@@ -16,7 +16,7 @@ from app.schemas.auth import (
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.error import ErrorResponse
 from app.services.auth_service import AuthService
-from app.dependencies import get_current_user, get_client_ip
+from app.dependencies import get_client_ip
 from app.core.exceptions import (
     AuthenticationError,
     AccountLockedException,
@@ -188,19 +188,17 @@ async def refresh_token(
     "/logout",
     response_model=LogoutResponse,
     responses={
-        401: {"model": ErrorResponse, "description": "Unauthorized"},
         404: {"model": ErrorResponse, "description": "Token not found"}
     }
 )
 async def logout(
     logout_data: LogoutRequest,
-    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Logout user by revoking refresh token.
     
-    Requires authentication via access token in Authorization header.
+    No authentication required - the refresh token itself is sufficient.
     
     - **refresh_token**: Refresh token to revoke
     """
