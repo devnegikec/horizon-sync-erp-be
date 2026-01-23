@@ -1,0 +1,1285 @@
+Table activity_logs {
+  organization_id uuid
+  user_id uuid
+  activity_type public.activitytype
+  entity_type character
+  entity_id uuid
+  entity_name character
+  related_entity_type character
+  related_entity_id uuid
+  team_id uuid
+  title character
+  description text
+  extra_data jsonb
+  is_public character
+  visible_to_teams jsonb
+  created_at timestamp
+  id uuid
+}
+
+Table audit_logs {
+  organization_id uuid
+  user_id uuid
+  user_email character
+  action public.auditaction
+  resource_type character
+  resource_id uuid
+  resource_name character
+  old_values jsonb
+  new_values jsonb
+  changed_fields jsonb
+  ip_address character
+  user_agent text
+  request_id character
+  extra_data jsonb
+  description text
+  created_at timestamp
+  id uuid
+}
+
+Table batches {
+  batch_no character
+  item_id uuid
+  manufacturing_date timestamp
+  expiry_date timestamp
+  supplier_id uuid
+  supplier_batch_no character
+  status public.batchstatus
+  reference_type character
+  reference_id uuid
+  description text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table chart_of_accounts {
+  organization_id uuid
+  account_code character
+  account_name character
+  account_type character
+  parent_account_id uuid
+  level integer
+  is_group boolean
+  opening_balance numeric(15,2)
+  current_balance numeric(15,2)
+  created_by uuid
+  updated_by uuid
+  tags jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table customers {
+  organization_id uuid
+  customer_name character
+  customer_code character
+  email character
+  phone character
+  address text
+  tax_number character
+  status character
+  created_by uuid
+  updated_by uuid
+  deleted_at timestamp
+  tags jsonb
+  custom_fields jsonb
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table delivery_note_items {
+  delivery_note_id uuid
+  item_id uuid
+  item_name character
+  description text
+  warehouse_id uuid
+  qty numeric(15,3)
+  uom character
+  rate numeric(15,2)
+  amount numeric(15,2)
+  sales_order_item_id uuid
+  batch_no character
+  serial_nos jsonb
+  quality_inspection_id uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table delivery_notes {
+  delivery_note_no character
+  customer_id uuid
+  customer_name character
+  sales_order_id uuid
+  pick_list_id uuid
+  posting_date timestamp
+  delivery_date timestamp
+  warehouse_id uuid
+  status public.documentstatus
+  shipping_address_line1 character
+  shipping_address_line2 character
+  shipping_city character
+  shipping_state character
+  shipping_postal_code character
+  shipping_country character
+  tracking_number character
+  carrier character
+  total_qty numeric(15,3)
+  total_amount numeric(15,2)
+  over_delivery_percentage numeric(5,2)
+  sales_invoice_id uuid
+  remarks text
+  extra_data jsonb
+  submitted_at timestamp
+  cancelled_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table email_verifications {
+  user_id uuid
+  email character
+  token_hash character
+  expires_at timestamp
+  verified_at timestamp
+  created_at timestamp
+  id uuid
+}
+
+Table invitations {
+  organization_id uuid
+  email character
+  first_name character
+  last_name character
+  role_id uuid
+  team_ids jsonb
+  invited_by_id uuid
+  token_hash character
+  status character
+  expires_at timestamp
+  accepted_at timestamp
+  accepted_user_id uuid
+  created_at timestamp
+  message text
+  extra_data jsonb
+  id uuid
+}
+
+Table invoice_items {
+  organization_id uuid
+  invoice_id uuid
+  item_id uuid
+  description character
+  quantity numeric(15,2)
+  unit_price numeric(15,2)
+  tax_rate numeric(5,2)
+  tax_amount numeric(15,2)
+  total_amount numeric(15,2)
+  id uuid
+}
+
+Table invoices {
+  organization_id uuid
+  invoice_no character
+  invoice_date timestamp
+  due_date timestamp
+  invoice_type character
+  status character
+  customer_id uuid
+  supplier_id uuid
+  total_amount numeric(15,2)
+  tax_amount numeric(15,2)
+  discount_amount numeric(15,2)
+  total_paid numeric(15,2)
+  balance_due numeric(15,2)
+  currency character
+  notes text
+  created_by uuid
+  updated_by uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table item_groups {
+  name character
+  code character
+  description text
+  parent_id uuid
+  default_valuation_method public.valuationmethod
+  default_uom character
+  is_active boolean
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table item_prices {
+  item_id uuid
+  price_list_id uuid
+  price numeric(15,2)
+  currency character
+  valid_from timestamp
+  valid_upto timestamp
+  min_qty integer
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table item_suppliers {
+  item_id uuid
+  supplier_id uuid
+  supplier_part_no character
+  lead_time_days integer
+  is_default boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table items {
+  item_code character
+  item_name character
+  description text
+  item_group_id uuid
+  item_type public.itemtype
+  uom character
+  maintain_stock boolean
+  valuation_method public.valuationmethod
+  allow_negative_stock boolean
+  has_variants boolean
+  variant_of uuid
+  variant_attributes jsonb
+  has_batch_no boolean
+  has_serial_no boolean
+  batch_number_series character
+  serial_number_series character
+  standard_rate numeric(15,2)
+  valuation_rate numeric(15,2)
+  enable_auto_reorder boolean
+  reorder_level integer
+  reorder_qty integer
+  min_order_qty integer
+  max_order_qty integer
+  weight_per_unit numeric(10,3)
+  weight_uom character
+  inspection_required_before_purchase boolean
+  inspection_required_before_delivery boolean
+  quality_inspection_template uuid
+  barcode character
+  status public.itemstatus
+  image_url character
+  images jsonb
+  tags jsonb
+  custom_fields jsonb
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table journal_entries {
+  organization_id uuid
+  entry_no character
+  entry_date timestamp
+  posting_date timestamp
+  reference_type character
+  reference_id uuid
+  reference_no character
+  description text
+  total_debit numeric(15,2)
+  total_credit numeric(15,2)
+  status character
+  posted_at timestamp
+  created_by uuid
+  updated_by uuid
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table journal_entry_lines {
+  organization_id uuid
+  journal_entry_id uuid
+  account_id uuid
+  debit_amount numeric(15,2)
+  credit_amount numeric(15,2)
+  description character
+  line_number integer
+  id uuid
+}
+
+Table landed_cost_items {
+  landed_cost_voucher_id uuid
+  purchase_receipt_item_id uuid
+  item_id uuid
+  qty numeric(15,3)
+  rate numeric(15,2)
+  amount numeric(15,2)
+  applicable_charges numeric(15,2)
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table landed_cost_purchase_receipts {
+  landed_cost_voucher_id uuid
+  purchase_receipt_id uuid
+  grand_total numeric(15,2)
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table landed_cost_taxes_and_charges {
+  landed_cost_voucher_id uuid
+  expense_account_id uuid
+  description text
+  amount numeric(15,2)
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table landed_cost_vouchers {
+  voucher_no character
+  posting_date timestamp
+  status public.documentstatus
+  distribute_charges_based_on character
+  total_landed_cost numeric(15,2)
+  remarks text
+  extra_data jsonb
+  submitted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table organization_settings {
+  organization_id uuid
+  timezone character
+  date_format character
+  time_format character
+  currency character
+  language character
+  features jsonb
+  notifications jsonb
+  security jsonb
+  integrations jsonb
+  custom_fields jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table organizations {
+  name character
+  slug character
+  display_name character
+  description text
+  email character
+  phone character
+  website character
+  address_line1 character
+  address_line2 character
+  city character
+  state character
+  postal_code character
+  country character
+  organization_type public.organizationtype
+  industry character
+  tax_id character
+  logo_url character
+  primary_color character
+  domain character
+  sso_enabled boolean
+  sso_provider character
+  sso_config jsonb
+  status public.organizationstatus
+  is_active boolean
+  settings jsonb
+  extra_data jsonb
+  owner_id uuid
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table password_resets {
+  user_id uuid
+  token_hash character
+  ip_address character
+  user_agent text
+  expires_at timestamp
+  used_at timestamp
+  created_at timestamp
+  id uuid
+}
+
+Table payment_allocations {
+  organization_id uuid
+  payment_id uuid
+  invoice_id uuid
+  allocated_amount numeric(15,2)
+  id uuid
+}
+
+Table payments {
+  organization_id uuid
+  payment_no character
+  payment_date timestamp
+  payment_type character
+  status character
+  customer_id uuid
+  supplier_id uuid
+  amount numeric(15,2)
+  payment_method character
+  bank_account_id uuid
+  reference_no character
+  created_by uuid
+  updated_by uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table permissions {
+  code character
+  name character
+  description text
+  resource public.resourcetype
+  action public.actiontype
+  module character
+  category character
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table pick_list_items {
+  pick_list_id uuid
+  item_id uuid
+  warehouse_id uuid
+  qty_to_pick integer
+  qty_picked integer
+  batch_no character
+  serial_nos jsonb
+  bin_location character
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table pick_lists {
+  pick_list_no character
+  reference_type character
+  reference_id uuid
+  warehouse_id uuid
+  status character
+  pick_date timestamp
+  completed_at timestamp
+  assigned_to uuid
+  notes text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table product_categories {
+  name character
+  code character
+  description text
+  parent_id uuid
+  is_active boolean
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table products {
+  name character
+  sku character
+  barcode character
+  description text
+  category_id uuid
+  unit_price numeric(15,2)
+  cost_price numeric(15,2)
+  currency character
+  tax_rate numeric(5,2)
+  track_inventory boolean
+  min_stock_level integer
+  reorder_point integer
+  reorder_quantity integer
+  weight numeric(10,2)
+  weight_unit character
+  dimensions jsonb
+  status public.productstatus
+  image_url character
+  images jsonb
+  tags jsonb
+  custom_fields jsonb
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table purchase_receipt_items {
+  purchase_receipt_id uuid
+  item_id uuid
+  item_name character
+  description text
+  warehouse_id uuid
+  qty numeric(15,3)
+  received_qty numeric(15,3)
+  uom character
+  rate numeric(15,2)
+  amount numeric(15,2)
+  purchase_order_item_id uuid
+  batch_no character
+  serial_nos jsonb
+  quality_inspection_id uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table purchase_receipts {
+  purchase_receipt_no character
+  supplier_id uuid
+  supplier_name character
+  purchase_order_id uuid
+  posting_date timestamp
+  warehouse_id uuid
+  status public.documentstatus
+  supplier_delivery_note character
+  supplier_invoice_no character
+  total_qty numeric(15,3)
+  total_amount numeric(15,2)
+  over_receipt_percentage numeric(5,2)
+  apply_putaway_rule boolean
+  purchase_invoice_id uuid
+  remarks text
+  extra_data jsonb
+  submitted_at timestamp
+  cancelled_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table put_away_rules {
+  name character
+  item_id uuid
+  item_group_id uuid
+  warehouse_id uuid
+  capacity integer
+  priority integer
+  min_qty integer
+  max_qty integer
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table quality_inspection_parameters {
+  template_id uuid
+  parameter_name character
+  description text
+  reading_type public.readingtype
+  min_value numeric(15,3)
+  max_value numeric(15,3)
+  acceptance_criteria text
+  non_conformance_action character
+  sequence integer
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table quality_inspection_readings {
+  inspection_id uuid
+  parameter_id uuid
+  parameter_name character
+  reading_value character
+  numeric_value numeric(15,3)
+  status character
+  remarks text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table quality_inspection_templates {
+  template_name character
+  description text
+  item_id uuid
+  item_group_id uuid
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table quality_inspections {
+  inspection_no character
+  item_id uuid
+  item_name character
+  template_id uuid
+  inspection_type public.inspectiontype
+  reference_type character
+  reference_id uuid
+  batch_no character
+  serial_no character
+  sample_size numeric(15,3)
+  inspected_by uuid
+  inspection_date timestamp
+  status public.inspectionstatus
+  verified boolean
+  remarks text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table refresh_tokens {
+  user_id uuid
+  token_hash character
+  token_family character
+  device_id character
+  device_name character
+  device_type character
+  os_info character
+  browser_info character
+  ip_address character
+  user_agent text
+  expires_at timestamp
+  revoked_at timestamp
+  revoked_reason character
+  created_at timestamp
+  last_used_at timestamp
+  id uuid
+}
+
+Table role_permissions {
+  role_id uuid
+  permission_id uuid
+  conditions jsonb
+  id uuid
+}
+
+Table roles {
+  organization_id uuid
+  name character
+  code character
+  description text
+  is_system boolean
+  is_default boolean
+  hierarchy_level integer
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table serial_no_history {
+  serial_no_id uuid
+  transaction_type character
+  transaction_id uuid
+  from_warehouse_id uuid
+  to_warehouse_id uuid
+  transaction_date timestamp
+  remarks text
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table serial_nos {
+  serial_no character
+  item_id uuid
+  warehouse_id uuid
+  status character
+  purchase_date timestamp
+  purchase_rate numeric(15,2)
+  supplier_id uuid
+  delivery_date timestamp
+  customer_id uuid
+  warranty_period integer
+  warranty_expiry_date timestamp
+  amc_expiry_date timestamp
+  batch_no character
+  description text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table stock_entries {
+  stock_entry_no character
+  stock_entry_type public.stockentrytype
+  from_warehouse_id uuid
+  to_warehouse_id uuid
+  posting_date timestamp
+  posting_time character
+  status public.stockentrystatus
+  reference_type character
+  reference_id uuid
+  remarks text
+  total_value numeric(15,2)
+  expense_account_id uuid
+  cost_center_id uuid
+  is_backflush boolean
+  bom_id uuid
+  extra_data jsonb
+  submitted_at timestamp
+  cancelled_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table stock_entry_items {
+  stock_entry_id uuid
+  item_id uuid
+  source_warehouse_id uuid
+  target_warehouse_id uuid
+  qty numeric(15,3)
+  uom character
+  basic_rate numeric(15,2)
+  basic_amount numeric(15,2)
+  valuation_rate numeric(15,2)
+  batch_no character
+  serial_nos jsonb
+  quality_inspection_id uuid
+  description text
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table stock_levels {
+  product_id uuid
+  warehouse_id uuid
+  quantity_on_hand integer
+  quantity_reserved integer
+  quantity_available integer
+  last_counted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table stock_movements {
+  product_id uuid
+  warehouse_id uuid
+  movement_type public.movementtype
+  quantity integer
+  unit_cost numeric(15,2)
+  reference_type character
+  reference_id uuid
+  notes text
+  performed_by uuid
+  performed_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table stock_reconciliation_items {
+  reconciliation_id uuid
+  item_id uuid
+  warehouse_id uuid
+  current_qty numeric(15,3)
+  qty numeric(15,3)
+  qty_difference numeric(15,3)
+  current_valuation_rate numeric(15,2)
+  valuation_rate numeric(15,2)
+  batch_no character
+  serial_nos jsonb
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table stock_reconciliations {
+  reconciliation_no character
+  purpose character
+  posting_date timestamp
+  posting_time character
+  status public.stockentrystatus
+  expense_account_id uuid
+  difference_account_id uuid
+  remarks text
+  extra_data jsonb
+  submitted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table stock_settings {
+  item_naming_by character
+  item_naming_series character
+  stock_entry_naming_series character
+  delivery_note_naming_series character
+  purchase_receipt_naming_series character
+  default_warehouse_id uuid
+  allow_negative_stock boolean
+  over_delivery_receipt_allowance numeric(5,2)
+  over_billing_allowance numeric(5,2)
+  auto_indent boolean
+  auto_indent_notification jsonb
+  default_valuation_method character
+  auto_create_serial_no boolean
+  default_quality_inspection_template_id uuid
+  stock_frozen_upto character
+  stock_frozen_upto_days integer
+  show_barcode_field boolean
+  convert_item_desc_to_transaction_desc boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Table subscription_invoices {
+  subscription_id uuid
+  stripe_invoice_id character
+  invoice_number character
+  amount numeric(10,2)
+  status character
+  billing_period_start timestamp
+  billing_period_end timestamp
+  id uuid
+}
+
+Table subscription_payments {
+  invoice_id uuid
+  stripe_payment_intent_id character
+  amount numeric(10,2)
+  paid_at timestamp
+  status character
+  id uuid
+}
+
+Table subscription_plans {
+  name character
+  code character
+  description text
+  plan_type public.plantype
+  price_monthly numeric(10,2)
+  price_yearly numeric(10,2)
+  currency character
+  max_users integer
+  max_teams integer
+  max_leads integer
+  max_contacts integer
+  max_deals integer
+  max_tickets integer
+  max_products integer
+  max_storage_gb integer
+  max_api_calls_per_day integer
+  features jsonb
+  is_active boolean
+  is_public boolean
+  trial_days integer
+  sort_order integer
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table subscription_usage {
+  subscription_id uuid
+  period_start timestamp
+  period_end timestamp
+  users_count integer
+  teams_count integer
+  leads_created integer
+  contacts_created integer
+  deals_created integer
+  tickets_created integer
+  storage_used_mb integer
+  api_calls integer
+  is_finalized boolean
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table subscriptions {
+  organization_id uuid
+  plan_id uuid
+  status public.subscriptionstatus
+  trial_starts_at timestamp
+  trial_ends_at timestamp
+  starts_at timestamp
+  ends_at timestamp
+  cancelled_at timestamp
+  billing_cycle public.billingcycle
+  next_billing_date timestamp
+  stripe_subscription_id character
+  stripe_customer_id character
+  current_users integer
+  current_teams integer
+  current_storage_mb integer
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table suppliers {
+  organization_id uuid
+  supplier_name character
+  supplier_code character
+  email character
+  phone character
+  address text
+  tax_number character
+  status character
+  created_by uuid
+  updated_by uuid
+  deleted_at timestamp
+  tags jsonb
+  custom_fields jsonb
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table team_members {
+  team_id uuid
+  user_id uuid
+  role public.teamrole
+  is_active boolean
+  joined_at timestamp
+  left_at timestamp
+  added_by_id uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table teams {
+  organization_id uuid
+  name character
+  code character
+  description text
+  team_type public.teamtype
+  parent_id uuid
+  lead_user_id uuid
+  is_active boolean
+  settings jsonb
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table user_organization_roles {
+  user_id uuid
+  organization_id uuid
+  role_id uuid
+  is_primary boolean
+  is_active boolean
+  status character
+  invited_by_id uuid
+  invited_at timestamp
+  joined_at timestamp
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table user_teams {
+  user_id uuid
+  team_id uuid
+  team_role character
+  is_active boolean
+  joined_at timestamp
+  left_at timestamp
+  added_by_id uuid
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table users {
+  email character
+  password_hash character
+  first_name character
+  last_name character
+  display_name character
+  phone character
+  avatar_url character
+  user_type public.usertype
+  status public.userstatus
+  is_active boolean
+  email_verified boolean
+  email_verified_at timestamp
+  mfa_enabled boolean
+  mfa_secret character
+  mfa_backup_codes jsonb
+  last_login_at timestamp
+  last_login_ip character
+  failed_login_attempts integer
+  locked_until timestamp
+  preferences jsonb
+  timezone character
+  language character
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table warehouses {
+  name character
+  code character
+  description text
+  address_line1 character
+  address_line2 character
+  city character
+  state character
+  postal_code character
+  country character
+  contact_name character
+  contact_phone character
+  contact_email character
+  is_active boolean
+  is_default boolean
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+}
+
+Table warehouses_extended {
+  name character
+  code character
+  description text
+  parent_warehouse_id uuid
+  warehouse_type public.warehousetype
+  address_line1 character
+  address_line2 character
+  city character
+  state character
+  postal_code character
+  country character
+  contact_name character
+  contact_phone character
+  contact_email character
+  total_capacity integer
+  capacity_uom character
+  stock_account_id uuid
+  is_active boolean
+  is_default boolean
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+  organization_id uuid
+  created_by uuid
+  updated_by uuid
+}
+
+Ref: activity_logs.organization_id > organizations.id
+Ref: activity_logs.user_id > users.id
+Ref: audit_logs.organization_id > organizations.id
+Ref: audit_logs.user_id > users.id
+Ref: batches.item_id > items.id
+Ref: chart_of_accounts.organization_id > organizations.id
+Ref: chart_of_accounts.parent_account_id > chart_of_accounts.id
+Ref: customers.organization_id > organizations.id
+Ref: delivery_note_items.delivery_note_id > delivery_notes.id
+Ref: delivery_note_items.item_id > items.id
+Ref: delivery_note_items.warehouse_id > warehouses_extended.id
+Ref: delivery_notes.pick_list_id > pick_lists.id
+Ref: delivery_notes.warehouse_id > warehouses_extended.id
+Ref: email_verifications.user_id > users.id
+Ref: invitations.invited_by_id > users.id
+Ref: invitations.organization_id > organizations.id
+Ref: invitations.role_id > roles.id
+Ref: invoice_items.invoice_id > invoices.id
+Ref: invoice_items.organization_id > organizations.id
+Ref: invoices.customer_id > customers.id
+Ref: invoices.organization_id > organizations.id
+Ref: invoices.supplier_id > suppliers.id
+Ref: item_groups.parent_id > item_groups.id
+Ref: item_prices.item_id > items.id
+Ref: item_suppliers.item_id > items.id
+Ref: items.item_group_id > item_groups.id
+Ref: items.variant_of > items.id
+Ref: journal_entries.organization_id > organizations.id
+Ref: journal_entry_lines.account_id > chart_of_accounts.id
+Ref: journal_entry_lines.journal_entry_id > journal_entries.id
+Ref: journal_entry_lines.organization_id > organizations.id
+Ref: landed_cost_items.item_id > items.id
+Ref: landed_cost_items.landed_cost_voucher_id > landed_cost_vouchers.id
+Ref: landed_cost_items.purchase_receipt_item_id > purchase_receipt_items.id
+Ref: landed_cost_purchase_receipts.landed_cost_voucher_id > landed_cost_vouchers.id
+Ref: landed_cost_purchase_receipts.purchase_receipt_id > purchase_receipts.id
+Ref: landed_cost_taxes_and_charges.landed_cost_voucher_id > landed_cost_vouchers.id
+Ref: organization_settings.organization_id > organizations.id
+Ref: password_resets.user_id > users.id
+Ref: payment_allocations.invoice_id > invoices.id
+Ref: payment_allocations.organization_id > organizations.id
+Ref: payment_allocations.payment_id > payments.id
+Ref: payments.customer_id > customers.id
+Ref: payments.organization_id > organizations.id
+Ref: payments.supplier_id > suppliers.id
+Ref: pick_list_items.item_id > items.id
+Ref: pick_list_items.pick_list_id > pick_lists.id
+Ref: pick_list_items.warehouse_id > warehouses_extended.id
+Ref: pick_lists.warehouse_id > warehouses_extended.id
+Ref: product_categories.parent_id > product_categories.id
+Ref: products.category_id > product_categories.id
+Ref: purchase_receipt_items.item_id > items.id
+Ref: purchase_receipt_items.purchase_receipt_id > purchase_receipts.id
+Ref: purchase_receipt_items.warehouse_id > warehouses_extended.id
+Ref: purchase_receipts.warehouse_id > warehouses_extended.id
+Ref: put_away_rules.item_group_id > item_groups.id
+Ref: put_away_rules.item_id > items.id
+Ref: put_away_rules.warehouse_id > warehouses_extended.id
+Ref: quality_inspection_parameters.template_id > quality_inspection_templates.id
+Ref: quality_inspection_readings.inspection_id > quality_inspections.id
+Ref: quality_inspection_readings.parameter_id > quality_inspection_parameters.id
+Ref: quality_inspection_templates.item_group_id > item_groups.id
+Ref: quality_inspection_templates.item_id > items.id
+Ref: quality_inspections.item_id > items.id
+Ref: quality_inspections.template_id > quality_inspection_templates.id
+Ref: refresh_tokens.user_id > users.id
+Ref: role_permissions.permission_id > permissions.id
+Ref: role_permissions.role_id > roles.id
+Ref: roles.organization_id > organizations.id
+Ref: serial_no_history.serial_no_id > serial_nos.id
+Ref: serial_nos.item_id > items.id
+Ref: serial_nos.warehouse_id > warehouses_extended.id
+Ref: stock_entries.from_warehouse_id > warehouses_extended.id
+Ref: stock_entries.to_warehouse_id > warehouses_extended.id
+Ref: stock_entry_items.item_id > items.id
+Ref: stock_entry_items.source_warehouse_id > warehouses_extended.id
+Ref: stock_entry_items.stock_entry_id > stock_entries.id
+Ref: stock_entry_items.target_warehouse_id > warehouses_extended.id
+Ref: stock_levels.product_id > products.id
+Ref: stock_levels.warehouse_id > warehouses.id
+Ref: stock_movements.product_id > products.id
+Ref: stock_movements.warehouse_id > warehouses.id
+Ref: stock_reconciliation_items.item_id > items.id
+Ref: stock_reconciliation_items.reconciliation_id > stock_reconciliations.id
+Ref: stock_reconciliation_items.warehouse_id > warehouses_extended.id
+Ref: subscription_invoices.subscription_id > subscriptions.id
+Ref: subscription_payments.invoice_id > subscription_invoices.id
+Ref: subscription_usage.subscription_id > subscriptions.id
+Ref: subscriptions.organization_id > organizations.id
+Ref: subscriptions.plan_id > subscription_plans.id
+Ref: suppliers.organization_id > organizations.id
+Ref: team_members.team_id > teams.id
+Ref: team_members.user_id > users.id
+Ref: teams.organization_id > organizations.id
+Ref: teams.parent_id > teams.id
+Ref: user_organization_roles.organization_id > organizations.id
+Ref: user_organization_roles.role_id > roles.id
+Ref: user_organization_roles.user_id > users.id
+Ref: user_teams.team_id > teams.id
+Ref: user_teams.user_id > users.id
+Ref: warehouses_extended.parent_warehouse_id > warehouses_extended.id

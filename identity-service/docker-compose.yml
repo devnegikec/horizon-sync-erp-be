@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: identity_postgres
+    environment:
+      POSTGRES_USER: identity_user
+      POSTGRES_PASSWORD: identity_pass
+      POSTGRES_DB: identity_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity_user -d identity_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - identity_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: identity_api
+    environment:
+      DATABASE_URL: postgresql://identity_user:identity_pass@postgres:5432/identity_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+    command: >
+      bash -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        echo 'Running migrations...' &&
+        python -m alembic upgrade head &&
+        echo 'Seeding database...' &&
+        python scripts/seed_data.py &&
+        echo 'Starting server...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    networks:
+      - identity_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  identity_network:
+    driver: bridge
