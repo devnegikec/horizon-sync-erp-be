@@ -47,8 +47,8 @@ class Permission(Base):
     description = Column(Text)
     
     # Permission details
-    resource = Column(SQLEnum(ResourceType), nullable=False)
-    action = Column(SQLEnum(ActionType), nullable=False)
+    resource = Column(SQLEnum(ResourceType, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    action = Column(SQLEnum(ActionType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     module = Column(String(50))
     category = Column(String(50))
     

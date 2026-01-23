@@ -51,7 +51,7 @@ async def health_check():
     try:
         # Test database connection
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(sa.text("SELECT 1"))
         
         return {
             "status": "healthy",

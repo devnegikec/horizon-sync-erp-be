@@ -34,7 +34,7 @@ class Organization(Base):
     country = Column(String(100))
     
     # Organization details
-    organization_type = Column(SQLEnum(OrganizationType), default=OrganizationType.BUSINESS)
+    organization_type = Column(SQLEnum(OrganizationType, values_callable=lambda x: [e.value for e in x]), default=OrganizationType.BUSINESS)
     industry = Column(String(100))
     tax_id = Column(String(100))
     
@@ -49,7 +49,7 @@ class Organization(Base):
     sso_config = Column(JSONB)
     
     # Status
-    status = Column(SQLEnum(OrganizationStatus), default=OrganizationStatus.ACTIVE, nullable=False)
+    status = Column(SQLEnum(OrganizationStatus, values_callable=lambda x: [e.value for e in x]), default=OrganizationStatus.ACTIVE, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Owner

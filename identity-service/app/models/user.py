@@ -24,8 +24,8 @@ class User(Base):
     avatar_url = Column(String(500))
     
     # User type and status
-    user_type = Column(SQLEnum(UserType), default=UserType.USER, nullable=False)
-    status = Column(SQLEnum(UserStatus), default=UserStatus.PENDING, nullable=False)
+    user_type = Column(SQLEnum(UserType, values_callable=lambda x: [e.value for e in x]), default=UserType.USER, nullable=False)
+    status = Column(SQLEnum(UserStatus, values_callable=lambda x: [e.value for e in x]), default=UserStatus.PENDING, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Email verification
