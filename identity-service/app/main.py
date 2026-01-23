@@ -1,6 +1,6 @@
 """Main FastAPI application"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import sqlalchemy as sa
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,7 +59,7 @@ async def health_check():
             "service": "identity-service",
             "version": settings.app_version,
             "environment": settings.environment,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "database": "connected"
         }
     except Exception as e:
@@ -69,7 +69,7 @@ async def health_check():
                 "status": "unhealthy",
                 "service": "identity-service",
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "database": "disconnected"
             }
         )
@@ -97,7 +97,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": "VALIDATION_ERROR",
             "message": "Invalid input data",
             "details": errors,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -110,7 +110,7 @@ async def authentication_exception_handler(request: Request, exc: Authentication
         content={
             "error": "AUTHENTICATION_FAILED",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -123,7 +123,7 @@ async def account_locked_exception_handler(request: Request, exc: AccountLockedE
         content={
             "error": "ACCOUNT_LOCKED",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -136,7 +136,7 @@ async def duplicate_email_exception_handler(request: Request, exc: DuplicateEmai
         content={
             "error": "DUPLICATE_EMAIL",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -149,7 +149,7 @@ async def password_validation_exception_handler(request: Request, exc: PasswordV
         content={
             "error": "PASSWORD_VALIDATION_FAILED",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -162,7 +162,7 @@ async def invalid_token_exception_handler(request: Request, exc: InvalidTokenExc
         content={
             "error": "INVALID_TOKEN",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -175,7 +175,7 @@ async def token_expired_exception_handler(request: Request, exc: TokenExpiredExc
         content={
             "error": "TOKEN_EXPIRED",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -188,7 +188,7 @@ async def user_not_found_exception_handler(request: Request, exc: UserNotFoundEx
         content={
             "error": "USER_NOT_FOUND",
             "message": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -201,7 +201,7 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError):
         content={
             "error": "DATABASE_ERROR",
             "message": "A database error occurred",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 
@@ -214,7 +214,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
 

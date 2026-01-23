@@ -1,7 +1,7 @@
 """Authentication service with business logic"""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
@@ -170,7 +170,7 @@ class AuthService:
         self.user_repo.update_user(user, {
             "failed_login_attempts": 0,
             "locked_until": None,
-            "last_login_at": datetime.utcnow(),
+            "last_login_at": datetime.now(timezone.utc),
             "last_login_ip": ip_address
         })
         
@@ -219,7 +219,7 @@ class AuthService:
         
         # Check if token is expired
         exp = payload.get("exp")
-        if exp and datetime.fromtimestamp(exp) < datetime.utcnow():
+        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
             raise TokenExpiredException("Refresh token has expired")
         
         # Get token from database
@@ -230,7 +230,7 @@ class AuthService:
             raise InvalidTokenException("Refresh token not found or has been revoked")
         
         # Check if token is expired in database
-        if db_token.expires_at < datetime.utcnow():
+        if db_token.expires_at < datetime.now(timezone.utc):
             raise TokenExpiredException("Refresh token has expired")
         
         # Get user
@@ -274,11 +274,11 @@ class AuthService:
     
     def _is_account_locked(self, user: User) -> bool:
         """Check if account is currently locked"""
-        if user.locked_until and user.locked_until > datetime.utcnow():
+        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
             return True
         
         # Unlock account if lock period has expired
-        if user.locked_until and user.locked_until <= datetime.utcnow():
+        if user.locked_until and user.locked_until <= datetime.now(timezone.utc):
             self.user_repo.update_user(user, {
                 "locked_until": None,
                 "failed_login_attempts": 0,
@@ -294,7 +294,7 @@ class AuthService:
         
         # Lock account after 5 failed attempts
         if failed_attempts >= 5:
-            update_data["locked_until"] = datetime.utcnow() + timedelta(minutes=30)
+            update_data["locked_until"] = datetime.now(timezone.utc) + timedelta(minutes=30)
             update_data["status"] = UserStatus.SUSPENDED
         
         self.user_repo.update_user(user, update_data)
@@ -315,7 +315,7 @@ class AuthService:
             "user_id": user_id,
             "token_hash": token_hash_value,
             "token_family": payload.get("token_family"),
-            "expires_at": datetime.fromtimestamp(payload.get("exp")),
+            "expires_at": datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
             "ip_address": ip_address,
             "user_agent": user_agent
         }

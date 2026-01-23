@@ -2,7 +2,7 @@
 
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.token import RefreshToken
@@ -60,7 +60,7 @@ class TokenRepository:
         Returns:
             Updated RefreshToken object
         """
-        token.revoked_at = datetime.utcnow()
+        token.revoked_at = datetime.now(timezone.utc)
         token.revoked_reason = reason
         self.db.commit()
         self.db.refresh(token)
@@ -76,7 +76,7 @@ class TokenRepository:
         Returns:
             Updated RefreshToken object
         """
-        token.last_used_at = datetime.utcnow()
+        token.last_used_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(token)
         return token
@@ -89,7 +89,7 @@ class TokenRepository:
             Number of tokens deleted
         """
         count = self.db.query(RefreshToken).filter(
-            RefreshToken.expires_at < datetime.utcnow()
+            RefreshToken.expires_at < datetime.now(timezone.utc)
         ).delete()
         self.db.commit()
         return count
@@ -109,7 +109,7 @@ class TokenRepository:
             RefreshToken.user_id == user_id,
             RefreshToken.revoked_at.is_(None)
         ).update({
-            "revoked_at": datetime.utcnow(),
+            "revoked_at": datetime.now(timezone.utc),
             "revoked_reason": reason
         })
         self.db.commit()
