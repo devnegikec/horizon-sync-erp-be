@@ -2,8 +2,7 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum as SQLEnum, Uuid, JSON
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -14,8 +13,8 @@ class Role(Base):
     """Role model for RBAC"""
     __tablename__ = "roles"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
+    organization_id = Column(Uuid, ForeignKey('organizations.id', ondelete='CASCADE'), index=True)
     name = Column(String(100), nullable=False)
     code = Column(String(50), nullable=False, index=True)
     description = Column(Text)
@@ -27,7 +26,7 @@ class Role(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Metadata
-    extra_data = Column(JSONB, default={})
+    extra_data = Column(JSON, default={})
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -41,7 +40,7 @@ class Permission(Base):
     """Permission model for RBAC"""
     __tablename__ = "permissions"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     code = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text)
@@ -56,7 +55,7 @@ class Permission(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Metadata
-    extra_data = Column(JSONB, default={})
+    extra_data = Column(JSON, default={})
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -68,10 +67,10 @@ class RolePermission(Base):
     """Role-Permission mapping model"""
     __tablename__ = "role_permissions"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    role_id = Column(UUID(as_uuid=True), ForeignKey('roles.id', ondelete='CASCADE'), nullable=False, index=True)
-    permission_id = Column(UUID(as_uuid=True), ForeignKey('permissions.id', ondelete='CASCADE'), nullable=False, index=True)
-    conditions = Column(JSONB, default={})
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    role_id = Column(Uuid, ForeignKey('roles.id', ondelete='CASCADE'), nullable=False, index=True)
+    permission_id = Column(Uuid, ForeignKey('permissions.id', ondelete='CASCADE'), nullable=False, index=True)
+    conditions = Column(JSON, default={})
     
     # Relationships
     role = relationship("Role", back_populates="role_permissions")
@@ -82,10 +81,10 @@ class UserOrganizationRole(Base):
     """User-Organization-Role mapping model"""
     __tablename__ = "user_organization_roles"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), nullable=False, index=True)
-    role_id = Column(UUID(as_uuid=True), ForeignKey('roles.id', ondelete='CASCADE'), nullable=False, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    organization_id = Column(Uuid, ForeignKey('organizations.id', ondelete='CASCADE'), nullable=False, index=True)
+    role_id = Column(Uuid, ForeignKey('roles.id', ondelete='CASCADE'), nullable=False, index=True)
     
     # Role assignment details
     is_primary = Column(Boolean, default=False)
@@ -93,12 +92,12 @@ class UserOrganizationRole(Base):
     status = Column(String(20), default='active')
     
     # Invitation tracking
-    invited_by_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
+    invited_by_id = Column(Uuid, ForeignKey('users.id'))
     invited_at = Column(DateTime(timezone=True))
     joined_at = Column(DateTime(timezone=True))
     
     # Metadata
-    extra_data = Column(JSONB, default={})
+    extra_data = Column(JSON, default={})
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     

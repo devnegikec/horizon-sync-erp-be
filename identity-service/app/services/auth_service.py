@@ -1,6 +1,7 @@
 """Authentication service with business logic"""
 
 import uuid
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from app.models.user import User
 from app.models.base import UserStatus, UserType
 from app.repositories.user_repository import UserRepository
 from app.repositories.token_repository import TokenRepository
+from app.repositories.password_reset_repository import PasswordResetRepository
 from app.config import settings
 
 
@@ -37,6 +39,7 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.token_repo = TokenRepository(db)
+        self.password_reset_repo = PasswordResetRepository(db)
     
     def register_user(
         self,
@@ -230,7 +233,11 @@ class AuthService:
             raise InvalidTokenException("Refresh token not found or has been revoked")
         
         # Check if token is expired in database
-        if db_token.expires_at < datetime.now(timezone.utc):
+        expires_at = db_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
+        if expires_at < datetime.now(timezone.utc):
             raise TokenExpiredException("Refresh token has expired")
         
         # Get user
@@ -274,11 +281,18 @@ class AuthService:
     
     def _is_account_locked(self, user: User) -> bool:
         """Check if account is currently locked"""
-        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
+        if not user.locked_until:
+            return False
+            
+        locked_until = user.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+            
+        if locked_until > datetime.now(timezone.utc):
             return True
         
         # Unlock account if lock period has expired
-        if user.locked_until and user.locked_until <= datetime.now(timezone.utc):
+        if locked_until <= datetime.now(timezone.utc):
             self.user_repo.update_user(user, {
                 "locked_until": None,
                 "failed_login_attempts": 0,
@@ -329,3 +343,107 @@ class AuthService:
             })
         
         self.token_repo.create_refresh_token(token_data)
+    
+    def forgot_password(
+        self,
+        email: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> str:
+        """
+        Generate password reset token for user.
+        
+        Args:
+            email: User email
+            ip_address: Optional IP address
+            user_agent: Optional user agent string
+            
+        Returns:
+            Password reset token (plain text)
+            
+        Raises:
+            UserNotFoundException: If user not found (silently handled for security)
+        """
+        # Get user by email
+        user = self.user_repo.get_user_by_email(email)
+        
+        # For security, don't reveal if email exists or not
+        # Always return success, but only create token if user exists
+        if not user:
+            # Return a fake token to prevent email enumeration
+            return secrets.token_urlsafe(32)
+        
+        # Revoke any existing unused tokens for this user
+        self.password_reset_repo.revoke_user_tokens(user.id)
+        
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
+        token_hash_value = hash_token(reset_token)
+        
+        # Store reset token
+        reset_data = {
+            "user_id": user.id,
+            "token_hash": token_hash_value,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=settings.password_reset_token_expire_hours),
+            "ip_address": ip_address,
+            "user_agent": user_agent
+        }
+        
+        self.password_reset_repo.create_password_reset(reset_data)
+        
+        return reset_token
+    
+    def reset_password(
+        self,
+        token: str,
+        new_password: str
+    ) -> bool:
+        """
+        Reset user password using reset token.
+        
+        Args:
+            token: Password reset token
+            new_password: New password
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            InvalidTokenException: If token is invalid or expired
+            PasswordValidationException: If password is weak
+            UserNotFoundException: If user not found
+        """
+        # Validate new password
+        is_valid, message = validate_password(new_password)
+        if not is_valid:
+            raise PasswordValidationException(message)
+        
+        # Get reset token from database
+        token_hash_value = hash_token(token)
+        reset = self.password_reset_repo.get_password_reset(token_hash_value)
+        
+        if not reset:
+            raise InvalidTokenException("Invalid or expired password reset token")
+        
+        # Get user
+        user = self.user_repo.get_user_by_id(reset.user_id)
+        if not user:
+            raise UserNotFoundException("User not found")
+        
+        # Hash new password
+        password_hash = hash_password(new_password)
+        
+        # Update user password
+        self.user_repo.update_user(user, {
+            "password_hash": password_hash,
+            "failed_login_attempts": 0,
+            "locked_until": None
+        })
+        
+        # Mark token as used
+        self.password_reset_repo.mark_as_used(reset)
+        
+        # Revoke all refresh tokens for security
+        self.token_repo.revoke_all_user_tokens(user.id, reason="password_reset")
+        
+        return True

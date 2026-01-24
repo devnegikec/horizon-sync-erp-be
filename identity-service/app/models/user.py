@@ -2,8 +2,7 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum as SQLEnum, Uuid, JSON
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -14,7 +13,7 @@ class User(Base):
     """User model"""
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
@@ -35,7 +34,7 @@ class User(Base):
     # MFA (Multi-Factor Authentication)
     mfa_enabled = Column(Boolean, default=False)
     mfa_secret = Column(String(255))
-    mfa_backup_codes = Column(JSONB)
+    mfa_backup_codes = Column(JSON)
     
     # Login tracking
     last_login_at = Column(DateTime(timezone=True))
@@ -44,12 +43,12 @@ class User(Base):
     locked_until = Column(DateTime(timezone=True))
     
     # User preferences
-    preferences = Column(JSONB, default={})
+    preferences = Column(JSON, default={})
     timezone = Column(String(50), default='UTC')
     language = Column(String(10), default='en')
     
     # Metadata
-    extra_data = Column(JSONB, default={})
+    extra_data = Column(JSON, default={})
     deleted_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -69,8 +68,8 @@ class EmailVerification(Base):
     """Email verification token model"""
     __tablename__ = "email_verifications"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     email = Column(String(255), nullable=False)
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)

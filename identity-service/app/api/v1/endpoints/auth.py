@@ -11,7 +11,11 @@ from app.schemas.auth import (
     RefreshTokenResponse,
     LogoutRequest,
     LogoutResponse,
-    RegisterResponse
+    RegisterResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse
 )
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.error import ErrorResponse
@@ -213,5 +217,97 @@ async def logout(
     except InvalidTokenException as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"model": ForgotPasswordResponse, "description": "Password reset email sent"}
+    }
+)
+async def forgot_password(
+    request_data: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Request password reset token.
+    
+    Sends a password reset email to the user if the email exists.
+    For security, always returns success even if email doesn't exist.
+    
+    - **email**: User's email address
+    """
+    auth_service = AuthService(db)
+    
+    # Get client info
+    ip_address = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent")
+    
+    # Generate reset token
+    reset_token = auth_service.forgot_password(
+        email=request_data.email,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+    
+    # TODO: Send email with reset token
+    # In production, you would send an email here with a link like:
+    # https://yourapp.com/reset-password?token={reset_token}
+    # For now, we'll just return success
+    
+    # Note: In development, you might want to log the token
+    # print(f"Password reset token for {request_data.email}: {reset_token}")
+    
+    return ForgotPasswordResponse(
+        message="If the email exists, a password reset link has been sent"
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=ResetPasswordResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid password"},
+        401: {"model": ErrorResponse, "description": "Invalid or expired token"}
+    }
+)
+async def reset_password(
+    request_data: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using reset token.
+    
+    - **token**: Password reset token from email
+    - **new_password**: New password (min 8 chars, must contain uppercase, lowercase, number, special char)
+    """
+    try:
+        auth_service = AuthService(db)
+        
+        # Reset password
+        auth_service.reset_password(
+            token=request_data.token,
+            new_password=request_data.new_password
+        )
+        
+        return ResetPasswordResponse(
+            message="Password has been reset successfully. Please login with your new password."
+        )
+    
+    except PasswordValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+    except (InvalidTokenException, UserNotFoundException) as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
