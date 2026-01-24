@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create custom enum types
 CREATE TYPE usertype AS ENUM (
     'system_admin',
-    'organization_admin', 
+    'organization_admin',
     'user',
     'guest'
 );

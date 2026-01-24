@@ -11,7 +11,7 @@ from app.database import Base
 class PasswordReset(Base):
     """Password reset token model"""
     __tablename__ = "password_resets"
-    
+
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id = Column(Uuid, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
@@ -20,6 +20,6 @@ class PasswordReset(Base):
     ip_address = Column(String(45))
     user_agent = Column(String(500))
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
+
     # Relationships
     user = relationship("User", backref="password_resets")

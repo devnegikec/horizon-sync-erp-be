@@ -52,7 +52,7 @@ async def register(
 ):
     """
     Register a new user.
-    
+
     - **email**: Valid email address (unique)
     - **password**: Min 8 chars, must contain uppercase, lowercase, number, special char
     - **first_name**: User's first name (2-100 chars)
@@ -61,11 +61,11 @@ async def register(
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Get client info
         ip_address = get_client_ip(request)
         user_agent = request.headers.get("User-Agent")
-        
+
         # Register user
         user, access_token, refresh_token = auth_service.register_user(
             email=user_data.email,
@@ -76,7 +76,7 @@ async def register(
             ip_address=ip_address,
             user_agent=user_agent
         )
-        
+
         return RegisterResponse(
             user=UserResponse.model_validate(user),
             access_token=access_token,
@@ -84,13 +84,13 @@ async def register(
             token_type="bearer",
             expires_in=settings.access_token_expire_minutes * 60
         )
-    
+
     except DuplicateEmailException as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e)
         )
-    
+
     except PasswordValidationException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -113,18 +113,18 @@ async def login(
 ):
     """
     Authenticate user and return JWT tokens.
-    
+
     - **email**: User's email address
     - **password**: User's password
     - **device_info**: Optional device information for tracking
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Get client info
         ip_address = get_client_ip(request)
         user_agent = request.headers.get("User-Agent")
-        
+
         # Login user
         user, access_token, refresh_token = auth_service.login_user(
             email=login_data.email,
@@ -133,20 +133,20 @@ async def login(
             ip_address=ip_address,
             user_agent=user_agent
         )
-        
+
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
             expires_in=settings.access_token_expire_minutes * 60
         )
-    
+
     except AuthenticationError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    
+
     except AccountLockedException as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -167,21 +167,21 @@ async def refresh_token(
 ):
     """
     Refresh access token using refresh token.
-    
+
     - **refresh_token**: Valid refresh token
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Generate new access token
         access_token = auth_service.refresh_access_token(token_data.refresh_token)
-        
+
         return RefreshTokenResponse(
             access_token=access_token,
             token_type="bearer",
             expires_in=settings.access_token_expire_minutes * 60
         )
-    
+
     except (InvalidTokenException, TokenExpiredException, UserNotFoundException) as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -202,19 +202,19 @@ async def logout(
 ):
     """
     Logout user by revoking refresh token.
-    
+
     No authentication required - the refresh token itself is sufficient.
-    
+
     - **refresh_token**: Refresh token to revoke
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Logout user
         auth_service.logout_user(logout_data.refresh_token)
-        
+
         return LogoutResponse(message="Successfully logged out")
-    
+
     except InvalidTokenException as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -238,33 +238,33 @@ async def forgot_password(
 ):
     """
     Request password reset token.
-    
+
     Sends a password reset email to the user if the email exists.
     For security, always returns success even if email doesn't exist.
-    
+
     - **email**: User's email address
     """
     auth_service = AuthService(db)
     email_service = EmailService()
-    
+
     # Get client info
     ip_address = get_client_ip(request)
     user_agent = request.headers.get("User-Agent")
-    
+
     # Generate reset token
     reset_token = auth_service.forgot_password(
         email=request_data.email,
         ip_address=ip_address,
         user_agent=user_agent
     )
-    
+
     # Send email in background
     background_tasks.add_task(
         email_service.send_password_reset_email,
         recipient=request_data.email,
         token=reset_token
     )
-    
+
     return ForgotPasswordResponse(
         message="If the email exists, a password reset link has been sent"
     )
@@ -285,29 +285,29 @@ async def reset_password(
 ):
     """
     Reset password using reset token.
-    
+
     - **token**: Password reset token from email
     - **new_password**: New password (min 8 chars, must contain uppercase, lowercase, number, special char)
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Reset password
         auth_service.reset_password(
             token=request_data.token,
             new_password=request_data.new_password
         )
-        
+
         return ResetPasswordResponse(
             message="Password has been reset successfully. Please login with your new password."
         )
-    
+
     except PasswordValidationException as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
     except (InvalidTokenException, UserNotFoundException) as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

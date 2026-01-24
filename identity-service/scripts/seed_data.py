@@ -21,16 +21,16 @@ from app.core.security import hash_password
 def seed_database():
     """Seed the database with initial data"""
     db: Session = SessionLocal()
-    
+
     try:
         print("Starting database seeding...")
-        
+
         # Check if data already exists
         existing_org = db.query(Organization).first()
         if existing_org:
             print("Database already seeded. Skipping...")
             return
-        
+
         # 1. Create default organization
         print("Creating default organization...")
         org = Organization(
@@ -45,7 +45,7 @@ def seed_database():
         db.add(org)
         db.flush()
         print(f"✓ Created organization: {org.name}")
-        
+
         # 2. Create roles
         print("\nCreating roles...")
         roles_data = [
@@ -74,7 +74,7 @@ def seed_database():
                 "hierarchy_level": 10
             }
         ]
-        
+
         roles = {}
         for role_data in roles_data:
             role = Role(
@@ -85,7 +85,7 @@ def seed_database():
             db.flush()
             roles[role.code] = role
             print(f"✓ Created role: {role.name}")
-        
+
         # 3. Create permissions
         print("\nCreating permissions...")
         permissions_data = [
@@ -95,14 +95,14 @@ def seed_database():
             {"code": "user.update", "name": "Update User", "resource": ResourceType.USER, "action": ActionType.UPDATE, "module": "identity"},
             {"code": "user.delete", "name": "Delete User", "resource": ResourceType.USER, "action": ActionType.DELETE, "module": "identity"},
             {"code": "user.manage", "name": "Manage Users", "resource": ResourceType.USER, "action": ActionType.MANAGE, "module": "identity"},
-            
+
             # Organization permissions
             {"code": "org.create", "name": "Create Organization", "resource": ResourceType.ORGANIZATION, "action": ActionType.CREATE, "module": "identity"},
             {"code": "org.read", "name": "Read Organization", "resource": ResourceType.ORGANIZATION, "action": ActionType.READ, "module": "identity"},
             {"code": "org.update", "name": "Update Organization", "resource": ResourceType.ORGANIZATION, "action": ActionType.UPDATE, "module": "identity"},
             {"code": "org.delete", "name": "Delete Organization", "resource": ResourceType.ORGANIZATION, "action": ActionType.DELETE, "module": "identity"},
             {"code": "org.manage", "name": "Manage Organizations", "resource": ResourceType.ORGANIZATION, "action": ActionType.MANAGE, "module": "identity"},
-            
+
             # Role permissions
             {"code": "role.create", "name": "Create Role", "resource": ResourceType.ROLE, "action": ActionType.CREATE, "module": "identity"},
             {"code": "role.read", "name": "Read Role", "resource": ResourceType.ROLE, "action": ActionType.READ, "module": "identity"},
@@ -110,7 +110,7 @@ def seed_database():
             {"code": "role.delete", "name": "Delete Role", "resource": ResourceType.ROLE, "action": ActionType.DELETE, "module": "identity"},
             {"code": "role.manage", "name": "Manage Roles", "resource": ResourceType.ROLE, "action": ActionType.MANAGE, "module": "identity"},
         ]
-        
+
         permissions = {}
         for perm_data in permissions_data:
             permission = Permission(**perm_data)
@@ -118,10 +118,10 @@ def seed_database():
             db.flush()
             permissions[perm_data["code"]] = permission
             print(f"✓ Created permission: {permission.name}")
-        
+
         # 4. Assign permissions to roles
         print("\nAssigning permissions to roles...")
-        
+
         # System admin gets all permissions
         for perm in permissions.values():
             role_perm = RolePermission(
@@ -130,7 +130,7 @@ def seed_database():
             )
             db.add(role_perm)
         print(f"✓ Assigned all permissions to System Administrator")
-        
+
         # Org admin gets organization and user permissions
         org_admin_perms = [p for code, p in permissions.items() if code.startswith(("org.", "user.read", "user.update"))]
         for perm in org_admin_perms:
@@ -140,7 +140,7 @@ def seed_database():
             )
             db.add(role_perm)
         print(f"✓ Assigned organization permissions to Organization Administrator")
-        
+
         # User gets basic read permissions
         user_perms = [permissions["user.read"], permissions["org.read"]]
         for perm in user_perms:
@@ -150,7 +150,7 @@ def seed_database():
             )
             db.add(role_perm)
         print(f"✓ Assigned basic permissions to User role")
-        
+
         # 5. Create test users
         print("\nCreating test users...")
         users_data = [
@@ -179,11 +179,11 @@ def seed_database():
                 "role_code": "user"
             }
         ]
-        
+
         for user_data in users_data:
             role_code = user_data.pop("role_code")
             password = user_data.pop("password")
-            
+
             user = User(
                 **user_data,
                 display_name=f"{user_data['first_name']} {user_data['last_name']}",
@@ -195,7 +195,7 @@ def seed_database():
             )
             db.add(user)
             db.flush()
-            
+
             # Assign role to user
             user_org_role = UserOrganizationRole(
                 user_id=user.id,
@@ -207,12 +207,12 @@ def seed_database():
                 joined_at=datetime.utcnow()
             )
             db.add(user_org_role)
-            
+
             print(f"✓ Created user: {user.email} (Role: {role_code})")
-        
+
         # Commit all changes
         db.commit()
-        
+
         print("\n" + "="*50)
         print("Database seeding completed successfully!")
         print("="*50)
@@ -227,7 +227,7 @@ def seed_database():
         print("\n  Email: jane.smith@example.com")
         print("  Password: User123!")
         print("-" * 50)
-        
+
     except Exception as e:
         print(f"\n✗ Error during seeding: {str(e)}")
         db.rollback()

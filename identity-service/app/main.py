@@ -74,14 +74,14 @@ app.add_middleware(
 async def health_check():
     """
     Health check endpoint.
-    
+
     Returns service status and database connectivity.
     """
     try:
         # Test database connection
         with engine.connect() as conn:
             conn.execute(sa.text("SELECT 1"))
-        
+
         return {
             "status": "healthy",
             "service": "identity-service",
@@ -118,7 +118,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "field": field,
             "message": error["msg"]
         })
-    
+
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
@@ -245,6 +245,3 @@ async def general_exception_handler(request: Request, exc: Exception):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     )
-
-
-

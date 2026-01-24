@@ -12,21 +12,21 @@ from app.core.exceptions import UserNotFoundException
 
 class UserService:
     """Service for user operations"""
-    
+
     def __init__(self, db: Session):
         self.db = db
         self.user_repo = UserRepository(db)
-    
+
     def get_user_by_id(self, user_id: UUID) -> User:
         """
         Get user by ID.
-        
+
         Args:
             user_id: User UUID
-            
+
         Returns:
             User object
-            
+
         Raises:
             UserNotFoundException: If user not found
         """
@@ -34,7 +34,7 @@ class UserService:
         if not user:
             raise UserNotFoundException(f"User with ID {user_id} not found")
         return user
-    
+
     def get_users(
         self,
         page: int = 1,
@@ -48,7 +48,7 @@ class UserService:
     ) -> Tuple[List[User], dict]:
         """
         Get paginated list of users with filters.
-        
+
         Args:
             page: Page number (1-indexed)
             page_size: Number of items per page
@@ -58,7 +58,7 @@ class UserService:
             search: Search term for email, first_name, last_name
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
-            
+
         Returns:
             Tuple of (list of users, pagination metadata)
         """
@@ -69,17 +69,17 @@ class UserService:
                 status_enum = UserStatus(status)
             except ValueError:
                 pass
-        
+
         user_type_enum = None
         if user_type:
             try:
                 user_type_enum = UserType(user_type)
             except ValueError:
                 pass
-        
+
         # Ensure page_size doesn't exceed maximum
         page_size = min(page_size, 100)
-        
+
         # Get users from repository
         users, total_count = self.user_repo.list_users(
             page=page,
@@ -91,7 +91,7 @@ class UserService:
             sort_by=sort_by,
             sort_order=sort_order
         )
-        
+
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
@@ -102,5 +102,5 @@ class UserService:
             "has_next": page < total_pages,
             "has_prev": page > 1
         }
-        
+
         return users, pagination

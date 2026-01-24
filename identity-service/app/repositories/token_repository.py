@@ -10,17 +10,17 @@ from app.models.token import RefreshToken
 
 class TokenRepository:
     """Repository for refresh token database operations"""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create_refresh_token(self, token_data: dict) -> RefreshToken:
         """
         Create a new refresh token.
-        
+
         Args:
             token_data: Dictionary containing token data
-            
+
         Returns:
             Created RefreshToken object
         """
@@ -29,14 +29,14 @@ class TokenRepository:
         self.db.commit()
         self.db.refresh(token)
         return token
-    
+
     def get_refresh_token(self, token_hash: str) -> Optional[RefreshToken]:
         """
         Get refresh token by hash.
-        
+
         Args:
             token_hash: Hashed token string
-            
+
         Returns:
             RefreshToken object or None if not found
         """
@@ -44,7 +44,7 @@ class TokenRepository:
             RefreshToken.token_hash == token_hash,
             RefreshToken.revoked_at.is_(None)
         ).first()
-    
+
     def revoke_refresh_token(
         self,
         token: RefreshToken,
@@ -52,11 +52,11 @@ class TokenRepository:
     ) -> RefreshToken:
         """
         Revoke a refresh token.
-        
+
         Args:
             token: RefreshToken object to revoke
             reason: Reason for revocation
-            
+
         Returns:
             Updated RefreshToken object
         """
@@ -65,14 +65,14 @@ class TokenRepository:
         self.db.commit()
         self.db.refresh(token)
         return token
-    
+
     def update_last_used(self, token: RefreshToken) -> RefreshToken:
         """
         Update the last_used_at timestamp.
-        
+
         Args:
             token: RefreshToken object to update
-            
+
         Returns:
             Updated RefreshToken object
         """
@@ -80,11 +80,11 @@ class TokenRepository:
         self.db.commit()
         self.db.refresh(token)
         return token
-    
+
     def delete_expired_tokens(self) -> int:
         """
         Delete all expired refresh tokens.
-        
+
         Returns:
             Number of tokens deleted
         """
@@ -93,15 +93,15 @@ class TokenRepository:
         ).delete()
         self.db.commit()
         return count
-    
+
     def revoke_all_user_tokens(self, user_id: UUID, reason: str = "security") -> int:
         """
         Revoke all refresh tokens for a user.
-        
+
         Args:
             user_id: User UUID
             reason: Reason for revocation
-            
+
         Returns:
             Number of tokens revoked
         """

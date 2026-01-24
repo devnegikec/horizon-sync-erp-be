@@ -32,9 +32,9 @@ async def list_users(
 ):
     """
     List users with pagination and filters.
-    
+
     Requires authentication.
-    
+
     **Query Parameters:**
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 20, max: 100)
@@ -46,7 +46,7 @@ async def list_users(
     - **sort_order**: Sort order - asc or desc (default: desc)
     """
     user_service = UserService(db)
-    
+
     # Get users with filters
     users, pagination = user_service.get_users(
         page=page,
@@ -58,10 +58,10 @@ async def list_users(
         sort_by=sort_by,
         sort_order=sort_order
     )
-    
+
     # Convert to response schema
     user_items = [UserListItem.model_validate(user) for user in users]
-    
+
     return UserListResponse(
         users=user_items,
         pagination=PaginationMeta(**pagination)

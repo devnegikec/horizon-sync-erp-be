@@ -16,10 +16,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def hash_password(password: str) -> str:
     """
     Hash a password using bcrypt.
-    
+
     Args:
         password: Plain text password
-        
+
     Returns:
         Hashed password string
     """
@@ -29,11 +29,11 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify a password against its hash.
-    
+
     Args:
         plain_password: Plain text password to verify
         hashed_password: Hashed password to compare against
-        
+
     Returns:
         True if password matches, False otherwise
     """
@@ -43,62 +43,62 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def validate_password(password: str) -> Tuple[bool, str]:
     """
     Validate password strength.
-    
+
     Password must:
     - Be at least 8 characters long
     - Contain at least one uppercase letter
     - Contain at least one lowercase letter
     - Contain at least one digit
     - Contain at least one special character
-    
+
     Args:
         password: Password to validate
-        
+
     Returns:
         Tuple of (is_valid, error_message)
     """
     if len(password) < 8:
         return False, "Password must be at least 8 characters long"
-    
+
     if not re.search(r"[A-Z]", password):
         return False, "Password must contain at least one uppercase letter"
-    
+
     if not re.search(r"[a-z]", password):
         return False, "Password must contain at least one lowercase letter"
-    
+
     if not re.search(r"\d", password):
         return False, "Password must contain at least one number"
-    
+
     if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
         return False, "Password must contain at least one special character"
-    
+
     return True, "Password is valid"
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT access token.
-    
+
     Args:
         data: Data to encode in the token
         expires_delta: Optional custom expiration time
-        
+
     Returns:
         Encoded JWT token string
     """
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    
+
     to_encode.update({
         "exp": expire,
         "iat": datetime.now(timezone.utc),
         "type": "access"
     })
-    
+
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
@@ -106,27 +106,27 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT refresh token.
-    
+
     Args:
         data: Data to encode in the token
         expires_delta: Optional custom expiration time
-        
+
     Returns:
         Encoded JWT token string
     """
     to_encode = data.copy()
-    
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
-    
+
     to_encode.update({
         "exp": expire,
         "iat": datetime.now(timezone.utc),
         "type": "refresh"
     })
-    
+
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
@@ -134,10 +134,10 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
 def decode_token(token: str) -> Optional[dict]:
     """
     Decode and validate a JWT token.
-    
+
     Args:
         token: JWT token string to decode
-        
+
     Returns:
         Decoded token payload or None if invalid
     """
@@ -151,10 +151,10 @@ def decode_token(token: str) -> Optional[dict]:
 def hash_token(token: str) -> str:
     """
     Create a SHA-256 hash of a token for storage.
-    
+
     Args:
         token: Token string to hash
-        
+
     Returns:
         Hexadecimal hash string
     """
