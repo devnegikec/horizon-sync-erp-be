@@ -233,7 +233,11 @@ class AuthService:
             raise InvalidTokenException("Refresh token not found or has been revoked")
         
         # Check if token is expired in database
-        if db_token.expires_at < datetime.now(timezone.utc):
+        expires_at = db_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
+        if expires_at < datetime.now(timezone.utc):
             raise TokenExpiredException("Refresh token has expired")
         
         # Get user
@@ -277,11 +281,18 @@ class AuthService:
     
     def _is_account_locked(self, user: User) -> bool:
         """Check if account is currently locked"""
-        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
+        if not user.locked_until:
+            return False
+            
+        locked_until = user.locked_until
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+            
+        if locked_until > datetime.now(timezone.utc):
             return True
         
         # Unlock account if lock period has expired
-        if user.locked_until and user.locked_until <= datetime.now(timezone.utc):
+        if locked_until <= datetime.now(timezone.utc):
             self.user_repo.update_user(user, {
                 "locked_until": None,
                 "failed_login_attempts": 0,

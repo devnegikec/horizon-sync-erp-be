@@ -2,8 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Uuid
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -13,8 +12,8 @@ class RefreshToken(Base):
     """Refresh token model for managing user sessions"""
     __tablename__ = "refresh_tokens"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     token_family = Column(String(255), index=True)
     
