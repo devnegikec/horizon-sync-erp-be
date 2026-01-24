@@ -1,37 +1,37 @@
 """Authentication API endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.core.exceptions import (
+    AccountLockedException,
+    AuthenticationError,
+    DuplicateEmailException,
+    InvalidTokenException,
+    PasswordValidationException,
+    TokenExpiredException,
+    UserNotFoundException,
+)
 from app.database import get_db
+from app.dependencies import get_client_ip
 from app.schemas.auth import (
-    LoginRequest,
-    TokenResponse,
-    RefreshTokenRequest,
-    RefreshTokenResponse,
-    LogoutRequest,
-    LogoutResponse,
-    RegisterResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    LoginRequest,
+    LogoutRequest,
+    LogoutResponse,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
+    RegisterResponse,
     ResetPasswordRequest,
-    ResetPasswordResponse
+    ResetPasswordResponse,
+    TokenResponse,
 )
-from app.schemas.user import UserCreate, UserResponse
 from app.schemas.error import ErrorResponse
+from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
-from app.dependencies import get_client_ip
-from app.core.exceptions import (
-    AuthenticationError,
-    AccountLockedException,
-    DuplicateEmailException,
-    PasswordValidationException,
-    InvalidTokenException,
-    TokenExpiredException,
-    UserNotFoundException
-)
-from app.config import settings
 
 router = APIRouter()
 
@@ -42,17 +42,15 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
-        409: {"model": ErrorResponse, "description": "Email already exists"}
-    }
+        409: {"model": ErrorResponse, "description": "Email already exists"},
+    },
 )
 async def register(
-    user_data: UserCreate,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_data: UserCreate, request: Request, db: Session = Depends(get_db)
 ):
     """
     Register a new user.
-    
+
     - **email**: Valid email address (unique)
     - **password**: Min 8 chars, must contain uppercase, lowercase, number, special char
     - **first_name**: User's first name (2-100 chars)
@@ -61,11 +59,11 @@ async def register(
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Get client info
         ip_address = get_client_ip(request)
         user_agent = request.headers.get("User-Agent")
-        
+
         # Register user
         user, access_token, refresh_token = auth_service.register_user(
             email=user_data.email,
@@ -74,28 +72,24 @@ async def register(
             last_name=user_data.last_name,
             phone=user_data.phone,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
-        
+
         return RegisterResponse(
             user=UserResponse.model_validate(user),
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
-    
+
     except DuplicateEmailException as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
-    
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
     except PasswordValidationException as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
 
 
 @router.post(
@@ -103,55 +97,51 @@ async def register(
     response_model=TokenResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid credentials"},
-        403: {"model": ErrorResponse, "description": "Account locked"}
-    }
+        403: {"model": ErrorResponse, "description": "Account locked"},
+    },
 )
 async def login(
-    login_data: LoginRequest,
-    request: Request,
-    db: Session = Depends(get_db)
+    login_data: LoginRequest, request: Request, db: Session = Depends(get_db)
 ):
     """
     Authenticate user and return JWT tokens.
-    
+
     - **email**: User's email address
     - **password**: User's password
     - **device_info**: Optional device information for tracking
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Get client info
         ip_address = get_client_ip(request)
         user_agent = request.headers.get("User-Agent")
-        
+
         # Login user
         user, access_token, refresh_token = auth_service.login_user(
             email=login_data.email,
             password=login_data.password,
-            device_info=login_data.device_info.model_dump() if login_data.device_info else None,
+            device_info=login_data.device_info.model_dump()
+            if login_data.device_info
+            else None,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
-        
+
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
-    
+
     except AuthenticationError as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
-    
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
+
     except AccountLockedException as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
 @router.post(
@@ -159,67 +149,55 @@ async def login(
     response_model=RefreshTokenResponse,
     responses={
         401: {"model": ErrorResponse, "description": "Invalid or expired token"}
-    }
+    },
 )
-async def refresh_token(
-    token_data: RefreshTokenRequest,
-    db: Session = Depends(get_db)
-):
+async def refresh_token(token_data: RefreshTokenRequest, db: Session = Depends(get_db)):
     """
     Refresh access token using refresh token.
-    
+
     - **refresh_token**: Valid refresh token
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Generate new access token
         access_token = auth_service.refresh_access_token(token_data.refresh_token)
-        
+
         return RefreshTokenResponse(
             access_token=access_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
-    
+
     except (InvalidTokenException, TokenExpiredException, UserNotFoundException) as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
 
 
 @router.post(
     "/logout",
     response_model=LogoutResponse,
-    responses={
-        404: {"model": ErrorResponse, "description": "Token not found"}
-    }
+    responses={404: {"model": ErrorResponse, "description": "Token not found"}},
 )
-async def logout(
-    logout_data: LogoutRequest,
-    db: Session = Depends(get_db)
-):
+async def logout(logout_data: LogoutRequest, db: Session = Depends(get_db)):
     """
     Logout user by revoking refresh token.
-    
+
     No authentication required - the refresh token itself is sufficient.
-    
+
     - **refresh_token**: Refresh token to revoke
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Logout user
         auth_service.logout_user(logout_data.refresh_token)
-        
+
         return LogoutResponse(message="Successfully logged out")
-    
+
     except InvalidTokenException as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 @router.post(
@@ -227,44 +205,45 @@ async def logout(
     response_model=ForgotPasswordResponse,
     status_code=status.HTTP_200_OK,
     responses={
-        200: {"model": ForgotPasswordResponse, "description": "Password reset email sent"}
-    }
+        200: {
+            "model": ForgotPasswordResponse,
+            "description": "Password reset email sent",
+        }
+    },
 )
 async def forgot_password(
     request_data: ForgotPasswordRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Request password reset token.
-    
+
     Sends a password reset email to the user if the email exists.
     For security, always returns success even if email doesn't exist.
-    
+
     - **email**: User's email address
     """
     auth_service = AuthService(db)
     email_service = EmailService()
-    
+
     # Get client info
     ip_address = get_client_ip(request)
     user_agent = request.headers.get("User-Agent")
-    
+
     # Generate reset token
     reset_token = auth_service.forgot_password(
-        email=request_data.email,
-        ip_address=ip_address,
-        user_agent=user_agent
+        email=request_data.email, ip_address=ip_address, user_agent=user_agent
     )
-    
+
     # Send email in background
     background_tasks.add_task(
         email_service.send_password_reset_email,
         recipient=request_data.email,
-        token=reset_token
+        token=reset_token,
     )
-    
+
     return ForgotPasswordResponse(
         message="If the email exists, a password reset link has been sent"
     )
@@ -276,40 +255,36 @@ async def forgot_password(
     status_code=status.HTTP_200_OK,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid password"},
-        401: {"model": ErrorResponse, "description": "Invalid or expired token"}
-    }
+        401: {"model": ErrorResponse, "description": "Invalid or expired token"},
+    },
 )
 async def reset_password(
-    request_data: ResetPasswordRequest,
-    db: Session = Depends(get_db)
+    request_data: ResetPasswordRequest, db: Session = Depends(get_db)
 ):
     """
     Reset password using reset token.
-    
+
     - **token**: Password reset token from email
     - **new_password**: New password (min 8 chars, must contain uppercase, lowercase, number, special char)
     """
     try:
         auth_service = AuthService(db)
-        
+
         # Reset password
         auth_service.reset_password(
-            token=request_data.token,
-            new_password=request_data.new_password
+            token=request_data.token, new_password=request_data.new_password
         )
-        
+
         return ResetPasswordResponse(
             message="Password has been reset successfully. Please login with your new password."
         )
-    
+
     except PasswordValidationException as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+
     except (InvalidTokenException, UserNotFoundException) as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e

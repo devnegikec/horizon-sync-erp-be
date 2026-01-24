@@ -8,8 +8,8 @@ Build a FastAPI-based identity microservice for authentication and user manageme
 
 ### 2.1 User Registration
 
-**As a** new user  
-**I want to** register an account  
+**As a** new user
+**I want to** register an account
 **So that** I can access the system
 
 **Acceptance Criteria:**
@@ -23,8 +23,8 @@ Build a FastAPI-based identity microservice for authentication and user manageme
 
 ### 2.2 User Login
 
-**As a** registered user  
-**I want to** login with my credentials  
+**As a** registered user
+**I want to** login with my credentials
 **So that** I can access protected resources
 
 **Acceptance Criteria:**
@@ -39,8 +39,8 @@ Build a FastAPI-based identity microservice for authentication and user manageme
 
 ### 2.3 Token Refresh
 
-**As a** user with valid refresh token  
-**I want to** obtain new access token  
+**As a** user with valid refresh token
+**I want to** obtain new access token
 **So that** I can continue using the system without re-login
 
 **Acceptance Criteria:**
@@ -53,8 +53,8 @@ Build a FastAPI-based identity microservice for authentication and user manageme
 
 ### 2.4 User Logout
 
-**As a** logged-in user  
-**I want to** logout from the system  
+**As a** logged-in user
+**I want to** logout from the system
 **So that** my session is terminated securely
 
 **Acceptance Criteria:**
@@ -66,8 +66,8 @@ Build a FastAPI-based identity microservice for authentication and user manageme
 
 ### 2.5 List Users
 
-**As an** administrator  
-**I want to** view all users in the system  
+**As an** administrator
+**I want to** view all users in the system
 **So that** I can manage user accounts
 
 **Acceptance Criteria:**

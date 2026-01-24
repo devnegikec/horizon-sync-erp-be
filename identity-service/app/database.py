@@ -1,8 +1,9 @@
 """Database connection and session management"""
 
+from collections.abc import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from typing import Generator
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
 
@@ -16,11 +17,7 @@ engine = create_engine(
 )
 
 # Create session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for models
 Base = declarative_base()

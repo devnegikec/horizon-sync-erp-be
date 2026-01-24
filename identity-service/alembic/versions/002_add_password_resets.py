@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create indexes
     op.create_index('ix_password_resets_user_id', 'password_resets', ['user_id'])
     op.create_index('ix_password_resets_token_hash', 'password_resets', ['token_hash'], unique=True)
@@ -43,6 +43,6 @@ def downgrade() -> None:
     op.drop_index('ix_password_resets_expires_at', table_name='password_resets')
     op.drop_index('ix_password_resets_token_hash', table_name='password_resets')
     op.drop_index('ix_password_resets_user_id', table_name='password_resets')
-    
+
     # Drop table
     op.drop_table('password_resets')

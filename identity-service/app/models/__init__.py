@@ -1,17 +1,17 @@
 """Database models package"""
 
 from app.models.base import (
-    UserType,
-    UserStatus,
-    OrganizationType,
+    ActionType,
     OrganizationStatus,
+    OrganizationType,
     ResourceType,
-    ActionType
+    UserStatus,
+    UserType,
 )
-from app.models.user import User, EmailVerification
-from app.models.token import RefreshToken
 from app.models.organization import Organization
-from app.models.role import Role, Permission, RolePermission, UserOrganizationRole
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
+from app.models.token import RefreshToken
+from app.models.user import EmailVerification, User
 
 __all__ = [
     "UserType",
