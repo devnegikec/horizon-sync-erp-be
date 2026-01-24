@@ -4,8 +4,18 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import sqlalchemy as sa
 import warnings
+import logging
 
-# Suppress passlib deprecation warning (internal to the library in Python 3.11+)
+from app.config import settings
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Suppress passlib deprecation warning
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,12 +40,12 @@ from app.core.exceptions import (
 async def lifespan(app: FastAPI):
     """Lifespan events for the application"""
     # Startup
-    print(f"Starting {settings.app_name} v{settings.app_version}")
-    print(f"Environment: {settings.environment}")
-    print(f"Debug mode: {settings.debug}")
+    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Environment: {settings.environment}")
+    logger.info(f"Debug mode: {settings.debug}")
     yield
     # Shutdown
-    print(f"Shutting down {settings.app_name}")
+    logger.info(f"Shutting down {settings.app_name}")
 
 
 # Create FastAPI application

@@ -1,6 +1,6 @@
 """Authentication API endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,6 +20,7 @@ from app.schemas.auth import (
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.error import ErrorResponse
 from app.services.auth_service import AuthService
+from app.services.email_service import EmailService
 from app.dependencies import get_client_ip
 from app.core.exceptions import (
     AuthenticationError,
@@ -232,6 +233,7 @@ async def logout(
 async def forgot_password(
     request_data: ForgotPasswordRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -243,6 +245,7 @@ async def forgot_password(
     - **email**: User's email address
     """
     auth_service = AuthService(db)
+    email_service = EmailService()
     
     # Get client info
     ip_address = get_client_ip(request)
@@ -255,13 +258,12 @@ async def forgot_password(
         user_agent=user_agent
     )
     
-    # TODO: Send email with reset token
-    # In production, you would send an email here with a link like:
-    # https://yourapp.com/reset-password?token={reset_token}
-    # For now, we'll just return success
-    
-    # Note: In development, you might want to log the token
-    # print(f"Password reset token for {request_data.email}: {reset_token}")
+    # Send email in background
+    background_tasks.add_task(
+        email_service.send_password_reset_email,
+        recipient=request_data.email,
+        token=reset_token
+    )
     
     return ForgotPasswordResponse(
         message="If the email exists, a password reset link has been sent"
