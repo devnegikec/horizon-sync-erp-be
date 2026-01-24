@@ -100,3 +100,17 @@ def test_register_duplicate_email(client, test_user_data):
     assert response.status_code == status.HTTP_409_CONFLICT
     assert "already registered" in response.json()["detail"]
     logger.info("Duplicate email registration handled correctly")
+
+
+def test_register_invalid_password(client, test_user_data):
+    """Test user registration with invalid password"""
+    invalid_data = test_user_data.copy()
+    invalid_data["password"] = "short"  # Too short, should fail validation
+
+    logger.info(f"Registering user with invalid password: {invalid_data['email']}")
+    response = client.post("/api/v1/identity/register", json=invalid_data)
+
+    logger.info(f"Response status: {response.status_code}")
+    # The service raises PasswordValidationException which returns 400
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    logger.info("Invalid password registration handled correctly")

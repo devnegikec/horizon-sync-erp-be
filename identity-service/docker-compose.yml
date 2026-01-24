@@ -50,6 +50,7 @@ services:
       - ./alembic:/app/alembic
       - ./scripts:/app/scripts
       - ./tests:/app/tests
+      - ./htmlcov:/app/htmlcov
     command: >
       bash -c "
         echo 'Waiting for database...' &&
