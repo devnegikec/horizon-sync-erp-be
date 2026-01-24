@@ -1,7 +1,13 @@
 """Application configuration management"""
 
+import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Get the project root directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_FILE = os.path.join(BASE_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -49,7 +55,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         case_sensitive=False,
         extra="ignore"
     )
