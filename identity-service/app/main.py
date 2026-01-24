@@ -1,7 +1,12 @@
 """Main FastAPI application"""
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import sqlalchemy as sa
+import warnings
+
+# Suppress passlib deprecation warning (internal to the library in Python 3.11+)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -21,6 +26,18 @@ from app.core.exceptions import (
     UserNotFoundException
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan events for the application"""
+    # Startup
+    print(f"Starting {settings.app_name} v{settings.app_version}")
+    print(f"Environment: {settings.environment}")
+    print(f"Debug mode: {settings.debug}")
+    yield
+    # Shutdown
+    print(f"Shutting down {settings.app_name}")
+
+
 # Create FastAPI application
 app = FastAPI(
     title=settings.app_name,
@@ -28,7 +45,8 @@ app = FastAPI(
     description="Identity Service - Authentication and User Management Microservice",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    lifespan=lifespan
 )
 
 # Configure CORS
@@ -219,17 +237,4 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Run on application startup"""
-    print(f"Starting {settings.app_name} v{settings.app_version}")
-    print(f"Environment: {settings.environment}")
-    print(f"Debug mode: {settings.debug}")
 
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Run on application shutdown"""
-    print(f"Shutting down {settings.app_name}")

@@ -26,7 +26,7 @@ async def list_users(
     email_verified: Optional[bool] = Query(None, description="Filter by email verification status"),
     search: Optional[str] = Query(None, description="Search in email, first_name, last_name"),
     sort_by: str = Query("created_at", description="Field to sort by"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
