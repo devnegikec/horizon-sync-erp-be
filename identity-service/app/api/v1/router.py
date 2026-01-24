@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users
+from app.api.v1.endpoints import auth, permissions, roles, users
 
 # Create main API router
 api_router = APIRouter()
@@ -11,11 +11,23 @@ api_router = APIRouter()
 api_router.include_router(
     auth.router,
     prefix="/identity",
-    tags=["Authentication"]
+    tags=["Authentication"],
 )
 
 api_router.include_router(
     users.router,
     prefix="/identity",
-    tags=["Users"]
+    tags=["Users"],
+)
+
+api_router.include_router(
+    permissions.router,
+    prefix="/rbac",
+    tags=["Permissions"],
+)
+
+api_router.include_router(
+    roles.router,
+    prefix="/rbac",
+    tags=["Roles"],
 )
