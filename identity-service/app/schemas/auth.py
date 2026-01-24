@@ -58,3 +58,24 @@ class RegisterResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request"""
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema for forgot password response"""
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for reset password request"""
+    token: str
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
+    """Schema for reset password response"""
+    message: str

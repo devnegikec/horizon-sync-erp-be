@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
+    password_reset_token_expire_hours: int = 1
+    
+    # Email (for password reset notifications)
+    email_enabled: bool = False
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@example.com"
+    smtp_from_name: str = "Identity Service"
     
     # CORS
     cors_origins: str = "http://localhost:3000"
