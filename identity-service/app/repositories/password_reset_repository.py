@@ -1,8 +1,8 @@
 """Password reset repository for database operations"""
 
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.models.password_reset import PasswordReset
@@ -30,7 +30,7 @@ class PasswordResetRepository:
         self.db.refresh(reset)
         return reset
 
-    def get_password_reset(self, token_hash: str) -> Optional[PasswordReset]:
+    def get_password_reset(self, token_hash: str) -> PasswordReset | None:
         """
         Get password reset token by hash.
 
@@ -40,11 +40,15 @@ class PasswordResetRepository:
         Returns:
             PasswordReset object or None if not found
         """
-        return self.db.query(PasswordReset).filter(
-            PasswordReset.token_hash == token_hash,
-            PasswordReset.used_at.is_(None),
-            PasswordReset.expires_at > datetime.now(timezone.utc)
-        ).first()
+        return (
+            self.db.query(PasswordReset)
+            .filter(
+                PasswordReset.token_hash == token_hash,
+                PasswordReset.used_at.is_(None),
+                PasswordReset.expires_at > datetime.now(UTC),
+            )
+            .first()
+        )
 
     def mark_as_used(self, reset: PasswordReset) -> PasswordReset:
         """
@@ -56,7 +60,7 @@ class PasswordResetRepository:
         Returns:
             Updated PasswordReset object
         """
-        reset.used_at = datetime.now(timezone.utc)
+        reset.used_at = datetime.now(UTC)
         self.db.commit()
         self.db.refresh(reset)
         return reset
@@ -68,9 +72,11 @@ class PasswordResetRepository:
         Returns:
             Number of tokens deleted
         """
-        count = self.db.query(PasswordReset).filter(
-            PasswordReset.expires_at < datetime.now(timezone.utc)
-        ).delete()
+        count = (
+            self.db.query(PasswordReset)
+            .filter(PasswordReset.expires_at < datetime.now(UTC))
+            .delete()
+        )
         self.db.commit()
         return count
 
@@ -84,9 +90,10 @@ class PasswordResetRepository:
         Returns:
             Number of tokens revoked
         """
-        count = self.db.query(PasswordReset).filter(
-            PasswordReset.user_id == user_id,
-            PasswordReset.used_at.is_(None)
-        ).update({"used_at": datetime.now(timezone.utc)})
+        count = (
+            self.db.query(PasswordReset)
+            .filter(PasswordReset.user_id == user_id, PasswordReset.used_at.is_(None))
+            .update({"used_at": datetime.now(UTC)})
+        )
         self.db.commit()
         return count

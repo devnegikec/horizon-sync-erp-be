@@ -1,11 +1,11 @@
 """Base model and enum definitions"""
 
 import enum
-from app.database import Base
 
 
 class UserType(str, enum.Enum):
     """User type enumeration"""
+
     SYSTEM_ADMIN = "system_admin"
     ORGANIZATION_ADMIN = "organization_admin"
     USER = "user"
@@ -14,6 +14,7 @@ class UserType(str, enum.Enum):
 
 class UserStatus(str, enum.Enum):
     """User status enumeration"""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
@@ -22,6 +23,7 @@ class UserStatus(str, enum.Enum):
 
 class OrganizationType(str, enum.Enum):
     """Organization type enumeration"""
+
     ENTERPRISE = "enterprise"
     BUSINESS = "business"
     STARTUP = "startup"
@@ -30,6 +32,7 @@ class OrganizationType(str, enum.Enum):
 
 class OrganizationStatus(str, enum.Enum):
     """Organization status enumeration"""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
@@ -38,6 +41,7 @@ class OrganizationStatus(str, enum.Enum):
 
 class ResourceType(str, enum.Enum):
     """Resource type enumeration"""
+
     USER = "user"
     ORGANIZATION = "organization"
     TEAM = "team"
@@ -47,6 +51,7 @@ class ResourceType(str, enum.Enum):
 
 class ActionType(str, enum.Enum):
     """Action type enumeration"""
+
     CREATE = "create"
     READ = "read"
     UPDATE = "update"

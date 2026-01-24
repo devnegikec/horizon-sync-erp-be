@@ -1,8 +1,8 @@
 """Token repository for database operations"""
 
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.models.token import RefreshToken
@@ -30,7 +30,7 @@ class TokenRepository:
         self.db.refresh(token)
         return token
 
-    def get_refresh_token(self, token_hash: str) -> Optional[RefreshToken]:
+    def get_refresh_token(self, token_hash: str) -> RefreshToken | None:
         """
         Get refresh token by hash.
 
@@ -40,15 +40,16 @@ class TokenRepository:
         Returns:
             RefreshToken object or None if not found
         """
-        return self.db.query(RefreshToken).filter(
-            RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked_at.is_(None)
-        ).first()
+        return (
+            self.db.query(RefreshToken)
+            .filter(
+                RefreshToken.token_hash == token_hash, RefreshToken.revoked_at.is_(None)
+            )
+            .first()
+        )
 
     def revoke_refresh_token(
-        self,
-        token: RefreshToken,
-        reason: str = "user_logout"
+        self, token: RefreshToken, reason: str = "user_logout"
     ) -> RefreshToken:
         """
         Revoke a refresh token.
@@ -60,7 +61,7 @@ class TokenRepository:
         Returns:
             Updated RefreshToken object
         """
-        token.revoked_at = datetime.now(timezone.utc)
+        token.revoked_at = datetime.now(UTC)
         token.revoked_reason = reason
         self.db.commit()
         self.db.refresh(token)
@@ -76,7 +77,7 @@ class TokenRepository:
         Returns:
             Updated RefreshToken object
         """
-        token.last_used_at = datetime.now(timezone.utc)
+        token.last_used_at = datetime.now(UTC)
         self.db.commit()
         self.db.refresh(token)
         return token
@@ -88,9 +89,11 @@ class TokenRepository:
         Returns:
             Number of tokens deleted
         """
-        count = self.db.query(RefreshToken).filter(
-            RefreshToken.expires_at < datetime.now(timezone.utc)
-        ).delete()
+        count = (
+            self.db.query(RefreshToken)
+            .filter(RefreshToken.expires_at < datetime.now(UTC))
+            .delete()
+        )
         self.db.commit()
         return count
 
@@ -105,12 +108,10 @@ class TokenRepository:
         Returns:
             Number of tokens revoked
         """
-        count = self.db.query(RefreshToken).filter(
-            RefreshToken.user_id == user_id,
-            RefreshToken.revoked_at.is_(None)
-        ).update({
-            "revoked_at": datetime.now(timezone.utc),
-            "revoked_reason": reason
-        })
+        count = (
+            self.db.query(RefreshToken)
+            .filter(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .update({"revoked_at": datetime.now(UTC), "revoked_reason": reason})
+        )
         self.db.commit()
         return count

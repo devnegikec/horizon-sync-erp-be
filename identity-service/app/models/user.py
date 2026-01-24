@@ -2,15 +2,27 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Text, Enum as SQLEnum, Uuid, JSON
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Uuid,
+)
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import UserType, UserStatus
+from app.models.base import UserStatus, UserType
 
 
 class User(Base):
     """User model"""
+
     __tablename__ = "users"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
@@ -23,8 +35,16 @@ class User(Base):
     avatar_url = Column(String(500))
 
     # User type and status
-    user_type = Column(SQLEnum(UserType, values_callable=lambda x: [e.value for e in x]), default=UserType.USER, nullable=False)
-    status = Column(SQLEnum(UserStatus, values_callable=lambda x: [e.value for e in x]), default=UserStatus.PENDING, nullable=False)
+    user_type = Column(
+        SQLEnum(UserType, values_callable=lambda x: [e.value for e in x]),
+        default=UserType.USER,
+        nullable=False,
+    )
+    status = Column(
+        SQLEnum(UserStatus, values_callable=lambda x: [e.value for e in x]),
+        default=UserStatus.PENDING,
+        nullable=False,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
 
     # Email verification
@@ -44,37 +64,48 @@ class User(Base):
 
     # User preferences
     preferences = Column(JSON, default={})
-    timezone = Column(String(50), default='UTC')
-    language = Column(String(10), default='en')
+    timezone = Column(String(50), default="UTC")
+    language = Column(String(10), default="en")
 
     # Metadata
     extra_data = Column(JSON, default={})
     deleted_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
-    email_verifications = relationship("EmailVerification", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    email_verifications = relationship(
+        "EmailVerification", back_populates="user", cascade="all, delete-orphan"
+    )
     user_organization_roles = relationship(
         "UserOrganizationRole",
         back_populates="user",
         foreign_keys="UserOrganizationRole.user_id",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
 class EmailVerification(Base):
     """Email verification token model"""
+
     __tablename__ = "email_verifications"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
-    user_id = Column(Uuid, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     email = Column(String(255), nullable=False)
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     verified_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
 
     # Relationships
     user = relationship("User", back_populates="email_verifications")

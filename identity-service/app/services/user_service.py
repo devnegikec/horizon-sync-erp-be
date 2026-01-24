@@ -1,13 +1,13 @@
 """User service with business logic"""
 
-from typing import Optional, Tuple, List
 from uuid import UUID
+
 from sqlalchemy.orm import Session
 
-from app.models.user import User
-from app.models.base import UserStatus, UserType
-from app.repositories.user_repository import UserRepository
 from app.core.exceptions import UserNotFoundException
+from app.models.base import UserStatus, UserType
+from app.models.user import User
+from app.repositories.user_repository import UserRepository
 
 
 class UserService:
@@ -39,13 +39,13 @@ class UserService:
         self,
         page: int = 1,
         page_size: int = 20,
-        status: Optional[str] = None,
-        user_type: Optional[str] = None,
-        email_verified: Optional[bool] = None,
-        search: Optional[str] = None,
+        status: str | None = None,
+        user_type: str | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
-    ) -> Tuple[List[User], dict]:
+        sort_order: str = "desc",
+    ) -> tuple[list[User], dict]:
         """
         Get paginated list of users with filters.
 
@@ -89,7 +89,7 @@ class UserService:
             email_verified=email_verified,
             search=search,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
         )
 
         # Calculate pagination metadata
@@ -100,7 +100,7 @@ class UserService:
             "total_items": total_count,
             "total_pages": total_pages,
             "has_next": page < total_pages,
-            "has_prev": page > 1
+            "has_prev": page > 1,
         }
 
         return users, pagination

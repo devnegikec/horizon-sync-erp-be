@@ -1,12 +1,12 @@
 """User repository for database operations"""
 
-from typing import Optional, List
 from uuid import UUID
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
 
-from app.models.user import User
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
 from app.models.base import UserStatus, UserType
+from app.models.user import User
 
 
 class UserRepository:
@@ -31,7 +31,7 @@ class UserRepository:
         self.db.refresh(user)
         return user
 
-    def get_user_by_id(self, user_id: UUID) -> Optional[User]:
+    def get_user_by_id(self, user_id: UUID) -> User | None:
         """
         Get user by ID.
 
@@ -41,12 +41,13 @@ class UserRepository:
         Returns:
             User object or None if not found
         """
-        return self.db.query(User).filter(
-            User.id == user_id,
-            User.deleted_at.is_(None)
-        ).first()
+        return (
+            self.db.query(User)
+            .filter(User.id == user_id, User.deleted_at.is_(None))
+            .first()
+        )
 
-    def get_user_by_email(self, email: str) -> Optional[User]:
+    def get_user_by_email(self, email: str) -> User | None:
         """
         Get user by email address.
 
@@ -56,10 +57,11 @@ class UserRepository:
         Returns:
             User object or None if not found
         """
-        return self.db.query(User).filter(
-            User.email == email,
-            User.deleted_at.is_(None)
-        ).first()
+        return (
+            self.db.query(User)
+            .filter(User.email == email, User.deleted_at.is_(None))
+            .first()
+        )
 
     def update_user(self, user: User, update_data: dict) -> User:
         """
@@ -84,13 +86,13 @@ class UserRepository:
         self,
         page: int = 1,
         page_size: int = 20,
-        status: Optional[UserStatus] = None,
-        user_type: Optional[UserType] = None,
-        email_verified: Optional[bool] = None,
-        search: Optional[str] = None,
+        status: UserStatus | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
-    ) -> tuple[List[User], int]:
+        sort_order: str = "desc",
+    ) -> tuple[list[User], int]:
         """
         List users with pagination and filters.
 
@@ -125,7 +127,7 @@ class UserRepository:
                 or_(
                     User.email.ilike(search_term),
                     User.first_name.ilike(search_term),
-                    User.last_name.ilike(search_term)
+                    User.last_name.ilike(search_term),
                 )
             )
 
@@ -155,7 +157,9 @@ class UserRepository:
         Returns:
             True if email exists, False otherwise
         """
-        return self.db.query(User).filter(
-            User.email == email,
-            User.deleted_at.is_(None)
-        ).count() > 0
+        return (
+            self.db.query(User)
+            .filter(User.email == email, User.deleted_at.is_(None))
+            .count()
+            > 0
+        )

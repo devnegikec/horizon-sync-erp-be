@@ -1,12 +1,29 @@
 """Main FastAPI application"""
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-import sqlalchemy as sa
-import warnings
 import logging
+import warnings
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
+import sqlalchemy as sa
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.api.v1.router import api_router
 from app.config import settings
+from app.core.exceptions import (
+    AccountLockedException,
+    AuthenticationError,
+    DuplicateEmailException,
+    InvalidTokenException,
+    PasswordValidationException,
+    TokenExpiredException,
+    UserNotFoundException,
+)
+from app.database import engine
 
 # Configure logging
 logging.basicConfig(
@@ -17,24 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Suppress passlib deprecation warning
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
-from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
-from app.config import settings
-from app.api.v1.router import api_router
-from app.database import engine, Base
-from app.core.exceptions import (
-    AuthenticationError,
-    AccountLockedException,
-    DuplicateEmailException,
-    PasswordValidationException,
-    InvalidTokenException,
-    TokenExpiredException,
-    UserNotFoundException
-)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,7 +56,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -87,8 +87,8 @@ async def health_check():
             "service": "identity-service",
             "version": settings.app_version,
             "environment": settings.environment,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "database": "connected"
+            "timestamp": datetime.now(UTC).isoformat(),
+            "database": "connected",
         }
     except Exception as e:
         return JSONResponse(
@@ -97,9 +97,9 @@ async def health_check():
                 "status": "unhealthy",
                 "service": "identity-service",
                 "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "database": "disconnected"
-            }
+                "timestamp": datetime.now(UTC).isoformat(),
+                "database": "disconnected",
+            },
         )
 
 
@@ -114,10 +114,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error["loc"] if loc != "body")
-        errors.append({
-            "field": field,
-            "message": error["msg"]
-        })
+        errors.append({"field": field, "message": error["msg"]})
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -125,8 +122,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": "VALIDATION_ERROR",
             "message": "Invalid input data",
             "details": errors,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
@@ -138,47 +135,53 @@ async def authentication_exception_handler(request: Request, exc: Authentication
         content={
             "error": "AUTHENTICATION_FAILED",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
 @app.exception_handler(AccountLockedException)
-async def account_locked_exception_handler(request: Request, exc: AccountLockedException):
+async def account_locked_exception_handler(
+    request: Request, exc: AccountLockedException
+):
     """Handle account locked errors"""
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
         content={
             "error": "ACCOUNT_LOCKED",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
 @app.exception_handler(DuplicateEmailException)
-async def duplicate_email_exception_handler(request: Request, exc: DuplicateEmailException):
+async def duplicate_email_exception_handler(
+    request: Request, exc: DuplicateEmailException
+):
     """Handle duplicate email errors"""
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
         content={
             "error": "DUPLICATE_EMAIL",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
 @app.exception_handler(PasswordValidationException)
-async def password_validation_exception_handler(request: Request, exc: PasswordValidationException):
+async def password_validation_exception_handler(
+    request: Request, exc: PasswordValidationException
+):
     """Handle password validation errors"""
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
             "error": "PASSWORD_VALIDATION_FAILED",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
@@ -190,8 +193,8 @@ async def invalid_token_exception_handler(request: Request, exc: InvalidTokenExc
         content={
             "error": "INVALID_TOKEN",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
@@ -203,21 +206,23 @@ async def token_expired_exception_handler(request: Request, exc: TokenExpiredExc
         content={
             "error": "TOKEN_EXPIRED",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
 @app.exception_handler(UserNotFoundException)
-async def user_not_found_exception_handler(request: Request, exc: UserNotFoundException):
+async def user_not_found_exception_handler(
+    request: Request, exc: UserNotFoundException
+):
     """Handle user not found errors"""
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={
             "error": "USER_NOT_FOUND",
             "message": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
@@ -229,8 +234,8 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError):
         content={
             "error": "DATABASE_ERROR",
             "message": "A database error occurred",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )
 
 
@@ -242,6 +247,6 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
     )

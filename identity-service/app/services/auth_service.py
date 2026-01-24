@@ -1,35 +1,35 @@
 """Authentication service with business logic"""
 
-import uuid
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+import uuid
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.core.exceptions import (
+    AccountLockedException,
+    AuthenticationError,
+    DuplicateEmailException,
+    InvalidTokenException,
+    PasswordValidationException,
+    TokenExpiredException,
+    UserNotFoundException,
+)
 from app.core.security import (
-    hash_password,
-    verify_password,
-    validate_password,
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_token
+    hash_password,
+    hash_token,
+    validate_password,
+    verify_password,
 )
-from app.core.exceptions import (
-    AuthenticationError,
-    AccountLockedException,
-    DuplicateEmailException,
-    PasswordValidationException,
-    InvalidTokenException,
-    TokenExpiredException,
-    UserNotFoundException
-)
-from app.models.user import User
 from app.models.base import UserStatus, UserType
-from app.repositories.user_repository import UserRepository
-from app.repositories.token_repository import TokenRepository
+from app.models.user import User
 from app.repositories.password_reset_repository import PasswordResetRepository
-from app.config import settings
+from app.repositories.token_repository import TokenRepository
+from app.repositories.user_repository import UserRepository
 
 
 class AuthService:
@@ -47,11 +47,11 @@ class AuthService:
         password: str,
         first_name: str,
         last_name: str,
-        phone: Optional[str] = None,
-        device_info: Optional[dict] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
-    ) -> Tuple[User, str, str]:
+        phone: str | None = None,
+        device_info: dict | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
         """
         Register a new user.
 
@@ -95,30 +95,27 @@ class AuthService:
             "user_type": UserType.USER,
             "status": UserStatus.PENDING,
             "email_verified": False,
-            "is_active": True
+            "is_active": True,
         }
 
         user = self.user_repo.create_user(user_data)
 
         # Generate tokens
-        access_token = create_access_token({
-            "sub": str(user.id),
-            "email": user.email,
-            "user_type": user.user_type.value
-        })
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_type": user.user_type.value,
+            }
+        )
 
-        refresh_token = create_refresh_token({
-            "sub": str(user.id),
-            "token_family": str(uuid.uuid4())
-        })
+        refresh_token = create_refresh_token(
+            {"sub": str(user.id), "token_family": str(uuid.uuid4())}
+        )
 
         # Store refresh token
         self._store_refresh_token(
-            user.id,
-            refresh_token,
-            device_info,
-            ip_address,
-            user_agent
+            user.id, refresh_token, device_info, ip_address, user_agent
         )
 
         return user, access_token, refresh_token
@@ -127,10 +124,10 @@ class AuthService:
         self,
         email: str,
         password: str,
-        device_info: Optional[dict] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
-    ) -> Tuple[User, str, str]:
+        device_info: dict | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
         """
         Authenticate user and generate tokens.
 
@@ -170,32 +167,32 @@ class AuthService:
             raise AuthenticationError("Account is inactive or suspended")
 
         # Reset failed attempts on successful login
-        self.user_repo.update_user(user, {
-            "failed_login_attempts": 0,
-            "locked_until": None,
-            "last_login_at": datetime.now(timezone.utc),
-            "last_login_ip": ip_address
-        })
+        self.user_repo.update_user(
+            user,
+            {
+                "failed_login_attempts": 0,
+                "locked_until": None,
+                "last_login_at": datetime.now(UTC),
+                "last_login_ip": ip_address,
+            },
+        )
 
         # Generate tokens
-        access_token = create_access_token({
-            "sub": str(user.id),
-            "email": user.email,
-            "user_type": user.user_type.value
-        })
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_type": user.user_type.value,
+            }
+        )
 
-        refresh_token = create_refresh_token({
-            "sub": str(user.id),
-            "token_family": str(uuid.uuid4())
-        })
+        refresh_token = create_refresh_token(
+            {"sub": str(user.id), "token_family": str(uuid.uuid4())}
+        )
 
         # Store refresh token
         self._store_refresh_token(
-            user.id,
-            refresh_token,
-            device_info,
-            ip_address,
-            user_agent
+            user.id, refresh_token, device_info, ip_address, user_agent
         )
 
         return user, access_token, refresh_token
@@ -222,7 +219,7 @@ class AuthService:
 
         # Check if token is expired
         exp = payload.get("exp")
-        if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
+        if exp and datetime.fromtimestamp(exp, tz=UTC) < datetime.now(UTC):
             raise TokenExpiredException("Refresh token has expired")
 
         # Get token from database
@@ -235,9 +232,9 @@ class AuthService:
         # Check if token is expired in database
         expires_at = db_token.expires_at
         if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            expires_at = expires_at.replace(tzinfo=UTC)
 
-        if expires_at < datetime.now(timezone.utc):
+        if expires_at < datetime.now(UTC):
             raise TokenExpiredException("Refresh token has expired")
 
         # Get user
@@ -249,11 +246,13 @@ class AuthService:
         self.token_repo.update_last_used(db_token)
 
         # Generate new access token
-        access_token = create_access_token({
-            "sub": str(user.id),
-            "email": user.email,
-            "user_type": user.user_type.value
-        })
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_type": user.user_type.value,
+            }
+        )
 
         return access_token
 
@@ -286,18 +285,21 @@ class AuthService:
 
         locked_until = user.locked_until
         if locked_until.tzinfo is None:
-            locked_until = locked_until.replace(tzinfo=timezone.utc)
+            locked_until = locked_until.replace(tzinfo=UTC)
 
-        if locked_until > datetime.now(timezone.utc):
+        if locked_until > datetime.now(UTC):
             return True
 
         # Unlock account if lock period has expired
-        if locked_until <= datetime.now(timezone.utc):
-            self.user_repo.update_user(user, {
-                "locked_until": None,
-                "failed_login_attempts": 0,
-                "status": UserStatus.ACTIVE
-            })
+        if locked_until <= datetime.now(UTC):
+            self.user_repo.update_user(
+                user,
+                {
+                    "locked_until": None,
+                    "failed_login_attempts": 0,
+                    "status": UserStatus.ACTIVE,
+                },
+            )
 
         return False
 
@@ -308,7 +310,7 @@ class AuthService:
 
         # Lock account after 5 failed attempts
         if failed_attempts >= 5:
-            update_data["locked_until"] = datetime.now(timezone.utc) + timedelta(minutes=30)
+            update_data["locked_until"] = datetime.now(UTC) + timedelta(minutes=30)
             update_data["status"] = UserStatus.SUSPENDED
 
         self.user_repo.update_user(user, update_data)
@@ -317,9 +319,9 @@ class AuthService:
         self,
         user_id: uuid.UUID,
         refresh_token: str,
-        device_info: Optional[dict],
-        ip_address: Optional[str],
-        user_agent: Optional[str]
+        device_info: dict | None,
+        ip_address: str | None,
+        user_agent: str | None,
     ):
         """Store refresh token in database"""
         token_hash_value = hash_token(refresh_token)
@@ -329,26 +331,28 @@ class AuthService:
             "user_id": user_id,
             "token_hash": token_hash_value,
             "token_family": payload.get("token_family"),
-            "expires_at": datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc),
+            "expires_at": datetime.fromtimestamp(payload.get("exp"), tz=UTC),
             "ip_address": ip_address,
-            "user_agent": user_agent
+            "user_agent": user_agent,
         }
 
         if device_info:
-            token_data.update({
-                "device_name": device_info.get("device_name"),
-                "device_type": device_info.get("device_type"),
-                "os_info": device_info.get("os_info"),
-                "browser_info": device_info.get("browser_info")
-            })
+            token_data.update(
+                {
+                    "device_name": device_info.get("device_name"),
+                    "device_type": device_info.get("device_type"),
+                    "os_info": device_info.get("os_info"),
+                    "browser_info": device_info.get("browser_info"),
+                }
+            )
 
         self.token_repo.create_refresh_token(token_data)
 
     def forgot_password(
         self,
         email: str,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> str:
         """
         Generate password reset token for user.
@@ -384,20 +388,17 @@ class AuthService:
         reset_data = {
             "user_id": user.id,
             "token_hash": token_hash_value,
-            "expires_at": datetime.now(timezone.utc) + timedelta(hours=settings.password_reset_token_expire_hours),
+            "expires_at": datetime.now(UTC)
+            + timedelta(hours=settings.password_reset_token_expire_hours),
             "ip_address": ip_address,
-            "user_agent": user_agent
+            "user_agent": user_agent,
         }
 
         self.password_reset_repo.create_password_reset(reset_data)
 
         return reset_token
 
-    def reset_password(
-        self,
-        token: str,
-        new_password: str
-    ) -> bool:
+    def reset_password(self, token: str, new_password: str) -> bool:
         """
         Reset user password using reset token.
 
@@ -434,11 +435,14 @@ class AuthService:
         password_hash = hash_password(new_password)
 
         # Update user password
-        self.user_repo.update_user(user, {
-            "password_hash": password_hash,
-            "failed_login_attempts": 0,
-            "locked_until": None
-        })
+        self.user_repo.update_user(
+            user,
+            {
+                "password_hash": password_hash,
+                "failed_login_attempts": 0,
+                "locked_until": None,
+            },
+        )
 
         # Mark token as used
         self.password_reset_repo.mark_as_used(reset)

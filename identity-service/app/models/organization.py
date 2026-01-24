@@ -2,15 +2,18 @@
 
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum, Uuid, JSON
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Text, Uuid
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import OrganizationType, OrganizationStatus
+from app.models.base import OrganizationStatus, OrganizationType
 
 
 class Organization(Base):
     """Organization model"""
+
     __tablename__ = "organizations"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
@@ -33,7 +36,10 @@ class Organization(Base):
     country = Column(String(100))
 
     # Organization details
-    organization_type = Column(SQLEnum(OrganizationType, values_callable=lambda x: [e.value for e in x]), default=OrganizationType.BUSINESS)
+    organization_type = Column(
+        SQLEnum(OrganizationType, values_callable=lambda x: [e.value for e in x]),
+        default=OrganizationType.BUSINESS,
+    )
     industry = Column(String(100))
     tax_id = Column(String(100))
 
@@ -48,19 +54,33 @@ class Organization(Base):
     sso_config = Column(JSON)
 
     # Status
-    status = Column(SQLEnum(OrganizationStatus, values_callable=lambda x: [e.value for e in x]), default=OrganizationStatus.ACTIVE, nullable=False)
+    status = Column(
+        SQLEnum(OrganizationStatus, values_callable=lambda x: [e.value for e in x]),
+        default=OrganizationStatus.ACTIVE,
+        nullable=False,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
 
     # Owner
-    owner_id = Column(Uuid, ForeignKey('users.id'))
+    owner_id = Column(Uuid, ForeignKey("users.id"))
 
     # Metadata
     settings = Column(JSON, default={})
     extra_data = Column(JSON, default={})
     deleted_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
-    roles = relationship("Role", back_populates="organization", cascade="all, delete-orphan")
-    user_organization_roles = relationship("UserOrganizationRole", back_populates="organization", cascade="all, delete-orphan")
+    roles = relationship(
+        "Role", back_populates="organization", cascade="all, delete-orphan"
+    )
+    user_organization_roles = relationship(
+        "UserOrganizationRole",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )

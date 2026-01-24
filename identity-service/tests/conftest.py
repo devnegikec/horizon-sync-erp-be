@@ -6,8 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
 from app.database import Base, get_db
+from app.main import app
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -36,6 +36,7 @@ def db_session():
 @pytest.fixture
 def client(db_session):
     """Create a test client with database session override"""
+
     def override_get_db():
         try:
             yield db_session
@@ -55,5 +56,5 @@ def test_user_data():
         "email": "test@example.com",
         "password": "Test123!@#",
         "first_name": "Test",
-        "last_name": "User"
+        "last_name": "User",
     }

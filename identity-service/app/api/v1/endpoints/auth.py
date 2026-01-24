@@ -1,37 +1,37 @@
 """Authentication API endpoints"""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.core.exceptions import (
+    AccountLockedException,
+    AuthenticationError,
+    DuplicateEmailException,
+    InvalidTokenException,
+    PasswordValidationException,
+    TokenExpiredException,
+    UserNotFoundException,
+)
 from app.database import get_db
+from app.dependencies import get_client_ip
 from app.schemas.auth import (
-    LoginRequest,
-    TokenResponse,
-    RefreshTokenRequest,
-    RefreshTokenResponse,
-    LogoutRequest,
-    LogoutResponse,
-    RegisterResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    LoginRequest,
+    LogoutRequest,
+    LogoutResponse,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
+    RegisterResponse,
     ResetPasswordRequest,
-    ResetPasswordResponse
+    ResetPasswordResponse,
+    TokenResponse,
 )
-from app.schemas.user import UserCreate, UserResponse
 from app.schemas.error import ErrorResponse
+from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
-from app.dependencies import get_client_ip
-from app.core.exceptions import (
-    AuthenticationError,
-    AccountLockedException,
-    DuplicateEmailException,
-    PasswordValidationException,
-    InvalidTokenException,
-    TokenExpiredException,
-    UserNotFoundException
-)
-from app.config import settings
 
 router = APIRouter()
 
@@ -42,13 +42,11 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
-        409: {"model": ErrorResponse, "description": "Email already exists"}
-    }
+        409: {"model": ErrorResponse, "description": "Email already exists"},
+    },
 )
 async def register(
-    user_data: UserCreate,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_data: UserCreate, request: Request, db: Session = Depends(get_db)
 ):
     """
     Register a new user.
@@ -74,7 +72,7 @@ async def register(
             last_name=user_data.last_name,
             phone=user_data.phone,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
 
         return RegisterResponse(
@@ -82,20 +80,16 @@ async def register(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
 
     except DuplicateEmailException as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
     except PasswordValidationException as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
 
 
 @router.post(
@@ -103,13 +97,11 @@ async def register(
     response_model=TokenResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid credentials"},
-        403: {"model": ErrorResponse, "description": "Account locked"}
-    }
+        403: {"model": ErrorResponse, "description": "Account locked"},
+    },
 )
 async def login(
-    login_data: LoginRequest,
-    request: Request,
-    db: Session = Depends(get_db)
+    login_data: LoginRequest, request: Request, db: Session = Depends(get_db)
 ):
     """
     Authenticate user and return JWT tokens.
@@ -129,29 +121,27 @@ async def login(
         user, access_token, refresh_token = auth_service.login_user(
             email=login_data.email,
             password=login_data.password,
-            device_info=login_data.device_info.model_dump() if login_data.device_info else None,
+            device_info=login_data.device_info.model_dump()
+            if login_data.device_info
+            else None,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
 
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
 
     except AuthenticationError as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
 
     except AccountLockedException as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
 
 
 @router.post(
@@ -159,12 +149,9 @@ async def login(
     response_model=RefreshTokenResponse,
     responses={
         401: {"model": ErrorResponse, "description": "Invalid or expired token"}
-    }
+    },
 )
-async def refresh_token(
-    token_data: RefreshTokenRequest,
-    db: Session = Depends(get_db)
-):
+async def refresh_token(token_data: RefreshTokenRequest, db: Session = Depends(get_db)):
     """
     Refresh access token using refresh token.
 
@@ -179,27 +166,21 @@ async def refresh_token(
         return RefreshTokenResponse(
             access_token=access_token,
             token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60
+            expires_in=settings.access_token_expire_minutes * 60,
         )
 
     except (InvalidTokenException, TokenExpiredException, UserNotFoundException) as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
 
 
 @router.post(
     "/logout",
     response_model=LogoutResponse,
-    responses={
-        404: {"model": ErrorResponse, "description": "Token not found"}
-    }
+    responses={404: {"model": ErrorResponse, "description": "Token not found"}},
 )
-async def logout(
-    logout_data: LogoutRequest,
-    db: Session = Depends(get_db)
-):
+async def logout(logout_data: LogoutRequest, db: Session = Depends(get_db)):
     """
     Logout user by revoking refresh token.
 
@@ -216,10 +197,7 @@ async def logout(
         return LogoutResponse(message="Successfully logged out")
 
     except InvalidTokenException as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 @router.post(
@@ -227,14 +205,17 @@ async def logout(
     response_model=ForgotPasswordResponse,
     status_code=status.HTTP_200_OK,
     responses={
-        200: {"model": ForgotPasswordResponse, "description": "Password reset email sent"}
-    }
+        200: {
+            "model": ForgotPasswordResponse,
+            "description": "Password reset email sent",
+        }
+    },
 )
 async def forgot_password(
     request_data: ForgotPasswordRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Request password reset token.
@@ -253,16 +234,14 @@ async def forgot_password(
 
     # Generate reset token
     reset_token = auth_service.forgot_password(
-        email=request_data.email,
-        ip_address=ip_address,
-        user_agent=user_agent
+        email=request_data.email, ip_address=ip_address, user_agent=user_agent
     )
 
     # Send email in background
     background_tasks.add_task(
         email_service.send_password_reset_email,
         recipient=request_data.email,
-        token=reset_token
+        token=reset_token,
     )
 
     return ForgotPasswordResponse(
@@ -276,12 +255,11 @@ async def forgot_password(
     status_code=status.HTTP_200_OK,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid password"},
-        401: {"model": ErrorResponse, "description": "Invalid or expired token"}
-    }
+        401: {"model": ErrorResponse, "description": "Invalid or expired token"},
+    },
 )
 async def reset_password(
-    request_data: ResetPasswordRequest,
-    db: Session = Depends(get_db)
+    request_data: ResetPasswordRequest, db: Session = Depends(get_db)
 ):
     """
     Reset password using reset token.
@@ -294,8 +272,7 @@ async def reset_password(
 
         # Reset password
         auth_service.reset_password(
-            token=request_data.token,
-            new_password=request_data.new_password
+            token=request_data.token, new_password=request_data.new_password
         )
 
         return ResetPasswordResponse(
@@ -304,12 +281,10 @@ async def reset_password(
 
     except PasswordValidationException as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
 
     except (InvalidTokenException, UserNotFoundException) as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e

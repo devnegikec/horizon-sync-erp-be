@@ -1,16 +1,15 @@
 """Dependency injection for FastAPI"""
 
-from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
 from uuid import UUID
 
-from app.database import get_db
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
 from app.core.security import decode_token
-from app.core.exceptions import UserNotFoundException
-from app.repositories.user_repository import UserRepository
+from app.database import get_db
 from app.models.user import User
+from app.repositories.user_repository import UserRepository
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
@@ -18,7 +17,7 @@ security = HTTPBearer()
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     """
     Get current authenticated user from JWT token.
@@ -63,12 +62,12 @@ async def get_current_user(
 
     try:
         user_id = UUID(user_id_str)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user ID in token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
     # Get user from database
     user_repo = UserRepository(db)
@@ -101,14 +100,13 @@ async def get_current_active_user(
     """
     if not current_user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user"
         )
 
     return current_user
 
 
-def get_client_ip(request) -> Optional[str]:
+def get_client_ip(request) -> str | None:
     """
     Extract client IP address from request.
 
