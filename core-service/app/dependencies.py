@@ -122,7 +122,7 @@ async def _get_user_organization(token: str) -> UUID:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{settings.identity_service_url}/api/v1/auth/me",
+                f"{settings.identity_service_url}/api/v1/identity/me",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=5.0,
             )

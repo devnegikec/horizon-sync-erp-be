@@ -6,41 +6,41 @@ import enum
 class ItemType(str, enum.Enum):
     """Item type enumeration"""
 
-    STOCK = "stock"
-    NON_STOCK = "non_stock"
-    SERVICE = "service"
-    FIXED_ASSET = "fixed_asset"
+    STOCK = "STOCK"
+    NON_STOCK = "NON_STOCK"
+    SERVICE = "SERVICE"
+    FIXED_ASSET = "FIXED_ASSET"
 
 
 class ItemStatus(str, enum.Enum):
     """Item status enumeration"""
 
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    DISCONTINUED = "discontinued"
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    DISCONTINUED = "DISCONTINUED"
 
 
 class ValuationMethod(str, enum.Enum):
     """Inventory valuation method enumeration"""
 
-    FIFO = "fifo"
-    LIFO = "lifo"
-    MOVING_AVERAGE = "moving_average"
-    STANDARD = "standard"
+    FIFO = "FIFO"
+    LIFO = "LIFO"
+    MOVING_AVERAGE = "MOVING_AVERAGE"
+    STANDARD = "STANDARD"
 
 
 class DocumentStatus(str, enum.Enum):
     """Document status enumeration"""
 
-    DRAFT = "draft"
-    SUBMITTED = "submitted"
-    CANCELLED = "cancelled"
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    CANCELLED = "CANCELLED"
 
 
 class WarehouseType(str, enum.Enum):
     """Warehouse type enumeration"""
 
-    WAREHOUSE = "warehouse"
-    STORE = "store"
-    VIRTUAL = "virtual"
-    TRANSIT = "transit"
+    WAREHOUSE = "WAREHOUSE"
+    STORE = "STORE"
+    VIRTUAL = "VIRTUAL"
+    TRANSIT = "TRANSIT"
