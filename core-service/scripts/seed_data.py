@@ -20,26 +20,21 @@ from app.database import SessionLocal  # noqa: E402
 from app.models import (  # noqa: E402
     Item,
     ItemGroup,
-    ItemStatus,
-    ItemType,
-    ValuationMethod,
     Warehouse,
-    WarehouseType,
 )
 
 
-def get_identity_session():
+def get_identity_session_factory():
     """
-    Create a session to the identity database.
-    Used for fetching organization and user data.
+    Create a session factory for the identity database.
+    Returns a sessionmaker instance that can be called to create sessions.
     """
     identity_db_url = settings.identity_database_url
     if not identity_db_url:
         return None
 
     engine = create_engine(identity_db_url)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return SessionLocal()
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_organization_id():
@@ -48,19 +43,23 @@ def get_organization_id():
 
     The organization is created by identity-service with slug 'default-org'.
     """
-    identity_session = get_identity_session()
-    if not identity_session:
+    session_factory = get_identity_session_factory()
+    if not session_factory:
         print("  Warning: IDENTITY_DATABASE_URL not configured")
         return None
 
+    session = session_factory()
     try:
-        result = identity_session.execute(
+        result = session.execute(
             text("SELECT id FROM organizations WHERE slug = 'default-org' LIMIT 1")
         )
         row = result.fetchone()
         return row[0] if row else None
+    except Exception as e:
+        print(f"  Error connecting to identity_db: {str(e)}")
+        return None
     finally:
-        identity_session.close()
+        session.close()
 
 
 def get_admin_user_id():
@@ -69,18 +68,22 @@ def get_admin_user_id():
 
     The admin user is created by identity-service with email 'admin@example.com'.
     """
-    identity_session = get_identity_session()
-    if not identity_session:
+    session_factory = get_identity_session_factory()
+    if not session_factory:
         return None
 
+    session = session_factory()
     try:
-        result = identity_session.execute(
+        result = session.execute(
             text("SELECT id FROM users WHERE email = 'admin@example.com' LIMIT 1")
         )
         row = result.fetchone()
         return row[0] if row else None
+    except Exception as e:
+        print(f"  Error fetching admin user from identity_db: {str(e)}")
+        return None
     finally:
-        identity_session.close()
+        session.close()
 
 
 def seed_database():
@@ -108,11 +111,15 @@ def seed_database():
         print(f"✓ Found organization in identity_db: {org_id}")
         print(f"✓ Found admin user in identity_db: {admin_user_id}")
 
-        # Check if data already exists
-        existing_items = db.query(Item).filter(Item.organization_id == org_id).first()
-        if existing_items:
-            print("Database already seeded with inventory data. Skipping...")
-            return
+        # Check if data already exists (handle case where tables don't exist yet)
+        try:
+            existing_items = db.query(Item).filter(Item.organization_id == org_id).first()
+            if existing_items:
+                print("Database already seeded with inventory data. Skipping...")
+                return
+        except Exception as e:
+            # Table doesn't exist yet, continue with seeding
+            print(f"  Note: Tables may not exist yet ({str(e)}). Proceeding with seed...")
 
         # 1. Create Warehouses
         print("\nCreating warehouses...")
@@ -121,7 +128,7 @@ def seed_database():
                 "name": "Main Warehouse",
                 "code": "WH-MAIN",
                 "description": "Primary warehouse for storage",
-                "warehouse_type": WarehouseType.WAREHOUSE,
+                "warehouse_type": "warehouse",  # Use string value directly
                 "address_line1": "123 Industrial Ave",
                 "city": "Mumbai",
                 "state": "Maharashtra",
@@ -134,7 +141,7 @@ def seed_database():
                 "name": "Retail Store",
                 "code": "WH-STORE",
                 "description": "Retail outlet for direct sales",
-                "warehouse_type": WarehouseType.STORE,
+                "warehouse_type": "store",  # Use string value directly
                 "address_line1": "456 Market Street",
                 "city": "Mumbai",
                 "state": "Maharashtra",
@@ -147,7 +154,7 @@ def seed_database():
                 "name": "Transit Warehouse",
                 "code": "WH-TRANSIT",
                 "description": "Temporary storage during transit",
-                "warehouse_type": WarehouseType.TRANSIT,
+                "warehouse_type": "transit",  # Use string value directly
                 "is_active": True,
                 "is_default": False,
             },
@@ -173,21 +180,21 @@ def seed_database():
                 "name": "Raw Materials",
                 "code": "RM",
                 "description": "Raw materials for production",
-                "default_valuation_method": ValuationMethod.FIFO,
+                "default_valuation_method": "fifo",  # Use string value directly
                 "default_uom": "Kg",
             },
             {
                 "name": "Finished Goods",
                 "code": "FG",
                 "description": "Finished products ready for sale",
-                "default_valuation_method": ValuationMethod.MOVING_AVERAGE,
+                "default_valuation_method": "moving_average",  # Use string value directly
                 "default_uom": "Nos",
             },
             {
                 "name": "Consumables",
                 "code": "CON",
                 "description": "Consumable items",
-                "default_valuation_method": ValuationMethod.FIFO,
+                "default_valuation_method": "fifo",  # Use string value directly
                 "default_uom": "Nos",
             },
             {
@@ -221,10 +228,10 @@ def seed_database():
                 "item_name": "Steel Sheet (2mm)",
                 "description": "High quality steel sheet, 2mm thickness",
                 "item_group_id": item_groups["RM"].id,
-                "item_type": ItemType.STOCK,
+                "item_type": "stock",  # Use string value directly
                 "uom": "Kg",
                 "maintain_stock": True,
-                "valuation_method": ValuationMethod.FIFO,
+                "valuation_method": "fifo",  # Use string value directly
                 "standard_rate": Decimal("85.00"),
                 "valuation_rate": Decimal("75.00"),
                 "reorder_level": 100,
@@ -237,10 +244,10 @@ def seed_database():
                 "item_name": "ABS Plastic Granules",
                 "description": "ABS plastic granules for injection molding",
                 "item_group_id": item_groups["RM"].id,
-                "item_type": ItemType.STOCK,
+                "item_type": "stock",  # Use string value directly
                 "uom": "Kg",
                 "maintain_stock": True,
-                "valuation_method": ValuationMethod.MOVING_AVERAGE,
+                "valuation_method": "moving_average",  # Use string value directly
                 "standard_rate": Decimal("120.00"),
                 "valuation_rate": Decimal("100.00"),
                 "reorder_level": 200,
@@ -253,10 +260,10 @@ def seed_database():
                 "item_name": "Widget Pro",
                 "description": "Premium widget for industrial use",
                 "item_group_id": item_groups["FG"].id,
-                "item_type": ItemType.STOCK,
+                "item_type": "stock",  # Use string value directly
                 "uom": "Nos",
                 "maintain_stock": True,
-                "valuation_method": ValuationMethod.MOVING_AVERAGE,
+                "valuation_method": "moving_average",  # Use string value directly
                 "standard_rate": Decimal("599.00"),
                 "valuation_rate": Decimal("350.00"),
                 "reorder_level": 50,
@@ -270,10 +277,10 @@ def seed_database():
                 "item_name": "Gadget Max",
                 "description": "Multi-purpose gadget for home and office",
                 "item_group_id": item_groups["FG"].id,
-                "item_type": ItemType.STOCK,
+                "item_type": "stock",  # Use string value directly
                 "uom": "Nos",
                 "maintain_stock": True,
-                "valuation_method": ValuationMethod.MOVING_AVERAGE,
+                "valuation_method": "moving_average",  # Use string value directly
                 "standard_rate": Decimal("1299.00"),
                 "valuation_rate": Decimal("750.00"),
                 "reorder_level": 25,
@@ -288,10 +295,10 @@ def seed_database():
                 "item_name": "Packaging Box (Medium)",
                 "description": "Medium sized packaging box",
                 "item_group_id": item_groups["CON"].id,
-                "item_type": ItemType.STOCK,
+                "item_type": "stock",  # Use string value directly
                 "uom": "Nos",
                 "maintain_stock": True,
-                "valuation_method": ValuationMethod.FIFO,
+                "valuation_method": "fifo",  # Use string value directly
                 "standard_rate": Decimal("25.00"),
                 "valuation_rate": Decimal("18.00"),
                 "reorder_level": 500,
@@ -304,7 +311,7 @@ def seed_database():
                 "item_name": "Installation Service",
                 "description": "Professional installation service",
                 "item_group_id": item_groups["SRV"].id,
-                "item_type": ItemType.SERVICE,
+                "item_type": "service",  # Use string value directly
                 "uom": "Hrs",
                 "maintain_stock": False,
                 "standard_rate": Decimal("500.00"),
@@ -315,7 +322,7 @@ def seed_database():
                 "item_name": "Annual Maintenance Contract",
                 "description": "Yearly maintenance and support",
                 "item_group_id": item_groups["SRV"].id,
-                "item_type": ItemType.SERVICE,
+                "item_type": "service",  # Use string value directly
                 "uom": "Nos",
                 "maintain_stock": False,
                 "standard_rate": Decimal("5000.00"),
@@ -328,7 +335,7 @@ def seed_database():
                 organization_id=org_id,
                 created_by=admin_user_id,
                 updated_by=admin_user_id,
-                status=ItemStatus.ACTIVE,
+                status="active",  # Use string value directly
                 **item_data,
             )
             db.add(item)
