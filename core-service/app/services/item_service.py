@@ -50,17 +50,21 @@ class ItemService:
         item_dict["created_by"] = user_id
         item_dict["updated_by"] = user_id
 
-        # Convert string enums to actual enums
+        # Convert string enums to actual enums (case-insensitive)
         if item_dict.get("item_type"):
             try:
-                item_dict["item_type"] = ItemType(item_dict["item_type"])
-            except ValueError:
+                # Normalize to uppercase for enum lookup
+                item_type_str = str(item_dict["item_type"]).upper()
+                item_dict["item_type"] = ItemType(item_type_str)
+            except (ValueError, KeyError):
                 item_dict["item_type"] = ItemType.STOCK
 
         if item_dict.get("status"):
             try:
-                item_dict["status"] = ItemStatus(item_dict["status"])
-            except ValueError:
+                # Normalize to uppercase for enum lookup
+                status_str = str(item_dict["status"]).upper()
+                item_dict["status"] = ItemStatus(status_str)
+            except (ValueError, KeyError):
                 item_dict["status"] = ItemStatus.ACTIVE
 
         return self.item_repo.create_item(item_dict)
@@ -122,17 +126,21 @@ class ItemService:
         update_dict = item_data.model_dump(exclude_unset=True)
         update_dict["updated_by"] = user_id
 
-        # Convert string enums to actual enums
+        # Convert string enums to actual enums (case-insensitive)
         if "item_type" in update_dict and update_dict["item_type"]:
             try:
-                update_dict["item_type"] = ItemType(update_dict["item_type"])
-            except ValueError:
+                # Normalize to uppercase for enum lookup
+                item_type_str = str(update_dict["item_type"]).upper()
+                update_dict["item_type"] = ItemType(item_type_str)
+            except (ValueError, KeyError):
                 del update_dict["item_type"]
 
         if "status" in update_dict and update_dict["status"]:
             try:
-                update_dict["status"] = ItemStatus(update_dict["status"])
-            except ValueError:
+                # Normalize to uppercase for enum lookup
+                status_str = str(update_dict["status"]).upper()
+                update_dict["status"] = ItemStatus(status_str)
+            except (ValueError, KeyError):
                 del update_dict["status"]
 
         return self.item_repo.update_item(item, update_dict)
@@ -195,19 +203,21 @@ class ItemService:
         Returns:
             Tuple of (list of items, pagination metadata)
         """
-        # Validate and convert enum values
+        # Validate and convert enum values (case-insensitive)
         status_enum = None
         if status:
             try:
-                status_enum = ItemStatus(status)
-            except ValueError:
+                status_str = str(status).upper()
+                status_enum = ItemStatus(status_str)
+            except (ValueError, KeyError):
                 pass
 
         item_type_enum = None
         if item_type:
             try:
-                item_type_enum = ItemType(item_type)
-            except ValueError:
+                item_type_str = str(item_type).upper()
+                item_type_enum = ItemType(item_type_str)
+            except (ValueError, KeyError):
                 pass
 
         # Ensure page_size doesn't exceed maximum

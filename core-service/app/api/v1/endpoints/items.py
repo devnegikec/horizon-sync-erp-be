@@ -40,9 +40,8 @@ async def create_item(
     **Request Body:**
     - **item_code**: Unique item code (required)
     - **item_name**: Item name (required)
-    - **description**: Item description
-    - **item_type**: stock, non_stock, service, fixed_asset (default: stock)
-    - **uom**: Unit of measure (default: Nos)
+    - **description**: Item description 
+    - **uom**: Unit of measure (default: Nos) (e.g. Kg, Nos, L, etc.)
     - **maintain_stock**: Track inventory levels (default: true)
     - **standard_rate**: Standard selling rate
     - **valuation_rate**: Valuation rate for inventory

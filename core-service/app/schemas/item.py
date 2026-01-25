@@ -25,7 +25,7 @@ class ItemBase(BaseModel):
 
     # Stock Settings
     maintain_stock: bool = True
-    valuation_method: str = Field(default="fifo")
+    valuation_method: str = Field(default="FIFO")
     allow_negative_stock: bool = False
 
     # Variants
@@ -60,7 +60,7 @@ class ItemBase(BaseModel):
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
-    status: str = Field(default="active")
+    status: str = Field(default="ACTIVE")
     image_url: str | None = Field(None, max_length=500)
     images: list[str] | None = None
     tags: list[str] | None = None
