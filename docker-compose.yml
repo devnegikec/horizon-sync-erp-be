@@ -67,8 +67,6 @@ services:
         sleep 5 &&
         echo 'Running Identity Service migrations...' &&
         python -m alembic upgrade head &&
-        echo 'Seeding Identity Service data...' &&
-        python scripts/seed_data.py &&
         echo 'Starting Identity Service...' &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
@@ -111,8 +109,6 @@ services:
         sleep 10 &&
         echo 'Running Core Service migrations...' &&
         python -m alembic upgrade head &&
-        echo 'Seeding Core Service data...' &&
-        python scripts/seed_data.py &&
         echo 'Starting Core Service...' &&
         uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
       "
