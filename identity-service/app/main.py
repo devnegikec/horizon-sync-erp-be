@@ -18,10 +18,13 @@ from app.core.exceptions import (
     AccountLockedException,
     AuthenticationError,
     DuplicateEmailException,
+    DuplicateResourceException,
     InvalidTokenException,
     PasswordValidationException,
+    ResourceNotFoundException,
     TokenExpiredException,
     UserNotFoundException,
+    ValidationException,
 )
 from app.database import engine
 
@@ -247,6 +250,51 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred",
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateResourceException)
+async def duplicate_resource_exception_handler(
+    request: Request, exc: DuplicateResourceException
+):
+    """Handle duplicate resource errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_RESOURCE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ResourceNotFoundException)
+async def resource_not_found_exception_handler(
+    request: Request, exc: ResourceNotFoundException
+):
+    """Handle resource not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "RESOURCE_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ValidationException)
+async def validation_exception_handler_custom(
+    request: Request, exc: ValidationException
+):
+    """Handle validation errors"""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error": "VALIDATION_ERROR",
+            "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
     )

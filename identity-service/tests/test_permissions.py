@@ -206,7 +206,7 @@ class TestPermissionEndpoints:
 
     def test_list_permissions_endpoint(self, client):
         """Test GET /permissions endpoint"""
-        response = client.get("/api/v1/rbac/permissions")
+        response = client.get("/api/v1/permissions")
 
         assert response.status_code == 200
         assert "data" in response.json()
@@ -227,7 +227,7 @@ class TestPermissionEndpoints:
         }
 
         response = client.post(
-            "/api/v1/rbac/permissions",
+            "/api/v1/permissions",
             json=permission_data,
         )
 
@@ -254,7 +254,7 @@ class TestPermissionEndpoints:
 
         created = service.create_permission(permission_data)
 
-        response = client.get(f"/api/v1/rbac/permissions/{created['id']}")
+        response = client.get(f"/api/v1/permissions/{created['id']}")
 
         assert response.status_code == 200
         assert response.json()["id"] == str(created["id"])
@@ -285,7 +285,7 @@ class TestPermissionEndpoints:
         }
 
         response = client.put(
-            f"/api/v1/rbac/permissions/{created['id']}",
+            f"/api/v1/permissions/{created['id']}",
             json=update_data,
         )
 
@@ -312,6 +312,6 @@ class TestPermissionEndpoints:
 
         created = service.create_permission(permission_data)
 
-        response = client.delete(f"/api/v1/rbac/permissions/{created['id']}")
+        response = client.delete(f"/api/v1/permissions/{created['id']}")
 
         assert response.status_code == 204

@@ -22,12 +22,10 @@ api_router.include_router(
 
 api_router.include_router(
     permissions.router,
-    prefix="/rbac",
     tags=["Permissions"],
 )
 
 api_router.include_router(
     roles.router,
-    prefix="/rbac",
     tags=["Roles"],
 )

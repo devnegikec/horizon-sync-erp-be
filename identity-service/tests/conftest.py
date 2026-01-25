@@ -5,9 +5,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from uuid import UUID
+from datetime import datetime, timedelta
 
 from app.database import Base, get_db
 from app.main import app
+from app.dependencies import get_current_active_user
+from app.models.user import User
+from app.models.base import UserType, UserStatus
+from app.core.security import create_token
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -34,7 +40,38 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def test_user(db_session):
+    """Create a test user"""
+    user = User(
+        id=UUID("99999999-9999-9999-9999-999999999999"),
+        email="test@example.com",
+        password_hash="$2b$12$test_hash",
+        first_name="Test",
+        last_name="User",
+        user_type=UserType.SYSTEM_ADMIN,
+        status=UserStatus.ACTIVE,
+        is_active=True,
+        email_verified=True,
+        email_verified_at=datetime.utcnow(),
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
+@pytest.fixture
+def access_token(test_user):
+    """Create a valid access token for test user"""
+    token = create_token(
+        subject=str(test_user.id),
+        token_type="access",
+        expires_delta=timedelta(hours=1),
+    )
+    return token
+
+
+@pytest.fixture
+def client(db_session, test_user, access_token):
     """Create a test client with database session override"""
 
     def override_get_db():
@@ -43,9 +80,15 @@ def client(db_session):
         finally:
             pass
 
+    def override_get_current_active_user():
+        return test_user
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_active_user] = override_get_current_active_user
+
     with TestClient(app) as test_client:
         yield test_client
+
     app.dependency_overrides.clear()
 
 
@@ -58,3 +101,4 @@ def test_user_data():
         "first_name": "Test",
         "last_name": "User",
     }
+

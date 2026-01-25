@@ -79,3 +79,18 @@ class RoleHasUsersException(Exception):
 class RolePermissionAlreadyAssignedException(Exception):
     """Raised when permission is already assigned to role"""
     pass
+
+
+class ResourceNotFoundException(Exception):
+    """Raised when a resource is not found"""
+    pass
+
+
+class DuplicateResourceException(Exception):
+    """Raised when a resource already exists"""
+    pass
+
+
+class ValidationException(Exception):
+    """Raised when validation fails"""
+    pass
