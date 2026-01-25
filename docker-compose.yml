@@ -12,14 +12,14 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-horizon_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-horizon_pass}
-      POSTGRES_DB: ${DB_NAME:-horizon_db}
+      POSTGRES_DB: ${DB_NAME:-postgres}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./identity-service/scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-horizon_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_identity
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-horizon_db}
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       DEBUG: ${DEBUG:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
@@ -85,11 +85,12 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_core
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-horizon_db}
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       DEBUG: ${DEBUG:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
+      IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
     ports:
       - "8001:8001"

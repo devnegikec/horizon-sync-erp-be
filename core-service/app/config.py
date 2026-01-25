@@ -22,10 +22,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
 
-    # Database (shared with identity-service)
+    # Database (core-service's own database)
     database_url: str
     db_pool_size: int = 20
     db_max_overflow: int = 10
+
+    # Identity Service Database (for seeding - read-only access)
+    identity_database_url: str = ""
 
     # Security (must match identity-service for JWT validation)
     secret_key: str

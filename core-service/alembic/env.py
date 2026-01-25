@@ -1,4 +1,4 @@
-"""Alembic environment configuration"""
+"""Alembic environment configuration for Core Service"""
 
 import os
 import sys
@@ -10,9 +10,9 @@ from sqlalchemy import engine_from_config, pool
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.config import settings
-from app.database import Base
-from app.models import *  # Import all models  # noqa: F401, F403
+from app.config import settings  # noqa: E402
+from app.database import Base  # noqa: E402
+from app.models import *  # Import all models  # noqa: E402, F401, F403
 
 # this is the Alembic Config object
 config = context.config
@@ -26,7 +26,6 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
-
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -66,7 +65,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

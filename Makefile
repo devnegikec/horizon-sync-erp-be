@@ -185,7 +185,13 @@ shell-core:
 	docker compose exec core-service bash
 
 db-shell:
-	docker compose exec postgres psql -U horizon_user -d horizon_db
+	docker compose exec postgres psql -U horizon_user -d postgres
+
+db-shell-identity:
+	docker compose exec postgres psql -U horizon_user -d identity_db
+
+db-shell-core:
+	docker compose exec postgres psql -U horizon_user -d core_db
 
 # ===========================================
 # Development Helpers

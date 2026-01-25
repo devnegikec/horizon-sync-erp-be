@@ -1,18 +1,21 @@
 """Database seeding script for Core Service
 
 This script seeds inventory data that complements the identity-service data.
-It uses the same organization and users created by identity-service.
+It connects to identity_db to fetch organization and user info,
+then seeds data into core_db.
 """
 
 import os
 import sys
 from decimal import Decimal
 
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.models import (  # noqa: E402
     Item,
@@ -25,39 +28,59 @@ from app.models import (  # noqa: E402
 )
 
 
-def get_organization_id(db: Session):
+def get_identity_session():
     """
-    Get the default organization ID from identity-service data.
+    Create a session to the identity database.
+    Used for fetching organization and user data.
+    """
+    identity_db_url = settings.identity_database_url
+    if not identity_db_url:
+        return None
+
+    engine = create_engine(identity_db_url)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return SessionLocal()
+
+
+def get_organization_id():
+    """
+    Get the default organization ID from identity-service database.
 
     The organization is created by identity-service with slug 'default-org'.
-    We query it directly from the organizations table.
     """
-    from sqlalchemy import text
+    identity_session = get_identity_session()
+    if not identity_session:
+        print("  Warning: IDENTITY_DATABASE_URL not configured")
+        return None
 
-    result = db.execute(
-        text("SELECT id FROM organizations WHERE slug = 'default-org' LIMIT 1")
-    )
-    row = result.fetchone()
-    if row:
-        return row[0]
-    return None
+    try:
+        result = identity_session.execute(
+            text("SELECT id FROM organizations WHERE slug = 'default-org' LIMIT 1")
+        )
+        row = result.fetchone()
+        return row[0] if row else None
+    finally:
+        identity_session.close()
 
 
-def get_admin_user_id(db: Session):
+def get_admin_user_id():
     """
-    Get the admin user ID from identity-service data.
+    Get the admin user ID from identity-service database.
 
     The admin user is created by identity-service with email 'admin@example.com'.
     """
-    from sqlalchemy import text
+    identity_session = get_identity_session()
+    if not identity_session:
+        return None
 
-    result = db.execute(
-        text("SELECT id FROM users WHERE email = 'admin@example.com' LIMIT 1")
-    )
-    row = result.fetchone()
-    if row:
-        return row[0]
-    return None
+    try:
+        result = identity_session.execute(
+            text("SELECT id FROM users WHERE email = 'admin@example.com' LIMIT 1")
+        )
+        row = result.fetchone()
+        return row[0] if row else None
+    finally:
+        identity_session.close()
 
 
 def seed_database():
@@ -67,21 +90,23 @@ def seed_database():
     try:
         print("Starting Core Service database seeding...")
 
-        # Get organization from identity-service
-        org_id = get_organization_id(db)
+        # Get organization from identity-service database
+        org_id = get_organization_id()
         if not org_id:
-            print("✗ Default organization not found!")
-            print("  Please run identity-service seed first.")
+            print("✗ Default organization not found in identity_db!")
+            print("  Please ensure identity-service has seeded first.")
+            print("  Skipping core-service seeding...")
             return
 
-        admin_user_id = get_admin_user_id(db)
+        admin_user_id = get_admin_user_id()
         if not admin_user_id:
-            print("✗ Admin user not found!")
-            print("  Please run identity-service seed first.")
+            print("✗ Admin user not found in identity_db!")
+            print("  Please ensure identity-service has seeded first.")
+            print("  Skipping core-service seeding...")
             return
 
-        print(f"✓ Found organization: {org_id}")
-        print(f"✓ Found admin user: {admin_user_id}")
+        print(f"✓ Found organization in identity_db: {org_id}")
+        print(f"✓ Found admin user in identity_db: {admin_user_id}")
 
         # Check if data already exists
         existing_items = db.query(Item).filter(Item.organization_id == org_id).first()
