@@ -12,7 +12,6 @@ from app.core.exceptions import (
     RolePermissionAlreadyAssignedException,
 )
 from app.database import get_db
-from app.dependencies import get_current_active_user
 from app.schemas.permission import (
     PermissionCreate,
     PermissionListResponse,
@@ -39,13 +38,12 @@ async def list_permissions(
     action: str | None = Query(None, description="Filter by action type"),
     module: str | None = Query(None, description="Filter by module"),
     search: str | None = Query(None, description="Search in code or name"),
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List permissions with pagination and filters.
 
-    Requires authentication.
+    This endpoint is public and does not require authentication.
 
     **Query Parameters:**
     - **skip**: Number of records to skip (default: 0)
@@ -57,7 +55,7 @@ async def list_permissions(
     - **search**: Search term for code or name
     """
     logger.info(
-        f"User {current_user.id} listing permissions - "
+        f"Listing permissions - "
         f"skip: {skip}, limit: {limit}"
     )
 
@@ -94,18 +92,17 @@ async def list_permissions(
 )
 async def get_permission(
     permission_id: UUID,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get a specific permission by ID.
 
-    Requires authentication.
+    This endpoint is public and does not require authentication.
 
     **Path Parameters:**
     - **permission_id**: UUID of the permission
     """
-    logger.info(f"User {current_user.id} fetching permission: {permission_id}")
+    logger.info(f"Fetching permission: {permission_id}")
 
     permission_service = PermissionService(db)
 
@@ -138,13 +135,12 @@ async def get_permission(
 )
 async def create_permission(
     permission: PermissionCreate,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Create a new permission.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Request Body:**
     - **code**: Unique permission code
@@ -158,7 +154,7 @@ async def create_permission(
     - **extra_data**: Optional metadata
     """
     logger.info(
-        f"User {current_user.id} creating permission: {permission.code}"
+        f"Creating permission: {permission.code}"
     )
 
     permission_service = PermissionService(db)
@@ -192,13 +188,12 @@ async def create_permission(
 async def update_permission(
     permission_id: UUID,
     permission: PermissionUpdate,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Update a permission.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **permission_id**: UUID of the permission
@@ -210,7 +205,7 @@ async def update_permission(
     - **extra_data**: Optional metadata
     """
     logger.info(
-        f"User {current_user.id} updating permission: {permission_id}"
+        f"Updating permission: {permission_id}"
     )
 
     permission_service = PermissionService(db)
@@ -246,19 +241,18 @@ async def update_permission(
 )
 async def delete_permission(
     permission_id: UUID,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Delete a permission.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **permission_id**: UUID of the permission
     """
     logger.info(
-        f"User {current_user.id} deleting permission: {permission_id}"
+        f"Deleting permission: {permission_id}"
     )
 
     permission_service = PermissionService(db)

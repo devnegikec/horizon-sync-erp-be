@@ -16,7 +16,6 @@ from app.core.exceptions import (
     SystemRoleModificationException,
 )
 from app.database import get_db
-from app.dependencies import get_current_active_user
 from app.schemas.role import (
     BulkAssignRolePermissionsRequest,
     RoleCreate,
@@ -49,13 +48,12 @@ async def list_roles(
     is_system: bool | None = Query(None, description="Filter by system role flag"),
     search: str | None = Query(None, description="Search in code or name"),
     include_permissions: bool = Query(False, description="Include permissions"),
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List roles with pagination and filters.
 
-    Requires authentication.
+    This endpoint does not require authentication.
 
     **Query Parameters:**
     - **skip**: Number of records to skip (default: 0)
@@ -67,7 +65,7 @@ async def list_roles(
     - **include_permissions**: Include permissions in response
     """
     logger.info(
-        f"User {current_user.id} listing roles - "
+        f"Listing roles - "
         f"skip: {skip}, limit: {limit}, org_id: {organization_id}"
     )
 
@@ -105,13 +103,12 @@ async def list_roles(
 async def get_role(
     role_id: UUID,
     include_permissions: bool = Query(False, description="Include permissions"),
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get a specific role by ID.
 
-    Requires authentication.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -119,7 +116,7 @@ async def get_role(
     **Query Parameters:**
     - **include_permissions**: Include permissions in response
     """
-    logger.info(f"User {current_user.id} fetching role: {role_id}")
+    logger.info(f"Fetching role: {role_id}")
 
     role_service = RoleService(db)
 
@@ -155,13 +152,12 @@ async def get_role(
 )
 async def create_role(
     role: RoleCreate,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Create a new role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Request Body:**
     - **organization_id**: Organization UUID (required)
@@ -175,7 +171,7 @@ async def create_role(
     - **extra_data**: Optional metadata
     """
     logger.info(
-        f"User {current_user.id} creating role: {role.code} "
+        f"Creating role: {role.code} "
         f"in org: {role.organization_id}"
     )
 
@@ -213,13 +209,12 @@ async def create_role(
 async def update_role(
     role_id: UUID,
     role: RoleUpdate,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Update a role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -231,7 +226,7 @@ async def update_role(
     - **is_active**: Optional active status
     - **extra_data**: Optional metadata
     """
-    logger.info(f"User {current_user.id} updating role: {role_id}")
+    logger.info(f"Updating role: {role_id}")
 
     role_service = RoleService(db)
 
@@ -273,18 +268,17 @@ async def update_role(
 )
 async def delete_role(
     role_id: UUID,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Delete a role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
     """
-    logger.info(f"User {current_user.id} deleting role: {role_id}")
+    logger.info(f"Deleting role: {role_id}")
 
     role_service = RoleService(db)
 
@@ -332,13 +326,12 @@ async def get_role_permissions(
     limit: int = Query(10, ge=1, le=100, description="Maximum records to return"),
     resource: str | None = Query(None, description="Filter by resource type"),
     action: str | None = Query(None, description="Filter by action type"),
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get permissions assigned to a role.
 
-    Requires authentication.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -350,7 +343,7 @@ async def get_role_permissions(
     - **action**: Filter by action type
     """
     logger.info(
-        f"User {current_user.id} fetching permissions for role: {role_id}"
+        f"Fetching permissions for role: {role_id}"
     )
 
     role_service = RoleService(db)
@@ -398,13 +391,12 @@ async def get_role_permissions(
 async def assign_permission_to_role(
     role_id: UUID,
     permission: RolePermissionCreate,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Assign a permission to a role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -414,7 +406,7 @@ async def assign_permission_to_role(
     - **conditions**: Optional conditions dictionary
     """
     logger.info(
-        f"User {current_user.id} assigning permission {permission.permission_id} "
+        f"Assigning permission {permission.permission_id} "
         f"to role {role_id}"
     )
 
@@ -478,20 +470,19 @@ async def assign_permission_to_role(
 async def remove_permission_from_role(
     role_id: UUID,
     permission_id: UUID,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Remove a permission from a role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
     - **permission_id**: UUID of the permission
     """
     logger.info(
-        f"User {current_user.id} removing permission {permission_id} "
+        f"Removing permission {permission_id} "
         f"from role {role_id}"
     )
 
@@ -540,13 +531,12 @@ async def remove_permission_from_role(
 async def bulk_assign_permissions_to_role(
     role_id: UUID,
     request: BulkAssignRolePermissionsRequest,
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Bulk assign permissions to a role.
 
-    Requires authentication and admin privileges.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -556,7 +546,7 @@ async def bulk_assign_permissions_to_role(
     - **mode**: "replace" (default) or "add"
     """
     logger.info(
-        f"User {current_user.id} bulk assigning {len(request.permission_ids)} "
+        f"Bulk assigning {len(request.permission_ids)} "
         f"permissions to role {role_id}"
     )
 
@@ -608,13 +598,12 @@ async def get_role_users(
     organization_id: UUID,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(10, ge=1, le=100, description="Maximum records to return"),
-    current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get users assigned to a role.
 
-    Requires authentication.
+    This endpoint does not require authentication.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -625,7 +614,7 @@ async def get_role_users(
     - **limit**: Maximum records to return
     """
     logger.info(
-        f"User {current_user.id} fetching users for role: {role_id} "
+        f"Fetching users for role: {role_id} "
         f"in org: {organization_id}"
     )
 
