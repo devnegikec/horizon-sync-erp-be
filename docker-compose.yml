@@ -1,0 +1,131 @@
+# Horizon Sync Backend - All Services
+# Run all microservices with: docker compose up -d
+# Run specific service: docker compose up -d identity-service
+
+services:
+  # ===========================================
+  # INFRASTRUCTURE
+  # ===========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: horizon_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-horizon_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-horizon_pass}
+      POSTGRES_DB: ${DB_NAME:-horizon_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./identity-service/scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-horizon_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - horizon_network
+
+  # ===========================================
+  # IDENTITY SERVICE (Auth & User Management)
+  # ===========================================
+  identity-service:
+    build:
+      context: ./identity-service
+      dockerfile: Dockerfile
+    container_name: horizon_identity
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-horizon_db}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./identity-service/app:/app/app
+      - ./identity-service/alembic:/app/alembic
+      - ./identity-service/scripts:/app/scripts
+      - ./identity-service/tests:/app/tests
+      - ./identity-service/htmlcov:/app/htmlcov
+    command: >
+      bash -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        echo 'Running Identity Service migrations...' &&
+        python -m alembic upgrade head &&
+        echo 'Seeding Identity Service data...' &&
+        python scripts/seed_data.py &&
+        echo 'Starting Identity Service...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  # ===========================================
+  # CORE SERVICE (Inventory, Orders, Billing)
+  # ===========================================
+  core-service:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_core
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-horizon_db}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+    volumes:
+      - ./core-service/app:/app/app
+      - ./core-service/alembic:/app/alembic
+      - ./core-service/scripts:/app/scripts
+      - ./core-service/tests:/app/tests
+      - ./core-service/htmlcov:/app/htmlcov
+    command: >
+      bash -c "
+        echo 'Waiting for Identity Service...' &&
+        sleep 10 &&
+        echo 'Running Core Service migrations...' &&
+        python -m alembic upgrade head &&
+        echo 'Seeding Core Service data...' &&
+        python scripts/seed_data.py &&
+        echo 'Starting Core Service...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+      "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+# ===========================================
+# VOLUMES & NETWORKS
+# ===========================================
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  horizon_network:
+    driver: bridge

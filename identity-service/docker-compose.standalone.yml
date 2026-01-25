@@ -1,45 +1,41 @@
+# Standalone Docker Compose for Identity Service
+# Use this for developing/testing identity-service in isolation
+# For full stack, use the root docker-compose.yml instead
+
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: identity_postgres
+    container_name: identity_postgres_standalone
     environment:
-      POSTGRES_USER: identity_user
-      POSTGRES_PASSWORD: identity_pass
-      POSTGRES_DB: identity_db
+      POSTGRES_USER: horizon_user
+      POSTGRES_PASSWORD: horizon_pass
+      POSTGRES_DB: horizon_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U identity_user -d identity_db"]
+      test: ["CMD-SHELL", "pg_isready -U horizon_user -d horizon_db"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - identity_network
+      - identity_standalone_network
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: identity_api
+    container_name: identity_api_standalone
     environment:
-      DATABASE_URL: postgresql://identity_user:identity_pass@postgres:5432/identity_db
+      DATABASE_URL: postgresql://horizon_user:horizon_pass@postgres:5432/horizon_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
-      DEBUG: ${DEBUG:-false}
+      DEBUG: ${DEBUG:-true}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
-      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
-      SMTP_HOST: ${SMTP_HOST:-localhost}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Identity Service}
     ports:
       - "8000:8000"
     depends_on:
@@ -50,26 +46,20 @@ services:
       - ./alembic:/app/alembic
       - ./scripts:/app/scripts
       - ./tests:/app/tests
-      - ./htmlcov:/app/htmlcov
     command: >
       bash -c "
-        echo 'Waiting for database...' &&
         sleep 5 &&
-        echo 'Running migrations...' &&
         python -m alembic upgrade head &&
-        echo 'Seeding database...' &&
         python scripts/seed_data.py &&
-        echo 'Starting server...' &&
         uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
     networks:
-      - identity_network
+      - identity_standalone_network
     restart: unless-stopped
 
 volumes:
   postgres_data:
-    driver: local
 
 networks:
-  identity_network:
+  identity_standalone_network:
     driver: bridge

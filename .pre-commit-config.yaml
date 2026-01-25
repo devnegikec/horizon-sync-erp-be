@@ -1,0 +1,45 @@
+# ===========================================
+# Horizon Sync Backend - Pre-commit Configuration
+# ===========================================
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  # Python linting and formatting with Ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.6
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(identity-service|core-service)/.*\.py$
+      - id: ruff-format
+        files: ^(identity-service|core-service)/.*\.py$
+
+  # Prettier for YAML, Markdown, JSON
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types_or: [yaml, markdown, json]
+        exclude: ^(identity-service|core-service)/alembic/
+
+  # Run tests on pre-push
+  - repo: local
+    hooks:
+      - id: pytest-all
+        name: Run all tests
+        entry: bash -c "make test-local"
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
