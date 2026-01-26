@@ -39,7 +39,12 @@ class Item(Base):
         UUID(as_uuid=True), ForeignKey("item_groups.id"), nullable=True
     )
     item_type = Column(
-        Enum(ItemType, name="itemtype", create_type=False),
+        Enum(
+            ItemType,
+            name="itemtype",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         default=ItemType.STOCK,
     )
 
@@ -49,7 +54,12 @@ class Item(Base):
     # Stock Settings
     maintain_stock = Column(Boolean, default=True)
     valuation_method = Column(
-        Enum(ValuationMethod, name="valuationmethod", create_type=False),
+        Enum(
+            ValuationMethod,
+            name="valuationmethod",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         default=ValuationMethod.FIFO,
     )
     allow_negative_stock = Column(Boolean, default=False)
@@ -88,7 +98,12 @@ class Item(Base):
     # Additional Info
     barcode = Column(String(100), nullable=True)
     status = Column(
-        Enum(ItemStatus, name="itemstatus", create_type=False),
+        Enum(
+            ItemStatus,
+            name="itemstatus",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         default=ItemStatus.ACTIVE,
     )
     image_url = Column(String(500), nullable=True)
