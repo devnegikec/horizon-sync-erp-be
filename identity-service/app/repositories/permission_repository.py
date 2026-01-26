@@ -61,7 +61,9 @@ class PermissionRepository:
         logger.debug(f"Fetching permission by code: {code}")
         return self.db.query(Permission).filter(Permission.code == code).first()
 
-    def update_permission(self, permission: Permission, update_data: dict) -> Permission:
+    def update_permission(
+        self, permission: Permission, update_data: dict
+    ) -> Permission:
         """
         Update permission fields.
 

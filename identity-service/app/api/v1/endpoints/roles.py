@@ -64,8 +64,7 @@ async def list_roles(
     - **include_permissions**: Include permissions in response
     """
     logger.info(
-        f"Listing roles - "
-        f"skip: {skip}, limit: {limit}, org_id: {organization_id}"
+        f"Listing roles - " f"skip: {skip}, limit: {limit}, org_id: {organization_id}"
     )
 
     role_service = RoleService(db)
@@ -169,10 +168,7 @@ async def create_role(
     - **is_active**: Active status (default: true)
     - **extra_data**: Optional metadata
     """
-    logger.info(
-        f"Creating role: {role.code} "
-        f"in org: {role.organization_id}"
-    )
+    logger.info(f"Creating role: {role.code} " f"in org: {role.organization_id}")
 
     role_service = RoleService(db)
 
@@ -341,9 +337,7 @@ async def get_role_permissions(
     - **resource**: Filter by resource type
     - **action**: Filter by action type
     """
-    logger.info(
-        f"Fetching permissions for role: {role_id}"
-    )
+    logger.info(f"Fetching permissions for role: {role_id}")
 
     role_service = RoleService(db)
 
@@ -405,8 +399,7 @@ async def assign_permission_to_role(
     - **conditions**: Optional conditions dictionary
     """
     logger.info(
-        f"Assigning permission {permission.permission_id} "
-        f"to role {role_id}"
+        f"Assigning permission {permission.permission_id} " f"to role {role_id}"
     )
 
     role_service = RoleService(db)
@@ -480,10 +473,7 @@ async def remove_permission_from_role(
     - **role_id**: UUID of the role
     - **permission_id**: UUID of the permission
     """
-    logger.info(
-        f"Removing permission {permission_id} "
-        f"from role {role_id}"
-    )
+    logger.info(f"Removing permission {permission_id} " f"from role {role_id}")
 
     role_service = RoleService(db)
 
@@ -499,9 +489,7 @@ async def remove_permission_from_role(
         )
 
     except RolePermissionNotFoundException as e:
-        logger.warning(
-            f"Role-permission not found: {role_id} -> {permission_id}"
-        )
+        logger.warning(f"Role-permission not found: {role_id} -> {permission_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
@@ -558,9 +546,7 @@ async def bulk_assign_permissions_to_role(
             request.mode,
         )
 
-        logger.info(
-            f"Bulk assigned {result['assigned_count']} permissions to role"
-        )
+        logger.info(f"Bulk assigned {result['assigned_count']} permissions to role")
 
         return result
 
@@ -612,10 +598,7 @@ async def get_role_users(
     - **skip**: Number of records to skip
     - **limit**: Maximum records to return
     """
-    logger.info(
-        f"Fetching users for role: {role_id} "
-        f"in org: {organization_id}"
-    )
+    logger.info(f"Fetching users for role: {role_id} " f"in org: {organization_id}")
 
     role_service = RoleService(db)
 
