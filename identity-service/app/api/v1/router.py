@@ -12,8 +12,6 @@ api_router.include_router(auth.router, prefix="/identity", tags=["Authentication
 
 api_router.include_router(users.router, prefix="/identity", tags=["Users"])
 
-api_router.include_router(
-    permissions.router, prefix="/identity", tags=["Permissions"]
-)
+api_router.include_router(permissions.router, prefix="/identity", tags=["Permissions"])
 
 api_router.include_router(roles.router, prefix="/identity", tags=["Roles"])

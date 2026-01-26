@@ -277,7 +277,9 @@ class PermissionService:
 
         if not permission:
             logger.warning(f"Permission not found for deletion: {permission_id}")
-            raise PermissionNotFoundException(f"Permission with ID {permission_id} not found")
+            raise PermissionNotFoundException(
+                f"Permission with ID {permission_id} not found"
+            )
 
         if self.permission_repo.check_permission_used_in_roles(permission_id):
             logger.warning(f"Cannot delete permission {permission_id} - used in roles")
