@@ -125,14 +125,14 @@ test-cov:
 
 test-local:
 	@echo "Running all tests locally..."
-	cd identity-service && python -m pytest tests/ -v --tb=short
-	cd core-service && python -m pytest tests/ -v --tb=short
+	cd identity-service && python3 -m pytest tests/ -v --tb=short
+	cd core-service && python3 -m pytest tests/ -v --tb=short
 
 test-local-identity:
-	cd identity-service && python -m pytest tests/ -v
+	cd identity-service && python3 -m pytest tests/ -v
 
 test-local-core:
-	cd core-service && python -m pytest tests/ -v
+	cd core-service && python3 -m pytest tests/ -v
 
 # ===========================================
 # Linting & Formatting
@@ -202,10 +202,10 @@ status:
 
 health:
 	@echo "Identity Service:"
-	@curl -s http://localhost:8000/health | python -m json.tool 2>/dev/null || echo "  Not running"
+	@curl -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo "  Not running"
 	@echo ""
 	@echo "Core Service:"
-	@curl -s http://localhost:8001/health | python -m json.tool 2>/dev/null || echo "  Not running"
+	@curl -s http://localhost:8001/health | python3 -m json.tool 2>/dev/null || echo "  Not running"
 
 # ===========================================
 # Pre-commit helpers
