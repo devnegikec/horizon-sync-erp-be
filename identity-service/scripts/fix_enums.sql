@@ -6,8 +6,7 @@
 --
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d identity_db -f /app/scripts/fix_enums.sql
-
-\c identity_db;
+-- Note: Database is specified in the psql command, no need for \c
 
 -- ===========================================
 -- Add new values to resourcetype enum
@@ -16,6 +15,11 @@
 
 DO $$
 BEGIN
+    -- Add invitation resource type
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'invitation' AND enumtypid = 'resourcetype'::regtype) THEN
+        ALTER TYPE resourcetype ADD VALUE 'invitation';
+    END IF;
+
     -- Add inventory resource types
     IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'item' AND enumtypid = 'resourcetype'::regtype) THEN
         ALTER TYPE resourcetype ADD VALUE 'item';
@@ -51,6 +55,11 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'all' AND enumtypid = 'resourcetype'::regtype) THEN
         ALTER TYPE resourcetype ADD VALUE 'all';
+    END IF;
+
+    -- Add invite action type
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'invite' AND enumtypid = 'actiontype'::regtype) THEN
+        ALTER TYPE actiontype ADD VALUE 'invite';
     END IF;
 END$$;
 

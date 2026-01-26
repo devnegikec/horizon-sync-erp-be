@@ -48,6 +48,7 @@ class ResourceType(str, enum.Enum):
     TEAM = "team"
     ROLE = "role"
     PERMISSION = "permission"
+    INVITATION = "invitation"
 
     # Inventory resources
     ITEM = "item"
@@ -72,3 +73,4 @@ class ActionType(str, enum.Enum):
     DELETE = "delete"
     MANAGE = "manage"
     EXECUTE = "execute"
+    INVITE = "invite"

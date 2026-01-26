@@ -1,5 +1,6 @@
 """Dependency injection for FastAPI"""
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -8,33 +9,46 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
 from app.database import get_db
+from app.models.base import UserStatus, UserType
+from app.models.role import Permission, RolePermission, UserOrganizationRole
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+
+
+@dataclass
+class CurrentUser:
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    display_name: str | None
+    user_type: UserType | None
+    status: UserStatus | None
+    is_active: bool
+    permissions: list[str]
+
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
 
 
+def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
+    permission_codes = (
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id)
+        .filter(UserOrganizationRole.user_id == user_id, UserOrganizationRole.is_active == True)
+        .all()
+    )
+    return [code for (code,) in permission_codes]
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-) -> User:
-    """
-    Get current authenticated user from JWT token.
-
-    Args:
-        credentials: HTTP authorization credentials
-        db: Database session
-
-    Returns:
-        Current User object
-
-    Raises:
-        HTTPException: If token is invalid or user not found
-    """
+) -> CurrentUser:
     token = credentials.credentials
 
-    # Decode token
     payload = decode_token(token)
     if not payload:
         raise HTTPException(
@@ -43,7 +57,6 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verify token type
     if payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -51,7 +64,6 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Get user ID from token
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(
@@ -69,7 +81,6 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
 
-    # Get user from database
     user_repo = UserRepository(db)
     user = user_repo.get_user_by_id(user_id)
 
@@ -80,24 +91,24 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return user
+    permissions = _get_user_permissions(db, user.id)
+
+    return CurrentUser(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        display_name=user.display_name,
+        user_type=user.user_type,
+        status=user.status,
+        is_active=user.is_active,
+        permissions=permissions,
+    )
 
 
 async def get_current_active_user(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    """
-    Get current active user.
-
-    Args:
-        current_user: Current authenticated user
-
-    Returns:
-        Current User object
-
-    Raises:
-        HTTPException: If user is inactive
-    """
+    current_user: CurrentUser = Depends(get_current_user)
+) -> CurrentUser:
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user"

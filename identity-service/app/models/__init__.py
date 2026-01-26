@@ -8,6 +8,7 @@ from app.models.base import (
     UserStatus,
     UserType,
 )
+from app.models.invitation import Invitation
 from app.models.organization import Organization
 from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.models.token import RefreshToken
@@ -28,4 +29,5 @@ __all__ = [
     "Permission",
     "RolePermission",
     "UserOrganizationRole",
+    "Invitation",
 ]

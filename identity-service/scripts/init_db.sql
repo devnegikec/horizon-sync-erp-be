@@ -53,6 +53,7 @@ CREATE TYPE resourcetype AS ENUM (
     'team',
     'role',
     'permission',
+    'invitation',
     'item',
     'item_group',
     'warehouse',
@@ -70,5 +71,6 @@ CREATE TYPE actiontype AS ENUM (
     'update',
     'delete',
     'manage',
-    'execute'
+    'execute',
+    'invite'
 );
