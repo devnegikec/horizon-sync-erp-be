@@ -2,7 +2,7 @@
 -- Core Service - Create Warehouses Table Only
 -- ===========================================
 -- Run this in core_db database
--- 
+--
 -- This script creates only the warehouses_extended table
 
 CREATE TABLE IF NOT EXISTS warehouses_extended (
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS warehouses_extended (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
-    CONSTRAINT fk_warehouses_extended_parent FOREIGN KEY (parent_warehouse_id) 
+    CONSTRAINT fk_warehouses_extended_parent FOREIGN KEY (parent_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL
 );
 

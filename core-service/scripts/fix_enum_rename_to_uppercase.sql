@@ -4,7 +4,7 @@
 -- This script renames existing enum values from lowercase to UPPERCASE
 -- Using ALTER TYPE ... RENAME VALUE (PostgreSQL 10+)
 -- This is safe and preserves all existing data!
--- 
+--
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d core_db -f /app/scripts/fix_enum_rename_to_uppercase.sql
 
@@ -38,11 +38,11 @@ ALTER TYPE valuationmethod RENAME VALUE 'standard' TO 'STANDARD';
 -- ===========================================
 -- Verify the changes
 -- ===========================================
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN ('itemtype', 'valuationmethod', 'warehousetype', 'itemstatus')
 GROUP BY t.typname
 ORDER BY t.typname;

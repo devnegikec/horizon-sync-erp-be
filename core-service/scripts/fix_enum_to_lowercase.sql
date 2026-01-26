@@ -3,7 +3,7 @@
 -- ===========================================
 -- This script recreates enum types with lowercase values
 -- WARNING: This will drop and recreate enums. Make sure you have backups!
--- 
+--
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d core_db -f /app/scripts/fix_enum_to_lowercase.sql
 --   OR
@@ -115,11 +115,11 @@ CREATE TYPE readingtype AS ENUM (
 -- ===========================================
 -- Step 3: Verify enum types
 -- ===========================================
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN (
     'itemtype', 'itemstatus', 'valuationmethod', 'documentstatus',
     'warehousetype', 'stockentrytype', 'stockentrystatus', 'movementtype',

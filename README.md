@@ -102,13 +102,13 @@ docker compose up -d
 
 ### 3. Access the APIs
 
-| Service          | URL                           | Description                |
-| ---------------- | ----------------------------- | -------------------------- |
-| Identity Service | http://localhost:8000         | Auth & User Management     |
-| Identity Docs    | http://localhost:8000/docs    | Swagger UI                 |
-| Core Service     | http://localhost:8001         | Inventory & Orders         |
-| Core Docs        | http://localhost:8001/docs    | Swagger UI                 |
-| PostgreSQL       | localhost:5432                | Database                   |
+| Service          | URL                        | Description            |
+| ---------------- | -------------------------- | ---------------------- |
+| Identity Service | http://localhost:8000      | Auth & User Management |
+| Identity Docs    | http://localhost:8000/docs | Swagger UI             |
+| Core Service     | http://localhost:8001      | Inventory & Orders     |
+| Core Docs        | http://localhost:8001/docs | Swagger UI             |
+| PostgreSQL       | localhost:5432             | Database               |
 
 ### 4. Test the APIs
 
@@ -171,11 +171,11 @@ make health               # Check all service health
 
 After seeding, these accounts are available:
 
-| Role         | Email                  | Password   |
-| ------------ | ---------------------- | ---------- |
-| System Admin | admin@example.com      | Admin123!  |
-| Regular User | john.doe@example.com   | User123!   |
-| Regular User | jane.smith@example.com | User123!   |
+| Role         | Email                  | Password  |
+| ------------ | ---------------------- | --------- |
+| System Admin | admin@example.com      | Admin123! |
+| Regular User | john.doe@example.com   | User123!  |
+| Regular User | jane.smith@example.com | User123!  |
 
 ## Development
 
@@ -238,14 +238,20 @@ See `.env.example` for all available configuration options.
 
 Key variables:
 
-| Variable      | Description                          | Default       |
-| ------------- | ------------------------------------ | ------------- |
-| `SECRET_KEY`  | JWT signing key (must match across services) | Required |
-| `DB_USER`     | PostgreSQL username                  | horizon_user  |
-| `DB_PASSWORD` | PostgreSQL password                  | horizon_pass  |
-| `DB_NAME`     | PostgreSQL database name             | horizon_db    |
-| `DEBUG`       | Enable debug mode                    | false         |
+| Variable      | Description                                  | Default      |
+| ------------- | -------------------------------------------- | ------------ |
+| `SECRET_KEY`  | JWT signing key (must match across services) | Required     |
+| `DB_USER`     | PostgreSQL username                          | horizon_user |
+| `DB_PASSWORD` | PostgreSQL password                          | horizon_pass |
+| `DB_NAME`     | PostgreSQL database name                     | horizon_db   |
+| `DEBUG`       | Enable debug mode                            | false        |
 
 ## License
 
 Proprietary - Horizon Sync
+
+## DB Backup
+
+# docker exec -t horizon_postgres pg_dump -U horizon_user -d identity_db > identity_backup_jan_26.sql
+
+# docker exec -t horizon_postgres pg_dump -U horizon_user -d core_db > core_backup_jan_26.sql

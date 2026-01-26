@@ -2,14 +2,14 @@
 -- Core Service - Simple Manual Seed Data Script
 -- ===========================================
 -- This script manually inserts seed data into core_db
--- 
+--
 -- IMPORTANT: You need to replace ORG_ID and ADMIN_USER_ID with actual UUIDs
 -- Get them by running:
 --   \c identity_db;
 --   SELECT id FROM organizations WHERE slug = 'default-org';
 --   SELECT id FROM users WHERE email = 'admin@example.com';
 --   \c core_db;
--- 
+--
 -- Usage:
 --   1. First, get the UUIDs from identity_db (see above)
 --   2. Replace :org_id and :admin_user_id in this script
@@ -22,11 +22,11 @@
 -- STEP 1: Get UUIDs from identity_db
 -- ===========================================
 -- Run these queries first to get the UUIDs:
--- 
+--
 -- \c identity_db;
 -- SELECT id FROM organizations WHERE slug = 'default-org';
 -- SELECT id FROM users WHERE email = 'admin@example.com';
--- 
+--
 -- Copy the UUIDs and replace :org_id and :admin_user_id below
 -- ===========================================
 
@@ -43,7 +43,7 @@ INSERT INTO warehouses_extended (
     is_active, is_default, created_by, updated_by, created_at, updated_at
 ) VALUES
 (
-    gen_random_uuid(), :'org_id'::uuid, 'Main Warehouse', 'WH-MAIN', 
+    gen_random_uuid(), :'org_id'::uuid, 'Main Warehouse', 'WH-MAIN',
     'Primary warehouse for storage', 'warehouse',
     '123 Industrial Ave', 'Mumbai', 'Maharashtra', '400001', 'India',
     true, true, :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
@@ -82,7 +82,7 @@ BEGIN
         'Raw materials for production', 'fifo', 'Kg', true,
         :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     ) RETURNING id INTO ig_rm_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_valuation_method, default_uom, is_active,
@@ -93,7 +93,7 @@ BEGIN
         'Finished products ready for sale', 'moving_average', 'Nos', true,
         :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     ) RETURNING id INTO ig_fg_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_valuation_method, default_uom, is_active,
@@ -104,7 +104,7 @@ BEGIN
         'Consumable items', 'fifo', 'Nos', true,
         :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     ) RETURNING id INTO ig_con_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_uom, is_active,
@@ -115,11 +115,11 @@ BEGIN
         'Service items (non-stock)', 'Hrs', true,
         :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     ) RETURNING id INTO ig_srv_id;
-    
+
     -- ===========================================
     -- STEP 4: Create Items
     -- ===========================================
-    
+
     -- Raw Materials
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -141,7 +141,7 @@ BEGIN
         120.00, 100.00, 200, 1000, 100,
         false, 'active', :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     );
-    
+
     -- Finished Goods
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -163,7 +163,7 @@ BEGIN
         1299.00, 750.00, 25, 100, 5,
         true, '8901234567891', 'active', :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     );
-    
+
     -- Consumables
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -178,7 +178,7 @@ BEGIN
         25.00, 18.00, 500, 2000, 100,
         'active', :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     );
-    
+
     -- Services
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -200,7 +200,7 @@ BEGIN
         5000.00, 0.00, 'active',
         :'admin_user_id'::uuid, :'admin_user_id'::uuid, NOW(), NOW()
     );
-    
+
     RAISE NOTICE '✓ Seeding completed successfully!';
     RAISE NOTICE '  Warehouses: 3';
     RAISE NOTICE '  Item Groups: 4';

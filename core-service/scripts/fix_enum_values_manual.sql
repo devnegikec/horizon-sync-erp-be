@@ -3,7 +3,7 @@
 -- ===========================================
 -- This script fixes enum values in core_db database
 -- Run this manually if you get errors like: 'stock' is not among the defined enum values
--- 
+--
 -- IMPORTANT: This will drop and recreate enums. If you have data, you may need to migrate it first.
 --
 -- Usage:
@@ -148,11 +148,11 @@ CREATE TYPE readingtype AS ENUM (
 -- ===========================================
 -- Step 3: Verify enum types
 -- ===========================================
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN (
     'itemtype', 'itemstatus', 'valuationmethod', 'documentstatus',
     'warehousetype', 'stockentrytype', 'stockentrystatus', 'movementtype',

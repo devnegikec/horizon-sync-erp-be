@@ -113,13 +113,17 @@ def seed_database():
 
         # Check if data already exists (handle case where tables don't exist yet)
         try:
-            existing_items = db.query(Item).filter(Item.organization_id == org_id).first()
+            existing_items = (
+                db.query(Item).filter(Item.organization_id == org_id).first()
+            )
             if existing_items:
                 print("Database already seeded with inventory data. Skipping...")
                 return
         except Exception as e:
             # Table doesn't exist yet, continue with seeding
-            print(f"  Note: Tables may not exist yet ({str(e)}). Proceeding with seed...")
+            print(
+                f"  Note: Tables may not exist yet ({str(e)}). Proceeding with seed..."
+            )
 
         # 1. Create Warehouses
         print("\nCreating warehouses...")

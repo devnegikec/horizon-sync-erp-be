@@ -11,6 +11,7 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 ## 📦 INVENTORY MANAGEMENT (20 tables)
 
 ### Core Inventory
+
 1. **`warehouses_extended`** - Warehouse master with hierarchy, capacity, location
 2. **`item_groups`** - Item categorization (hierarchical)
 3. **`items`** - Core inventory items with stock settings
@@ -18,6 +19,7 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 5. **`item_suppliers`** - Item-supplier relationships
 
 ### Stock Management
+
 6. **`batches`** - Batch tracking for items
 7. **`serial_nos`** - Serial number tracking
 8. **`serial_no_history`** - Serial number transaction history
@@ -30,9 +32,11 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 15. **`stock_settings`** - Stock management settings per organization
 
 ### Warehouse Operations
+
 16. **`put_away_rules`** - Automated put-away rules
 
 ### Quality Management
+
 17. **`quality_inspection_templates`** - Quality inspection templates
 18. **`quality_inspection_parameters`** - Template parameters
 19. **`quality_inspections`** - Quality inspection records
@@ -43,10 +47,12 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 ## 🛒 LEAD TO ORDER (12 tables)
 
 ### Master Data
+
 21. **`customers`** - Customer master data
 22. **`suppliers`** - Supplier master data
 
 ### Order Processing
+
 23. **`pick_lists`** - Warehouse pick lists
 24. **`pick_list_items`** - Pick list line items
 25. **`delivery_notes`** - Sales delivery documentation
@@ -55,6 +61,7 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 28. **`purchase_receipt_items`** - Purchase receipt line items
 
 ### Landed Cost
+
 29. **`landed_cost_vouchers`** - Landed cost allocation vouchers
 30. **`landed_cost_purchase_receipts`** - Purchase receipts in voucher
 31. **`landed_cost_items`** - Items with allocated costs
@@ -65,11 +72,13 @@ Core Service manages **Inventory**, **Lead-to-Order**, and **Billing** modules. 
 ## 💰 BILLING (7 tables)
 
 ### Accounting
+
 33. **`chart_of_accounts`** - Chart of accounts (hierarchical)
 34. **`journal_entries`** - Journal entry headers
 35. **`journal_entry_lines`** - Journal entry line items
 
 ### Invoicing & Payments
+
 36. **`invoices`** - Sales and purchase invoices
 37. **`invoice_items`** - Invoice line items
 38. **`payments`** - Payment transactions
@@ -127,6 +136,7 @@ chart_of_accounts
 ## How to Use
 
 ### Option 1: Create All Tables (Recommended)
+
 ```bash
 # Connect to core_db
 docker compose exec postgres psql -U horizon_user -d core_db
@@ -136,6 +146,7 @@ docker compose exec postgres psql -U horizon_user -d core_db
 ```
 
 ### Option 2: Create Only Warehouses Table
+
 ```bash
 docker compose exec postgres psql -U horizon_user -d core_db
 
@@ -144,6 +155,7 @@ docker compose exec postgres psql -U horizon_user -d core_db
 ```
 
 ### Option 3: Use Alembic Migrations (Recommended for Production)
+
 ```bash
 # Migrations are automatically created and run via Alembic
 # The create_tables.sql is for reference or manual setup

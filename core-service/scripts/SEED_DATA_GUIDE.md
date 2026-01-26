@@ -1,11 +1,13 @@
 # Seed Data Guide - Core Service
 
 ## Problem
+
 The seed script fails because tables don't exist yet or there's a mismatch between the model and database schema.
 
 ## Solution Options
 
 ### Option 1: Fix Seed Script (Recommended)
+
 The seed script has been fixed to handle missing tables gracefully. After creating tables, run:
 
 ```bash

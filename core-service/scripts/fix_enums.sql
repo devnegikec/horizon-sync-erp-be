@@ -3,7 +3,7 @@
 -- ===========================================
 -- This script fixes enum values in core_db
 -- Run this if you get errors like: 'stock' is not among the defined enum values
--- 
+--
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d core_db -f /app/scripts/fix_enums.sql
 --   OR
@@ -158,11 +158,11 @@ CREATE TYPE readingtype AS ENUM (
 SELECT 'Enum types created successfully!' AS status;
 
 -- List all enum types
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN (
     'itemtype', 'itemstatus', 'valuationmethod', 'documentstatus',
     'warehousetype', 'stockentrytype', 'stockentrystatus', 'movementtype',

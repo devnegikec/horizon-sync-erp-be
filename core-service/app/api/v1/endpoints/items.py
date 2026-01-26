@@ -40,7 +40,7 @@ async def create_item(
     **Request Body:**
     - **item_code**: Unique item code (required)
     - **item_name**: Item name (required)
-    - **description**: Item description 
+    - **description**: Item description
     - **uom**: Unit of measure (default: Nos) (e.g. Kg, Nos, L, etc.)
     - **maintain_stock**: Track inventory levels (default: true)
     - **standard_rate**: Standard selling rate

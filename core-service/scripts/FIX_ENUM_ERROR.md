@@ -1,6 +1,7 @@
 # Fix Enum Error: 'stock' is not among the defined enum values
 
 ## Problem
+
 The error occurs because PostgreSQL enum types have uppercase values (STOCK, NON_STOCK) but the code is trying to use lowercase values ('stock', 'non_stock').
 
 ## Solution
@@ -46,11 +47,13 @@ EOF
 ## After Fixing Enums
 
 1. **Recreate tables** (if they were dropped):
+
    ```bash
    docker compose exec postgres psql -U horizon_user -d core_db -f /app/scripts/create_tables.sql
    ```
 
 2. **OR run Alembic migrations**:
+
    ```bash
    docker compose exec core-service python -m alembic upgrade head
    ```
@@ -63,6 +66,7 @@ EOF
 ## What Was Fixed
 
 ✅ **Seed script** (`seed_data.py`) - Now uses string values directly:
+
 - `"warehouse"` instead of `WarehouseType.WAREHOUSE`
 - `"stock"` instead of `ItemType.STOCK`
 - `"fifo"` instead of `ValuationMethod.FIFO`
@@ -75,11 +79,11 @@ EOF
 After running the fix, verify enums:
 
 ```sql
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN ('itemtype', 'itemstatus', 'valuationmethod', 'warehousetype')
 GROUP BY t.typname;
 ```

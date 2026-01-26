@@ -56,9 +56,7 @@ class ItemRepository:
 
         return query.first()
 
-    def get_item_by_code(
-        self, item_code: str, organization_id: UUID
-    ) -> Item | None:
+    def get_item_by_code(self, item_code: str, organization_id: UUID) -> Item | None:
         """
         Get item by code within an organization.
 

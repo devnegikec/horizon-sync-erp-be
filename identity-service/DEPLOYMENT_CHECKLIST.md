@@ -14,21 +14,25 @@ Use this checklist before deploying the Identity Service to production.
 - [ ] **Set DEBUG=false** in production environment
 
 - [ ] **Use strong database credentials**
+
   - Change default PostgreSQL username
   - Use a strong password (20+ characters)
   - Store credentials securely (AWS Secrets Manager, HashiCorp Vault, etc.)
 
 - [ ] **Configure CORS properly**
+
   - Set `CORS_ORIGINS` to your actual frontend domains
   - Remove wildcard origins
   - Verify `CORS_ALLOW_CREDENTIALS` setting
 
 - [ ] **Enable HTTPS**
+
   - Use SSL/TLS certificates
   - Configure reverse proxy (Nginx, Traefik, etc.)
   - Redirect HTTP to HTTPS
 
 - [ ] **Review token expiration times**
+
   - Access token: 15 minutes (default) - adjust if needed
   - Refresh token: 7 days (default) - adjust if needed
 
@@ -40,20 +44,24 @@ Use this checklist before deploying the Identity Service to production.
 ## 🗄️ Database
 
 - [ ] **Use managed PostgreSQL service**
+
   - AWS RDS, Google Cloud SQL, Azure Database, etc.
   - Enable automated backups
   - Configure backup retention policy
 
 - [ ] **Enable SSL for database connections**
+
   - Update DATABASE_URL with SSL parameters
   - Verify SSL certificate validation
 
 - [ ] **Set up database monitoring**
+
   - Monitor connection pool usage
   - Track query performance
   - Set up alerts for slow queries
 
 - [ ] **Configure connection pooling**
+
   - Adjust `DB_POOL_SIZE` based on load
   - Set appropriate `DB_MAX_OVERFLOW`
 
@@ -67,15 +75,18 @@ Use this checklist before deploying the Identity Service to production.
 - [ ] **Set ENVIRONMENT=production**
 
 - [ ] **Configure logging**
+
   - Set appropriate `LOG_LEVEL` (INFO or WARNING)
   - Configure log aggregation (ELK, CloudWatch, etc.)
   - Set up error tracking (Sentry, Rollbar, etc.)
 
 - [ ] **Remove or secure development endpoints**
+
   - Disable /docs in production (or add authentication)
   - Disable /redoc in production (or add authentication)
 
 - [ ] **Configure health checks**
+
   - Set up monitoring for /health endpoint
   - Configure uptime monitoring
   - Set up alerting
@@ -88,16 +99,19 @@ Use this checklist before deploying the Identity Service to production.
 ## 🌐 Infrastructure
 
 - [ ] **Use container orchestration**
+
   - Kubernetes, ECS, or similar
   - Configure auto-scaling
   - Set resource limits (CPU, memory)
 
 - [ ] **Set up load balancing**
+
   - Configure load balancer
   - Enable health checks
   - Set up SSL termination
 
 - [ ] **Configure DNS**
+
   - Set up domain name
   - Configure A/CNAME records
   - Consider CDN for static assets
@@ -110,16 +124,19 @@ Use this checklist before deploying the Identity Service to production.
 ## 📊 Monitoring & Observability
 
 - [ ] **Application monitoring**
+
   - Set up APM (Application Performance Monitoring)
   - Track response times
   - Monitor error rates
 
 - [ ] **Infrastructure monitoring**
+
   - CPU and memory usage
   - Disk space
   - Network traffic
 
 - [ ] **Set up alerts**
+
   - High error rate
   - Slow response times
   - Database connection issues
@@ -133,11 +150,13 @@ Use this checklist before deploying the Identity Service to production.
 ## 🔄 CI/CD
 
 - [ ] **Set up CI/CD pipeline**
+
   - Automated testing
   - Automated builds
   - Automated deployments
 
 - [ ] **Configure environments**
+
   - Development
   - Staging
   - Production
@@ -156,11 +175,13 @@ Use this checklist before deploying the Identity Service to production.
   ```
 
 - [ ] **Load testing**
+
   - Test with expected production load
   - Identify bottlenecks
   - Verify auto-scaling works
 
 - [ ] **Security testing**
+
   - Penetration testing
   - Vulnerability scanning
   - Dependency audit
@@ -173,11 +194,13 @@ Use this checklist before deploying the Identity Service to production.
 ## 📝 Documentation
 
 - [ ] **Update documentation**
+
   - API documentation
   - Deployment procedures
   - Runbook for operations
 
 - [ ] **Document credentials**
+
   - Where they're stored
   - How to rotate them
   - Who has access
@@ -216,11 +239,13 @@ Use this checklist before deploying the Identity Service to production.
 ## 🎯 Performance
 
 - [ ] **Database optimization**
+
   - Add indexes on frequently queried fields
   - Analyze query performance
   - Configure query caching if needed
 
 - [ ] **Application optimization**
+
   - Enable response compression
   - Configure caching headers
   - Optimize database queries
@@ -233,11 +258,13 @@ Use this checklist before deploying the Identity Service to production.
 ## 🔒 Compliance
 
 - [ ] **Data privacy**
+
   - GDPR compliance (if applicable)
   - Data retention policies
   - User data deletion procedures
 
 - [ ] **Security compliance**
+
   - Regular security audits
   - Dependency updates
   - Vulnerability patching
@@ -274,11 +301,13 @@ docker-compose logs api | grep ERROR
 ## ✅ Post-Deployment
 
 - [ ] **Verify deployment**
+
   - Check health endpoint
   - Test authentication flow
   - Verify database connectivity
 
 - [ ] **Monitor for issues**
+
   - Watch error logs
   - Monitor response times
   - Check resource usage
@@ -293,6 +322,7 @@ docker-compose logs api | grep ERROR
 Have a rollback plan ready:
 
 1. **Identify rollback trigger conditions**
+
    - High error rate (>5%)
    - Critical functionality broken
    - Security vulnerability discovered

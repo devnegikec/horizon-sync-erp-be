@@ -25,12 +25,12 @@ Core Service is a microservice handling **Inventory**, **Order**, and **Billing*
 
 ### Items
 
-| Method | Endpoint              | Description        |
-| ------ | --------------------- | ------------------ |
-| POST   | `/api/v1/items`       | Create a new item  |
-| GET    | `/api/v1/items`       | List items         |
-| GET    | `/api/v1/items/{id}`  | Get item by ID     |
-| PUT    | `/api/v1/items/{id}`  | Update an item     |
+| Method | Endpoint             | Description         |
+| ------ | -------------------- | ------------------- |
+| POST   | `/api/v1/items`      | Create a new item   |
+| GET    | `/api/v1/items`      | List items          |
+| GET    | `/api/v1/items/{id}` | Get item by ID      |
+| PUT    | `/api/v1/items/{id}` | Update an item      |
 | DELETE | `/api/v1/items/{id}` | Soft delete an item |
 
 ## Quick Start
@@ -144,13 +144,13 @@ pre-commit run --all-files
 
 ### Environment Variables
 
-| Variable               | Description                            | Default              |
-| ---------------------- | -------------------------------------- | -------------------- |
-| `DATABASE_URL`         | PostgreSQL connection string           | Required             |
-| `SECRET_KEY`           | JWT secret (must match identity-service) | Required           |
-| `IDENTITY_SERVICE_URL` | URL of identity service                | http://identity_api:8000 |
-| `DEBUG`                | Enable debug mode                      | false                |
-| `CORS_ORIGINS`         | Allowed CORS origins                   | http://localhost:3000 |
+| Variable               | Description                              | Default                  |
+| ---------------------- | ---------------------------------------- | ------------------------ |
+| `DATABASE_URL`         | PostgreSQL connection string             | Required                 |
+| `SECRET_KEY`           | JWT secret (must match identity-service) | Required                 |
+| `IDENTITY_SERVICE_URL` | URL of identity service                  | http://identity_api:8000 |
+| `DEBUG`                | Enable debug mode                        | false                    |
+| `CORS_ORIGINS`         | Allowed CORS origins                     | http://localhost:3000    |
 
 ## Architecture
 

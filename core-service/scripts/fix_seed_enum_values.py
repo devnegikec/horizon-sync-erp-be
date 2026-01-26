@@ -7,7 +7,7 @@ Run this script to update seed_data.py to use string values.
 import re
 
 # Read the seed file
-with open("seed_data.py", "r") as f:
+with open("seed_data.py") as f:
     content = f.read()
 
 # Replace enum members with their string values
@@ -17,19 +17,16 @@ replacements = [
     (r"WarehouseType\.STORE", '"store"'),
     (r"WarehouseType\.TRANSIT", '"transit"'),
     (r"WarehouseType\.VIRTUAL", '"virtual"'),
-    
     # ValuationMethod
     (r"ValuationMethod\.FIFO", '"fifo"'),
     (r"ValuationMethod\.LIFO", '"lifo"'),
     (r"ValuationMethod\.MOVING_AVERAGE", '"moving_average"'),
     (r"ValuationMethod\.STANDARD", '"standard"'),
-    
     # ItemType
     (r"ItemType\.STOCK", '"stock"'),
     (r"ItemType\.NON_STOCK", '"non_stock"'),
     (r"ItemType\.SERVICE", '"service"'),
     (r"ItemType\.FIXED_ASSET", '"fixed_asset"'),
-    
     # ItemStatus
     (r"ItemStatus\.ACTIVE", '"active"'),
     (r"ItemStatus\.INACTIVE", '"inactive"'),

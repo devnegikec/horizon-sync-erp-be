@@ -1,7 +1,7 @@
 -- ===========================================
 -- Core Service - Ready-to-Use Seed Data Script
 -- ===========================================
--- 
+--
 -- INSTRUCTIONS:
 -- 1. First, get the UUIDs by running these queries:
 --    \c identity_db;
@@ -37,7 +37,7 @@ DECLARE
     -- REPLACE THESE WITH ACTUAL UUIDs FROM identity_db
     org_id UUID := '4d851712-a4d3-44c5-a70d-2fe4bc38252c';  -- REPLACE THIS
     admin_user_id UUID := 'e0a8c3d6-c229-4868-9986-a08d398df3c5';  -- REPLACE THIS
-    
+
     ig_rm_id UUID;
     ig_fg_id UUID;
     ig_con_id UUID;
@@ -47,26 +47,26 @@ BEGIN
     IF org_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
         RAISE EXCEPTION 'Please replace org_id with actual UUID from identity_db';
     END IF;
-    
+
     IF admin_user_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
         RAISE EXCEPTION 'Please replace admin_user_id with actual UUID from identity_db';
     END IF;
-    
+
     RAISE NOTICE 'Using Organization ID: %', org_id;
     RAISE NOTICE 'Using Admin User ID: %', admin_user_id;
-    
+
     -- ===========================================
     -- Create Warehouses
     -- ===========================================
     RAISE NOTICE 'Creating warehouses...';
-    
+
     INSERT INTO warehouses_extended (
         id, organization_id, name, code, description, warehouse_type,
         address_line1, city, state, postal_code, country,
         is_active, is_default, created_by, updated_by, created_at, updated_at
     ) VALUES
     (
-        gen_random_uuid(), org_id, 'Main Warehouse', 'WH-MAIN', 
+        gen_random_uuid(), org_id, 'Main Warehouse', 'WH-MAIN',
         'Primary warehouse for storage', 'warehouse',
         '123 Industrial Ave', 'Mumbai', 'Maharashtra', '400001', 'India',
         true, true, admin_user_id, admin_user_id, NOW(), NOW()
@@ -83,14 +83,14 @@ BEGIN
         null, null, null, null, null,
         true, false, admin_user_id, admin_user_id, NOW(), NOW()
     );
-    
+
     RAISE NOTICE '✓ Created 3 warehouses';
-    
+
     -- ===========================================
     -- Create Item Groups
     -- ===========================================
     RAISE NOTICE 'Creating item groups...';
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_valuation_method, default_uom, is_active,
@@ -101,7 +101,7 @@ BEGIN
         'Raw materials for production', 'fifo', 'Kg', true,
         admin_user_id, admin_user_id, NOW(), NOW()
     ) RETURNING id INTO ig_rm_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_valuation_method, default_uom, is_active,
@@ -112,7 +112,7 @@ BEGIN
         'Finished products ready for sale', 'moving_average', 'Nos', true,
         admin_user_id, admin_user_id, NOW(), NOW()
     ) RETURNING id INTO ig_fg_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_valuation_method, default_uom, is_active,
@@ -123,7 +123,7 @@ BEGIN
         'Consumable items', 'fifo', 'Nos', true,
         admin_user_id, admin_user_id, NOW(), NOW()
     ) RETURNING id INTO ig_con_id;
-    
+
     INSERT INTO item_groups (
         id, organization_id, name, code, description,
         default_uom, is_active,
@@ -134,14 +134,14 @@ BEGIN
         'Service items (non-stock)', 'Hrs', true,
         admin_user_id, admin_user_id, NOW(), NOW()
     ) RETURNING id INTO ig_srv_id;
-    
+
     RAISE NOTICE '✓ Created 4 item groups';
-    
+
     -- ===========================================
     -- Create Items
     -- ===========================================
     RAISE NOTICE 'Creating items...';
-    
+
     -- Raw Materials
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -163,7 +163,7 @@ BEGIN
         120.00, 100.00, 200, 1000, 100,
         false, 'active', admin_user_id, admin_user_id, NOW(), NOW()
     );
-    
+
     -- Finished Goods
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -185,7 +185,7 @@ BEGIN
         1299.00, 750.00, 25, 100, 5,
         true, '8901234567891', 'active', admin_user_id, admin_user_id, NOW(), NOW()
     );
-    
+
     -- Consumables
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -200,7 +200,7 @@ BEGIN
         25.00, 18.00, 500, 2000, 100,
         'active', admin_user_id, admin_user_id, NOW(), NOW()
     );
-    
+
     -- Services
     INSERT INTO items (
         id, organization_id, item_code, item_name, description, item_group_id,
@@ -222,7 +222,7 @@ BEGIN
         5000.00, 0.00, 'active',
         admin_user_id, admin_user_id, NOW(), NOW()
     );
-    
+
     RAISE NOTICE '✓ Created 7 items';
     RAISE NOTICE '';
     RAISE NOTICE '============================================================';
@@ -231,11 +231,11 @@ BEGIN
     RAISE NOTICE '  Item Groups: 4';
     RAISE NOTICE '  Items: 7';
     RAISE NOTICE '============================================================';
-    
+
 END $$;
 
 -- Verification
-SELECT 
+SELECT
     'Warehouses' AS type, COUNT(*) AS count FROM warehouses_extended
 UNION ALL
 SELECT 'Item Groups', COUNT(*) FROM item_groups

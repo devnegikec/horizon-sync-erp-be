@@ -1,5 +1,6 @@
 """Test health check endpoint"""
 
+
 def test_health_check(client):
     """Test that health check endpoint returns 200"""
     response = client.get("/health")

@@ -3,12 +3,12 @@
 -- ===========================================
 -- This script creates all tables for core-service (Inventory, Lead-to-Order, Billing)
 -- Run this in core_db database
--- 
+--
 -- IMPORTANT: All enum types use public schema (e.g., public.itemtype)
 -- Enum values are UPPERCASE (e.g., 'STOCK', 'ACTIVE', 'DRAFT')
--- 
+--
 -- Total Tables: 39 tables
--- 
+--
 -- Categories:
 --   Inventory: warehouses_extended, item_groups, items, item_prices, item_suppliers,
 --              batches, serial_nos, serial_no_history, stock_entries, stock_entry_items,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS warehouses_extended (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID,
     updated_by UUID,
-    CONSTRAINT fk_warehouses_extended_parent FOREIGN KEY (parent_warehouse_id) 
+    CONSTRAINT fk_warehouses_extended_parent FOREIGN KEY (parent_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL
 );
 
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS item_groups (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID,
     updated_by UUID,
-    CONSTRAINT fk_item_groups_parent FOREIGN KEY (parent_id) 
+    CONSTRAINT fk_item_groups_parent FOREIGN KEY (parent_id)
         REFERENCES item_groups(id) ON DELETE SET NULL
 );
 
@@ -138,9 +138,9 @@ CREATE TABLE IF NOT EXISTS items (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID,
     updated_by UUID,
-    CONSTRAINT fk_items_item_group FOREIGN KEY (item_group_id) 
+    CONSTRAINT fk_items_item_group FOREIGN KEY (item_group_id)
         REFERENCES item_groups(id) ON DELETE SET NULL,
-    CONSTRAINT fk_items_variant_of FOREIGN KEY (variant_of) 
+    CONSTRAINT fk_items_variant_of FOREIGN KEY (variant_of)
         REFERENCES items(id) ON DELETE SET NULL
 );
 
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS item_prices (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_item_prices_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_item_prices_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE
 );
 
@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS item_suppliers (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_item_suppliers_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_item_suppliers_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE
 );
 
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS batches (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_batches_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_batches_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE
 );
 
@@ -245,9 +245,9 @@ CREATE TABLE IF NOT EXISTS serial_nos (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_serial_nos_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_serial_nos_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_serial_nos_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_serial_nos_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -271,7 +271,7 @@ CREATE TABLE IF NOT EXISTS serial_no_history (
     remarks TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_serial_no_history_serial_no FOREIGN KEY (serial_no_id) 
+    CONSTRAINT fk_serial_no_history_serial_no FOREIGN KEY (serial_no_id)
         REFERENCES serial_nos(id) ON DELETE CASCADE
 );
 
@@ -307,9 +307,9 @@ CREATE TABLE IF NOT EXISTS stock_entries (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by UUID,
     updated_by UUID,
-    CONSTRAINT fk_stock_entries_from_warehouse FOREIGN KEY (from_warehouse_id) 
+    CONSTRAINT fk_stock_entries_from_warehouse FOREIGN KEY (from_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL,
-    CONSTRAINT fk_stock_entries_to_warehouse FOREIGN KEY (to_warehouse_id) 
+    CONSTRAINT fk_stock_entries_to_warehouse FOREIGN KEY (to_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL
 );
 
@@ -339,13 +339,13 @@ CREATE TABLE IF NOT EXISTS stock_entry_items (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_entry_items_stock_entry FOREIGN KEY (stock_entry_id) 
+    CONSTRAINT fk_stock_entry_items_stock_entry FOREIGN KEY (stock_entry_id)
         REFERENCES stock_entries(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_entry_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_stock_entry_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_entry_items_source_warehouse FOREIGN KEY (source_warehouse_id) 
+    CONSTRAINT fk_stock_entry_items_source_warehouse FOREIGN KEY (source_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL,
-    CONSTRAINT fk_stock_entry_items_target_warehouse FOREIGN KEY (target_warehouse_id) 
+    CONSTRAINT fk_stock_entry_items_target_warehouse FOREIGN KEY (target_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL
 );
 
@@ -368,9 +368,9 @@ CREATE TABLE IF NOT EXISTS stock_levels (
     last_counted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_levels_product FOREIGN KEY (product_id) 
+    CONSTRAINT fk_stock_levels_product FOREIGN KEY (product_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_levels_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_stock_levels_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE,
     CONSTRAINT uq_stock_levels_product_warehouse UNIQUE (product_id, warehouse_id)
 );
@@ -398,9 +398,9 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     performed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_movements_product FOREIGN KEY (product_id) 
+    CONSTRAINT fk_stock_movements_product FOREIGN KEY (product_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_movements_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_stock_movements_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -453,11 +453,11 @@ CREATE TABLE IF NOT EXISTS stock_reconciliation_items (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_reconciliation_items_reconciliation FOREIGN KEY (reconciliation_id) 
+    CONSTRAINT fk_stock_reconciliation_items_reconciliation FOREIGN KEY (reconciliation_id)
         REFERENCES stock_reconciliations(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_reconciliation_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_stock_reconciliation_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_stock_reconciliation_items_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_stock_reconciliation_items_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -493,7 +493,7 @@ CREATE TABLE IF NOT EXISTS stock_settings (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_stock_settings_default_warehouse FOREIGN KEY (default_warehouse_id) 
+    CONSTRAINT fk_stock_settings_default_warehouse FOREIGN KEY (default_warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE SET NULL
 );
 
@@ -519,11 +519,11 @@ CREATE TABLE IF NOT EXISTS put_away_rules (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_put_away_rules_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_put_away_rules_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_put_away_rules_item_group FOREIGN KEY (item_group_id) 
+    CONSTRAINT fk_put_away_rules_item_group FOREIGN KEY (item_group_id)
         REFERENCES item_groups(id) ON DELETE CASCADE,
-    CONSTRAINT fk_put_away_rules_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_put_away_rules_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -546,9 +546,9 @@ CREATE TABLE IF NOT EXISTS quality_inspection_templates (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_quality_inspection_templates_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_quality_inspection_templates_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_quality_inspection_templates_item_group FOREIGN KEY (item_group_id) 
+    CONSTRAINT fk_quality_inspection_templates_item_group FOREIGN KEY (item_group_id)
         REFERENCES item_groups(id) ON DELETE CASCADE
 );
 
@@ -572,7 +572,7 @@ CREATE TABLE IF NOT EXISTS quality_inspection_parameters (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_quality_inspection_parameters_template FOREIGN KEY (template_id) 
+    CONSTRAINT fk_quality_inspection_parameters_template FOREIGN KEY (template_id)
         REFERENCES quality_inspection_templates(id) ON DELETE CASCADE
 );
 
@@ -605,9 +605,9 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_quality_inspections_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_quality_inspections_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_quality_inspections_template FOREIGN KEY (template_id) 
+    CONSTRAINT fk_quality_inspections_template FOREIGN KEY (template_id)
         REFERENCES quality_inspection_templates(id) ON DELETE SET NULL
 );
 
@@ -631,9 +631,9 @@ CREATE TABLE IF NOT EXISTS quality_inspection_readings (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_quality_inspection_readings_inspection FOREIGN KEY (inspection_id) 
+    CONSTRAINT fk_quality_inspection_readings_inspection FOREIGN KEY (inspection_id)
         REFERENCES quality_inspections(id) ON DELETE CASCADE,
-    CONSTRAINT fk_quality_inspection_readings_parameter FOREIGN KEY (parameter_id) 
+    CONSTRAINT fk_quality_inspection_readings_parameter FOREIGN KEY (parameter_id)
         REFERENCES quality_inspection_parameters(id) ON DELETE CASCADE
 );
 
@@ -718,7 +718,7 @@ CREATE TABLE IF NOT EXISTS pick_lists (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_pick_lists_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_pick_lists_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -743,11 +743,11 @@ CREATE TABLE IF NOT EXISTS pick_list_items (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_pick_list_items_pick_list FOREIGN KEY (pick_list_id) 
+    CONSTRAINT fk_pick_list_items_pick_list FOREIGN KEY (pick_list_id)
         REFERENCES pick_lists(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pick_list_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_pick_list_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pick_list_items_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_pick_list_items_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -789,11 +789,11 @@ CREATE TABLE IF NOT EXISTS delivery_notes (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_delivery_notes_customer FOREIGN KEY (customer_id) 
+    CONSTRAINT fk_delivery_notes_customer FOREIGN KEY (customer_id)
         REFERENCES customers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_delivery_notes_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_delivery_notes_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE,
-    CONSTRAINT fk_delivery_notes_pick_list FOREIGN KEY (pick_list_id) 
+    CONSTRAINT fk_delivery_notes_pick_list FOREIGN KEY (pick_list_id)
         REFERENCES pick_lists(id) ON DELETE SET NULL
 );
 
@@ -823,11 +823,11 @@ CREATE TABLE IF NOT EXISTS delivery_note_items (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_delivery_note_items_delivery_note FOREIGN KEY (delivery_note_id) 
+    CONSTRAINT fk_delivery_note_items_delivery_note FOREIGN KEY (delivery_note_id)
         REFERENCES delivery_notes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_delivery_note_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_delivery_note_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_delivery_note_items_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_delivery_note_items_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -862,9 +862,9 @@ CREATE TABLE IF NOT EXISTS purchase_receipts (
     updated_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_purchase_receipts_supplier FOREIGN KEY (supplier_id) 
+    CONSTRAINT fk_purchase_receipts_supplier FOREIGN KEY (supplier_id)
         REFERENCES suppliers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_purchase_receipts_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_purchase_receipts_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -895,11 +895,11 @@ CREATE TABLE IF NOT EXISTS purchase_receipt_items (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_purchase_receipt_items_purchase_receipt FOREIGN KEY (purchase_receipt_id) 
+    CONSTRAINT fk_purchase_receipt_items_purchase_receipt FOREIGN KEY (purchase_receipt_id)
         REFERENCES purchase_receipts(id) ON DELETE CASCADE,
-    CONSTRAINT fk_purchase_receipt_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_purchase_receipt_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_purchase_receipt_items_warehouse FOREIGN KEY (warehouse_id) 
+    CONSTRAINT fk_purchase_receipt_items_warehouse FOREIGN KEY (warehouse_id)
         REFERENCES warehouses_extended(id) ON DELETE CASCADE
 );
 
@@ -940,9 +940,9 @@ CREATE TABLE IF NOT EXISTS landed_cost_purchase_receipts (
     grand_total NUMERIC(15,2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_landed_cost_purchase_receipts_voucher FOREIGN KEY (landed_cost_voucher_id) 
+    CONSTRAINT fk_landed_cost_purchase_receipts_voucher FOREIGN KEY (landed_cost_voucher_id)
         REFERENCES landed_cost_vouchers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_landed_cost_purchase_receipts_purchase_receipt FOREIGN KEY (purchase_receipt_id) 
+    CONSTRAINT fk_landed_cost_purchase_receipts_purchase_receipt FOREIGN KEY (purchase_receipt_id)
         REFERENCES purchase_receipts(id) ON DELETE CASCADE
 );
 
@@ -963,11 +963,11 @@ CREATE TABLE IF NOT EXISTS landed_cost_items (
     applicable_charges NUMERIC(15,2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_landed_cost_items_voucher FOREIGN KEY (landed_cost_voucher_id) 
+    CONSTRAINT fk_landed_cost_items_voucher FOREIGN KEY (landed_cost_voucher_id)
         REFERENCES landed_cost_vouchers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_landed_cost_items_purchase_receipt_item FOREIGN KEY (purchase_receipt_item_id) 
+    CONSTRAINT fk_landed_cost_items_purchase_receipt_item FOREIGN KEY (purchase_receipt_item_id)
         REFERENCES purchase_receipt_items(id) ON DELETE CASCADE,
-    CONSTRAINT fk_landed_cost_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_landed_cost_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE CASCADE
 );
 
@@ -985,7 +985,7 @@ CREATE TABLE IF NOT EXISTS landed_cost_taxes_and_charges (
     amount NUMERIC(15,2) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_landed_cost_taxes_and_charges_voucher FOREIGN KEY (landed_cost_voucher_id) 
+    CONSTRAINT fk_landed_cost_taxes_and_charges_voucher FOREIGN KEY (landed_cost_voucher_id)
         REFERENCES landed_cost_vouchers(id) ON DELETE CASCADE
 );
 
@@ -1014,7 +1014,7 @@ CREATE TABLE IF NOT EXISTS chart_of_accounts (
     tags JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_chart_of_accounts_parent FOREIGN KEY (parent_account_id) 
+    CONSTRAINT fk_chart_of_accounts_parent FOREIGN KEY (parent_account_id)
         REFERENCES chart_of_accounts(id) ON DELETE SET NULL
 );
 
@@ -1047,9 +1047,9 @@ CREATE TABLE IF NOT EXISTS invoices (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_invoices_customer FOREIGN KEY (customer_id) 
+    CONSTRAINT fk_invoices_customer FOREIGN KEY (customer_id)
         REFERENCES customers(id) ON DELETE SET NULL,
-    CONSTRAINT fk_invoices_supplier FOREIGN KEY (supplier_id) 
+    CONSTRAINT fk_invoices_supplier FOREIGN KEY (supplier_id)
         REFERENCES suppliers(id) ON DELETE SET NULL
 );
 
@@ -1072,9 +1072,9 @@ CREATE TABLE IF NOT EXISTS invoice_items (
     tax_rate NUMERIC(5,2),
     tax_amount NUMERIC(15,2),
     total_amount NUMERIC(15,2) NOT NULL,
-    CONSTRAINT fk_invoice_items_invoice FOREIGN KEY (invoice_id) 
+    CONSTRAINT fk_invoice_items_invoice FOREIGN KEY (invoice_id)
         REFERENCES invoices(id) ON DELETE CASCADE,
-    CONSTRAINT fk_invoice_items_item FOREIGN KEY (item_id) 
+    CONSTRAINT fk_invoice_items_item FOREIGN KEY (item_id)
         REFERENCES items(id) ON DELETE SET NULL
 );
 
@@ -1102,9 +1102,9 @@ CREATE TABLE IF NOT EXISTS payments (
     extra_data JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_payments_customer FOREIGN KEY (customer_id) 
+    CONSTRAINT fk_payments_customer FOREIGN KEY (customer_id)
         REFERENCES customers(id) ON DELETE SET NULL,
-    CONSTRAINT fk_payments_supplier FOREIGN KEY (supplier_id) 
+    CONSTRAINT fk_payments_supplier FOREIGN KEY (supplier_id)
         REFERENCES suppliers(id) ON DELETE SET NULL
 );
 
@@ -1122,9 +1122,9 @@ CREATE TABLE IF NOT EXISTS payment_allocations (
     payment_id UUID NOT NULL,
     invoice_id UUID NOT NULL,
     allocated_amount NUMERIC(15,2) NOT NULL,
-    CONSTRAINT fk_payment_allocations_payment FOREIGN KEY (payment_id) 
+    CONSTRAINT fk_payment_allocations_payment FOREIGN KEY (payment_id)
         REFERENCES payments(id) ON DELETE CASCADE,
-    CONSTRAINT fk_payment_allocations_invoice FOREIGN KEY (invoice_id) 
+    CONSTRAINT fk_payment_allocations_invoice FOREIGN KEY (invoice_id)
         REFERENCES invoices(id) ON DELETE CASCADE
 );
 
@@ -1171,9 +1171,9 @@ CREATE TABLE IF NOT EXISTS journal_entry_lines (
     credit_amount NUMERIC(15,2),
     description VARCHAR(255),
     line_number INTEGER,
-    CONSTRAINT fk_journal_entry_lines_journal_entry FOREIGN KEY (journal_entry_id) 
+    CONSTRAINT fk_journal_entry_lines_journal_entry FOREIGN KEY (journal_entry_id)
         REFERENCES journal_entries(id) ON DELETE CASCADE,
-    CONSTRAINT fk_journal_entry_lines_account FOREIGN KEY (account_id) 
+    CONSTRAINT fk_journal_entry_lines_account FOREIGN KEY (account_id)
         REFERENCES chart_of_accounts(id) ON DELETE CASCADE
 );
 

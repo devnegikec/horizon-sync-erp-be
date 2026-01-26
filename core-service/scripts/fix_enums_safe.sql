@@ -3,7 +3,7 @@
 -- ===========================================
 -- This script fixes enum values WITHOUT dropping tables
 -- It uses ALTER TYPE to add missing values
--- 
+--
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d core_db
 --   Then copy-paste this script or run: \i /app/scripts/fix_enums_safe.sql
@@ -14,11 +14,11 @@
 -- Check current enum values
 -- ===========================================
 SELECT 'Current enum values:' AS info;
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS current_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN ('itemtype', 'itemstatus', 'valuationmethod', 'warehousetype')
 GROUP BY t.typname
 ORDER BY t.typname;
@@ -29,33 +29,33 @@ ORDER BY t.typname;
 -- ===========================================
 
 -- For ITEMTYPE: Add lowercase values if they don't exist
-DO $$ 
+DO $$
 BEGIN
     -- Check and add 'stock' if missing
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
+        SELECT 1 FROM pg_enum
         WHERE enumlabel = 'stock' AND enumtypid = 'itemtype'::regtype
     ) THEN
         ALTER TYPE itemtype ADD VALUE IF NOT EXISTS 'stock';
     END IF;
-    
+
     -- Check and add other values
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
+        SELECT 1 FROM pg_enum
         WHERE enumlabel = 'non_stock' AND enumtypid = 'itemtype'::regtype
     ) THEN
         ALTER TYPE itemtype ADD VALUE IF NOT EXISTS 'non_stock';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
+        SELECT 1 FROM pg_enum
         WHERE enumlabel = 'service' AND enumtypid = 'itemtype'::regtype
     ) THEN
         ALTER TYPE itemtype ADD VALUE IF NOT EXISTS 'service';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
+        SELECT 1 FROM pg_enum
         WHERE enumlabel = 'fixed_asset' AND enumtypid = 'itemtype'::regtype
     ) THEN
         ALTER TYPE itemtype ADD VALUE IF NOT EXISTS 'fixed_asset';
@@ -100,11 +100,11 @@ CREATE TYPE readingtype AS ENUM ('numeric', 'text', 'pass_fail');
 -- ===========================================
 SELECT 'Enum types recreated with lowercase values!' AS status;
 
-SELECT 
+SELECT
     t.typname AS enum_name,
     string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder) AS enum_values
-FROM pg_type t 
-JOIN pg_enum e ON t.oid = e.enumtypid  
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
 WHERE t.typname IN (
     'itemtype', 'itemstatus', 'valuationmethod', 'documentstatus',
     'warehousetype', 'stockentrytype', 'stockentrystatus', 'movementtype',

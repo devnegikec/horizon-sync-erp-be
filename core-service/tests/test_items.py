@@ -2,8 +2,6 @@
 
 import uuid
 
-import pytest
-
 
 class TestCreateItem:
     """Tests for POST /api/v1/items"""
