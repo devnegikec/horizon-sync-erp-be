@@ -7,6 +7,11 @@ class CoreServiceException(Exception):
     pass
 
 
+# ===========================================
+# INVENTORY EXCEPTIONS
+# ===========================================
+
+
 class ItemNotFoundException(CoreServiceException):
     """Raised when an item is not found"""
 
@@ -37,6 +42,63 @@ class DuplicateItemGroupCodeException(CoreServiceException):
     pass
 
 
+class DuplicateWarehouseCodeException(CoreServiceException):
+    """Raised when warehouse code already exists"""
+
+    pass
+
+
+# ===========================================
+# CUSTOMER/SUPPLIER EXCEPTIONS
+# ===========================================
+
+
+class CustomerNotFoundException(CoreServiceException):
+    """Raised when a customer is not found"""
+
+    pass
+
+
+class SupplierNotFoundException(CoreServiceException):
+    """Raised when a supplier is not found"""
+
+    pass
+
+
+class DuplicateCustomerCodeException(CoreServiceException):
+    """Raised when customer code already exists"""
+
+    pass
+
+
+class DuplicateSupplierCodeException(CoreServiceException):
+    """Raised when supplier code already exists"""
+
+    pass
+
+
+# ===========================================
+# ACCOUNTING EXCEPTIONS
+# ===========================================
+
+
+class ChartOfAccountNotFoundException(CoreServiceException):
+    """Raised when a chart of account is not found"""
+
+    pass
+
+
+class DuplicateAccountCodeException(CoreServiceException):
+    """Raised when account code already exists"""
+
+    pass
+
+
+# ===========================================
+# GENERAL EXCEPTIONS
+# ===========================================
+
+
 class AuthenticationError(CoreServiceException):
     """Raised when authentication fails"""
 
@@ -51,5 +113,17 @@ class AuthorizationError(CoreServiceException):
 
 class ValidationError(CoreServiceException):
     """Raised when validation fails"""
+
+    pass
+
+
+class CircularReferenceException(CoreServiceException):
+    """Raised when a circular reference is detected in hierarchical data"""
+
+    pass
+
+
+class CannotDeleteException(CoreServiceException):
+    """Raised when an entity cannot be deleted due to dependencies"""
 
     pass

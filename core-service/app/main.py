@@ -17,7 +17,11 @@ from app.config import settings
 from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
+    CannotDeleteException,
+    CircularReferenceException,
     DuplicateItemCodeException,
+    DuplicateItemGroupCodeException,
+    DuplicateWarehouseCodeException,
     ItemGroupNotFoundException,
     ItemNotFoundException,
     ValidationError,
@@ -208,6 +212,64 @@ async def duplicate_item_code_exception_handler(
         status_code=status.HTTP_409_CONFLICT,
         content={
             "error": "DUPLICATE_ITEM_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateItemGroupCodeException)
+async def duplicate_item_group_code_exception_handler(
+    request: Request, exc: DuplicateItemGroupCodeException
+):
+    """Handle duplicate item group code errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_ITEM_GROUP_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateWarehouseCodeException)
+async def duplicate_warehouse_code_exception_handler(
+    request: Request, exc: DuplicateWarehouseCodeException
+):
+    """Handle duplicate warehouse code errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_WAREHOUSE_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(CircularReferenceException)
+async def circular_reference_exception_handler(
+    request: Request, exc: CircularReferenceException
+):
+    """Handle circular reference errors"""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error": "CIRCULAR_REFERENCE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(CannotDeleteException)
+async def cannot_delete_exception_handler(request: Request, exc: CannotDeleteException):
+    """Handle cannot delete errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "CANNOT_DELETE",
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
