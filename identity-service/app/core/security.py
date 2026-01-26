@@ -4,40 +4,37 @@ import hashlib
 import re
 from datetime import UTC, datetime, timedelta
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
+# Remove passlib import
 from app.config import settings
-
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
     """
-    Hash a password using bcrypt.
-
-    Args:
-        password: Plain text password
-
-    Returns:
-        Hashed password string
+    Hash a password using native bcrypt.
     """
-    return pwd_context.hash(password)
+    # Convert password to bytes
+    pwd_bytes = password.encode("utf-8")
+    # Generate salt and hash
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(pwd_bytes, salt)
+    # Return as string for database storage
+    return hashed_password.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify a password against its hash.
-
-    Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password to compare against
-
-    Returns:
-        True if password matches, False otherwise
+    Verify a password against its hash using native bcrypt.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # Convert both to bytes for comparison
+        password_byte_enc = plain_password.encode("utf-8")
+        hashed_byte_enc = hashed_password.encode("utf-8")
+        return bcrypt.checkpw(password_byte_enc, hashed_byte_enc)
+    except Exception:
+        return False
 
 
 def validate_password(password: str) -> tuple[bool, str]:

@@ -23,7 +23,6 @@ from app.schemas.role import (
     RolePermissionCreate,
     RolePermissionDetailResponse,
     RolePermissionResponse,
-    RolePermissionUpdate,
     RoleResponse,
     RoleUpdate,
     RoleUsersListResponse,

@@ -1,7 +1,6 @@
 """Permission related Pydantic schemas"""
 
 from datetime import datetime
-from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,13 +11,13 @@ class PermissionBase(BaseModel):
 
     code: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
     resource: str = Field(..., min_length=1, max_length=50)
     action: str = Field(..., min_length=1, max_length=50)
-    module: Optional[str] = Field(None, max_length=50)
-    category: Optional[str] = Field(None, max_length=50)
+    module: str | None = Field(None, max_length=50)
+    category: str | None = Field(None, max_length=50)
     is_active: bool = Field(True)
-    extra_data: Optional[dict] = Field(default_factory=dict)
+    extra_data: dict | None = Field(default_factory=dict)
 
 
 class PermissionCreate(PermissionBase):
@@ -30,10 +29,10 @@ class PermissionCreate(PermissionBase):
 class PermissionUpdate(BaseModel):
     """Schema for updating a permission"""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
-    is_active: Optional[bool] = None
-    extra_data: Optional[dict] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    is_active: bool | None = None
+    extra_data: dict | None = None
 
 
 class PermissionResponse(PermissionBase):

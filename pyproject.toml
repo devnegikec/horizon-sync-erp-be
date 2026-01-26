@@ -1,0 +1,122 @@
+# ===========================================
+# Horizon Sync Backend - Python Project Configuration
+# ===========================================
+
+[project]
+name = "horizon-sync-be"
+version = "1.0.0"
+description = "Horizon Sync ERP Backend - Microservices"
+requires-python = ">=3.11"
+
+# ===========================================
+# Ruff Configuration (Linting & Formatting)
+# ===========================================
+[tool.ruff]
+# Target Python version
+target-version = "py311"
+
+# Include service directories
+include = ["identity-service/**/*.py", "core-service/**/*.py"]
+
+# Enable linting and formatting
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+
+ignore = [
+    "E501", # line too long (handled by formatter)
+    "B008", # do not perform function calls in argument defaults (FastAPI Depends)
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Exclude directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "**/alembic/**",
+]
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings
+quote-style = "double"
+
+# Like Black, indent with spaces
+indent-style = "space"
+
+# Respect magic trailing commas
+skip-magic-trailing-comma = false
+
+# Auto-detect line ending
+line-ending = "auto"
+
+# ===========================================
+# Pytest Configuration
+# ===========================================
+[tool.pytest.ini_options]
+testpaths = [
+    "identity-service/tests",
+    "core-service/tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "-v",
+    "--tb=short",
+]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# ===========================================
+# Coverage Configuration
+# ===========================================
+[tool.coverage.run]
+source = [
+    "identity-service/app",
+    "core-service/app",
+]
+omit = [
+    "**/tests/*",
+    "**/alembic/*",
+    "**/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

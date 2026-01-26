@@ -1,7 +1,6 @@
 """Role related Pydantic schemas"""
 
 from datetime import datetime
-from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,12 +13,12 @@ class RoleBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     code: str = Field(..., min_length=1, max_length=50)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
     is_system: bool = Field(False)
     is_default: bool = Field(False)
     hierarchy_level: int = Field(0, ge=0)
     is_active: bool = Field(True)
-    extra_data: Optional[dict] = Field(default_factory=dict)
+    extra_data: dict | None = Field(default_factory=dict)
 
 
 class RoleCreate(RoleBase):
@@ -31,11 +30,11 @@ class RoleCreate(RoleBase):
 class RoleUpdate(BaseModel):
     """Schema for updating a role"""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
-    hierarchy_level: Optional[int] = Field(None, ge=0)
-    is_active: Optional[bool] = None
-    extra_data: Optional[dict] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    hierarchy_level: int | None = Field(None, ge=0)
+    is_active: bool | None = None
+    extra_data: dict | None = None
 
 
 class RoleResponse(RoleBase):
@@ -45,7 +44,7 @@ class RoleResponse(RoleBase):
     organization_id: UUID
     created_at: datetime
     updated_at: datetime
-    permissions: Optional[list[PermissionResponse]] = Field(default_factory=list)
+    permissions: list[PermissionResponse] | None = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,20 +63,20 @@ class RolePermissionBase(BaseModel):
 
     role_id: UUID
     permission_id: UUID
-    conditions: Optional[dict] = Field(default_factory=dict)
+    conditions: dict | None = Field(default_factory=dict)
 
 
 class RolePermissionCreate(BaseModel):
     """Schema for creating role-permission mapping"""
 
     permission_id: UUID
-    conditions: Optional[dict] = Field(default_factory=dict)
+    conditions: dict | None = Field(default_factory=dict)
 
 
 class RolePermissionUpdate(BaseModel):
     """Schema for updating role-permission mapping"""
 
-    conditions: Optional[dict] = None
+    conditions: dict | None = None
 
 
 class RolePermissionResponse(BaseModel):
@@ -101,7 +100,7 @@ class RolePermissionDetailResponse(BaseModel):
     name: str
     resource: str
     action: str
-    module: Optional[str] = None
+    module: str | None = None
     conditions: dict
 
 
@@ -123,7 +122,7 @@ class RoleUserResponse(BaseModel):
     is_primary: bool
     is_active: bool
     status: str
-    joined_at: Optional[datetime] = None
+    joined_at: datetime | None = None
 
 
 class RoleUsersListResponse(BaseModel):

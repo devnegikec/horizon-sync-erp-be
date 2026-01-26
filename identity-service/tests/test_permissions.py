@@ -1,7 +1,8 @@
 """Unit tests for permission endpoints and service"""
 
-import pytest
 from uuid import UUID
+
+import pytest
 
 from app.core.exceptions import (
     DuplicatePermissionException,

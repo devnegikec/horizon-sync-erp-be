@@ -1,11 +1,11 @@
 """Unit tests for role endpoints and service"""
 
-import pytest
 from uuid import UUID
+
+import pytest
 
 from app.core.exceptions import (
     DuplicateRoleException,
-    RoleHasUsersException,
     RoleNotFoundException,
     RolePermissionAlreadyAssignedException,
     SystemRoleModificationException,
@@ -170,8 +170,8 @@ class TestRoleService:
 
     def test_cannot_update_system_role(self, db_session, test_organization):
         """Test that system roles cannot be updated"""
-        from app.services.role_service import RoleService
         from app.models.role import Role
+        from app.services.role_service import RoleService
 
         service = RoleService(db_session)
 
@@ -218,8 +218,8 @@ class TestRoleService:
 
     def test_cannot_delete_system_role(self, db_session, test_organization):
         """Test that system roles cannot be deleted"""
-        from app.services.role_service import RoleService
         from app.models.role import Role
+        from app.services.role_service import RoleService
 
         service = RoleService(db_session)
 
@@ -243,8 +243,8 @@ class TestRoleService:
 
     def test_assign_permission_to_role(self, db_session, test_organization):
         """Test assigning permission to role"""
+        from app.models.role import Permission, Role
         from app.services.role_service import RoleService
-        from app.models.role import Role, Permission
 
         service = RoleService(db_session)
 
@@ -289,8 +289,8 @@ class TestRoleService:
 
     def test_cannot_assign_duplicate_permission(self, db_session, test_organization):
         """Test that duplicate permission assignment fails"""
+        from app.models.role import Permission, Role
         from app.services.role_service import RoleService
-        from app.models.role import Role, Permission
 
         service = RoleService(db_session)
 
@@ -330,8 +330,8 @@ class TestRoleService:
 
     def test_remove_permission_from_role(self, db_session, test_organization):
         """Test removing permission from role"""
+        from app.models.role import Permission, Role
         from app.services.role_service import RoleService
-        from app.models.role import Role, Permission
 
         service = RoleService(db_session)
 
@@ -373,8 +373,8 @@ class TestRoleService:
 
     def test_bulk_assign_permissions(self, db_session, test_organization):
         """Test bulk assigning permissions to role"""
+        from app.models.role import Permission, Role
         from app.services.role_service import RoleService
-        from app.models.role import Role, Permission
 
         service = RoleService(db_session)
 
@@ -455,9 +455,10 @@ class TestRoleEndpoints:
 
     def test_get_role_endpoint(self, client, db_session):
         """Test GET /roles/{id} endpoint"""
-        from app.services.role_service import RoleService
-        from app.models.organization import Organization
         from uuid import UUID
+
+        from app.models.organization import Organization
+        from app.services.role_service import RoleService
 
         org = Organization(
             id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -489,9 +490,10 @@ class TestRoleEndpoints:
 
     def test_update_role_endpoint(self, client, db_session):
         """Test PUT /roles/{id} endpoint"""
-        from app.services.role_service import RoleService
-        from app.models.organization import Organization
         from uuid import UUID
+
+        from app.models.organization import Organization
+        from app.services.role_service import RoleService
 
         org = Organization(
             id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -531,9 +533,10 @@ class TestRoleEndpoints:
 
     def test_delete_role_endpoint(self, client, db_session):
         """Test DELETE /roles/{id} endpoint"""
-        from app.services.role_service import RoleService
-        from app.models.organization import Organization
         from uuid import UUID
+
+        from app.models.organization import Organization
+        from app.services.role_service import RoleService
 
         org = Organization(
             id=UUID("11111111-1111-1111-1111-111111111111"),

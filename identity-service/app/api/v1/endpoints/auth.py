@@ -14,7 +14,9 @@ from app.core.exceptions import (
     UserNotFoundException,
 )
 from app.database import get_db
-from app.dependencies import get_client_ip
+from app.dependencies import get_client_ip, get_current_user
+from app.models.role import UserOrganizationRole
+from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -288,3 +290,49 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
         ) from e
+
+
+@router.get(
+    "/me",
+    response_model=dict,
+    summary="Get current user info",
+    description="Get current authenticated user information including organization_id",
+)
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get current authenticated user information.
+
+    Returns user details including organization_id from their primary organization role.
+
+    **Returns:**
+    - User information
+    - organization_id: Primary organization UUID
+    """
+    # Get user's primary organization, or fallback to any active organization
+    user_org_role = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == current_user.id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .order_by(UserOrganizationRole.is_primary.desc())  # Primary first
+        .first()
+    )
+
+    organization_id = None
+    if user_org_role:
+        organization_id = str(user_org_role.organization_id)
+
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name,
+        "display_name": current_user.display_name,
+        "user_type": current_user.user_type.value if current_user.user_type else None,
+        "status": current_user.status.value if current_user.status else None,
+        "organization_id": organization_id,
+    }

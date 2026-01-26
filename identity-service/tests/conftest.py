@@ -1,19 +1,20 @@
 """Pytest configuration and fixtures"""
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-from uuid import UUID
-from datetime import datetime, timedelta
+import os
 
-from app.database import Base, get_db
-from app.main import app
-from app.dependencies import get_current_active_user
-from app.models.user import User
-from app.models.base import UserType, UserStatus
-from app.core.security import create_token
+# Set required environment variables BEFORE importing app modules
+# This is needed when running tests locally (outside Docker)
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only-min-32-chars")
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -101,4 +102,3 @@ def test_user_data():
         "first_name": "Test",
         "last_name": "User",
     }
-
