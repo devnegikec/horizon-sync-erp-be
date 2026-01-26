@@ -11,7 +11,6 @@ from app.core.security import decode_token
 from app.database import get_db
 from app.models.base import UserStatus, UserType
 from app.models.role import Permission, RolePermission, UserOrganizationRole
-from app.models.user import User
 from app.repositories.user_repository import UserRepository
 
 
@@ -36,8 +35,13 @@ def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
     permission_codes = (
         db.query(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id)
-        .filter(UserOrganizationRole.user_id == user_id, UserOrganizationRole.is_active == True)
+        .join(
+            UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id
+        )
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.is_active == True,
+        )
         .all()
     )
     return [code for (code,) in permission_codes]
