@@ -1,0 +1,482 @@
+Table activity_logs {
+  organization_id uuid
+  user_id uuid
+  activity_type public.activitytype
+  entity_type character
+  entity_id uuid
+  entity_name character
+  related_entity_type character
+  related_entity_id uuid
+  team_id uuid
+  title character
+  description text
+  extra_data jsonb
+  is_public character
+  visible_to_teams jsonb
+  created_at timestamp
+  id uuid
+}
+
+Table audit_logs {
+  organization_id uuid
+  user_id uuid
+  user_email character
+  action public.auditaction
+  resource_type character
+  resource_id uuid
+  resource_name character
+  old_values jsonb
+  new_values jsonb
+  changed_fields jsonb
+  ip_address character
+  user_agent text
+  request_id character
+  extra_data jsonb
+  description text
+  created_at timestamp
+  id uuid
+}
+
+
+Table customers {
+  organization_id uuid
+  customer_name character
+  customer_code character
+  email character
+  phone character
+  address text
+  tax_number character
+  status character
+  created_by uuid
+  updated_by uuid
+  deleted_at timestamp
+  tags jsonb
+  custom_fields jsonb
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table email_verifications {
+  user_id uuid
+  email character
+  token_hash character
+  expires_at timestamp
+  verified_at timestamp
+  created_at timestamp
+  id uuid
+}
+
+Table invitations {
+  organization_id uuid
+  email character
+  first_name character
+  last_name character
+  role_id uuid
+  team_ids jsonb
+  invited_by_id uuid
+  token_hash character
+  status character
+  expires_at timestamp
+  accepted_at timestamp
+  accepted_user_id uuid
+  created_at timestamp
+  message text
+  extra_data jsonb
+  id uuid
+}
+
+Table invoices {
+  organization_id uuid
+  invoice_no character
+  invoice_date timestamp
+  due_date timestamp
+  invoice_type character
+  status character
+  customer_id uuid
+  supplier_id uuid
+  total_amount numeric(15,2)
+  tax_amount numeric(15,2)
+  discount_amount numeric(15,2)
+  total_paid numeric(15,2)
+  balance_due numeric(15,2)
+  currency character
+  notes text
+  created_by uuid
+  updated_by uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Table organization_settings {
+  organization_id uuid
+  timezone character
+  date_format character
+  time_format character
+  currency character
+  language character
+  features jsonb
+  notifications jsonb
+  security jsonb
+  integrations jsonb
+  custom_fields jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table organizations {
+  name character
+  slug character
+  display_name character
+  description text
+  email character
+  phone character
+  website character
+  address_line1 character
+  address_line2 character
+  city character
+  state character
+  postal_code character
+  country character
+  organization_type public.organizationtype
+  industry character
+  tax_id character
+  logo_url character
+  primary_color character
+  domain character
+  sso_enabled boolean
+  sso_provider character
+  sso_config jsonb
+  status public.organizationstatus
+  is_active boolean
+  settings jsonb
+  extra_data jsonb
+  owner_id uuid
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table password_resets {
+  user_id uuid
+  token_hash character
+  ip_address character
+  user_agent text
+  expires_at timestamp
+  used_at timestamp
+  created_at timestamp
+  id uuid
+}
+
+Table payment_allocations {
+  organization_id uuid
+  payment_id uuid
+  invoice_id uuid
+  allocated_amount numeric(15,2)
+  id uuid
+}
+
+Table payments {
+  organization_id uuid
+  payment_no character
+  payment_date timestamp
+  payment_type character
+  status character
+  customer_id uuid
+  supplier_id uuid
+  amount numeric(15,2)
+  payment_method character
+  bank_account_id uuid
+  reference_no character
+  created_by uuid
+  updated_by uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table permissions {
+  code character
+  name character
+  description text
+  resource public.resourcetype
+  action public.actiontype
+  module character
+  category character
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table refresh_tokens {
+  user_id uuid
+  token_hash character
+  token_family character
+  device_id character
+  device_name character
+  device_type character
+  os_info character
+  browser_info character
+  ip_address character
+  user_agent text
+  expires_at timestamp
+  revoked_at timestamp
+  revoked_reason character
+  created_at timestamp
+  last_used_at timestamp
+  id uuid
+}
+
+Table role_permissions {
+  role_id uuid
+  permission_id uuid
+  conditions jsonb
+  id uuid
+}
+
+Table roles {
+  organization_id uuid
+  name character
+  code character
+  description text
+  is_system boolean
+  is_default boolean
+  hierarchy_level integer
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Table subscription_invoices {
+  subscription_id uuid
+  stripe_invoice_id character
+  invoice_number character
+  amount numeric(10,2)
+  status character
+  billing_period_start timestamp
+  billing_period_end timestamp
+  id uuid
+}
+
+Table subscription_payments {
+  invoice_id uuid
+  stripe_payment_intent_id character
+  amount numeric(10,2)
+  paid_at timestamp
+  status character
+  id uuid
+}
+
+Table subscription_plans {
+  name character
+  code character
+  description text
+  plan_type public.plantype
+  price_monthly numeric(10,2)
+  price_yearly numeric(10,2)
+  currency character
+  max_users integer
+  max_teams integer
+  max_leads integer
+  max_contacts integer
+  max_deals integer
+  max_tickets integer
+  max_products integer
+  max_storage_gb integer
+  max_api_calls_per_day integer
+  features jsonb
+  is_active boolean
+  is_public boolean
+  trial_days integer
+  sort_order integer
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table subscription_usage {
+  subscription_id uuid
+  period_start timestamp
+  period_end timestamp
+  users_count integer
+  teams_count integer
+  leads_created integer
+  contacts_created integer
+  deals_created integer
+  tickets_created integer
+  storage_used_mb integer
+  api_calls integer
+  is_finalized boolean
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table subscriptions {
+  organization_id uuid
+  plan_id uuid
+  status public.subscriptionstatus
+  trial_starts_at timestamp
+  trial_ends_at timestamp
+  starts_at timestamp
+  ends_at timestamp
+  cancelled_at timestamp
+  billing_cycle public.billingcycle
+  next_billing_date timestamp
+  stripe_subscription_id character
+  stripe_customer_id character
+  current_users integer
+  current_teams integer
+  current_storage_mb integer
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table team_members {
+  team_id uuid
+  user_id uuid
+  role public.teamrole
+  is_active boolean
+  joined_at timestamp
+  left_at timestamp
+  added_by_id uuid
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table teams {
+  organization_id uuid
+  name character
+  code character
+  description text
+  team_type public.teamtype
+  parent_id uuid
+  lead_user_id uuid
+  is_active boolean
+  settings jsonb
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table user_organization_roles {
+  user_id uuid
+  organization_id uuid
+  role_id uuid
+  is_primary boolean
+  is_active boolean
+  status character
+  invited_by_id uuid
+  invited_at timestamp
+  joined_at timestamp
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table user_teams {
+  user_id uuid
+  team_id uuid
+  team_role character
+  is_active boolean
+  joined_at timestamp
+  left_at timestamp
+  added_by_id uuid
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table users {
+  email character
+  password_hash character
+  first_name character
+  last_name character
+  display_name character
+  phone character
+  avatar_url character
+  user_type public.usertype
+  status public.userstatus
+  is_active boolean
+  email_verified boolean
+  email_verified_at timestamp
+  mfa_enabled boolean
+  mfa_secret character
+  mfa_backup_codes jsonb
+  last_login_at timestamp
+  last_login_ip character
+  failed_login_attempts integer
+  locked_until timestamp
+  preferences jsonb
+  timezone character
+  language character
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+
+
+Ref: activity_logs.organization_id > organizations.id
+Ref: activity_logs.user_id > users.id
+Ref: audit_logs.organization_id > organizations.id
+Ref: audit_logs.user_id > users.id
+Ref: customers.organization_id > organizations.id
+Ref: email_verifications.user_id > users.id
+Ref: invitations.invited_by_id > users.id
+Ref: invitations.organization_id > organizations.id
+Ref: invitations.role_id > roles.id
+Ref: invoices.customer_id > customers.id
+Ref: invoices.organization_id > organizations.id
+Ref: organization_settings.organization_id > organizations.id
+Ref: password_resets.user_id > users.id
+Ref: payment_allocations.invoice_id > invoices.id
+Ref: payment_allocations.organization_id > organizations.id
+Ref: payment_allocations.payment_id > payments.id
+Ref: payments.customer_id > customers.id
+Ref: payments.organization_id > organizations.id
+Ref: refresh_tokens.user_id > users.id
+Ref: role_permissions.permission_id > permissions.id
+Ref: role_permissions.role_id > roles.id
+Ref: roles.organization_id > organizations.id
+Ref: subscription_invoices.subscription_id > subscriptions.id
+Ref: subscription_payments.invoice_id > subscription_invoices.id
+Ref: subscription_usage.subscription_id > subscriptions.id
+Ref: subscriptions.organization_id > organizations.id
+Ref: subscriptions.plan_id > subscription_plans.id
+Ref: team_members.team_id > teams.id
+Ref: team_members.user_id > users.id
+Ref: teams.organization_id > organizations.id
+Ref: teams.parent_id > teams.id
+Ref: user_organization_roles.organization_id > organizations.id
+Ref: user_organization_roles.role_id > roles.id
+Ref: user_organization_roles.user_id > users.id
+Ref: user_teams.team_id > teams.id
+Ref: user_teams.user_id > users.id
+
+
+Ref: "users"."email" < "users"."mfa_backup_codes"
+
+Ref: "organizations"."name" < "organizations"."email"

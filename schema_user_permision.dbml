@@ -1,0 +1,136 @@
+
+Table organizations {
+  name character
+  slug character
+  display_name character
+  description text
+  email character
+  phone character
+  website character
+  address_line1 character
+  address_line2 character
+  city character
+  state character
+  postal_code character
+  country character
+  organization_type public.organizationtype
+  industry character
+  tax_id character
+  logo_url character
+  primary_color character
+  domain character
+  sso_enabled boolean
+  sso_provider character
+  sso_config jsonb
+  status public.organizationstatus
+  is_active boolean
+  settings jsonb
+  extra_data jsonb
+  owner_id uuid
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+
+Table permissions {
+  code character
+  name character
+  description text
+  resource public.resourcetype
+  action public.actiontype
+  module character
+  category character
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Table role_permissions {
+  role_id uuid
+  permission_id uuid
+  conditions jsonb
+  id uuid
+}
+
+Table roles {
+  organization_id uuid
+  name character
+  code character
+  description text
+  is_system boolean
+  is_default boolean
+  hierarchy_level integer
+  is_active boolean
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table user_organization_roles {
+  user_id uuid
+  organization_id uuid
+  role_id uuid
+  is_primary boolean
+  is_active boolean
+  status character
+  invited_by_id uuid
+  invited_at timestamp
+  joined_at timestamp
+  extra_data jsonb
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Table users {
+  email character
+  password_hash character
+  first_name character
+  last_name character
+  display_name character
+  phone character
+  avatar_url character
+  user_type public.usertype
+  status public.userstatus
+  is_active boolean
+  email_verified boolean
+  email_verified_at timestamp
+  mfa_enabled boolean
+  mfa_secret character
+  mfa_backup_codes jsonb
+  last_login_at timestamp
+  last_login_ip character
+  failed_login_attempts integer
+  locked_until timestamp
+  preferences jsonb
+  timezone character
+  language character
+  extra_data jsonb
+  deleted_at timestamp
+  id uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Ref: role_permissions.permission_id > permissions.id
+Ref: role_permissions.role_id > roles.id
+Ref: roles.organization_id > organizations.id
+Ref: user_organization_roles.organization_id > organizations.id
+Ref: user_organization_roles.role_id > roles.id
+Ref: user_organization_roles.user_id > users.id
+
+
+Ref: "users"."email" < "users"."mfa_backup_codes"
+
+Ref: "organizations"."name" < "organizations"."email"
+
+Ref: "organizations"."name" < "organizations"."slug"

@@ -18,6 +18,13 @@ from app.repositories.role_repository import RoleRepository
 logger = logging.getLogger(__name__)
 
 
+def _convert_enum_to_string(value) -> str:
+    """Convert enum value to string if needed."""
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
 class RoleService:
     """Service for role operations"""
 
@@ -517,8 +524,8 @@ class RoleService:
                     "code": rp.permission.code,
                     "name": rp.permission.name,
                     "description": rp.permission.description,
-                    "resource": rp.permission.resource,
-                    "action": rp.permission.action,
+                    "resource": _convert_enum_to_string(rp.permission.resource),
+                    "action": _convert_enum_to_string(rp.permission.action),
                     "module": rp.permission.module,
                     "category": rp.permission.category,
                     "is_active": rp.permission.is_active,
@@ -539,8 +546,8 @@ class RoleService:
             "permission_id": role_permission.permission_id,
             "code": role_permission.permission.code,
             "name": role_permission.permission.name,
-            "resource": role_permission.permission.resource,
-            "action": role_permission.permission.action,
+            "resource": _convert_enum_to_string(role_permission.permission.resource),
+            "action": _convert_enum_to_string(role_permission.permission.action),
             "module": role_permission.permission.module,
             "conditions": role_permission.conditions,
         }
