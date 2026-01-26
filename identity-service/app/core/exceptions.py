@@ -113,3 +113,33 @@ class ValidationException(Exception):
     """Raised when validation fails"""
 
     pass
+
+
+class InvitationNotFoundException(Exception):
+    """Raised when an invitation is not found"""
+
+    pass
+
+
+class InvitationExpiredException(Exception):
+    """Raised when an invitation has expired"""
+
+    pass
+
+
+class InvitationAlreadyAcceptedException(Exception):
+    """Raised when an invitation has already been accepted"""
+
+    pass
+
+
+class PermissionDeniedException(Exception):
+    """Raised when user doesn't have required permission"""
+
+    pass
+
+
+class UserAlreadyExistsException(Exception):
+    """Raised when user already exists in organization"""
+
+    pass

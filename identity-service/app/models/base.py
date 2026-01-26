@@ -42,11 +42,26 @@ class OrganizationStatus(str, enum.Enum):
 class ResourceType(str, enum.Enum):
     """Resource type enumeration"""
 
+    # Identity resources
     USER = "user"
     ORGANIZATION = "organization"
     TEAM = "team"
     ROLE = "role"
     PERMISSION = "permission"
+    INVITATION = "invitation"
+
+    # Inventory resources
+    ITEM = "item"
+    ITEM_GROUP = "item_group"
+    WAREHOUSE = "warehouse"
+    STOCK_ENTRY = "stock_entry"
+    BATCH = "batch"
+    SERIAL = "serial"
+
+    # General
+    REPORT = "report"
+    SETTING = "setting"
+    ALL = "all"
 
 
 class ActionType(str, enum.Enum):
@@ -58,3 +73,4 @@ class ActionType(str, enum.Enum):
     DELETE = "delete"
     MANAGE = "manage"
     EXECUTE = "execute"
+    INVITE = "invite"

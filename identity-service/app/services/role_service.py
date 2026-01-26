@@ -18,6 +18,13 @@ from app.repositories.role_repository import RoleRepository
 logger = logging.getLogger(__name__)
 
 
+def _convert_enum_to_string(value) -> str:
+    """Convert enum value to string if needed."""
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
 class RoleService:
     """Service for role operations"""
 
@@ -161,7 +168,9 @@ class RoleService:
 
         if role.is_system:
             logger.warning(f"Cannot modify system role: {role_id}")
-            raise SystemRoleModificationException(f"Cannot modify system role '{role.name}'")
+            raise SystemRoleModificationException(
+                f"Cannot modify system role '{role.name}'"
+            )
 
         filtered_data = {k: v for k, v in update_data.items() if v is not None}
 
@@ -192,12 +201,16 @@ class RoleService:
 
         if role.is_system:
             logger.warning(f"Cannot delete system role: {role_id}")
-            raise SystemRoleModificationException(f"Cannot delete system role '{role.name}'")
+            raise SystemRoleModificationException(
+                f"Cannot delete system role '{role.name}'"
+            )
 
         user_count = self.role_repo.count_role_users(role_id)
 
         if user_count > 0:
-            logger.warning(f"Cannot delete role {role_id} - has {user_count} active users")
+            logger.warning(
+                f"Cannot delete role {role_id} - has {user_count} active users"
+            )
             raise RoleHasUsersException(
                 f"Cannot delete role with active user assignments ({user_count} users)"
             )
@@ -361,9 +374,7 @@ class RoleService:
         role_permission = self.role_repo.get_role_permission(role_id, permission_id)
 
         if not role_permission:
-            logger.warning(
-                f"Role-permission not found: {role_id} -> {permission_id}"
-            )
+            logger.warning(f"Role-permission not found: {role_id} -> {permission_id}")
             raise RolePermissionNotFoundException(
                 "Permission not assigned to this role"
             )
@@ -392,7 +403,9 @@ class RoleService:
             RoleNotFoundException: If role not found
             SystemRoleModificationException: If role is system role
         """
-        logger.info(f"Bulk assigning {len(permission_ids)} permissions to role {role_id}")
+        logger.info(
+            f"Bulk assigning {len(permission_ids)} permissions to role {role_id}"
+        )
 
         role = self.role_repo.get_role_by_id(role_id)
 
@@ -473,17 +486,19 @@ class RoleService:
         data = []
 
         for assignment, user in user_assignments:
-            data.append({
-                "id": assignment.id,
-                "user_id": user.id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "is_primary": assignment.is_primary,
-                "is_active": assignment.is_active,
-                "status": assignment.status,
-                "joined_at": assignment.joined_at,
-            })
+            data.append(
+                {
+                    "id": assignment.id,
+                    "user_id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "is_primary": assignment.is_primary,
+                    "is_active": assignment.is_active,
+                    "status": assignment.status,
+                    "joined_at": assignment.joined_at,
+                }
+            )
 
         return {
             "data": data,
@@ -517,8 +532,8 @@ class RoleService:
                     "code": rp.permission.code,
                     "name": rp.permission.name,
                     "description": rp.permission.description,
-                    "resource": rp.permission.resource,
-                    "action": rp.permission.action,
+                    "resource": _convert_enum_to_string(rp.permission.resource),
+                    "action": _convert_enum_to_string(rp.permission.action),
                     "module": rp.permission.module,
                     "category": rp.permission.category,
                     "is_active": rp.permission.is_active,
@@ -539,8 +554,8 @@ class RoleService:
             "permission_id": role_permission.permission_id,
             "code": role_permission.permission.code,
             "name": role_permission.permission.name,
-            "resource": role_permission.permission.resource,
-            "action": role_permission.permission.action,
+            "resource": _convert_enum_to_string(role_permission.permission.resource),
+            "action": _convert_enum_to_string(role_permission.permission.action),
             "module": role_permission.permission.module,
             "conditions": role_permission.conditions,
         }

@@ -2,6 +2,11 @@
 -- Horizon Sync Backend - Database Initialization
 -- Creates separate databases for each service
 -- ===========================================
+-- This script runs as the postgres superuser during container initialization
+-- It runs against the default database specified by POSTGRES_DB (usually 'postgres')
+
+-- Ensure we're connected to the default database
+\c postgres;
 
 -- Enable UUID extension for the default database
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -19,13 +24,15 @@ CREATE DATABASE core_db;
 -- ===========================================
 -- Grant privileges to horizon_user
 -- ===========================================
+-- Note: horizon_user is created by POSTGRES_USER env var
 GRANT ALL PRIVILEGES ON DATABASE identity_db TO horizon_user;
 GRANT ALL PRIVILEGES ON DATABASE core_db TO horizon_user;
 
 -- ===========================================
 -- Initialize Identity Database
 -- ===========================================
-\connect identity_db;
+-- Connect to identity_db (must be explicit)
+\c identity_db;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -77,7 +84,17 @@ CREATE TYPE resourcetype AS ENUM (
     'organization',
     'team',
     'role',
-    'permission'
+    'permission',
+    'invitation',
+    'item',
+    'item_group',
+    'warehouse',
+    'stock_entry',
+    'batch',
+    'serial',
+    'report',
+    'setting',
+    'all'
 );
 
 CREATE TYPE actiontype AS ENUM (
@@ -86,13 +103,15 @@ CREATE TYPE actiontype AS ENUM (
     'update',
     'delete',
     'manage',
-    'execute'
+    'execute',
+    'invite'
 );
 
 -- ===========================================
 -- Initialize Core Database
 -- ===========================================
-\connect core_db;
+-- Connect to core_db (must be explicit)
+\c core_db;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

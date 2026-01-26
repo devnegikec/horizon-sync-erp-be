@@ -10,9 +10,37 @@ from app.core.exceptions import (
     PermissionNotFoundException,
     RolePermissionAlreadyAssignedException,
 )
+from app.models.base import ActionType, ResourceType
 from app.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_enum_to_string(value) -> str:
+    """Convert enum value to string if needed."""
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _convert_string_to_resource_type(value: str) -> ResourceType:
+    """Convert string to ResourceType enum."""
+    if isinstance(value, ResourceType):
+        return value
+    try:
+        return ResourceType(value.lower())
+    except ValueError:
+        raise ValueError(f"Invalid resource type: {value}")
+
+
+def _convert_string_to_action_type(value: str) -> ActionType:
+    """Convert string to ActionType enum."""
+    if isinstance(value, ActionType):
+        return value
+    try:
+        return ActionType(value.lower())
+    except ValueError:
+        raise ValueError(f"Invalid action type: {value}")
 
 
 class PermissionService:
@@ -42,9 +70,21 @@ class PermissionService:
         )
 
         if existing:
-            logger.warning(f"Permission code already exists: {permission_data.get('code')}")
+            logger.warning(
+                f"Permission code already exists: {permission_data.get('code')}"
+            )
             raise DuplicatePermissionException(
                 f"Permission code '{permission_data.get('code')}' already exists"
+            )
+
+        # Convert string values to enum types
+        if "resource" in permission_data:
+            permission_data["resource"] = _convert_string_to_resource_type(
+                permission_data["resource"]
+            )
+        if "action" in permission_data:
+            permission_data["action"] = _convert_string_to_action_type(
+                permission_data["action"]
             )
 
         permission = self.permission_repo.create_permission(permission_data)
@@ -55,8 +95,8 @@ class PermissionService:
             "code": permission.code,
             "name": permission.name,
             "description": permission.description,
-            "resource": permission.resource,
-            "action": permission.action,
+            "resource": _convert_enum_to_string(permission.resource),
+            "action": _convert_enum_to_string(permission.action),
             "module": permission.module,
             "category": permission.category,
             "is_active": permission.is_active,
@@ -84,15 +124,17 @@ class PermissionService:
 
         if not permission:
             logger.warning(f"Permission not found: {permission_id}")
-            raise PermissionNotFoundException(f"Permission with ID {permission_id} not found")
+            raise PermissionNotFoundException(
+                f"Permission with ID {permission_id} not found"
+            )
 
         return {
             "id": permission.id,
             "code": permission.code,
             "name": permission.name,
             "description": permission.description,
-            "resource": permission.resource,
-            "action": permission.action,
+            "resource": _convert_enum_to_string(permission.resource),
+            "action": _convert_enum_to_string(permission.action),
             "module": permission.module,
             "category": permission.category,
             "is_active": permission.is_active,
@@ -148,8 +190,8 @@ class PermissionService:
                     "code": p.code,
                     "name": p.name,
                     "description": p.description,
-                    "resource": p.resource,
-                    "action": p.action,
+                    "resource": _convert_enum_to_string(p.resource),
+                    "action": _convert_enum_to_string(p.action),
                     "module": p.module,
                     "category": p.category,
                     "is_active": p.is_active,
@@ -184,10 +226,22 @@ class PermissionService:
 
         if not permission:
             logger.warning(f"Permission not found for update: {permission_id}")
-            raise PermissionNotFoundException(f"Permission with ID {permission_id} not found")
+            raise PermissionNotFoundException(
+                f"Permission with ID {permission_id} not found"
+            )
 
         # Remove None values from update_data
         filtered_data = {k: v for k, v in update_data.items() if v is not None}
+
+        # Convert string values to enum types if present
+        if "resource" in filtered_data:
+            filtered_data["resource"] = _convert_string_to_resource_type(
+                filtered_data["resource"]
+            )
+        if "action" in filtered_data:
+            filtered_data["action"] = _convert_string_to_action_type(
+                filtered_data["action"]
+            )
 
         permission = self.permission_repo.update_permission(permission, filtered_data)
         logger.info(f"Permission updated: {permission.id}")
@@ -197,8 +251,8 @@ class PermissionService:
             "code": permission.code,
             "name": permission.name,
             "description": permission.description,
-            "resource": permission.resource,
-            "action": permission.action,
+            "resource": _convert_enum_to_string(permission.resource),
+            "action": _convert_enum_to_string(permission.action),
             "module": permission.module,
             "category": permission.category,
             "is_active": permission.is_active,
@@ -223,7 +277,9 @@ class PermissionService:
 
         if not permission:
             logger.warning(f"Permission not found for deletion: {permission_id}")
-            raise PermissionNotFoundException(f"Permission with ID {permission_id} not found")
+            raise PermissionNotFoundException(
+                f"Permission with ID {permission_id} not found"
+            )
 
         if self.permission_repo.check_permission_used_in_roles(permission_id):
             logger.warning(f"Cannot delete permission {permission_id} - used in roles")

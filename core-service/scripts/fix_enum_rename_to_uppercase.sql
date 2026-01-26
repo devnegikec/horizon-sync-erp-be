@@ -7,8 +7,7 @@
 --
 -- Usage:
 --   docker compose exec postgres psql -U horizon_user -d core_db -f /app/scripts/fix_enum_rename_to_uppercase.sql
-
-\c core_db;
+-- Note: Database is specified in the psql command, no need for \c
 
 -- ===========================================
 -- Fix itemtype: stock -> STOCK, etc.
