@@ -4,11 +4,12 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import StockEntryStatus
+from app.models.types import JSONB
 
 
 class StockReconciliation(Base):

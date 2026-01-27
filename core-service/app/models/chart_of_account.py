@@ -13,11 +13,12 @@ from sqlalchemy import (
     Numeric,
     String,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import AccountType
+from app.models.types import JSONB
 
 
 class ChartOfAccount(Base):

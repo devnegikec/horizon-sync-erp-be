@@ -24,9 +24,10 @@ class TestCreateItem:
         """Test creating an item without required fields fails"""
         response = client.post("/api/v1/items", json={})
 
-        assert response.status_code == 400
+        assert response.status_code == 400  # Validation error
         data = response.json()
         assert data["error"] == "VALIDATION_ERROR"
+        assert "details" in data  # FastAPI returns validation errors in 'details'
 
     def test_create_item_duplicate_code(self, client, test_item_data):
         """Test creating an item with duplicate code fails"""
