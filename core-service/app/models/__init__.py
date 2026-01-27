@@ -24,8 +24,11 @@ from app.models.base import (
     ValuationMethod,
     WarehouseType,
 )
+from app.models.chart_of_account import ChartOfAccount
+from app.models.customer import Customer
 from app.models.item import Item
 from app.models.item_group import ItemGroup
+from app.models.supplier import Supplier
 from app.models.warehouse import Warehouse
 
 __all__ = [
@@ -59,4 +62,7 @@ __all__ = [
     "Item",
     "ItemGroup",
     "Warehouse",
+    "Customer",
+    "Supplier",
+    "ChartOfAccount",
 ]

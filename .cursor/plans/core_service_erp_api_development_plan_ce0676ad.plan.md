@@ -15,7 +15,13 @@ This plan outlines the complete development strategy for the core-service ERP sy
 
 - ✅ **Identity Service**: Complete (users, organizations, roles, permissions)
 - ✅ **Items API**: Complete (CRUD operations for items)
-- ⏳ **Remaining APIs**: To be built following this plan
+- ✅ **Phase 1 - Master Data APIs**: Complete
+- ✅ Warehouses API (tested)
+- ✅ Item Groups API (tested)
+- ✅ Customers API
+- ✅ Suppliers API
+- ✅ Chart of Accounts API
+- ⏳ **Phase 2+**: To be built following this plan
 
 ## API Development Order
 
