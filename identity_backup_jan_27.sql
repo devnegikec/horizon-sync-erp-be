@@ -26,7 +26,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner:
 --
 
 COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
@@ -1026,4 +1026,3 @@ ALTER TABLE ONLY public.user_organization_roles
 --
 
 \unrestrict I5Fgcz4iU3PkGSxIRajoUuEFJIGV52riB4uNZuzYua23yStqUaJB6JG3rh78NUv
-
