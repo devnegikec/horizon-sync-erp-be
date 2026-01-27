@@ -132,6 +132,24 @@ class PutAwayRuleNotFoundException(CoreServiceException):
     pass
 
 
+class ItemPriceNotFoundException(CoreServiceException):
+    """Raised when an item price is not found"""
+
+    pass
+
+
+class ItemSupplierNotFoundException(CoreServiceException):
+    """Raised when an item supplier is not found"""
+
+    pass
+
+
+class DuplicateItemSupplierException(CoreServiceException):
+    """Raised when (item_id, supplier_id) already exists for the organization"""
+
+    pass
+
+
 # ===========================================
 # CUSTOMER/SUPPLIER EXCEPTIONS
 # ===========================================

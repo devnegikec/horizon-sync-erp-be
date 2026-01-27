@@ -29,6 +29,8 @@ from app.models.chart_of_account import ChartOfAccount
 from app.models.customer import Customer
 from app.models.item import Item
 from app.models.item_group import ItemGroup
+from app.models.item_price import ItemPrice
+from app.models.item_supplier import ItemSupplier
 from app.models.put_away_rule import PutAwayRule
 from app.models.serial_no import SerialNo, SerialNoHistory
 from app.models.stock_entry import StockEntry, StockEntryItem
@@ -69,6 +71,8 @@ __all__ = [
     # Models
     "Item",
     "ItemGroup",
+    "ItemPrice",
+    "ItemSupplier",
     "Warehouse",
     "Customer",
     "Supplier",

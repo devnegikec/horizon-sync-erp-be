@@ -27,6 +27,7 @@ from app.core.exceptions import (
     DuplicateCustomerCodeException,
     DuplicateItemCodeException,
     DuplicateItemGroupCodeException,
+    DuplicateItemSupplierException,
     DuplicateReconciliationNoException,
     DuplicateSerialNoException,
     DuplicateStockEntryNoException,
@@ -34,6 +35,8 @@ from app.core.exceptions import (
     DuplicateWarehouseCodeException,
     ItemGroupNotFoundException,
     ItemNotFoundException,
+    ItemPriceNotFoundException,
+    ItemSupplierNotFoundException,
     PutAwayRuleNotFoundException,
     SerialNoNotFoundException,
     StockEntryItemNotFoundException,
@@ -356,6 +359,28 @@ async def duplicate_account_code_exception_handler(
             "timestamp": datetime.now(UTC).isoformat(),
         },
     )
+
+
+# ----- Phase 2: Item-Related exception handlers -----
+
+
+@app.exception_handler(ItemPriceNotFoundException)
+async def item_price_not_found_handler(r: Request, exc: ItemPriceNotFoundException):
+    return _stock_404(exc, "ITEM_PRICE_NOT_FOUND")
+
+
+@app.exception_handler(ItemSupplierNotFoundException)
+async def item_supplier_not_found_handler(
+    r: Request, exc: ItemSupplierNotFoundException
+):
+    return _stock_404(exc, "ITEM_SUPPLIER_NOT_FOUND")
+
+
+@app.exception_handler(DuplicateItemSupplierException)
+async def duplicate_item_supplier_handler(
+    r: Request, exc: DuplicateItemSupplierException
+):
+    return _stock_409(exc, "DUPLICATE_ITEM_SUPPLIER")
 
 
 # ----- Phase 3: Stock Management exception handlers -----

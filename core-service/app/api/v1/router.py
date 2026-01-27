@@ -7,6 +7,8 @@ from app.api.v1.endpoints import (
     chart_of_accounts,
     customers,
     item_groups,
+    item_prices,
+    item_suppliers,
     items,
     put_away_rules,
     serial_numbers,
@@ -25,6 +27,12 @@ api_router = APIRouter()
 api_router.include_router(items.router, prefix="/items", tags=["Items"])
 api_router.include_router(
     item_groups.router, prefix="/item-groups", tags=["Item Groups"]
+)
+api_router.include_router(
+    item_prices.router, prefix="/item-prices", tags=["Item Prices"]
+)
+api_router.include_router(
+    item_suppliers.router, prefix="/item-suppliers", tags=["Item Suppliers"]
 )
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["Warehouses"])
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])

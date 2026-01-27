@@ -30,7 +30,10 @@ This plan outlines the complete development strategy for the core-service ERP sy
 - Stock Reconciliations API (header + items)
 - Stock Settings API (one per org)
 - Put Away Rules API
-- ⏳ **Phase 2, 4+**: To be built following this plan
+- ✅ **Phase 2 - Item-Related APIs**: Complete
+- Item Prices API (item_prices)
+- Item Suppliers API (item_suppliers)
+- ⏳ **Phase 4+**: To be built following this plan
 
 ## API Development Order
 

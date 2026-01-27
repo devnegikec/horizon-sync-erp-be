@@ -5,6 +5,8 @@ from app.api.v1.endpoints import (
     chart_of_accounts,
     customers,
     item_groups,
+    item_prices,
+    item_suppliers,
     items,
     put_away_rules,
     serial_numbers,
@@ -20,6 +22,8 @@ from app.api.v1.endpoints import (
 __all__ = [
     "items",
     "item_groups",
+    "item_prices",
+    "item_suppliers",
     "warehouses",
     "customers",
     "suppliers",
