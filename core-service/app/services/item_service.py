@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateItemCodeException, ItemNotFoundException
-from app.models.base import ItemStatus, ItemType
+from app.models.base import ItemStatus, ItemType, ValuationMethod
 from app.models.item import Item
 from app.repositories.item_repository import ItemRepository
 from app.schemas.item import ItemCreate, ItemUpdate
@@ -66,6 +66,13 @@ class ItemService:
                 item_dict["status"] = ItemStatus(status_str)
             except (ValueError, KeyError):
                 item_dict["status"] = ItemStatus.ACTIVE
+
+        if item_dict.get("valuation_method"):
+            try:
+                valuation_method_str = str(item_dict["valuation_method"]).lower()
+                item_dict["valuation_method"] = ValuationMethod(valuation_method_str)
+            except (ValueError, KeyError):
+                item_dict["valuation_method"] = ValuationMethod.FIFO
 
         return self.item_repo.create_item(item_dict)
 
@@ -142,6 +149,13 @@ class ItemService:
                 update_dict["status"] = ItemStatus(status_str)
             except (ValueError, KeyError):
                 del update_dict["status"]
+
+        if "valuation_method" in update_dict and update_dict["valuation_method"]:
+            try:
+                valuation_method_str = str(update_dict["valuation_method"]).lower()
+                update_dict["valuation_method"] = ValuationMethod(valuation_method_str)
+            except (ValueError, KeyError):
+                del update_dict["valuation_method"]
 
         return self.item_repo.update_item(item, update_dict)
 
