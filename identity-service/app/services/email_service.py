@@ -65,7 +65,7 @@ class EmailService:
         """
         subject = "Password Reset Request"
         # In a real app, you would use a proper URL from your frontend
-        reset_link = f"https://yourapp.com/reset-password?token={token}"
+        reset_link = f"http://localhost:4200/reset-password?token={token}"
 
         body = (
             f"Hello,\n\n"
