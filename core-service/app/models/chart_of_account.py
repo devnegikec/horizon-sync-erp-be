@@ -3,7 +3,16 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -62,9 +71,7 @@ class ChartOfAccount(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    parent = relationship(
-        "ChartOfAccount", remote_side=[id], backref="children"
-    )
+    parent = relationship("ChartOfAccount", remote_side=[id], backref="children")
 
     def __repr__(self):
         return f"<ChartOfAccount(id={self.id}, code='{self.account_code}', name='{self.account_name}')>"

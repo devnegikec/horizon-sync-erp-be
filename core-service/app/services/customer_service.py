@@ -77,13 +77,9 @@ class CustomerService:
         Raises:
             CustomerNotFoundException: If customer not found
         """
-        customer = self.customer_repo.get_customer_by_id(
-            customer_id, organization_id
-        )
+        customer = self.customer_repo.get_customer_by_id(customer_id, organization_id)
         if not customer:
-            raise CustomerNotFoundException(
-                f"Customer with ID {customer_id} not found"
-            )
+            raise CustomerNotFoundException(f"Customer with ID {customer_id} not found")
         return customer
 
     def update_customer(
@@ -108,13 +104,9 @@ class CustomerService:
         Raises:
             CustomerNotFoundException: If customer not found
         """
-        customer = self.customer_repo.get_customer_by_id(
-            customer_id, organization_id
-        )
+        customer = self.customer_repo.get_customer_by_id(customer_id, organization_id)
         if not customer:
-            raise CustomerNotFoundException(
-                f"Customer with ID {customer_id} not found"
-            )
+            raise CustomerNotFoundException(f"Customer with ID {customer_id} not found")
 
         update_dict = customer_data.model_dump(exclude_unset=True)
         update_dict["updated_by"] = user_id
@@ -149,13 +141,9 @@ class CustomerService:
         Raises:
             CustomerNotFoundException: If customer not found
         """
-        customer = self.customer_repo.get_customer_by_id(
-            customer_id, organization_id
-        )
+        customer = self.customer_repo.get_customer_by_id(customer_id, organization_id)
         if not customer:
-            raise CustomerNotFoundException(
-                f"Customer with ID {customer_id} not found"
-            )
+            raise CustomerNotFoundException(f"Customer with ID {customer_id} not found")
 
         customer.updated_by = user_id
         return self.customer_repo.soft_delete_customer(customer)

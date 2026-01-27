@@ -158,9 +158,7 @@ class ChartOfAccountRepository:
             query = query.filter(ChartOfAccount.account_type == account_type)
 
         if parent_account_id is not None:
-            query = query.filter(
-                ChartOfAccount.parent_account_id == parent_account_id
-            )
+            query = query.filter(ChartOfAccount.parent_account_id == parent_account_id)
 
         if is_active is not None:
             query = query.filter(ChartOfAccount.is_active == is_active)
@@ -190,9 +188,7 @@ class ChartOfAccountRepository:
 
         return accounts, total_count
 
-    def account_code_exists(
-        self, account_code: str, organization_id: UUID
-    ) -> bool:
+    def account_code_exists(self, account_code: str, organization_id: UUID) -> bool:
         """
         Check if account code already exists in the organization.
 
@@ -234,9 +230,7 @@ class ChartOfAccountRepository:
             .all()
         )
 
-    def has_children(
-        self, account_id: UUID, organization_id: UUID
-    ) -> bool:
+    def has_children(self, account_id: UUID, organization_id: UUID) -> bool:
         """
         Check if chart of account has child accounts.
 

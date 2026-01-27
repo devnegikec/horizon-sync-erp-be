@@ -55,9 +55,7 @@ class ChartOfAccountService:
             )
 
         if data.parent_account_id:
-            parent = self.repo.get_by_id(
-                data.parent_account_id, organization_id
-            )
+            parent = self.repo.get_by_id(data.parent_account_id, organization_id)
             if not parent:
                 raise ChartOfAccountNotFoundException(
                     f"Parent account with ID {data.parent_account_id} not found"
@@ -144,9 +142,7 @@ class ChartOfAccountService:
             parent_id = update_dict["parent_account_id"]
 
             if parent_id == account_id:
-                raise CircularReferenceException(
-                    "Account cannot be its own parent"
-                )
+                raise CircularReferenceException("Account cannot be its own parent")
 
             parent = self.repo.get_by_id(parent_id, organization_id)
             if not parent:
@@ -276,9 +272,7 @@ class ChartOfAccountService:
 
         return accounts, pagination
 
-    def get_tree(
-        self, organization_id: UUID
-    ) -> list[ChartOfAccountTreeNode]:
+    def get_tree(self, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
         """
         Get chart of accounts as a tree structure.
 

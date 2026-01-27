@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
-from app.schemas.common import PaginationMeta
 from app.schemas.chart_of_account import (
     ChartOfAccountCreate,
     ChartOfAccountListItem,
@@ -16,6 +15,7 @@ from app.schemas.chart_of_account import (
     ChartOfAccountTreeNode,
     ChartOfAccountUpdate,
 )
+from app.schemas.common import PaginationMeta
 from app.services.chart_of_account_service import ChartOfAccountService
 
 router = APIRouter()
@@ -214,9 +214,7 @@ async def update_chart_of_account(
 )
 async def delete_chart_of_account(
     account_id: UUID,
-    force: bool = Query(
-        False, description="Force delete even if has children"
-    ),
+    force: bool = Query(False, description="Force delete even if has children"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):

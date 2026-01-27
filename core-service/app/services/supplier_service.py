@@ -77,13 +77,9 @@ class SupplierService:
         Raises:
             SupplierNotFoundException: If supplier not found
         """
-        supplier = self.supplier_repo.get_supplier_by_id(
-            supplier_id, organization_id
-        )
+        supplier = self.supplier_repo.get_supplier_by_id(supplier_id, organization_id)
         if not supplier:
-            raise SupplierNotFoundException(
-                f"Supplier with ID {supplier_id} not found"
-            )
+            raise SupplierNotFoundException(f"Supplier with ID {supplier_id} not found")
         return supplier
 
     def update_supplier(
@@ -108,13 +104,9 @@ class SupplierService:
         Raises:
             SupplierNotFoundException: If supplier not found
         """
-        supplier = self.supplier_repo.get_supplier_by_id(
-            supplier_id, organization_id
-        )
+        supplier = self.supplier_repo.get_supplier_by_id(supplier_id, organization_id)
         if not supplier:
-            raise SupplierNotFoundException(
-                f"Supplier with ID {supplier_id} not found"
-            )
+            raise SupplierNotFoundException(f"Supplier with ID {supplier_id} not found")
 
         update_dict = supplier_data.model_dump(exclude_unset=True)
         update_dict["updated_by"] = user_id
@@ -149,13 +141,9 @@ class SupplierService:
         Raises:
             SupplierNotFoundException: If supplier not found
         """
-        supplier = self.supplier_repo.get_supplier_by_id(
-            supplier_id, organization_id
-        )
+        supplier = self.supplier_repo.get_supplier_by_id(supplier_id, organization_id)
         if not supplier:
-            raise SupplierNotFoundException(
-                f"Supplier with ID {supplier_id} not found"
-            )
+            raise SupplierNotFoundException(f"Supplier with ID {supplier_id} not found")
 
         supplier.updated_by = user_id
         return self.supplier_repo.soft_delete_supplier(supplier)
