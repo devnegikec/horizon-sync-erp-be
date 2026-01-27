@@ -48,9 +48,7 @@ class RoleRepository:
         logger.debug(f"Fetching role: {role_id}")
         return self.db.query(Role).filter(Role.id == role_id).first()
 
-    def get_role_by_code(
-        self, code: str, organization_id: UUID
-    ) -> Role | None:
+    def get_role_by_code(self, code: str, organization_id: UUID) -> Role | None:
         """
         Get role by code within organization.
 
@@ -287,9 +285,7 @@ class RoleRepository:
 
         from app.models.role import Permission
 
-        query = self.db.query(RolePermission).filter(
-            RolePermission.role_id == role_id
-        )
+        query = self.db.query(RolePermission).filter(RolePermission.role_id == role_id)
 
         if resource or action:
             query = query.join(Permission)
@@ -327,7 +323,7 @@ class RoleRepository:
             .filter(
                 and_(
                     UserOrganizationRole.role_id == role_id,
-                    UserOrganizationRole.is_active == True,
+                    UserOrganizationRole.is_active,
                 )
             )
             .count()

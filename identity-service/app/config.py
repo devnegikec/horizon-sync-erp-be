@@ -1,5 +1,6 @@
 """Application configuration management"""
 
+import logging
 import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,8 +68,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Debug: Print loaded settings
-import logging
-
 logger = logging.getLogger(__name__)
 logger.info("=" * 60)
 logger.info("Configuration Loaded")

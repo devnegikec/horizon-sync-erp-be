@@ -2,6 +2,7 @@
 # Target Python version
 target-version = "py311"
 
+[tool.ruff.lint]
 # Enable linting and formatting
 select = [
     "E",   # pycodestyle errors
@@ -16,6 +17,7 @@ select = [
 ignore = [
     "E501", # line too long (handled by formatter)
     "B008", # do not perform function calls in argument defaults (FastAPI Depends)
+    "B904", # exception chaining - disabled for now
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.

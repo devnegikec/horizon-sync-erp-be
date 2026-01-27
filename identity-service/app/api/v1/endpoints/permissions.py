@@ -54,10 +54,7 @@ async def list_permissions(
     - **module**: Filter by module
     - **search**: Search term for code or name
     """
-    logger.info(
-        f"Listing permissions - "
-        f"skip: {skip}, limit: {limit}"
-    )
+    logger.info(f"Listing permissions - skip: {skip}, limit: {limit}")
 
     permission_service = PermissionService(db)
 
@@ -153,9 +150,7 @@ async def create_permission(
     - **is_active**: Active status (default: true)
     - **extra_data**: Optional metadata
     """
-    logger.info(
-        f"Creating permission: {permission.code}"
-    )
+    logger.info(f"Creating permission: {permission.code}")
 
     permission_service = PermissionService(db)
 
@@ -204,9 +199,7 @@ async def update_permission(
     - **is_active**: Optional active status
     - **extra_data**: Optional metadata
     """
-    logger.info(
-        f"Updating permission: {permission_id}"
-    )
+    logger.info(f"Updating permission: {permission_id}")
 
     permission_service = PermissionService(db)
 
@@ -251,9 +244,7 @@ async def delete_permission(
     **Path Parameters:**
     - **permission_id**: UUID of the permission
     """
-    logger.info(
-        f"Deleting permission: {permission_id}"
-    )
+    logger.info(f"Deleting permission: {permission_id}")
 
     permission_service = PermissionService(db)
 
@@ -270,8 +261,7 @@ async def delete_permission(
 
     except RolePermissionAlreadyAssignedException as e:
         logger.warning(
-            f"Cannot delete permission {permission_id}: "
-            f"has active role assignments"
+            f"Cannot delete permission {permission_id}: has active role assignments"
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

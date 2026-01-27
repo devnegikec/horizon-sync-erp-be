@@ -5,9 +5,11 @@ Revises:
 Create Date: 2026-01-25 12:00:00.000000
 
 """
-from alembic import op
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "001"
@@ -25,9 +27,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("code", sa.String(length=50), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column(
-            "parent_id", postgresql.UUID(as_uuid=True), nullable=True
-        ),
+        sa.Column("parent_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column(
             "default_valuation_method",
             postgresql.ENUM(
@@ -49,9 +49,7 @@ def upgrade() -> None:
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_item_groups_code"), "item_groups", ["code"], unique=False
-    )
+    op.create_index(op.f("ix_item_groups_code"), "item_groups", ["code"], unique=False)
     op.create_index(
         op.f("ix_item_groups_organization_id"),
         "item_groups",
@@ -104,7 +102,9 @@ def upgrade() -> None:
         sa.Column("allow_negative_stock", sa.Boolean(), nullable=True),
         sa.Column("has_variants", sa.Boolean(), nullable=True),
         sa.Column("variant_of", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("variant_attributes", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "variant_attributes", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("has_batch_no", sa.Boolean(), nullable=True),
         sa.Column("has_serial_no", sa.Boolean(), nullable=True),
         sa.Column("batch_number_series", sa.String(length=100), nullable=True),
@@ -120,7 +120,9 @@ def upgrade() -> None:
         sa.Column("weight_uom", sa.String(length=50), nullable=True),
         sa.Column("inspection_required_before_purchase", sa.Boolean(), nullable=True),
         sa.Column("inspection_required_before_delivery", sa.Boolean(), nullable=True),
-        sa.Column("quality_inspection_template", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column(
+            "quality_inspection_template", postgresql.UUID(as_uuid=True), nullable=True
+        ),
         sa.Column("barcode", sa.String(length=100), nullable=True),
         sa.Column(
             "status",
@@ -136,7 +138,9 @@ def upgrade() -> None:
         sa.Column("image_url", sa.String(length=500), nullable=True),
         sa.Column("images", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("tags", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("custom_fields", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "custom_fields", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("updated_by", postgresql.UUID(as_uuid=True), nullable=True),

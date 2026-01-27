@@ -296,9 +296,6 @@ class WarehouseService:
         """
         all_warehouses = self.warehouse_repo.get_all_warehouses(organization_id)
 
-        # Build lookup dict
-        warehouse_dict = {w.id: w for w in all_warehouses}
-
         # Build tree
         root_nodes = []
         children_map: dict[UUID, list] = {}
