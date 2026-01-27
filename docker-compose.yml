@@ -19,8 +19,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,9 +61,6 @@ services:
     volumes:
       - ./identity-service/app:/app/app
       - ./identity-service/alembic:/app/alembic
-      - ./identity-service/scripts:/app/scripts
-      - ./identity-service/tests:/app/tests
-      - ./identity-service/htmlcov:/app/htmlcov
     command: >
       bash -c "
         echo 'Waiting for database...' &&

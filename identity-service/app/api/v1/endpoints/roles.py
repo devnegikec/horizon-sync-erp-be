@@ -6,6 +6,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.authorization import (
+    check_permission,
+    is_system_admin,
+    require_permission,
+    validate_user_in_organization,
+)
 from app.core.exceptions import (
     DuplicateRoleException,
     PermissionNotFoundException,
@@ -16,6 +22,7 @@ from app.core.exceptions import (
     SystemRoleModificationException,
 )
 from app.database import get_db
+from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.role import (
     BulkAssignRolePermissionsRequest,
     RoleCreate,
@@ -47,12 +54,13 @@ async def list_roles(
     is_system: bool | None = Query(None, description="Filter by system role flag"),
     search: str | None = Query(None, description="Search in code or name"),
     include_permissions: bool = Query(False, description="Include permissions"),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List roles with pagination and filters.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.read' permission.
 
     **Query Parameters:**
     - **skip**: Number of records to skip (default: 0)
@@ -64,8 +72,16 @@ async def list_roles(
     - **include_permissions**: Include permissions in response
     """
     logger.info(
-        f"Listing roles - skip: {skip}, limit: {limit}, org_id: {organization_id}"
+        f"User {current_user.id} listing roles - "
+        f"skip: {skip}, limit: {limit}, org_id: {organization_id}"
     )
+
+    # Check permission
+    require_permission(current_user.permissions, "role.read")
+
+    # If organization_id specified, validate user is in org
+    if organization_id:
+        validate_user_in_organization(current_user.id, organization_id, db)
 
     role_service = RoleService(db)
 
@@ -80,7 +96,7 @@ async def list_roles(
             include_permissions=include_permissions,
         )
 
-        logger.info(f"Retrieved {len(result['data'])} roles")
+        logger.info(f"User {current_user.id} retrieved {len(result['data'])} roles")
 
         return RoleListResponse(**result)
 
@@ -101,12 +117,13 @@ async def list_roles(
 async def get_role(
     role_id: UUID,
     include_permissions: bool = Query(False, description="Include permissions"),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get a specific role by ID.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.read' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -114,7 +131,10 @@ async def get_role(
     **Query Parameters:**
     - **include_permissions**: Include permissions in response
     """
-    logger.info(f"Fetching role: {role_id}")
+    logger.info(f"User {current_user.id} fetching role: {role_id}")
+
+    # Check permission
+    require_permission(current_user.permissions, "role.read")
 
     role_service = RoleService(db)
 
@@ -123,7 +143,11 @@ async def get_role(
             role_id,
             include_permissions=include_permissions,
         )
-        logger.info(f"Role fetched: {role_id}")
+
+        # Validate organization membership
+        validate_user_in_organization(current_user.id, result["organization_id"], db)
+
+        logger.info(f"User {current_user.id} fetched role: {role_id}")
         return RoleResponse(**result)
 
     except RoleNotFoundException as e:
@@ -150,12 +174,13 @@ async def get_role(
 )
 async def create_role(
     role: RoleCreate,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Create a new role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.create' permission.
 
     **Request Body:**
     - **organization_id**: Organization UUID (required)
@@ -168,7 +193,16 @@ async def create_role(
     - **is_active**: Active status (default: true)
     - **extra_data**: Optional metadata
     """
-    logger.info(f"Creating role: {role.code} in org: {role.organization_id}")
+    logger.info(
+        f"User {current_user.id} creating role: {role.code} "
+        f"in org: {role.organization_id}"
+    )
+
+    # Check permission
+    require_permission(current_user.permissions, "role.create")
+
+    # Validate user is in the organization
+    validate_user_in_organization(current_user.id, role.organization_id, db)
 
     role_service = RoleService(db)
 
@@ -177,11 +211,14 @@ async def create_role(
             role.model_dump(exclude={"organization_id"}),
             role.organization_id,
         )
-        logger.info(f"Role created: {result['id']}")
+        logger.info(
+            f"User {current_user.id} created role: {result['id']} "
+            f"in org: {role.organization_id}"
+        )
         return RoleResponse(**result)
 
     except DuplicateRoleException as e:
-        logger.warning(f"Duplicate role code: {role.code}")
+        logger.warning(f"User {current_user.id}: Duplicate role code: {role.code}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
@@ -204,12 +241,13 @@ async def create_role(
 async def update_role(
     role_id: UUID,
     role: RoleUpdate,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Update a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.update' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -221,16 +259,35 @@ async def update_role(
     - **is_active**: Optional active status
     - **extra_data**: Optional metadata
     """
-    logger.info(f"Updating role: {role_id}")
+    logger.info(f"User {current_user.id} updating role: {role_id}")
+
+    # Check permission
+    require_permission(current_user.permissions, "role.update")
 
     role_service = RoleService(db)
 
     try:
+        # Get role first to validate org membership and system role check
+        existing_role = role_service.get_role_by_id(role_id)
+        
+        # Validate organization membership
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
+        # Check if trying to modify system role
+        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+            logger.warning(f"User {current_user.id} attempted to modify system role {role_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify system roles",
+            )
+
         result = role_service.update_role(
             role_id,
             role.model_dump(exclude_unset=True),
         )
-        logger.info(f"Role updated: {role_id}")
+        logger.info(f"User {current_user.id} updated role: {role_id}")
         return RoleResponse(**result)
 
     except RoleNotFoundException as e:
@@ -241,7 +298,7 @@ async def update_role(
         )
 
     except SystemRoleModificationException as e:
-        logger.warning(f"Cannot modify system role: {role_id}")
+        logger.warning(f"User {current_user.id}: Cannot modify system role: {role_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e),
@@ -263,23 +320,43 @@ async def update_role(
 )
 async def delete_role(
     role_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Delete a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.delete' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
     """
-    logger.info(f"Deleting role: {role_id}")
+    logger.info(f"User {current_user.id} deleting role: {role_id}")
+
+    # Check permission
+    require_permission(current_user.permissions, "role.delete")
 
     role_service = RoleService(db)
 
     try:
+        # Get role first to validate org membership
+        existing_role = role_service.get_role_by_id(role_id)
+        
+        # Validate organization membership
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
+        # Check if trying to delete system role
+        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+            logger.warning(f"User {current_user.id} attempted to delete system role {role_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete system roles",
+            )
+
         role_service.delete_role(role_id)
-        logger.info(f"Role deleted: {role_id}")
+        logger.info(f"User {current_user.id} deleted role: {role_id}")
 
     except RoleNotFoundException as e:
         logger.warning(f"Role not found: {role_id}")
@@ -289,14 +366,14 @@ async def delete_role(
         )
 
     except SystemRoleModificationException as e:
-        logger.warning(f"Cannot delete system role: {role_id}")
+        logger.warning(f"User {current_user.id}: Cannot delete system role: {role_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e),
         )
 
     except RoleHasUsersException as e:
-        logger.warning(f"Cannot delete role {role_id}: has active users")
+        logger.warning(f"User {current_user.id}: Cannot delete role {role_id}: has active users")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
@@ -321,12 +398,13 @@ async def get_role_permissions(
     limit: int = Query(10, ge=1, le=100, description="Maximum records to return"),
     resource: str | None = Query(None, description="Filter by resource type"),
     action: str | None = Query(None, description="Filter by action type"),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get permissions assigned to a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.read' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -337,11 +415,20 @@ async def get_role_permissions(
     - **resource**: Filter by resource type
     - **action**: Filter by action type
     """
-    logger.info(f"Fetching permissions for role: {role_id}")
+    logger.info(f"User {current_user.id} fetching permissions for role: {role_id}")
+
+    # Check permission
+    require_permission(current_user.permissions, "role.read")
 
     role_service = RoleService(db)
 
     try:
+        # Get role to validate org membership
+        existing_role = role_service.get_role_by_id(role_id)
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
         result = role_service.get_role_permissions(
             role_id,
             skip=skip,
@@ -350,7 +437,9 @@ async def get_role_permissions(
             action=action,
         )
 
-        logger.info(f"Retrieved {len(result['data'])} permissions for role")
+        logger.info(
+            f"User {current_user.id} retrieved {len(result['data'])} permissions for role"
+        )
 
         return {
             "data": [RolePermissionDetailResponse(**item) for item in result["data"]],
@@ -384,12 +473,13 @@ async def get_role_permissions(
 async def assign_permission_to_role(
     role_id: UUID,
     permission: RolePermissionCreate,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Assign a permission to a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.manage' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -398,18 +488,43 @@ async def assign_permission_to_role(
     - **permission_id**: UUID of the permission
     - **conditions**: Optional conditions dictionary
     """
-    logger.info(f"Assigning permission {permission.permission_id} to role {role_id}")
+    logger.info(
+        f"User {current_user.id} assigning permission {permission.permission_id} "
+        f"to role {role_id}"
+    )
+
+    # Check permission
+    require_permission(current_user.permissions, "role.manage")
 
     role_service = RoleService(db)
 
     try:
+        # Get role to validate org membership and system role
+        existing_role = role_service.get_role_by_id(role_id)
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
+        # Check if trying to modify system role
+        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+            logger.warning(
+                f"User {current_user.id} attempted to modify system role {role_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify system roles unless you are a system admin",
+            )
+
         result = role_service.assign_permission_to_role(
             role_id,
             permission.permission_id,
             permission.conditions,
         )
 
-        logger.info(f"Permission assigned to role: {result['id']}")
+        logger.info(
+            f"User {current_user.id} assigned permission {permission.permission_id} "
+            f"to role {role_id}"
+        )
 
         return RolePermissionResponse(**result)
 
@@ -460,24 +575,50 @@ async def assign_permission_to_role(
 async def remove_permission_from_role(
     role_id: UUID,
     permission_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Remove a permission from a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.manage' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
     - **permission_id**: UUID of the permission
     """
-    logger.info(f"Removing permission {permission_id} from role {role_id}")
+    logger.info(
+        f"User {current_user.id} removing permission {permission_id} "
+        f"from role {role_id}"
+    )
+
+    # Check permission
+    require_permission(current_user.permissions, "role.manage")
 
     role_service = RoleService(db)
 
     try:
+        # Get role to validate org membership and system role
+        existing_role = role_service.get_role_by_id(role_id)
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
+        # Check if trying to modify system role
+        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+            logger.warning(
+                f"User {current_user.id} attempted to modify system role {role_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify system roles unless you are a system admin",
+            )
+
         role_service.remove_permission_from_role(role_id, permission_id)
-        logger.info(f"Permission removed from role: {role_id}")
+        logger.info(
+            f"User {current_user.id} removed permission {permission_id} "
+            f"from role {role_id}"
+        )
 
     except RoleNotFoundException as e:
         logger.warning(f"Role not found: {role_id}")
@@ -516,12 +657,14 @@ async def remove_permission_from_role(
 async def bulk_assign_permissions_to_role(
     role_id: UUID,
     request: BulkAssignRolePermissionsRequest,
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Bulk assign permissions to a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'role.manage' permission.
+    Only system admins can bulk assign to system roles.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -531,19 +674,42 @@ async def bulk_assign_permissions_to_role(
     - **mode**: "replace" (default) or "add"
     """
     logger.info(
-        f"Bulk assigning {len(request.permission_ids)} permissions to role {role_id}"
+        f"User {current_user.id} bulk assigning {len(request.permission_ids)} "
+        f"permissions to role {role_id}"
     )
+
+    # Check permission
+    require_permission(current_user.permissions, "role.manage")
 
     role_service = RoleService(db)
 
     try:
+        # Get role to validate org membership and system role
+        existing_role = role_service.get_role_by_id(role_id)
+        validate_user_in_organization(
+            current_user.id, existing_role["organization_id"], db
+        )
+
+        # Check if trying to modify system role
+        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+            logger.warning(
+                f"User {current_user.id} attempted to bulk modify system role {role_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot modify system roles unless you are a system admin",
+            )
+
         result = role_service.bulk_assign_permissions_to_role(
             role_id,
             request.permission_ids,
             request.mode,
         )
 
-        logger.info(f"Bulk assigned {result['assigned_count']} permissions to role")
+        logger.info(
+            f"User {current_user.id} bulk assigned {result['assigned_count']} "
+            f"permissions to role"
+        )
 
         return result
 
@@ -580,12 +746,13 @@ async def get_role_users(
     organization_id: UUID,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(10, ge=1, le=100, description="Maximum records to return"),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Get users assigned to a role.
 
-    This endpoint does not require authentication.
+    Requires authentication and 'user.read' permission.
 
     **Path Parameters:**
     - **role_id**: UUID of the role
@@ -595,7 +762,16 @@ async def get_role_users(
     - **skip**: Number of records to skip
     - **limit**: Maximum records to return
     """
-    logger.info(f"Fetching users for role: {role_id} in org: {organization_id}")
+    logger.info(
+        f"User {current_user.id} fetching users for role: {role_id} "
+        f"in org: {organization_id}"
+    )
+
+    # Check permission
+    require_permission(current_user.permissions, "user.read")
+
+    # Validate organization membership
+    validate_user_in_organization(current_user.id, organization_id, db)
 
     role_service = RoleService(db)
 
@@ -607,7 +783,9 @@ async def get_role_users(
             limit=limit,
         )
 
-        logger.info(f"Retrieved {len(result['data'])} users for role")
+        logger.info(
+            f"User {current_user.id} retrieved {len(result['data'])} users for role"
+        )
 
         return RoleUsersListResponse(**result)
 
