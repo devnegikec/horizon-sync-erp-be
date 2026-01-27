@@ -21,7 +21,16 @@ This plan outlines the complete development strategy for the core-service ERP sy
 - ✅ Customers API
 - ✅ Suppliers API
 - ✅ Chart of Accounts API
-- ⏳ **Phase 2+**: To be built following this plan
+- ✅ **Phase 3 - Stock Management APIs**: Complete
+- Batches API
+- Serial Numbers API (serial_nos + serial_no_history)
+- Stock Entries API (stock_entries + stock_entry_items)
+- Stock Levels API
+- Stock Movements API
+- Stock Reconciliations API (header + items)
+- Stock Settings API (one per org)
+- Put Away Rules API
+- ⏳ **Phase 2, 4+**: To be built following this plan
 
 ## API Development Order
 

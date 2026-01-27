@@ -17,18 +17,32 @@ from app.config import settings
 from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
+    BatchNotFoundException,
     CannotDeleteException,
     ChartOfAccountNotFoundException,
     CircularReferenceException,
     CustomerNotFoundException,
     DuplicateAccountCodeException,
+    DuplicateBatchNoException,
     DuplicateCustomerCodeException,
     DuplicateItemCodeException,
     DuplicateItemGroupCodeException,
+    DuplicateReconciliationNoException,
+    DuplicateSerialNoException,
+    DuplicateStockEntryNoException,
     DuplicateSupplierCodeException,
     DuplicateWarehouseCodeException,
     ItemGroupNotFoundException,
     ItemNotFoundException,
+    PutAwayRuleNotFoundException,
+    SerialNoNotFoundException,
+    StockEntryItemNotFoundException,
+    StockEntryNotFoundException,
+    StockLevelNotFoundException,
+    StockMovementNotFoundException,
+    StockReconciliationItemNotFoundException,
+    StockReconciliationNotFoundException,
+    StockSettingsNotFoundException,
     SupplierNotFoundException,
     ValidationError,
     WarehouseNotFoundException,
@@ -342,6 +356,117 @@ async def duplicate_account_code_exception_handler(
             "timestamp": datetime.now(UTC).isoformat(),
         },
     )
+
+
+# ----- Phase 3: Stock Management exception handlers -----
+
+
+def _stock_404(exc: Exception, code: str):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": code,
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+def _stock_409(exc: Exception, code: str):
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": code,
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(BatchNotFoundException)
+async def batch_not_found_handler(r: Request, exc: BatchNotFoundException):
+    return _stock_404(exc, "BATCH_NOT_FOUND")
+
+
+@app.exception_handler(SerialNoNotFoundException)
+async def serial_no_not_found_handler(r: Request, exc: SerialNoNotFoundException):
+    return _stock_404(exc, "SERIAL_NO_NOT_FOUND")
+
+
+@app.exception_handler(StockEntryNotFoundException)
+async def stock_entry_not_found_handler(r: Request, exc: StockEntryNotFoundException):
+    return _stock_404(exc, "STOCK_ENTRY_NOT_FOUND")
+
+
+@app.exception_handler(StockEntryItemNotFoundException)
+async def stock_entry_item_not_found_handler(
+    r: Request, exc: StockEntryItemNotFoundException
+):
+    return _stock_404(exc, "STOCK_ENTRY_ITEM_NOT_FOUND")
+
+
+@app.exception_handler(StockLevelNotFoundException)
+async def stock_level_not_found_handler(r: Request, exc: StockLevelNotFoundException):
+    return _stock_404(exc, "STOCK_LEVEL_NOT_FOUND")
+
+
+@app.exception_handler(StockMovementNotFoundException)
+async def stock_movement_not_found_handler(
+    r: Request, exc: StockMovementNotFoundException
+):
+    return _stock_404(exc, "STOCK_MOVEMENT_NOT_FOUND")
+
+
+@app.exception_handler(StockReconciliationNotFoundException)
+async def stock_reconciliation_not_found_handler(
+    r: Request, exc: StockReconciliationNotFoundException
+):
+    return _stock_404(exc, "STOCK_RECONCILIATION_NOT_FOUND")
+
+
+@app.exception_handler(StockReconciliationItemNotFoundException)
+async def stock_reconciliation_item_not_found_handler(
+    r: Request, exc: StockReconciliationItemNotFoundException
+):
+    return _stock_404(exc, "STOCK_RECONCILIATION_ITEM_NOT_FOUND")
+
+
+@app.exception_handler(StockSettingsNotFoundException)
+async def stock_settings_not_found_handler(
+    r: Request, exc: StockSettingsNotFoundException
+):
+    return _stock_404(exc, "STOCK_SETTINGS_NOT_FOUND")
+
+
+@app.exception_handler(PutAwayRuleNotFoundException)
+async def put_away_rule_not_found_handler(
+    r: Request, exc: PutAwayRuleNotFoundException
+):
+    return _stock_404(exc, "PUT_AWAY_RULE_NOT_FOUND")
+
+
+@app.exception_handler(DuplicateBatchNoException)
+async def duplicate_batch_no_handler(r: Request, exc: DuplicateBatchNoException):
+    return _stock_409(exc, "DUPLICATE_BATCH_NO")
+
+
+@app.exception_handler(DuplicateSerialNoException)
+async def duplicate_serial_no_handler(r: Request, exc: DuplicateSerialNoException):
+    return _stock_409(exc, "DUPLICATE_SERIAL_NO")
+
+
+@app.exception_handler(DuplicateStockEntryNoException)
+async def duplicate_stock_entry_no_handler(
+    r: Request, exc: DuplicateStockEntryNoException
+):
+    return _stock_409(exc, "DUPLICATE_STOCK_ENTRY_NO")
+
+
+@app.exception_handler(DuplicateReconciliationNoException)
+async def duplicate_reconciliation_no_handler(
+    r: Request, exc: DuplicateReconciliationNoException
+):
+    return _stock_409(exc, "DUPLICATE_RECONCILIATION_NO")
 
 
 @app.exception_handler(CircularReferenceException)
