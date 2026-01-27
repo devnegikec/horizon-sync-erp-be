@@ -7,10 +7,18 @@ import sys
 # Try to run pytest with the current Python interpreter
 try:
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/test_permissions.py", "tests/test_roles.py", "-v", "--tb=short"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_permissions.py",
+            "tests/test_roles.py",
+            "-v",
+            "--tb=short",
+        ],
         cwd=".",
         capture_output=True,
-        text=True
+        text=True,
     )
     print(result.stdout)
     if result.stderr:

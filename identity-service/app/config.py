@@ -1,5 +1,6 @@
 """Application configuration management"""
 
+import logging
 import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -65,3 +66,25 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+# Debug: Print loaded settings
+logger = logging.getLogger(__name__)
+logger.info("=" * 60)
+logger.info("Configuration Loaded")
+logger.info("=" * 60)
+logger.info(f"Config file path: {ENV_FILE}")
+logger.info(f"Config file exists: {os.path.exists(ENV_FILE)}")
+logger.info(f"Environment: {settings.environment}")
+logger.info(f"Debug mode: {settings.debug}")
+logger.info(f"Email enabled: {settings.email_enabled}")
+logger.info(f"SMTP host: {settings.smtp_host}")
+logger.info(f"SMTP port: {settings.smtp_port}")
+logger.info(
+    f"SMTP username: {settings.smtp_username if settings.smtp_username else 'NOT SET'}"
+)
+logger.info(
+    f"SMTP password: {'SET (length: ' + str(len(settings.smtp_password)) + ')' if settings.smtp_password else 'NOT SET'}"
+)
+logger.info(f"SMTP from email: {settings.smtp_from_email}")
+logger.info(f"SMTP from name: {settings.smtp_from_name}")
+logger.info("=" * 60)

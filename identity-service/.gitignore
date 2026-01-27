@@ -25,9 +25,11 @@ venv/
 ENV/
 env/
 .venv
-
+# AI debug script
+.debug/
 # IDE
 .vscode/
+.kiro/
 .idea/
 *.swp
 *.swo

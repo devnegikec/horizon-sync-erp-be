@@ -40,7 +40,7 @@ def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
         )
         .filter(
             UserOrganizationRole.user_id == user_id,
-            UserOrganizationRole.is_active == True,
+            UserOrganizationRole.is_active,
         )
         .all()
     )
@@ -111,7 +111,7 @@ async def get_current_user(
 
 
 async def get_current_active_user(
-    current_user: CurrentUser = Depends(get_current_user)
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> CurrentUser:
     if not current_user.is_active:
         raise HTTPException(

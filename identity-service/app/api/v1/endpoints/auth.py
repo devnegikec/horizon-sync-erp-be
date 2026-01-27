@@ -227,6 +227,15 @@ async def forgot_password(
 
     - **email**: User's email address
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    logger.info("=" * 60)
+    logger.info("Forgot Password Endpoint Called")
+    logger.info("=" * 60)
+    logger.info(f"Email: {request_data.email}")
+
     auth_service = AuthService(db)
     email_service = EmailService()
 
@@ -234,17 +243,25 @@ async def forgot_password(
     ip_address = get_client_ip(request)
     user_agent = request.headers.get("User-Agent")
 
+    logger.info(f"Client IP: {ip_address}")
+    logger.info(f"User Agent: {user_agent}")
+
     # Generate reset token
+    logger.info("Generating reset token...")
     reset_token = auth_service.forgot_password(
         email=request_data.email, ip_address=ip_address, user_agent=user_agent
     )
+    logger.info(f"Reset token generated (length: {len(reset_token)})")
 
     # Send email in background
+    logger.info("Adding email task to background...")
     background_tasks.add_task(
         email_service.send_password_reset_email,
         recipient=request_data.email,
         token=reset_token,
     )
+    logger.info("Email task added to background queue")
+    logger.info("=" * 60)
 
     return ForgotPasswordResponse(
         message="If the email exists, a password reset link has been sent"

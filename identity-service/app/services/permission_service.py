@@ -30,7 +30,7 @@ def _convert_string_to_resource_type(value: str) -> ResourceType:
     try:
         return ResourceType(value.lower())
     except ValueError:
-        raise ValueError(f"Invalid resource type: {value}")
+        raise ValueError(f"Invalid resource type: {value}") from None
 
 
 def _convert_string_to_action_type(value: str) -> ActionType:
@@ -40,7 +40,7 @@ def _convert_string_to_action_type(value: str) -> ActionType:
     try:
         return ActionType(value.lower())
     except ValueError:
-        raise ValueError(f"Invalid action type: {value}")
+        raise ValueError(f"Invalid action type: {value}") from None
 
 
 class PermissionService:

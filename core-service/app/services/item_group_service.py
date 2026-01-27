@@ -298,9 +298,6 @@ class ItemGroupService:
         """
         all_groups = self.item_group_repo.get_all_item_groups(organization_id)
 
-        # Build lookup dict
-        group_dict = {g.id: g for g in all_groups}
-
         # Build tree
         root_nodes = []
         children_map: dict[UUID, list] = {}

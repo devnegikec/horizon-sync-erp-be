@@ -15,7 +15,9 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from app.core.security import create_token  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+from app.dependencies import get_current_active_user  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.user import User, UserStatus, UserType  # noqa: E402
 from app.models.organization import Organization  # noqa: E402
