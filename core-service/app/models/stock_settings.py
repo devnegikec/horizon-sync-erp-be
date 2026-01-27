@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
