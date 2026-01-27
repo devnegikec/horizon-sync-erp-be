@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     password_reset_token_expire_hours: int = 1
 
     # Email (for password reset notifications)
-    email_enabled: bool = False
+    email_enabled: bool = True
     smtp_host: str = "localhost"
     smtp_port: int = 587
     smtp_username: str = ""
