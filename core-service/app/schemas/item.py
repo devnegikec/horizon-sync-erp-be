@@ -158,7 +158,7 @@ class ItemResponse(BaseModel):
     uom: str
 
     # Stock Settings
-    maintain_stock: bool
+    maintain_stock: bool | None = None
     valuation_method: str
     allow_negative_stock: bool
 
@@ -174,8 +174,8 @@ class ItemResponse(BaseModel):
     serial_number_series: str | None = None
 
     # Pricing
-    standard_rate: Decimal
-    valuation_rate: Decimal
+    standard_rate: Decimal | None = None
+    valuation_rate: Decimal | None = None
 
     # Reorder Settings
     enable_auto_reorder: bool
@@ -203,8 +203,8 @@ class ItemResponse(BaseModel):
     # Audit
     created_by: UUID | None = None
     updated_by: UUID | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -218,12 +218,12 @@ class ItemListItem(BaseModel):
     item_type: str
     uom: str
     item_group_id: UUID | None = None
-    standard_rate: Decimal
+    standard_rate: Decimal | None = None
     status: str
-    maintain_stock: bool
+    maintain_stock: bool | None = None
     barcode: str | None = None
     image_url: str | None = None
-    created_at: datetime
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

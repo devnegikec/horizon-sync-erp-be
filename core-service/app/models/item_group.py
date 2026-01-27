@@ -25,7 +25,12 @@ class ItemGroup(Base):
 
     parent_id = Column(UUID(as_uuid=True), ForeignKey("item_groups.id"), nullable=True)
     default_valuation_method = Column(
-        Enum(ValuationMethod, name="valuationmethod", create_type=False),
+        Enum(
+            ValuationMethod,
+            name="valuationmethod",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=True,
     )
     default_uom = Column(String(50), nullable=True)

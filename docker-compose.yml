@@ -36,8 +36,10 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_identity
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      PYDEVD_DISABLE_FILE_VALIDATION: "1"
       DEBUG: ${DEBUG:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
@@ -53,6 +55,7 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
     ports:
       - "8000:8000"
+      - "5678:5678"
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,8 +71,8 @@ services:
         sleep 5 &&
         echo 'Running Identity Service migrations...' &&
         python -m alembic upgrade head &&
-        echo 'Starting Identity Service...' &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+        echo 'Starting Identity Service with Debugger...' &&
+        python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
     networks:
       - horizon_network
@@ -93,6 +96,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
     ports:
       - "8001:8001"
+      - "5679:5679"
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,8 +114,8 @@ services:
         sleep 10 &&
         echo 'Running Core Service migrations...' &&
         python -m alembic upgrade head &&
-        echo 'Starting Core Service...' &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+        echo 'Starting Core Service with Debugger...' &&
+        python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m uvicorn app.main:app --host 0.0.0.0 --port 8001
       "
     networks:
       - horizon_network

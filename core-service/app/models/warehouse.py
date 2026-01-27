@@ -38,7 +38,12 @@ class Warehouse(Base):
         UUID(as_uuid=True), ForeignKey("warehouses_extended.id"), nullable=True
     )
     warehouse_type = Column(
-        Enum(WarehouseType, name="warehousetype", create_type=False),
+        Enum(
+            WarehouseType,
+            name="warehousetype",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         default=WarehouseType.WAREHOUSE,
     )
 
