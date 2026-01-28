@@ -15,7 +15,25 @@ This plan outlines the complete development strategy for the core-service ERP sy
 
 - ✅ **Identity Service**: Complete (users, organizations, roles, permissions)
 - ✅ **Items API**: Complete (CRUD operations for items)
-- ⏳ **Remaining APIs**: To be built following this plan
+- ✅ **Phase 1 - Master Data APIs**: Complete
+- ✅ Warehouses API (tested)
+- ✅ Item Groups API (tested)
+- ✅ Customers API
+- ✅ Suppliers API
+- ✅ Chart of Accounts API
+- ✅ **Phase 3 - Stock Management APIs**: Complete
+- Batches API
+- Serial Numbers API (serial_nos + serial_no_history)
+- Stock Entries API (stock_entries + stock_entry_items)
+- Stock Levels API
+- Stock Movements API
+- Stock Reconciliations API (header + items)
+- Stock Settings API (one per org)
+- Put Away Rules API
+- ✅ **Phase 2 - Item-Related APIs**: Complete
+- Item Prices API (item_prices)
+- Item Suppliers API (item_suppliers)
+- ⏳ **Phase 4+**: To be built following this plan
 
 ## API Development Order
 
