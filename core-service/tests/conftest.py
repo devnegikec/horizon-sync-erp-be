@@ -8,6 +8,8 @@ import uuid
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only-min-32-chars")
 os.environ.setdefault("IDENTITY_SERVICE_URL", "http://localhost:8000")
+os.environ.setdefault("DB_POOL_SIZE", "5")
+os.environ.setdefault("DB_MAX_OVERFLOW", "10")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -89,4 +91,17 @@ def test_item_data(mock_current_user):
         "maintain_stock": True,
         "standard_rate": "100.00",
         "valuation_rate": "75.00",
+    }
+
+
+@pytest.fixture
+def test_item_group_data(mock_current_user):
+    """Sample item group data for testing"""
+    return {
+        "name": "Test Electronics",
+        "code": "TEST-ELEC-001",
+        "description": "Test item group for electronics",
+        "default_valuation_method": "FIFO",
+        "default_uom": "Nos",
+        "is_active": True,
     }
