@@ -551,7 +551,7 @@ BEGIN
 
     RAISE NOTICE 'Seeding batches...';
 
-    INSERT INTO batches (organization_id, batch_no, item_id, manufacturing_date, expiry_date, supplier_id, supplier_batch_no, status)
+    INSERT INTO batches (organization_id, batch_no, item_id, manufacturing_date, expiry_date, supplier_id, supplier_batch_no, status, created_at, updated_at)
     VALUES (v_org_id, 'BATCH-STEEL-001', v_item_steel_id, CURRENT_DATE - INTERVAL '30 days', CURRENT_DATE + INTERVAL '335 days', v_supp1_id, 'SB-2024-001', 'active')
     RETURNING id INTO v_batch1_id;
 
@@ -560,7 +560,7 @@ BEGIN
 
     RAISE NOTICE 'Seeding serial_nos...';
 
-    INSERT INTO serial_nos (organization_id, serial_no, item_id, warehouse_id, status, purchase_rate)
+    INSERT INTO serial_nos (organization_id, serial_no, item_id, warehouse_id, status, purchase_rate, created_at, updated_at)
     VALUES (v_org_id, 'SN-PCB-0001', v_item_board_id, v_main_wh_id, 'Available', 1100.00)
     RETURNING id INTO v_serial1_id;
 
