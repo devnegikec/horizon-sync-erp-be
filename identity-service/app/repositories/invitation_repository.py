@@ -29,12 +29,18 @@ class InvitationRepository:
             Created Invitation object
         """
         logger.debug(f"Creating invitation for email: {invitation_data.get('email')}")
-        invitation = Invitation(**invitation_data)
-        self.db.add(invitation)
-        self.db.commit()
-        self.db.refresh(invitation)
-        logger.info(f"Invitation created successfully: {invitation.id}")
-        return invitation
+        try:
+            invitation = Invitation(**invitation_data)
+            self.db.add(invitation)
+            self.db.flush()  # Flush to ensure ID is generated and constraints checked
+            self.db.commit()
+            self.db.refresh(invitation)
+            logger.info(f"Invitation created successfully: {invitation.id}")
+            return invitation
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error creating invitation: {str(e)}")
+            raise
 
     def get_invitation_by_id(self, invitation_id: UUID) -> Invitation | None:
         """

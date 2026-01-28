@@ -337,3 +337,9 @@ def test_user_data():
         "first_name": "Test",
         "last_name": "User",
     }
+
+
+@pytest.fixture
+def auth_headers(access_token):
+    """Return headers with Authorization for test_user"""
+    return {"Authorization": f"Bearer {access_token}"}

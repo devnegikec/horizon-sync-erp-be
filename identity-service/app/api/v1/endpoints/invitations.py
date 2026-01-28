@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -23,6 +23,8 @@ from app.schemas.invitation import (
     InvitationResponse,
 )
 from app.services.invitation_service import InvitationService
+from app.services.email_service import EmailService
+from app.models.organization import Organization
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ logger = logging.getLogger(__name__)
 )
 async def send_invitation(
     invitation: InvitationCreate,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -65,6 +68,23 @@ async def send_invitation(
             inviter_permissions=current_user.permissions,
         )
         logger.info(f"Invitation created: {result['id']}")
+
+        # Send invitation email in background
+        email_service = EmailService()
+        org = db.query(Organization).filter(Organization.id == result["organization_id"]).first()
+        org_name = org.name if org else "the organization"
+        inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+
+        background_tasks.add_task(
+            email_service.send_invitation_email,
+            recipient=result["email"],
+            token=result["token"],
+            org_name=org_name,
+            inviter_name=inviter_name,
+            message=result.get("message"),
+        )
+        logger.info(f"Invitation email task added to background for {result['email']}")
+
         return InvitationResponse(**result)
 
     except PermissionDeniedException as e:
@@ -250,6 +270,7 @@ async def cancel_invitation(
 )
 async def resend_invitation(
     invitation_id: UUID,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -272,6 +293,23 @@ async def resend_invitation(
             user_permissions=current_user.permissions,
         )
         logger.info(f"Invitation resent: {invitation_id}")
+
+        # Send invitation email in background
+        email_service = EmailService()
+        org = db.query(Organization).filter(Organization.id == result["organization_id"]).first()
+        org_name = org.name if org else "the organization"
+        inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+
+        background_tasks.add_task(
+            email_service.send_invitation_email,
+            recipient=result["email"],
+            token=result["token"],
+            org_name=org_name,
+            inviter_name=inviter_name,
+            message=result.get("message"),
+        )
+        logger.info(f"Invitation resend email task added to background for {result['email']}")
+
         return InvitationResponse(**result)
 
     except InvitationNotFoundException as e:
