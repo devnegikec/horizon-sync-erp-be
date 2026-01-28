@@ -9,6 +9,7 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import ValuationMethod
+from app.models.types import JSONB
 
 
 class ItemGroup(Base):
@@ -35,6 +36,9 @@ class ItemGroup(Base):
     )
     default_uom = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
+
+    # Extra
+    extra_data = Column(JSONB, nullable=True)
 
     # Audit fields
     created_by = Column(UUID(as_uuid=True), nullable=True)

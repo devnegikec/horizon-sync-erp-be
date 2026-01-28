@@ -127,6 +127,9 @@ class Item(Base):
     # Relationships
     item_group = relationship("ItemGroup", back_populates="items")
     variant_parent = relationship("Item", remote_side=[id], backref="variants")
+    item_prices = relationship(
+        "ItemPrice", back_populates="item", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Item(id={self.id}, code='{self.item_code}', name='{self.item_name}')>"

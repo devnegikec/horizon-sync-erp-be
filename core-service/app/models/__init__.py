@@ -30,15 +30,6 @@ from app.models.customer import Customer
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.item_price import ItemPrice
-from app.models.item_supplier import ItemSupplier
-from app.models.put_away_rule import PutAwayRule
-from app.models.serial_no import SerialNo, SerialNoHistory
-from app.models.stock_entry import StockEntry, StockEntryItem
-from app.models.stock_level import StockLevel
-from app.models.stock_movement import StockMovement
-from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
-from app.models.stock_settings import StockSettings
-from app.models.supplier import Supplier
 from app.models.warehouse import Warehouse
 
 __all__ = [
@@ -72,7 +63,6 @@ __all__ = [
     "Item",
     "ItemGroup",
     "ItemPrice",
-    "ItemSupplier",
     "Warehouse",
     "Customer",
     "Supplier",

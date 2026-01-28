@@ -48,104 +48,14 @@ class DuplicateWarehouseCodeException(CoreServiceException):
     pass
 
 
-class BatchNotFoundException(CoreServiceException):
-    """Raised when a batch is not found"""
-
-    pass
-
-
-class DuplicateBatchNoException(CoreServiceException):
-    """Raised when batch number already exists for the item"""
-
-    pass
-
-
-class SerialNoNotFoundException(CoreServiceException):
-    """Raised when a serial number is not found"""
-
-    pass
-
-
-class DuplicateSerialNoException(CoreServiceException):
-    """Raised when serial number already exists for the item"""
-
-    pass
-
-
-class StockEntryNotFoundException(CoreServiceException):
-    """Raised when a stock entry is not found"""
-
-    pass
-
-
-class DuplicateStockEntryNoException(CoreServiceException):
-    """Raised when stock entry number already exists"""
-
-    pass
-
-
-class StockEntryItemNotFoundException(CoreServiceException):
-    """Raised when a stock entry item is not found"""
-
-    pass
-
-
-class StockLevelNotFoundException(CoreServiceException):
-    """Raised when a stock level is not found"""
-
-    pass
-
-
-class StockMovementNotFoundException(CoreServiceException):
-    """Raised when a stock movement is not found"""
-
-    pass
-
-
-class StockReconciliationNotFoundException(CoreServiceException):
-    """Raised when a stock reconciliation is not found"""
-
-    pass
-
-
-class DuplicateReconciliationNoException(CoreServiceException):
-    """Raised when reconciliation number already exists"""
-
-    pass
-
-
-class StockReconciliationItemNotFoundException(CoreServiceException):
-    """Raised when a stock reconciliation item is not found"""
-
-    pass
-
-
-class StockSettingsNotFoundException(CoreServiceException):
-    """Raised when stock settings are not found for the organization"""
-
-    pass
-
-
-class PutAwayRuleNotFoundException(CoreServiceException):
-    """Raised when a put away rule is not found"""
-
-    pass
-
-
 class ItemPriceNotFoundException(CoreServiceException):
     """Raised when an item price is not found"""
 
     pass
 
 
-class ItemSupplierNotFoundException(CoreServiceException):
-    """Raised when an item supplier is not found"""
-
-    pass
-
-
-class DuplicateItemSupplierException(CoreServiceException):
-    """Raised when (item_id, supplier_id) already exists for the organization"""
+class DuplicateItemPriceException(CoreServiceException):
+    """Raised when item price with same conditions already exists"""
 
     pass
 
@@ -214,6 +124,12 @@ class AuthorizationError(CoreServiceException):
 
 
 class ValidationError(CoreServiceException):
+    """Raised when validation fails"""
+
+    pass
+
+
+class ValidationException(CoreServiceException):
     """Raised when validation fails"""
 
     pass

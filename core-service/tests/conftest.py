@@ -92,3 +92,27 @@ def test_item_data(mock_current_user):
         "standard_rate": "100.00",
         "valuation_rate": "75.00",
     }
+
+
+@pytest.fixture
+def test_item_group_data(mock_current_user):
+    """Sample item group data for testing"""
+    return {
+        "name": "Test Electronics",
+        "code": "TEST-ELEC-001",
+        "description": "Test item group for electronics",
+        "default_valuation_method": "FIFO",
+        "default_uom": "Nos",
+        "is_active": True,
+    }
+
+
+@pytest.fixture
+def test_item_price_data(mock_current_user):
+    """Sample item price data for testing"""
+    return {
+        "price": "99.99",
+        "currency": "USD",
+        "min_qty": 1,
+        "extra_data": {"notes": "Test price"},
+    }
