@@ -45,7 +45,7 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-4320}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -90,7 +90,7 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
       IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
     ports:
       - "8001:8001"
       - "5679:5679"
