@@ -18,12 +18,18 @@ from app.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     CannotDeleteException,
+    ChartOfAccountNotFoundException,
     CircularReferenceException,
+    CustomerNotFoundException,
+    DuplicateAccountCodeException,
+    DuplicateCustomerCodeException,
     DuplicateItemCodeException,
     DuplicateItemGroupCodeException,
+    DuplicateSupplierCodeException,
     DuplicateWarehouseCodeException,
     ItemGroupNotFoundException,
     ItemNotFoundException,
+    SupplierNotFoundException,
     ValidationError,
     WarehouseNotFoundException,
 )
@@ -242,6 +248,96 @@ async def duplicate_warehouse_code_exception_handler(
         status_code=status.HTTP_409_CONFLICT,
         content={
             "error": "DUPLICATE_WAREHOUSE_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(CustomerNotFoundException)
+async def customer_not_found_exception_handler(
+    request: Request, exc: CustomerNotFoundException
+):
+    """Handle customer not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "CUSTOMER_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(SupplierNotFoundException)
+async def supplier_not_found_exception_handler(
+    request: Request, exc: SupplierNotFoundException
+):
+    """Handle supplier not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "SUPPLIER_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ChartOfAccountNotFoundException)
+async def chart_of_account_not_found_exception_handler(
+    request: Request, exc: ChartOfAccountNotFoundException
+):
+    """Handle chart of account not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "CHART_OF_ACCOUNT_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateCustomerCodeException)
+async def duplicate_customer_code_exception_handler(
+    request: Request, exc: DuplicateCustomerCodeException
+):
+    """Handle duplicate customer code errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_CUSTOMER_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateSupplierCodeException)
+async def duplicate_supplier_code_exception_handler(
+    request: Request, exc: DuplicateSupplierCodeException
+):
+    """Handle duplicate supplier code errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_SUPPLIER_CODE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateAccountCodeException)
+async def duplicate_account_code_exception_handler(
+    request: Request, exc: DuplicateAccountCodeException
+):
+    """Handle duplicate account code errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_ACCOUNT_CODE",
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
