@@ -48,6 +48,18 @@ class DuplicateWarehouseCodeException(CoreServiceException):
     pass
 
 
+class ItemPriceNotFoundException(CoreServiceException):
+    """Raised when an item price is not found"""
+
+    pass
+
+
+class DuplicateItemPriceException(CoreServiceException):
+    """Raised when item price with same conditions already exists"""
+
+    pass
+
+
 # ===========================================
 # CUSTOMER/SUPPLIER EXCEPTIONS
 # ===========================================
@@ -112,6 +124,12 @@ class AuthorizationError(CoreServiceException):
 
 
 class ValidationError(CoreServiceException):
+    """Raised when validation fails"""
+
+    pass
+
+
+class ValidationException(CoreServiceException):
     """Raised when validation fails"""
 
     pass

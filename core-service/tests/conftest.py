@@ -105,3 +105,14 @@ def test_item_group_data(mock_current_user):
         "default_uom": "Nos",
         "is_active": True,
     }
+
+
+@pytest.fixture
+def test_item_price_data(mock_current_user):
+    """Sample item price data for testing"""
+    return {
+        "price": "99.99",
+        "currency": "USD",
+        "min_qty": 1,
+        "extra_data": {"notes": "Test price"},
+    }

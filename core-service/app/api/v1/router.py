@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import item_groups, items, warehouses
+from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 
 api_router = APIRouter()
 
@@ -10,5 +10,8 @@ api_router = APIRouter()
 api_router.include_router(items.router, prefix="/items", tags=["Items"])
 api_router.include_router(
     item_groups.router, prefix="/item-groups", tags=["Item Groups"]
+)
+api_router.include_router(
+    item_prices.router, prefix="/item-prices", tags=["Item Prices"]
 )
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["Warehouses"])

@@ -21,10 +21,13 @@ from app.core.exceptions import (
     CircularReferenceException,
     DuplicateItemCodeException,
     DuplicateItemGroupCodeException,
+    DuplicateItemPriceException,
     DuplicateWarehouseCodeException,
     ItemGroupNotFoundException,
     ItemNotFoundException,
+    ItemPriceNotFoundException,
     ValidationError,
+    ValidationException,
     WarehouseNotFoundException,
 )
 from app.database import engine
@@ -270,6 +273,51 @@ async def cannot_delete_exception_handler(request: Request, exc: CannotDeleteExc
         status_code=status.HTTP_409_CONFLICT,
         content={
             "error": "CANNOT_DELETE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ItemPriceNotFoundException)
+async def item_price_not_found_exception_handler(
+    request: Request, exc: ItemPriceNotFoundException
+):
+    """Handle item price not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "ITEM_PRICE_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateItemPriceException)
+async def duplicate_item_price_exception_handler(
+    request: Request, exc: DuplicateItemPriceException
+):
+    """Handle duplicate item price errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_ITEM_PRICE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ValidationException)
+async def validation_exception_handler_custom(
+    request: Request, exc: ValidationException
+):
+    """Handle validation exception errors"""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error": "VALIDATION_ERROR",
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },

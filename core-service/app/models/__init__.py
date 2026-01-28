@@ -26,6 +26,7 @@ from app.models.base import (
 )
 from app.models.item import Item
 from app.models.item_group import ItemGroup
+from app.models.item_price import ItemPrice
 from app.models.warehouse import Warehouse
 
 __all__ = [
@@ -58,5 +59,6 @@ __all__ = [
     # Models
     "Item",
     "ItemGroup",
+    "ItemPrice",
     "Warehouse",
 ]
