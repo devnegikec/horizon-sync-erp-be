@@ -14,11 +14,12 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import ItemStatus, ItemType, ValuationMethod
+from app.models.types import JSONB
 
 
 class Item(Base):

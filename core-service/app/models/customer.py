@@ -4,10 +4,11 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Enum, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 from app.models.base import CustomerStatus
+from app.models.types import JSONB
 
 
 class Customer(Base):

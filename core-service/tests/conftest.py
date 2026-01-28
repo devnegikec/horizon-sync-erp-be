@@ -8,6 +8,8 @@ import uuid
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only-min-32-chars")
 os.environ.setdefault("IDENTITY_SERVICE_URL", "http://localhost:8000")
+os.environ.setdefault("DB_POOL_SIZE", "5")
+os.environ.setdefault("DB_MAX_OVERFLOW", "10")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
