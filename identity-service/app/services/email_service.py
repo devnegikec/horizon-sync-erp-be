@@ -6,6 +6,7 @@ from email.message import EmailMessage
 import aiosmtplib
 
 from app.config import settings
+from app.services.invitation_service import INVITATION_EXPIRY_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -60,15 +61,24 @@ class EmailService:
         try:
             logger.info("Connecting to SMTP server...")
 
+            import ssl
+
+            ssl_context = ssl.create_default_context()
+            if not settings.smtp_validate_certs:
+                logger.warning("SSL certificate validation is DISABLED for SMTP!")
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
             kwargs = {
                 "hostname": settings.smtp_host,
                 "port": settings.smtp_port,
                 "use_tls": settings.smtp_port == 465,
                 "start_tls": settings.smtp_port == 587,
+                "tls_context": ssl_context,
             }
 
             logger.info(
-                f"Connection parameters: use_tls={kwargs['use_tls']}, start_tls={kwargs['start_tls']}"
+                f"Connection parameters: use_tls={kwargs['use_tls']}, start_tls={kwargs['start_tls']}, validate_certs={settings.smtp_validate_certs}"
             )
 
             if settings.smtp_username and settings.smtp_password:
@@ -80,6 +90,7 @@ class EmailService:
 
             logger.info("Attempting to send email...")
             await aiosmtplib.send(message, **kwargs)
+
             logger.info(f"✅ Email '{subject}' sent successfully to {recipient}")
             logger.info("=" * 60)
 
@@ -104,8 +115,8 @@ class EmailService:
             token: Password reset token
         """
         subject = "Password Reset Request"
-        # In a real app, you would use a proper URL from your frontend
-        reset_link = f"http://localhost:4200/reset-password?token={token}"
+        # Use URL from settings
+        reset_link = f"{settings.password_reset_url}?token={token}"
 
         body = (
             f"Hello,\n\n"
@@ -113,6 +124,45 @@ class EmailService:
             f"{reset_link}\n\n"
             f"This link will expire in {settings.password_reset_token_expire_hours} hour.\n\n"
             f"If you didn't request this, please ignore this email.\n"
+        )
+
+        await self.send_email(subject, recipient, body)
+
+    async def send_invitation_email(
+        self,
+        recipient: str,
+        token: str,
+        org_name: str,
+        inviter_name: str,
+        message: str | None = None,
+    ):
+        """
+        Send an organization invitation email.
+
+        Args:
+            recipient: Invitee's email address
+            token: Invitation token
+            org_name: Name of the organization
+            inviter_name: Name of the person inviting
+            message: Optional personal message
+        """
+        subject = f"Invitation to join {org_name}"
+        # Use URL from settings
+        invitation_link = f"{settings.invitation_url}?token={token}"
+
+        body = (
+            f"Hello,\n\n"
+            f"{inviter_name} has invited you to join {org_name} on Horizon Sync ERP.\n\n"
+        )
+
+        if message:
+            body += f"Message from {inviter_name}:\n\"{message}\"\n\n"
+
+        body += (
+            f"Click the link below to accept the invitation and set up your account:\n\n"
+            f"{invitation_link}\n\n"
+            f"This invitation will expire in {INVITATION_EXPIRY_DAYS} days.\n\n"
+            f"If you weren't expecting this invitation, you can safely ignore this email.\n"
         )
 
         await self.send_email(subject, recipient, body)

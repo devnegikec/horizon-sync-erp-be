@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 4320  # 3 days
     refresh_token_expire_days: int = 7
     password_reset_token_expire_hours: int = 1
+    password_reset_url: str = "http://localhost:4200/reset-password"
+    invitation_url: str = "http://localhost:4200/accept-invitation"
 
     # Email (for password reset notifications)
     email_enabled: bool = True
@@ -43,6 +45,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = "noreply@example.com"
     smtp_from_name: str = "Identity Service"
+    smtp_validate_certs: bool = True
+
 
     # CORS
     cors_origins: str = "http://localhost:3000"

@@ -19,8 +19,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,6 +52,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
     ports:
       - "8000:8000"
       - "5678:5678"

@@ -119,6 +119,15 @@ class InvitationService:
         expires_at = datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS)
 
         # Create invitation
+        from uuid import uuid4
+        
+        # Convert team_ids UUIDs to strings for JSONB storage
+        if "team_ids" in invitation_data and invitation_data["team_ids"]:
+            invitation_data["team_ids"] = [
+                str(team_id) for team_id in invitation_data["team_ids"]
+            ]
+        
+        invitation_data["id"] = uuid4()  # Explicitly generate UUID to avoid blank ID
         invitation_data["token_hash"] = token_hash
         invitation_data["invited_by_id"] = inviter_id
         invitation_data["expires_at"] = expires_at
@@ -373,11 +382,11 @@ class InvitationService:
             user = existing_user
         else:
             # Create new user
-            from app.core.security import get_password_hash
+            from app.core.security import hash_password
 
             user_data = {
                 "email": invitation.email,
-                "password_hash": get_password_hash(password),
+                "password_hash": hash_password(password),
                 "first_name": first_name or invitation.first_name or "",
                 "last_name": last_name or invitation.last_name or "",
                 "is_active": True,
