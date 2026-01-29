@@ -2,7 +2,24 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
+# from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
+from app.api.v1.endpoints import (
+    batches,
+    chart_of_accounts,
+    customers,
+    item_groups,
+    item_prices,
+    items,
+    put_away_rules,
+    serial_numbers,
+    stock_entries,
+    stock_levels,
+    stock_movements,
+    stock_reconciliations,
+    stock_settings,
+    suppliers,
+    warehouses,
+)
 
 api_router = APIRouter()
 
