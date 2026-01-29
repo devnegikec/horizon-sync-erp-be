@@ -4,7 +4,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import UserNotFoundException
+from app.core.exceptions import DuplicateEmailException, UserNotFoundException
+from app.core.security import hash_password
 from app.models.base import UserStatus, UserType
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
@@ -16,6 +17,22 @@ class UserService:
     def __init__(self, db: Session):
         self.db = db
         self.user_repo = UserRepository(db)
+
+    def create_user(self, data: dict) -> User:
+        """
+        Create a new user. Hashes password. Raises DuplicateEmailException if email exists.
+        """
+        email = (data.get("email") or "").strip().lower()
+        if self.user_repo.email_exists(email):
+            raise DuplicateEmailException(f"User with email '{email}' already exists")
+        payload = dict(data)
+        if "password" in payload:
+            payload["password_hash"] = hash_password(payload.pop("password"))
+        if "user_type" in payload and payload["user_type"]:
+            payload["user_type"] = UserType(payload["user_type"])
+        if "status" in payload and payload["status"]:
+            payload["status"] = UserStatus(payload["status"])
+        return self.user_repo.create_user(payload)
 
     def get_user_by_id(self, user_id: UUID) -> User:
         """
@@ -45,6 +62,7 @@ class UserService:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        organization_ids: list[UUID] | None = None,
     ) -> tuple[list[User], dict]:
         """
         Get paginated list of users with filters.
@@ -58,6 +76,7 @@ class UserService:
             search: Search term for email, first_name, last_name
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            organization_ids: If set, only users in these organizations
 
         Returns:
             Tuple of (list of users, pagination metadata)
@@ -90,6 +109,7 @@ class UserService:
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
+            organization_ids=organization_ids,
         )
 
         # Calculate pagination metadata
@@ -104,3 +124,23 @@ class UserService:
         }
 
         return users, pagination
+
+    def update_user(self, user_id: UUID, data: dict) -> User:
+        """
+        Update user by ID. Partial update; enum fields converted.
+        Raises UserNotFoundException if not found.
+        """
+        user = self.get_user_by_id(user_id)
+        payload = {k: v for k, v in data.items() if v is not None}
+        if "user_type" in payload:
+            payload["user_type"] = UserType(payload["user_type"])
+        if "status" in payload:
+            payload["status"] = UserStatus(payload["status"])
+        if "password" in payload:
+            payload["password_hash"] = hash_password(payload.pop("password"))
+        return self.user_repo.update_user(user, payload)
+
+    def delete_user(self, user_id: UUID) -> None:
+        """Soft delete user by ID. Raises UserNotFoundException if not found."""
+        user = self.get_user_by_id(user_id)
+        self.user_repo.soft_delete(user)

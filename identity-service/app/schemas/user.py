@@ -21,6 +21,19 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
 
 
+class UserUpdate(BaseModel):
+    """Schema for partial user update"""
+
+    email: EmailStr | None = None
+    first_name: str | None = Field(None, min_length=2, max_length=100)
+    last_name: str | None = Field(None, min_length=2, max_length=100)
+    phone: str | None = Field(None, max_length=20)
+    user_type: str | None = Field(
+        None, pattern="^(system_admin|organization_admin|user|guest)$"
+    )
+    status: str | None = Field(None, pattern="^(active|inactive|suspended|pending)$")
+
+
 class UserResponse(UserBase):
     """Schema for user response"""
 
