@@ -7,10 +7,18 @@ from app.api.v1.endpoints import (
     batches,
     chart_of_accounts,
     customers,
+    delivery_notes,
+    invoices,
     item_groups,
     item_prices,
     items,
+    journal_entries,
+    landed_cost,
+    payments,
+    pick_lists,
+    purchase_receipts,
     put_away_rules,
+    quality_inspections,
     serial_numbers,
     stock_entries,
     stock_levels,
@@ -63,4 +71,28 @@ api_router.include_router(
 )
 api_router.include_router(
     put_away_rules.router, prefix="/put-away-rules", tags=["Put Away Rules"]
+)
+# Phase 4: Quality Management
+api_router.include_router(
+    quality_inspections.router,
+    prefix="/quality-inspections",
+    tags=["Quality Inspections"],
+)
+# Phase 5: Order Processing
+api_router.include_router(pick_lists.router, prefix="/pick-lists", tags=["Pick Lists"])
+api_router.include_router(
+    delivery_notes.router, prefix="/delivery-notes", tags=["Delivery Notes"]
+)
+api_router.include_router(
+    purchase_receipts.router, prefix="/purchase-receipts", tags=["Purchase Receipts"]
+)
+# Phase 6: Landed Cost
+api_router.include_router(
+    landed_cost.router, prefix="/landed-cost", tags=["Landed Cost"]
+)
+# Phase 7: Billing
+api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"])
+api_router.include_router(payments.router, prefix="/payments", tags=["Payments"])
+api_router.include_router(
+    journal_entries.router, prefix="/journal-entries", tags=["Journal Entries"]
 )

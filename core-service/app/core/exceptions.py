@@ -241,3 +241,9 @@ class CannotDeleteException(CoreServiceException):
     """Raised when an entity cannot be deleted due to dependencies"""
 
     pass
+
+
+class ResourceNotFoundException(CoreServiceException):
+    """Raised when a resource (e.g. quality template, inspection) is not found"""
+
+    pass

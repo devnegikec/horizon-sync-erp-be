@@ -39,6 +39,7 @@ from app.core.exceptions import (
     ItemPriceNotFoundException,
     ItemSupplierNotFoundException,
     PutAwayRuleNotFoundException,
+    ResourceNotFoundException,
     SerialNoNotFoundException,
     StockEntryItemNotFoundException,
     StockEntryNotFoundException,
@@ -518,6 +519,21 @@ async def cannot_delete_exception_handler(request: Request, exc: CannotDeleteExc
         status_code=status.HTTP_409_CONFLICT,
         content={
             "error": "CANNOT_DELETE",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(ResourceNotFoundException)
+async def resource_not_found_exception_handler(
+    request: Request, exc: ResourceNotFoundException
+):
+    """Handle resource not found errors (e.g. quality template, inspection)"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "RESOURCE_NOT_FOUND",
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
