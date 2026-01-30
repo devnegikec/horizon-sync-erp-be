@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.error_handler import handle_login_errors
 from app.core.exceptions import (
     AccountLockedException,
     AuthenticationError,
@@ -21,6 +22,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
+    LoginUserResponse,
     LogoutRequest,
     LogoutResponse,
     RefreshTokenRequest,
@@ -106,11 +108,14 @@ async def login(
     login_data: LoginRequest, request: Request, db: Session = Depends(get_db)
 ):
     """
-    Authenticate user and return JWT tokens.
+    Authenticate user and return JWT tokens with user details.
 
     - **email**: User's email address
     - **password**: User's password
     - **device_info**: Optional device information for tracking
+
+    Returns user details excluding sensitive fields: password, mfa_secret,
+    mfa_backup_codes, deleted_at, created_at, updated_at
     """
     try:
         auth_service = AuthService(db)
@@ -130,20 +135,54 @@ async def login(
             user_agent=user_agent,
         )
 
+        # Get user's organization_id (similar to /me endpoint logic)
+        user_org_role = (
+            db.query(UserOrganizationRole)
+            .filter(
+                UserOrganizationRole.user_id == user.id,
+                UserOrganizationRole.is_active == True,  # noqa: E712
+            )
+            .order_by(UserOrganizationRole.is_primary.desc())  # Primary first
+            .first()
+        )
+
+        organization_id = None
+        if user_org_role:
+            organization_id = str(user_org_role.organization_id)
+
+        # Create user response with organization_id
+        user_dict = {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "display_name": user.display_name,
+            "phone": user.phone,
+            "avatar_url": user.avatar_url,
+            "user_type": user.user_type.value if user.user_type else None,
+            "status": user.status.value if user.status else None,
+            "is_active": user.is_active,
+            "email_verified": user.email_verified,
+            "email_verified_at": user.email_verified_at,
+            "last_login_at": user.last_login_at,
+            "last_login_ip": user.last_login_ip,
+            "preferences": user.preferences,
+            "timezone": user.timezone,
+            "language": user.language,
+            "extra_data": user.extra_data,
+            "organization_id": organization_id,
+        }
+
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
             expires_in=settings.access_token_expire_minutes * 60,
+            user=LoginUserResponse.model_validate(user_dict),
         )
 
-    except AuthenticationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
-        ) from e
-
-    except AccountLockedException as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except (AuthenticationError, AccountLockedException) as e:
+        raise handle_login_errors(login_data.email, e)
 
 
 @router.post(
