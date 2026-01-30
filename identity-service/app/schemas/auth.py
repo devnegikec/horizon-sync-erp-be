@@ -1,6 +1,9 @@
 """Authentication related Pydantic schemas"""
 
-from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.schemas.user import UserResponse
 
@@ -22,6 +25,32 @@ class LoginRequest(BaseModel):
     device_info: DeviceInfo | None = None
 
 
+class LoginUserResponse(BaseModel):
+    """Schema for user data in login response"""
+
+    id: UUID
+    email: EmailStr
+    first_name: str
+    last_name: str
+    display_name: str | None = None
+    phone: str | None = None
+    avatar_url: str | None = None
+    user_type: str
+    status: str
+    is_active: bool
+    email_verified: bool
+    email_verified_at: datetime | None = None
+    last_login_at: datetime | None = None
+    last_login_ip: str | None = None
+    preferences: dict | None = None
+    timezone: str | None = None
+    language: str | None = None
+    extra_data: dict | None = None
+    organization_id: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TokenResponse(BaseModel):
     """Schema for token response"""
 
@@ -29,6 +58,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    user: LoginUserResponse
 
 
 class RefreshTokenRequest(BaseModel):
