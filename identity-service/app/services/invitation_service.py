@@ -120,13 +120,13 @@ class InvitationService:
 
         # Create invitation
         from uuid import uuid4
-        
+
         # Convert team_ids UUIDs to strings for JSONB storage
         if "team_ids" in invitation_data and invitation_data["team_ids"]:
             invitation_data["team_ids"] = [
                 str(team_id) for team_id in invitation_data["team_ids"]
             ]
-        
+
         invitation_data["id"] = uuid4()  # Explicitly generate UUID to avoid blank ID
         invitation_data["token_hash"] = token_hash
         invitation_data["invited_by_id"] = inviter_id

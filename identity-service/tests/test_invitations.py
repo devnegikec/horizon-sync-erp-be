@@ -1,17 +1,18 @@
 """Unit and integration tests for invitation creation and logic"""
 
-import pytest
-from uuid import uuid4, UUID
-from datetime import datetime, timedelta
+from uuid import UUID, uuid4
+
 from fastapi import status
 
-from app.services.invitation_service import InvitationService
 from app.repositories.invitation_repository import InvitationRepository
-from app.models.invitation import Invitation
+from app.services.invitation_service import InvitationService
 
 # -------- UNIT TESTS --------
 
-def test_create_invitation_with_team_ids_as_uuids(db_session, test_organization, test_user):
+
+def test_create_invitation_with_team_ids_as_uuids(
+    db_session, test_organization, test_user
+):
     service = InvitationService(db_session)
     team_ids = [uuid4(), uuid4()]
     invitation_data = {
@@ -25,7 +26,11 @@ def test_create_invitation_with_team_ids_as_uuids(db_session, test_organization,
         "extra_data": {},
     }
     inviter_permissions = ["user.invite"]
-    result = service.create_invitation(invitation_data, inviter_id=test_user.id, inviter_permissions=inviter_permissions)
+    result = service.create_invitation(
+        invitation_data,
+        inviter_id=test_user.id,
+        inviter_permissions=inviter_permissions,
+    )
     assert result["email"] == "invitee@example.com"
     assert result["team_ids"] == [str(tid) for tid in team_ids]
     assert result["status"] == "pending"
@@ -47,19 +52,28 @@ def test_duplicate_invitation_cancels_old(db_session, test_organization, test_us
         "extra_data": {},
     }
     # First invitation
-    result1 = service.create_invitation(invitation_data.copy(), inviter_id=test_user.id, inviter_permissions=inviter_permissions)
+    result1 = service.create_invitation(
+        invitation_data.copy(),
+        inviter_id=test_user.id,
+        inviter_permissions=inviter_permissions,
+    )
     # Second invitation (should cancel the first)
-    result2 = service.create_invitation(invitation_data.copy(), inviter_id=test_user.id, inviter_permissions=inviter_permissions)
+    result2 = service.create_invitation(
+        invitation_data.copy(),
+        inviter_id=test_user.id,
+        inviter_permissions=inviter_permissions,
+    )
     repo = InvitationRepository(db_session)
     old_inv = repo.get_invitation_by_id(result1["id"])
     assert old_inv.status == "cancelled"
     assert result2["email"] == email
     assert result2["status"] == "pending"
 
+
 # -------- INTEGRATION TESTS --------
 
+
 def test_post_invitations_api(client, test_organization, test_user, auth_headers):
-    from app.schemas.invitation import InvitationCreate
     team_ids = [str(uuid4()), str(uuid4())]
     payload = {
         "organization_id": str(test_organization.id),
@@ -80,7 +94,9 @@ def test_post_invitations_api(client, test_organization, test_user, auth_headers
     assert "id" in data
 
 
-def test_post_invitations_api_duplicate(client, test_organization, test_user, auth_headers):
+def test_post_invitations_api_duplicate(
+    client, test_organization, test_user, auth_headers
+):
     team_ids = [str(uuid4())]
     payload = {
         "organization_id": str(test_organization.id),

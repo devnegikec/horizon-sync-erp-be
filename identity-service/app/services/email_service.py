@@ -156,7 +156,7 @@ class EmailService:
         )
 
         if message:
-            body += f"Message from {inviter_name}:\n\"{message}\"\n\n"
+            body += f'Message from {inviter_name}:\n"{message}"\n\n'
 
         body += (
             f"Click the link below to accept the invitation and set up your account:\n\n"

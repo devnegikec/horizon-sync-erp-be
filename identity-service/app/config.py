@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Identity Service"
     smtp_validate_certs: bool = True
 
-
     # CORS
     cors_origins: str = "http://localhost:3000"
     cors_allow_credentials: bool = True
