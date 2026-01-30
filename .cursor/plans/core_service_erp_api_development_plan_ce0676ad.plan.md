@@ -33,7 +33,11 @@ This plan outlines the complete development strategy for the core-service ERP sy
 - ✅ **Phase 2 - Item-Related APIs**: Complete
 - Item Prices API (item_prices)
 - Item Suppliers API (item_suppliers)
-- ⏳ **Phase 4+**: To be built following this plan
+- ✅ **Phase 4 - Quality Management APIs**: Complete (quality_inspection_templates, quality_inspections)
+- ✅ **Phase 5 - Order Processing APIs**: Complete (pick_lists, delivery_notes, purchase_receipts)
+- ✅ **Phase 6 - Landed Cost APIs**: Complete (landed_cost_vouchers)
+- ✅ **Phase 7 - Billing APIs**: Complete (invoices, payments, journal_entries)
+- ✅ **RBAC**: Core-service APIs respect role-based access from identity-service (permissions in /me, require_permission enforced)
 
 ## API Development Order
 

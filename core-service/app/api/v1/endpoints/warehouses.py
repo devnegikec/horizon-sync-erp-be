@@ -5,8 +5,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.authorization import (
+    WAREHOUSE_CREATE,
+    WAREHOUSE_DELETE,
+    WAREHOUSE_READ,
+    WAREHOUSE_UPDATE,
+)
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse import (
     WarehouseCreate,
@@ -30,7 +36,7 @@ router = APIRouter()
 )
 async def create_warehouse(
     warehouse_data: WarehouseCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -80,7 +86,7 @@ async def list_warehouses(
     search: str | None = Query(None, description="Search in name, code, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -129,7 +135,7 @@ async def list_warehouses(
     description="Get warehouses as a hierarchical tree structure",
 )
 async def get_warehouse_tree(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -151,7 +157,7 @@ async def get_warehouse_tree(
 )
 async def get_warehouse(
     warehouse_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -182,7 +188,7 @@ async def get_warehouse(
 async def update_warehouse(
     warehouse_id: UUID,
     warehouse_data: WarehouseUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -215,7 +221,7 @@ async def update_warehouse(
 )
 async def delete_warehouse(
     warehouse_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_DELETE)),
     db: Session = Depends(get_db),
 ):
     """

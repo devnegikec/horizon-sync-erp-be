@@ -15,9 +15,8 @@ from app.core.exceptions import (
     UserNotFoundException,
 )
 from app.database import get_db
-from app.dependencies import get_client_ip, get_current_user
+from app.dependencies import CurrentUser, get_client_ip, get_current_user
 from app.models.role import UserOrganizationRole
-from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -355,17 +354,19 @@ async def reset_password(
     description="Get current authenticated user information including organization_id",
 )
 async def get_me(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Get current authenticated user information.
 
-    Returns user details including organization_id from their primary organization role.
+    Returns user details including organization_id and permissions from their primary organization role.
+    Used by core-service and other clients for RBAC (role-based access control).
 
     **Returns:**
     - User information
     - organization_id: Primary organization UUID
+    - permissions: List of permission codes (e.g. item.read, warehouse.create)
     """
     # Get user's primary organization, or fallback to any active organization
     user_org_role = (
@@ -391,4 +392,5 @@ async def get_me(
         "user_type": current_user.user_type.value if current_user.user_type else None,
         "status": current_user.status.value if current_user.status else None,
         "organization_id": organization_id,
+        "permissions": current_user.permissions,
     }

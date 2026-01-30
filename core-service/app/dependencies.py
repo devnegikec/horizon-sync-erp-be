@@ -84,40 +84,35 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
 
-    # Extract organization_id (if present in token)
-    org_id_str = payload.get("organization_id")
-    organization_id = None
-    if org_id_str:
-        try:
-            organization_id = UUID(org_id_str)
-        except ValueError:
-            pass
-
-    # If organization_id not in token, call identity-service to get it
-    if not organization_id:
-        organization_id = await _get_user_organization(token)
+    # Get organization_id and permissions from identity-service /me (token rarely has them)
+    org_id, permissions = await _get_user_org_and_permissions(token)
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unable to determine user organization",
+        )
 
     return CurrentUser(
         id=user_id,
         email=payload.get("email", ""),
-        organization_id=organization_id,
+        organization_id=org_id,
         user_type=payload.get("user_type", "user"),
-        permissions=payload.get("permissions", []),
+        permissions=permissions,
     )
 
 
-async def _get_user_organization(token: str) -> UUID:
+async def _get_user_org_and_permissions(token: str) -> tuple[UUID | None, list[str]]:
     """
-    Get user's organization from identity-service.
+    Get user's organization_id and permissions from identity-service /me.
 
     Args:
         token: Bearer token
 
     Returns:
-        Organization UUID
+        Tuple of (organization_id or None, list of permission codes)
 
     Raises:
-        HTTPException: If unable to get organization
+        HTTPException: If identity service unavailable or returns error
     """
     try:
         async with httpx.AsyncClient() as client:
@@ -127,17 +122,24 @@ async def _get_user_organization(token: str) -> UUID:
                 timeout=5.0,
             )
 
-            if response.status_code == 200:
-                data = response.json()
-                org_id_str = data.get("organization_id")
-                if org_id_str:
-                    return UUID(org_id_str)
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Unable to get user context from identity service",
+                )
 
-            # Fallback: return a default org (should not happen in production)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unable to determine user organization",
-            )
+            data = response.json()
+            org_id_str = data.get("organization_id")
+            organization_id = None
+            if org_id_str:
+                try:
+                    organization_id = UUID(org_id_str)
+                except ValueError:
+                    pass
+            permissions = data.get("permissions") or []
+            if not isinstance(permissions, list):
+                permissions = []
+            return organization_id, permissions
 
     except httpx.RequestError as e:
         raise HTTPException(
@@ -167,28 +169,27 @@ async def get_current_active_user(
 
 def require_permission(permission: str):
     """
-    Dependency factory to require a specific permission.
+    Dependency factory to require a specific permission (RBAC from identity-service).
 
     Args:
-        permission: Permission code required (e.g., "item.create")
+        permission: Permission code required (e.g. "item.create", "warehouse.read")
 
     Returns:
-        Dependency function that checks permission
+        Dependency function that raises 403 if permission is missing
     """
 
     async def check_permission(
         current_user: CurrentUser = Depends(get_current_active_user),
     ) -> CurrentUser:
-        # System admins have all permissions
+        # System admins bypass permission check
         if current_user.user_type == "system_admin":
             return current_user
-
-        # Check if user has the required permission
+        # Require the permission; raise 403 if missing
         if permission not in current_user.permissions:
-            # For now, allow all authenticated users (permissions not yet in token)
-            # In production, you'd enforce this strictly
-            pass
-
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied. Required: {permission}",
+            )
         return current_user
 
     return check_permission
