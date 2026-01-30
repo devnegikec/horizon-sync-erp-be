@@ -1,5 +1,6 @@
 """User repository for database operations"""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import or_
@@ -92,6 +93,7 @@ class UserRepository:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        organization_ids: list[UUID] | None = None,
     ) -> tuple[list[User], int]:
         """
         List users with pagination and filters.
@@ -105,11 +107,25 @@ class UserRepository:
             search: Search term for email, first_name, last_name
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            organization_ids: If set, only users that belong to these organizations
 
         Returns:
             Tuple of (list of users, total count)
         """
         query = self.db.query(User).filter(User.deleted_at.is_(None))
+
+        if organization_ids is not None:
+            from app.models.role import UserOrganizationRole
+
+            query = (
+                query.join(UserOrganizationRole)
+                .filter(
+                    UserOrganizationRole.user_id == User.id,
+                    UserOrganizationRole.organization_id.in_(organization_ids),
+                    UserOrganizationRole.is_active,
+                )
+                .distinct()
+            )
 
         # Apply filters
         if status:
@@ -163,3 +179,18 @@ class UserRepository:
             .count()
             > 0
         )
+
+    def soft_delete(self, user: User) -> User:
+        """
+        Soft delete user by setting deleted_at.
+
+        Args:
+            user: User object to soft delete
+
+        Returns:
+            Updated User object
+        """
+        user.deleted_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(user)
+        return user

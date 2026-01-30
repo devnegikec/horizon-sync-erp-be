@@ -143,3 +143,15 @@ class UserAlreadyExistsException(Exception):
     """Raised when user already exists in organization"""
 
     pass
+
+
+class OrganizationNotFoundException(Exception):
+    """Raised when an organization is not found"""
+
+    pass
+
+
+class DuplicateOrganizationSlugException(Exception):
+    """Raised when attempting to create an organization with an existing slug"""
+
+    pass

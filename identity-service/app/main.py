@@ -18,8 +18,10 @@ from app.core.exceptions import (
     AccountLockedException,
     AuthenticationError,
     DuplicateEmailException,
+    DuplicateOrganizationSlugException,
     DuplicateResourceException,
     InvalidTokenException,
+    OrganizationNotFoundException,
     PasswordValidationException,
     ResourceNotFoundException,
     TokenExpiredException,
@@ -294,6 +296,36 @@ async def validation_exception_handler_custom(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
             "error": "VALIDATION_ERROR",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(OrganizationNotFoundException)
+async def organization_not_found_exception_handler(
+    request: Request, exc: OrganizationNotFoundException
+):
+    """Handle organization not found errors"""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "ORGANIZATION_NOT_FOUND",
+            "message": str(exc),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+
+@app.exception_handler(DuplicateOrganizationSlugException)
+async def duplicate_organization_slug_exception_handler(
+    request: Request, exc: DuplicateOrganizationSlugException
+):
+    """Handle duplicate organization slug errors"""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": "DUPLICATE_ORGANIZATION_SLUG",
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
