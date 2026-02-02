@@ -22,7 +22,7 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    """Schema for partial user update"""
+    """Schema for partial user update (admin)"""
 
     email: EmailStr | None = None
     first_name: str | None = Field(None, min_length=2, max_length=100)
@@ -34,6 +34,19 @@ class UserUpdate(BaseModel):
     status: str | None = Field(None, pattern="^(active|inactive|suspended|pending)$")
 
 
+class UserSelfUpdate(BaseModel):
+    """Schema for self-service profile update (logged-in user updates own info)"""
+
+    first_name: str | None = Field(None, min_length=2, max_length=100)
+    last_name: str | None = Field(None, min_length=2, max_length=100)
+    display_name: str | None = Field(None, max_length=200)
+    phone: str | None = Field(None, max_length=20)
+    preferences: dict | None = None
+    extra_data: dict | None = None
+    timezone: str | None = Field(None, max_length=50)
+    language: str | None = Field(None, max_length=10)
+
+
 class UserResponse(UserBase):
     """Schema for user response"""
 
@@ -42,6 +55,24 @@ class UserResponse(UserBase):
     user_type: str
     status: str
     email_verified: bool
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserProfileResponse(UserBase):
+    """Schema for user profile (self-service) including preferences, extra_data, timezone"""
+
+    id: UUID
+    display_name: str | None = None
+    user_type: str
+    status: str
+    email_verified: bool
+    preferences: dict | None = None
+    timezone: str | None = "UTC"
+    language: str | None = "en"
+    extra_data: dict | None = None
     last_login_at: datetime | None = None
     created_at: datetime
 
