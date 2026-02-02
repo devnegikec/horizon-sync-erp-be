@@ -15,6 +15,7 @@ from app.core.exceptions import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.organization import Organization
 from app.schemas.invitation import (
     InvitationAcceptRequest,
     InvitationAcceptResponse,
@@ -22,9 +23,8 @@ from app.schemas.invitation import (
     InvitationListResponse,
     InvitationResponse,
 )
-from app.services.invitation_service import InvitationService
 from app.services.email_service import EmailService
-from app.models.organization import Organization
+from app.services.invitation_service import InvitationService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -71,9 +71,16 @@ async def send_invitation(
 
         # Send invitation email in background
         email_service = EmailService()
-        org = db.query(Organization).filter(Organization.id == result["organization_id"]).first()
+        org = (
+            db.query(Organization)
+            .filter(Organization.id == result["organization_id"])
+            .first()
+        )
         org_name = org.name if org else "the organization"
-        inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+        inviter_name = (
+            f"{current_user.first_name} {current_user.last_name}".strip()
+            or current_user.email
+        )
 
         background_tasks.add_task(
             email_service.send_invitation_email,
@@ -296,9 +303,16 @@ async def resend_invitation(
 
         # Send invitation email in background
         email_service = EmailService()
-        org = db.query(Organization).filter(Organization.id == result["organization_id"]).first()
+        org = (
+            db.query(Organization)
+            .filter(Organization.id == result["organization_id"])
+            .first()
+        )
         org_name = org.name if org else "the organization"
-        inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+        inviter_name = (
+            f"{current_user.first_name} {current_user.last_name}".strip()
+            or current_user.email
+        )
 
         background_tasks.add_task(
             email_service.send_invitation_email,
@@ -308,7 +322,9 @@ async def resend_invitation(
             inviter_name=inviter_name,
             message=result.get("message"),
         )
-        logger.info(f"Invitation resend email task added to background for {result['email']}")
+        logger.info(
+            f"Invitation resend email task added to background for {result['email']}"
+        )
 
         return InvitationResponse(**result)
 

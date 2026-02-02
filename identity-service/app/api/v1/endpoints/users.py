@@ -19,7 +19,9 @@ from app.schemas.user import (
     UserCreate,
     UserListItem,
     UserListResponse,
+    UserProfileResponse,
     UserResponse,
+    UserSelfUpdate,
     UserUpdate,
 )
 from app.services.user_service import UserService
@@ -113,6 +115,59 @@ async def list_users(
     )
     user_items = [UserListItem.model_validate(user) for user in users]
     return UserListResponse(users=user_items, pagination=PaginationMeta(**pagination))
+
+
+# ----- Self-service profile (logged-in user updates own info) -----
+# Must be defined before /users/{user_id} so "me" is matched as literal
+
+
+@router.get(
+    "/users/me",
+    response_model=UserProfileResponse,
+    summary="Get my profile",
+    description="Get current user's profile including preferences, extra_data, timezone. No permission required.",
+)
+async def get_my_profile(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get current user's own profile including preferences, extra_data, timezone, language.
+
+    Any logged-in user can access their own profile. No permission required.
+    """
+    user_service = UserService(db)
+    try:
+        user = user_service.get_user_by_id(current_user.id)
+        return UserProfileResponse.model_validate(user)
+    except UserNotFoundException:
+        raise
+
+
+@router.patch(
+    "/users/me",
+    response_model=UserProfileResponse,
+    summary="Update my profile",
+    description="Update current user's own profile (preferences, extra_data, timezone, etc). No permission required.",
+)
+async def update_my_profile(
+    body: UserSelfUpdate,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update current user's own profile.
+
+    Allowed fields: first_name, last_name, display_name, phone, preferences, extra_data,
+    timezone, language. Any logged-in user can update these. No permission required.
+    """
+    user_service = UserService(db)
+    payload = body.model_dump(exclude_unset=True)
+    try:
+        user = user_service.update_user(current_user.id, payload)
+        return UserProfileResponse.model_validate(user)
+    except UserNotFoundException:
+        raise
 
 
 @router.get(

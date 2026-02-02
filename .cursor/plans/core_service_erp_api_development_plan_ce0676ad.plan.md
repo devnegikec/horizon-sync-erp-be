@@ -50,129 +50,129 @@ The APIs should be built in the following order to respect dependencies:
 - Independent, no dependencies
 - Required by: items, stock entries, delivery notes, purchase receipts
 
-2. **Item Groups API** (`item_groups`)
+1. **Item Groups API** (`item_groups`)
 
 - Independent (self-referencing for hierarchy)
 - Required by: items
 
-3. **Customers API** (`customers`)
+1. **Customers API** (`customers`)
 
 - Independent
 - Required by: delivery notes, invoices, payments
 
-4. **Suppliers API** (`suppliers`)
+1. **Suppliers API** (`suppliers`)
 
 - Independent
 - Required by: purchase receipts, invoices, payments, item_suppliers
 
-5. **Chart of Accounts API** (`chart_of_accounts`)
+1. **Chart of Accounts API** (`chart_of_accounts`)
 
 - Independent (self-referencing for hierarchy)
 - Required by: journal entries, warehouses (stock_account_id)
 
 ### Phase 2: Item-Related APIs
 
-6. **Item Prices API** (`item_prices`)
+1. **Item Prices API** (`item_prices`)
 
 - Depends on: items
 - Price list management for items
 
-7. **Item Suppliers API** (`item_suppliers`)
+1. **Item Suppliers API** (`item_suppliers`)
 
 - Depends on: items, suppliers
 - Supplier relationships for items
 
 ### Phase 3: Stock Management APIs
 
-8. **Batches API** (`batches`)
+1. **Batches API** (`batches`)
 
 - Depends on: items
 - Batch tracking for items
 
-9. **Serial Numbers API** (`serial_nos`, `serial_no_history`)
+1. **Serial Numbers API** (`serial_nos`, `serial_no_history`)
 
 - Depends on: items, warehouses_extended
 - Serial number tracking
 
-10. **Stock Entries API** (`stock_entries`, `stock_entry_items`)
+1. **Stock Entries API** (`stock_entries`, `stock_entry_items`)
 
 - Depends on: items, warehouses_extended
 - Stock movement management
 
-11. **Stock Levels API** (`stock_levels`)
+1. **Stock Levels API** (`stock_levels`)
 
 - Depends on: items (via products), warehouses
 - Current stock tracking
 
-12. **Stock Movements API** (`stock_movements`)
+1. **Stock Movements API** (`stock_movements`)
 
 - Depends on: items (via products), warehouses
 - Stock movement audit trail
 
-13. **Stock Reconciliations API** (`stock_reconciliations`, `stock_reconciliation_items`)
+1. **Stock Reconciliations API** (`stock_reconciliations`, `stock_reconciliation_items`)
 
 - Depends on: items, warehouses_extended
 - Stock reconciliation management
 
-14. **Stock Settings API** (`stock_settings`)
+1. **Stock Settings API** (`stock_settings`)
 
 - Depends on: warehouses_extended (default_warehouse_id)
 - Organization-level stock settings
 
-15. **Put Away Rules API** (`put_away_rules`)
+1. **Put Away Rules API** (`put_away_rules`)
 
 - Depends on: items, item_groups, warehouses_extended
 - Automated put-away rules
 
 ### Phase 4: Quality Management APIs
 
-16. **Quality Inspection Templates API** (`quality_inspection_templates`, `quality_inspection_parameters`)
+1. **Quality Inspection Templates API** (`quality_inspection_templates`, `quality_inspection_parameters`)
 
 - Depends on: items, item_groups
 - Template management
 
-17. **Quality Inspections API** (`quality_inspections`, `quality_inspection_readings`)
+1. **Quality Inspections API** (`quality_inspections`, `quality_inspection_readings`)
 
 - Depends on: items, quality_inspection_templates
 - Inspection record management
 
 ### Phase 5: Order Processing APIs
 
-18. **Pick Lists API** (`pick_lists`, `pick_list_items`)
+1. **Pick Lists API** (`pick_lists`, `pick_list_items`)
 
 - Depends on: items, warehouses_extended
 - Warehouse picking operations
 
-19. **Delivery Notes API** (`delivery_notes`, `delivery_note_items`)
+1. **Delivery Notes API** (`delivery_notes`, `delivery_note_items`)
 
 - Depends on: customers, items, warehouses_extended, pick_lists (optional)
 - Sales delivery documentation
 
-20. **Purchase Receipts API** (`purchase_receipts`, `purchase_receipt_items`)
+1. **Purchase Receipts API** (`purchase_receipts`, `purchase_receipt_items`)
 
 - Depends on: suppliers, items, warehouses_extended
 - Purchase receipt documentation
 
 ### Phase 6: Landed Cost APIs
 
-21. **Landed Cost Vouchers API** (`landed_cost_vouchers`, `landed_cost_purchase_receipts`, `landed_cost_items`, `landed_cost_taxes_and_charges`)
+1. **Landed Cost Vouchers API** (`landed_cost_vouchers`, `landed_cost_purchase_receipts`, `landed_cost_items`, `landed_cost_taxes_and_charges`)
 
 - Depends on: purchase_receipts, items
 - Landed cost allocation
 
 ### Phase 7: Billing APIs
 
-22. **Invoices API** (`invoices`, `invoice_items`)
+1. **Invoices API** (`invoices`, `invoice_items`)
 
 - Depends on: customers, suppliers
 - Sales and purchase invoicing
 
-23. **Payments API** (`payments`, `payment_allocations`)
+1. **Payments API** (`payments`, `payment_allocations`)
 
 - Depends on: customers, suppliers, invoices
 - Payment processing
 
-24. **Journal Entries API** (`journal_entries`, `journal_entry_lines`)
+1. **Journal Entries API** (`journal_entries`, `journal_entry_lines`)
 
 - Depends on: chart_of_accounts
 - Accounting journal entries
@@ -210,55 +210,55 @@ Tables must be created in the following order:
 
 **Group 2: Item-Related Tables**
 
-6. `items` (already exists)
-7. `item_prices`
-8. `item_suppliers`
+1. `items` (already exists)
+2. `item_prices`
+3. `item_suppliers`
 
 **Group 3: Stock Management Tables**
 
-9. `batches`
-10. `serial_nos`
-11. `serial_no_history`
-12. `stock_entries`
-13. `stock_entry_items`
-14. `stock_levels`
-15. `stock_movements`
-16. `stock_reconciliations`
-17. `stock_reconciliation_items`
-18. `stock_settings`
-19. `put_away_rules`
+1. `batches`
+2. `serial_nos`
+3. `serial_no_history`
+4. `stock_entries`
+5. `stock_entry_items`
+6. `stock_levels`
+7. `stock_movements`
+8. `stock_reconciliations`
+9. `stock_reconciliation_items`
+10. `stock_settings`
+11. `put_away_rules`
 
 **Group 4: Quality Management Tables**
 
-20. `quality_inspection_templates`
-21. `quality_inspection_parameters`
-22. `quality_inspections`
-23. `quality_inspection_readings`
+1. `quality_inspection_templates`
+2. `quality_inspection_parameters`
+3. `quality_inspections`
+4. `quality_inspection_readings`
 
 **Group 5: Order Processing Tables**
 
-24. `pick_lists`
-25. `pick_list_items`
-26. `delivery_notes`
-27. `delivery_note_items`
-28. `purchase_receipts`
-29. `purchase_receipt_items`
+1. `pick_lists`
+2. `pick_list_items`
+3. `delivery_notes`
+4. `delivery_note_items`
+5. `purchase_receipts`
+6. `purchase_receipt_items`
 
 **Group 6: Landed Cost Tables**
 
-30. `landed_cost_vouchers`
-31. `landed_cost_purchase_receipts`
-32. `landed_cost_items`
-33. `landed_cost_taxes_and_charges`
+1. `landed_cost_vouchers`
+2. `landed_cost_purchase_receipts`
+3. `landed_cost_items`
+4. `landed_cost_taxes_and_charges`
 
 **Group 7: Billing Tables**
 
-34. `invoices`
-35. `invoice_items`
-36. `payments`
-37. `payment_allocations`
-38. `journal_entries`
-39. `journal_entry_lines`
+1. `invoices`
+2. `invoice_items`
+3. `payments`
+4. `payment_allocations`
+5. `journal_entries`
+6. `journal_entry_lines`
 
 ### Step 3: Create Indexes
 

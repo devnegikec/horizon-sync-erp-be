@@ -3,6 +3,7 @@
 ## Database Schema Overview
 
 ### 1. **Permissions Table**
+
 ```
 id (UUID): Primary Key
 code (String[100]): Unique identifier (e.g., "user:create", "invoice:read")
@@ -19,6 +20,7 @@ updated_at (DateTime): Timestamp
 ```
 
 ### 2. **Roles Table**
+
 ```
 id (UUID): Primary Key
 organization_id (UUID): Foreign Key to organizations
@@ -35,6 +37,7 @@ updated_at (DateTime): Timestamp
 ```
 
 ### 3. **Role_Permissions Table** (Junction)
+
 ```
 id (UUID): Primary Key
 role_id (UUID): Foreign Key to roles
@@ -53,9 +56,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ## 1. PERMISSIONS API
 
 ### 1.1 List All Permissions
+
 **Endpoint:** `GET /api/v1/permissions`
 
 **Query Parameters:**
+
 - `skip` (int, default: 0): Pagination offset
 - `limit` (int, default: 10): Pagination limit
 - `is_active` (bool, optional): Filter by active status
@@ -65,6 +70,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 - `search` (string, optional): Search by name or code
 
 **Response (200 OK):**
+
 ```json
 {
   "data": [
@@ -92,9 +98,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 1.2 Get Permission by ID
+
 **Endpoint:** `GET /api/v1/permissions/{permission_id}`
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -115,9 +123,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 1.3 Create Permission
+
 **Endpoint:** `POST /api/v1/permissions`
 
 **Request Body:**
+
 ```json
 {
   "code": "user:create",
@@ -133,6 +143,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "id": "uuid",
@@ -151,6 +162,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "Code 'user:create' already exists"
@@ -160,9 +172,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 1.4 Update Permission
+
 **Endpoint:** `PUT /api/v1/permissions/{permission_id}`
 
 **Request Body:**
+
 ```json
 {
   "name": "Create New User",
@@ -173,6 +187,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -193,11 +208,13 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 1.5 Delete Permission
+
 **Endpoint:** `DELETE /api/v1/permissions/{permission_id}`
 
 **Response (204 No Content)**
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "Cannot delete permission with active role assignments"
@@ -207,9 +224,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 1.6 Bulk Assign Permissions to Role
+
 **Endpoint:** `POST /api/v1/permissions/bulk-assign`
 
 **Request Body:**
+
 ```json
 {
   "role_id": "uuid",
@@ -218,6 +237,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Successfully assigned 3 permissions to role",
@@ -231,9 +251,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ## 2. ROLES API
 
 ### 2.1 List All Roles
+
 **Endpoint:** `GET /api/v1/roles`
 
 **Query Parameters:**
+
 - `skip` (int, default: 0): Pagination offset
 - `limit` (int, default: 10): Pagination limit
 - `organization_id` (UUID, optional): Filter by organization (required for non-admin)
@@ -243,6 +265,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 - `include_permissions` (bool, default: false): Include permissions in response
 
 **Response (200 OK):**
+
 ```json
 {
   "data": [
@@ -271,12 +294,15 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.2 Get Role by ID
+
 **Endpoint:** `GET /api/v1/roles/{role_id}`
 
 **Query Parameters:**
+
 - `include_permissions` (bool, default: false): Include permissions in response
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -306,9 +332,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.3 Create Role
+
 **Endpoint:** `POST /api/v1/roles`
 
 **Request Body:**
+
 ```json
 {
   "organization_id": "uuid",
@@ -324,6 +352,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "id": "uuid",
@@ -342,6 +371,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "Role code 'manager' already exists in this organization"
@@ -351,9 +381,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.4 Update Role
+
 **Endpoint:** `PUT /api/v1/roles/{role_id}`
 
 **Request Body:**
+
 ```json
 {
   "name": "Senior Manager",
@@ -365,6 +397,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -383,6 +416,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "Cannot modify system role 'admin'"
@@ -392,11 +426,13 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.5 Delete Role
+
 **Endpoint:** `DELETE /api/v1/roles/{role_id}`
 
 **Response (204 No Content)**
 
 **Error (400 Bad Request):**
+
 ```json
 {
   "detail": "Cannot delete role with active user assignments (5 users)"
@@ -404,6 +440,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Error (403 Forbidden):**
+
 ```json
 {
   "detail": "Cannot delete system role"
@@ -413,15 +450,18 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.6 Get Role Permissions
+
 **Endpoint:** `GET /api/v1/roles/{role_id}/permissions`
 
 **Query Parameters:**
+
 - `skip` (int, default: 0): Pagination offset
 - `limit` (int, default: 10): Pagination limit
 - `resource` (string, optional): Filter by resource type
 - `action` (string, optional): Filter by action type
 
 **Response (200 OK):**
+
 ```json
 {
   "data": [
@@ -445,9 +485,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.7 Assign Permission to Role
+
 **Endpoint:** `POST /api/v1/roles/{role_id}/permissions`
 
 **Request Body:**
+
 ```json
 {
   "permission_id": "uuid",
@@ -459,6 +501,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "id": "uuid",
@@ -473,6 +516,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Error (409 Conflict):**
+
 ```json
 {
   "detail": "Permission already assigned to this role"
@@ -482,6 +526,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.8 Remove Permission from Role
+
 **Endpoint:** `DELETE /api/v1/roles/{role_id}/permissions/{permission_id}`
 
 **Response (204 No Content)**
@@ -489,17 +534,20 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.9 Bulk Assign Permissions to Role
+
 **Endpoint:** `POST /api/v1/roles/{role_id}/permissions/bulk`
 
 **Request Body:**
+
 ```json
 {
   "permission_ids": ["uuid1", "uuid2", "uuid3"],
-  "mode": "replace"  // "replace" or "add"
+  "mode": "replace" // "replace" or "add"
 }
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Successfully assigned 3 permissions",
@@ -512,14 +560,17 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 2.10 Get Users with Role
+
 **Endpoint:** `GET /api/v1/roles/{role_id}/users`
 
 **Query Parameters:**
+
 - `skip` (int, default: 0): Pagination offset
 - `limit` (int, default: 10): Pagination limit
 - `organization_id` (UUID, required): Organization filter
 
 **Response (200 OK):**
+
 ```json
 {
   "data": [
@@ -546,9 +597,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ## 3. ROLE-PERMISSIONS API (Junction Table Management)
 
 ### 3.1 Get Role Permission by ID
+
 **Endpoint:** `GET /api/v1/role-permissions/{role_permission_id}`
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -561,9 +614,11 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ---
 
 ### 3.2 Update Role Permission Conditions
+
 **Endpoint:** `PUT /api/v1/role-permissions/{role_permission_id}`
 
 **Request Body:**
+
 ```json
 {
   "conditions": {
@@ -574,6 +629,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "uuid",
@@ -591,6 +647,7 @@ conditions (JSON): Optional conditional permissions (e.g., department restrictio
 ## 4. PYDANTIC SCHEMAS (Request/Response Models)
 
 ### Permissions Schemas
+
 ```python
 class PermissionBase(BaseModel):
     code: str
@@ -625,6 +682,7 @@ class PermissionListResponse(BaseModel):
 ```
 
 ### Roles Schemas
+
 ```python
 class RoleBase(BaseModel):
     name: str
@@ -661,6 +719,7 @@ class RoleListResponse(BaseModel):
 ```
 
 ### Role-Permission Schemas
+
 ```python
 class RolePermissionBase(BaseModel):
     role_id: UUID
@@ -686,6 +745,7 @@ class BulkAssignPermissionsRequest(BaseModel):
 ## 5. AUTHORIZATION & SECURITY
 
 ### Required Permissions for Endpoints
+
 - `GET /permissions` → `permission:read`
 - `POST /permissions` → `permission:create`
 - `PUT /permissions/{id}` → `permission:update`
@@ -696,6 +756,7 @@ class BulkAssignPermissionsRequest(BaseModel):
 - `DELETE /roles/{id}` → `role:delete`
 
 ### Rules
+
 1. Users can only view/manage roles within their organization
 2. System roles cannot be deleted or modified
 3. Hierarchy level restrictions: Only higher hierarchy users can manage lower hierarchy roles
@@ -707,6 +768,7 @@ class BulkAssignPermissionsRequest(BaseModel):
 ## 6. ERROR RESPONSES
 
 ### Common Error Codes
+
 - `400 Bad Request` → Validation failed
 - `401 Unauthorized` → Missing/invalid authentication
 - `403 Forbidden` → Insufficient permissions
@@ -715,6 +777,7 @@ class BulkAssignPermissionsRequest(BaseModel):
 - `422 Unprocessable Entity` → Invalid request data
 
 ### Standard Error Response Format
+
 ```json
 {
   "detail": "Error message",

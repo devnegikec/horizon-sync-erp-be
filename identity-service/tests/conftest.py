@@ -15,16 +15,17 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.core.security import create_token  # noqa: E402
+from app.core.security import (  # noqa: E402
+    create_token,  # noqa: E402
+    hash_password,
+)
 from app.database import Base, get_db  # noqa: E402
-from app.dependencies import get_current_active_user  # noqa: E402
+from app.dependencies import get_current_active_user  # noqa: E402  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models.user import User, UserStatus, UserType  # noqa: E402
 from app.models.organization import Organization  # noqa: E402
-from app.models.role import Role, RoleHierarchy  # noqa: E402
+from app.models.role import Role  # noqa: E402
 from app.models.token import Permission  # noqa: E402
-from app.core.security import create_token, hash_password  # noqa: E402
-from app.dependencies import get_current_active_user  # noqa: E402
+from app.models.user import User, UserStatus, UserType  # noqa: E402
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -119,7 +120,7 @@ def test_user_other_org(db_session):
     )
     db_session.add(org)
     db_session.commit()
-    
+
     user = User(
         id=UUID("77777777-7777-7777-7777-777777777777"),
         email="other@example.com",
@@ -160,7 +161,7 @@ def test_permissions(db_session):
         ("role.delete", "Delete Role", "role", "delete"),
         ("role.manage", "Manage Roles", "role", "manage"),
     ]
-    
+
     for code, name, resource, action in permission_codes:
         perm = Permission(
             id=uuid4(),
@@ -174,7 +175,7 @@ def test_permissions(db_session):
         )
         db_session.add(perm)
         permissions.append(perm)
-    
+
     db_session.commit()
     return {perm.code: perm for perm in permissions}
 
@@ -194,11 +195,11 @@ def test_system_role(db_session, test_organization, test_permissions):
     )
     db_session.add(role)
     db_session.commit()
-    
+
     # Add all permissions to system admin role
     for perm in test_permissions.values():
         role.permissions.append(perm)
-    
+
     db_session.commit()
     return role
 
@@ -218,14 +219,24 @@ def test_org_role(db_session, test_organization, test_permissions):
     )
     db_session.add(role)
     db_session.commit()
-    
+
     # Add org and role management permissions
-    org_perms = ["org.create", "org.read", "org.update", "org.delete", "org.manage",
-                 "role.create", "role.read", "role.update", "role.delete", "role.manage"]
+    org_perms = [
+        "org.create",
+        "org.read",
+        "org.update",
+        "org.delete",
+        "org.manage",
+        "role.create",
+        "role.read",
+        "role.update",
+        "role.delete",
+        "role.manage",
+    ]
     for perm_code in org_perms:
         if perm_code in test_permissions:
             role.permissions.append(test_permissions[perm_code])
-    
+
     db_session.commit()
     return role
 
@@ -246,11 +257,11 @@ def test_limited_role(db_session, test_organization, test_permissions):
     )
     db_session.add(role)
     db_session.commit()
-    
+
     # Add only user read permission
     if "user.read" in test_permissions:
         role.permissions.append(test_permissions["user.read"])
-    
+
     db_session.commit()
     return role
 

@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
-    check_permission,
     is_system_admin,
     require_permission,
     validate_user_in_organization,
@@ -269,7 +268,7 @@ async def update_role(
     try:
         # Get role first to validate org membership and system role check
         existing_role = role_service.get_role_by_id(role_id)
-        
+
         # Validate organization membership
         validate_user_in_organization(
             current_user.id, existing_role["organization_id"], db
@@ -277,7 +276,9 @@ async def update_role(
 
         # Check if trying to modify system role
         if existing_role["is_system"] and not is_system_admin(current_user.permissions):
-            logger.warning(f"User {current_user.id} attempted to modify system role {role_id}")
+            logger.warning(
+                f"User {current_user.id} attempted to modify system role {role_id}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot modify system roles",
@@ -341,7 +342,7 @@ async def delete_role(
     try:
         # Get role first to validate org membership
         existing_role = role_service.get_role_by_id(role_id)
-        
+
         # Validate organization membership
         validate_user_in_organization(
             current_user.id, existing_role["organization_id"], db
@@ -349,7 +350,9 @@ async def delete_role(
 
         # Check if trying to delete system role
         if existing_role["is_system"] and not is_system_admin(current_user.permissions):
-            logger.warning(f"User {current_user.id} attempted to delete system role {role_id}")
+            logger.warning(
+                f"User {current_user.id} attempted to delete system role {role_id}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete system roles",
@@ -373,7 +376,9 @@ async def delete_role(
         )
 
     except RoleHasUsersException as e:
-        logger.warning(f"User {current_user.id}: Cannot delete role {role_id}: has active users")
+        logger.warning(
+            f"User {current_user.id}: Cannot delete role {role_id}: has active users"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),

@@ -218,6 +218,7 @@ class ItemListItem(BaseModel):
     item_type: str
     uom: str
     item_group_id: UUID | None = None
+    item_group_name: str | None = None
     standard_rate: Decimal | None = None
     status: str
     maintain_stock: bool | None = None

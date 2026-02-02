@@ -326,6 +326,18 @@ class ItemGroupService:
 
         return [build_tree_node(g) for g in root_nodes]
 
+    def get_active_item_groups(self, organization_id: UUID) -> list[ItemGroup]:
+        """
+        Get all active item groups for an organization.
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            List of active ItemGroup objects
+        """
+        return self.item_group_repo.get_active_item_groups(organization_id)
+
     def _would_create_circular_reference(
         self, item_group_id: UUID, new_parent_id: UUID, organization_id: UUID
     ) -> bool:

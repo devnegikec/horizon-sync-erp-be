@@ -220,6 +220,27 @@ class ItemGroupRepository:
             .all()
         )
 
+    def get_active_item_groups(self, organization_id: UUID) -> list[ItemGroup]:
+        """
+        Get all active item groups for an organization.
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            List of active item groups
+        """
+        return (
+            self.db.query(ItemGroup)
+            .filter(
+                ItemGroup.organization_id == organization_id,
+                ItemGroup.is_active.is_(True),
+                ItemGroup.deleted_at.is_(None),
+            )
+            .order_by(ItemGroup.name)
+            .all()
+        )
+
     def has_children(self, item_group_id: UUID, organization_id: UUID) -> bool:
         """
         Check if item group has child groups.

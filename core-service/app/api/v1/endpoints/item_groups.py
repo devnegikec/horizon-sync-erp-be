@@ -134,6 +134,30 @@ async def get_item_group_tree(
 
 
 @router.get(
+    "/active",
+    response_model=list[ItemGroupListItem],
+    summary="Get active item groups",
+    description="Get all active item groups in the organization as a flat list",
+)
+async def get_active_item_groups(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all active item groups.
+
+    Requires authentication.
+
+    **Returns:** List of active item groups
+    """
+    item_group_service = ItemGroupService(db)
+    item_groups = item_group_service.get_active_item_groups(
+        current_user.organization_id
+    )
+    return [ItemGroupListItem.model_validate(ig) for ig in item_groups]
+
+
+@router.get(
     "/{item_group_id}",
     response_model=ItemGroupResponse,
     summary="Get item group",
