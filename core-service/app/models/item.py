@@ -131,5 +131,10 @@ class Item(Base):
         "ItemPrice", back_populates="item", cascade="all, delete-orphan"
     )
 
+    @property
+    def item_group_name(self) -> str | None:
+        """Get item group name from relationship"""
+        return self.item_group.name if self.item_group else None
+
     def __repr__(self):
         return f"<Item(id={self.id}, code='{self.item_code}', name='{self.item_name}')>"

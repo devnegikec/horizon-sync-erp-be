@@ -144,9 +144,13 @@ class ItemRepository:
         Returns:
             Tuple of (list of items, total count)
         """
-        query = self.db.query(Item).filter(
-            Item.organization_id == organization_id,
-            Item.deleted_at.is_(None),
+        query = (
+            self.db.query(Item)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.deleted_at.is_(None),
+            )
+            .options(joinedload(Item.item_group))
         )
 
         # Apply filters
