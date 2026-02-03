@@ -349,6 +349,85 @@ For each API:
 7. Test enum validation
 8. Test foreign key constraints
 
+## Schema vs API Coverage (Why Some Tables Have No Standalone API)
+
+`schema.dbml` defines **63 tables**. Core-service ERP exposes **standalone (top-level) APIs** only for **parent/primary entities**. Many tables are either child tables (managed via parent APIs), owned by another service (Identity), or out of scope for the current ERP API set.
+
+### Tables With Standalone APIs (Parent / Primary Entities)
+
+| Table(s)                                                                                                      | API                              | Notes                                                                             |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------- |
+| `warehouses_extended`                                                                                         | Warehouses API                   | Plan uses `warehouses_extended`; schema also has `warehouses` (see Out of scope). |
+| `item_groups`                                                                                                 | Item Groups API                  |                                                                                   |
+| `items`                                                                                                       | Items API                        |                                                                                   |
+| `item_prices`                                                                                                 | Item Prices API                  |                                                                                   |
+| `item_suppliers`                                                                                              | Item Suppliers API               |                                                                                   |
+| `customers`                                                                                                   | Customers API                    |                                                                                   |
+| `suppliers`                                                                                                   | Suppliers API                    |                                                                                   |
+| `chart_of_accounts`                                                                                           | Chart of Accounts API            |                                                                                   |
+| `batches`                                                                                                     | Batches API                      |                                                                                   |
+| `serial_nos`, `serial_no_history`                                                                             | Serial Numbers API               | History is part of serial-number flow.                                            |
+| `stock_entries`, `stock_entry_items`                                                                          | Stock Entries API                | Line items are sub-resource of stock entry.                                       |
+| `stock_levels`                                                                                                | Stock Levels API                 | Implementation may use item/product mapping.                                      |
+| `stock_movements`                                                                                             | Stock Movements API              | Implementation may use item/product mapping.                                      |
+| `stock_reconciliations`, `stock_reconciliation_items`                                                         | Stock Reconciliations API        | Items are sub-resource of reconciliation.                                         |
+| `stock_settings`                                                                                              | Stock Settings API               |                                                                                   |
+| `put_away_rules`                                                                                              | Put Away Rules API               |                                                                                   |
+| `quality_inspection_templates`, `quality_inspection_parameters`                                               | Quality Inspection Templates API | Parameters are sub-resource of template.                                          |
+| `quality_inspections`, `quality_inspection_readings`                                                          | Quality Inspections API          | Readings are sub-resource of inspection.                                          |
+| `pick_lists`, `pick_list_items`                                                                               | Pick Lists API                   | Items are sub-resource of pick list.                                              |
+| `delivery_notes`, `delivery_note_items`                                                                       | Delivery Notes API               | Items are sub-resource of delivery note.                                          |
+| `purchase_receipts`, `purchase_receipt_items`                                                                 | Purchase Receipts API            | Items are sub-resource of purchase receipt.                                       |
+| `landed_cost_vouchers`, `landed_cost_purchase_receipts`, `landed_cost_items`, `landed_cost_taxes_and_charges` | Landed Cost Vouchers API         | All child tables are part of voucher API.                                         |
+| `invoices`, `invoice_items`                                                                                   | Invoices API                     | Line items are sub-resource of invoice.                                           |
+| `payments`, `payment_allocations`                                                                             | Payments API                     | Allocations are sub-resource of payment.                                          |
+| `journal_entries`, `journal_entry_lines`                                                                      | Journal Entries API              | Lines are sub-resource of journal entry.                                          |
+
+### Child / Detail Tables (No Standalone API — Managed via Parent)
+
+These are created, updated, and deleted only through their parent API (e.g. create delivery note with `delivery_note_items` in the same request). They are not missing; they are intentionally not top-level resources.
+
+| Table                                                                                 | Parent entity / API                    |
+| ------------------------------------------------------------------------------------- | -------------------------------------- |
+| `stock_entry_items`                                                                   | Stock Entries API                      |
+| `stock_reconciliation_items`                                                          | Stock Reconciliations API              |
+| `serial_no_history`                                                                   | Serial Numbers API (lifecycle/history) |
+| `quality_inspection_parameters`                                                       | Quality Inspection Templates API       |
+| `quality_inspection_readings`                                                         | Quality Inspections API                |
+| `pick_list_items`                                                                     | Pick Lists API                         |
+| `delivery_note_items`                                                                 | Delivery Notes API                     |
+| `purchase_receipt_items`                                                              | Purchase Receipts API                  |
+| `landed_cost_purchase_receipts`, `landed_cost_items`, `landed_cost_taxes_and_charges` | Landed Cost Vouchers API               |
+| `invoice_items`                                                                       | Invoices API                           |
+| `payment_allocations`                                                                 | Payments API                           |
+| `journal_entry_lines`                                                                 | Journal Entries API                    |
+
+### Identity / Other Services (Not Core-Service ERP)
+
+These tables are owned by the Identity service or other subsystems; core-service ERP does not expose APIs for them.
+
+| Table(s)                                                                                                      | Service / purpose                                 |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `users`, `organizations`, `organization_settings`                                                             | Identity                                          |
+| `roles`, `permissions`, `role_permissions`                                                                    | Identity (RBAC)                                   |
+| `user_organization_roles`, `user_teams`, `teams`, `team_members`                                              | Identity                                          |
+| `invitations`, `email_verifications`, `password_resets`, `refresh_tokens`                                     | Identity (auth)                                   |
+| `activity_logs`, `audit_logs`                                                                                 | Cross-cutting / audit (may be identity or shared) |
+| `subscription_plans`, `subscriptions`, `subscription_invoices`, `subscription_payments`, `subscription_usage` | Billing / subscriptions                           |
+
+### In Schema But Not in Current ERP API Scope
+
+| Table(s)             | Reason                                                                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `warehouses`         | Plan and APIs use `warehouses_extended`; schema references `warehouses` for `stock_levels` and `stock_movements`. Implementation may use only `warehouses_extended` and map as needed. |
+| `products`           | Schema uses `products` for `stock_levels` and `stock_movements`; ERP APIs use **items** as the primary entity. Products may be legacy or a separate catalog; not in current API scope. |
+| `product_categories` | Tied to `products`; same as above.                                                                                                                                                     |
+
+### Summary
+
+- **Standalone APIs:** All primary ERP entities listed in Phases 1–7 have APIs; child tables are covered as sub-resources of those APIs.
+- **“Missing” APIs:** There are no standalone APIs for (1) child/detail tables by design, (2) Identity/auth tables (different service), (3) `warehouses` / `products` / `product_categories` (out of current scope or alternate model). No core ERP **parent** table from the plan is missing an API.
+
 ## Next Steps
 
 1. Review and confirm this plan
