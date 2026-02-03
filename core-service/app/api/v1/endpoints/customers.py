@@ -67,7 +67,7 @@ async def list_customers(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (max 100)"),
     status: str | None = Query(
-        None, description="Filter by status (active, inactive, blocked)"
+        "active", description="Filter by status (active, inactive, blocked)"
     ),
     search: str | None = Query(None, description="Search in name, code, email, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
@@ -83,7 +83,7 @@ async def list_customers(
     **Query Parameters:**
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 20, max: 100)
-    - **status**: Filter by status
+    - **status**: Filter by status (default: active)
     - **search**: Search term for name, code, email, city
     - **sort_by**: Field to sort by (default: created_at)
     - **sort_order**: Sort order - asc or desc (default: desc)

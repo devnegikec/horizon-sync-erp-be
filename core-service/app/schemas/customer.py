@@ -136,8 +136,16 @@ class CustomerListItem(BaseModel):
     customer_name: str
     customer_code: str
     email: str | None = None
+    phone: str | None = None
+    address: str | None = None
     city: str | None = None
+    tax_number: str | None = None
     status: str
+    tags: list | dict | None = None
+    credit_limit: Decimal
+    outstanding_balance: Decimal
+    custom_fields: dict | None = None
+    extra_data: dict | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

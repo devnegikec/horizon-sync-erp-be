@@ -139,6 +139,20 @@ app.include_router(api_router, prefix="/api/v1")
 
 
 # Exception handlers
+def create_error_response(status_code: int, message: str, code: str):
+    """Utility to create consistent error responses"""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "detail": {
+                "message": message,
+                "status_code": status_code,
+                "code": code,
+            }
+        },
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors"""
@@ -147,40 +161,30 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         field = ".".join(str(loc) for loc in error["loc"] if loc != "body")
         errors.append({"field": field, "message": error["msg"]})
 
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": "VALIDATION_ERROR",
-            "message": "Invalid input data",
-            "details": errors,
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message="Invalid input data",
+        code="VALIDATION_ERROR",
     )
 
 
 @app.exception_handler(AuthenticationError)
 async def authentication_exception_handler(request: Request, exc: AuthenticationError):
     """Handle authentication errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        content={
-            "error": "AUTHENTICATION_FAILED",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="AUTHENTICATION_FAILED",
     )
 
 
 @app.exception_handler(AuthorizationError)
 async def authorization_exception_handler(request: Request, exc: AuthorizationError):
     """Handle authorization errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_403_FORBIDDEN,
-        content={
-            "error": "AUTHORIZATION_FAILED",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="AUTHORIZATION_FAILED",
     )
 
 
@@ -189,13 +193,10 @@ async def item_not_found_exception_handler(
     request: Request, exc: ItemNotFoundException
 ):
     """Handle item not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "ITEM_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="ITEM_NOT_FOUND",
     )
 
 
@@ -204,13 +205,10 @@ async def item_group_not_found_exception_handler(
     request: Request, exc: ItemGroupNotFoundException
 ):
     """Handle item group not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "ITEM_GROUP_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="ITEM_GROUP_NOT_FOUND",
     )
 
 
@@ -219,13 +217,10 @@ async def warehouse_not_found_exception_handler(
     request: Request, exc: WarehouseNotFoundException
 ):
     """Handle warehouse not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "WAREHOUSE_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="WAREHOUSE_NOT_FOUND",
     )
 
 
@@ -234,13 +229,10 @@ async def duplicate_item_code_exception_handler(
     request: Request, exc: DuplicateItemCodeException
 ):
     """Handle duplicate item code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_ITEM_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_ITEM_CODE",
     )
 
 
@@ -249,13 +241,10 @@ async def duplicate_item_group_code_exception_handler(
     request: Request, exc: DuplicateItemGroupCodeException
 ):
     """Handle duplicate item group code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_ITEM_GROUP_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_ITEM_GROUP_CODE",
     )
 
 
@@ -264,13 +253,10 @@ async def duplicate_warehouse_code_exception_handler(
     request: Request, exc: DuplicateWarehouseCodeException
 ):
     """Handle duplicate warehouse code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_WAREHOUSE_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_WAREHOUSE_CODE",
     )
 
 
@@ -279,13 +265,10 @@ async def customer_not_found_exception_handler(
     request: Request, exc: CustomerNotFoundException
 ):
     """Handle customer not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "CUSTOMER_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="CUSTOMER_NOT_FOUND",
     )
 
 
@@ -294,13 +277,10 @@ async def supplier_not_found_exception_handler(
     request: Request, exc: SupplierNotFoundException
 ):
     """Handle supplier not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "SUPPLIER_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="SUPPLIER_NOT_FOUND",
     )
 
 
@@ -309,13 +289,10 @@ async def chart_of_account_not_found_exception_handler(
     request: Request, exc: ChartOfAccountNotFoundException
 ):
     """Handle chart of account not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "CHART_OF_ACCOUNT_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="CHART_OF_ACCOUNT_NOT_FOUND",
     )
 
 
@@ -324,13 +301,10 @@ async def duplicate_customer_code_exception_handler(
     request: Request, exc: DuplicateCustomerCodeException
 ):
     """Handle duplicate customer code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_CUSTOMER_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_CUSTOMER_CODE",
     )
 
 
@@ -339,13 +313,10 @@ async def duplicate_supplier_code_exception_handler(
     request: Request, exc: DuplicateSupplierCodeException
 ):
     """Handle duplicate supplier code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_SUPPLIER_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_SUPPLIER_CODE",
     )
 
 
@@ -354,13 +325,10 @@ async def duplicate_account_code_exception_handler(
     request: Request, exc: DuplicateAccountCodeException
 ):
     """Handle duplicate account code errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_ACCOUNT_CODE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_ACCOUNT_CODE",
     )
 
 
@@ -390,24 +358,18 @@ async def duplicate_item_supplier_handler(
 
 
 def _stock_404(exc: Exception, code: str):
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": code,
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code=code,
     )
 
 
 def _stock_409(exc: Exception, code: str):
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": code,
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code=code,
     )
 
 
@@ -502,26 +464,20 @@ async def circular_reference_exception_handler(
     request: Request, exc: CircularReferenceException
 ):
     """Handle circular reference errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": "CIRCULAR_REFERENCE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="CIRCULAR_REFERENCE",
     )
 
 
 @app.exception_handler(CannotDeleteException)
 async def cannot_delete_exception_handler(request: Request, exc: CannotDeleteException):
     """Handle cannot delete errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "CANNOT_DELETE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="CANNOT_DELETE",
     )
 
 
@@ -530,13 +486,10 @@ async def resource_not_found_exception_handler(
     request: Request, exc: ResourceNotFoundException
 ):
     """Handle resource not found errors (e.g. quality template, inspection)"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "RESOURCE_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="RESOURCE_NOT_FOUND",
     )
 
 
@@ -545,13 +498,10 @@ async def item_price_not_found_exception_handler(
     request: Request, exc: ItemPriceNotFoundException
 ):
     """Handle item price not found errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": "ITEM_PRICE_NOT_FOUND",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="ITEM_PRICE_NOT_FOUND",
     )
 
 
@@ -560,13 +510,10 @@ async def duplicate_item_price_exception_handler(
     request: Request, exc: DuplicateItemPriceException
 ):
     """Handle duplicate item price errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": "DUPLICATE_ITEM_PRICE",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="DUPLICATE_ITEM_PRICE",
     )
 
 
@@ -575,26 +522,20 @@ async def validation_exception_handler_custom(
     request: Request, exc: ValidationException
 ):
     """Handle validation exception errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": "VALIDATION_ERROR",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="VALIDATION_ERROR",
     )
 
 
 @app.exception_handler(ValidationError)
 async def custom_validation_exception_handler(request: Request, exc: ValidationError):
     """Handle custom validation errors"""
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": "VALIDATION_FAILED",
-            "message": str(exc),
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message=str(exc),
+        code="VALIDATION_FAILED",
     )
 
 
@@ -602,13 +543,10 @@ async def custom_validation_exception_handler(request: Request, exc: ValidationE
 async def database_exception_handler(request: Request, exc: SQLAlchemyError):
     """Handle database errors"""
     logger.error(f"Database error: {exc}")
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "DATABASE_ERROR",
-            "message": "A database error occurred",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message="A database error occurred",
+        code="DATABASE_ERROR",
     )
 
 
@@ -616,11 +554,8 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general errors"""
     logger.error(f"Unexpected error: {exc}")
-    return JSONResponse(
+    return create_error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "INTERNAL_SERVER_ERROR",
-            "message": "An unexpected error occurred",
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
+        message="An unexpected error occurred",
+        code="INTERNAL_SERVER_ERROR",
     )
