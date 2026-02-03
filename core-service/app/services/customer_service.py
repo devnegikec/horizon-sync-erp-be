@@ -157,7 +157,7 @@ class CustomerService:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[Customer], dict]:
+    ) -> tuple[list[Customer], dict, dict]:
         """
         Get paginated list of customers with filters.
 
@@ -171,7 +171,7 @@ class CustomerService:
             sort_order: Sort order (asc or desc)
 
         Returns:
-            Tuple of (list of customers, pagination metadata)
+            Tuple of (list of customers, pagination metadata, status counts)
         """
         page_size = min(page_size, 100)
 
@@ -192,6 +192,9 @@ class CustomerService:
             sort_order=sort_order,
         )
 
+        # Get status counts
+        status_counts = self.customer_repo.get_customer_status_counts(organization_id)
+
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
             "page": page,
@@ -202,4 +205,4 @@ class CustomerService:
             "has_prev": page > 1,
         }
 
-        return customers, pagination
+        return customers, pagination, status_counts
