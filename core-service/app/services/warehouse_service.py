@@ -228,7 +228,7 @@ class WarehouseService:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[Warehouse], dict]:
+    ) -> tuple[list[Warehouse], dict, dict, dict]:
         """
         Get paginated list of warehouses with filters.
 
@@ -244,7 +244,7 @@ class WarehouseService:
             sort_order: Sort order (asc or desc)
 
         Returns:
-            Tuple of (list of warehouses, pagination metadata)
+            Tuple of (list of warehouses, pagination metadata, status counts, type counts)
         """
         # Convert warehouse_type string to enum
         warehouse_type_enum = None
@@ -271,6 +271,10 @@ class WarehouseService:
             sort_order=sort_order,
         )
 
+        # Get status and type counts
+        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id)
+        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id)
+
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
@@ -282,7 +286,7 @@ class WarehouseService:
             "has_prev": page > 1,
         }
 
-        return warehouses, pagination
+        return warehouses, pagination, status_counts, type_counts
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """

@@ -9,6 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+class CustomerStatusCounts(BaseModel):
+    """Schema for customer status counts"""
+
+    active: int = 0
+    inactive: int = 0
+    blocked: int = 0
+    total: int = 0
+
+
 class CustomerBase(BaseModel):
     """Base customer schema with common fields"""
 
@@ -156,3 +165,4 @@ class CustomerListResponse(BaseModel):
 
     customers: list[CustomerListItem]
     pagination: PaginationMeta
+    status_counts: CustomerStatusCounts
