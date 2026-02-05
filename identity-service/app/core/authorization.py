@@ -52,21 +52,53 @@ def validate_user_in_organization(
     return True
 
 
+def has_permission(permissions: list[str], required_permission: str) -> bool:
+    """
+    Check if user has the required permission, including wildcard matching.
+
+    Permission format is resource.action (e.g. user.read, warehouse.create).
+    Wildcards:
+    - Exact match: user has "user.read" and required is "user.read"
+    - Resource wildcard: user has "user.*" and required is "user.read" or "user.create"
+    - Full wildcard: user has "*.*" grants any required permission
+
+    Args:
+        permissions: List of user permission codes (may include wildcards like user.*, *.*)
+        required_permission: Required permission code (e.g. user.read)
+
+    Returns:
+        True if user has permission (exact or via wildcard), False otherwise
+    """
+    if not permissions or not required_permission:
+        return False
+    if required_permission in permissions:
+        return True
+    if "*.*" in permissions:
+        return True
+    if "." in required_permission:
+        resource, _, _ = required_permission.partition(".")
+        resource_wildcard = f"{resource}.*"
+        if resource_wildcard in permissions:
+            return True
+    return False
+
+
 def check_permission(permissions: list[str], required_permission: str) -> bool:
     """
-    Check if user has the required permission.
+    Check if user has the required permission (with wildcard support).
+    Raises HTTPException 403 if user lacks permission.
 
     Args:
         permissions: List of user permission codes
         required_permission: Required permission code
 
     Returns:
-        True if user has permission, False otherwise
+        True if user has permission
 
     Raises:
         HTTPException: 403 Forbidden if user lacks permission
     """
-    if required_permission not in permissions:
+    if not has_permission(permissions, required_permission):
         logger.warning(
             f"Permission denied: required '{required_permission}', "
             f"user has {permissions}"
@@ -75,7 +107,6 @@ def check_permission(permissions: list[str], required_permission: str) -> bool:
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Insufficient permissions. Required: {required_permission}",
         )
-
     return True
 
 
@@ -83,7 +114,7 @@ def is_system_admin(permissions: list[str]) -> bool:
     """
     Check if user is a system administrator.
 
-    System admin has role.manage permission or is system_admin role.
+    System admin has *.* or system.admin or role.manage (backward compatibility).
 
     Args:
         permissions: List of user permission codes
@@ -91,12 +122,16 @@ def is_system_admin(permissions: list[str]) -> bool:
     Returns:
         True if user is system admin
     """
-    return "role.manage" in permissions or "system.admin" in permissions
+    return (
+        "*.*" in permissions
+        or "system.admin" in permissions
+        or "role.manage" in permissions
+    )
 
 
 def require_permission(permissions: list[str], required_permission: str) -> None:
     """
-    Require a specific permission or raise exception.
+    Require a specific permission (with wildcard support) or raise exception.
 
     Args:
         permissions: List of user permission codes
@@ -105,7 +140,7 @@ def require_permission(permissions: list[str], required_permission: str) -> None
     Raises:
         HTTPException: 403 Forbidden if permission missing
     """
-    if required_permission not in permissions:
+    if not has_permission(permissions, required_permission):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Permission denied. Required: {required_permission}",

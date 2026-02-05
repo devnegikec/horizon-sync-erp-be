@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -130,20 +130,48 @@ async def get_organization(
         raise
 
 
+def _user_has_no_organization(db: Session, user_id: UUID) -> bool:
+    """Return True if the user is not a member of any organization (first-time user)."""
+    any_org = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.is_active,
+        )
+        .first()
+    )
+    return any_org is None
+
+
 @router.post(
     "/organizations",
     response_model=OrganizationResponse,
     status_code=201,
     summary="Create organization",
-    description="Create a new organization; requires org.create.",
+    description="Create a new organization. Allowed if user has org.create (or org.* / *.*) or has no org (first-time user).",
 )
 async def create_organization(
     body: OrganizationCreate,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Create organization. Requires org.create. Sets owner to current user."""
-    require_permission(current_user.permissions, "org.create")
+    """
+    Create organization. Sets owner to current user and assigns them the Owner role with *.*.
+
+    Allowed when:
+    - User has org.create, org.*, or *.* permission, OR
+    - User belongs to no organization (first-time user creating their first org).
+    """
+    from app.core.authorization import has_permission
+
+    can_create = has_permission(
+        current_user.permissions, "org.create"
+    ) or _user_has_no_organization(db, current_user.id)
+    if not can_create:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied. Required: org.create (or create your first organization)",
+        )
     svc = OrganizationService(db)
     try:
         data = svc.create(body.model_dump(), owner_id=current_user.id)
