@@ -8,6 +8,24 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+class WarehouseStatusCounts(BaseModel):
+    """Schema for warehouse status counts"""
+
+    active: int = 0
+    inactive: int = 0
+    total: int = 0
+
+
+class WarehouseTypeCounts(BaseModel):
+    """Schema for warehouse type counts"""
+
+    warehouse: int = 0
+    store: int = 0
+    virtual: int = 0
+    transit: int = 0
+    total: int = 0
+
+
 class WarehouseBase(BaseModel):
     """Base warehouse schema with common fields"""
 
@@ -159,9 +177,34 @@ class WarehouseListItem(BaseModel):
     code: str
     warehouse_type: str
     parent_warehouse_id: UUID | None = None
+
+    # Address fields
+    address_line1: str | None = None
+    address_line2: str | None = None
     city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+
+    # Contact fields
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+
+    # Capacity fields
+    total_capacity: int | None = None
+    capacity_uom: str | None = None
+
+    # Accounting
+    stock_account_id: UUID | None = None
+
+    # Status
     is_active: bool
     is_default: bool
+
+    # Extra
+    extra_data: dict | None = None
+
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -172,6 +215,8 @@ class WarehouseListResponse(BaseModel):
 
     warehouses: list[WarehouseListItem]
     pagination: PaginationMeta
+    status_counts: WarehouseStatusCounts
+    type_counts: WarehouseTypeCounts
 
 
 class WarehouseTreeNode(BaseModel):

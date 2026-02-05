@@ -13,6 +13,7 @@ from app.schemas.customer import (
     CustomerListItem,
     CustomerListResponse,
     CustomerResponse,
+    CustomerStatusCounts,
     CustomerUpdate,
 )
 from app.services.customer_service import CustomerService
@@ -67,7 +68,8 @@ async def list_customers(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page (max 100)"),
     status: str | None = Query(
-        "active", description="Filter by status (active, inactive, blocked)"
+        None,
+        description="Filter by status (active, inactive, blocked). If not provided, returns all customers.",
     ),
     search: str | None = Query(None, description="Search in name, code, email, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
@@ -83,16 +85,16 @@ async def list_customers(
     **Query Parameters:**
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 20, max: 100)
-    - **status**: Filter by status (default: active)
+    - **status**: Filter by status (active, inactive, blocked). If not provided, returns all customers.
     - **search**: Search term for name, code, email, city
     - **sort_by**: Field to sort by (default: created_at)
     - **sort_order**: Sort order - asc or desc (default: desc)
 
-    **Returns:** Paginated list of customers
+    **Returns:** Paginated list of customers with status counts
     """
     customer_service = CustomerService(db)
 
-    customers, pagination = customer_service.get_customers(
+    customers, pagination, status_counts = customer_service.get_customers(
         organization_id=current_user.organization_id,
         page=page,
         page_size=page_size,
@@ -105,7 +107,9 @@ async def list_customers(
     customer_items = [CustomerListItem.model_validate(c) for c in customers]
 
     return CustomerListResponse(
-        customers=customer_items, pagination=PaginationMeta(**pagination)
+        customers=customer_items,
+        pagination=PaginationMeta(**pagination),
+        status_counts=CustomerStatusCounts(**status_counts),
     )
 
 

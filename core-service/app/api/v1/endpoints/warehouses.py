@@ -19,7 +19,9 @@ from app.schemas.warehouse import (
     WarehouseListItem,
     WarehouseListResponse,
     WarehouseResponse,
+    WarehouseStatusCounts,
     WarehouseTreeNode,
+    WarehouseTypeCounts,
     WarehouseUpdate,
 )
 from app.services.warehouse_service import WarehouseService
@@ -104,11 +106,16 @@ async def list_warehouses(
     - **sort_by**: Field to sort by (default: created_at)
     - **sort_order**: Sort order - asc or desc (default: desc)
 
-    **Returns:** Paginated list of warehouses
+    **Returns:** Paginated list of warehouses with status and type counts
     """
     warehouse_service = WarehouseService(db)
 
-    warehouses, pagination = warehouse_service.get_warehouses(
+    (
+        warehouses,
+        pagination,
+        status_counts,
+        type_counts,
+    ) = warehouse_service.get_warehouses(
         organization_id=current_user.organization_id,
         page=page,
         page_size=page_size,
@@ -124,7 +131,10 @@ async def list_warehouses(
     warehouse_items = [WarehouseListItem.model_validate(w) for w in warehouses]
 
     return WarehouseListResponse(
-        warehouses=warehouse_items, pagination=PaginationMeta(**pagination)
+        warehouses=warehouse_items,
+        pagination=PaginationMeta(**pagination),
+        status_counts=WarehouseStatusCounts(**status_counts),
+        type_counts=WarehouseTypeCounts(**type_counts),
     )
 
 

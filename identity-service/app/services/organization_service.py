@@ -1,5 +1,6 @@
 """Organization service with business logic"""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -8,8 +9,14 @@ from app.core.exceptions import (
     DuplicateOrganizationSlugException,
     OrganizationNotFoundException,
 )
-from app.models.base import OrganizationStatus, OrganizationType
+from app.models.base import (
+    ActionType,
+    OrganizationStatus,
+    OrganizationType,
+    ResourceType,
+)
 from app.models.organization import Organization
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.repositories.organization_repository import OrganizationRepository
 
 
@@ -21,7 +28,7 @@ class OrganizationService:
         self.repo = OrganizationRepository(db)
 
     def create(self, data: dict, owner_id: UUID) -> dict:
-        """Create organization; validate slug uniqueness. Sets owner_id."""
+        """Create organization; validate slug uniqueness. Sets owner_id and assigns Owner role with *.* to creating user."""
         slug = data.get("slug", "").strip().lower()
         if self.repo.slug_exists(slug):
             raise DuplicateOrganizationSlugException(
@@ -36,6 +43,53 @@ class OrganizationService:
         if "status" in payload and payload["status"]:
             payload["status"] = OrganizationStatus(payload["status"])
         org = self.repo.create(payload)
+
+        # Ensure creating user is always assigned as Owner with full access (*.*) in this org
+        full_access = self.db.query(Permission).filter(Permission.code == "*.*").first()
+        if not full_access:
+            # Create *.* permission if missing (e.g. DB seeded before wildcards were added)
+            full_access = Permission(
+                code="*.*",
+                name="Full access (all resources and actions)",
+                resource=ResourceType.ALL,
+                action=ActionType.MANAGE,
+                module="identity",
+                is_active=True,
+            )
+            self.db.add(full_access)
+            self.db.flush()
+
+        owner_role = Role(
+            organization_id=org.id,
+            name="Organization Owner",
+            code="owner",
+            description="User who created the organization; has full access in this org.",
+            is_system=False,
+            is_default=False,
+            hierarchy_level=100,
+            is_active=True,
+        )
+        self.db.add(owner_role)
+        self.db.flush()
+        self.db.add(
+            RolePermission(
+                role_id=owner_role.id,
+                permission_id=full_access.id,
+            )
+        )
+        self.db.add(
+            UserOrganizationRole(
+                user_id=owner_id,
+                organization_id=org.id,
+                role_id=owner_role.id,
+                is_primary=True,
+                is_active=True,
+                status="active",
+                joined_at=datetime.now(UTC),
+            )
+        )
+        self.db.commit()
+
         return self._to_response(org)
 
     def get_by_id(self, organization_id: UUID) -> dict:

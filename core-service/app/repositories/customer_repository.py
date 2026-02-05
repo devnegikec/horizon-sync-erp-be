@@ -191,3 +191,45 @@ class CustomerRepository:
             .count()
             > 0
         )
+
+    def get_customer_status_counts(self, organization_id: UUID) -> dict:
+        """
+        Get count of customers by status.
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            Dictionary with status counts
+        """
+        from sqlalchemy import func
+
+        # Get counts for each status
+        status_counts = (
+            self.db.query(Customer.status, func.count(Customer.id))
+            .filter(
+                Customer.organization_id == organization_id,
+                Customer.deleted_at.is_(None),
+            )
+            .group_by(Customer.status)
+            .all()
+        )
+
+        # Initialize counts
+        counts = {
+            "active": 0,
+            "inactive": 0,
+            "blocked": 0,
+            "total": 0,
+        }
+
+        # Populate counts from query results
+        for status, count in status_counts:
+            status_key = (
+                status.value if hasattr(status, "value") else str(status).lower()
+            )
+            if status_key in counts:
+                counts[status_key] = count
+            counts["total"] += count
+
+        return counts
