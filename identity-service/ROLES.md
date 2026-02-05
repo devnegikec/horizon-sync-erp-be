@@ -44,9 +44,51 @@ When checking a required permission (e.g. `user.read`):
 
 ---
 
+## Permissions Table: resource, action, and code
+
+The `permissions` table has (among others) **resource**, **action**, and **code** columns. Authorization in the app uses **code** only; resource and action are for display, filtering, and grouping.
+
+### Mapping (resource + action → code)
+
+The **code** is the string used in `require_permission(..., code)` and in the list returned by `/me` (user’s permissions). Format: `code = "{prefix}.{action}"` where:
+
+- For **user**: prefix = `"user"` (same as resource value).
+- For **organization**: prefix = `"org"` (short form; resource value is `"organization"`).
+- For **role**: prefix = `"role"` (same as resource value).
+
+| resource (column) | action (column) | code (used in app) |
+| ----------------- | --------------- | ------------------ |
+| user              | create          | user.create        |
+| user              | read            | user.read          |
+| user              | update          | user.update        |
+| user              | delete          | user.delete        |
+| user              | manage          | user.manage        |
+| organization      | create          | org.create         |
+| organization      | read            | org.read           |
+| organization      | update          | org.update         |
+| organization      | delete          | org.delete         |
+| organization      | manage          | org.manage         |
+| role              | create          | role.create        |
+| role              | read            | role.read          |
+| role              | update          | role.update        |
+| role              | delete          | role.delete        |
+| role              | manage          | role.manage        |
+
+So:
+
+- **resource** and **action** match the enums (`ResourceType`, `ActionType`); stored in DB as `user`, `organization`, `role` and `create`, `read`, `update`, `delete`, `manage`.
+- **code** must be unique and is what the API checks. For organization we use **org** in the code, not **organization**, so all endpoints use `"org.read"`, `"org.create"`, etc.
+
+Rule to derive **code** from (resource, action):
+
+- If `resource == "organization"` then use prefix `"org"`, else use `resource` as prefix.
+- `code = f"{prefix}.{action}"`.
+
+---
+
 ## Permission Codes (Identity)
 
-Granular permissions use the form `resource.action`:
+Granular permissions use the form `resource.action` (with **org** for organization):
 
 - **user**: user.create, user.read, user.update, user.delete, user.manage
 - **org**: org.create, org.read, org.update, org.delete, org.manage
@@ -66,7 +108,4 @@ Core-service uses additional resources (e.g. warehouse, item, customer, supplier
 
 ## Existing Databases
 
-If the database was seeded before wildcard permissions were added, the `*.*` permission will not exist. In that case:
-
-1. **New organizations**: Creating an org will still succeed, but the creating user will not get the Owner role (no `*.*` permission row). Manually add a role with full access and assign it to the org creator, or run a migration that inserts the wildcard permission rows from `scripts/seed_data.py` (the block with `*.*`, `system.admin`, `user.*`, `org.*`, `role.*`).
-2. **Re-seed**: Alternatively, add a one-off script or migration that inserts only the new permission rows and re-run it.
+If the database was seeded before wildcard permissions were added, the `*.*` permission may not exist. When a user creates a new organization, the organization service now **creates the `*.*` permission** if it is missing and then assigns the Owner role to the creator, so no manual step is required for new orgs. To have wildcards (e.g. `user.*`, `org.*`) available for role assignment without creating an org first, run a migration or seed that inserts the wildcard permission rows from `scripts/seed_data.py`.

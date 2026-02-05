@@ -9,7 +9,12 @@ from app.core.exceptions import (
     DuplicateOrganizationSlugException,
     OrganizationNotFoundException,
 )
-from app.models.base import OrganizationStatus, OrganizationType
+from app.models.base import (
+    ActionType,
+    OrganizationStatus,
+    OrganizationType,
+    ResourceType,
+)
 from app.models.organization import Organization
 from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.repositories.organization_repository import OrganizationRepository
@@ -39,39 +44,51 @@ class OrganizationService:
             payload["status"] = OrganizationStatus(payload["status"])
         org = self.repo.create(payload)
 
-        # Create Owner role for this org (full access *.*) and assign to creating user
+        # Ensure creating user is always assigned as Owner with full access (*.*) in this org
         full_access = self.db.query(Permission).filter(Permission.code == "*.*").first()
-        if full_access:
-            owner_role = Role(
-                organization_id=org.id,
-                name="Organization Owner",
-                code="owner",
-                description="First user who created the organization; has full access in this org.",
-                is_system=False,
-                is_default=False,
-                hierarchy_level=100,
+        if not full_access:
+            # Create *.* permission if missing (e.g. DB seeded before wildcards were added)
+            full_access = Permission(
+                code="*.*",
+                name="Full access (all resources and actions)",
+                resource=ResourceType.ALL,
+                action=ActionType.MANAGE,
+                module="identity",
                 is_active=True,
             )
-            self.db.add(owner_role)
+            self.db.add(full_access)
             self.db.flush()
-            self.db.add(
-                RolePermission(
-                    role_id=owner_role.id,
-                    permission_id=full_access.id,
-                )
+
+        owner_role = Role(
+            organization_id=org.id,
+            name="Organization Owner",
+            code="owner",
+            description="User who created the organization; has full access in this org.",
+            is_system=False,
+            is_default=False,
+            hierarchy_level=100,
+            is_active=True,
+        )
+        self.db.add(owner_role)
+        self.db.flush()
+        self.db.add(
+            RolePermission(
+                role_id=owner_role.id,
+                permission_id=full_access.id,
             )
-            self.db.add(
-                UserOrganizationRole(
-                    user_id=owner_id,
-                    organization_id=org.id,
-                    role_id=owner_role.id,
-                    is_primary=True,
-                    is_active=True,
-                    status="active",
-                    joined_at=datetime.now(UTC),
-                )
+        )
+        self.db.add(
+            UserOrganizationRole(
+                user_id=owner_id,
+                organization_id=org.id,
+                role_id=owner_role.id,
+                is_primary=True,
+                is_active=True,
+                status="active",
+                joined_at=datetime.now(UTC),
             )
-            self.db.commit()
+        )
+        self.db.commit()
 
         return self._to_response(org)
 
