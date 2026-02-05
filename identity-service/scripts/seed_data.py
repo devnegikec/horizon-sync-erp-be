@@ -203,6 +203,42 @@ def seed_database():
                 "action": ActionType.MANAGE,
                 "module": "identity",
             },
+            # Wildcard permissions (grant all actions for a resource or everything)
+            {
+                "code": "*.*",
+                "name": "Full access (all resources and actions)",
+                "resource": ResourceType.ALL,
+                "action": ActionType.MANAGE,
+                "module": "identity",
+            },
+            {
+                "code": "system.admin",
+                "name": "System Administrator access",
+                "resource": ResourceType.ALL,
+                "action": ActionType.MANAGE,
+                "module": "identity",
+            },
+            {
+                "code": "user.*",
+                "name": "All user actions",
+                "resource": ResourceType.USER,
+                "action": ActionType.MANAGE,
+                "module": "identity",
+            },
+            {
+                "code": "org.*",
+                "name": "All organization actions",
+                "resource": ResourceType.ORGANIZATION,
+                "action": ActionType.MANAGE,
+                "module": "identity",
+            },
+            {
+                "code": "role.*",
+                "name": "All role actions",
+                "resource": ResourceType.ROLE,
+                "action": ActionType.MANAGE,
+                "module": "identity",
+            },
         ]
 
         permissions = {}

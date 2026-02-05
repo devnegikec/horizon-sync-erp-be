@@ -39,7 +39,7 @@ graph TB
 - Response formatting and error handling
 - Rate limiting and request throttling
 
-**Service Layer**
+\*\*Service Laye
 
 - Business logic orchestration
 - Authorization and permission filtering

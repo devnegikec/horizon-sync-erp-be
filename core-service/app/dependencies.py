@@ -167,9 +167,29 @@ async def get_current_active_user(
     return current_user
 
 
+def has_permission(permissions: list[str], required_permission: str) -> bool:
+    """
+    Check if user has the required permission, including wildcard matching.
+
+    Matches: exact permission, resource.* (e.g. warehouse.*), or *.*.
+    """
+    if not permissions or not required_permission:
+        return False
+    if required_permission in permissions:
+        return True
+    if "*.*" in permissions:
+        return True
+    if "." in required_permission:
+        resource, _, _ = required_permission.partition(".")
+        if f"{resource}.*" in permissions:
+            return True
+    return False
+
+
 def require_permission(permission: str):
     """
     Dependency factory to require a specific permission (RBAC from identity-service).
+    Supports wildcards: user has resource.* or *.* to grant all actions for that resource.
 
     Args:
         permission: Permission code required (e.g. "item.create", "warehouse.read")
@@ -181,11 +201,10 @@ def require_permission(permission: str):
     async def check_permission(
         current_user: CurrentUser = Depends(get_current_active_user),
     ) -> CurrentUser:
-        # System admins bypass permission check
+        # System admins bypass permission check (backward compatibility)
         if current_user.user_type == "system_admin":
             return current_user
-        # Require the permission; raise 403 if missing
-        if permission not in current_user.permissions:
+        if not has_permission(current_user.permissions, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission denied. Required: {permission}",
