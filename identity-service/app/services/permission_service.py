@@ -11,6 +11,7 @@ from app.core.exceptions import (
     RolePermissionAlreadyAssignedException,
 )
 from app.models.base import ActionType, ResourceType
+from app.models.role import Permission
 from app.repositories.permission_repository import PermissionRepository
 
 logger = logging.getLogger(__name__)
@@ -23,22 +24,93 @@ def _convert_enum_to_string(value) -> str:
     return value
 
 
+def _normalize_resource_for_db(value: str | None) -> str | None:
+    """Map API/frontend resource values to DB enum values. ResourceType has 'organization' not 'org'."""
+    if not value:
+        return value
+    v = value.lower().strip()
+    if v == "org":
+        return ResourceType.ORGANIZATION.value
+    return v
+
+
+def _normalize_action_for_db(value: str | None) -> str | None:
+    """Map API/frontend action values to DB enum values. ActionType has create/read/update/delete/manage/execute/invite only."""
+    if not value:
+        return value
+    v = value.lower().strip()
+    if v in ("*.*", ".*", "owner"):
+        return ActionType.MANAGE.value
+    return v
+
+
+def _parse_permission_code(code: str) -> tuple[str | None, str | None]:
+    """
+    Parse permission code to extract resource and action.
+
+    Examples:
+        "user.read" -> ("user", "read")
+        "user.*" -> ("user", "*")
+        "*.*" -> ("*", "*")
+        "org.create" -> ("org", "create")  # Note: org in code, organization in DB
+
+    Returns:
+        Tuple of (resource_prefix, action) or (None, None) if invalid format
+    """
+    if not code or "." not in code:
+        return None, None
+    parts = code.split(".", 1)
+    if len(parts) != 2:
+        return None, None
+    resource_prefix, action = parts
+    return resource_prefix.lower(), action.lower()
+
+
+def _validate_permission_code(code: str) -> tuple[bool, str | None]:
+    """
+    Validate permission code format.
+
+    Valid formats:
+        - resource.action (e.g., "user.read", "org.create")
+        - resource.* (e.g., "user.*", "org.*")
+        - *.* (full wildcard)
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not code or not isinstance(code, str):
+        return False, "Permission code must be a non-empty string"
+    if "." not in code:
+        return False, "Permission code must contain a dot (format: resource.action or resource.* or *.*)"
+    parts = code.split(".", 1)
+    if len(parts) != 2:
+        return False, "Permission code must have exactly one dot"
+    resource_part, action_part = parts
+    if not resource_part or not action_part:
+        return False, "Permission code parts cannot be empty"
+    if resource_part == "*" and action_part != "*":
+        return False, "Full wildcard must be '*.*'"
+    return True, None
+
+
 def _convert_string_to_resource_type(value: str) -> ResourceType:
-    """Convert string to ResourceType enum."""
+    """Convert string to ResourceType enum. Accepts 'org' and maps to ORGANIZATION."""
     if isinstance(value, ResourceType):
         return value
+    normalized = _normalize_resource_for_db(value)
     try:
-        return ResourceType(value.lower())
+        return ResourceType(normalized)
     except ValueError:
         raise ValueError(f"Invalid resource type: {value}") from None
 
 
 def _convert_string_to_action_type(value: str) -> ActionType:
-    """Convert string to ActionType enum."""
+    """Convert string to ActionType enum. Accepts '*.*', '.*', 'owner' and maps to MANAGE."""
     if isinstance(value, ActionType):
         return value
+    normalized = _normalize_action_for_db(value)
     try:
-        return ActionType(value.lower())
+        return ActionType(normalized)
     except ValueError:
         raise ValueError(f"Invalid action type: {value}") from None
 
@@ -54,6 +126,11 @@ class PermissionService:
         """
         Create a new permission.
 
+        Valid permission code formats:
+        - resource.action (e.g., "user.read", "org.create")
+        - resource.* (e.g., "user.*", "org.*") - grants all actions for that resource
+        - *.* - grants all permissions (all resources, all actions)
+
         Args:
             permission_data: Dictionary containing permission data
 
@@ -62,27 +139,60 @@ class PermissionService:
 
         Raises:
             DuplicatePermissionException: If code already exists
+            ValueError: If code format is invalid
         """
-        logger.info(f"Creating permission: {permission_data.get('code')}")
+        code = permission_data.get("code")
+        logger.info(f"Creating permission: {code}")
 
-        existing = self.permission_repo.get_permission_by_code(
-            permission_data.get("code")
-        )
+        # Validate code format
+        is_valid, error_msg = _validate_permission_code(code)
+        if not is_valid:
+            logger.warning(f"Invalid permission code format: {code} - {error_msg}")
+            raise ValueError(error_msg or f"Invalid permission code format: {code}")
+
+        existing = self.permission_repo.get_permission_by_code(code)
 
         if existing:
-            logger.warning(
-                f"Permission code already exists: {permission_data.get('code')}"
-            )
+            logger.warning(f"Permission code already exists: {code}")
             raise DuplicatePermissionException(
-                f"Permission code '{permission_data.get('code')}' already exists"
+                f"Permission code '{code}' already exists"
             )
 
-        # Convert string values to enum types
-        if "resource" in permission_data:
+        # Auto-derive resource and action from code if not provided
+        resource_prefix, action_part = _parse_permission_code(code)
+        if resource_prefix and action_part:
+            # Set resource and action based on code
+            if not permission_data.get("resource"):
+                # Map resource prefix to ResourceType enum
+                if resource_prefix == "*":
+                    permission_data["resource"] = ResourceType.ALL
+                elif resource_prefix == "org":
+                    permission_data["resource"] = ResourceType.ORGANIZATION
+                else:
+                    try:
+                        permission_data["resource"] = ResourceType(resource_prefix)
+                    except ValueError:
+                        # If not in enum, use USER as default (will be validated later)
+                        permission_data["resource"] = ResourceType.USER
+
+            if not permission_data.get("action"):
+                # Map action to ActionType enum
+                if action_part == "*":
+                    permission_data["action"] = ActionType.MANAGE  # Placeholder for wildcard
+                else:
+                    try:
+                        permission_data["action"] = ActionType(action_part)
+                    except ValueError:
+                        permission_data["action"] = ActionType.MANAGE
+
+        # Convert string values to enum types (if provided explicitly)
+        if "resource" in permission_data and isinstance(
+            permission_data["resource"], str
+        ):
             permission_data["resource"] = _convert_string_to_resource_type(
                 permission_data["resource"]
             )
-        if "action" in permission_data:
+        if "action" in permission_data and isinstance(permission_data["action"], str):
             permission_data["action"] = _convert_string_to_action_type(
                 permission_data["action"]
             )
@@ -172,13 +282,16 @@ class PermissionService:
             f"Listing permissions - skip: {skip}, limit: {limit}, "
             f"is_active: {is_active}, resource: {resource}, action: {action}"
         )
+        # Normalize filter values to match DB enum (org -> organization, *.*/owner -> manage)
+        filter_resource = _normalize_resource_for_db(resource) if resource else None
+        filter_action = _normalize_action_for_db(action) if action else None
 
         permissions, total_count = self.permission_repo.list_permissions(
             skip=skip,
             limit=limit,
             is_active=is_active,
-            resource=resource,
-            action=action,
+            resource=filter_resource,
+            action=filter_action,
             module=module,
             search=search,
         )
@@ -289,3 +402,75 @@ class PermissionService:
 
         self.permission_repo.delete_permission(permission)
         logger.info(f"Permission deleted: {permission_id}")
+
+    def get_or_create_permission_by_code(
+        self, code: str, name: str | None = None, description: str | None = None
+    ) -> Permission:
+        """
+        Get existing permission by code, or create it if it doesn't exist.
+
+        Useful for ensuring wildcard permissions exist before assigning to roles.
+
+        Args:
+            code: Permission code (e.g., "user.*", "*.*", "user.read")
+            name: Permission name (auto-generated if not provided)
+            description: Permission description
+
+        Returns:
+            Permission object
+        """
+        existing = self.permission_repo.get_permission_by_code(code)
+        if existing:
+            return existing
+
+        # Auto-generate name if not provided
+        if not name:
+            if code == "*.*":
+                name = "Full access (all resources and actions)"
+            elif code.endswith(".*"):
+                resource = code.split(".")[0]
+                name = f"All {resource} actions"
+            else:
+                resource, action = code.split(".", 1)
+                name = f"{action.capitalize()} {resource}"
+
+        permission_data = {
+            "code": code,
+            "name": name,
+            "description": description,
+        }
+        # Resource and action will be auto-derived in create_permission
+        result = self.create_permission(permission_data)
+        return self.permission_repo.get_permission_by_code(code)
+
+    @staticmethod
+    def get_resource_prefix_for_code(code: str) -> str:
+        """
+        Extract resource prefix from permission code.
+
+        Examples:
+            "user.read" -> "user"
+            "org.create" -> "org"
+            "user.*" -> "user"
+            "*.*" -> "*"
+
+        Returns:
+            Resource prefix string
+        """
+        resource_prefix, _ = _parse_permission_code(code)
+        return resource_prefix or ""
+
+    @staticmethod
+    def is_wildcard_permission(code: str) -> bool:
+        """
+        Check if a permission code is a wildcard.
+
+        Args:
+            code: Permission code
+
+        Returns:
+            True if code is a wildcard (*.* or resource.*)
+        """
+        if not code:
+            return False
+        return code == "*.*" or code.endswith(".*")

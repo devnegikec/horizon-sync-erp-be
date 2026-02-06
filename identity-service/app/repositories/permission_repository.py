@@ -132,10 +132,32 @@ class PermissionRepository:
             query = query.filter(Permission.is_active == is_active)
 
         if resource:
-            query = query.filter(Permission.resource == resource)
+            # Map 'org' to 'organization' for enum comparison
+            resource_normalized = resource.lower()
+            if resource_normalized == "org":
+                resource_normalized = "organization"
+            # Include both exact resource match AND wildcard codes for that resource
+            # e.g., filter resource='user' should show user.read, user.create, AND user.*
+            resource_prefix = "org" if resource_normalized == "organization" else resource_normalized
+            query = query.filter(
+                or_(
+                    Permission.resource == resource_normalized,
+                    Permission.code.like(f"{resource_prefix}.*"),  # Include user.*, org.*, etc.
+                    Permission.code == "*.*",  # Include full wildcard
+                )
+            )
 
         if action:
-            query = query.filter(Permission.action == action)
+            # When filtering by action, include wildcards that grant that action
+            # e.g., filter action='read' should show user.read AND user.* AND *.*
+            query = query.filter(
+                or_(
+                    Permission.action == action,
+                    Permission.code.like(f"%.{action}"),  # Any resource with this action
+                    Permission.code.like("%.*"),  # Resource wildcards (user.*, org.*)
+                    Permission.code == "*.*",  # Full wildcard
+                )
+            )
 
         if module:
             query = query.filter(Permission.module == module)

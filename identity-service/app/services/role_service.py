@@ -446,6 +446,118 @@ class RoleService:
             "previous_count": previous_count,
         }
 
+    def assign_permission_by_code(
+        self,
+        role_id: UUID,
+        permission_code: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign permission to role by permission code (convenience method).
+
+        Gets or creates the permission if it doesn't exist, then assigns it to the role.
+
+        Examples:
+            assign_permission_by_code(role_id, "user.*")  # Assign user.* wildcard
+            assign_permission_by_code(role_id, "*.*")      # Assign full access
+            assign_permission_by_code(role_id, "user.read") # Assign specific permission
+
+        Args:
+            role_id: Role UUID
+            permission_code: Permission code (e.g., "user.*", "*.*", "user.read")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+
+        Raises:
+            RoleNotFoundException: If role not found
+            SystemRoleModificationException: If role is system role
+            ValueError: If permission code format is invalid
+        """
+        from app.services.permission_service import PermissionService
+
+        permission_service = PermissionService(self.db)
+        permission = permission_service.get_or_create_permission_by_code(permission_code)
+
+        return self.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission.id,
+            conditions=conditions,
+        )
+
+    def assign_full_access(self, role_id: UUID, conditions: dict | None = None) -> dict:
+        """
+        Assign full access (*.*) permission to role (convenience method).
+
+        Args:
+            role_id: Role UUID
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        return self.assign_permission_by_code(role_id, "*.*", conditions)
+
+    def assign_resource_wildcard(
+        self,
+        role_id: UUID,
+        resource: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign resource wildcard permission to role (convenience method).
+
+        Examples:
+            assign_resource_wildcard(role_id, "user")   # Assigns user.*
+            assign_resource_wildcard(role_id, "org")     # Assigns org.*
+            assign_resource_wildcard(role_id, "role")    # Assigns role.*
+
+        Args:
+            role_id: Role UUID
+            resource: Resource name (will be normalized: "org" -> "org", "organization" -> "org")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        # Normalize resource: "organization" -> "org" for code
+        resource_normalized = resource.lower().strip()
+        if resource_normalized == "organization":
+            resource_normalized = "org"
+        permission_code = f"{resource_normalized}.*"
+        return self.assign_permission_by_code(role_id, permission_code, conditions)
+
+    def assign_specific_permission(
+        self,
+        role_id: UUID,
+        resource: str,
+        action: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign specific permission to role (convenience method).
+
+        Examples:
+            assign_specific_permission(role_id, "user", "read")   # Assigns user.read
+            assign_specific_permission(role_id, "org", "create") # Assigns org.create
+
+        Args:
+            role_id: Role UUID
+            resource: Resource name (will be normalized: "organization" -> "org")
+            action: Action name (e.g., "read", "create", "update", "delete")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        # Normalize resource: "organization" -> "org" for code
+        resource_normalized = resource.lower().strip()
+        if resource_normalized == "organization":
+            resource_normalized = "org"
+        permission_code = f"{resource_normalized}.{action.lower().strip()}"
+        return self.assign_permission_by_code(role_id, permission_code, conditions)
+
     def get_role_users(
         self,
         role_id: UUID,
