@@ -125,6 +125,30 @@ class UserService:
 
         return users, pagination
 
+    def get_user_status_counts(
+        self,
+        organization_ids: list[UUID] | None = None,
+        user_type: str | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ) -> dict[str, int]:
+        """
+        Get counts by status and mfa_enabled for the same scope as get_users.
+        Returns dict with keys: active, inactive, suspended, pending, mfa_enabled.
+        """
+        user_type_enum = None
+        if user_type:
+            try:
+                user_type_enum = UserType(user_type)
+            except ValueError:
+                pass
+        return self.user_repo.get_user_status_counts(
+            organization_ids=organization_ids,
+            user_type=user_type_enum,
+            email_verified=email_verified,
+            search=search,
+        )
+
     def update_user(self, user_id: UUID, data: dict) -> User:
         """
         Update user by ID. Partial update; enum fields converted.

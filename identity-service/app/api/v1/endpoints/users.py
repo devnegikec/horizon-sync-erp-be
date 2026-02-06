@@ -22,6 +22,7 @@ from app.schemas.user import (
     UserProfileResponse,
     UserResponse,
     UserSelfUpdate,
+    UserStatusCounts,
     UserUpdate,
 )
 from app.services.user_service import UserService
@@ -99,6 +100,7 @@ async def list_users(
                     has_next=False,
                     has_prev=False,
                 ),
+                status_counts=UserStatusCounts(),
             )
 
     user_service = UserService(db)
@@ -113,8 +115,18 @@ async def list_users(
         sort_order=sort_order,
         organization_ids=organization_ids,
     )
+    status_counts = user_service.get_user_status_counts(
+        organization_ids=organization_ids,
+        user_type=user_type,
+        email_verified=email_verified,
+        search=search,
+    )
     user_items = [UserListItem.model_validate(user) for user in users]
-    return UserListResponse(users=user_items, pagination=PaginationMeta(**pagination))
+    return UserListResponse(
+        users=user_items,
+        pagination=PaginationMeta(**pagination),
+        status_counts=UserStatusCounts(**status_counts),
+    )
 
 
 # ----- Self-service profile (logged-in user updates own info) -----

@@ -163,6 +163,89 @@ class UserRepository:
 
         return users, total_count
 
+    def get_user_status_counts(
+        self,
+        organization_ids: list[UUID] | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ) -> dict[str, int]:
+        """
+        Get counts of users by status and mfa_enabled for the same scope as list_users.
+
+        Uses the same filters (organization_ids, user_type, email_verified, search)
+        but does not filter by status. Returns counts for active, inactive, suspended,
+        pending, and mfa_enabled (count of users with MFA enabled).
+
+        Returns:
+            Dict with keys: active, inactive, suspended, pending, mfa_enabled
+        """
+        from sqlalchemy import distinct, func
+
+        def apply_filters(q):
+            if organization_ids is not None:
+                from app.models.role import UserOrganizationRole
+
+                q = (
+                    q.join(UserOrganizationRole)
+                    .filter(
+                        UserOrganizationRole.user_id == User.id,
+                        UserOrganizationRole.organization_id.in_(organization_ids),
+                        UserOrganizationRole.is_active,
+                    )
+                    .distinct()
+                )
+            if user_type is not None:
+                q = q.filter(User.user_type == user_type)
+            if email_verified is not None:
+                q = q.filter(User.email_verified == email_verified)
+            if search:
+                search_term = f"%{search}%"
+                q = q.filter(
+                    or_(
+                        User.email.ilike(search_term),
+                        User.first_name.ilike(search_term),
+                        User.last_name.ilike(search_term),
+                    )
+                )
+            return q
+
+        count_expr = (
+            func.count(distinct(User.id))
+            if organization_ids is not None
+            else func.count(User.id)
+        )
+        status_counts = self.db.query(User.status, count_expr).filter(
+            User.deleted_at.is_(None)
+        )
+        status_counts = apply_filters(status_counts)
+        status_counts = status_counts.group_by(User.status).all()
+
+        result = {
+            UserStatus.ACTIVE.value: 0,
+            UserStatus.INACTIVE.value: 0,
+            UserStatus.SUSPENDED.value: 0,
+            UserStatus.PENDING.value: 0,
+            "mfa_enabled": 0,
+        }
+        for status_val, count in status_counts:
+            key = status_val.value if hasattr(status_val, "value") else status_val
+            if key in result:
+                result[key] = count
+
+        mfa_count_expr = (
+            func.count(distinct(User.id))
+            if organization_ids is not None
+            else func.count(User.id)
+        )
+        mfa_query = self.db.query(mfa_count_expr).filter(
+            User.deleted_at.is_(None), User.mfa_enabled.is_(True)
+        )
+        mfa_query = apply_filters(mfa_query)
+        result["mfa_enabled"] = mfa_query.scalar() or 0
+
+        return result
+
     def email_exists(self, email: str) -> bool:
         """
         Check if email already exists.
