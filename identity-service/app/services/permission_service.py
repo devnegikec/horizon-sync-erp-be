@@ -319,6 +319,99 @@ class PermissionService:
             "limit": limit,
         }
 
+    def get_permissions_grouped_by_category(
+        self, organization_id: UUID | None = None, module: str | None = None
+    ) -> dict:
+        """
+        Get permissions grouped by category for UI display.
+
+        Args:
+            organization_id: Optional organization ID to filter permissions
+            module: Optional module filter
+
+        Returns:
+            Dictionary with categories and uncategorized permissions
+        """
+        logger.debug("Fetching permissions grouped by category")
+
+        # Get all active permissions
+        permissions, _ = self.permission_repo.list_permissions(
+            skip=0,
+            limit=10000,  # Get all permissions
+            is_active=True,
+            module=module,
+        )
+
+        # Group by category
+        categories_dict: dict[str, list] = {}
+        uncategorized = []
+
+        for perm in permissions:
+            perm_dict = {
+                "id": perm.id,
+                "code": perm.code,
+                "name": perm.name,
+                "description": perm.description,
+                "resource": _convert_enum_to_string(perm.resource),
+                "action": _convert_enum_to_string(perm.action),
+                "module": perm.module,
+                "category": perm.category,
+                "is_active": perm.is_active,
+                "extra_data": perm.extra_data,
+                "created_at": perm.created_at,
+                "updated_at": perm.updated_at,
+            }
+
+            # Determine category name
+            category_name = perm.category or perm.module or "Other"
+            
+            # Map module to category name for UI
+            if perm.module:
+                module_to_category = {
+                    "crm": "CRM & Sales",
+                    "sales": "CRM & Sales",
+                    "inventory": "Inventory Management",
+                    "warehouse": "Inventory Management",
+                    "billing": "Billing & Subscriptions",
+                    "subscription": "Billing & Subscriptions",
+                    "payment": "Billing & Subscriptions",
+                }
+                category_name = module_to_category.get(
+                    perm.module.lower(), perm.category or perm.module or "Other"
+                )
+
+            if category_name and category_name != "Other":
+                if category_name not in categories_dict:
+                    categories_dict[category_name] = []
+                categories_dict[category_name].append(perm_dict)
+            else:
+                uncategorized.append(perm_dict)
+
+        # Convert to list format
+        categories = []
+        for category_name, perms in sorted(categories_dict.items()):
+            # Determine icon based on category
+            icon_map = {
+                "CRM & Sales": "users",
+                "Inventory Management": "box",
+                "Billing & Subscriptions": "credit-card",
+            }
+            icon = icon_map.get(category_name)
+
+            categories.append(
+                {
+                    "name": category_name,
+                    "icon": icon,
+                    "module": perms[0].get("module") if perms else None,
+                    "permissions": perms,
+                }
+            )
+
+        return {
+            "categories": categories,
+            "uncategorized": uncategorized,
+        }
+
     def update_permission(self, permission_id: UUID, update_data: dict) -> dict:
         """
         Update a permission.

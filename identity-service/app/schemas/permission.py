@@ -59,3 +59,21 @@ class BulkAssignPermissionsRequest(BaseModel):
 
     permission_ids: list[UUID] = Field(..., min_items=1)
     mode: str = Field("replace", pattern="^(replace|add)$")
+
+
+class PermissionCategoryGroup(BaseModel):
+    """Schema for a category group of permissions"""
+
+    name: str = Field(..., description="Category name (e.g., 'CRM & Sales')")
+    icon: str | None = Field(None, description="Icon identifier for UI")
+    module: str | None = Field(None, description="Module name if applicable")
+    permissions: list[PermissionResponse] = Field(default_factory=list)
+
+
+class GroupedPermissionsResponse(BaseModel):
+    """Schema for permissions grouped by category"""
+
+    categories: list[PermissionCategoryGroup] = Field(default_factory=list)
+    uncategorized: list[PermissionResponse] = Field(
+        default_factory=list, description="Permissions without a category"
+    )

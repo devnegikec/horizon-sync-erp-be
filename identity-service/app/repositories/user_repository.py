@@ -1,5 +1,6 @@
 """User repository for database operations"""
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models.base import UserStatus, UserType
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository:
@@ -118,9 +121,11 @@ class UserRepository:
             from app.models.role import UserOrganizationRole
 
             query = (
-                query.join(UserOrganizationRole)
+                query.join(
+                    UserOrganizationRole,
+                    UserOrganizationRole.user_id == User.id
+                )
                 .filter(
-                    UserOrganizationRole.user_id == User.id,
                     UserOrganizationRole.organization_id.in_(organization_ids),
                     UserOrganizationRole.is_active,
                 )
@@ -187,9 +192,11 @@ class UserRepository:
                 from app.models.role import UserOrganizationRole
 
                 q = (
-                    q.join(UserOrganizationRole)
+                    q.join(
+                        UserOrganizationRole,
+                        UserOrganizationRole.user_id == User.id
+                    )
                     .filter(
-                        UserOrganizationRole.user_id == User.id,
                         UserOrganizationRole.organization_id.in_(organization_ids),
                         UserOrganizationRole.is_active,
                     )
@@ -215,11 +222,11 @@ class UserRepository:
             if organization_ids is not None
             else func.count(User.id)
         )
-        status_counts = self.db.query(User.status, count_expr).filter(
+        status_counts_query = self.db.query(User.status, count_expr).filter(
             User.deleted_at.is_(None)
         )
-        status_counts = apply_filters(status_counts)
-        status_counts = status_counts.group_by(User.status).all()
+        status_counts_query = apply_filters(status_counts_query)
+        status_counts = status_counts_query.group_by(User.status).all()
 
         result = {
             UserStatus.ACTIVE.value: 0,
@@ -229,9 +236,23 @@ class UserRepository:
             "mfa_enabled": 0,
         }
         for status_val, count in status_counts:
-            key = status_val.value if hasattr(status_val, "value") else status_val
-            if key in result:
-                result[key] = count
+            # Handle enum values safely
+            if status_val is None:
+                continue
+            try:
+                if hasattr(status_val, "value"):
+                    key = status_val.value
+                elif isinstance(status_val, str):
+                    key = status_val
+                else:
+                    # Try to convert to string
+                    key = str(status_val)
+                if key in result:
+                    result[key] = int(count) if count is not None else 0
+            except (AttributeError, ValueError, TypeError) as e:
+                # Log but don't fail - skip invalid status values
+                logger.warning(f"Error processing status value {status_val}: {e}")
+                continue
 
         mfa_count_expr = (
             func.count(distinct(User.id))

@@ -13,6 +13,10 @@ class InvitationBase(BaseModel):
     first_name: str | None = Field(None, max_length=100)
     last_name: str | None = Field(None, max_length=100)
     role_id: UUID | None = Field(None, description="Role to assign to the user")
+    custom_permission_ids: list[UUID] | None = Field(
+        default_factory=list,
+        description="Custom permissions to assign (overrides role permissions)",
+    )
     team_ids: list[UUID] | None = Field(
         default_factory=list, description="Teams to add user to"
     )
@@ -47,6 +51,7 @@ class InvitationResponse(BaseModel):
     last_name: str | None = None
     role_id: UUID | None = None
     role_name: str | None = None
+    custom_permission_ids: list[UUID] | None = None
     team_ids: list[UUID] | None = None
     invited_by_id: UUID | None = None
     invited_by_email: str | None = None

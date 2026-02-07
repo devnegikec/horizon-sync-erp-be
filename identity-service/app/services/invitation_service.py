@@ -121,11 +121,20 @@ class InvitationService:
         # Create invitation
         from uuid import uuid4
 
+        # Extract custom_permission_ids and store in extra_data (not a model column)
+        custom_permission_ids = invitation_data.pop("custom_permission_ids", None) or []
+
         # Convert team_ids UUIDs to strings for JSONB storage
         if "team_ids" in invitation_data and invitation_data["team_ids"]:
             invitation_data["team_ids"] = [
                 str(team_id) for team_id in invitation_data["team_ids"]
             ]
+
+        # Merge custom_permission_ids into extra_data for persistence
+        extra_data = invitation_data.get("extra_data") or {}
+        if custom_permission_ids:
+            extra_data["custom_permission_ids"] = [str(pid) for pid in custom_permission_ids]
+        invitation_data["extra_data"] = extra_data
 
         invitation_data["id"] = uuid4()  # Explicitly generate UUID to avoid blank ID
         invitation_data["token_hash"] = token_hash
@@ -147,6 +156,18 @@ class InvitationService:
         inviter = self.user_repo.get_user_by_id(inviter_id)
         inviter_email = inviter.email if inviter else None
 
+        # Extract custom_permission_ids from extra_data for response
+        custom_permission_ids_resp = []
+        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
+            try:
+                custom_permission_ids_resp = [
+                    UUID(pid)
+                    for pid in invitation.extra_data["custom_permission_ids"]
+                    if pid
+                ]
+            except (ValueError, TypeError):
+                pass
+
         return {
             "id": invitation.id,
             "organization_id": invitation.organization_id,
@@ -155,6 +176,7 @@ class InvitationService:
             "last_name": invitation.last_name,
             "role_id": invitation.role_id,
             "role_name": role_name,
+            "custom_permission_ids": custom_permission_ids_resp,
             "team_ids": invitation.team_ids,
             "invited_by_id": invitation.invited_by_id,
             "invited_by_email": inviter_email,
@@ -396,18 +418,88 @@ class InvitationService:
             user = self.user_repo.create_user(user_data)
 
         # Add user to organization with role
-        from app.models.role import UserOrganizationRole
+        from app.models.role import Role, RolePermission, UserOrganizationRole
 
-        user_org_role = UserOrganizationRole(
-            user_id=user.id,
-            organization_id=invitation.organization_id,
-            role_id=invitation.role_id,
-            is_active=True,
-            is_primary=True,
-            status="active",
-            joined_at=datetime.utcnow(),
-        )
-        self.db.add(user_org_role)
+        # Assign primary role (if provided)
+        primary_role_id = invitation.role_id
+        if primary_role_id:
+            user_org_role = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=invitation.organization_id,
+                role_id=primary_role_id,
+                is_active=True,
+                is_primary=True,
+                status="active",
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(user_org_role)
+
+        # Apply custom permissions (create a dedicated role for them)
+        custom_permission_ids = []
+        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
+            custom_permission_ids = [
+                UUID(pid)
+                for pid in invitation.extra_data["custom_permission_ids"]
+                if pid
+            ]
+
+        if custom_permission_ids:
+            # Create a "Custom Permissions" role for this user
+            custom_role = Role(
+                organization_id=invitation.organization_id,
+                name="Custom Permissions",
+                code=f"custom_{user.id}",
+                description="Custom permissions assigned via invitation",
+                is_system=False,
+                is_default=False,
+                is_active=True,
+            )
+            self.db.add(custom_role)
+            self.db.flush()  # Get custom_role.id
+
+            # Assign permissions to the custom role
+            for permission_id in custom_permission_ids:
+                role_perm = RolePermission(
+                    role_id=custom_role.id,
+                    permission_id=permission_id,
+                )
+                self.db.add(role_perm)
+
+            # Assign user to the custom role
+            custom_user_org_role = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=invitation.organization_id,
+                role_id=custom_role.id,
+                is_active=True,
+                is_primary=not primary_role_id,  # Primary only if no other role
+                status="active",
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(custom_user_org_role)
+
+        # If no role at all, ensure user has at least one UserOrganizationRole
+        if not primary_role_id and not custom_permission_ids:
+            # Create minimal role or use a default - need at least one assignment
+            default_role = (
+                self.db.query(Role)
+                .filter(
+                    Role.organization_id == invitation.organization_id,
+                    Role.is_default == True,  # noqa: E712
+                    Role.is_active == True,  # noqa: E712
+                )
+                .first()
+            )
+            if default_role:
+                user_org_role = UserOrganizationRole(
+                    user_id=user.id,
+                    organization_id=invitation.organization_id,
+                    role_id=default_role.id,
+                    is_active=True,
+                    is_primary=True,
+                    status="active",
+                    joined_at=datetime.utcnow(),
+                )
+                self.db.add(user_org_role)
 
         # Update invitation status
         self.invitation_repo.update_invitation(
@@ -502,6 +594,18 @@ class InvitationService:
         if invitation.invited_by:
             inviter_email = invitation.invited_by.email
 
+        # Extract custom_permission_ids from extra_data
+        custom_permission_ids = []
+        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
+            try:
+                custom_permission_ids = [
+                    UUID(pid)
+                    for pid in invitation.extra_data["custom_permission_ids"]
+                    if pid
+                ]
+            except (ValueError, TypeError):
+                pass
+
         return {
             "id": invitation.id,
             "organization_id": invitation.organization_id,
@@ -510,6 +614,7 @@ class InvitationService:
             "last_name": invitation.last_name,
             "role_id": invitation.role_id,
             "role_name": role_name,
+            "custom_permission_ids": custom_permission_ids,
             "team_ids": invitation.team_ids,
             "invited_by_id": invitation.invited_by_id,
             "invited_by_email": inviter_email,

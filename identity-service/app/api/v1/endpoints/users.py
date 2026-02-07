@@ -1,9 +1,12 @@
 """User management API endpoints"""
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.authorization import (
     require_permission,
@@ -115,29 +118,36 @@ async def list_users(
         )
 
     user_service = UserService(db)
-    users, pagination = user_service.get_users(
-        page=page,
-        page_size=page_size,
-        status=status,
-        user_type=user_type,
-        email_verified=email_verified,
-        search=search,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        organization_ids=organization_ids,
-    )
-    status_counts = user_service.get_user_status_counts(
-        organization_ids=organization_ids,
-        user_type=user_type,
-        email_verified=email_verified,
-        search=search,
-    )
-    user_items = [UserListItem.model_validate(user) for user in users]
-    return UserListResponse(
-        users=user_items,
-        pagination=PaginationMeta(**pagination),
-        status_counts=UserStatusCounts(**status_counts),
-    )
+    try:
+        users, pagination = user_service.get_users(
+            page=page,
+            page_size=page_size,
+            status=status,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            organization_ids=organization_ids,
+        )
+        status_counts = user_service.get_user_status_counts(
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+        user_items = [UserListItem.model_validate(user) for user in users]
+        return UserListResponse(
+            users=user_items,
+            pagination=PaginationMeta(**pagination),
+            status_counts=UserStatusCounts(**status_counts),
+        )
+    except Exception as e:
+        logger.error(f"Error in list_users endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving users: {str(e)}"
+        )
 
 
 # ----- Self-service profile (logged-in user updates own info) -----
