@@ -122,8 +122,7 @@ class UserRepository:
 
             query = (
                 query.join(
-                    UserOrganizationRole,
-                    UserOrganizationRole.user_id == User.id
+                    UserOrganizationRole, UserOrganizationRole.user_id == User.id
                 )
                 .filter(
                     UserOrganizationRole.organization_id.in_(organization_ids),
@@ -193,8 +192,7 @@ class UserRepository:
 
                 q = (
                     q.join(
-                        UserOrganizationRole,
-                        UserOrganizationRole.user_id == User.id
+                        UserOrganizationRole, UserOrganizationRole.user_id == User.id
                     )
                     .filter(
                         UserOrganizationRole.organization_id.in_(organization_ids),

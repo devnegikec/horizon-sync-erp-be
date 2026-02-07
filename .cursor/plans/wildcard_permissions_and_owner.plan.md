@@ -44,7 +44,7 @@ Support codes like `user.*`, `org.*`, `role.*`, `warehouse.*`, and `*.*`. At che
 
 - Select one org from a list (e.g. dropdown), or
 - Are given a default/primary org.
-Identity issues an **access token scoped to that org** (e.g. `organization_id` in token claims and/or returned by `/me`).
+  Identity issues an **access token scoped to that org** (e.g. `organization_id` in token claims and/or returned by `/me`).
 
 1. **Requests**: Identity and core-service use the token’s `organization_id` (or `/me`’s `organization_id`) for all data scope. No "system admin can access any org" bypass.
 2. **Switching org**: To work in another org, the user:
@@ -73,7 +73,6 @@ Option B is simpler for "one system admin, many orgs": no per-org role assignmen
 
 ### Summary for system users
 
-
 | Aspect                   | One-org-per-session (chosen)                                                      |
 | ------------------------ | --------------------------------------------------------------------------------- |
 | Scope                    | One org per token/session                                                         |
@@ -82,12 +81,11 @@ Option B is simpler for "one system admin, many orgs": no per-org role assignmen
 | Core-service             | Always filter by token’s `organization_id`; no special system-admin org bypass    |
 | Best practice            | Prefer **org switcher** over full logout for better UX                            |
 
-
 ---
 
 ## 4. Best Practices and Safeguards
 
-- **Full access (*.*)**: Use audit logging, MFA for *.*/system.admin, and prefer resource wildcards (e.g. `user.*`) over `*.*` where possible. Reserve `*.*` for org owner and minimal super-admin use.
+- **Full access (_._)**: Use audit logging, MFA for _._/system.admin, and prefer resource wildcards (e.g. `user.*`) over `*.*` where possible. Reserve `*.*` for org owner and minimal super-admin use.
 - **System admin**: One-org-per-session reduces risk; org switcher improves UX without changing the security model.
 
 ---
@@ -98,4 +96,3 @@ Option B is simpler for "one system admin, many orgs": no per-org role assignmen
 2. Owner role with `*.*` on org create.
 3. **System admins**: Login (and optional org-switch) with org selection; token scoped to one org; no cross-org bypass in core-service. Implement "system admin can request token for any org" and, if desired, org-switcher endpoint.
 4. Tests and docs for wildcards, owner, and one-org-per-session system admin.
-

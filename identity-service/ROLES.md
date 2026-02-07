@@ -113,10 +113,12 @@ Core-service uses additional resources (e.g. warehouse, item, customer, supplier
 When creating permissions, use these formats:
 
 1. **Individual Permission**: `{resource}.{action}`
+
    - Examples: `user.read`, `org.create`, `role.update`, `warehouse.delete`
    - Grants only that specific action on that resource
 
 2. **Resource Wildcard**: `{resource}.*`
+
    - Examples: `user.*`, `org.*`, `warehouse.*`
    - Grants **all actions** for that resource (read, create, update, delete, manage, invite, etc.)
 
@@ -127,6 +129,7 @@ When creating permissions, use these formats:
 ### Creating Permissions
 
 **Via API**: `POST /api/v1/permissions` with body:
+
 ```json
 {
   "code": "user.*",
@@ -139,6 +142,7 @@ When creating permissions, use these formats:
 ```
 
 **Via Service** (programmatic):
+
 ```python
 from app.services.permission_service import PermissionService
 
@@ -197,12 +201,15 @@ role_service.bulk_assign_permissions_to_role(role_id, perm_ids, mode="add")
 ### Why Use Wildcards?
 
 **Instead of** creating and assigning multiple permissions:
+
 - `user.read`, `user.create`, `user.update`, `user.delete`, `user.manage`, `user.invite` (6 permissions)
 
 **Use one wildcard**:
+
 - `user.*` (1 permission grants all 6+ actions)
 
 **Benefits**:
+
 - Simpler role management
 - Fewer database rows
 - Easier to maintain
@@ -211,6 +218,7 @@ role_service.bulk_assign_permissions_to_role(role_id, perm_ids, mode="add")
 ### Permission Validation
 
 The service validates permission codes:
+
 - Must contain exactly one dot (`.`)
 - Format: `resource.action`, `resource.*`, or `*.*`
 - Invalid codes raise `ValueError` with descriptive message

@@ -6,7 +6,7 @@
 -- org_id: bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150
 
 -- Step 1: Check current status
-SELECT 
+SELECT
     u.id as user_id,
     u.email,
     o.id as org_id,
@@ -27,8 +27,8 @@ WHERE u.id = '8d509f22-5fe5-4765-9496-3a236cae2af1'::uuid
   AND uor.is_active = true;
 
 -- Step 2: Check if *.* permission exists
-SELECT id, code, name 
-FROM permissions 
+SELECT id, code, name
+FROM permissions
 WHERE code = '*.*';
 
 -- Step 3: Get all permissions for this user in this org
@@ -46,7 +46,7 @@ ORDER BY p.code;
 -- Step 4: If *.* permission doesn't exist, create it
 -- (Run this only if Step 2 returns no rows)
 INSERT INTO permissions (id, code, name, description, resource, action, module, is_active, created_at, updated_at)
-SELECT 
+SELECT
     gen_random_uuid(),
     '*.*',
     'Full access (all resources and actions)',
@@ -62,7 +62,7 @@ WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE code = '*.*');
 -- Step 5: Assign *.* permission to user's role(s) in this org
 -- This will assign *.* to ALL roles the user has in this org
 INSERT INTO role_permissions (id, role_id, permission_id, conditions, created_at, updated_at)
-SELECT 
+SELECT
     gen_random_uuid(),
     r.id,
     (SELECT id FROM permissions WHERE code = '*.*'),
@@ -75,13 +75,13 @@ WHERE uor.user_id = '8d509f22-5fe5-4765-9496-3a236cae2af1'::uuid
   AND uor.organization_id = 'bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150'::uuid
   AND uor.is_active = true
   AND NOT EXISTS (
-    SELECT 1 FROM role_permissions rp2 
-    WHERE rp2.role_id = r.id 
+    SELECT 1 FROM role_permissions rp2
+    WHERE rp2.role_id = r.id
     AND rp2.permission_id = (SELECT id FROM permissions WHERE code = '*.*')
   );
 
 -- Step 6: Verify the assignment
-SELECT 
+SELECT
     u.email,
     o.name as org_name,
     r.name as role_name,

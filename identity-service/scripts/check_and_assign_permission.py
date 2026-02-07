@@ -72,9 +72,7 @@ def assign_full_access_to_user(
     3. If no role exists, create an "Owner" role with *.* and assign user to it
     """
     # Get or create *.* permission
-    full_access_perm = (
-        db.query(Permission).filter(Permission.code == "*.*").first()
-    )
+    full_access_perm = db.query(Permission).filter(Permission.code == "*.*").first()
 
     if not full_access_perm:
         # Create *.* permission if it doesn't exist
@@ -208,7 +206,7 @@ def assign_full_access_to_user(
 
         return {
             "status": "created_and_assigned",
-            "message": f"Created Owner role and assigned user to it with *.* permission",
+            "message": "Created Owner role and assigned user to it with *.* permission",
             "role_id": str(owner_role.id),
             "role_name": owner_role.name,
             "role_code": owner_role.code,
@@ -246,7 +244,9 @@ def main():
             print("\nAssigning *.* permission...")
             result = assign_full_access_to_user(db, user_id, org_id)
             print(f"\n✅ {result['message']}")
-            print(f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})")
+            print(
+                f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})"
+            )
             print(f"   Permission ID: {result['permission_id']}")
         elif has_access:
             print("✅ User HAS *.* permission in this organization")
@@ -269,7 +269,9 @@ def main():
             print("\nAssigning *.* permission...")
             result = assign_full_access_to_user(db, user_id, org_id)
             print(f"\n✅ {result['message']}")
-            print(f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})")
+            print(
+                f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})"
+            )
             print(f"   Permission ID: {result['permission_id']}")
 
             # Verify
@@ -279,7 +281,9 @@ def main():
             if has_access_after:
                 print("\n✅ Verification: User now has *.* permission")
             else:
-                print("\n❌ Verification failed: User still does not have *.* permission")
+                print(
+                    "\n❌ Verification failed: User still does not have *.* permission"
+                )
 
     except Exception as e:
         print(f"\n❌ Error: {e}")

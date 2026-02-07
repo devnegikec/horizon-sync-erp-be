@@ -138,11 +138,15 @@ class PermissionRepository:
                 resource_normalized = "organization"
             # Include both exact resource match AND wildcard codes for that resource
             # e.g., filter resource='user' should show user.read, user.create, AND user.*
-            resource_prefix = "org" if resource_normalized == "organization" else resource_normalized
+            resource_prefix = (
+                "org" if resource_normalized == "organization" else resource_normalized
+            )
             query = query.filter(
                 or_(
                     Permission.resource == resource_normalized,
-                    Permission.code.like(f"{resource_prefix}.*"),  # Include user.*, org.*, etc.
+                    Permission.code.like(
+                        f"{resource_prefix}.*"
+                    ),  # Include user.*, org.*, etc.
                     Permission.code == "*.*",  # Include full wildcard
                 )
             )
@@ -153,7 +157,9 @@ class PermissionRepository:
             query = query.filter(
                 or_(
                     Permission.action == action,
-                    Permission.code.like(f"%.{action}"),  # Any resource with this action
+                    Permission.code.like(
+                        f"%.{action}"
+                    ),  # Any resource with this action
                     Permission.code.like("%.*"),  # Resource wildcards (user.*, org.*)
                     Permission.code == "*.*",  # Full wildcard
                 )

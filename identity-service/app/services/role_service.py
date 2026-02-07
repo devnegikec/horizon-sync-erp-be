@@ -478,7 +478,9 @@ class RoleService:
         from app.services.permission_service import PermissionService
 
         permission_service = PermissionService(self.db)
-        permission = permission_service.get_or_create_permission_by_code(permission_code)
+        permission = permission_service.get_or_create_permission_by_code(
+            permission_code
+        )
 
         return self.assign_permission_to_role(
             role_id=role_id,

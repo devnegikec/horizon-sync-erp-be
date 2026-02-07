@@ -133,7 +133,9 @@ class InvitationService:
         # Merge custom_permission_ids into extra_data for persistence
         extra_data = invitation_data.get("extra_data") or {}
         if custom_permission_ids:
-            extra_data["custom_permission_ids"] = [str(pid) for pid in custom_permission_ids]
+            extra_data["custom_permission_ids"] = [
+                str(pid) for pid in custom_permission_ids
+            ]
         invitation_data["extra_data"] = extra_data
 
         invitation_data["id"] = uuid4()  # Explicitly generate UUID to avoid blank ID

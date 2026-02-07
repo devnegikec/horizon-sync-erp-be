@@ -3,25 +3,30 @@
 ## ✅ APIs You Already Have
 
 ### 1. **List Roles** (for dropdown)
+
 ```
 GET /api/v1/identity/roles?organization_id={org_id}
 ```
+
 - Returns list of roles with `id`, `name`, `code`
 - Use for the "Assign Role" dropdown
 
 ### 2. **Create Invitation** (extended)
+
 ```
 POST /api/v1/identity/invitations
 ```
+
 **Request Body:**
+
 ```json
 {
   "organization_id": "uuid",
   "email": "user@example.com",
   "first_name": "John",
   "last_name": "Doe",
-  "role_id": "uuid",  // Optional - for dropdown selection
-  "custom_permission_ids": ["uuid1", "uuid2"],  // NEW - for custom permissions
+  "role_id": "uuid", // Optional - for dropdown selection
+  "custom_permission_ids": ["uuid1", "uuid2"], // NEW - for custom permissions
   "message": "Optional message"
 }
 ```
@@ -29,11 +34,13 @@ POST /api/v1/identity/invitations
 ## ✅ NEW APIs Added
 
 ### 1. **Get Permissions Grouped by Category** ⭐ NEW
+
 ```
 GET /api/v1/identity/permissions/grouped?module={module}
 ```
 
 **Response:**
+
 ```json
 {
   "categories": [
@@ -82,14 +89,16 @@ GET /api/v1/identity/permissions/grouped?module={module}
 ### Frontend Implementation:
 
 1. **Load Roles** (on modal open):
+
    ```javascript
    GET /api/v1/identity/roles?organization_id={current_org_id}
    // Populate "Assign Role" dropdown
    ```
 
 2. **Load Permissions** (on modal open):
+
    ```javascript
-   GET /api/v1/identity/permissions/grouped
+   GET / api / v1 / identity / permissions / grouped;
    // Render checkboxes grouped by category
    // Each checkbox value = permission.id
    ```
@@ -111,9 +120,11 @@ GET /api/v1/identity/permissions/grouped?module={module}
 ## ⚠️ Important Notes
 
 ### Custom Permissions Storage
+
 The `custom_permission_ids` field has been added to the invitation schema, but you'll need to:
 
 1. **Update the database** to store custom permissions:
+
    - Option A: Add JSONB column to `invitations` table
    - Option B: Create `invitation_custom_permissions` junction table
 
@@ -122,7 +133,9 @@ The `custom_permission_ids` field has been added to the invitation schema, but y
    - Apply custom permissions when user accepts invitation
 
 ### Permission Override Logic
+
 When a user accepts an invitation:
+
 - If `role_id` is provided → assign role (which has its own permissions)
 - If `custom_permission_ids` is provided → assign these permissions directly to user
 - If both are provided → role permissions + custom permissions (or override, depending on your business logic)
@@ -149,26 +162,25 @@ const [permissions, setPermissions] = useState({ categories: [] });
 useEffect(() => {
   // Load roles
   fetch(`/api/v1/identity/roles?organization_id=${orgId}`)
-    .then(res => res.json())
-    .then(data => setRoles(data.data));
+    .then((res) => res.json())
+    .then((data) => setRoles(data.data));
 
   // Load grouped permissions
-  fetch('/api/v1/identity/permissions/grouped')
-    .then(res => res.json())
-    .then(data => setPermissions(data));
+  fetch("/api/v1/identity/permissions/grouped")
+    .then((res) => res.json())
+    .then((data) => setPermissions(data));
 }, []);
 
 // Submit invitation
 const handleSubmit = async (formData) => {
-  const selectedPermissionIds = 
-    Object.values(selectedPermissions).flat(); // Get all selected checkbox IDs
+  const selectedPermissionIds = Object.values(selectedPermissions).flat(); // Get all selected checkbox IDs
 
-  await fetch('/api/v1/identity/invitations', {
-    method: 'POST',
+  await fetch("/api/v1/identity/invitations", {
+    method: "POST",
     body: JSON.stringify({
       ...formData,
-      custom_permission_ids: selectedPermissionIds
-    })
+      custom_permission_ids: selectedPermissionIds,
+    }),
   });
 };
 ```

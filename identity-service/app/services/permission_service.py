@@ -81,7 +81,10 @@ def _validate_permission_code(code: str) -> tuple[bool, str | None]:
     if not code or not isinstance(code, str):
         return False, "Permission code must be a non-empty string"
     if "." not in code:
-        return False, "Permission code must contain a dot (format: resource.action or resource.* or *.*)"
+        return (
+            False,
+            "Permission code must contain a dot (format: resource.action or resource.* or *.*)",
+        )
     parts = code.split(".", 1)
     if len(parts) != 2:
         return False, "Permission code must have exactly one dot"
@@ -178,7 +181,9 @@ class PermissionService:
             if not permission_data.get("action"):
                 # Map action to ActionType enum
                 if action_part == "*":
-                    permission_data["action"] = ActionType.MANAGE  # Placeholder for wildcard
+                    permission_data[
+                        "action"
+                    ] = ActionType.MANAGE  # Placeholder for wildcard
                 else:
                     try:
                         permission_data["action"] = ActionType(action_part)
@@ -364,7 +369,7 @@ class PermissionService:
 
             # Determine category name
             category_name = perm.category or perm.module or "Other"
-            
+
             # Map module to category name for UI
             if perm.module:
                 module_to_category = {

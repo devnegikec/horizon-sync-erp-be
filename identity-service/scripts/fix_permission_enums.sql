@@ -6,11 +6,11 @@
 -- This allows PostgreSQL to read/write rows with these values
 
 -- Add 'org' to resourcetype enum (if not already present)
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
-        WHERE enumlabel = 'org' 
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'org'
         AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'resourcetype')
     ) THEN
         ALTER TYPE resourcetype ADD VALUE 'org';
@@ -18,27 +18,27 @@ BEGIN
 END $$;
 
 -- Add invalid action values to actiontype enum (if not already present)
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
-        WHERE enumlabel = '*.*' 
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = '*.*'
         AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'actiontype')
     ) THEN
         ALTER TYPE actiontype ADD VALUE '*.*';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
-        WHERE enumlabel = '.*' 
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = '.*'
         AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'actiontype')
     ) THEN
         ALTER TYPE actiontype ADD VALUE '.*';
     END IF;
-    
+
     IF NOT EXISTS (
-        SELECT 1 FROM pg_enum 
-        WHERE enumlabel = 'owner' 
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'owner'
         AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'actiontype')
     ) THEN
         ALTER TYPE actiontype ADD VALUE 'owner';
@@ -47,12 +47,12 @@ END $$;
 
 -- Step 2: Now we can update the rows
 -- Fix resource: 'org' -> 'organization'
-UPDATE permissions 
+UPDATE permissions
 SET resource = 'organization'::resourcetype
 WHERE resource = 'org'::resourcetype;
 
 -- Fix action: '*.*', '.*', 'owner' -> 'manage'
-UPDATE permissions 
+UPDATE permissions
 SET action = 'manage'::actiontype
 WHERE action IN ('*.*'::actiontype, '.*'::actiontype, 'owner'::actiontype);
 
@@ -61,9 +61,9 @@ WHERE action IN ('*.*'::actiontype, '.*'::actiontype, 'owner'::actiontype);
 -- Note: PostgreSQL doesn't allow removing enum values once added, but they won't cause issues if unused
 
 -- Verify the fixes
-SELECT id, code, resource, action 
-FROM permissions 
-WHERE resource = 'org'::resourcetype 
+SELECT id, code, resource, action
+FROM permissions
+WHERE resource = 'org'::resourcetype
    OR action IN ('*.*'::actiontype, '.*'::actiontype, 'owner'::actiontype);
 
 -- If the above query returns 0 rows, all invalid values have been fixed.

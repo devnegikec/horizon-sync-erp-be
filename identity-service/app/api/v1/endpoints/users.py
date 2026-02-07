@@ -46,9 +46,7 @@ def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
     return [r[0] for r in rows]
 
 
-def _users_share_organization(
-    db: Session, user_id: UUID, other_user_id: UUID
-) -> bool:
+def _users_share_organization(db: Session, user_id: UUID, other_user_id: UUID) -> bool:
     """Return True if both users belong to at least one common organization."""
     my_orgs = set(_user_organization_ids(db, user_id))
     if not my_orgs:
@@ -146,7 +144,7 @@ async def list_users(
         logger.error(f"Error in list_users endpoint: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving users: {str(e)}"
+            detail=f"Error retrieving users: {str(e)}",
         )
 
 
