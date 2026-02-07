@@ -374,9 +374,11 @@ class PermissionService:
             if perm.module:
                 module_to_category = {
                     "crm": "CRM & Sales",
-                    "sales": "CRM & Sales",
-                    "inventory": "Inventory Management",
-                    "warehouse": "Inventory Management",
+                    "sales": "Sales & Orders",
+                    "procurement": "Procurement",
+                    "inventory": "Inventory",
+                    "warehouse": "Inventory",
+                    "accounting": "Accounting",
                     "billing": "Billing & Subscriptions",
                     "subscription": "Billing & Subscriptions",
                     "payment": "Billing & Subscriptions",
@@ -398,7 +400,11 @@ class PermissionService:
             # Determine icon based on category
             icon_map = {
                 "CRM & Sales": "users",
+                "Sales & Orders": "shopping-cart",
+                "Procurement": "truck",
+                "Inventory": "box",
                 "Inventory Management": "box",
+                "Accounting": "calculator",
                 "Billing & Subscriptions": "credit-card",
             }
             icon = icon_map.get(category_name)

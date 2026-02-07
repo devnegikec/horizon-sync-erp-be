@@ -50,6 +50,15 @@ class ResourceType(str, enum.Enum):
     PERMISSION = "permission"
     INVITATION = "invitation"
 
+    # Sales & Orders
+    CUSTOMER = "customer"
+    SALES_ORDER = "sales_order"
+    INVOICE = "invoice"
+
+    # Procurement
+    SUPPLIER = "supplier"
+    PURCHASE_ORDER = "purchase_order"
+
     # Inventory resources
     ITEM = "item"
     ITEM_GROUP = "item_group"
@@ -57,6 +66,10 @@ class ResourceType(str, enum.Enum):
     STOCK_ENTRY = "stock_entry"
     BATCH = "batch"
     SERIAL = "serial"
+
+    # Accounting
+    CHART_OF_ACCOUNT = "chart_of_account"
+    PAYMENT = "payment"
 
     # General
     REPORT = "report"

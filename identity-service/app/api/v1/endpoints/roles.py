@@ -22,6 +22,7 @@ from app.core.exceptions import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.role import UserOrganizationRole
 from app.schemas.role import (
     BulkAssignRolePermissionsRequest,
     RoleCreate,
@@ -37,6 +38,20 @@ from app.services.role_service import RoleService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
+    """Return list of organization IDs the user is a member of."""
+    rows = (
+        db.query(UserOrganizationRole.organization_id)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    )
+    return [r[0] for r in rows]
 
 
 @router.get(
@@ -75,18 +90,32 @@ async def list_roles(
         f"skip: {skip}, limit: {limit}, org_id: {organization_id}"
     )
 
-    # Check permission
+    # Check permission - user must have role.read (or role.* or *.*)
     require_permission(current_user.permissions, "role.read")
 
-    # If organization_id specified, validate user is in org
-    if organization_id:
+    # Restrict to user's organizations only - never return roles from other orgs
+    organization_ids: list[UUID] | None = None
+    if organization_id is not None:
+        # Specific org requested: validate user is a member
         validate_user_in_organization(current_user.id, organization_id, db)
+        organization_ids = [organization_id]
+    else:
+        # No org specified: restrict to user's own organizations
+        organization_ids = _user_organization_ids(db, current_user.id)
+        if not organization_ids:
+            # User has no org membership - return empty list
+            return RoleListResponse(
+                data=[],
+                total=0,
+                skip=skip,
+                limit=limit,
+            )
 
     role_service = RoleService(db)
 
     try:
         result = role_service.list_roles(
-            organization_id=organization_id,
+            organization_ids=organization_ids,
             skip=skip,
             limit=limit,
             is_active=is_active,

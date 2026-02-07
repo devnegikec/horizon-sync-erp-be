@@ -97,7 +97,8 @@ class RoleService:
 
     def list_roles(
         self,
-        organization_id: UUID | None = None,
+        organization_ids: list[UUID] | None = None,
+        organization_id: UUID | None = None,  # Deprecated: use organization_ids
         skip: int = 0,
         limit: int = 10,
         is_active: bool | None = None,
@@ -109,7 +110,8 @@ class RoleService:
         List roles with pagination and filters.
 
         Args:
-            organization_id: Filter by organization
+            organization_ids: Filter by organizations (user's orgs only)
+            organization_id: Deprecated - use organization_ids
             skip: Number of records to skip
             limit: Maximum number of records to return
             is_active: Filter by active status
@@ -120,12 +122,16 @@ class RoleService:
         Returns:
             Dictionary with roles list and pagination info
         """
+        # Support legacy organization_id for backward compatibility
+        if organization_ids is None and organization_id is not None:
+            organization_ids = [organization_id]
+
         logger.debug(
-            f"Listing roles - org_id: {organization_id}, skip: {skip}, limit: {limit}"
+            f"Listing roles - org_ids: {organization_ids}, skip: {skip}, limit: {limit}"
         )
 
         roles, total_count = self.role_repo.list_roles(
-            organization_id=organization_id,
+            organization_ids=organization_ids,
             skip=skip,
             limit=limit,
             is_active=is_active,

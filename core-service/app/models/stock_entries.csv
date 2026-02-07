@@ -1,0 +1,25 @@
+column_name,data_type,character_maximum_length,is_nullable
+updated_by,uuid,NULL,YES
+organization_id,uuid,NULL,NO
+created_at,timestamp with time zone,NULL,YES
+updated_at,timestamp with time zone,NULL,YES
+created_by,uuid,NULL,YES
+id,uuid,NULL,NO
+stock_entry_type,USER-DEFINED,NULL,NO
+from_warehouse_id,uuid,NULL,YES
+to_warehouse_id,uuid,NULL,YES
+posting_date,timestamp with time zone,NULL,NO
+status,USER-DEFINED,NULL,YES
+reference_id,uuid,NULL,YES
+total_value,numeric,NULL,YES
+expense_account_id,uuid,NULL,YES
+cost_center_id,uuid,NULL,YES
+is_backflush,boolean,NULL,YES
+bom_id,uuid,NULL,YES
+extra_data,jsonb,NULL,YES
+submitted_at,timestamp with time zone,NULL,YES
+cancelled_at,timestamp with time zone,NULL,YES
+stock_entry_no,character varying,100,NO
+reference_type,character varying,50,YES
+posting_time,character varying,10,YES
+remarks,text,NULL,YES
