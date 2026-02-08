@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.permission import PermissionResponse
 
@@ -20,15 +20,35 @@ class RoleBase(BaseModel):
     is_active: bool = Field(True)
     extra_data: dict | None = Field(default_factory=dict)
 
+    @field_validator("extra_data", mode="before")
+    @classmethod
+    def coerce_extra_data(cls, v):
+        """Accept null or omit; use empty dict for None."""
+        if v is None:
+            return {}
+        if isinstance(v, dict):
+            return v
+        return {}
+
 
 class RoleCreate(RoleBase):
     """Schema for creating a new role"""
 
     organization_id: UUID
-    permission_ids: list[UUID] | None = Field(
+    permission_ids: list[UUID] = Field(
         default_factory=list,
         description="Optional list of permission UUIDs to assign to the role",
     )
+
+    @field_validator("permission_ids", mode="before")
+    @classmethod
+    def coerce_permission_ids(cls, v):
+        """Accept None, omit empty list, or list of UUIDs (as UUID or str)."""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        return []
 
 
 class RoleUpdate(BaseModel):
@@ -111,7 +131,7 @@ class RolePermissionDetailResponse(BaseModel):
 class BulkAssignRolePermissionsRequest(BaseModel):
     """Schema for bulk role permission assignment"""
 
-    permission_ids: list[UUID] = Field(..., min_items=1)
+    permission_ids: list[UUID] = Field(..., min_length=1)
     mode: str = Field("replace", pattern="^(replace|add)$")
 
 

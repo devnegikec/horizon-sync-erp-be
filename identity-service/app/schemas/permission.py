@@ -57,7 +57,7 @@ class PermissionListResponse(BaseModel):
 class BulkAssignPermissionsRequest(BaseModel):
     """Schema for bulk permission assignment"""
 
-    permission_ids: list[UUID] = Field(..., min_items=1)
+    permission_ids: list[UUID] = Field(..., min_length=1)
     mode: str = Field("replace", pattern="^(replace|add)$")
 
 
