@@ -25,6 +25,10 @@ class RoleCreate(RoleBase):
     """Schema for creating a new role"""
 
     organization_id: UUID
+    permission_ids: list[UUID] | None = Field(
+        default_factory=list,
+        description="Optional list of permission UUIDs to assign to the role",
+    )
 
 
 class RoleUpdate(BaseModel):

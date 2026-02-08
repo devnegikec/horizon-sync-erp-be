@@ -206,7 +206,7 @@ async def create_role(
     db: Session = Depends(get_db),
 ):
     """
-    Create a new role.
+    Create a new role with optional permissions in one step.
 
     Requires authentication and 'role.create' permission.
 
@@ -215,6 +215,7 @@ async def create_role(
     - **name**: Role name
     - **code**: Unique role code
     - **description**: Optional description
+    - **permission_ids**: Optional list of permission UUIDs to assign
     - **is_system**: System role flag (default: false)
     - **is_default**: Default role flag (default: false)
     - **hierarchy_level**: Hierarchy level (default: 0)

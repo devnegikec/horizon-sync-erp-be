@@ -34,19 +34,25 @@ class RoleService:
 
     def create_role(self, role_data: dict, organization_id: UUID) -> dict:
         """
-        Create a new role.
+        Create a new role, optionally with permissions in one step.
 
         Args:
-            role_data: Dictionary containing role data
+            role_data: Dictionary containing role data (may include permission_ids)
             organization_id: Organization UUID
 
         Returns:
-            Role response dictionary
+            Role response dictionary with permissions if any were assigned
 
         Raises:
             DuplicateRoleException: If role code already exists in organization
         """
-        logger.info(f"Creating role: {role_data.get('code')} in org: {organization_id}")
+        # Extract permission_ids before creating role (not a Role model column)
+        permission_ids = role_data.pop("permission_ids", None) or []
+
+        logger.info(
+            f"Creating role: {role_data.get('code')} in org: {organization_id} "
+            f"with {len(permission_ids)} permissions"
+        )
 
         existing_role = self.role_repo.get_role_by_code(
             role_data.get("code"), organization_id
@@ -65,7 +71,19 @@ class RoleService:
         role = self.role_repo.create_role(role_data)
         logger.info(f"Role created: {role.id}")
 
-        return self._role_to_dict(role)
+        # Assign permissions if provided
+        if permission_ids:
+            for permission_id in permission_ids:
+                existing = self.role_repo.get_role_permission(role.id, permission_id)
+                if not existing:
+                    self.role_repo.assign_permission(
+                        role_id=role.id,
+                        permission_id=permission_id,
+                    )
+            # Refresh to load role_permissions
+            self.db.refresh(role)
+
+        return self._role_to_dict(role, include_permissions=True)
 
     def get_role_by_id(
         self,
