@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from app.core.bulk_operations import FileGenerator
+from app.core.bulk_operations import FileGenerator, BulkImportValidator
 from app.models.bulk_export_job import BulkExportJob, BulkExportJobStatus
 from app.models.item import Item
 from app.repositories.bulk_export_repository import BulkExportRepository
@@ -143,33 +143,30 @@ class BulkExportService:
 
             # Convert items to dictionaries
             export_data = []
-            default_columns = [
-                "id",
-                "item_code",
-                "item_name",
-                "description",
-                "item_type",
-                "status",
-                "uom",
-                "standard_rate",
-            ]
-
-            columns_to_export = selected_columns or default_columns
+            
+            # Use all valid columns from Item model as default
+            all_schema_columns = sorted(list(BulkImportValidator.VALID_COLUMNS))
+            columns_to_export = selected_columns or all_schema_columns
 
             for item in items:
                 row = {}
                 for col in columns_to_export:
-                    if hasattr(item, col):
+                    # Handle special fields first
+                    if col == "item_group_name":
+                        row[col] = item.item_group.name if item.item_group else None
+                    elif hasattr(item, col):
                         value = getattr(item, col)
-                        # Convert UUID to string for JSON serialization
-                        if hasattr(value, "hex"):
+                        # Convert UUID and Enum to string for serialization
+                        if hasattr(value, "hex") or hasattr(value, "value"):
                             value = str(value)
                         row[col] = value
+                    else:
+                        row[col] = None
                 export_data.append(row)
 
             # Generate file
             try:
-                file_content = FileGenerator.generate_file(export_data, file_format)
+                file_content = FileGenerator.generate_file(export_data, file_format, headers=columns_to_export)
             except Exception as e:
                 error_msg = f"File generation failed: {str(e)}"
                 logger.error(error_msg)

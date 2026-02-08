@@ -229,45 +229,63 @@ class FileGenerator:
     """Generator for different export file formats"""
 
     @staticmethod
-    def generate_csv(data: list[dict]) -> bytes:
+    def generate_csv(data: list[dict], headers: list[str] | None = None) -> bytes:
         """
         Generate CSV from data.
 
         Args:
             data: List of dictionaries
+            headers: Optional list of headers to maintain column order
 
         Returns:
             CSV content as bytes
         """
         if not data:
+            if headers:
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=headers)
+                writer.writeheader()
+                return output.getvalue().encode("utf-8")
             return b""
 
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=data[0].keys())
+        fieldnames = headers if headers else list(data[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(data)
         return output.getvalue().encode("utf-8")
 
     @staticmethod
-    def generate_xlsx(data: list[dict], sheet_name: str = "Items") -> bytes:
+    def generate_xlsx(data: list[dict], sheet_name: str = "Items", headers: list[str] | None = None) -> bytes:
         """
         Generate XLSX from data.
 
         Args:
             data: List of dictionaries
             sheet_name: Name of the worksheet
+            headers: Optional list of headers to maintain column order
 
         Returns:
             XLSX content as bytes
         """
         if not data:
             wb = openpyxl.Workbook()
-            wb.active.title = sheet_name
+            ws = wb.active
+            ws.title = sheet_name
+            if headers:
+                ws.append(headers)
             output = io.BytesIO()
             wb.save(output)
             return output.getvalue()
 
         df = pd.DataFrame(data)
+        if headers:
+            # Reorder columns according to headers and add missing ones as empty
+            for col in headers:
+                if col not in df.columns:
+                    df[col] = None
+            df = df[headers]
+            
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -287,21 +305,22 @@ class FileGenerator:
         return json.dumps({"items": data}, indent=2, default=str).encode("utf-8")
 
     @staticmethod
-    def generate_file(data: list[dict], file_format: str) -> bytes:
+    def generate_file(data: list[dict], file_format: str, headers: list[str] | None = None) -> bytes:
         """
         Generate file based on format.
 
         Args:
             data: List of dictionaries
             file_format: File format (csv, xlsx, json)
+            headers: Optional list of headers to maintain column order
 
         Returns:
             File content as bytes
         """
         if file_format == FileFormat.CSV:
-            return FileGenerator.generate_csv(data)
+            return FileGenerator.generate_csv(data, headers=headers)
         elif file_format == FileFormat.XLSX:
-            return FileGenerator.generate_xlsx(data)
+            return FileGenerator.generate_xlsx(data, headers=headers)
         elif file_format == FileFormat.JSON:
             return FileGenerator.generate_json(data)
         else:
@@ -311,41 +330,38 @@ class FileGenerator:
 class ImportTemplate:
     """Generate import templates"""
 
-    TEMPLATE_COLUMNS = [
-        "item_code",
-        "item_name",
-        "description",
-        "item_group_id",
-        "item_type",
-        "status",
-        "uom",
-        "standard_rate",
-    ]
+    @staticmethod
+    def get_template_columns() -> list[str]:
+        """Get all valid columns for template"""
+        return sorted(list(BulkImportValidator.VALID_COLUMNS))
 
-    TEMPLATE_DATA = [
-        {
-            "item_code": "ITEM001",
-            "item_name": "Sample Item 1",
-            "description": "This is a sample item",
-            "item_group_id": "",
-            "item_type": "Stock",
-            "status": "Active",
-            "uom": "Nos",
-            "standard_rate": "100.00",
-        }
-    ]
+    @staticmethod
+    def get_template_data() -> list[dict]:
+        """Get sample template data"""
+        return [
+            {
+                "item_code": "ITEM001",
+                "item_name": "Sample Item 1",
+                "description": "This is a sample item",
+                "item_group_name": "Default",
+                "item_type": "stock",
+                "status": "active",
+                "uom": "Nos",
+                "standard_rate": 100.00,
+            }
+        ]
 
     @staticmethod
     def get_template_csv() -> bytes:
         """Get CSV template"""
-        return FileGenerator.generate_csv(ImportTemplate.TEMPLATE_DATA)
+        return FileGenerator.generate_csv(ImportTemplate.get_template_data(), headers=ImportTemplate.get_template_columns())
 
     @staticmethod
     def get_template_xlsx() -> bytes:
         """Get XLSX template"""
-        return FileGenerator.generate_xlsx(ImportTemplate.TEMPLATE_DATA)
+        return FileGenerator.generate_xlsx(ImportTemplate.get_template_data(), headers=ImportTemplate.get_template_columns())
 
     @staticmethod
     def get_template_json() -> bytes:
         """Get JSON template"""
-        return FileGenerator.generate_json(ImportTemplate.TEMPLATE_DATA)
+        return FileGenerator.generate_json(ImportTemplate.get_template_data())
