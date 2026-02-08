@@ -116,7 +116,41 @@ class UserRepository:
             Tuple of (list of users, total count)
         """
         query = self.db.query(User).filter(User.deleted_at.is_(None))
+        query = self._apply_filters(
+            query,
+            organization_ids=organization_ids,
+            status=status,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
 
+        # Get total count before pagination
+        total_count = query.count()
+
+        # Apply sorting
+        sort_column = getattr(User, sort_by, User.created_at)
+        if sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        users = query.offset(offset).limit(page_size).all()
+
+        return users, total_count
+
+    def _apply_filters(
+        self,
+        query,
+        organization_ids: list[UUID] | None = None,
+        status: UserStatus | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ):
+        """Apply filters to user query."""
         if organization_ids is not None:
             from app.models.role import UserOrganizationRole
 
@@ -131,7 +165,6 @@ class UserRepository:
                 .distinct()
             )
 
-        # Apply filters
         if status:
             query = query.filter(User.status == status)
 
@@ -150,22 +183,33 @@ class UserRepository:
                     User.last_name.ilike(search_term),
                 )
             )
+        return query
 
-        # Get total count before pagination
-        total_count = query.count()
+    def _process_status_counts(self, status_counts) -> dict[str, int]:
+        """Convert raw status counts to dict with all status keys."""
+        result = {
+            UserStatus.ACTIVE.value: 0,
+            UserStatus.INACTIVE.value: 0,
+            UserStatus.SUSPENDED.value: 0,
+            UserStatus.PENDING.value: 0,
+        }
+        for status_val, count in status_counts:
+            if status_val is None:
+                continue
+            try:
+                if hasattr(status_val, "value"):
+                    key = status_val.value
+                elif isinstance(status_val, str):
+                    key = status_val
+                else:
+                    key = str(status_val)
 
-        # Apply sorting
-        sort_column = getattr(User, sort_by, User.created_at)
-        if sort_order == "desc":
-            query = query.order_by(sort_column.desc())
-        else:
-            query = query.order_by(sort_column.asc())
-
-        # Apply pagination
-        offset = (page - 1) * page_size
-        users = query.offset(offset).limit(page_size).all()
-
-        return users, total_count
+                if key in result:
+                    result[key] = int(count) if count is not None else 0
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(f"Error processing status value {status_val}: {e}")
+                continue
+        return result
 
     def get_user_status_counts(
         self,
@@ -176,91 +220,40 @@ class UserRepository:
     ) -> dict[str, int]:
         """
         Get counts of users by status and mfa_enabled for the same scope as list_users.
-
-        Uses the same filters (organization_ids, user_type, email_verified, search)
-        but does not filter by status. Returns counts for active, inactive, suspended,
-        pending, and mfa_enabled (count of users with MFA enabled).
-
-        Returns:
-            Dict with keys: active, inactive, suspended, pending, mfa_enabled
         """
         from sqlalchemy import distinct, func
-
-        def apply_filters(q):
-            if organization_ids is not None:
-                from app.models.role import UserOrganizationRole
-
-                q = (
-                    q.join(
-                        UserOrganizationRole, UserOrganizationRole.user_id == User.id
-                    )
-                    .filter(
-                        UserOrganizationRole.organization_id.in_(organization_ids),
-                        UserOrganizationRole.is_active,
-                    )
-                    .distinct()
-                )
-            if user_type is not None:
-                q = q.filter(User.user_type == user_type)
-            if email_verified is not None:
-                q = q.filter(User.email_verified == email_verified)
-            if search:
-                search_term = f"%{search}%"
-                q = q.filter(
-                    or_(
-                        User.email.ilike(search_term),
-                        User.first_name.ilike(search_term),
-                        User.last_name.ilike(search_term),
-                    )
-                )
-            return q
 
         count_expr = (
             func.count(distinct(User.id))
             if organization_ids is not None
             else func.count(User.id)
         )
-        status_counts_query = self.db.query(User.status, count_expr).filter(
+
+        # Status counts
+        status_query = self.db.query(User.status, count_expr).filter(
             User.deleted_at.is_(None)
         )
-        status_counts_query = apply_filters(status_counts_query)
-        status_counts = status_counts_query.group_by(User.status).all()
-
-        result = {
-            UserStatus.ACTIVE.value: 0,
-            UserStatus.INACTIVE.value: 0,
-            UserStatus.SUSPENDED.value: 0,
-            UserStatus.PENDING.value: 0,
-            "mfa_enabled": 0,
-        }
-        for status_val, count in status_counts:
-            # Handle enum values safely
-            if status_val is None:
-                continue
-            try:
-                if hasattr(status_val, "value"):
-                    key = status_val.value
-                elif isinstance(status_val, str):
-                    key = status_val
-                else:
-                    # Try to convert to string
-                    key = str(status_val)
-                if key in result:
-                    result[key] = int(count) if count is not None else 0
-            except (AttributeError, ValueError, TypeError) as e:
-                # Log but don't fail - skip invalid status values
-                logger.warning(f"Error processing status value {status_val}: {e}")
-                continue
-
-        mfa_count_expr = (
-            func.count(distinct(User.id))
-            if organization_ids is not None
-            else func.count(User.id)
+        status_query = self._apply_filters(
+            status_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
         )
-        mfa_query = self.db.query(mfa_count_expr).filter(
+        status_counts = status_query.group_by(User.status).all()
+        result = self._process_status_counts(status_counts)
+
+        # MFA count
+        mfa_query = self.db.query(count_expr).filter(
             User.deleted_at.is_(None), User.mfa_enabled.is_(True)
         )
-        mfa_query = apply_filters(mfa_query)
+        mfa_query = self._apply_filters(
+            mfa_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
         result["mfa_enabled"] = mfa_query.scalar() or 0
 
         return result
