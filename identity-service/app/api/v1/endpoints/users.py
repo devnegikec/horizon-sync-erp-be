@@ -6,8 +6,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
-
 from app.core.authorization import (
     require_permission,
     validate_user_in_organization,
@@ -28,6 +26,8 @@ from app.schemas.user import (
     UserUpdate,
 )
 from app.services.user_service import UserService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
