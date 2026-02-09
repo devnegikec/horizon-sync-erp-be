@@ -162,11 +162,24 @@ class PermissionService:
             )
 
         # Auto-derive resource and action from code if not provided
+        self._derive_permission_metadata(permission_data)
+
+        # Convert string values to enum types (if provided explicitly)
+        self._convert_permission_metadata_to_enums(permission_data)
+
+        permission = self.permission_repo.create_permission(permission_data)
+        logger.info(f"Permission created: {permission.id}")
+
+        return self._permission_to_dict(permission)
+
+    def _derive_permission_metadata(self, permission_data: dict) -> None:
+        """Derive resource and action from permission code if not provided."""
+        code = permission_data.get("code")
         resource_prefix, action_part = _parse_permission_code(code)
+
         if resource_prefix and action_part:
-            # Set resource and action based on code
+            # Set resource based on code if not provided
             if not permission_data.get("resource"):
-                # Map resource prefix to ResourceType enum
                 if resource_prefix == "*":
                     permission_data["resource"] = ResourceType.ALL
                 elif resource_prefix == "org":
@@ -175,22 +188,21 @@ class PermissionService:
                     try:
                         permission_data["resource"] = ResourceType(resource_prefix)
                     except ValueError:
-                        # If not in enum, use USER as default (will be validated later)
+                        # If not in enum, use USER as default
                         permission_data["resource"] = ResourceType.USER
 
+            # Set action based on code if not provided
             if not permission_data.get("action"):
-                # Map action to ActionType enum
                 if action_part == "*":
-                    permission_data[
-                        "action"
-                    ] = ActionType.MANAGE  # Placeholder for wildcard
+                    permission_data["action"] = ActionType.MANAGE
                 else:
                     try:
                         permission_data["action"] = ActionType(action_part)
                     except ValueError:
                         permission_data["action"] = ActionType.MANAGE
 
-        # Convert string values to enum types (if provided explicitly)
+    def _convert_permission_metadata_to_enums(self, permission_data: dict) -> None:
+        """Convert string metadata values to enum types."""
         if "resource" in permission_data and isinstance(
             permission_data["resource"], str
         ):
@@ -202,9 +214,8 @@ class PermissionService:
                 permission_data["action"]
             )
 
-        permission = self.permission_repo.create_permission(permission_data)
-        logger.info(f"Permission created: {permission.id}")
-
+    def _permission_to_dict(self, permission: Permission) -> dict:
+        """Convert a Permission object to a response dictionary."""
         return {
             "id": permission.id,
             "code": permission.code,
@@ -544,7 +555,7 @@ class PermissionService:
             "description": description,
         }
         # Resource and action will be auto-derived in create_permission
-        result = self.create_permission(permission_data)
+        self.create_permission(permission_data)
         return self.permission_repo.get_permission_by_code(code)
 
     @staticmethod

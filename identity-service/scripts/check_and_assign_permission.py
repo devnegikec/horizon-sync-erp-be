@@ -215,7 +215,8 @@ def assign_full_access_to_user(
         }
 
 
-def main():
+def _parse_args() -> tuple[UUID, UUID]:
+    """Parse command line arguments."""
     if len(sys.argv) != 3:
         print("Usage: python scripts/check_and_assign_permission.py <user_id> <org_id>")
         sys.exit(1)
@@ -223,9 +224,60 @@ def main():
     try:
         user_id = UUID(sys.argv[1])
         org_id = UUID(sys.argv[2])
+        return user_id, org_id
     except ValueError as e:
         print(f"Error: Invalid UUID format - {e}")
         sys.exit(1)
+
+
+def _display_status(
+    user_id: UUID, org_id: UUID, has_access: bool, permissions: list[str], roles: list
+):
+    """Display current permission status for the user."""
+    print(f"\n{'='*60}")
+    print(f"User ID: {user_id}")
+    print(f"Organization ID: {org_id}")
+    print(f"{'='*60}\n")
+
+    if not roles:
+        print("❌ User has NO roles in this organization")
+    elif has_access:
+        print("✅ User HAS *.* permission in this organization")
+        print(f"\nRoles ({len(roles)}):")
+        for role in roles:
+            print(f"  - {role.name} ({role.code})")
+        print(f"\nPermissions ({len(permissions)}):")
+        for perm in sorted(permissions):
+            marker = " ⭐" if perm == "*.*" else ""
+            print(f"  - {perm}{marker}")
+    else:
+        print("❌ User does NOT have *.* permission")
+        print(f"\nCurrent roles ({len(roles)}):")
+        for role in roles:
+            print(f"  - {role.name} ({role.code})")
+        print(f"\nCurrent permissions ({len(permissions)}):")
+        for perm in sorted(permissions):
+            print(f"  - {perm}")
+
+
+def _assign_and_verify(db: Session, user_id: UUID, org_id: UUID):
+    """Assign full access and verify the assignment."""
+    print("\nAssigning *.* permission...")
+    result = assign_full_access_to_user(db, user_id, org_id)
+    print(f"\n✅ {result['message']}")
+    print(f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})")
+    print(f"   Permission ID: {result['permission_id']}")
+
+    # Verify
+    has_access_after, _, _ = check_user_permission_in_org(db, user_id, org_id)
+    if has_access_after:
+        print("\n✅ Verification: User now has *.* permission")
+    else:
+        print("\n❌ Verification failed: User still does not have *.* permission")
+
+
+def main():
+    user_id, org_id = _parse_args()
 
     db = SessionLocal()
     try:
@@ -234,56 +286,10 @@ def main():
             db, user_id, org_id
         )
 
-        print(f"\n{'='*60}")
-        print(f"User ID: {user_id}")
-        print(f"Organization ID: {org_id}")
-        print(f"{'='*60}\n")
+        _display_status(user_id, org_id, has_access, permissions, roles)
 
-        if not roles:
-            print("❌ User has NO roles in this organization")
-            print("\nAssigning *.* permission...")
-            result = assign_full_access_to_user(db, user_id, org_id)
-            print(f"\n✅ {result['message']}")
-            print(
-                f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})"
-            )
-            print(f"   Permission ID: {result['permission_id']}")
-        elif has_access:
-            print("✅ User HAS *.* permission in this organization")
-            print(f"\nRoles ({len(roles)}):")
-            for role in roles:
-                print(f"  - {role.name} ({role.code})")
-            print(f"\nPermissions ({len(permissions)}):")
-            for perm in sorted(permissions):
-                marker = " ⭐" if perm == "*.*" else ""
-                print(f"  - {perm}{marker}")
-        else:
-            print("❌ User does NOT have *.* permission")
-            print(f"\nCurrent roles ({len(roles)}):")
-            for role in roles:
-                print(f"  - {role.name} ({role.code})")
-            print(f"\nCurrent permissions ({len(permissions)}):")
-            for perm in sorted(permissions):
-                print(f"  - {perm}")
-
-            print("\nAssigning *.* permission...")
-            result = assign_full_access_to_user(db, user_id, org_id)
-            print(f"\n✅ {result['message']}")
-            print(
-                f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})"
-            )
-            print(f"   Permission ID: {result['permission_id']}")
-
-            # Verify
-            has_access_after, permissions_after, _ = check_user_permission_in_org(
-                db, user_id, org_id
-            )
-            if has_access_after:
-                print("\n✅ Verification: User now has *.* permission")
-            else:
-                print(
-                    "\n❌ Verification failed: User still does not have *.* permission"
-                )
+        if not roles or not has_access:
+            _assign_and_verify(db, user_id, org_id)
 
     except Exception as e:
         print(f"\n❌ Error: {e}")

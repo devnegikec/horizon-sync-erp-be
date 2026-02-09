@@ -75,17 +75,44 @@ class InvitationService:
         logger.info(f"Creating invitation for: {invitation_data.get('email')}")
 
         # Check if user has invite permission
-        if not self._has_invite_permission(inviter_permissions):
-            logger.warning(f"User {inviter_id} lacks invite permission")
-            raise PermissionDeniedException("You don't have permission to invite users")
+        self._validate_inviter_permissions(inviter_id, inviter_permissions)
 
         email = invitation_data.get("email")
         organization_id = invitation_data.get("organization_id")
 
         # Check if user already exists and is in the organization
+        self._check_existing_membership(email, organization_id)
+
+        # Check for existing pending invitation
+        self._handle_existing_invitation(email, organization_id)
+
+        # Generate token
+        token, token_hash = _generate_invitation_token()
+
+        # Prepare invitation data
+        invitation_data = self._prepare_invitation_data(
+            invitation_data, inviter_id, token_hash
+        )
+
+        invitation = self.invitation_repo.create_invitation(invitation_data)
+        logger.info(f"Invitation created: {invitation.id}")
+
+        result = self._invitation_to_dict(invitation)
+        result["token"] = token  # Include token for sending in email
+        return result
+
+    def _validate_inviter_permissions(
+        self, inviter_id: UUID, inviter_permissions: list[str]
+    ) -> None:
+        """Validate if the inviter has permission to create invitations."""
+        if not self._has_invite_permission(inviter_permissions):
+            logger.warning(f"User {inviter_id} lacks invite permission")
+            raise PermissionDeniedException("You don't have permission to invite users")
+
+    def _check_existing_membership(self, email: str, organization_id: UUID) -> None:
+        """Check if user with email is already a member of the organization."""
         existing_user = self.user_repo.get_user_by_email(email)
         if existing_user:
-            # Check if user is already in this organization
             from app.models.role import UserOrganizationRole
 
             existing_membership = (
@@ -102,7 +129,8 @@ class InvitationService:
                     f"User with email '{email}' is already a member of this organization"
                 )
 
-        # Check for existing pending invitation
+    def _handle_existing_invitation(self, email: str, organization_id: UUID) -> None:
+        """Cancel existing pending invitation for the same email and organization."""
         existing_invitation = self.invitation_repo.get_invitation_by_email_and_org(
             email, organization_id
         )
@@ -112,14 +140,14 @@ class InvitationService:
                 existing_invitation, {"status": "cancelled"}
             )
 
-        # Generate token
-        token, token_hash = _generate_invitation_token()
+    def _prepare_invitation_data(
+        self, invitation_data: dict, inviter_id: UUID, token_hash: str
+    ) -> dict:
+        """Prepare invitation data dictionary for repository."""
+        from uuid import uuid4
 
         # Set expiration
         expires_at = datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS)
-
-        # Create invitation
-        from uuid import uuid4
 
         # Extract custom_permission_ids and store in extra_data (not a model column)
         custom_permission_ids = invitation_data.pop("custom_permission_ids", None) or []
@@ -144,52 +172,7 @@ class InvitationService:
         invitation_data["expires_at"] = expires_at
         invitation_data["status"] = "pending"
 
-        invitation = self.invitation_repo.create_invitation(invitation_data)
-        logger.info(f"Invitation created: {invitation.id}")
-
-        # Get role name if role_id is provided
-        role_name = None
-        if invitation.role_id:
-            role = self.role_repo.get_role_by_id(invitation.role_id)
-            if role:
-                role_name = role.name
-
-        # Get inviter info
-        inviter = self.user_repo.get_user_by_id(inviter_id)
-        inviter_email = inviter.email if inviter else None
-
-        # Extract custom_permission_ids from extra_data for response
-        custom_permission_ids_resp = []
-        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
-            try:
-                custom_permission_ids_resp = [
-                    UUID(pid)
-                    for pid in invitation.extra_data["custom_permission_ids"]
-                    if pid
-                ]
-            except (ValueError, TypeError):
-                pass
-
-        return {
-            "id": invitation.id,
-            "organization_id": invitation.organization_id,
-            "email": invitation.email,
-            "first_name": invitation.first_name,
-            "last_name": invitation.last_name,
-            "role_id": invitation.role_id,
-            "role_name": role_name,
-            "custom_permission_ids": custom_permission_ids_resp,
-            "team_ids": invitation.team_ids,
-            "invited_by_id": invitation.invited_by_id,
-            "invited_by_email": inviter_email,
-            "status": invitation.status,
-            "expires_at": invitation.expires_at,
-            "accepted_at": invitation.accepted_at,
-            "message": invitation.message,
-            "extra_data": invitation.extra_data,
-            "created_at": invitation.created_at,
-            "token": token,  # Include token for sending in email
-        }
+        return invitation_data
 
     def get_invitation_by_id(self, invitation_id: UUID) -> dict:
         """
@@ -382,126 +365,13 @@ class InvitationService:
         """
         logger.info("Accepting invitation")
 
-        token_hash = _hash_token(token)
-        invitation = self.invitation_repo.get_invitation_by_token(token_hash)
+        invitation = self._get_validated_invitation(token)
+        user = self._get_or_create_user_from_invitation(
+            invitation, password, first_name, last_name
+        )
 
-        if not invitation:
-            raise InvitationNotFoundException("Invalid invitation token")
-
-        if invitation.status == "accepted":
-            raise InvitationAlreadyAcceptedException("Invitation already accepted")
-
-        if invitation.status == "cancelled":
-            raise InvitationNotFoundException("Invitation has been cancelled")
-
-        if invitation.status == "expired" or invitation.expires_at < datetime.utcnow():
-            self.invitation_repo.update_invitation(invitation, {"status": "expired"})
-            raise InvitationExpiredException("Invitation has expired")
-
-        # Check if user already exists
-        existing_user = self.user_repo.get_user_by_email(invitation.email)
-
-        if existing_user:
-            # Add user to organization with the specified role
-            user = existing_user
-        else:
-            # Create new user
-            from app.core.security import hash_password
-
-            user_data = {
-                "email": invitation.email,
-                "password_hash": hash_password(password),
-                "first_name": first_name or invitation.first_name or "",
-                "last_name": last_name or invitation.last_name or "",
-                "is_active": True,
-                "email_verified": True,
-                "email_verified_at": datetime.utcnow(),
-            }
-            user = self.user_repo.create_user(user_data)
-
-        # Add user to organization with role
-        from app.models.role import Role, RolePermission, UserOrganizationRole
-
-        # Assign primary role (if provided)
-        primary_role_id = invitation.role_id
-        if primary_role_id:
-            user_org_role = UserOrganizationRole(
-                user_id=user.id,
-                organization_id=invitation.organization_id,
-                role_id=primary_role_id,
-                is_active=True,
-                is_primary=True,
-                status="active",
-                joined_at=datetime.utcnow(),
-            )
-            self.db.add(user_org_role)
-
-        # Apply custom permissions (create a dedicated role for them)
-        custom_permission_ids = []
-        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
-            custom_permission_ids = [
-                UUID(pid)
-                for pid in invitation.extra_data["custom_permission_ids"]
-                if pid
-            ]
-
-        if custom_permission_ids:
-            # Create a "Custom Permissions" role for this user
-            custom_role = Role(
-                organization_id=invitation.organization_id,
-                name="Custom Permissions",
-                code=f"custom_{user.id}",
-                description="Custom permissions assigned via invitation",
-                is_system=False,
-                is_default=False,
-                is_active=True,
-            )
-            self.db.add(custom_role)
-            self.db.flush()  # Get custom_role.id
-
-            # Assign permissions to the custom role
-            for permission_id in custom_permission_ids:
-                role_perm = RolePermission(
-                    role_id=custom_role.id,
-                    permission_id=permission_id,
-                )
-                self.db.add(role_perm)
-
-            # Assign user to the custom role
-            custom_user_org_role = UserOrganizationRole(
-                user_id=user.id,
-                organization_id=invitation.organization_id,
-                role_id=custom_role.id,
-                is_active=True,
-                is_primary=not primary_role_id,  # Primary only if no other role
-                status="active",
-                joined_at=datetime.utcnow(),
-            )
-            self.db.add(custom_user_org_role)
-
-        # If no role at all, ensure user has at least one UserOrganizationRole
-        if not primary_role_id and not custom_permission_ids:
-            # Create minimal role or use a default - need at least one assignment
-            default_role = (
-                self.db.query(Role)
-                .filter(
-                    Role.organization_id == invitation.organization_id,
-                    Role.is_default == True,  # noqa: E712
-                    Role.is_active == True,  # noqa: E712
-                )
-                .first()
-            )
-            if default_role:
-                user_org_role = UserOrganizationRole(
-                    user_id=user.id,
-                    organization_id=invitation.organization_id,
-                    role_id=default_role.id,
-                    is_active=True,
-                    is_primary=True,
-                    status="active",
-                    joined_at=datetime.utcnow(),
-                )
-                self.db.add(user_org_role)
+        # Add user to organization with role(s)
+        self._assign_user_roles_from_invitation(user, invitation)
 
         # Update invitation status
         self.invitation_repo.update_invitation(
@@ -523,6 +393,149 @@ class InvitationService:
             "organization_id": invitation.organization_id,
             "email": user.email,
         }
+
+    def _get_validated_invitation(self, token: str):
+        """Get and validate invitation by token."""
+        token_hash = _hash_token(token)
+        invitation = self.invitation_repo.get_invitation_by_token(token_hash)
+
+        if not invitation:
+            raise InvitationNotFoundException("Invalid invitation token")
+
+        if invitation.status == "accepted":
+            raise InvitationAlreadyAcceptedException("Invitation already accepted")
+
+        if invitation.status == "cancelled":
+            raise InvitationNotFoundException("Invitation has been cancelled")
+
+        if invitation.status == "expired" or invitation.expires_at < datetime.utcnow():
+            self.invitation_repo.update_invitation(invitation, {"status": "expired"})
+            raise InvitationExpiredException("Invitation has expired")
+
+        return invitation
+
+    def _get_or_create_user_from_invitation(
+        self, invitation, password: str, first_name: str | None, last_name: str | None
+    ):
+        """Get existing user or create a new one from invitation data."""
+        existing_user = self.user_repo.get_user_by_email(invitation.email)
+
+        if existing_user:
+            return existing_user
+
+        # Create new user
+        from app.core.security import hash_password
+
+        user_data = {
+            "email": invitation.email,
+            "password_hash": hash_password(password),
+            "first_name": first_name or invitation.first_name or "",
+            "last_name": last_name or invitation.last_name or "",
+            "is_active": True,
+            "email_verified": True,
+            "email_verified_at": datetime.utcnow(),
+        }
+        return self.user_repo.create_user(user_data)
+
+    def _assign_user_roles_from_invitation(self, user, invitation) -> None:
+        """Assign primary, custom, or default roles to the user based on invitation."""
+        from app.models.role import UserOrganizationRole
+
+        # Assign primary role (if provided)
+        primary_role_id = invitation.role_id
+        if primary_role_id:
+            user_org_role = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=invitation.organization_id,
+                role_id=primary_role_id,
+                is_active=True,
+                is_primary=True,
+                status="active",
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(user_org_role)
+
+        # Apply custom permissions
+        custom_permission_ids = []
+        if invitation.extra_data and "custom_permission_ids" in invitation.extra_data:
+            custom_permission_ids = [
+                UUID(pid)
+                for pid in invitation.extra_data["custom_permission_ids"]
+                if pid
+            ]
+
+        if custom_permission_ids:
+            self._create_custom_role_with_permissions(
+                user, invitation, custom_permission_ids, bool(primary_role_id)
+            )
+
+        # If no role at all, ensure user has at least one UserOrganizationRole
+        if not primary_role_id and not custom_permission_ids:
+            self._assign_default_role(user, invitation.organization_id)
+
+    def _create_custom_role_with_permissions(
+        self, user, invitation, custom_permission_ids, has_primary_role: bool
+    ) -> None:
+        """Create a custom role with specific permissions for the user."""
+        from app.models.role import Role, RolePermission, UserOrganizationRole
+
+        # Create a "Custom Permissions" role for this user
+        custom_role = Role(
+            organization_id=invitation.organization_id,
+            name="Custom Permissions",
+            code=f"custom_{user.id}",
+            description="Custom permissions assigned via invitation",
+            is_system=False,
+            is_default=False,
+            is_active=True,
+        )
+        self.db.add(custom_role)
+        self.db.flush()  # Get custom_role.id
+
+        # Assign permissions to the custom role
+        for permission_id in custom_permission_ids:
+            role_perm = RolePermission(
+                role_id=custom_role.id,
+                permission_id=permission_id,
+            )
+            self.db.add(role_perm)
+
+        # Assign user to the custom role
+        custom_user_org_role = UserOrganizationRole(
+            user_id=user.id,
+            organization_id=invitation.organization_id,
+            role_id=custom_role.id,
+            is_active=True,
+            is_primary=not has_primary_role,  # Primary only if no other role
+            status="active",
+            joined_at=datetime.utcnow(),
+        )
+        self.db.add(custom_user_org_role)
+
+    def _assign_default_role(self, user, organization_id: UUID) -> None:
+        """Assign the default organization role to the user."""
+        from app.models.role import Role, UserOrganizationRole
+
+        default_role = (
+            self.db.query(Role)
+            .filter(
+                Role.organization_id == organization_id,
+                Role.is_default == True,  # noqa: E712
+                Role.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if default_role:
+            user_org_role = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=organization_id,
+                role_id=default_role.id,
+                is_active=True,
+                is_primary=True,
+                status="active",
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(user_org_role)
 
     def validate_invitation(self, token: str) -> dict:
         """
