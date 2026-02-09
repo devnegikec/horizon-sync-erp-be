@@ -124,6 +124,7 @@ class AuthService:
         self,
         email: str,
         password: str,
+        remember_me: bool = False,
         device_info: dict | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
@@ -134,6 +135,7 @@ class AuthService:
         Args:
             email: User email
             password: Plain text password
+            remember_me: Whether to extend token expiration for "Remember Me"
             device_info: Optional device information
             ip_address: Optional IP address
             user_agent: Optional user agent string
@@ -177,17 +179,28 @@ class AuthService:
             },
         )
 
-        # Generate tokens
+        # Generate tokens with appropriate expiration based on remember_me
+        if remember_me:
+            # Extended expiration for "Remember Me"
+            access_token_expires = timedelta(days=settings.remember_me_access_token_expire_days)
+            refresh_token_expires = timedelta(days=settings.remember_me_refresh_token_expire_days)
+        else:
+            # Standard expiration
+            access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+            refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+
         access_token = create_access_token(
             {
                 "sub": str(user.id),
                 "email": user.email,
                 "user_type": user.user_type.value,
-            }
+            },
+            expires_delta=access_token_expires,
         )
 
         refresh_token = create_refresh_token(
-            {"sub": str(user.id), "token_family": str(uuid.uuid4())}
+            {"sub": str(user.id), "token_family": str(uuid.uuid4())},
+            expires_delta=refresh_token_expires,
         )
 
         # Store refresh token

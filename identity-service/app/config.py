@@ -33,9 +33,17 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 4320  # 3 days
     refresh_token_expire_days: int = 7
+    remember_me_access_token_expire_days: int = 30  # 30 days for remember me
+    remember_me_refresh_token_expire_days: int = 90  # 90 days for remember me
     password_reset_token_expire_hours: int = 1
     password_reset_url: str = "http://localhost:4200/reset-password"
     invitation_url: str = "http://localhost:4200/accept-invitation"
+
+    # Cookie Settings
+    cookie_secure: bool = False  # Set to True in production (requires HTTPS)
+    cookie_samesite: str = "lax"  # "lax", "strict", or "none"
+    cookie_httponly: bool = True  # Prevent JavaScript access
+    cookie_domain: str | None = None  # Set to your domain in production
 
     # Email (for password reset notifications)
     email_enabled: bool = True
