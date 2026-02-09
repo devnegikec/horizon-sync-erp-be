@@ -182,10 +182,16 @@ async def login(
 
         # Calculate expires_in based on remember_me
         if login_data.remember_me:
-            expires_in = settings.remember_me_access_token_expire_days * 24 * 60 * 60  # Convert days to seconds
-            max_age = settings.remember_me_refresh_token_expire_days * 24 * 60 * 60  # Cookie max age in seconds
+            expires_in = (
+                settings.remember_me_access_token_expire_days * 24 * 60 * 60
+            )  # Convert days to seconds
+            max_age = (
+                settings.remember_me_refresh_token_expire_days * 24 * 60 * 60
+            )  # Cookie max age in seconds
         else:
-            expires_in = settings.access_token_expire_minutes * 60  # Convert minutes to seconds
+            expires_in = (
+                settings.access_token_expire_minutes * 60
+            )  # Convert minutes to seconds
             max_age = None  # Session cookie (expires when browser closes)
 
         # Create response
@@ -195,7 +201,9 @@ async def login(
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
                 "expires_in": expires_in,
-                "user": LoginUserResponse.model_validate(user_dict).model_dump(mode='json'),
+                "user": LoginUserResponse.model_validate(user_dict).model_dump(
+                    mode="json"
+                ),
             }
         )
 
@@ -283,9 +291,7 @@ async def logout(logout_data: LogoutRequest, db: Session = Depends(get_db)):
         auth_service.logout_user(logout_data.refresh_token)
 
         # Create response
-        response = JSONResponse(
-            content={"message": "Successfully logged out"}
-        )
+        response = JSONResponse(content={"message": "Successfully logged out"})
 
         # Clear cookies
         response.delete_cookie(

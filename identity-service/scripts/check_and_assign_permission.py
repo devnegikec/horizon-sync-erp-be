@@ -265,7 +265,9 @@ def _assign_and_verify(db: Session, user_id: UUID, org_id: UUID):
     print("\nAssigning *.* permission...")
     result = assign_full_access_to_user(db, user_id, org_id)
     print(f"\n✅ {result['message']}")
-    print(f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})")
+    print(
+        f"   Role: {result.get('role_name', 'N/A')} ({result.get('role_code', 'N/A')})"
+    )
     print(f"   Permission ID: {result['permission_id']}")
 
     # Verify

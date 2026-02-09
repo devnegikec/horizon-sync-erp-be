@@ -182,11 +182,17 @@ class AuthService:
         # Generate tokens with appropriate expiration based on remember_me
         if remember_me:
             # Extended expiration for "Remember Me"
-            access_token_expires = timedelta(days=settings.remember_me_access_token_expire_days)
-            refresh_token_expires = timedelta(days=settings.remember_me_refresh_token_expire_days)
+            access_token_expires = timedelta(
+                days=settings.remember_me_access_token_expire_days
+            )
+            refresh_token_expires = timedelta(
+                days=settings.remember_me_refresh_token_expire_days
+            )
         else:
             # Standard expiration
-            access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+            access_token_expires = timedelta(
+                minutes=settings.access_token_expire_minutes
+            )
             refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
 
         access_token = create_access_token(

@@ -333,11 +333,13 @@ SECRET_KEY=<strong-secret-key>
 ## Next Steps
 
 1. **Test in Development**:
+
    - Use `test-login.html` to verify functionality
    - Test with your frontend application
    - Verify cookies persist across browser restarts
 
 2. **Prepare for Production**:
+
    - Update `.env.production` with your values
    - Generate strong `SECRET_KEY`
    - Configure HTTPS/SSL
