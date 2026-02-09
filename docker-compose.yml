@@ -27,6 +27,22 @@ services:
     networks:
       - horizon_network
 
+  redis:
+    image: redis:7-alpine
+    container_name: horizon_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
   # ===========================================
   # IDENTITY SERVICE (Auth & User Management)
   # ===========================================
@@ -119,11 +135,62 @@ services:
       - horizon_network
     restart: unless-stopped
 
+  # ===========================================
+  # SEARCH SERVICE (Unified Search API)
+  # ===========================================
+  search-service:
+    build:
+      context: ./search-service
+      dockerfile: Dockerfile
+    container_name: horizon_search
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/search_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+      CORE_SERVICE_URL: http://core-service:8001
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+      SEARCH_MAX_RESULTS: ${SEARCH_MAX_RESULTS:-1000}
+      SEARCH_DEFAULT_PAGE_SIZE: ${SEARCH_DEFAULT_PAGE_SIZE:-20}
+    ports:
+      - "8002:8002"
+      - "5680:5680"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+      core-service:
+        condition: service_started
+    volumes:
+      - ./search-service/app:/app/app
+      - ./search-service/alembic:/app/alembic
+      - ./search-service/tests:/app/tests
+    command: >
+      bash -c "
+        echo 'Waiting for dependencies...' &&
+        sleep 15 &&
+        echo 'Running Search Service migrations...' &&
+        python -m alembic upgrade head &&
+        echo 'Starting Search Service with Debugger...' &&
+        python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5680 -m uvicorn app.main:app --host 0.0.0.0 --port 8002
+      "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
 # ===========================================
 # VOLUMES & NETWORKS
 # ===========================================
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:
