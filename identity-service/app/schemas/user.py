@@ -107,8 +107,19 @@ class PaginationMeta(BaseModel):
     has_prev: bool
 
 
+class UserStatusCounts(BaseModel):
+    """Counts of users by status and MFA for the list scope"""
+
+    active: int = 0
+    inactive: int = 0
+    suspended: int = 0
+    pending: int = 0
+    mfa_enabled: int = 0
+
+
 class UserListResponse(BaseModel):
     """Schema for paginated user list response"""
 
     users: list[UserListItem]
     pagination: PaginationMeta
+    status_counts: UserStatusCounts

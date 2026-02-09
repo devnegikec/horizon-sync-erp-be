@@ -90,7 +90,7 @@ async def update_stock_entry(
 ):
     """Update stock entry header (draft only)."""
     svc = StockEntryService(db)
-    e = svc.update(entry_id, data, current_user.organization_id, current_user.id)
+    svc.update(entry_id, data, current_user.organization_id, current_user.id)
     return StockEntryResponse.model_validate(
         svc.get_by_id(entry_id, current_user.organization_id)
     )

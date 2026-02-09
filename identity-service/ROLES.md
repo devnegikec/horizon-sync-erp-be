@@ -106,6 +106,125 @@ Core-service uses additional resources (e.g. warehouse, item, customer, supplier
 
 ---
 
+## Best Practices: Permission Creation and Assignment
+
+### Permission Code Formats
+
+When creating permissions, use these formats:
+
+1. **Individual Permission**: `{resource}.{action}`
+
+   - Examples: `user.read`, `org.create`, `role.update`, `warehouse.delete`
+   - Grants only that specific action on that resource
+
+2. **Resource Wildcard**: `{resource}.*`
+
+   - Examples: `user.*`, `org.*`, `warehouse.*`
+   - Grants **all actions** for that resource (read, create, update, delete, manage, invite, etc.)
+
+3. **Full Wildcard**: `*.*`
+   - Grants **all permissions** (all resources, all actions)
+   - Use sparingly (only for Owner and super-admin roles)
+
+### Creating Permissions
+
+**Via API**: `POST /api/v1/permissions` with body:
+
+```json
+{
+  "code": "user.*",
+  "name": "All user actions",
+  "description": "Grants all user permissions",
+  "resource": "user",
+  "action": "manage",
+  "module": "identity"
+}
+```
+
+**Via Service** (programmatic):
+
+```python
+from app.services.permission_service import PermissionService
+
+permission_service = PermissionService(db)
+permission = permission_service.get_or_create_permission_by_code(
+    code="user.*",
+    name="All user actions",
+    description="Grants all user permissions"
+)
+```
+
+**Note**: The service auto-derives `resource` and `action` from `code` if not provided. For wildcards, `action` is set to `MANAGE` as a placeholder (the actual grant is determined by the `code`).
+
+### Assigning Permissions to Roles
+
+**Option 1: By Permission Code (Recommended - Convenience Methods)**
+
+```python
+from app.services.role_service import RoleService
+
+role_service = RoleService(db)
+
+# Assign full access (*.*)
+role_service.assign_full_access(role_id)
+
+# Assign resource wildcard (user.*, org.*, etc.)
+role_service.assign_resource_wildcard(role_id, "user")  # Assigns user.*
+role_service.assign_resource_wildcard(role_id, "org")   # Assigns org.*
+
+# Assign specific permission
+role_service.assign_specific_permission(role_id, "user", "read")  # Assigns user.read
+
+# Assign any permission by code
+role_service.assign_permission_by_code(role_id, "warehouse.*")
+```
+
+**Option 2: By Permission ID (Traditional)**
+
+```python
+# Get permission ID first
+permission = permission_service.get_permission_by_code("user.*")
+role_service.assign_permission_to_role(role_id, permission.id)
+```
+
+**Option 3: Bulk Assignment**
+
+```python
+# Get permission IDs
+perm_ids = [
+    permission_service.get_or_create_permission_by_code("user.*").id,
+    permission_service.get_or_create_permission_by_code("org.read").id,
+]
+role_service.bulk_assign_permissions_to_role(role_id, perm_ids, mode="add")
+```
+
+### Why Use Wildcards?
+
+**Instead of** creating and assigning multiple permissions:
+
+- `user.read`, `user.create`, `user.update`, `user.delete`, `user.manage`, `user.invite` (6 permissions)
+
+**Use one wildcard**:
+
+- `user.*` (1 permission grants all 6+ actions)
+
+**Benefits**:
+
+- Simpler role management
+- Fewer database rows
+- Easier to maintain
+- New actions automatically covered (if they follow `{resource}.{action}` pattern)
+
+### Permission Validation
+
+The service validates permission codes:
+
+- Must contain exactly one dot (`.`)
+- Format: `resource.action`, `resource.*`, or `*.*`
+- Invalid codes raise `ValueError` with descriptive message
+
+---
+
 ## Existing Databases
 
 If the database was seeded before wildcard permissions were added, the `*.*` permission may not exist. When a user creates a new organization, the organization service now **creates the `*.*` permission** if it is missing and then assigns the Owner role to the creator, so no manual step is required for new orgs. To have wildcards (e.g. `user.*`, `org.*`) available for role assignment without creating an org first, run a migration or seed that inserts the wildcard permission rows from `scripts/seed_data.py`.

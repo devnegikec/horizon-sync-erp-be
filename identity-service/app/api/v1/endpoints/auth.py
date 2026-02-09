@@ -1,6 +1,7 @@
 """Authentication API endpoints"""
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -111,7 +112,13 @@ async def login(
 
     - **email**: User's email address
     - **password**: User's password
+    - **remember_me**: Keep user logged in for extended period (default: false)
     - **device_info**: Optional device information for tracking
+
+    When remember_me is true:
+    - Access token expires in 30 days (instead of 3 days)
+    - Refresh token expires in 90 days (instead of 7 days)
+    - Tokens are set as HTTP-only cookies for security
 
     Returns user details excluding sensitive fields: password, mfa_secret,
     mfa_backup_codes, deleted_at, created_at, updated_at
@@ -123,10 +130,11 @@ async def login(
         ip_address = get_client_ip(request)
         user_agent = request.headers.get("User-Agent")
 
-        # Login user
+        # Login user with remember_me flag
         user, access_token, refresh_token = auth_service.login_user(
             email=login_data.email,
             password=login_data.password,
+            remember_me=login_data.remember_me,
             device_info=login_data.device_info.model_dump()
             if login_data.device_info
             else None,
@@ -172,13 +180,61 @@ async def login(
             "organization_id": organization_id,
         }
 
-        return TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_type="bearer",
-            expires_in=settings.access_token_expire_minutes * 60,
-            user=LoginUserResponse.model_validate(user_dict),
+        # Calculate expires_in based on remember_me
+        if login_data.remember_me:
+            expires_in = (
+                settings.remember_me_access_token_expire_days * 24 * 60 * 60
+            )  # Convert days to seconds
+            max_age = (
+                settings.remember_me_refresh_token_expire_days * 24 * 60 * 60
+            )  # Cookie max age in seconds
+        else:
+            expires_in = (
+                settings.access_token_expire_minutes * 60
+            )  # Convert minutes to seconds
+            max_age = None  # Session cookie (expires when browser closes)
+
+        # Create response
+        response = JSONResponse(
+            content={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "expires_in": expires_in,
+                "user": LoginUserResponse.model_validate(user_dict).model_dump(
+                    mode="json"
+                ),
+            }
         )
+
+        # Set cookies for tokens
+        # Access token cookie
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            max_age=max_age,
+            expires=max_age,
+            path="/",
+            domain=settings.cookie_domain,
+            secure=settings.cookie_secure,
+            httponly=settings.cookie_httponly,
+            samesite=settings.cookie_samesite,
+        )
+
+        # Refresh token cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            max_age=max_age,
+            expires=max_age,
+            path="/",
+            domain=settings.cookie_domain,
+            secure=settings.cookie_secure,
+            httponly=settings.cookie_httponly,
+            samesite=settings.cookie_samesite,
+        )
+
+        return response
 
     except (AuthenticationError, AccountLockedException) as e:
         raise handle_login_errors(login_data.email, e)
@@ -222,7 +278,7 @@ async def refresh_token(token_data: RefreshTokenRequest, db: Session = Depends(g
 )
 async def logout(logout_data: LogoutRequest, db: Session = Depends(get_db)):
     """
-    Logout user by revoking refresh token.
+    Logout user by revoking refresh token and clearing cookies.
 
     No authentication required - the refresh token itself is sufficient.
 
@@ -234,7 +290,29 @@ async def logout(logout_data: LogoutRequest, db: Session = Depends(get_db)):
         # Logout user
         auth_service.logout_user(logout_data.refresh_token)
 
-        return LogoutResponse(message="Successfully logged out")
+        # Create response
+        response = JSONResponse(content={"message": "Successfully logged out"})
+
+        # Clear cookies
+        response.delete_cookie(
+            key="access_token",
+            path="/",
+            domain=settings.cookie_domain,
+            secure=settings.cookie_secure,
+            httponly=settings.cookie_httponly,
+            samesite=settings.cookie_samesite,
+        )
+
+        response.delete_cookie(
+            key="refresh_token",
+            path="/",
+            domain=settings.cookie_domain,
+            secure=settings.cookie_secure,
+            httponly=settings.cookie_httponly,
+            samesite=settings.cookie_samesite,
+        )
+
+        return response
 
     except InvalidTokenException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e

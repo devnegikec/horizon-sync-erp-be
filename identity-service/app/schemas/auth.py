@@ -23,6 +23,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     device_info: DeviceInfo | None = None
+    remember_me: bool = False
 
 
 class LoginUserResponse(BaseModel):

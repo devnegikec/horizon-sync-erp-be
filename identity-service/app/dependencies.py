@@ -32,19 +32,39 @@ security = HTTPBearer()
 
 
 def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
-    permission_codes = (
-        db.query(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(
-            UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id
+    """
+    Get user's permission codes from their active roles.
+
+    Handles potential enum issues gracefully by catching exceptions
+    and returning an empty list if there are database errors.
+    """
+    try:
+        permission_codes = (
+            db.query(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(
+                UserOrganizationRole,
+                RolePermission.role_id == UserOrganizationRole.role_id,
+            )
+            .filter(
+                UserOrganizationRole.user_id == user_id,
+                UserOrganizationRole.is_active,
+                Permission.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
         )
-        .filter(
-            UserOrganizationRole.user_id == user_id,
-            UserOrganizationRole.is_active,
+        return [code for (code,) in permission_codes if code]
+    except Exception as e:
+        # Log the error but don't fail - return empty permissions
+        # This prevents 500 errors if there are enum issues in permissions table
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(
+            f"Error fetching permissions for user {user_id}: {e}", exc_info=True
         )
-        .all()
-    )
-    return [code for (code,) in permission_codes]
+        return []
 
 
 async def get_current_user(

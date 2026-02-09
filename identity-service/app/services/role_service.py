@@ -34,19 +34,25 @@ class RoleService:
 
     def create_role(self, role_data: dict, organization_id: UUID) -> dict:
         """
-        Create a new role.
+        Create a new role, optionally with permissions in one step.
 
         Args:
-            role_data: Dictionary containing role data
+            role_data: Dictionary containing role data (may include permission_ids)
             organization_id: Organization UUID
 
         Returns:
-            Role response dictionary
+            Role response dictionary with permissions if any were assigned
 
         Raises:
             DuplicateRoleException: If role code already exists in organization
         """
-        logger.info(f"Creating role: {role_data.get('code')} in org: {organization_id}")
+        # Extract permission_ids before creating role (not a Role model column)
+        permission_ids = role_data.pop("permission_ids", None) or []
+
+        logger.info(
+            f"Creating role: {role_data.get('code')} in org: {organization_id} "
+            f"with {len(permission_ids)} permissions"
+        )
 
         existing_role = self.role_repo.get_role_by_code(
             role_data.get("code"), organization_id
@@ -65,7 +71,19 @@ class RoleService:
         role = self.role_repo.create_role(role_data)
         logger.info(f"Role created: {role.id}")
 
-        return self._role_to_dict(role)
+        # Assign permissions if provided
+        if permission_ids:
+            for permission_id in permission_ids:
+                existing = self.role_repo.get_role_permission(role.id, permission_id)
+                if not existing:
+                    self.role_repo.assign_permission(
+                        role_id=role.id,
+                        permission_id=permission_id,
+                    )
+            # Refresh to load role_permissions
+            self.db.refresh(role)
+
+        return self._role_to_dict(role, include_permissions=True)
 
     def get_role_by_id(
         self,
@@ -97,7 +115,8 @@ class RoleService:
 
     def list_roles(
         self,
-        organization_id: UUID | None = None,
+        organization_ids: list[UUID] | None = None,
+        organization_id: UUID | None = None,  # Deprecated: use organization_ids
         skip: int = 0,
         limit: int = 10,
         is_active: bool | None = None,
@@ -109,7 +128,8 @@ class RoleService:
         List roles with pagination and filters.
 
         Args:
-            organization_id: Filter by organization
+            organization_ids: Filter by organizations (user's orgs only)
+            organization_id: Deprecated - use organization_ids
             skip: Number of records to skip
             limit: Maximum number of records to return
             is_active: Filter by active status
@@ -120,12 +140,16 @@ class RoleService:
         Returns:
             Dictionary with roles list and pagination info
         """
+        # Support legacy organization_id for backward compatibility
+        if organization_ids is None and organization_id is not None:
+            organization_ids = [organization_id]
+
         logger.debug(
-            f"Listing roles - org_id: {organization_id}, skip: {skip}, limit: {limit}"
+            f"Listing roles - org_ids: {organization_ids}, skip: {skip}, limit: {limit}"
         )
 
         roles, total_count = self.role_repo.list_roles(
-            organization_id=organization_id,
+            organization_ids=organization_ids,
             skip=skip,
             limit=limit,
             is_active=is_active,
@@ -445,6 +469,120 @@ class RoleService:
             "assigned_count": assigned_count,
             "previous_count": previous_count,
         }
+
+    def assign_permission_by_code(
+        self,
+        role_id: UUID,
+        permission_code: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign permission to role by permission code (convenience method).
+
+        Gets or creates the permission if it doesn't exist, then assigns it to the role.
+
+        Examples:
+            assign_permission_by_code(role_id, "user.*")  # Assign user.* wildcard
+            assign_permission_by_code(role_id, "*.*")      # Assign full access
+            assign_permission_by_code(role_id, "user.read") # Assign specific permission
+
+        Args:
+            role_id: Role UUID
+            permission_code: Permission code (e.g., "user.*", "*.*", "user.read")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+
+        Raises:
+            RoleNotFoundException: If role not found
+            SystemRoleModificationException: If role is system role
+            ValueError: If permission code format is invalid
+        """
+        from app.services.permission_service import PermissionService
+
+        permission_service = PermissionService(self.db)
+        permission = permission_service.get_or_create_permission_by_code(
+            permission_code
+        )
+
+        return self.assign_permission_to_role(
+            role_id=role_id,
+            permission_id=permission.id,
+            conditions=conditions,
+        )
+
+    def assign_full_access(self, role_id: UUID, conditions: dict | None = None) -> dict:
+        """
+        Assign full access (*.*) permission to role (convenience method).
+
+        Args:
+            role_id: Role UUID
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        return self.assign_permission_by_code(role_id, "*.*", conditions)
+
+    def assign_resource_wildcard(
+        self,
+        role_id: UUID,
+        resource: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign resource wildcard permission to role (convenience method).
+
+        Examples:
+            assign_resource_wildcard(role_id, "user")   # Assigns user.*
+            assign_resource_wildcard(role_id, "org")     # Assigns org.*
+            assign_resource_wildcard(role_id, "role")    # Assigns role.*
+
+        Args:
+            role_id: Role UUID
+            resource: Resource name (will be normalized: "org" -> "org", "organization" -> "org")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        # Normalize resource: "organization" -> "org" for code
+        resource_normalized = resource.lower().strip()
+        if resource_normalized == "organization":
+            resource_normalized = "org"
+        permission_code = f"{resource_normalized}.*"
+        return self.assign_permission_by_code(role_id, permission_code, conditions)
+
+    def assign_specific_permission(
+        self,
+        role_id: UUID,
+        resource: str,
+        action: str,
+        conditions: dict | None = None,
+    ) -> dict:
+        """
+        Assign specific permission to role (convenience method).
+
+        Examples:
+            assign_specific_permission(role_id, "user", "read")   # Assigns user.read
+            assign_specific_permission(role_id, "org", "create") # Assigns org.create
+
+        Args:
+            role_id: Role UUID
+            resource: Resource name (will be normalized: "organization" -> "org")
+            action: Action name (e.g., "read", "create", "update", "delete")
+            conditions: Optional conditions dictionary
+
+        Returns:
+            Role-permission response dictionary
+        """
+        # Normalize resource: "organization" -> "org" for code
+        resource_normalized = resource.lower().strip()
+        if resource_normalized == "organization":
+            resource_normalized = "org"
+        permission_code = f"{resource_normalized}.{action.lower().strip()}"
+        return self.assign_permission_by_code(role_id, permission_code, conditions)
 
     def get_role_users(
         self,

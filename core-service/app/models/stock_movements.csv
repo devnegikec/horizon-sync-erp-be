@@ -1,0 +1,15 @@
+column_name,data_type,character_maximum_length,is_nullable
+id,uuid,NULL,NO
+organization_id,uuid,NULL,NO
+product_id,uuid,NULL,NO
+warehouse_id,uuid,NULL,NO
+movement_type,USER-DEFINED,NULL,NO
+quantity,integer,NULL,NO
+unit_cost,numeric,NULL,YES
+created_at,timestamp with time zone,NULL,YES
+updated_at,timestamp with time zone,NULL,YES
+reference_id,uuid,NULL,YES
+performed_by,uuid,NULL,YES
+performed_at,timestamp with time zone,NULL,YES
+reference_type,character varying,50,YES
+notes,text,NULL,YES

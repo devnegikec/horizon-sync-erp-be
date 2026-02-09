@@ -1,0 +1,11 @@
+column_name,data_type,character_maximum_length,is_nullable
+id,uuid,NULL,NO
+organization_id,uuid,NULL,NO
+product_id,uuid,NULL,NO
+warehouse_id,uuid,NULL,NO
+quantity_on_hand,integer,NULL,YES
+quantity_reserved,integer,NULL,YES
+quantity_available,integer,NULL,YES
+last_counted_at,timestamp with time zone,NULL,YES
+created_at,timestamp with time zone,NULL,YES
+updated_at,timestamp with time zone,NULL,YES

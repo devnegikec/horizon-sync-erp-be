@@ -1,5 +1,6 @@
 """User repository for database operations"""
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models.base import UserStatus, UserType
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository:
@@ -113,21 +116,55 @@ class UserRepository:
             Tuple of (list of users, total count)
         """
         query = self.db.query(User).filter(User.deleted_at.is_(None))
+        query = self._apply_filters(
+            query,
+            organization_ids=organization_ids,
+            status=status,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
 
+        # Get total count before pagination
+        total_count = query.count()
+
+        # Apply sorting
+        sort_column = getattr(User, sort_by, User.created_at)
+        if sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        users = query.offset(offset).limit(page_size).all()
+
+        return users, total_count
+
+    def _apply_filters(
+        self,
+        query,
+        organization_ids: list[UUID] | None = None,
+        status: UserStatus | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ):
+        """Apply filters to user query."""
         if organization_ids is not None:
             from app.models.role import UserOrganizationRole
 
             query = (
-                query.join(UserOrganizationRole)
+                query.join(
+                    UserOrganizationRole, UserOrganizationRole.user_id == User.id
+                )
                 .filter(
-                    UserOrganizationRole.user_id == User.id,
                     UserOrganizationRole.organization_id.in_(organization_ids),
                     UserOrganizationRole.is_active,
                 )
                 .distinct()
             )
 
-        # Apply filters
         if status:
             query = query.filter(User.status == status)
 
@@ -146,22 +183,80 @@ class UserRepository:
                     User.last_name.ilike(search_term),
                 )
             )
+        return query
 
-        # Get total count before pagination
-        total_count = query.count()
+    def _process_status_counts(self, status_counts) -> dict[str, int]:
+        """Convert raw status counts to dict with all status keys."""
+        result = {
+            UserStatus.ACTIVE.value: 0,
+            UserStatus.INACTIVE.value: 0,
+            UserStatus.SUSPENDED.value: 0,
+            UserStatus.PENDING.value: 0,
+        }
+        for status_val, count in status_counts:
+            if status_val is None:
+                continue
+            try:
+                if hasattr(status_val, "value"):
+                    key = status_val.value
+                elif isinstance(status_val, str):
+                    key = status_val
+                else:
+                    key = str(status_val)
 
-        # Apply sorting
-        sort_column = getattr(User, sort_by, User.created_at)
-        if sort_order == "desc":
-            query = query.order_by(sort_column.desc())
-        else:
-            query = query.order_by(sort_column.asc())
+                if key in result:
+                    result[key] = int(count) if count is not None else 0
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(f"Error processing status value {status_val}: {e}")
+                continue
+        return result
 
-        # Apply pagination
-        offset = (page - 1) * page_size
-        users = query.offset(offset).limit(page_size).all()
+    def get_user_status_counts(
+        self,
+        organization_ids: list[UUID] | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ) -> dict[str, int]:
+        """
+        Get counts of users by status and mfa_enabled for the same scope as list_users.
+        """
+        from sqlalchemy import distinct, func
 
-        return users, total_count
+        count_expr = (
+            func.count(distinct(User.id))
+            if organization_ids is not None
+            else func.count(User.id)
+        )
+
+        # Status counts
+        status_query = self.db.query(User.status, count_expr).filter(
+            User.deleted_at.is_(None)
+        )
+        status_query = self._apply_filters(
+            status_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+        status_counts = status_query.group_by(User.status).all()
+        result = self._process_status_counts(status_counts)
+
+        # MFA count
+        mfa_query = self.db.query(count_expr).filter(
+            User.deleted_at.is_(None), User.mfa_enabled.is_(True)
+        )
+        mfa_query = self._apply_filters(
+            mfa_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+        result["mfa_enabled"] = mfa_query.scalar() or 0
+
+        return result
 
     def email_exists(self, email: str) -> bool:
         """

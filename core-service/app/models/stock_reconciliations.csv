@@ -1,0 +1,17 @@
+column_name,data_type,character_maximum_length,is_nullable
+updated_by,uuid,NULL,YES
+organization_id,uuid,NULL,NO
+created_at,timestamp with time zone,NULL,YES
+updated_at,timestamp with time zone,NULL,YES
+created_by,uuid,NULL,YES
+id,uuid,NULL,NO
+posting_date,timestamp with time zone,NULL,NO
+status,USER-DEFINED,NULL,YES
+expense_account_id,uuid,NULL,YES
+difference_account_id,uuid,NULL,YES
+extra_data,jsonb,NULL,YES
+submitted_at,timestamp with time zone,NULL,YES
+reconciliation_no,character varying,100,NO
+purpose,character varying,100,YES
+remarks,text,NULL,YES
+posting_time,character varying,10,YES

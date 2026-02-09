@@ -13,6 +13,7 @@ from app.core.exceptions import (
 )
 from app.database import get_db
 from app.schemas.permission import (
+    GroupedPermissionsResponse,
     PermissionCreate,
     PermissionListResponse,
     PermissionResponse,
@@ -78,6 +79,59 @@ async def list_permissions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve permissions",
+        )
+
+
+@router.get(
+    "/permissions/grouped",
+    response_model=GroupedPermissionsResponse,
+    summary="Get permissions grouped by category",
+    description="Get permissions organized by category/module for UI display",
+)
+async def get_permissions_grouped(
+    organization_id: UUID | None = Query(
+        None, description="Filter by organization (optional)"
+    ),
+    module: str | None = Query(None, description="Filter by module"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get permissions grouped by category for UI display.
+
+    This endpoint returns permissions organized by category (e.g., "CRM & Sales",
+    "Inventory Management", "Billing & Subscriptions") to make it easy for the
+    frontend to display them in grouped sections.
+
+    **Query Parameters:**
+    - **organization_id**: Optional organization ID to filter permissions
+    - **module**: Optional module filter (e.g., "crm", "inventory", "billing")
+
+    **Response:**
+    - **categories**: List of category groups, each containing permissions
+    - **uncategorized**: Permissions that don't belong to any category
+    """
+    logger.info("Fetching permissions grouped by category")
+
+    permission_service = PermissionService(db)
+
+    try:
+        result = permission_service.get_permissions_grouped_by_category(
+            organization_id=organization_id,
+            module=module,
+        )
+
+        logger.info(
+            f"Retrieved {len(result['categories'])} categories "
+            f"with {sum(len(c['permissions']) for c in result['categories'])} permissions"
+        )
+
+        return GroupedPermissionsResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Error fetching grouped permissions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve grouped permissions",
         )
 
 

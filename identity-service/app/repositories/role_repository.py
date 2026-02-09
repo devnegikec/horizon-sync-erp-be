@@ -106,7 +106,8 @@ class RoleRepository:
 
     def list_roles(
         self,
-        organization_id: UUID | None = None,
+        organization_ids: list[UUID] | None = None,
+        organization_id: UUID | None = None,  # Deprecated: use organization_ids
         skip: int = 0,
         limit: int = 10,
         is_active: bool | None = None,
@@ -117,7 +118,8 @@ class RoleRepository:
         List roles with pagination and filters.
 
         Args:
-            organization_id: Filter by organization
+            organization_ids: Filter by organizations (roles in these orgs only)
+            organization_id: Deprecated - use organization_ids
             skip: Number of records to skip
             limit: Maximum number of records to return
             is_active: Filter by active status
@@ -127,15 +129,19 @@ class RoleRepository:
         Returns:
             Tuple of (list of roles, total count)
         """
+        # Support legacy organization_id for backward compatibility
+        if organization_ids is None and organization_id is not None:
+            organization_ids = [organization_id]
+
         logger.debug(
-            f"Listing roles - org_id: {organization_id}, skip: {skip}, limit: {limit}, "
+            f"Listing roles - org_ids: {organization_ids}, skip: {skip}, limit: {limit}, "
             f"is_active: {is_active}, is_system: {is_system}"
         )
 
         query = self.db.query(Role)
 
-        if organization_id:
-            query = query.filter(Role.organization_id == organization_id)
+        if organization_ids:
+            query = query.filter(Role.organization_id.in_(organization_ids))
 
         if is_active is not None:
             query = query.filter(Role.is_active == is_active)
