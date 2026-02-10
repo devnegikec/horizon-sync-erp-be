@@ -111,7 +111,9 @@ def seed_stock_data():
 
         # Get existing items and warehouses
         items = db.query(Item).filter(Item.organization_id == org_id).all()
-        warehouses = db.query(Warehouse).filter(Warehouse.organization_id == org_id).all()
+        warehouses = (
+            db.query(Warehouse).filter(Warehouse.organization_id == org_id).all()
+        )
 
         if not items or not warehouses:
             print("✗ No items or warehouses found. Please run seed_data.py first!")
@@ -126,40 +128,43 @@ def seed_stock_data():
         # Get stock items only
         stock_items = [item for item in items if item.maintain_stock]
         print(f"✓ Found {len(stock_items)} stock items")
-        
+
         # Select items for seeding (use first available items)
         if len(stock_items) < 5:
             print(f"✗ Need at least 5 stock items, found only {len(stock_items)}")
             return
-        
+
         # Select warehouses (prefer warehouse and store types)
-        warehouse_list = [wh for wh in warehouses if wh.warehouse_type in ["warehouse", "store"]]
+        warehouse_list = [
+            wh for wh in warehouses if wh.warehouse_type in ["warehouse", "store"]
+        ]
         if len(warehouse_list) < 2:
             print(f"✗ Need at least 2 warehouses, found only {len(warehouse_list)}")
             return
-        
+
         # Use first 5 items and first 2 warehouses
         item1 = stock_items[0]  # Will be used as raw material 1
         item2 = stock_items[1]  # Will be used as raw material 2
         item3 = stock_items[2]  # Will be used as finished good 1
         item4 = stock_items[3]  # Will be used as finished good 2
         item5 = stock_items[4]  # Will be used as consumable
-        
+
         warehouse1 = warehouse_list[0]  # Main warehouse
         warehouse2 = warehouse_list[1]  # Secondary warehouse/store
-        
-        print(f"✓ Using items: {item1.item_code}, {item2.item_code}, {item3.item_code}, {item4.item_code}, {item5.item_code}")
-        print(f"✓ Using warehouses: {warehouse1.code}, {warehouse2.code}")
 
+        print(
+            f"✓ Using items: {item1.item_code}, {item2.item_code}, {item3.item_code}, {item4.item_code}, {item5.item_code}"
+        )
+        print(f"✓ Using warehouses: {warehouse1.code}, {warehouse2.code}")
 
         # ===================================================================
         # 1. CREATE STOCK ENTRIES (Material Receipts)
         # ===================================================================
         print("\n1. Creating Stock Entries (Material Receipts)...")
-        
+
         stock_entries = []
         base_date = datetime.now(UTC) - timedelta(days=30)
-        
+
         # Stock Entry 1: Material Receipt for Raw Materials
         entry1 = StockEntry(
             organization_id=org_id,
@@ -178,7 +183,7 @@ def seed_stock_data():
         db.add(entry1)
         db.flush()
         stock_entries.append(entry1)
-        
+
         # Add items to entry1
         entry1_item1 = StockEntryItem(
             organization_id=org_id,
@@ -194,7 +199,7 @@ def seed_stock_data():
             description=f"{item1.item_name} initial stock",
         )
         db.add(entry1_item1)
-        
+
         entry1_item2 = StockEntryItem(
             organization_id=org_id,
             stock_entry_id=entry1.id,
@@ -208,9 +213,8 @@ def seed_stock_data():
             description=f"{item2.item_name} initial stock",
         )
         db.add(entry1_item2)
-        
-        print(f"✓ Created stock entry: {entry1.stock_entry_no}")
 
+        print(f"✓ Created stock entry: {entry1.stock_entry_no}")
 
         # Stock Entry 2: Material Receipt for Finished Goods
         entry2 = StockEntry(
@@ -230,7 +234,7 @@ def seed_stock_data():
         db.add(entry2)
         db.flush()
         stock_entries.append(entry2)
-        
+
         # Add items to entry2
         entry2_item1 = StockEntryItem(
             organization_id=org_id,
@@ -246,7 +250,7 @@ def seed_stock_data():
             description=f"{item3.item_name} units",
         )
         db.add(entry2_item1)
-        
+
         entry2_item2 = StockEntryItem(
             organization_id=org_id,
             stock_entry_id=entry2.id,
@@ -261,7 +265,7 @@ def seed_stock_data():
             description=f"{item4.item_name} units",
         )
         db.add(entry2_item2)
-        
+
         entry2_item3 = StockEntryItem(
             organization_id=org_id,
             stock_entry_id=entry2.id,
@@ -275,9 +279,8 @@ def seed_stock_data():
             description=f"{item5.item_name} units",
         )
         db.add(entry2_item3)
-        
-        print(f"✓ Created stock entry: {entry2.stock_entry_no}")
 
+        print(f"✓ Created stock entry: {entry2.stock_entry_no}")
 
         # Stock Entry 3: Material Transfer (Main to Store)
         entry3 = StockEntry(
@@ -298,7 +301,7 @@ def seed_stock_data():
         db.add(entry3)
         db.flush()
         stock_entries.append(entry3)
-        
+
         # Add items to entry3
         if "FG-WIDGET-001" in items_dict:
             item6 = StockEntryItem(
@@ -315,7 +318,7 @@ def seed_stock_data():
                 description="Transfer to store",
             )
             db.add(item6)
-        
+
         if "FG-GADGET-001" in items_dict:
             item7 = StockEntryItem(
                 organization_id=org_id,
@@ -331,9 +334,9 @@ def seed_stock_data():
                 description="Transfer to store",
             )
             db.add(item7)
-        
+
         print(f"✓ Created stock entry: {entry3.stock_entry_no}")
-        
+
         # Stock Entry 4: Material Issue
         entry4 = StockEntry(
             organization_id=org_id,
@@ -352,7 +355,7 @@ def seed_stock_data():
         db.add(entry4)
         db.flush()
         stock_entries.append(entry4)
-        
+
         # Add items to entry4
         if "FG-WIDGET-001" in items_dict:
             item8 = StockEntryItem(
@@ -368,7 +371,7 @@ def seed_stock_data():
                 description="Sold to customer",
             )
             db.add(item8)
-        
+
         if "FG-GADGET-001" in items_dict:
             item9 = StockEntryItem(
                 organization_id=org_id,
@@ -383,17 +386,16 @@ def seed_stock_data():
                 description="Sold to customer",
             )
             db.add(item9)
-        
-        print(f"✓ Created stock entry: {entry4.stock_entry_no}")
 
+        print(f"✓ Created stock entry: {entry4.stock_entry_no}")
 
         # ===================================================================
         # 2. CREATE STOCK MOVEMENTS (Audit Trail)
         # ===================================================================
         print("\n2. Creating Stock Movements...")
-        
+
         movements_count = 0
-        
+
         # Movement 1: Receipt of Steel
         if "RM-STEEL-001" in items_dict:
             movement1 = StockMovement(
@@ -411,7 +413,7 @@ def seed_stock_data():
             )
             db.add(movement1)
             movements_count += 1
-        
+
         # Movement 2: Receipt of Plastic
         if "RM-PLAST-001" in items_dict:
             movement2 = StockMovement(
@@ -429,7 +431,7 @@ def seed_stock_data():
             )
             db.add(movement2)
             movements_count += 1
-        
+
         # Movement 3: Receipt of Widgets
         if "FG-WIDGET-001" in items_dict:
             movement3 = StockMovement(
@@ -447,7 +449,7 @@ def seed_stock_data():
             )
             db.add(movement3)
             movements_count += 1
-        
+
         # Movement 4: Receipt of Gadgets
         if "FG-GADGET-001" in items_dict:
             movement4 = StockMovement(
@@ -465,7 +467,7 @@ def seed_stock_data():
             )
             db.add(movement4)
             movements_count += 1
-        
+
         # Movement 5: Receipt of Packaging
         if "CON-PACK-001" in items_dict:
             movement5 = StockMovement(
@@ -484,7 +486,6 @@ def seed_stock_data():
             db.add(movement5)
             movements_count += 1
 
-
         # Movement 6-7: Transfer OUT from Main (Widgets)
         if "FG-WIDGET-001" in items_dict:
             movement6 = StockMovement(
@@ -502,7 +503,7 @@ def seed_stock_data():
             )
             db.add(movement6)
             movements_count += 1
-            
+
             # Transfer IN to Store
             movement7 = StockMovement(
                 organization_id=org_id,
@@ -519,7 +520,7 @@ def seed_stock_data():
             )
             db.add(movement7)
             movements_count += 1
-        
+
         # Movement 8-9: Transfer OUT from Main (Gadgets)
         if "FG-GADGET-001" in items_dict:
             movement8 = StockMovement(
@@ -537,7 +538,7 @@ def seed_stock_data():
             )
             db.add(movement8)
             movements_count += 1
-            
+
             # Transfer IN to Store
             movement9 = StockMovement(
                 organization_id=org_id,
@@ -554,7 +555,7 @@ def seed_stock_data():
             )
             db.add(movement9)
             movements_count += 1
-        
+
         # Movement 10-11: Sales from Store
         if "FG-WIDGET-001" in items_dict:
             movement10 = StockMovement(
@@ -572,7 +573,7 @@ def seed_stock_data():
             )
             db.add(movement10)
             movements_count += 1
-        
+
         if "FG-GADGET-001" in items_dict:
             movement11 = StockMovement(
                 organization_id=org_id,
@@ -589,15 +590,14 @@ def seed_stock_data():
             )
             db.add(movement11)
             movements_count += 1
-        
-        print(f"✓ Created {movements_count} stock movements")
 
+        print(f"✓ Created {movements_count} stock movements")
 
         # ===================================================================
         # 3. CREATE STOCK LEVELS (Current Inventory)
         # ===================================================================
         print("\n3. Creating Stock Levels...")
-        
+
         stock_levels_data = [
             # Main Warehouse
             {
@@ -651,10 +651,13 @@ def seed_stock_data():
                 "quantity_available": 15,
             },
         ]
-        
+
         levels_count = 0
         for level_data in stock_levels_data:
-            if level_data["product_code"] in items_dict and level_data["warehouse_code"] in warehouses_dict:
+            if (
+                level_data["product_code"] in items_dict
+                and level_data["warehouse_code"] in warehouses_dict
+            ):
                 stock_level = StockLevel(
                     organization_id=org_id,
                     product_id=items_dict[level_data["product_code"]].id,
@@ -666,15 +669,14 @@ def seed_stock_data():
                 )
                 db.add(stock_level)
                 levels_count += 1
-        
-        print(f"✓ Created {levels_count} stock levels")
 
+        print(f"✓ Created {levels_count} stock levels")
 
         # ===================================================================
         # 4. CREATE STOCK RECONCILIATIONS (Physical Count Adjustments)
         # ===================================================================
         print("\n4. Creating Stock Reconciliations...")
-        
+
         # Reconciliation 1: Physical count adjustment
         recon1 = StockReconciliation(
             organization_id=org_id,
@@ -690,10 +692,10 @@ def seed_stock_data():
         )
         db.add(recon1)
         db.flush()
-        
+
         # Add reconciliation items
         recon_items_count = 0
-        
+
         # Reconciliation item 1: Widget adjustment in Main Warehouse
         if "FG-WIDGET-001" in items_dict:
             recon_item1 = StockReconciliationItem(
@@ -709,7 +711,7 @@ def seed_stock_data():
             )
             db.add(recon_item1)
             recon_items_count += 1
-        
+
         # Reconciliation item 2: Packaging adjustment
         if "CON-PACK-001" in items_dict:
             recon_item2 = StockReconciliationItem(
@@ -725,7 +727,7 @@ def seed_stock_data():
             )
             db.add(recon_item2)
             recon_items_count += 1
-        
+
         # Reconciliation item 3: Gadget adjustment in Store
         if "FG-GADGET-001" in items_dict:
             recon_item3 = StockReconciliationItem(
@@ -741,9 +743,11 @@ def seed_stock_data():
             )
             db.add(recon_item3)
             recon_items_count += 1
-        
-        print(f"✓ Created reconciliation: {recon1.reconciliation_no} with {recon_items_count} items")
-        
+
+        print(
+            f"✓ Created reconciliation: {recon1.reconciliation_no} with {recon_items_count} items"
+        )
+
         # Reconciliation 2: Damage adjustment
         recon2 = StockReconciliation(
             organization_id=org_id,
@@ -759,9 +763,9 @@ def seed_stock_data():
         )
         db.add(recon2)
         db.flush()
-        
+
         recon2_items_count = 0
-        
+
         # Reconciliation item for damaged steel
         if "RM-STEEL-001" in items_dict:
             recon_item4 = StockReconciliationItem(
@@ -777,9 +781,10 @@ def seed_stock_data():
             )
             db.add(recon_item4)
             recon2_items_count += 1
-        
-        print(f"✓ Created reconciliation: {recon2.reconciliation_no} with {recon2_items_count} items")
 
+        print(
+            f"✓ Created reconciliation: {recon2.reconciliation_no} with {recon2_items_count} items"
+        )
 
         # Commit all changes
         db.commit()
@@ -792,7 +797,7 @@ def seed_stock_data():
         print(f"  Stock Entries: {len(stock_entries)}")
         print(f"  Stock Movements: {movements_count}")
         print(f"  Stock Levels: {levels_count}")
-        print(f"  Stock Reconciliations: 2")
+        print("  Stock Reconciliations: 2")
         print(f"  Reconciliation Items: {recon_items_count + recon2_items_count}")
         print("-" * 70)
         print("\nStock Entry Types:")
@@ -817,6 +822,7 @@ def seed_stock_data():
     except Exception as e:
         print(f"\n✗ Error during seeding: {str(e)}")
         import traceback
+
         traceback.print_exc()
         db.rollback()
         raise

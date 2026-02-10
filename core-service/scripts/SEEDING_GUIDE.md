@@ -11,6 +11,7 @@ This guide explains how to seed your PostgreSQL database with test data.
    ```
 
 2. **Migrations must be applied**:
+
    - Identity service migrations (runs automatically on container start)
    - Core service migrations (runs automatically on container start)
 

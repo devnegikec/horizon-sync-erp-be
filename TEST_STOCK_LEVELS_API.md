@@ -218,9 +218,9 @@ ORDER BY w.code, i.item_code;
 
 ## Summary
 
-✅ **Item details** (name and code) are already included in the response via the `product` field  
-✅ **Warehouse details** (name and code) are already included in the response via the `warehouse` field  
-✅ All endpoints return these details: list, get by ID, get by location  
+✅ **Item details** (name and code) are already included in the response via the `product` field
+✅ **Warehouse details** (name and code) are already included in the response via the `warehouse` field
+✅ All endpoints return these details: list, get by ID, get by location
 ✅ The implementation uses proper eager loading to avoid N+1 queries
 
 **No changes needed - the feature is already fully implemented!** 🎉

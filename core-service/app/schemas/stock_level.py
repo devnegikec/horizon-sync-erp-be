@@ -85,7 +85,7 @@ class StockLevelListResponse(BaseModel):
     pagination: PaginationMeta
 
 
-def stock_level_to_list_item(s: "StockLevel") -> StockLevelListItem:
+def stock_level_to_list_item(s: StockLevel) -> StockLevelListItem:
     """Build list item from ORM without embedding Item/Warehouse (avoids lazy-load loops)."""
     product = None
     if getattr(s, "product", None) is not None:
@@ -107,7 +107,7 @@ def stock_level_to_list_item(s: "StockLevel") -> StockLevelListItem:
     )
 
 
-def stock_level_to_response(s: "StockLevel") -> StockLevelResponse:
+def stock_level_to_response(s: StockLevel) -> StockLevelResponse:
     """Build response from ORM without embedding Item/Warehouse (avoids lazy-load loops)."""
     product = None
     if getattr(s, "product", None) is not None:

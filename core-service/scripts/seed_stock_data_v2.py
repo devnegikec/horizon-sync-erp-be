@@ -107,19 +107,27 @@ def seed_stock_data():
             return
 
         # Get existing items and warehouses
-        items = db.query(Item).filter(
-            Item.organization_id == org_id,
-            Item.maintain_stock == True  # noqa: E712
-        ).limit(10).all()
-        
-        warehouses = db.query(Warehouse).filter(
-            Warehouse.organization_id == org_id
-        ).limit(5).all()
+        items = (
+            db.query(Item)
+            .filter(
+                Item.organization_id == org_id,
+                Item.maintain_stock == True,  # noqa: E712
+            )
+            .limit(10)
+            .all()
+        )
+
+        warehouses = (
+            db.query(Warehouse)
+            .filter(Warehouse.organization_id == org_id)
+            .limit(5)
+            .all()
+        )
 
         if not items or len(items) < 5:
             print(f"✗ Need at least 5 stock items, found only {len(items)}")
             return
-            
+
         if not warehouses or len(warehouses) < 2:
             print(f"✗ Need at least 2 warehouses, found only {len(warehouses)}")
             return
@@ -127,11 +135,21 @@ def seed_stock_data():
         print(f"✓ Found {len(items)} items and {len(warehouses)} warehouses")
 
         # Select items and warehouses
-        item1, item2, item3, item4, item5 = items[0], items[1], items[2], items[3], items[4]
+        item1, item2, item3, item4, item5 = (
+            items[0],
+            items[1],
+            items[2],
+            items[3],
+            items[4],
+        )
         warehouse1, warehouse2 = warehouses[0], warehouses[1]
-        
-        print(f"✓ Using items: {item1.item_code}, {item2.item_code}, {item3.item_code}, {item4.item_code}, {item5.item_code}")
-        print(f"✓ Using warehouses: {warehouse1.code} ({warehouse1.name}), {warehouse2.code} ({warehouse2.name})")
+
+        print(
+            f"✓ Using items: {item1.item_code}, {item2.item_code}, {item3.item_code}, {item4.item_code}, {item5.item_code}"
+        )
+        print(
+            f"✓ Using warehouses: {warehouse1.code} ({warehouse1.name}), {warehouse2.code} ({warehouse2.name})"
+        )
 
         base_date = datetime.now(UTC) - timedelta(days=30)
 
@@ -139,9 +157,9 @@ def seed_stock_data():
         # 1. CREATE STOCK ENTRIES
         # ===================================================================
         print("\n1. Creating Stock Entries...")
-        
+
         stock_entries = []
-        
+
         # Entry 1: Material Receipt
         entry1 = StockEntry(
             organization_id=org_id,
@@ -160,34 +178,38 @@ def seed_stock_data():
         db.add(entry1)
         db.flush()
         stock_entries.append(entry1)
-        
+
         # Add items to entry1
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry1.id,
-            item_id=item1.id,
-            target_warehouse_id=warehouse1.id,
-            qty=Decimal("500.00"),
-            uom=item1.uom or "Nos",
-            basic_rate=Decimal("75.00"),
-            basic_amount=Decimal("37500.00"),
-            valuation_rate=Decimal("75.00"),
-            description=f"{item1.item_name} - initial stock",
-        ))
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry1.id,
-            item_id=item2.id,
-            target_warehouse_id=warehouse1.id,
-            qty=Decimal("125.00"),
-            uom=item2.uom or "Nos",
-            basic_rate=Decimal("100.00"),
-            basic_amount=Decimal("12500.00"),
-            valuation_rate=Decimal("100.00"),
-            description=f"{item2.item_name} - initial stock",
-        ))
-        
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry1.id,
+                item_id=item1.id,
+                target_warehouse_id=warehouse1.id,
+                qty=Decimal("500.00"),
+                uom=item1.uom or "Nos",
+                basic_rate=Decimal("75.00"),
+                basic_amount=Decimal("37500.00"),
+                valuation_rate=Decimal("75.00"),
+                description=f"{item1.item_name} - initial stock",
+            )
+        )
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry1.id,
+                item_id=item2.id,
+                target_warehouse_id=warehouse1.id,
+                qty=Decimal("125.00"),
+                uom=item2.uom or "Nos",
+                basic_rate=Decimal("100.00"),
+                basic_amount=Decimal("12500.00"),
+                valuation_rate=Decimal("100.00"),
+                description=f"{item2.item_name} - initial stock",
+            )
+        )
+
         print(f"✓ Created: {entry1.stock_entry_no}")
 
         # Entry 2: Material Receipt
@@ -208,46 +230,52 @@ def seed_stock_data():
         db.add(entry2)
         db.flush()
         stock_entries.append(entry2)
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry2.id,
-            item_id=item3.id,
-            target_warehouse_id=warehouse1.id,
-            qty=Decimal("100.00"),
-            uom=item3.uom or "Nos",
-            basic_rate=Decimal("350.00"),
-            basic_amount=Decimal("35000.00"),
-            valuation_rate=Decimal("350.00"),
-            description=f"{item3.item_name} units",
-        ))
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry2.id,
-            item_id=item4.id,
-            target_warehouse_id=warehouse1.id,
-            qty=Decimal("50.00"),
-            uom=item4.uom or "Nos",
-            basic_rate=Decimal("750.00"),
-            basic_amount=Decimal("37500.00"),
-            valuation_rate=Decimal("750.00"),
-            description=f"{item4.item_name} units",
-        ))
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry2.id,
-            item_id=item5.id,
-            target_warehouse_id=warehouse1.id,
-            qty=Decimal("1000.00"),
-            uom=item5.uom or "Nos",
-            basic_rate=Decimal("18.00"),
-            basic_amount=Decimal("18000.00"),
-            valuation_rate=Decimal("18.00"),
-            description=f"{item5.item_name} units",
-        ))
-        
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry2.id,
+                item_id=item3.id,
+                target_warehouse_id=warehouse1.id,
+                qty=Decimal("100.00"),
+                uom=item3.uom or "Nos",
+                basic_rate=Decimal("350.00"),
+                basic_amount=Decimal("35000.00"),
+                valuation_rate=Decimal("350.00"),
+                description=f"{item3.item_name} units",
+            )
+        )
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry2.id,
+                item_id=item4.id,
+                target_warehouse_id=warehouse1.id,
+                qty=Decimal("50.00"),
+                uom=item4.uom or "Nos",
+                basic_rate=Decimal("750.00"),
+                basic_amount=Decimal("37500.00"),
+                valuation_rate=Decimal("750.00"),
+                description=f"{item4.item_name} units",
+            )
+        )
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry2.id,
+                item_id=item5.id,
+                target_warehouse_id=warehouse1.id,
+                qty=Decimal("1000.00"),
+                uom=item5.uom or "Nos",
+                basic_rate=Decimal("18.00"),
+                basic_amount=Decimal("18000.00"),
+                valuation_rate=Decimal("18.00"),
+                description=f"{item5.item_name} units",
+            )
+        )
+
         print(f"✓ Created: {entry2.stock_entry_no}")
 
         # Entry 3: Material Transfer
@@ -269,35 +297,39 @@ def seed_stock_data():
         db.add(entry3)
         db.flush()
         stock_entries.append(entry3)
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry3.id,
-            item_id=item3.id,
-            source_warehouse_id=warehouse1.id,
-            target_warehouse_id=warehouse2.id,
-            qty=Decimal("30.00"),
-            uom=item3.uom or "Nos",
-            basic_rate=Decimal("350.00"),
-            basic_amount=Decimal("10500.00"),
-            valuation_rate=Decimal("350.00"),
-            description="Transfer",
-        ))
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry3.id,
-            item_id=item4.id,
-            source_warehouse_id=warehouse1.id,
-            target_warehouse_id=warehouse2.id,
-            qty=Decimal("20.00"),
-            uom=item4.uom or "Nos",
-            basic_rate=Decimal("750.00"),
-            basic_amount=Decimal("15000.00"),
-            valuation_rate=Decimal("750.00"),
-            description="Transfer",
-        ))
-        
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry3.id,
+                item_id=item3.id,
+                source_warehouse_id=warehouse1.id,
+                target_warehouse_id=warehouse2.id,
+                qty=Decimal("30.00"),
+                uom=item3.uom or "Nos",
+                basic_rate=Decimal("350.00"),
+                basic_amount=Decimal("10500.00"),
+                valuation_rate=Decimal("350.00"),
+                description="Transfer",
+            )
+        )
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry3.id,
+                item_id=item4.id,
+                source_warehouse_id=warehouse1.id,
+                target_warehouse_id=warehouse2.id,
+                qty=Decimal("20.00"),
+                uom=item4.uom or "Nos",
+                basic_rate=Decimal("750.00"),
+                basic_amount=Decimal("15000.00"),
+                valuation_rate=Decimal("750.00"),
+                description="Transfer",
+            )
+        )
+
         print(f"✓ Created: {entry3.stock_entry_no}")
 
         # Entry 4: Material Issue
@@ -318,166 +350,182 @@ def seed_stock_data():
         db.add(entry4)
         db.flush()
         stock_entries.append(entry4)
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry4.id,
-            item_id=item3.id,
-            source_warehouse_id=warehouse2.id,
-            qty=Decimal("10.00"),
-            uom=item3.uom or "Nos",
-            basic_rate=Decimal("350.00"),
-            basic_amount=Decimal("3500.00"),
-            valuation_rate=Decimal("350.00"),
-            description="Sold",
-        ))
-        
-        db.add(StockEntryItem(
-            organization_id=org_id,
-            stock_entry_id=entry4.id,
-            item_id=item4.id,
-            source_warehouse_id=warehouse2.id,
-            qty=Decimal("5.00"),
-            uom=item4.uom or "Nos",
-            basic_rate=Decimal("750.00"),
-            basic_amount=Decimal("3750.00"),
-            valuation_rate=Decimal("750.00"),
-            description="Sold",
-        ))
-        
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry4.id,
+                item_id=item3.id,
+                source_warehouse_id=warehouse2.id,
+                qty=Decimal("10.00"),
+                uom=item3.uom or "Nos",
+                basic_rate=Decimal("350.00"),
+                basic_amount=Decimal("3500.00"),
+                valuation_rate=Decimal("350.00"),
+                description="Sold",
+            )
+        )
+
+        db.add(
+            StockEntryItem(
+                organization_id=org_id,
+                stock_entry_id=entry4.id,
+                item_id=item4.id,
+                source_warehouse_id=warehouse2.id,
+                qty=Decimal("5.00"),
+                uom=item4.uom or "Nos",
+                basic_rate=Decimal("750.00"),
+                basic_amount=Decimal("3750.00"),
+                valuation_rate=Decimal("750.00"),
+                description="Sold",
+            )
+        )
+
         print(f"✓ Created: {entry4.stock_entry_no}")
 
         # ===================================================================
         # 2. CREATE STOCK MOVEMENTS
         # ===================================================================
         print("\n2. Creating Stock Movements...")
-        
+
         movements_count = 0
-        
+
         # Movements for entry1
         for item, qty, cost in [(item1, 500, 75), (item2, 125, 100)]:
-            db.add(StockMovement(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse1.id,
-                movement_type="in",
-                quantity=qty,
-                unit_cost=Decimal(str(cost)),
-                reference_type="stock_entry",
-                reference_id=entry1.id,
-                notes=f"Receipt - {item.item_name}",
-                performed_by=admin_user_id,
-                performed_at=base_date,
-            ))
+            db.add(
+                StockMovement(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse1.id,
+                    movement_type="in",
+                    quantity=qty,
+                    unit_cost=Decimal(str(cost)),
+                    reference_type="stock_entry",
+                    reference_id=entry1.id,
+                    notes=f"Receipt - {item.item_name}",
+                    performed_by=admin_user_id,
+                    performed_at=base_date,
+                )
+            )
             movements_count += 1
-        
+
         # Movements for entry2
         for item, qty, cost in [(item3, 100, 350), (item4, 50, 750), (item5, 1000, 18)]:
-            db.add(StockMovement(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse1.id,
-                movement_type="in",
-                quantity=qty,
-                unit_cost=Decimal(str(cost)),
-                reference_type="stock_entry",
-                reference_id=entry2.id,
-                notes=f"Receipt - {item.item_name}",
-                performed_by=admin_user_id,
-                performed_at=base_date + timedelta(days=2),
-            ))
+            db.add(
+                StockMovement(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse1.id,
+                    movement_type="in",
+                    quantity=qty,
+                    unit_cost=Decimal(str(cost)),
+                    reference_type="stock_entry",
+                    reference_id=entry2.id,
+                    notes=f"Receipt - {item.item_name}",
+                    performed_by=admin_user_id,
+                    performed_at=base_date + timedelta(days=2),
+                )
+            )
             movements_count += 1
-        
+
         # Movements for entry3 (transfer OUT and IN)
         for item, qty, cost in [(item3, 30, 350), (item4, 20, 750)]:
             # OUT from warehouse1
-            db.add(StockMovement(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse1.id,
-                movement_type="out",
-                quantity=qty,
-                unit_cost=Decimal(str(cost)),
-                reference_type="stock_entry",
-                reference_id=entry3.id,
-                notes=f"Transfer out - {item.item_name}",
-                performed_by=admin_user_id,
-                performed_at=base_date + timedelta(days=5),
-            ))
+            db.add(
+                StockMovement(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse1.id,
+                    movement_type="out",
+                    quantity=qty,
+                    unit_cost=Decimal(str(cost)),
+                    reference_type="stock_entry",
+                    reference_id=entry3.id,
+                    notes=f"Transfer out - {item.item_name}",
+                    performed_by=admin_user_id,
+                    performed_at=base_date + timedelta(days=5),
+                )
+            )
             movements_count += 1
-            
+
             # IN to warehouse2
-            db.add(StockMovement(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse2.id,
-                movement_type="in",
-                quantity=qty,
-                unit_cost=Decimal(str(cost)),
-                reference_type="stock_entry",
-                reference_id=entry3.id,
-                notes=f"Transfer in - {item.item_name}",
-                performed_by=admin_user_id,
-                performed_at=base_date + timedelta(days=5),
-            ))
+            db.add(
+                StockMovement(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse2.id,
+                    movement_type="in",
+                    quantity=qty,
+                    unit_cost=Decimal(str(cost)),
+                    reference_type="stock_entry",
+                    reference_id=entry3.id,
+                    notes=f"Transfer in - {item.item_name}",
+                    performed_by=admin_user_id,
+                    performed_at=base_date + timedelta(days=5),
+                )
+            )
             movements_count += 1
-        
+
         # Movements for entry4 (issue)
         for item, qty, cost in [(item3, 10, 350), (item4, 5, 750)]:
-            db.add(StockMovement(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse2.id,
-                movement_type="out",
-                quantity=qty,
-                unit_cost=Decimal(str(cost)),
-                reference_type="stock_entry",
-                reference_id=entry4.id,
-                notes=f"Issue/Sale - {item.item_name}",
-                performed_by=admin_user_id,
-                performed_at=base_date + timedelta(days=10),
-            ))
+            db.add(
+                StockMovement(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse2.id,
+                    movement_type="out",
+                    quantity=qty,
+                    unit_cost=Decimal(str(cost)),
+                    reference_type="stock_entry",
+                    reference_id=entry4.id,
+                    notes=f"Issue/Sale - {item.item_name}",
+                    performed_by=admin_user_id,
+                    performed_at=base_date + timedelta(days=10),
+                )
+            )
             movements_count += 1
-        
+
         print(f"✓ Created {movements_count} stock movements")
 
         # ===================================================================
         # 3. CREATE STOCK LEVELS
         # ===================================================================
         print("\n3. Creating Stock Levels...")
-        
+
         stock_levels_data = [
             # Warehouse 1
             (item1, warehouse1, 500, 50, 450),
             (item2, warehouse1, 125, 25, 100),
-            (item3, warehouse1, 70, 10, 60),   # 100 - 30 transferred
-            (item4, warehouse1, 30, 5, 25),    # 50 - 20 transferred
+            (item3, warehouse1, 70, 10, 60),  # 100 - 30 transferred
+            (item4, warehouse1, 30, 5, 25),  # 50 - 20 transferred
             (item5, warehouse1, 1000, 100, 900),
             # Warehouse 2
-            (item3, warehouse2, 20, 0, 20),    # 30 - 10 sold
-            (item4, warehouse2, 15, 0, 15),    # 20 - 5 sold
+            (item3, warehouse2, 20, 0, 20),  # 30 - 10 sold
+            (item4, warehouse2, 15, 0, 15),  # 20 - 5 sold
         ]
-        
+
         levels_count = 0
         for item, warehouse, on_hand, reserved, available in stock_levels_data:
-            db.add(StockLevel(
-                organization_id=org_id,
-                product_id=item.id,
-                warehouse_id=warehouse.id,
-                quantity_on_hand=on_hand,
-                quantity_reserved=reserved,
-                quantity_available=available,
-                last_counted_at=datetime.now(UTC) - timedelta(days=1),
-            ))
+            db.add(
+                StockLevel(
+                    organization_id=org_id,
+                    product_id=item.id,
+                    warehouse_id=warehouse.id,
+                    quantity_on_hand=on_hand,
+                    quantity_reserved=reserved,
+                    quantity_available=available,
+                    last_counted_at=datetime.now(UTC) - timedelta(days=1),
+                )
+            )
             levels_count += 1
-        
+
         print(f"✓ Created {levels_count} stock levels")
 
         # ===================================================================
         # 4. CREATE STOCK RECONCILIATIONS
         # ===================================================================
         print("\n4. Creating Stock Reconciliations...")
-        
+
         # Reconciliation 1
         recon1 = StockReconciliation(
             organization_id=org_id,
@@ -493,51 +541,57 @@ def seed_stock_data():
         )
         db.add(recon1)
         db.flush()
-        
+
         recon_items_count = 0
-        
+
         # Reconciliation items
-        db.add(StockReconciliationItem(
-            organization_id=org_id,
-            reconciliation_id=recon1.id,
-            item_id=item3.id,
-            warehouse_id=warehouse1.id,
-            current_qty=Decimal("70.00"),
-            qty=Decimal("68.00"),
-            qty_difference=Decimal("-2.00"),
-            current_valuation_rate=Decimal("350.00"),
-            valuation_rate=Decimal("350.00"),
-        ))
+        db.add(
+            StockReconciliationItem(
+                organization_id=org_id,
+                reconciliation_id=recon1.id,
+                item_id=item3.id,
+                warehouse_id=warehouse1.id,
+                current_qty=Decimal("70.00"),
+                qty=Decimal("68.00"),
+                qty_difference=Decimal("-2.00"),
+                current_valuation_rate=Decimal("350.00"),
+                valuation_rate=Decimal("350.00"),
+            )
+        )
         recon_items_count += 1
-        
-        db.add(StockReconciliationItem(
-            organization_id=org_id,
-            reconciliation_id=recon1.id,
-            item_id=item5.id,
-            warehouse_id=warehouse1.id,
-            current_qty=Decimal("1000.00"),
-            qty=Decimal("995.00"),
-            qty_difference=Decimal("-5.00"),
-            current_valuation_rate=Decimal("18.00"),
-            valuation_rate=Decimal("18.00"),
-        ))
+
+        db.add(
+            StockReconciliationItem(
+                organization_id=org_id,
+                reconciliation_id=recon1.id,
+                item_id=item5.id,
+                warehouse_id=warehouse1.id,
+                current_qty=Decimal("1000.00"),
+                qty=Decimal("995.00"),
+                qty_difference=Decimal("-5.00"),
+                current_valuation_rate=Decimal("18.00"),
+                valuation_rate=Decimal("18.00"),
+            )
+        )
         recon_items_count += 1
-        
-        db.add(StockReconciliationItem(
-            organization_id=org_id,
-            reconciliation_id=recon1.id,
-            item_id=item4.id,
-            warehouse_id=warehouse2.id,
-            current_qty=Decimal("15.00"),
-            qty=Decimal("16.00"),
-            qty_difference=Decimal("1.00"),
-            current_valuation_rate=Decimal("750.00"),
-            valuation_rate=Decimal("750.00"),
-        ))
+
+        db.add(
+            StockReconciliationItem(
+                organization_id=org_id,
+                reconciliation_id=recon1.id,
+                item_id=item4.id,
+                warehouse_id=warehouse2.id,
+                current_qty=Decimal("15.00"),
+                qty=Decimal("16.00"),
+                qty_difference=Decimal("1.00"),
+                current_valuation_rate=Decimal("750.00"),
+                valuation_rate=Decimal("750.00"),
+            )
+        )
         recon_items_count += 1
-        
+
         print(f"✓ Created: {recon1.reconciliation_no} with {recon_items_count} items")
-        
+
         # Reconciliation 2
         recon2 = StockReconciliation(
             organization_id=org_id,
@@ -553,22 +607,24 @@ def seed_stock_data():
         )
         db.add(recon2)
         db.flush()
-        
+
         recon2_items_count = 0
-        
-        db.add(StockReconciliationItem(
-            organization_id=org_id,
-            reconciliation_id=recon2.id,
-            item_id=item1.id,
-            warehouse_id=warehouse1.id,
-            current_qty=Decimal("500.00"),
-            qty=Decimal("495.00"),
-            qty_difference=Decimal("-5.00"),
-            current_valuation_rate=Decimal("75.00"),
-            valuation_rate=Decimal("75.00"),
-        ))
+
+        db.add(
+            StockReconciliationItem(
+                organization_id=org_id,
+                reconciliation_id=recon2.id,
+                item_id=item1.id,
+                warehouse_id=warehouse1.id,
+                current_qty=Decimal("500.00"),
+                qty=Decimal("495.00"),
+                qty_difference=Decimal("-5.00"),
+                current_valuation_rate=Decimal("75.00"),
+                valuation_rate=Decimal("75.00"),
+            )
+        )
         recon2_items_count += 1
-        
+
         print(f"✓ Created: {recon2.reconciliation_no} with {recon2_items_count} items")
 
         # Commit all changes
@@ -582,7 +638,7 @@ def seed_stock_data():
         print(f"  Stock Entries: {len(stock_entries)}")
         print(f"  Stock Movements: {movements_count}")
         print(f"  Stock Levels: {levels_count}")
-        print(f"  Stock Reconciliations: 2")
+        print("  Stock Reconciliations: 2")
         print(f"  Reconciliation Items: {recon_items_count + recon2_items_count}")
         print("-" * 70)
         print("\nItems Used:")
@@ -596,6 +652,7 @@ def seed_stock_data():
     except Exception as e:
         print(f"\n✗ Error during seeding: {str(e)}")
         import traceback
+
         traceback.print_exc()
         db.rollback()
         raise

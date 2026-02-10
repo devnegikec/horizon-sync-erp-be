@@ -285,16 +285,20 @@ ORDER BY w.code, i.item_code;
 All the necessary code is already in place:
 
 1. **Schema**: `core-service/app/schemas/stock_level.py`
+
    - Defines `ProductInfo` and `WarehouseInfo`
    - Includes them in `StockLevelResponse` and `StockLevelListItem`
 
 2. **Repository**: `core-service/app/repositories/stock_level_repository.py`
+
    - Uses `joinedload` for efficient data loading
 
 3. **Service**: `core-service/app/services/stock_level_service.py`
+
    - Business logic (no changes needed)
 
 4. **API Endpoints**: `core-service/app/api/v1/endpoints/stock_levels.py`
+
    - All endpoints use the conversion functions
 
 5. **Model**: `core-service/app/models/stock_level.py`
@@ -304,8 +308,8 @@ All the necessary code is already in place:
 
 The implementation uses **eager loading** (`joinedload`) which means:
 
-✅ **Single query** - All data loaded in one database query  
-✅ **No N+1 problem** - Efficient even with many stock levels  
+✅ **Single query** - All data loaded in one database query
+✅ **No N+1 problem** - Efficient even with many stock levels
 ✅ **Fast response** - Minimal database round trips
 
 ## Conclusion

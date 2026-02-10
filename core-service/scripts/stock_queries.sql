@@ -6,7 +6,7 @@
 -- ============================================================================
 
 -- 1. View all stock levels with item and warehouse details
-SELECT 
+SELECT
     sl.id,
     i.item_code,
     i.item_name,
@@ -22,7 +22,7 @@ JOIN warehouses_extended w ON sl.warehouse_id = w.id
 ORDER BY w.code, i.item_code;
 
 -- 2. Stock levels by warehouse
-SELECT 
+SELECT
     w.name as warehouse,
     COUNT(*) as items_count,
     SUM(sl.quantity_on_hand) as total_quantity
@@ -31,7 +31,7 @@ JOIN warehouses_extended w ON sl.warehouse_id = w.id
 GROUP BY w.name;
 
 -- 3. Items below reorder level
-SELECT 
+SELECT
     i.item_code,
     i.item_name,
     i.reorder_level,
@@ -43,7 +43,7 @@ GROUP BY i.id, i.item_code, i.item_name, i.reorder_level
 HAVING SUM(sl.quantity_available) < i.reorder_level;
 
 -- 4. Stock value by warehouse
-SELECT 
+SELECT
     w.name as warehouse,
     SUM(sl.quantity_on_hand * i.valuation_rate) as stock_value
 FROM stock_levels sl
@@ -57,7 +57,7 @@ ORDER BY stock_value DESC;
 -- ============================================================================
 
 -- 5. All stock movements with details
-SELECT 
+SELECT
     sm.id,
     sm.movement_type,
     i.item_code,
@@ -74,7 +74,7 @@ JOIN warehouses_extended w ON sm.warehouse_id = w.id
 ORDER BY sm.performed_at DESC;
 
 -- 6. Movement summary by type
-SELECT 
+SELECT
     movement_type,
     COUNT(*) as movement_count,
     SUM(quantity) as total_quantity,
@@ -83,7 +83,7 @@ FROM stock_movements
 GROUP BY movement_type;
 
 -- 7. Movement history for a specific item
-SELECT 
+SELECT
     sm.performed_at,
     sm.movement_type,
     w.name as warehouse,
@@ -96,7 +96,7 @@ WHERE sm.product_id = (SELECT id FROM items WHERE item_code = 'FG-WIDGET-001')
 ORDER BY sm.performed_at DESC;
 
 -- 8. Daily movement summary
-SELECT 
+SELECT
     DATE(performed_at) as movement_date,
     movement_type,
     COUNT(*) as transactions,
@@ -110,7 +110,7 @@ ORDER BY movement_date DESC;
 -- ============================================================================
 
 -- 9. All stock entries with summary
-SELECT 
+SELECT
     se.stock_entry_no,
     se.stock_entry_type,
     se.posting_date,
@@ -124,12 +124,12 @@ FROM stock_entries se
 LEFT JOIN warehouses_extended fw ON se.from_warehouse_id = fw.id
 LEFT JOIN warehouses_extended tw ON se.to_warehouse_id = tw.id
 LEFT JOIN stock_entry_items sei ON se.id = sei.stock_entry_id
-GROUP BY se.id, se.stock_entry_no, se.stock_entry_type, se.posting_date, 
+GROUP BY se.id, se.stock_entry_no, se.stock_entry_type, se.posting_date,
          se.status, fw.name, tw.name, se.total_value, se.remarks
 ORDER BY se.posting_date DESC;
 
 -- 10. Stock entry details with items
-SELECT 
+SELECT
     se.stock_entry_no,
     se.stock_entry_type,
     i.item_code,
@@ -148,7 +148,7 @@ LEFT JOIN warehouses_extended tw ON sei.target_warehouse_id = tw.id
 WHERE se.stock_entry_no = 'STE-2024-001';
 
 -- 11. Stock entries by type
-SELECT 
+SELECT
     stock_entry_type,
     COUNT(*) as entry_count,
     SUM(total_value) as total_value,
@@ -157,7 +157,7 @@ FROM stock_entries
 GROUP BY stock_entry_type;
 
 -- 12. Recent stock entries (last 7 days)
-SELECT 
+SELECT
     se.stock_entry_no,
     se.stock_entry_type,
     se.posting_date,
@@ -172,7 +172,7 @@ ORDER BY se.posting_date DESC;
 -- ============================================================================
 
 -- 13. All reconciliations with summary
-SELECT 
+SELECT
     sr.reconciliation_no,
     sr.purpose,
     sr.posting_date,
@@ -185,7 +185,7 @@ GROUP BY sr.id, sr.reconciliation_no, sr.purpose, sr.posting_date, sr.status
 ORDER BY sr.posting_date DESC;
 
 -- 14. Reconciliation details with items
-SELECT 
+SELECT
     sr.reconciliation_no,
     sr.purpose,
     i.item_code,
@@ -203,7 +203,7 @@ JOIN warehouses_extended w ON sri.warehouse_id = w.id
 WHERE sr.reconciliation_no = 'RECON-2024-001';
 
 -- 15. Reconciliation impact summary
-SELECT 
+SELECT
     sr.reconciliation_no,
     sr.purpose,
     SUM(CASE WHEN sri.qty_difference > 0 THEN sri.qty_difference ELSE 0 END) as total_gains,
@@ -218,13 +218,13 @@ GROUP BY sr.id, sr.reconciliation_no, sr.purpose;
 -- ============================================================================
 
 -- 16. Stock movement vs current levels
-SELECT 
+SELECT
     i.item_code,
     i.item_name,
     SUM(CASE WHEN sm.movement_type = 'in' THEN sm.quantity ELSE 0 END) as total_in,
     SUM(CASE WHEN sm.movement_type = 'out' THEN sm.quantity ELSE 0 END) as total_out,
-    SUM(CASE WHEN sm.movement_type = 'in' THEN sm.quantity 
-             WHEN sm.movement_type = 'out' THEN -sm.quantity 
+    SUM(CASE WHEN sm.movement_type = 'in' THEN sm.quantity
+             WHEN sm.movement_type = 'out' THEN -sm.quantity
              ELSE 0 END) as net_movement,
     COALESCE(SUM(sl.quantity_on_hand), 0) as current_stock
 FROM items i
@@ -234,7 +234,7 @@ WHERE i.maintain_stock = true
 GROUP BY i.id, i.item_code, i.item_name;
 
 -- 17. Warehouse utilization
-SELECT 
+SELECT
     w.name as warehouse,
     w.total_capacity,
     w.capacity_uom,
@@ -247,7 +247,7 @@ LEFT JOIN items i ON sl.product_id = i.id
 GROUP BY w.id, w.name, w.total_capacity, w.capacity_uom;
 
 -- 18. Item movement frequency
-SELECT 
+SELECT
     i.item_code,
     i.item_name,
     COUNT(sm.id) as movement_count,
@@ -262,7 +262,7 @@ GROUP BY i.id, i.item_code, i.item_name
 ORDER BY movement_count DESC;
 
 -- 19. Stock aging analysis (items not moved recently)
-SELECT 
+SELECT
     i.item_code,
     i.item_name,
     w.name as warehouse,
@@ -279,7 +279,7 @@ HAVING MAX(sm.performed_at) IS NOT NULL
 ORDER BY days_since_movement DESC;
 
 -- 20. Complete stock audit trail for an item
-SELECT 
+SELECT
     'Stock Entry' as source,
     se.stock_entry_no as reference,
     se.posting_date as date,
@@ -294,7 +294,7 @@ WHERE i.item_code = 'FG-WIDGET-001'
 
 UNION ALL
 
-SELECT 
+SELECT
     'Stock Movement' as source,
     sm.reference_type as reference,
     sm.performed_at as date,
@@ -308,7 +308,7 @@ WHERE i.item_code = 'FG-WIDGET-001'
 
 UNION ALL
 
-SELECT 
+SELECT
     'Reconciliation' as source,
     sr.reconciliation_no as reference,
     sr.posting_date as date,

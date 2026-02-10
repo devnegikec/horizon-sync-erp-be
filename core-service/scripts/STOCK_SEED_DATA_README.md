@@ -279,10 +279,12 @@ GET /api/v1/stock-reconciliations/{reconciliation_id}
 After running the seed script, verify:
 
 1. **Stock Levels Match Movements**:
+
    - Widget Pro in Main: 100 (received) - 30 (transferred) = 70 ✓
    - Widget Pro in Store: 30 (received) - 10 (sold) = 20 ✓
 
 2. **Reconciliation Adjustments**:
+
    - Widget Pro adjusted from 70 to 68 (2 shortage)
    - Packaging adjusted from 1000 to 995 (5 damaged)
 
