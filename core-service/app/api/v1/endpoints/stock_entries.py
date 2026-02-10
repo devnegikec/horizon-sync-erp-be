@@ -13,10 +13,11 @@ from app.schemas.stock_entry import (
     StockEntryItemCreate,
     StockEntryItemResponse,
     StockEntryItemUpdate,
-    StockEntryListItem,
     StockEntryListResponse,
     StockEntryResponse,
     StockEntryUpdate,
+    stock_entry_to_list_item,
+    stock_entry_to_response,
 )
 from app.services.stock_entry_service import StockEntryService
 
@@ -32,7 +33,7 @@ async def create_stock_entry(
     """Create a stock entry with optional line items."""
     svc = StockEntryService(db)
     e = svc.create(data, current_user.organization_id, current_user.id)
-    return StockEntryResponse.model_validate(e)
+    return stock_entry_to_response(e)
 
 
 @router.get("", response_model=StockEntryListResponse)
@@ -64,7 +65,7 @@ async def list_stock_entries(
         sort_order=sort_order,
     )
     return StockEntryListResponse(
-        stock_entries=[StockEntryListItem.model_validate(e) for e in items],
+        stock_entries=[stock_entry_to_list_item(e) for e in items],
         pagination=PaginationMeta(**pagination),
     )
 
@@ -78,7 +79,7 @@ async def get_stock_entry(
     """Get stock entry by ID including line items."""
     svc = StockEntryService(db)
     e = svc.get_by_id(entry_id, current_user.organization_id)
-    return StockEntryResponse.model_validate(e)
+    return stock_entry_to_response(e)
 
 
 @router.put("/{entry_id}", response_model=StockEntryResponse)
@@ -90,10 +91,8 @@ async def update_stock_entry(
 ):
     """Update stock entry header (draft only)."""
     svc = StockEntryService(db)
-    svc.update(entry_id, data, current_user.organization_id, current_user.id)
-    return StockEntryResponse.model_validate(
-        svc.get_by_id(entry_id, current_user.organization_id)
-    )
+    e = svc.update(entry_id, data, current_user.organization_id, current_user.id)
+    return stock_entry_to_response(e)
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)

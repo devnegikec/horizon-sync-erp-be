@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.base import MovementType
 from app.models.stock_movement import StockMovement
@@ -17,6 +17,8 @@ class StockMovementRepository:
         self.db.add(m)
         self.db.commit()
         self.db.refresh(m)
+        # Eagerly load relationships
+        self.db.refresh(m, ["product", "warehouse"])
         return m
 
     def get_by_id(
@@ -24,6 +26,9 @@ class StockMovementRepository:
     ) -> StockMovement | None:
         return (
             self.db.query(StockMovement)
+            .options(
+                joinedload(StockMovement.product), joinedload(StockMovement.warehouse)
+            )
             .filter(
                 StockMovement.id == movement_id,
                 StockMovement.organization_id == organization_id,
@@ -44,8 +49,12 @@ class StockMovementRepository:
         sort_by: str = "performed_at",
         sort_order: str = "desc",
     ) -> tuple[list[StockMovement], int]:
-        q = self.db.query(StockMovement).filter(
-            StockMovement.organization_id == organization_id
+        q = (
+            self.db.query(StockMovement)
+            .options(
+                joinedload(StockMovement.product), joinedload(StockMovement.warehouse)
+            )
+            .filter(StockMovement.organization_id == organization_id)
         )
         if product_id:
             q = q.filter(StockMovement.product_id == product_id)

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.stock_level import StockLevel
 
@@ -14,6 +14,10 @@ class StockLevelRepository:
     def get_by_id(self, level_id: UUID, organization_id: UUID) -> StockLevel | None:
         return (
             self.db.query(StockLevel)
+            .options(
+                joinedload(StockLevel.product),
+                joinedload(StockLevel.warehouse),
+            )
             .filter(
                 StockLevel.id == level_id,
                 StockLevel.organization_id == organization_id,
@@ -26,6 +30,10 @@ class StockLevelRepository:
     ) -> StockLevel | None:
         return (
             self.db.query(StockLevel)
+            .options(
+                joinedload(StockLevel.product),
+                joinedload(StockLevel.warehouse),
+            )
             .filter(
                 StockLevel.product_id == product_id,
                 StockLevel.warehouse_id == warehouse_id,
@@ -39,7 +47,7 @@ class StockLevelRepository:
         self.db.add(s)
         self.db.commit()
         self.db.refresh(s)
-        return s
+        return self.get_by_id(s.id, s.organization_id)
 
     def update(self, s: StockLevel, data: dict) -> StockLevel:
         for k, v in data.items():
@@ -47,7 +55,7 @@ class StockLevelRepository:
                 setattr(s, k, v)
         self.db.commit()
         self.db.refresh(s)
-        return s
+        return self.get_by_id(s.id, s.organization_id)
 
     def list_levels(
         self,
@@ -59,8 +67,13 @@ class StockLevelRepository:
         sort_by: str = "updated_at",
         sort_order: str = "desc",
     ) -> tuple[list[StockLevel], int]:
-        q = self.db.query(StockLevel).filter(
-            StockLevel.organization_id == organization_id
+        q = (
+            self.db.query(StockLevel)
+            .options(
+                joinedload(StockLevel.product),
+                joinedload(StockLevel.warehouse),
+            )
+            .filter(StockLevel.organization_id == organization_id)
         )
         if product_id:
             q = q.filter(StockLevel.product_id == product_id)
