@@ -23,14 +23,23 @@ class StockEntryRepository:
             self.db.add(StockEntryItem(**it))
         self.db.commit()
         self.db.refresh(entry)
+        # Eagerly load relationships
+        self.db.refresh(entry, ["from_warehouse", "to_warehouse", "items"])
         return entry
 
     def get_by_id(
         self, entry_id: UUID, organization_id: UUID, load_items: bool = True
     ) -> StockEntry | None:
-        q = self.db.query(StockEntry).filter(
-            StockEntry.id == entry_id,
-            StockEntry.organization_id == organization_id,
+        q = (
+            self.db.query(StockEntry)
+            .options(
+                joinedload(StockEntry.from_warehouse),
+                joinedload(StockEntry.to_warehouse),
+            )
+            .filter(
+                StockEntry.id == entry_id,
+                StockEntry.organization_id == organization_id,
+            )
         )
         if load_items:
             q = q.options(joinedload(StockEntry.items))
@@ -54,6 +63,8 @@ class StockEntryRepository:
                 setattr(entry, k, v)
         self.db.commit()
         self.db.refresh(entry)
+        # Eagerly load relationships
+        self.db.refresh(entry, ["from_warehouse", "to_warehouse"])
         return entry
 
     def delete(self, entry: StockEntry) -> None:
@@ -73,8 +84,13 @@ class StockEntryRepository:
         sort_by: str = "posting_date",
         sort_order: str = "desc",
     ) -> tuple[list[StockEntry], int]:
-        q = self.db.query(StockEntry).filter(
-            StockEntry.organization_id == organization_id
+        q = (
+            self.db.query(StockEntry)
+            .options(
+                joinedload(StockEntry.from_warehouse),
+                joinedload(StockEntry.to_warehouse),
+            )
+            .filter(StockEntry.organization_id == organization_id)
         )
         if stock_entry_type is not None:
             q = q.filter(StockEntry.stock_entry_type == stock_entry_type)

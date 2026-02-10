@@ -10,9 +10,10 @@ from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_movement import (
     StockMovementCreate,
-    StockMovementListItem,
     StockMovementListResponse,
     StockMovementResponse,
+    stock_movement_to_list_item,
+    stock_movement_to_response,
 )
 from app.services.stock_movement_service import StockMovementService
 
@@ -30,7 +31,7 @@ async def create_stock_movement(
     """Record a stock movement (in, out, transfer, adjustment)."""
     svc = StockMovementService(db)
     m = svc.create(data, current_user.organization_id, current_user.id)
-    return StockMovementResponse.model_validate(m)
+    return stock_movement_to_response(m)
 
 
 @router.get("", response_model=StockMovementListResponse)
@@ -64,7 +65,7 @@ async def list_stock_movements(
         sort_order=sort_order,
     )
     return StockMovementListResponse(
-        stock_movements=[StockMovementListItem.model_validate(m) for m in items],
+        stock_movements=[stock_movement_to_list_item(m) for m in items],
         pagination=PaginationMeta(**pagination),
     )
 
@@ -77,6 +78,6 @@ async def get_stock_movement(
 ):
     """Get a stock movement by ID."""
     svc = StockMovementService(db)
-    return StockMovementResponse.model_validate(
+    return stock_movement_to_response(
         svc.get_by_id(movement_id, current_user.organization_id)
     )

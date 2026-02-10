@@ -1,12 +1,26 @@
 """Stock entry and stock_entry_items schemas"""
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+if TYPE_CHECKING:
+    from app.models.stock_entry import StockEntry
+
 from app.schemas.common import PaginationMeta
+
+
+class WarehouseInfo(BaseModel):
+    """Warehouse name and code from warehouses_extended table."""
+
+    name: str
+    code: str
+
 
 # ----- StockEntryItem -----
 
@@ -132,6 +146,8 @@ class StockEntryResponse(BaseModel):
     updated_at: datetime
     created_by: UUID | None = None
     updated_by: UUID | None = None
+    from_warehouse: WarehouseInfo | None = None
+    to_warehouse: WarehouseInfo | None = None
     items: list[StockEntryItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -146,6 +162,8 @@ class StockEntryListItem(BaseModel):
     posting_date: datetime
     status: str | None = None
     created_at: datetime
+    from_warehouse: WarehouseInfo | None = None
+    to_warehouse: WarehouseInfo | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -153,3 +171,87 @@ class StockEntryListItem(BaseModel):
 class StockEntryListResponse(BaseModel):
     stock_entries: list[StockEntryListItem]
     pagination: PaginationMeta
+
+
+def stock_entry_to_list_item(e: StockEntry) -> StockEntryListItem:
+    """Build list item from ORM without embedding warehouses (avoids lazy-load loops)."""
+
+    from_warehouse = None
+    if getattr(e, "from_warehouse", None) is not None:
+        from_warehouse = WarehouseInfo(
+            name=e.from_warehouse.name, code=e.from_warehouse.code
+        )
+    to_warehouse = None
+    if getattr(e, "to_warehouse", None) is not None:
+        to_warehouse = WarehouseInfo(name=e.to_warehouse.name, code=e.to_warehouse.code)
+    return StockEntryListItem(
+        id=e.id,
+        stock_entry_no=e.stock_entry_no,
+        stock_entry_type=e.stock_entry_type.value
+        if hasattr(e.stock_entry_type, "value")
+        else str(e.stock_entry_type),
+        from_warehouse_id=e.from_warehouse_id,
+        to_warehouse_id=e.to_warehouse_id,
+        posting_date=e.posting_date,
+        status=e.status.value
+        if hasattr(e.status, "value")
+        else str(e.status)
+        if e.status
+        else None,
+        created_at=e.created_at,
+        from_warehouse=from_warehouse,
+        to_warehouse=to_warehouse,
+    )
+
+
+def stock_entry_to_response(e: StockEntry) -> StockEntryResponse:
+    """Build response from ORM without embedding warehouses (avoids lazy-load loops)."""
+
+    from_warehouse = None
+    if getattr(e, "from_warehouse", None) is not None:
+        from_warehouse = WarehouseInfo(
+            name=e.from_warehouse.name, code=e.from_warehouse.code
+        )
+    to_warehouse = None
+    if getattr(e, "to_warehouse", None) is not None:
+        to_warehouse = WarehouseInfo(name=e.to_warehouse.name, code=e.to_warehouse.code)
+
+    items = []
+    if hasattr(e, "items") and e.items:
+        items = [StockEntryItemResponse.model_validate(item) for item in e.items]
+
+    return StockEntryResponse(
+        id=e.id,
+        organization_id=e.organization_id,
+        stock_entry_no=e.stock_entry_no,
+        stock_entry_type=e.stock_entry_type.value
+        if hasattr(e.stock_entry_type, "value")
+        else str(e.stock_entry_type),
+        from_warehouse_id=e.from_warehouse_id,
+        to_warehouse_id=e.to_warehouse_id,
+        posting_date=e.posting_date,
+        posting_time=e.posting_time,
+        status=e.status.value
+        if hasattr(e.status, "value")
+        else str(e.status)
+        if e.status
+        else None,
+        reference_type=e.reference_type,
+        reference_id=e.reference_id,
+        remarks=e.remarks,
+        total_value=e.total_value,
+        expense_account_id=e.expense_account_id,
+        cost_center_id=e.cost_center_id,
+        is_backflush=e.is_backflush,
+        bom_id=e.bom_id,
+        extra_data=e.extra_data,
+        submitted_at=e.submitted_at,
+        cancelled_at=e.cancelled_at,
+        created_at=e.created_at,
+        updated_at=e.updated_at,
+        created_by=e.created_by,
+        updated_by=e.updated_by,
+        from_warehouse=from_warehouse,
+        to_warehouse=to_warehouse,
+        items=items,
+    )
