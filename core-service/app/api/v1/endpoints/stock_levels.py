@@ -10,10 +10,11 @@ from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_level import (
     StockLevelCreate,
-    StockLevelListItem,
     StockLevelListResponse,
     StockLevelResponse,
     StockLevelUpdate,
+    stock_level_to_list_item,
+    stock_level_to_response,
 )
 from app.services.stock_level_service import StockLevelService
 
@@ -29,7 +30,7 @@ async def create_stock_level(
     """Create or upsert a stock level for an item in a warehouse."""
     svc = StockLevelService(db)
     s = svc.create(data, current_user.organization_id)
-    return StockLevelResponse.model_validate(s)
+    return stock_level_to_response(s)
 
 
 @router.get("", response_model=StockLevelListResponse)
@@ -55,7 +56,7 @@ async def list_stock_levels(
         sort_order=sort_order,
     )
     return StockLevelListResponse(
-        stock_levels=[StockLevelListItem.model_validate(s) for s in items],
+        stock_levels=[stock_level_to_list_item(s) for s in items],
         pagination=PaginationMeta(**pagination),
     )
 
@@ -70,7 +71,7 @@ async def get_stock_level_by_location(
     """Get stock level for an item in a warehouse. 404 if not found."""
     svc = StockLevelService(db)
     s = svc.get(item_id, warehouse_id, current_user.organization_id)
-    return StockLevelResponse.model_validate(s)
+    return stock_level_to_response(s)
 
 
 @router.get("/{level_id}", response_model=StockLevelResponse)
@@ -81,7 +82,7 @@ async def get_stock_level(
 ):
     """Get stock level by ID."""
     svc = StockLevelService(db)
-    return StockLevelResponse.model_validate(
+    return stock_level_to_response(
         svc.get_by_id(level_id, current_user.organization_id)
     )
 
@@ -97,7 +98,7 @@ async def update_stock_level_by_location(
     """Update stock level for an item in a warehouse."""
     svc = StockLevelService(db)
     s = svc.update(item_id, warehouse_id, data, current_user.organization_id)
-    return StockLevelResponse.model_validate(s)
+    return stock_level_to_response(s)
 
 
 @router.put("/{level_id}", response_model=StockLevelResponse)
@@ -110,4 +111,4 @@ async def update_stock_level(
     """Update stock level by ID."""
     svc = StockLevelService(db)
     s = svc.update_by_id(level_id, data, current_user.organization_id)
-    return StockLevelResponse.model_validate(s)
+    return stock_level_to_response(s)
