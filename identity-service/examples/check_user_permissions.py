@@ -87,90 +87,102 @@ class PermissionsClient:
         return False
 
 
+def display_user_permissions(my_perms: dict):
+    """Display user permission details"""
+    print(f"\nUser ID: {my_perms['user_id']}")
+    print(f"Organization ID: {my_perms['organization_id']}")
+    print(f"Has Access: {my_perms['has_access']}")
+    print(f"Roles: {', '.join(my_perms['roles'])}")
+    print(f"\nPermissions ({len(my_perms['permissions'])}):")
+    for perm in sorted(my_perms["permissions"]):
+        print(f"  - {perm}")
+
+
+def check_specific_permissions(client: PermissionsClient, user_permissions: list[str]):
+    """Check and display specific permissions"""
+    print("\n" + "=" * 60)
+    print("Permission Checks:")
+    print("=" * 60)
+
+    permissions_to_check = [
+        "user.read",
+        "user.create",
+        "item.read",
+        "item.create",
+        "invoice.read",
+        "invoice.create",
+    ]
+
+    for perm in permissions_to_check:
+        has_perm = client.has_permission(user_permissions, perm)
+        status = "✓" if has_perm else "✗"
+        print(f"{status} {perm}")
+
+
+def show_navigation_items(client: PermissionsClient, user_permissions: list[str]):
+    """Display navigation items based on permissions"""
+    print("\n" + "=" * 60)
+    print("Navigation Items (based on permissions):")
+    print("=" * 60)
+
+    nav_items = {
+        "Users": "user.read",
+        "Items": "item.read",
+        "Invoices": "invoice.read",
+        "Customers": "customer.read",
+        "Reports": "report.read",
+        "Settings": "org.update",
+    }
+
+    for nav_item, required_perm in nav_items.items():
+        if client.has_permission(user_permissions, required_perm):
+            print(f"  ✓ Show: {nav_item}")
+        else:
+            print(f"  ✗ Hide: {nav_item}")
+
+
+def check_other_user_permissions(
+    client: PermissionsClient, user_permissions: list[str], organization_id: str
+):
+    """Check another user's permissions if current user has user.read permission"""
+    if not client.has_permission(user_permissions, "user.read"):
+        return
+
+    print("\n" + "=" * 60)
+    print("Checking another user's permissions...")
+    print("=" * 60)
+
+    OTHER_USER_ID = "22222222-2222-2222-2222-222222222222"
+
+    try:
+        other_perms = client.get_user_permissions(OTHER_USER_ID, organization_id)
+        print(f"\nUser ID: {other_perms['user_id']}")
+        print(f"Has Access: {other_perms['has_access']}")
+        print(f"Roles: {', '.join(other_perms['roles'])}")
+        print(f"Permissions: {len(other_perms['permissions'])}")
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            print(f"User {OTHER_USER_ID} not found in organization")
+        else:
+            raise
+
+
 def main():
     """Example usage of the permissions API"""
-
-    # Configuration
     BASE_URL = "http://localhost:8000"
     ACCESS_TOKEN = "your-access-token-here"
     ORGANIZATION_ID = "11111111-1111-1111-1111-111111111111"
 
-    # Create client
     client = PermissionsClient(BASE_URL, ACCESS_TOKEN)
 
     try:
-        # Get current user's permissions
         print("Fetching current user's permissions...")
         my_perms = client.get_my_permissions(ORGANIZATION_ID)
 
-        print(f"\nUser ID: {my_perms['user_id']}")
-        print(f"Organization ID: {my_perms['organization_id']}")
-        print(f"Has Access: {my_perms['has_access']}")
-        print(f"Roles: {', '.join(my_perms['roles'])}")
-        print(f"\nPermissions ({len(my_perms['permissions'])}):")
-        for perm in sorted(my_perms["permissions"]):
-            print(f"  - {perm}")
-
-        # Check specific permissions
-        print("\n" + "=" * 60)
-        print("Permission Checks:")
-        print("=" * 60)
-
-        permissions_to_check = [
-            "user.read",
-            "user.create",
-            "item.read",
-            "item.create",
-            "invoice.read",
-            "invoice.create",
-        ]
-
-        for perm in permissions_to_check:
-            has_perm = client.has_permission(my_perms["permissions"], perm)
-            status = "✓" if has_perm else "✗"
-            print(f"{status} {perm}")
-
-        # Example: Determine which navigation items to show
-        print("\n" + "=" * 60)
-        print("Navigation Items (based on permissions):")
-        print("=" * 60)
-
-        nav_items = {
-            "Users": "user.read",
-            "Items": "item.read",
-            "Invoices": "invoice.read",
-            "Customers": "customer.read",
-            "Reports": "report.read",
-            "Settings": "org.update",
-        }
-
-        for nav_item, required_perm in nav_items.items():
-            if client.has_permission(my_perms["permissions"], required_perm):
-                print(f"  ✓ Show: {nav_item}")
-            else:
-                print(f"  ✗ Hide: {nav_item}")
-
-        # Example: Check another user's permissions (if you have user.read)
-        if client.has_permission(my_perms["permissions"], "user.read"):
-            print("\n" + "=" * 60)
-            print("Checking another user's permissions...")
-            print("=" * 60)
-
-            OTHER_USER_ID = "22222222-2222-2222-2222-222222222222"
-
-            try:
-                other_perms = client.get_user_permissions(
-                    OTHER_USER_ID, ORGANIZATION_ID
-                )
-                print(f"\nUser ID: {other_perms['user_id']}")
-                print(f"Has Access: {other_perms['has_access']}")
-                print(f"Roles: {', '.join(other_perms['roles'])}")
-                print(f"Permissions: {len(other_perms['permissions'])}")
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 404:
-                    print(f"User {OTHER_USER_ID} not found in organization")
-                else:
-                    raise
+        display_user_permissions(my_perms)
+        check_specific_permissions(client, my_perms["permissions"])
+        show_navigation_items(client, my_perms["permissions"])
+        check_other_user_permissions(client, my_perms["permissions"], ORGANIZATION_ID)
 
     except requests.exceptions.HTTPError as e:
         print(f"\nError: {e}")
