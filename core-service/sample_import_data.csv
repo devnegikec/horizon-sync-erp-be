@@ -1,0 +1,3 @@
+item_code,item_name,description,item_group_name,item_type,status,uom,standard_rate
+ITEM007,Chicken26,Leg pieces,Food,stock,active,Nos,1200.99
+ITEM008,Toilet cleaner26,cleanner,Chemical,stock,active,Nos,288.99

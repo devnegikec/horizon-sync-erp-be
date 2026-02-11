@@ -1,0 +1,454 @@
+{
+  "info": {
+    "name": "Horizon Sync - Bulk Item Import/Export",
+    "description": "Collection for testing bulk item import and export operations in core-service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "your_access_token_here",
+      "type": "string"
+    },
+    {
+      "key": "organization_id",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "string"
+    },
+    {
+      "key": "import_job_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "export_job_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Bulk Import Operations",
+      "item": [
+        {
+          "name": "1. Upload CSV File for Import",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.environment.set('import_job_id', jsonData.id);",
+                  "    console.log('Import Job ID: ' + jsonData.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/bulk-import/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import",
+                "upload"
+              ]
+            },
+            "description": "Upload a CSV file for bulk item import.\n\nSupported formats: CSV, XLSX, JSON\nMax file size: 50MB\nMax rows: 10,000\n\nNote: Replace the file input with your actual CSV file"
+          }
+        },
+        {
+          "name": "2. Get Import Job Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-import/{{import_job_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import",
+                "{{import_job_id}}",
+                "status"
+              ]
+            },
+            "description": "Get the current status of an import job including statistics and completion status."
+          }
+        },
+        {
+          "name": "3. Get Import Job Errors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-import/{{import_job_id}}/errors",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import",
+                "{{import_job_id}}",
+                "errors"
+              ]
+            },
+            "description": "Get detailed error information for a failed import job with row numbers and error descriptions."
+          }
+        },
+        {
+          "name": "4. List All Import Jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-import?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List all bulk import jobs for the current organization with pagination."
+          }
+        },
+        {
+          "name": "5. Download CSV Import Template",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-import/template/csv",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import",
+                "template",
+                "csv"
+              ]
+            },
+            "description": "Download a CSV template with sample data and proper columns for bulk import."
+          }
+        },
+        {
+          "name": "6. Download XLSX Import Template",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-import/template/xlsx",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-import",
+                "template",
+                "xlsx"
+              ]
+            },
+            "description": "Download an XLSX template with sample data and proper columns for bulk import."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bulk Export Operations",
+      "item": [
+        {
+          "name": "1. Create Export Job with Filters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.environment.set('export_job_id', jsonData.id);",
+                  "    console.log('Export Job ID: ' + jsonData.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_format\": \"csv\",\n  \"file_name\": \"stock_items_export\",\n  \"filters\": {\n    \"item_type\": \"Stock\",\n    \"status\": \"Active\"\n  },\n  \"selected_columns\": [\n    \"id\",\n    \"item_code\",\n    \"item_name\",\n    \"description\",\n    \"item_type\",\n    \"status\",\n    \"uom\",\n    \"standard_rate\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bulk-export",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export"
+              ]
+            },
+            "description": "Create a bulk export job with specific filters and column selection."
+          }
+        },
+        {
+          "name": "2. Create Export Job (XLSX Format)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_format\": \"xlsx\",\n  \"file_name\": \"all_items_export\",\n  \"filters\": null,\n  \"selected_columns\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bulk-export",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export"
+              ]
+            },
+            "description": "Create a bulk export job in XLSX format with all items and columns."
+          }
+        },
+        {
+          "name": "3. Create Export Job (JSON Format)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_format\": \"json\",\n  \"file_name\": \"items_export_json\",\n  \"filters\": {\n    \"search\": \"widget\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/bulk-export",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export"
+              ]
+            },
+            "description": "Create a bulk export job in JSON format with search filter."
+          }
+        },
+        {
+          "name": "4. Get Export Job Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-export/{{export_job_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export",
+                "{{export_job_id}}",
+                "status"
+              ]
+            },
+            "description": "Get the current status of an export job."
+          }
+        },
+        {
+          "name": "5. Download Exported File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-export/{{export_job_id}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export",
+                "{{export_job_id}}",
+                "download"
+              ]
+            },
+            "description": "Download the exported file from a completed export job."
+          }
+        },
+        {
+          "name": "6. List All Export Jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-export?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List all bulk export jobs for the current organization with pagination."
+          }
+        },
+        {
+          "name": "7. Quick Export (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-export/quick?file_format=csv&item_type=Stock&status=Active",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export",
+                "quick"
+              ],
+              "query": [
+                {
+                  "key": "file_format",
+                  "value": "csv"
+                },
+                {
+                  "key": "item_type",
+                  "value": "Stock"
+                },
+                {
+                  "key": "status",
+                  "value": "Active"
+                }
+              ]
+            },
+            "description": "Quick export without creating a job, returns file directly. Supported formats: csv, xlsx, json"
+          }
+        },
+        {
+          "name": "8. Quick Export (XLSX with Search)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bulk-export/quick?file_format=xlsx&search=widget",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bulk-export",
+                "quick"
+              ],
+              "query": [
+                {
+                  "key": "file_format",
+                  "value": "xlsx"
+                },
+                {
+                  "key": "search",
+                  "value": "widget"
+                }
+              ]
+            },
+            "description": "Quick export with search filter for items matching 'widget'."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sample Data & Testing",
+      "item": [
+        {
+          "name": "Sample CSV Import Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://example.com",
+              "protocol": "https",
+              "host": [
+                "example.com"
+              ]
+            },
+            "description": "# Sample CSV Import Data\n\nUse this data to create a CSV file for testing bulk import:\n\n```csv\nitem_code,item_name,description,item_group_id,item_type,status,uom,standard_rate\nITEM001,Laptop Computer,Dell XPS 13 Laptop,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,1299.99\nITEM002,Office Chair,Ergonomic Office Chair,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,299.99\nITEM003,Desk Lamp,LED Desk Lamp with USB,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,49.99\nITEM004,Wireless Mouse,Logitech Wireless Mouse,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,29.99\nITEM005,USB-C Cable,3 Pack USB-C Cables,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,19.99\nITEM006,Keyboard,Mechanical RGB Keyboard,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,89.99\nITEM007,Monitor Stand,Adjustable Monitor Stand,,Stock,Active,Nos,69.99\nITEM008,Webcam,1080p HD Webcam,,Stock,Inactive,Nos,59.99\nITEM009,Headphones,Wireless Bluetooth Headphones,,Stock,Active,Nos,129.99\nITEM010,Screen Protector,MacBook Pro Screen Protector,,Stock,Active,Nos,9.99\n```\n\n## Steps to test:\n1. Copy the CSV data above\n2. Create a file named `items_import.csv`\n3. Use the 'Upload CSV File for Import' request in Bulk Import Operations\n4. Select the CSV file and send\n5. Check the import job status using the job ID returned"
+          }
+        },
+        {
+          "name": "Expected Response Examples",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://example.com",
+              "protocol": "https",
+              "host": [
+                "example.com"
+              ]
+            },
+            "description": "# Expected Response Examples\n\n## Import Job Status - Success (202 Accepted)\n```json\n{\n  \"id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"organization_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"created_by_id\": \"660e8400-e29b-41d4-a716-446655440000\",\n  \"file_name\": \"items_import.csv\",\n  \"status\": \"PENDING\",\n  \"total_rows\": 0,\n  \"successful_rows\": 0,\n  \"failed_rows\": 0,\n  \"error_details\": null,\n  \"summary\": null,\n  \"created_at\": \"2026-02-03T10:30:00Z\",\n  \"updated_at\": \"2026-02-03T10:30:00Z\",\n  \"completed_at\": null\n}\n```\n\n## Import Job Status - Completed (200 OK)\n```json\n{\n  \"id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"organization_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"created_by_id\": \"660e8400-e29b-41d4-a716-446655440000\",\n  \"file_name\": \"items_import.csv\",\n  \"status\": \"COMPLETED\",\n  \"total_rows\": 10,\n  \"successful_rows\": 9,\n  \"failed_rows\": 1,\n  \"error_details\": {\n    \"errors\": [\n      {\n        \"row_number\": 8,\n        \"errors\": [\"Item code 'ITEM008' already exists\"],\n        \"data\": {\"item_code\": \"ITEM008\", \"item_name\": \"Webcam\"}\n      }\n    ]\n  },\n  \"summary\": \"Import completed: 9/10 rows successful\",\n  \"created_at\": \"2026-02-03T10:30:00Z\",\n  \"updated_at\": \"2026-02-03T10:35:00Z\",\n  \"completed_at\": \"2026-02-03T10:35:00Z\"\n}\n```\n\n## Export Job Status - Completed (200 OK)\n```json\n{\n  \"id\": \"a47ac10b-58cc-4372-a567-0e02b2c3d470\",\n  \"organization_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"created_by_id\": \"660e8400-e29b-41d4-a716-446655440000\",\n  \"file_name\": \"stock_items_export\",\n  \"file_format\": \"csv\",\n  \"status\": \"COMPLETED\",\n  \"total_rows\": \"42\",\n  \"filters\": {\n    \"item_type\": \"Stock\",\n    \"status\": \"Active\"\n  },\n  \"selected_columns\": [\"id\", \"item_code\", \"item_name\", \"description\", \"status\"],\n  \"created_at\": \"2026-02-03T10:40:00Z\",\n  \"updated_at\": \"2026-02-03T10:40:15Z\",\n  \"completed_at\": \"2026-02-03T10:40:15Z\",\n  \"expires_at\": \"2026-02-04T10:40:15Z\"\n}\n```\n\n## List Import Jobs - Paginated Response (200 OK)\n```json\n{\n  \"items\": [\n    {\n      \"id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n      \"organization_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n      \"created_by_id\": \"660e8400-e29b-41d4-a716-446655440000\",\n      \"file_name\": \"items_import.csv\",\n      \"status\": \"COMPLETED\",\n      \"total_rows\": 10,\n      \"successful_rows\": 9,\n      \"failed_rows\": 1,\n      \"error_details\": null,\n      \"summary\": \"Import completed: 9/10 rows successful\",\n      \"created_at\": \"2026-02-03T10:30:00Z\",\n      \"updated_at\": \"2026-02-03T10:35:00Z\",\n      \"completed_at\": \"2026-02-03T10:35:00Z\"\n    }\n  ],\n  \"total\": 1,\n  \"page\": 1,\n  \"page_size\": 20,\n  \"total_pages\": 1\n}\n```"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,275 @@
+# Postman Collection Summary
+
+## 📦 What You Have
+
+A complete Postman collection with **11 pre-configured requests** for testing bulk item import and export operations.
+
+## 📁 Files Delivered
+
+### 1. **Horizon_Sync_Bulk_Import_Export.postman_collection.json**
+   - Main Postman collection file
+   - All 11 requests with examples
+   - Auto-save variables
+   - Pre-request scripts
+
+### 2. **POSTMAN_COLLECTION_README.md**
+   - Detailed setup instructions
+   - Complete API reference
+   - Response examples
+   - Troubleshooting guide
+
+### 3. **QUICK_START_POSTMAN.md**
+   - 5-minute quick start
+   - Common test scenarios
+   - Useful tips and tricks
+
+### 4. **sample_import_data.csv**
+   - 25 sample items ready to import
+   - Proper column structure
+   - Mix of active/inactive items
+
+### 5. **BULK_OPERATIONS_TABLES.md**
+   - Database table structure
+   - Schema documentation
+   - Sample queries
+
+## 🚀 Quick Start
+
+### 1. Import Collection
+```
+Postman → File → Import → Select JSON file → Import
+```
+
+### 2. Set Variables
+```
+Environment dropdown → Set:
+- base_url = http://localhost:8001/api/v1
+- access_token = YOUR_JWT_TOKEN
+- organization_id = YOUR_ORG_UUID
+```
+
+### 3. Test Upload
+```
+Bulk Import Operations → 1. Upload CSV File for Import → Send
+```
+
+### 4. Check Status
+```
+Bulk Import Operations → 2. Get Import Job Status → Send
+```
+
+## 📋 All Endpoints Included
+
+### Bulk Import (6 endpoints)
+- ✅ Upload CSV/XLSX/JSON file
+- ✅ Get job status with statistics
+- ✅ View detailed error list
+- ✅ List all import jobs (paginated)
+- ✅ Download CSV template
+- ✅ Download XLSX template
+
+### Bulk Export (5 endpoints)
+- ✅ Create export job with filters
+- ✅ Export in CSV/XLSX/JSON
+- ✅ Get job status
+- ✅ Download exported file
+- ✅ List all export jobs (paginated)
+- ✅ Quick export without job tracking
+
+## 🔑 Key Features
+
+### Authentication
+- Bearer token authentication
+- Auto-populated from environment variable
+- Ready for JWT tokens
+
+### Job Tracking
+- Status monitoring (PENDING → PROCESSING → COMPLETED)
+- Error details with row numbers
+- Statistics (total, successful, failed)
+
+### Filters & Options
+- Item type filter
+- Status filter
+- Search by item code/name
+- Column selection
+- Pagination support
+
+### File Support
+- CSV format
+- XLSX format
+- JSON format
+- 50MB max file size
+- 10,000 rows max
+
+## 📊 Sample Data Included
+
+25 sample items covering:
+- Computer equipment (Laptops, Monitors)
+- Office furniture (Chairs, Desks)
+- Peripherals (Mouse, Keyboard, Webcam)
+- Supplies (Paper, Ink, Labels)
+- Various statuses (Active/Inactive)
+
+## 🔄 Response Auto-Population
+
+Collection has tests that automatically:
+- Save import job ID to `import_job_id` variable
+- Save export job ID to `export_job_id` variable
+- Enable chaining requests
+
+## 📝 Example Requests
+
+### Import Example
+```bash
+POST /bulk-import/upload
+Body: form-data with CSV file
+Response: Job ID + Status
+```
+
+### Export Example
+```bash
+POST /bulk-export
+Body: {
+  "file_format": "csv",
+  "filters": {"item_type": "Stock", "status": "Active"}
+}
+Response: Job ID + Export URL
+```
+
+## ✨ Special Features
+
+1. **Pre-request Scripts**
+   - Auto-sets authorization headers
+   - Validates environment setup
+
+2. **Tests**
+   - Auto-save job IDs
+   - Response validation
+   - Time tracking
+
+3. **Documentation**
+   - Every request has full description
+   - Sample responses in comments
+   - Usage guidelines
+
+4. **Organization Support**
+   - Organization ID in variables
+   - Tenant-aware requests
+   - Role-based access
+
+## 🎯 Common Workflows
+
+### Workflow 1: Simple Import
+1. Upload CSV → 2. Check Status → 3. Done
+
+### Workflow 2: Import with Error Review
+1. Upload CSV → 2. Check Status → 3. Get Errors → 4. Fix & Re-upload
+
+### Workflow 3: Export & Download
+1. Create Export → 2. Check Status → 3. Download File
+
+### Workflow 4: Quick Export
+1. Quick Export (direct download, no job tracking)
+
+## 🔍 Status Codes
+
+- **202 Accepted** - Job created successfully
+- **200 OK** - Request successful
+- **400 Bad Request** - Invalid data
+- **401 Unauthorized** - Missing/invalid token
+- **404 Not Found** - Job not found
+
+## 📚 Documentation Structure
+
+```
+📄 QUICK_START_POSTMAN.md (start here!)
+   ├─ 5-minute setup
+   ├─ Test scenarios
+   └─ Troubleshooting
+
+📄 POSTMAN_COLLECTION_README.md (detailed)
+   ├─ Setup instructions
+   ├─ API reference
+   ├─ Response examples
+   └─ Tips & tricks
+
+📄 BULK_OPERATIONS_TABLES.md (database)
+   ├─ Table structure
+   ├─ Columns & types
+   └─ Sample queries
+
+📄 sample_import_data.csv
+   └─ 25 ready-to-use items
+```
+
+## ✅ Before You Start
+
+Ensure you have:
+- [ ] Postman installed
+- [ ] Core-service running on port 8001
+- [ ] Valid JWT token
+- [ ] Organization UUID
+- [ ] Database tables created
+
+## 🆘 Need Help?
+
+1. **Check Quick Start** - QUICK_START_POSTMAN.md
+2. **Check Collection README** - POSTMAN_COLLECTION_README.md
+3. **Check API Docs** - http://localhost:8001/docs
+4. **View Backend Logs** - `docker logs horizon_core`
+5. **Check Database** - `docker exec horizon_postgres psql -U horizon_user -d core_db -c "SELECT * FROM bulk_import_jobs;"`
+
+## 🎓 Learning Path
+
+### Beginner
+1. Read QUICK_START_POSTMAN.md
+2. Import collection
+3. Set variables
+4. Upload sample CSV
+5. Check import status
+
+### Intermediate
+1. Try different file formats
+2. Use filters in export
+3. Review error details
+4. Test pagination
+
+### Advanced
+1. Create automation scripts
+2. Integrate with CI/CD
+3. Monitor large imports
+4. Optimize filters
+
+## 📦 Version Info
+
+- **Collection Version:** 1.0.0
+- **API Version:** v1
+- **Created:** 2026-02-03
+- **Core-Service:** Latest
+- **Database:** PostgreSQL 15
+
+## 🚢 Deployment Checklist
+
+Before going to production:
+- [ ] Update base_url for production
+- [ ] Use production JWT token
+- [ ] Test with production database
+- [ ] Monitor file upload limits
+- [ ] Set up error notifications
+- [ ] Configure file retention policy
+- [ ] Test with large datasets (5K+ rows)
+- [ ] Document custom filters
+
+## 📞 Support
+
+For issues with the collection or API:
+- Check the included documentation
+- Review backend logs
+- Verify database tables exist
+- Ensure authentication is configured
+- Check network connectivity
+
+---
+
+**You're all set! Start with QUICK_START_POSTMAN.md** ✨
