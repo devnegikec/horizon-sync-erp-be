@@ -21,32 +21,34 @@ class SalesOrderService:
         payload["organization_id"] = organization_id
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
-        
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = SalesOrderStatus(payload["status"])
-        
+
         # Extract items and calculate grand_total
         items_data = payload.pop("items", [])
         grand_total = self._calculate_grand_total(items_data)
         payload["grand_total"] = grand_total
-        
+
         # Create sales order
         sales_order = self.repo.create(payload)
-        
+
         # Create sales order items
         for item_data in items_data:
             item_payload = dict(item_data)
             item_payload["organization_id"] = organization_id
             item_payload["sales_order_id"] = sales_order.id
             # Calculate amount as qty * rate
-            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(str(item_payload["rate"]))
+            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
+                str(item_payload["rate"])
+            )
             # Initialize billed_qty and delivered_qty to 0
             item_payload["billed_qty"] = Decimal("0")
             item_payload["delivered_qty"] = Decimal("0")
             item = SalesOrderItem(**item_payload)
             self.db.add(item)
-        
+
         self.db.commit()
         self.db.refresh(sales_order)
         return self._to_response(sales_order)
@@ -93,30 +95,32 @@ class SalesOrderService:
         sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
         if not sales_order:
             raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
-        
+
         payload = {k: v for k, v in data.items() if v is not None and k != "items"}
-        
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = SalesOrderStatus(payload["status"])
-        
+
         payload["updated_by"] = user_id
-        
+
         # Handle items update if provided
         if "items" in data:
             items_data = data["items"]
-            
+
             # Delete existing items
             for item in sales_order.items:
                 self.db.delete(item)
-            
+
             # Create new items
             for item_data in items_data:
                 item_payload = dict(item_data)
                 item_payload["organization_id"] = organization_id
                 item_payload["sales_order_id"] = sales_order.id
                 # Calculate amount as qty * rate
-                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(str(item_payload["rate"]))
+                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
+                    str(item_payload["rate"])
+                )
                 # Initialize billed_qty and delivered_qty to 0 if not provided
                 if "billed_qty" not in item_payload:
                     item_payload["billed_qty"] = Decimal("0")
@@ -124,10 +128,10 @@ class SalesOrderService:
                     item_payload["delivered_qty"] = Decimal("0")
                 item = SalesOrderItem(**item_payload)
                 self.db.add(item)
-            
+
             # Recalculate grand_total
             payload["grand_total"] = self._calculate_grand_total(items_data)
-        
+
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
         return self._to_response(sales_order)
@@ -139,7 +143,11 @@ class SalesOrderService:
         self.repo.delete(sales_order)
 
     def update_status(
-        self, sales_order_id: UUID, new_status: str, organization_id: UUID, user_id: UUID
+        self,
+        sales_order_id: UUID,
+        new_status: str,
+        organization_id: UUID,
+        user_id: UUID,
     ) -> dict:
         """Update sales order status with validation
 
@@ -173,14 +181,19 @@ class SalesOrderService:
         }
 
         # Set submitted_at when status changes to CONFIRMED
-        if new_status_enum == SalesOrderStatus.CONFIRMED and sales_order.submitted_at is None:
+        if (
+            new_status_enum == SalesOrderStatus.CONFIRMED
+            and sales_order.submitted_at is None
+        ):
             from datetime import UTC, datetime
+
             payload["submitted_at"] = datetime.now(UTC)
 
         # Update the sales order
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
         return self._to_response(sales_order)
+
     def convert_to_invoice(
         self,
         sales_order_id: UUID,
@@ -204,6 +217,7 @@ class SalesOrderService:
             ValueError: If billing quantities exceed pending_billing_qty
         """
         from datetime import UTC, datetime
+
         from app.models.base import InvoiceStatus, InvoiceType
         from app.models.invoice import Invoice
 
@@ -239,8 +253,12 @@ class SalesOrderService:
             for item_to_bill in items_to_bill:
                 # Find the corresponding sales order item
                 so_item = next(
-                    (item for item in sales_order.items if item.id == item_to_bill["item_id"]),
-                    None
+                    (
+                        item
+                        for item in sales_order.items
+                        if item.id == item_to_bill["item_id"]
+                    ),
+                    None,
                 )
                 if so_item:
                     qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
@@ -311,9 +329,7 @@ class SalesOrderService:
         # CANCELLED can be set from any state except CLOSED
         if new_status == SalesOrderStatus.CANCELLED:
             if current_status == SalesOrderStatus.CLOSED:
-                raise ValueError(
-                    "Cannot cancel a sales order that is already CLOSED"
-                )
+                raise ValueError("Cannot cancel a sales order that is already CLOSED")
             return
 
         # Cannot transition from CANCELLED or CLOSED to any other status
@@ -340,6 +356,7 @@ class SalesOrderService:
                 f"Invalid status transition from {current_status.value} to {new_status.value}. "
                 f"Allowed transitions: {', '.join(s.value for s in allowed_next_statuses)}"
             )
+
     def _validate_billing_quantities(
         self, sales_order, items_to_bill: list[dict]
     ) -> None:
@@ -381,9 +398,7 @@ class SalesOrderService:
                     f"Billing quantity must be greater than 0 for item {item_id}"
                 )
 
-    def _update_billed_quantities(
-        self, sales_order, items_to_bill: list[dict]
-    ) -> None:
+    def _update_billed_quantities(self, sales_order, items_to_bill: list[dict]) -> None:
         """Update billed_qty for each billed item
 
         Args:
@@ -401,8 +416,6 @@ class SalesOrderService:
 
             if so_item:
                 so_item.billed_qty += qty_to_bill
-
-
 
     def _calculate_grand_total(self, items: list[dict]) -> Decimal:
         """Calculate grand total from line items"""

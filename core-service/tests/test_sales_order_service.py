@@ -11,11 +11,7 @@ from app.core.exceptions import ResourceNotFoundException
 from app.models.base import SalesOrderStatus
 from app.models.customer import Customer
 from app.models.item import Item
-from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.services.sales_order_service import SalesOrderService
-
-
-
 
 
 @pytest.fixture
@@ -75,7 +71,7 @@ class TestSalesOrderServiceCreate:
     ):
         """Test creating a sales order with line items"""
         service = SalesOrderService(db_session)
-        
+
         data = {
             "sales_order_no": "SO-001",
             "customer_id": customer.id,
@@ -91,9 +87,9 @@ class TestSalesOrderServiceCreate:
                 }
             ],
         }
-        
+
         result = service.create(data, organization_id, user_id)
-        
+
         assert result["sales_order_no"] == "SO-001"
         assert result["customer_id"] == customer.id
         assert result["status"] == "draft"
@@ -103,7 +99,7 @@ class TestSalesOrderServiceCreate:
         assert result["created_by"] == user_id
         assert result["updated_by"] == user_id
         assert len(result["items"]) == 1
-        
+
         # Check line item
         line_item = result["items"][0]
         assert line_item["item_id"] == item.id
@@ -125,7 +121,7 @@ class TestSalesOrderServiceCreate:
     ):
         """Test that billed_qty and delivered_qty are initialized to 0"""
         service = SalesOrderService(db_session)
-        
+
         data = {
             "sales_order_no": "SO-002",
             "customer_id": customer.id,
@@ -139,9 +135,9 @@ class TestSalesOrderServiceCreate:
                 }
             ],
         }
-        
+
         result = service.create(data, organization_id, user_id)
-        
+
         line_item = result["items"][0]
         assert line_item["billed_qty"] == Decimal("0")
         assert line_item["delivered_qty"] == Decimal("0")
@@ -156,7 +152,7 @@ class TestSalesOrderServiceCreate:
     ):
         """Test that grand_total is calculated from line items"""
         service = SalesOrderService(db_session)
-        
+
         data = {
             "sales_order_no": "SO-003",
             "customer_id": customer.id,
@@ -176,9 +172,9 @@ class TestSalesOrderServiceCreate:
                 },
             ],
         }
-        
+
         result = service.create(data, organization_id, user_id)
-        
+
         # grand_total should be (10 * 100) + (5 * 200) = 2000
         assert result["grand_total"] == Decimal("2000.00")
 
@@ -196,7 +192,7 @@ class TestSalesOrderServiceRead:
     ):
         """Test getting a sales order by ID includes pending quantities"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-004",
@@ -211,15 +207,15 @@ class TestSalesOrderServiceRead:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Get the sales order
         result = service.get_by_id(created["id"], organization_id)
-        
+
         assert result["id"] == created["id"]
         assert len(result["items"]) == 1
-        
+
         line_item = result["items"][0]
         assert line_item["pending_billing_qty"] == Decimal("10.000")
         assert line_item["pending_delivery_qty"] == Decimal("10.000")
@@ -231,7 +227,7 @@ class TestSalesOrderServiceRead:
     ):
         """Test getting a non-existent sales order raises exception"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ResourceNotFoundException):
             service.get_by_id(uuid.uuid4(), organization_id)
 
@@ -245,7 +241,7 @@ class TestSalesOrderServiceRead:
     ):
         """Test getting a list of sales orders with pagination"""
         service = SalesOrderService(db_session)
-        
+
         # Create multiple sales orders
         for i in range(3):
             data = {
@@ -262,10 +258,10 @@ class TestSalesOrderServiceRead:
                 ],
             }
             service.create(data, organization_id, user_id)
-        
+
         # Get list
         items, pagination = service.get_list(organization_id, page=1, page_size=2)
-        
+
         assert len(items) == 2
         assert pagination["total_items"] == 3
         assert pagination["total_pages"] == 2
@@ -286,7 +282,7 @@ class TestSalesOrderServiceUpdate:
     ):
         """Test updating a sales order"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-005",
@@ -301,16 +297,16 @@ class TestSalesOrderServiceUpdate:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Update the sales order
         update_data = {
             "remarks": "Updated remarks",
         }
-        
+
         result = service.update(created["id"], update_data, organization_id, user_id)
-        
+
         assert result["remarks"] == "Updated remarks"
         assert result["updated_by"] == user_id
 
@@ -328,7 +324,7 @@ class TestSalesOrderServiceDelete:
     ):
         """Test deleting a sales order"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-006",
@@ -343,16 +339,15 @@ class TestSalesOrderServiceDelete:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Delete the sales order
         service.delete(created["id"], organization_id)
-        
+
         # Verify it's deleted
         with pytest.raises(ResourceNotFoundException):
             service.get_by_id(created["id"], organization_id)
-
 
 
 class TestSalesOrderStatusTransitions:
@@ -364,7 +359,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test valid transition from DRAFT to CONFIRMED"""
         service = SalesOrderService(db_session)
-        
+
         # Should not raise an exception
         service._validate_status_transition(
             SalesOrderStatus.DRAFT, SalesOrderStatus.CONFIRMED
@@ -376,7 +371,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test valid transition from CONFIRMED to PARTIALLY_DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.CONFIRMED, SalesOrderStatus.PARTIALLY_DELIVERED
         )
@@ -387,7 +382,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test valid transition from CONFIRMED to DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.CONFIRMED, SalesOrderStatus.DELIVERED
         )
@@ -398,7 +393,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test valid transition from PARTIALLY_DELIVERED to DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.PARTIALLY_DELIVERED, SalesOrderStatus.DELIVERED
         )
@@ -409,7 +404,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test valid transition from DELIVERED to CLOSED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.DELIVERED, SalesOrderStatus.CLOSED
         )
@@ -420,7 +415,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test CANCELLED is allowed from DRAFT"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.DRAFT, SalesOrderStatus.CANCELLED
         )
@@ -431,7 +426,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test CANCELLED is allowed from CONFIRMED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.CONFIRMED, SalesOrderStatus.CANCELLED
         )
@@ -442,7 +437,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test CANCELLED is allowed from PARTIALLY_DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.PARTIALLY_DELIVERED, SalesOrderStatus.CANCELLED
         )
@@ -453,7 +448,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test CANCELLED is allowed from DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         service._validate_status_transition(
             SalesOrderStatus.DELIVERED, SalesOrderStatus.CANCELLED
         )
@@ -464,8 +459,10 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test CANCELLED is not allowed from CLOSED"""
         service = SalesOrderService(db_session)
-        
-        with pytest.raises(ValueError, match="Cannot cancel a sales order that is already CLOSED"):
+
+        with pytest.raises(
+            ValueError, match="Cannot cancel a sales order that is already CLOSED"
+        ):
             service._validate_status_transition(
                 SalesOrderStatus.CLOSED, SalesOrderStatus.CANCELLED
             )
@@ -476,7 +473,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test invalid transition from DRAFT to DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ValueError, match="Invalid status transition"):
             service._validate_status_transition(
                 SalesOrderStatus.DRAFT, SalesOrderStatus.DELIVERED
@@ -488,7 +485,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test invalid transition from DRAFT to CLOSED"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ValueError, match="Invalid status transition"):
             service._validate_status_transition(
                 SalesOrderStatus.DRAFT, SalesOrderStatus.CLOSED
@@ -500,7 +497,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test invalid transition from CONFIRMED to CLOSED"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ValueError, match="Invalid status transition"):
             service._validate_status_transition(
                 SalesOrderStatus.CONFIRMED, SalesOrderStatus.CLOSED
@@ -512,7 +509,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test that no transitions are allowed from CANCELLED"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ValueError, match="Cannot transition from cancelled"):
             service._validate_status_transition(
                 SalesOrderStatus.CANCELLED, SalesOrderStatus.DRAFT
@@ -524,7 +521,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test that no transitions are allowed from CLOSED"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ValueError, match="Cannot transition from closed"):
             service._validate_status_transition(
                 SalesOrderStatus.CLOSED, SalesOrderStatus.DRAFT
@@ -536,7 +533,7 @@ class TestSalesOrderStatusTransitions:
     ):
         """Test that transitioning to the same status is allowed (no-op)"""
         service = SalesOrderService(db_session)
-        
+
         # Should not raise an exception
         service._validate_status_transition(
             SalesOrderStatus.DRAFT, SalesOrderStatus.DRAFT
@@ -559,7 +556,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test updating status from DRAFT to CONFIRMED"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-STATUS-001",
@@ -574,14 +571,16 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
         assert created["status"] == "draft"
         assert created["submitted_at"] is None
-        
+
         # Update status to CONFIRMED
-        result = service.update_status(created["id"], "confirmed", organization_id, user_id)
-        
+        result = service.update_status(
+            created["id"], "confirmed", organization_id, user_id
+        )
+
         assert result["status"] == "confirmed"
         assert result["submitted_at"] is not None
         assert result["updated_by"] == user_id
@@ -596,7 +595,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test that submitted_at is set only once when transitioning to CONFIRMED"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-STATUS-002",
@@ -611,16 +610,20 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Update status to CONFIRMED
-        result1 = service.update_status(created["id"], "confirmed", organization_id, user_id)
+        result1 = service.update_status(
+            created["id"], "confirmed", organization_id, user_id
+        )
         first_submitted_at = result1["submitted_at"]
-        
+
         # Update status to CONFIRMED again (no-op)
-        result2 = service.update_status(created["id"], "confirmed", organization_id, user_id)
-        
+        result2 = service.update_status(
+            created["id"], "confirmed", organization_id, user_id
+        )
+
         # submitted_at should remain the same
         assert result2["submitted_at"] == first_submitted_at
 
@@ -634,7 +637,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test updating status from CONFIRMED to DELIVERED"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-STATUS-003",
@@ -649,15 +652,17 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Update to CONFIRMED first
         service.update_status(created["id"], "confirmed", organization_id, user_id)
-        
+
         # Update to DELIVERED
-        result = service.update_status(created["id"], "delivered", organization_id, user_id)
-        
+        result = service.update_status(
+            created["id"], "delivered", organization_id, user_id
+        )
+
         assert result["status"] == "delivered"
 
     def test_update_status_invalid_transition_raises_error(
@@ -670,7 +675,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test that invalid status transition raises ValueError"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-STATUS-004",
@@ -685,9 +690,9 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Try to update from DRAFT to DELIVERED (invalid)
         with pytest.raises(ValueError, match="Invalid status transition"):
             service.update_status(created["id"], "delivered", organization_id, user_id)
@@ -702,7 +707,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test updating status to CANCELLED from DRAFT"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order
         data = {
             "sales_order_no": "SO-STATUS-005",
@@ -717,12 +722,14 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Update to CANCELLED
-        result = service.update_status(created["id"], "cancelled", organization_id, user_id)
-        
+        result = service.update_status(
+            created["id"], "cancelled", organization_id, user_id
+        )
+
         assert result["status"] == "cancelled"
 
     def test_update_status_not_found_raises_exception(
@@ -733,7 +740,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test updating status of non-existent sales order raises exception"""
         service = SalesOrderService(db_session)
-        
+
         with pytest.raises(ResourceNotFoundException):
             service.update_status(uuid.uuid4(), "confirmed", organization_id, user_id)
 
@@ -747,7 +754,7 @@ class TestSalesOrderUpdateStatus:
     ):
         """Test that CLOSED sales order cannot be cancelled"""
         service = SalesOrderService(db_session)
-        
+
         # Create a sales order and move it to CLOSED
         data = {
             "sales_order_no": "SO-STATUS-006",
@@ -762,18 +769,19 @@ class TestSalesOrderUpdateStatus:
                 }
             ],
         }
-        
+
         created = service.create(data, organization_id, user_id)
-        
+
         # Move through the workflow to CLOSED
         service.update_status(created["id"], "confirmed", organization_id, user_id)
         service.update_status(created["id"], "delivered", organization_id, user_id)
         service.update_status(created["id"], "closed", organization_id, user_id)
-        
-        # Try to cancel - should fail
-        with pytest.raises(ValueError, match="Cannot cancel a sales order that is already CLOSED"):
-            service.update_status(created["id"], "cancelled", organization_id, user_id)
 
+        # Try to cancel - should fail
+        with pytest.raises(
+            ValueError, match="Cannot cancel a sales order that is already CLOSED"
+        ):
+            service.update_status(created["id"], "cancelled", organization_id, user_id)
 
 
 class TestSalesOrderConvertToInvoice:
@@ -789,7 +797,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test converting a sales order to invoice with full billing"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-001",
@@ -807,9 +815,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # Convert to invoice with full billing
         items_to_bill = [
             {
@@ -817,11 +825,11 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("10.000"),
             }
         ]
-        
+
         invoice = service.convert_to_invoice(
             sales_order["id"], items_to_bill, organization_id, user_id
         )
-        
+
         # Verify invoice
         assert invoice["invoice_type"] == "sales"
         assert invoice["party_id"] == customer.id
@@ -832,7 +840,7 @@ class TestSalesOrderConvertToInvoice:
         assert invoice["reference_id"] == sales_order["id"]
         assert invoice["remarks"] == "Test order"
         assert invoice["grand_total"] == Decimal("1000.00")
-        
+
         # Verify sales order item billed_qty updated
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["billed_qty"] == Decimal("10.000")
@@ -848,7 +856,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test converting a sales order to invoice with partial billing"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-002",
@@ -865,9 +873,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # Convert to invoice with partial billing (5 out of 10)
         items_to_bill = [
             {
@@ -875,14 +883,14 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("5.000"),
             }
         ]
-        
+
         invoice = service.convert_to_invoice(
             sales_order["id"], items_to_bill, organization_id, user_id
         )
-        
+
         # Verify invoice
         assert invoice["grand_total"] == Decimal("500.00")
-        
+
         # Verify sales order item billed_qty updated
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["billed_qty"] == Decimal("5.000")
@@ -898,7 +906,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test that billing quantity exceeding pending_billing_qty raises error"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-003",
@@ -915,9 +923,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # Try to bill more than available
         items_to_bill = [
             {
@@ -925,7 +933,7 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("15.000"),  # More than ordered qty
             }
         ]
-        
+
         with pytest.raises(ValueError, match="exceeds pending billing quantity"):
             service.convert_to_invoice(
                 sales_order["id"], items_to_bill, organization_id, user_id
@@ -941,7 +949,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test multiple partial billings for the same sales order"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-004",
@@ -958,9 +966,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # First partial billing (3 units)
         items_to_bill_1 = [
             {
@@ -968,18 +976,18 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("3.000"),
             }
         ]
-        
+
         invoice1 = service.convert_to_invoice(
             sales_order["id"], items_to_bill_1, organization_id, user_id
         )
-        
+
         assert invoice1["grand_total"] == Decimal("300.00")
-        
+
         # Verify first update
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["billed_qty"] == Decimal("3.000")
         assert updated_so["items"][0]["pending_billing_qty"] == Decimal("7.000")
-        
+
         # Second partial billing (4 units)
         items_to_bill_2 = [
             {
@@ -987,13 +995,13 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("4.000"),
             }
         ]
-        
+
         invoice2 = service.convert_to_invoice(
             sales_order["id"], items_to_bill_2, organization_id, user_id
         )
-        
+
         assert invoice2["grand_total"] == Decimal("400.00")
-        
+
         # Verify second update
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["billed_qty"] == Decimal("7.000")
@@ -1009,7 +1017,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test that zero billing quantity raises error"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-005",
@@ -1026,9 +1034,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # Try to bill zero quantity
         items_to_bill = [
             {
@@ -1036,7 +1044,7 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("0.000"),
             }
         ]
-        
+
         with pytest.raises(ValueError, match="must be greater than 0"):
             service.convert_to_invoice(
                 sales_order["id"], items_to_bill, organization_id, user_id
@@ -1050,7 +1058,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test that converting non-existent sales order raises error"""
         service = SalesOrderService(db_session)
-        
+
         fake_id = uuid.uuid4()
         items_to_bill = [
             {
@@ -1058,11 +1066,9 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("5.000"),
             }
         ]
-        
+
         with pytest.raises(ResourceNotFoundException):
-            service.convert_to_invoice(
-                fake_id, items_to_bill, organization_id, user_id
-            )
+            service.convert_to_invoice(fake_id, items_to_bill, organization_id, user_id)
 
     def test_convert_to_invoice_invalid_item_raises_error(
         self,
@@ -1074,7 +1080,7 @@ class TestSalesOrderConvertToInvoice:
     ):
         """Test that billing an item not in the sales order raises error"""
         service = SalesOrderService(db_session)
-        
+
         # Create sales order
         data = {
             "sales_order_no": "SO-006",
@@ -1091,9 +1097,9 @@ class TestSalesOrderConvertToInvoice:
                 }
             ],
         }
-        
+
         sales_order = service.create(data, organization_id, user_id)
-        
+
         # Try to bill an item that's not in the sales order
         items_to_bill = [
             {
@@ -1101,7 +1107,7 @@ class TestSalesOrderConvertToInvoice:
                 "qty_to_bill": Decimal("5.000"),
             }
         ]
-        
+
         with pytest.raises(ValueError, match="not found in sales order"):
             service.convert_to_invoice(
                 sales_order["id"], items_to_bill, organization_id, user_id

@@ -8,9 +8,9 @@ This script shows how to:
 3. Use permissions to control UI/navigation access
 """
 
-import requests
-from typing import List, Dict
 import sys
+
+import requests
 
 
 class PermissionsClient:
@@ -20,7 +20,7 @@ class PermissionsClient:
         self.base_url = base_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {access_token}"}
 
-    def get_my_permissions(self, organization_id: str) -> Dict:
+    def get_my_permissions(self, organization_id: str) -> dict:
         """
         Get current user's permissions in an organization.
 
@@ -38,7 +38,7 @@ class PermissionsClient:
 
         return response.json()
 
-    def get_user_permissions(self, user_id: str, organization_id: str) -> Dict:
+    def get_user_permissions(self, user_id: str, organization_id: str) -> dict:
         """
         Get a specific user's permissions in an organization.
         Requires user.read permission.
@@ -58,7 +58,7 @@ class PermissionsClient:
 
         return response.json()
 
-    def has_permission(self, permissions: List[str], required: str) -> bool:
+    def has_permission(self, permissions: list[str], required: str) -> bool:
         """
         Check if a permission list includes a specific permission.
         Supports wildcard permissions (e.g., user.*, *.*)
@@ -108,7 +108,7 @@ def main():
         print(f"Has Access: {my_perms['has_access']}")
         print(f"Roles: {', '.join(my_perms['roles'])}")
         print(f"\nPermissions ({len(my_perms['permissions'])}):")
-        for perm in sorted(my_perms['permissions']):
+        for perm in sorted(my_perms["permissions"]):
             print(f"  - {perm}")
 
         # Check specific permissions
@@ -126,7 +126,7 @@ def main():
         ]
 
         for perm in permissions_to_check:
-            has_perm = client.has_permission(my_perms['permissions'], perm)
+            has_perm = client.has_permission(my_perms["permissions"], perm)
             status = "✓" if has_perm else "✗"
             print(f"{status} {perm}")
 
@@ -145,13 +145,13 @@ def main():
         }
 
         for nav_item, required_perm in nav_items.items():
-            if client.has_permission(my_perms['permissions'], required_perm):
+            if client.has_permission(my_perms["permissions"], required_perm):
                 print(f"  ✓ Show: {nav_item}")
             else:
                 print(f"  ✗ Hide: {nav_item}")
 
         # Example: Check another user's permissions (if you have user.read)
-        if client.has_permission(my_perms['permissions'], "user.read"):
+        if client.has_permission(my_perms["permissions"], "user.read"):
             print("\n" + "=" * 60)
             print("Checking another user's permissions...")
             print("=" * 60)
@@ -159,7 +159,9 @@ def main():
             OTHER_USER_ID = "22222222-2222-2222-2222-222222222222"
 
             try:
-                other_perms = client.get_user_permissions(OTHER_USER_ID, ORGANIZATION_ID)
+                other_perms = client.get_user_permissions(
+                    OTHER_USER_ID, ORGANIZATION_ID
+                )
                 print(f"\nUser ID: {other_perms['user_id']}")
                 print(f"Has Access: {other_perms['has_access']}")
                 print(f"Roles: {', '.join(other_perms['roles'])}")

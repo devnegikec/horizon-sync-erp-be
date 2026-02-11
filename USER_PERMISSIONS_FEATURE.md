@@ -122,9 +122,9 @@ See `identity-service/USER_PERMISSIONS_API.md` for:
 
 ## Benefits
 
-✅ **Reduced Backend Calls**: Check permissions once, use throughout the session  
-✅ **Better UX**: Hide inaccessible features instead of showing errors  
-✅ **Faster Development**: Frontend developers can implement access control without backend changes  
-✅ **Security**: Server-side validation remains in place; this is UX-only  
-✅ **Flexibility**: Supports complex permission schemes with wildcards  
+✅ **Reduced Backend Calls**: Check permissions once, use throughout the session
+✅ **Better UX**: Hide inaccessible features instead of showing errors
+✅ **Faster Development**: Frontend developers can implement access control without backend changes
+✅ **Security**: Server-side validation remains in place; this is UX-only
+✅ **Flexibility**: Supports complex permission schemes with wildcards
 ✅ **Scalability**: Single API call provides all needed permission data

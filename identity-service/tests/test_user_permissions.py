@@ -1,9 +1,7 @@
 """Tests for user permissions endpoints"""
 
-import pytest
-from uuid import UUID
 
-from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
+from app.models.role import UserOrganizationRole
 
 
 class TestGetMyPermissions:
@@ -77,7 +75,9 @@ class TestGetMyPermissions:
         assert data["permissions"] == []
         assert data["roles"] == []
 
-    def test_get_my_permissions_unauthenticated(self, client_no_override, test_organization):
+    def test_get_my_permissions_unauthenticated(
+        self, client_no_override, test_organization
+    ):
         """Test getting permissions without authentication"""
         response = client_no_override.get(
             f"/api/v1/users/me/permissions?organization_id={test_organization.id}"

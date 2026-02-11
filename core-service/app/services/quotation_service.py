@@ -21,29 +21,31 @@ class QuotationService:
         payload["organization_id"] = organization_id
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
-        
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = QuotationStatus(payload["status"])
-        
+
         # Extract items and calculate grand_total
         items_data = payload.pop("items", [])
         grand_total = self._calculate_grand_total(items_data)
         payload["grand_total"] = grand_total
-        
+
         # Create quotation
         quotation = self.repo.create(payload)
-        
+
         # Create quotation items
         for item_data in items_data:
             item_payload = dict(item_data)
             item_payload["organization_id"] = organization_id
             item_payload["quotation_id"] = quotation.id
             # Calculate amount as qty * rate
-            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(str(item_payload["rate"]))
+            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
+                str(item_payload["rate"])
+            )
             item = QuotationItem(**item_payload)
             self.db.add(item)
-        
+
         self.db.commit()
         self.db.refresh(quotation)
         return self._to_response(quotation)
@@ -90,42 +92,42 @@ class QuotationService:
         quotation = self.repo.get_by_id(quotation_id, organization_id)
         if not quotation:
             raise ResourceNotFoundException(f"Quotation {quotation_id} not found")
-        
+
         # Prevent line item modifications when status is SENT
         if "items" in data and quotation.status == QuotationStatus.SENT:
-            raise ValueError(
-                "Cannot modify line items when quotation status is SENT"
-            )
-        
+            raise ValueError("Cannot modify line items when quotation status is SENT")
+
         payload = {k: v for k, v in data.items() if v is not None and k != "items"}
-        
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = QuotationStatus(payload["status"])
-        
+
         payload["updated_by"] = user_id
-        
+
         # Handle items update if provided
         if "items" in data:
             items_data = data["items"]
-            
+
             # Delete existing items
             for item in quotation.items:
                 self.db.delete(item)
-            
+
             # Create new items
             for item_data in items_data:
                 item_payload = dict(item_data)
                 item_payload["organization_id"] = organization_id
                 item_payload["quotation_id"] = quotation.id
                 # Calculate amount as qty * rate
-                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(str(item_payload["rate"]))
+                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
+                    str(item_payload["rate"])
+                )
                 item = QuotationItem(**item_payload)
                 self.db.add(item)
-            
+
             # Recalculate grand_total
             payload["grand_total"] = self._calculate_grand_total(items_data)
-        
+
         self.repo.update(quotation, payload)
         self.db.refresh(quotation)
         return self._to_response(quotation)
@@ -174,6 +176,7 @@ class QuotationService:
         # Set submitted_at when status changes to SENT
         if new_status_enum == QuotationStatus.SENT and quotation.submitted_at is None:
             from datetime import UTC, datetime
+
             payload["submitted_at"] = datetime.now(UTC)
 
         # Update quotation
@@ -189,6 +192,7 @@ class QuotationService:
             rate = Decimal(str(item.get("rate", 0)))
             total += qty * rate
         return total
+
     def convert_to_sales_order(
         self, quotation_id: UUID, organization_id: UUID, user_id: UUID
     ) -> dict:
@@ -208,20 +212,21 @@ class QuotationService:
             ValueError: If quotation status is not ACCEPTED
         """
         from datetime import UTC, datetime
+
         from app.services.sales_order_service import SalesOrderService
-        
+
         # Get the quotation
         quotation = self.repo.get_by_id(quotation_id, organization_id)
         if not quotation:
             raise ResourceNotFoundException(f"Quotation {quotation_id} not found")
-        
+
         # Validate quotation status is ACCEPTED
         if quotation.status != QuotationStatus.ACCEPTED:
             raise ValueError(
                 f"Cannot convert quotation with status {quotation.status.value}. "
                 "Only ACCEPTED quotations can be converted to sales orders."
             )
-        
+
         # Use database transaction for atomicity
         try:
             # Generate sales order number from quotation number
@@ -232,7 +237,7 @@ class QuotationService:
                 # Fallback: generate based on timestamp
                 timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
                 sales_order_no = f"SO-{timestamp}"
-            
+
             # Prepare sales order data
             sales_order_data = {
                 "sales_order_no": sales_order_no,
@@ -255,15 +260,15 @@ class QuotationService:
                     for item in quotation.items
                 ],
             }
-            
+
             # Create sales order using SalesOrderService
             sales_order_service = SalesOrderService(self.db)
             sales_order = sales_order_service.create(
                 sales_order_data, organization_id, user_id
             )
-            
+
             return sales_order
-            
+
         except Exception as e:
             # Rollback is handled by the session
             self.db.rollback()
@@ -313,7 +318,6 @@ class QuotationService:
                 f"Invalid status transition from {current_status.value} to {new_status.value}. "
                 f"Allowed transitions: {', '.join(s.value for s in allowed_next_states)}"
             )
-
 
     @staticmethod
     def _to_response(quotation) -> dict:

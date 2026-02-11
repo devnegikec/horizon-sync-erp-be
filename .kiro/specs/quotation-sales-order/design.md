@@ -453,8 +453,8 @@ _For any_ quotation or sales order, when the parent document is deleted, all ass
 **Validates: Requirements 2.5, 4.6**
 
 **Property 4: Required fields presence**
-_For any_ created quotation, it SHALL have all required fields: id, organization_id, quotation_no, customer_id, quotation_date, status, grand_total, currency, created_at, updated_at
-_For any_ created sales order, it SHALL have all required fields: id, organization_id, sales_order_no, customer_id, order_date, status, grand_total, currency, created_at, updated_at
+_For any_ created quotation, it SHALL have all required fields: id, organization*id, quotation_no, customer_id, quotation_date, status, grand_total, currency, created_at, updated_at
+\_For any* created sales order, it SHALL have all required fields: id, organization_id, sales_order_no, customer_id, order_date, status, grand_total, currency, created_at, updated_at
 **Validates: Requirements 1.2, 1.8, 3.2, 3.8**
 
 **Property 5: JSONB extensibility support**
@@ -480,8 +480,8 @@ _For any_ quotation with status SENT, modifications to line items and pricing fi
 **Validates: Requirements 1.4**
 
 **Property 10: Document initialization**
-_For any_ newly created quotation, the status SHALL be DRAFT and quotation_no SHALL be unique
-_For any_ newly created sales order, the status SHALL be DRAFT and sales_order_no SHALL be unique
+_For any_ newly created quotation, the status SHALL be DRAFT and quotation*no SHALL be unique
+\_For any* newly created sales order, the status SHALL be DRAFT and sales_order_no SHALL be unique
 **Validates: Requirements 1.1, 3.1**
 
 ### Quantity Tracking Properties

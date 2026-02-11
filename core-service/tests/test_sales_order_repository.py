@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.models.base import SalesOrderStatus
-from app.models.sales_order import SalesOrder, SalesOrderItem
+from app.models.sales_order import SalesOrderItem
 from app.repositories.sales_order_repository import SalesOrderRepository
 
 
@@ -139,9 +139,7 @@ class TestSalesOrderRepositoryGetByIdWithItems:
         assert retrieved.items[0].billed_qty == Decimal("0.000")
         assert retrieved.items[0].delivered_qty == Decimal("0.000")
 
-    def test_get_by_id_with_items_not_found(
-        self, sales_order_repo, mock_current_user
-    ):
+    def test_get_by_id_with_items_not_found(self, sales_order_repo, mock_current_user):
         """Test getting a non-existent sales order with items"""
         fake_id = uuid.uuid4()
         retrieved = sales_order_repo.get_by_id_with_items(

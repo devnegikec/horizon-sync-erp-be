@@ -20,9 +20,13 @@ depends_on = None
 
 def upgrade() -> None:
     # Create enum types
-    op.execute("CREATE TYPE quotationstatus AS ENUM ('draft', 'sent', 'accepted', 'rejected', 'expired')")
-    op.execute("CREATE TYPE salesorderstatus AS ENUM ('draft', 'confirmed', 'partially_delivered', 'delivered', 'closed', 'cancelled')")
-    
+    op.execute(
+        "CREATE TYPE quotationstatus AS ENUM ('draft', 'sent', 'accepted', 'rejected', 'expired')"
+    )
+    op.execute(
+        "CREATE TYPE salesorderstatus AS ENUM ('draft', 'confirmed', 'partially_delivered', 'delivered', 'closed', 'cancelled')"
+    )
+
     # Create quotations table
     op.create_table(
         "quotations",
@@ -52,14 +56,26 @@ def upgrade() -> None:
             nullable=False,
             server_default="0",
         ),
-        sa.Column("currency", sa.String(length=10), nullable=False, server_default="INR"),
+        sa.Column(
+            "currency", sa.String(length=10), nullable=False, server_default="INR"
+        ),
         sa.Column("remarks", sa.Text(), nullable=True),
         sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("updated_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["customer_id"],
@@ -68,7 +84,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
     )
-    
+
     # Create indexes for quotations
     op.create_index(
         op.f("ix_quotations_organization_id"),
@@ -102,8 +118,18 @@ def upgrade() -> None:
         sa.Column("amount", sa.Numeric(precision=15, scale=2), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["quotation_id"],
@@ -118,7 +144,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
     )
-    
+
     # Create indexes for quotation_items
     op.create_index(
         op.f("ix_quotation_items_organization_id"),
@@ -163,7 +189,9 @@ def upgrade() -> None:
             nullable=False,
             server_default="0",
         ),
-        sa.Column("currency", sa.String(length=10), nullable=False, server_default="INR"),
+        sa.Column(
+            "currency", sa.String(length=10), nullable=False, server_default="INR"
+        ),
         sa.Column("reference_type", sa.String(length=50), nullable=True),
         sa.Column("reference_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("remarks", sa.Text(), nullable=True),
@@ -171,8 +199,18 @@ def upgrade() -> None:
         sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("updated_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["customer_id"],
@@ -181,7 +219,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
     )
-    
+
     # Create indexes for sales_orders
     op.create_index(
         op.f("ix_sales_orders_organization_id"),
@@ -227,8 +265,18 @@ def upgrade() -> None:
         ),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
             ["sales_order_id"],
@@ -243,7 +291,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
     )
-    
+
     # Create indexes for sales_order_items
     op.create_index(
         op.f("ix_sales_order_items_organization_id"),
@@ -265,7 +313,7 @@ def downgrade() -> None:
     op.drop_table("sales_orders")
     op.drop_table("quotation_items")
     op.drop_table("quotations")
-    
+
     # Drop enum types
     op.execute("DROP TYPE IF EXISTS salesorderstatus")
     op.execute("DROP TYPE IF EXISTS quotationstatus")

@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 
 from app.models.base import QuotationStatus
-from app.models.quotation import Quotation, QuotationItem
 from app.repositories.quotation_repository import QuotationRepository
 
 
@@ -185,12 +184,16 @@ class TestQuotationRepositoryList:
 
         # Test descending order (default)
         quotations_desc, _ = quotation_repo.list_quotations(
-            mock_current_user.organization_id, sort_by="quotation_date", sort_order="desc"
+            mock_current_user.organization_id,
+            sort_by="quotation_date",
+            sort_order="desc",
         )
 
         # Test ascending order
         quotations_asc, _ = quotation_repo.list_quotations(
-            mock_current_user.organization_id, sort_by="quotation_date", sort_order="asc"
+            mock_current_user.organization_id,
+            sort_by="quotation_date",
+            sort_order="asc",
         )
 
         assert len(quotations_desc) == 3

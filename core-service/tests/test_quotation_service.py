@@ -1,14 +1,13 @@
 """Tests for QuotationService"""
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
 from app.core.exceptions import ResourceNotFoundException
 from app.models.base import QuotationStatus
-from app.repositories.quotation_repository import QuotationRepository
 from app.services.quotation_service import QuotationService
 
 
@@ -238,7 +237,9 @@ class TestQuotationServiceDelete:
         quotation_service.delete(created["id"], mock_current_user.organization_id)
 
         with pytest.raises(ResourceNotFoundException):
-            quotation_service.get_by_id(created["id"], mock_current_user.organization_id)
+            quotation_service.get_by_id(
+                created["id"], mock_current_user.organization_id
+            )
 
     def test_delete_quotation_not_found(self, quotation_service, mock_current_user):
         """Test deleting a non-existent quotation raises exception"""
@@ -299,21 +300,27 @@ class TestQuotationServiceStatusTransition:
 
     def test_terminal_state_accepted_cannot_transition(self, quotation_service):
         """Test that ACCEPTED terminal state cannot transition"""
-        with pytest.raises(ValueError, match="Cannot change status from terminal state"):
+        with pytest.raises(
+            ValueError, match="Cannot change status from terminal state"
+        ):
             quotation_service._validate_status_transition(
                 QuotationStatus.ACCEPTED, QuotationStatus.SENT
             )
 
     def test_terminal_state_rejected_cannot_transition(self, quotation_service):
         """Test that REJECTED terminal state cannot transition"""
-        with pytest.raises(ValueError, match="Cannot change status from terminal state"):
+        with pytest.raises(
+            ValueError, match="Cannot change status from terminal state"
+        ):
             quotation_service._validate_status_transition(
                 QuotationStatus.REJECTED, QuotationStatus.SENT
             )
 
     def test_terminal_state_expired_cannot_transition(self, quotation_service):
         """Test that EXPIRED terminal state cannot transition"""
-        with pytest.raises(ValueError, match="Cannot change status from terminal state"):
+        with pytest.raises(
+            ValueError, match="Cannot change status from terminal state"
+        ):
             quotation_service._validate_status_transition(
                 QuotationStatus.EXPIRED, QuotationStatus.SENT
             )
@@ -412,7 +419,9 @@ class TestQuotationServiceUpdateStatus:
         )
 
         # Try to transition from ACCEPTED (terminal state)
-        with pytest.raises(ValueError, match="Cannot change status from terminal state"):
+        with pytest.raises(
+            ValueError, match="Cannot change status from terminal state"
+        ):
             quotation_service.update_status(
                 created["id"],
                 QuotationStatus.SENT.value,
@@ -492,7 +501,9 @@ class TestQuotationServiceSentImmutability:
             }
         ]
 
-        with pytest.raises(ValueError, match="Cannot modify line items when quotation status is SENT"):
+        with pytest.raises(
+            ValueError, match="Cannot modify line items when quotation status is SENT"
+        ):
             quotation_service.update(
                 created["id"],
                 {"items": new_items},
@@ -681,7 +692,9 @@ class TestQuotationServiceConvertToSalesOrder:
         )
 
         # Try to convert DRAFT quotation
-        with pytest.raises(ValueError, match="Only ACCEPTED quotations can be converted"):
+        with pytest.raises(
+            ValueError, match="Only ACCEPTED quotations can be converted"
+        ):
             quotation_service.convert_to_sales_order(
                 created["id"], mock_current_user.organization_id, mock_current_user.id
             )
@@ -704,7 +717,9 @@ class TestQuotationServiceConvertToSalesOrder:
         )
 
         # Try to convert SENT quotation
-        with pytest.raises(ValueError, match="Only ACCEPTED quotations can be converted"):
+        with pytest.raises(
+            ValueError, match="Only ACCEPTED quotations can be converted"
+        ):
             quotation_service.convert_to_sales_order(
                 created["id"], mock_current_user.organization_id, mock_current_user.id
             )
@@ -733,7 +748,9 @@ class TestQuotationServiceConvertToSalesOrder:
         )
 
         # Try to convert REJECTED quotation
-        with pytest.raises(ValueError, match="Only ACCEPTED quotations can be converted"):
+        with pytest.raises(
+            ValueError, match="Only ACCEPTED quotations can be converted"
+        ):
             quotation_service.convert_to_sales_order(
                 created["id"], mock_current_user.organization_id, mock_current_user.id
             )
@@ -748,4 +765,3 @@ class TestQuotationServiceConvertToSalesOrder:
             quotation_service.convert_to_sales_order(
                 fake_id, mock_current_user.organization_id, mock_current_user.id
             )
-

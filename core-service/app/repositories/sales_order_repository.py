@@ -80,13 +80,17 @@ class SalesOrderRepository:
         self.db.commit()
 
     def update_item_billed_qty(self, item_id: UUID, qty_to_add: Decimal) -> None:
-        item = self.db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+        item = (
+            self.db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+        )
         if item:
             item.billed_qty += qty_to_add
             self.db.commit()
 
     def update_item_delivered_qty(self, item_id: UUID, qty_to_add: Decimal) -> None:
-        item = self.db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+        item = (
+            self.db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+        )
         if item:
             item.delivered_qty += qty_to_add
             self.db.commit()
