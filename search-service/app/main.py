@@ -1,5 +1,6 @@
 """Main FastAPI application for Search Service"""
 
+import asyncio
 import logging
 import warnings
 from contextlib import asynccontextmanager
@@ -13,8 +14,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
-from app.database import async_engine
+from app.database import async_engine, AsyncSessionLocal
 from app.logging_config import get_logger
+from app.services.sync_service import start_auto_sync
+from app.workers.event_consumer import SearchIndexEventConsumer
 
 # Configure logging
 logging.basicConfig(
@@ -37,9 +40,29 @@ async def lifespan(app: FastAPI):
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
     logger.info(f"Core Service URL: {settings.core_service_url}")
     logger.info(f"Redis URL: {settings.redis_url}")
+    
+    # Start event consumer for real-time sync
+    event_consumer = SearchIndexEventConsumer()
+    consumer_task = asyncio.create_task(event_consumer.start())
+    logger.info("Started real-time event consumer for search index updates")
+    
+    # Start periodic fallback sync (runs every hour as backup)
+    start_auto_sync(app, AsyncSessionLocal, interval_seconds=3600)
+    logger.info("Started periodic fallback sync (every 60 minutes)")
+    
     yield
+    
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
+    
+    # Stop event consumer
+    await event_consumer.stop()
+    consumer_task.cancel()
+    try:
+        await consumer_task
+    except asyncio.CancelledError:
+        pass
+    
     await async_engine.dispose()
 
 

@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # Redis Cache
     redis_url: str = "redis://redis:6379/0"
     cache_ttl_seconds: int = 300
+    redis_stream_name: str = "search:events"
+
+    # Sync Service Token (for internal service-to-service auth)
+    sync_service_token: str = ""
+    
+    # Service account credentials for automated token retrieval
+    sync_service_username: str = ""
+    sync_service_password: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:3000"
