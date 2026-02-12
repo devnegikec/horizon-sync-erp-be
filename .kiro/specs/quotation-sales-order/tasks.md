@@ -46,7 +46,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
   - **Property 3: Cascade deletion preservation**
   - **Validates: Requirements 2.5**
 
-- [ ] 4. Implement Quotation service layer
+- [x] 4. Implement Quotation service layer
 
   - [x] 4.1 Create `app/services/quotation_service.py` with basic CRUD operations
 
@@ -95,7 +95,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
   - Include pagination, filtering (customer_id, status), and sorting
   - _Requirements: 3.1, 3.2, 4.3, 6.6, 7.6, 10.2_
 
-- [ ] 7. Implement Sales Order service layer
+- [x] 7. Implement Sales Order service layer
 
   - [x] 7.1 Create `app/services/sales_order_service.py` with basic CRUD operations
 
@@ -136,7 +136,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Implement quotation to sales order conversion
+- [x] 9. Implement quotation to sales order conversion
 
   - [x] 9.1 Add convert_to_sales_order method to QuotationService
 
@@ -159,7 +159,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 27: Document conversion atomicity**
     - **Validates: Requirements 12.6, 12.7**
 
-- [ ] 10. Implement sales order to invoice conversion
+- [x] 10. Implement sales order to invoice conversion
 
   - [x] 10.1 Add convert_to_invoice method to SalesOrderService
 
@@ -183,7 +183,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 19: Sales order to invoice conversion**
     - **Validates: Requirements 6.1, 6.2, 6.3, 6.4**
 
-  - [ ] 10.4 Add logic to check if sales order is fully billed
+  - [x] 10.4 Add logic to check if sales order is fully billed
 
     - After updating billed_qty, check if all items have billed_qty = qty
     - If fully billed, allow status transition to CLOSED
@@ -193,9 +193,9 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 16: Fully billed closure eligibility**
     - **Validates: Requirements 6.7**
 
-- [ ] 11. Implement sales order to delivery note conversion
+- [x] 11. Implement sales order to delivery note conversion
 
-  - [ ] 11.1 Add convert_to_delivery_note method to SalesOrderService
+  - [x] 11.1 Add convert_to_delivery_note method to SalesOrderService
 
     - Accept items_to_deliver parameter with item_id and qty_to_deliver for each item
     - Validate delivery quantities don't exceed pending_delivery_qty
@@ -216,7 +216,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 20: Sales order to delivery note conversion**
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4**
 
-  - [ ] 11.4 Add automatic delivery status updates
+  - [x] 11.4 Add automatic delivery status updates
 
     - After updating delivered_qty, check delivery status
     - If all items have delivered_qty = qty, set status to DELIVERED
@@ -227,11 +227,11 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 15: Automatic delivery status updates**
     - **Validates: Requirements 7.7, 7.8**
 
-- [ ] 12. Checkpoint - Ensure conversion logic tests pass
+- [x] 12. Checkpoint - Ensure conversion logic tests pass
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Create Pydantic schemas for Quotations
+- [x] 13. Create Pydantic schemas for Quotations
 
   - Create `app/schemas/quotation.py`
   - Define QuotationBase, QuotationCreate, QuotationUpdate, QuotationResponse schemas
@@ -241,7 +241,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
   - Follow existing Invoice schema patterns
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6_
 
-- [ ] 14. Create Pydantic schemas for Sales Orders
+- [x] 14. Create Pydantic schemas for Sales Orders
 
   - Create `app/schemas/sales_order.py`
   - Define SalesOrderBase, SalesOrderCreate, SalesOrderUpdate, SalesOrderResponse schemas
@@ -251,9 +251,9 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
   - Include pending_billing_qty and pending_delivery_qty in item responses
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.6, 10.7_
 
-- [ ] 15. Implement Quotation API endpoints
+- [x] 15. Implement Quotation API endpoints
 
-  - [ ] 15.1 Create `app/api/v1/endpoints/quotations.py`
+  - [x] 15.1 Create `app/api/v1/endpoints/quotations.py`
 
     - Implement POST /api/v1/quotations (create)
     - Implement GET /api/v1/quotations (list with pagination, filters, sorting)
@@ -275,20 +275,20 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - Test pagination, filtering, and sorting
     - Test error responses (404, 403, 400)
 
-  - [ ] 15.4 Add status update endpoint
+  - [x] 15.4 Add status update endpoint
 
     - Implement PUT /api/v1/quotations/{id}/status
     - Validate status transitions
     - _Requirements: 9.7_
 
-  - [ ] 15.5 Add conversion endpoint
+  - [x] 15.5 Add conversion endpoint
     - Implement POST /api/v1/quotations/{id}/convert-to-sales-order
     - Return created sales order
     - _Requirements: 9.6_
 
-- [ ] 16. Implement Sales Order API endpoints
+- [x] 16. Implement Sales Order API endpoints
 
-  - [ ] 16.1 Create `app/api/v1/endpoints/sales_orders.py`
+  - [x] 16.1 Create `app/api/v1/endpoints/sales_orders.py`
 
     - Implement POST /api/v1/sales-orders (create)
     - Implement GET /api/v1/sales-orders (list with pagination, filters, sorting)
@@ -311,34 +311,34 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - Test quantity tracking in responses
     - Test error responses
 
-  - [ ] 16.4 Add status update endpoint
+  - [x] 16.4 Add status update endpoint
 
     - Implement PUT /api/v1/sales-orders/{id}/status
     - Validate status transitions
     - _Requirements: 10.8_
 
-  - [ ] 16.5 Add invoice conversion endpoint
+  - [x] 16.5 Add invoice conversion endpoint
 
     - Implement POST /api/v1/sales-orders/{id}/convert-to-invoice
     - Accept items_to_bill in request body
     - Return created invoice
     - _Requirements: 10.6_
 
-  - [ ] 16.6 Add delivery note conversion endpoint
+  - [x] 16.6 Add delivery note conversion endpoint
     - Implement POST /api/v1/sales-orders/{id}/convert-to-delivery-note
     - Accept items_to_deliver in request body
     - Return created delivery note
     - _Requirements: 10.7_
 
-- [ ] 17. Register API routers
+- [x] 17. Register API routers
 
   - Add quotations and sales_orders routers to `app/api/v1/router.py`
   - Ensure proper URL prefixes: /quotations and /sales-orders
   - Test that all endpoints are accessible
 
-- [ ] 18. Add cross-organization reference validation
+- [x] 18. Add cross-organization reference validation
 
-  - [ ] 18.1 Add validation in QuotationService and SalesOrderService
+  - [x] 18.1 Add validation in QuotationService and SalesOrderService
 
     - Validate customer_id belongs to same organization_id
     - Validate item_id in line items belongs to same organization_id
@@ -349,9 +349,9 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 22: Cross-organization reference validation**
     - **Validates: Requirements 11.3, 11.4**
 
-- [ ] 19. Add automatic timestamp management
+- [x] 19. Add automatic timestamp management
 
-  - [ ] 19.1 Verify timestamp behavior in models
+  - [x] 19.1 Verify timestamp behavior in models
 
     - Ensure created_at is set on creation
     - Ensure updated_at is updated on modification
@@ -362,7 +362,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
     - **Property 25: Automatic timestamp management**
     - **Validates: Requirements 12.1, 12.2, 12.3**
 
-- [ ] 20. Final integration testing
+- [x] 20. Final integration testing
 
   - [ ]\* 20.1 Write integration test for complete quotation to sales order flow
 
@@ -382,7 +382,7 @@ This implementation plan breaks down the Quotation and Sales Order feature into 
   - [ ]\* 20.4 Write integration test for complete end-to-end flow
     - Quotation → Sales Order → Invoice + Delivery Note → Verify CLOSED status
 
-- [ ] 21. Final checkpoint - Ensure all tests pass
+- [x] 21. Final checkpoint - Ensure all tests pass
   - Run full test suite (unit, property, integration)
   - Verify all 27 correctness properties are tested
   - Ensure test coverage is adequate
