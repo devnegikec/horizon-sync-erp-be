@@ -17,6 +17,7 @@ class FileFormat(str, Enum):
     CSV = "csv"
     XLSX = "xlsx"
     JSON = "json"
+    PDF = "pdf"
 
 
 class BulkImportValidator:
@@ -229,6 +230,16 @@ class FileGenerator:
     """Generator for different export file formats"""
 
     @staticmethod
+    def _normalize_headers(headers: list[str] | None) -> list[str] | None:
+        if headers is None:
+            return None
+        if isinstance(headers, list):
+            return headers
+        if isinstance(headers, str):
+            return [h.strip() for h in headers.split(",") if h.strip()]
+        return list(headers)
+
+    @staticmethod
     def generate_csv(data: list[dict], headers: list[str] | None = None) -> bytes:
         """
         Generate CSV from data.
@@ -240,19 +251,22 @@ class FileGenerator:
         Returns:
             CSV content as bytes
         """
+        headers = FileGenerator._normalize_headers(headers)
+
         if not data:
             if headers:
-                output = io.StringIO()
-                writer = csv.DictWriter(output, fieldnames=headers)
-                writer.writeheader()
+                output = io.StringIO(newline="")
+                writer = csv.writer(output, lineterminator="\r\n")
+                writer.writerow(headers)
                 return output.getvalue().encode("utf-8")
             return b""
 
-        output = io.StringIO()
+        output = io.StringIO(newline="")
         fieldnames = headers if headers else list(data[0].keys())
-        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(data)
+        writer = csv.writer(output, lineterminator="\r\n")
+        writer.writerow(fieldnames)
+        for row in data:
+            writer.writerow([row.get(name) for name in fieldnames])
         return output.getvalue().encode("utf-8")
 
     @staticmethod
@@ -268,6 +282,8 @@ class FileGenerator:
         Returns:
             XLSX content as bytes
         """
+        headers = FileGenerator._normalize_headers(headers)
+
         if not data:
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -278,13 +294,9 @@ class FileGenerator:
             wb.save(output)
             return output.getvalue()
 
-        df = pd.DataFrame(data)
-        if headers:
-            # Reorder columns according to headers and add missing ones as empty
-            for col in headers:
-                if col not in df.columns:
-                    df[col] = None
-            df = df[headers]
+        fieldnames = headers if headers else list(data[0].keys())
+        rows = [[row.get(name) for name in fieldnames] for row in data]
+        df = pd.DataFrame(rows, columns=fieldnames)
             
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -305,6 +317,58 @@ class FileGenerator:
         return json.dumps({"items": data}, indent=2, default=str).encode("utf-8")
 
     @staticmethod
+    def generate_pdf(data: list[dict], headers: list[str] | None = None, title: str = "Exported Data") -> bytes:
+        """
+        Generate PDF from data in tabular format.
+
+        Args:
+            data: List of dictionaries
+            headers: Optional list of headers to maintain column order
+            title: Title for the PDF
+
+        Returns:
+            PDF content as bytes
+        """
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+        elements = []
+        styles = getSampleStyleSheet()
+        elements.append(Paragraph(title, styles["Title"]))
+        elements.append(Spacer(1, 12))
+
+        if not data:
+            if headers:
+                table_data = [headers]
+            else:
+                table_data = [[]]
+        else:
+            fieldnames = headers if headers else list(data[0].keys())
+            table_data = [fieldnames]
+            for row in data:
+                table_data.append([str(row.get(name, "")) for name in fieldnames])
+
+        table = Table(table_data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dbeafe")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(table)
+        doc.build(elements)
+        pdf = buffer.getvalue()
+        buffer.close()
+        return pdf
+
+    @staticmethod
     def generate_file(data: list[dict], file_format: str, headers: list[str] | None = None) -> bytes:
         """
         Generate file based on format.
@@ -323,6 +387,8 @@ class FileGenerator:
             return FileGenerator.generate_xlsx(data, headers=headers)
         elif file_format == FileFormat.JSON:
             return FileGenerator.generate_json(data)
+        elif file_format == FileFormat.PDF:
+            return FileGenerator.generate_pdf(data, headers=headers)
         else:
             raise ValueError(f"Unsupported format: {file_format}")
 

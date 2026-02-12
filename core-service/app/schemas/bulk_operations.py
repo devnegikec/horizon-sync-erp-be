@@ -91,7 +91,7 @@ class ExportFilter(BaseModel):
 class BulkExportRequest(BaseModel):
     """Schema for export request"""
 
-    file_format: str = Field(..., description="csv, xlsx, or json")
+    file_format: str = Field(..., description="csv, xlsx, json, or pdf")
     filters: Optional[ExportFilter] = None
     selected_columns: Optional[list[str]] = None
     file_name: Optional[str] = Field(
