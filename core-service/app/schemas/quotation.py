@@ -77,6 +77,7 @@ class QuotationListItem(BaseModel):
     customer_id: UUID
     status: str
     quotation_date: datetime
+    valid_until: datetime | None = None
     grand_total: Decimal
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)

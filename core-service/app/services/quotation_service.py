@@ -408,6 +408,8 @@ class QuotationService:
             "items": [
                 {
                     "id": item.id,
+                    "organization_id": item.organization_id,
+                    "quotation_id": item.quotation_id,
                     "item_id": item.item_id,
                     "qty": item.qty,
                     "uom": item.uom,
@@ -415,6 +417,8 @@ class QuotationService:
                     "amount": item.amount,
                     "sort_order": item.sort_order,
                     "extra_data": item.extra_data,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
                 }
                 for item in quotation.items
             ],
@@ -428,6 +432,7 @@ class QuotationService:
             "quotation_no": quotation.quotation_no,
             "customer_id": quotation.customer_id,
             "quotation_date": quotation.quotation_date,
+            "valid_until": quotation.valid_until,
             "status": quotation.status.value if quotation.status else None,
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
