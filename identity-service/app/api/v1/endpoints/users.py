@@ -175,6 +175,102 @@ async def get_my_profile(
         raise
 
 
+@router.get(
+    "/users/me/permissions",
+    summary="Get my permissions",
+    description="Get current user's permissions within an organization for UI/navigation access control",
+)
+async def get_my_permissions(
+    organization_id: UUID = Query(
+        ..., description="Organization ID to get permissions for"
+    ),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get current user's permissions within a specific organization.
+
+    This endpoint returns all permissions the user has in the specified organization,
+    allowing the frontend to determine which UI elements, navigation items, and features
+    the user can access without making additional backend calls.
+
+    **Query Parameters:**
+    - **organization_id**: UUID of the organization to check permissions for
+
+    **Response:**
+    - **user_id**: User's UUID
+    - **organization_id**: Organization UUID
+    - **permissions**: List of permission codes the user has
+    - **roles**: List of role names the user has in the organization
+    - **has_access**: Boolean indicating if user has any access to the organization
+    """
+    from app.models.role import Permission, Role, RolePermission
+
+    logger.info(
+        f"Fetching permissions for user {current_user.id} in org {organization_id}"
+    )
+
+    # Validate user is member of the organization
+    try:
+        validate_user_in_organization(current_user.id, organization_id, db)
+    except HTTPException:
+        # User is not a member of this organization
+        return {
+            "user_id": str(current_user.id),
+            "organization_id": str(organization_id),
+            "permissions": [],
+            "roles": [],
+            "has_access": False,
+        }
+
+    # Get user's roles in this organization
+    user_roles = (
+        db.query(Role)
+        .join(UserOrganizationRole, UserOrganizationRole.role_id == Role.id)
+        .filter(
+            UserOrganizationRole.user_id == current_user.id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.is_active,
+            Role.is_active,
+        )
+        .all()
+    )
+
+    role_names = [role.name for role in user_roles]
+
+    # Get all permissions for these roles
+    permission_codes = (
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(
+            UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id
+        )
+        .filter(
+            UserOrganizationRole.user_id == current_user.id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.is_active,
+            Permission.is_active == True,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    )
+
+    permissions = [code for (code,) in permission_codes if code]
+
+    logger.info(
+        f"User {current_user.id} has {len(permissions)} permissions "
+        f"and {len(role_names)} roles in org {organization_id}"
+    )
+
+    return {
+        "user_id": str(current_user.id),
+        "organization_id": str(organization_id),
+        "permissions": permissions,
+        "roles": role_names,
+        "has_access": len(permissions) > 0 or len(role_names) > 0,
+    }
+
+
 @router.patch(
     "/users/me",
     response_model=UserProfileResponse,
@@ -225,6 +321,116 @@ async def get_user(
         return UserResponse.model_validate(user)
     except UserNotFoundException:
         raise
+
+
+@router.get(
+    "/users/{user_id}/permissions",
+    summary="Get user permissions",
+    description="Get a user's permissions within an organization; requires user.read.",
+)
+async def get_user_permissions(
+    user_id: UUID,
+    organization_id: UUID = Query(
+        ..., description="Organization ID to get permissions for"
+    ),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a specific user's permissions within an organization.
+
+    Requires user.read permission. Both the current user and target user must be
+    members of the specified organization.
+
+    **Path Parameters:**
+    - **user_id**: UUID of the user to get permissions for
+
+    **Query Parameters:**
+    - **organization_id**: UUID of the organization to check permissions for
+
+    **Response:**
+    - **user_id**: User's UUID
+    - **organization_id**: Organization UUID
+    - **permissions**: List of permission codes the user has
+    - **roles**: List of role names the user has in the organization
+    - **has_access**: Boolean indicating if user has any access to the organization
+    """
+    from app.models.role import Permission, Role, RolePermission
+
+    require_permission(current_user.permissions, "user.read")
+
+    logger.info(
+        f"User {current_user.id} fetching permissions for user {user_id} in org {organization_id}"
+    )
+
+    # Validate current user has access to the organization
+    try:
+        validate_user_in_organization(current_user.id, organization_id, db)
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this organization",
+        )
+
+    # Validate target user is in the organization
+    try:
+        validate_user_in_organization(user_id, organization_id, db)
+    except HTTPException:
+        # Target user is not a member of this organization
+        return {
+            "user_id": str(user_id),
+            "organization_id": str(organization_id),
+            "permissions": [],
+            "roles": [],
+            "has_access": False,
+        }
+
+    # Get user's roles in this organization
+    user_roles = (
+        db.query(Role)
+        .join(UserOrganizationRole, UserOrganizationRole.role_id == Role.id)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.is_active,
+            Role.is_active,
+        )
+        .all()
+    )
+
+    role_names = [role.name for role in user_roles]
+
+    # Get all permissions for these roles
+    permission_codes = (
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(
+            UserOrganizationRole, RolePermission.role_id == UserOrganizationRole.role_id
+        )
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.is_active,
+            Permission.is_active == True,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    )
+
+    permissions = [code for (code,) in permission_codes if code]
+
+    logger.info(
+        f"User {user_id} has {len(permissions)} permissions "
+        f"and {len(role_names)} roles in org {organization_id}"
+    )
+
+    return {
+        "user_id": str(user_id),
+        "organization_id": str(organization_id),
+        "permissions": permissions,
+        "roles": role_names,
+        "has_access": len(permissions) > 0 or len(role_names) > 0,
+    }
 
 
 @router.post(

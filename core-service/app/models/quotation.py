@@ -1,4 +1,4 @@
-"""Delivery note and delivery note items models"""
+"""Quotation and quotation items models"""
 
 import uuid
 from datetime import UTC, datetime
@@ -17,46 +17,37 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import DocumentStatus
+from app.models.base import QuotationStatus
 from app.models.types import JSONB
 
 
-class DeliveryNote(Base):
-    __tablename__ = "delivery_notes"
+class Quotation(Base):
+    __tablename__ = "quotations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    delivery_note_no = Column(String(100), nullable=False)
+    quotation_no = Column(String(100), nullable=False)
     customer_id = Column(
         UUID(as_uuid=True),
         ForeignKey("customers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    delivery_date = Column(
+    quotation_date = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
+    valid_until = Column(DateTime(timezone=True), nullable=True)
     status = Column(
         Enum(
-            DocumentStatus,
-            name="documentstatus",
+            QuotationStatus,
+            name="quotationstatus",
             create_type=False,
             values_callable=lambda o: [e.value for e in o],
         ),
-        default=DocumentStatus.DRAFT,
+        default=QuotationStatus.DRAFT,
         nullable=False,
     )
-    warehouse_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("warehouses_extended.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    pick_list_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("pick_lists.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    reference_type = Column(String(50), nullable=True)
-    reference_id = Column(UUID(as_uuid=True), nullable=True)
+    grand_total = Column(Numeric(15, 2), default=0)
+    currency = Column(String(10), default="INR")
     remarks = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
@@ -70,20 +61,19 @@ class DeliveryNote(Base):
     )
 
     items = relationship(
-        "DeliveryNoteItem", back_populates="delivery_note", cascade="all, delete-orphan"
+        "QuotationItem", back_populates="quotation", cascade="all, delete-orphan"
     )
     customer = relationship("Customer", foreign_keys=[customer_id])
-    warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
 
 
-class DeliveryNoteItem(Base):
-    __tablename__ = "delivery_note_items"
+class QuotationItem(Base):
+    __tablename__ = "quotation_items"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    delivery_note_id = Column(
+    quotation_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("delivery_notes.id", ondelete="CASCADE"),
+        ForeignKey("quotations.id", ondelete="CASCADE"),
         nullable=False,
     )
     item_id = Column(
@@ -91,15 +81,8 @@ class DeliveryNoteItem(Base):
     )
     qty = Column(Numeric(15, 3), nullable=False)
     uom = Column(String(50), nullable=False)
-    rate = Column(Numeric(15, 2), nullable=True)
-    amount = Column(Numeric(15, 2), nullable=True)
-    warehouse_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("warehouses_extended.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    batch_no = Column(String(100), nullable=True)
-    serial_nos = Column(JSONB, nullable=True)
+    rate = Column(Numeric(15, 2), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
     sort_order = Column(Integer, default=0)
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -109,4 +92,5 @@ class DeliveryNoteItem(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    delivery_note = relationship("DeliveryNote", back_populates="items")
+    quotation = relationship("Quotation", back_populates="items")
+    item = relationship("Item")

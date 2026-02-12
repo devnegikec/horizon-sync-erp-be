@@ -2,9 +2,11 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.models.customer import Customer
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
+from app.models.warehouse import Warehouse
 
 
 class DeliveryNoteRepository:
@@ -26,13 +28,18 @@ class DeliveryNoteRepository:
     def get_by_id(
         self, delivery_note_id: UUID, organization_id: UUID, load_items: bool = True
     ) -> DeliveryNote | None:
-        q = self.db.query(DeliveryNote).filter(
-            DeliveryNote.id == delivery_note_id,
-            DeliveryNote.organization_id == organization_id,
+        q = (
+            self.db.query(DeliveryNote)
+            .outerjoin(Customer, DeliveryNote.customer_id == Customer.id)
+            .outerjoin(Warehouse, DeliveryNote.warehouse_id == Warehouse.id)
+            .filter(
+                DeliveryNote.id == delivery_note_id,
+                DeliveryNote.organization_id == organization_id,
+            )
         )
+        if load_items:
+            q = q.options(joinedload(DeliveryNote.items))
         dn = q.first()
-        if dn and load_items:
-            _ = dn.items
         return dn
 
     def get_by_no(
@@ -57,8 +64,11 @@ class DeliveryNoteRepository:
         sort_by: str = "delivery_date",
         sort_order: str = "desc",
     ) -> tuple[list[DeliveryNote], int]:
-        q = self.db.query(DeliveryNote).filter(
-            DeliveryNote.organization_id == organization_id
+        q = (
+            self.db.query(DeliveryNote)
+            .outerjoin(Customer, DeliveryNote.customer_id == Customer.id)
+            .outerjoin(Warehouse, DeliveryNote.warehouse_id == Warehouse.id)
+            .filter(DeliveryNote.organization_id == organization_id)
         )
         if customer_id is not None:
             q = q.filter(DeliveryNote.customer_id == customer_id)

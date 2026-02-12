@@ -89,18 +89,60 @@ class DeliveryNoteService:
 
     @staticmethod
     def _to_response(dn) -> dict:
+        # Get customer data
+        customer_data = None
+        if dn.customer:
+            customer_data = {
+                "customer_name": dn.customer.customer_name,
+                "customer_code": dn.customer.customer_code,
+                "phone": dn.customer.phone,
+                "email": dn.customer.email,
+            }
+
+        # Get warehouse data
+        warehouse_data = None
+        if dn.warehouse:
+            warehouse_data = {
+                "warehouse_name": dn.warehouse.name,
+                "warehouse_code": dn.warehouse.code,
+            }
+
+        # Get items data
+        items_data = []
+        if hasattr(dn, "items") and dn.items:
+            for item in dn.items:
+                items_data.append(
+                    {
+                        "id": item.id,
+                        "item_id": item.item_id,
+                        "qty": item.qty,
+                        "uom": item.uom,
+                        "rate": item.rate,
+                        "amount": item.amount,
+                        "warehouse_id": item.warehouse_id,
+                        "batch_no": item.batch_no,
+                        "serial_nos": item.serial_nos,
+                        "sort_order": item.sort_order,
+                        "extra_data": item.extra_data,
+                    }
+                )
+
         return {
             "id": dn.id,
             "organization_id": dn.organization_id,
             "delivery_note_no": dn.delivery_note_no,
             "customer_id": dn.customer_id,
+            "customer": customer_data,
             "delivery_date": dn.delivery_date,
             "status": dn.status.value if dn.status else None,
             "warehouse_id": dn.warehouse_id,
+            "warehouse": warehouse_data,
             "pick_list_id": dn.pick_list_id,
             "reference_type": dn.reference_type,
             "reference_id": dn.reference_id,
             "remarks": dn.remarks,
+            "extra_data": dn.extra_data,
+            "items": items_data,
             "submitted_at": dn.submitted_at,
             "created_by": dn.created_by,
             "updated_by": dn.updated_by,
@@ -110,12 +152,34 @@ class DeliveryNoteService:
 
     @staticmethod
     def _to_list_item(dn) -> dict:
+        # Get customer data
+        customer_data = None
+        if dn.customer:
+            customer_data = {
+                "customer_name": dn.customer.customer_name,
+                "customer_code": dn.customer.customer_code,
+                "phone": dn.customer.phone,
+                "email": dn.customer.email,
+            }
+
+        # Get warehouse data
+        warehouse_data = None
+        if dn.warehouse:
+            warehouse_data = {
+                "warehouse_name": dn.warehouse.name,
+                "warehouse_code": dn.warehouse.code,
+            }
+
         return {
             "id": dn.id,
             "organization_id": dn.organization_id,
             "delivery_note_no": dn.delivery_note_no,
             "customer_id": dn.customer_id,
+            "customer": customer_data,
             "status": dn.status.value if dn.status else None,
             "delivery_date": dn.delivery_date,
+            "warehouse_id": dn.warehouse_id,
+            "warehouse": warehouse_data,
+            "remarks": dn.remarks,
             "created_at": dn.created_at,
         }

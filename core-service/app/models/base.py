@@ -212,3 +212,24 @@ class PickListStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+
+class QuotationStatus(str, enum.Enum):
+    """Quotation status enumeration"""
+
+    DRAFT = "draft"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class SalesOrderStatus(str, enum.Enum):
+    """Sales order status enumeration"""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    PARTIALLY_DELIVERED = "partially_delivered"
+    DELIVERED = "delivered"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"

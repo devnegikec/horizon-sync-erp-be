@@ -9,6 +9,22 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+class CustomerInfo(BaseModel):
+    """Customer information embedded in delivery note"""
+
+    customer_name: str
+    customer_code: str
+    phone: str | None = None
+    email: str | None = None
+
+
+class WarehouseInfo(BaseModel):
+    """Warehouse information embedded in delivery note"""
+
+    warehouse_name: str
+    warehouse_code: str
+
+
 class DeliveryNoteItemBase(BaseModel):
     item_id: UUID
     qty: Decimal | float = Field(..., gt=0)
@@ -23,6 +39,14 @@ class DeliveryNoteItemBase(BaseModel):
 
 class DeliveryNoteItemCreate(DeliveryNoteItemBase):
     pass
+
+
+class DeliveryNoteItemResponse(DeliveryNoteItemBase):
+    """Delivery note item with extra data"""
+
+    id: UUID
+    extra_data: dict | None = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeliveryNoteBase(BaseModel):
@@ -51,6 +75,10 @@ class DeliveryNoteUpdate(BaseModel):
 class DeliveryNoteResponse(DeliveryNoteBase):
     id: UUID
     organization_id: UUID
+    customer: CustomerInfo | None = None
+    warehouse: WarehouseInfo | None = None
+    items: list[DeliveryNoteItemResponse] = Field(default_factory=list)
+    extra_data: dict | None = None
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -64,8 +92,12 @@ class DeliveryNoteListItem(BaseModel):
     organization_id: UUID
     delivery_note_no: str
     customer_id: UUID
+    customer: CustomerInfo | None = None
     status: str
     delivery_date: datetime
+    warehouse_id: UUID | None = None
+    warehouse: WarehouseInfo | None = None
+    remarks: str | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
