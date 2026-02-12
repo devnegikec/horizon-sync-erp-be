@@ -55,10 +55,10 @@ async def create_export_job(
         user_id = current_user.id
 
         # Validate format
-        if request.file_format not in ["csv", "xlsx", "json"]:
+        if request.file_format not in ["csv", "xlsx", "json", "pdf"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Supported formats: csv, xlsx, json",
+                detail="Supported formats: csv, xlsx, json, pdf",
             )
 
         # Generate file name if not provided
@@ -223,6 +223,7 @@ async def download_export_file(
             "csv": "text/csv",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "json": "application/json",
+            "pdf": "application/pdf",
         }
         media_type = media_types.get(file_ext, "application/octet-stream")
 
@@ -318,10 +319,10 @@ async def quick_export_items(
         Exported file stream
     """
     try:
-        if file_format not in ["csv", "xlsx", "json"]:
+        if file_format not in ["csv", "xlsx", "json", "pdf"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Supported formats: csv, xlsx, json",
+                detail="Supported formats: csv, xlsx, json, pdf",
             )
 
         organization_id = current_user.organization_id
