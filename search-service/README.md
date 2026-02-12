@@ -6,6 +6,7 @@ Unified Search API for ERP System - provides comprehensive search functionality 
 
 - **Global Search**: Search across all entity types (items, customers, suppliers, warehouses, stock entries)
 - **Local Search**: Search within specific entity types with field-specific filtering
+- **Real-time Sync**: Event-driven architecture for instant search index updates
 - **High Performance**: PostgreSQL full-text search with Redis caching
 - **Security**: JWT-based authentication with role-based access control
 - **Scalability**: Designed to handle 100,000+ records with <500ms response times
@@ -13,13 +14,14 @@ Unified Search API for ERP System - provides comprehensive search functionality 
 
 ## Architecture
 
-The service follows a layered architecture:
+The service follows a layered architecture with event-driven sync:
 
 - **API Layer**: FastAPI endpoints for search operations
 - **Service Layer**: Business logic and authorization
 - **Search Engine Layer**: PostgreSQL full-text search implementation
 - **Data Layer**: Entity persistence and search indexing
 - **Cache Layer**: Redis for query result caching
+- **Event Worker**: Real-time event consumer for instant index updates
 
 ## Requirements
 
@@ -80,6 +82,60 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+## Real-Time Search Sync
+
+The service uses an **event-driven architecture** for real-time search index updates:
+
+### How It Works
+
+1. **Event Publishing** (Core Service):
+   - When entities are created/updated/deleted in core-service
+   - Events are published to Redis Stream (`search:events`)
+   - Events contain full entity data for indexing
+
+2. **Event Consumption** (Search Service):
+   - Background worker consumes events from Redis Stream
+   - Processes events in real-time (typically <100ms)
+   - Updates search documents table immediately
+
+3. **Fallback Sync**:
+   - Periodic sync runs every hour as backup
+   - Catches any missed events
+   - Ensures data consistency
+
+### Event Flow
+
+```
+Create Item → DB Commit → Publish Event → Redis Stream
+                                              ↓
+                               Event Consumer (Search Service)
+                                              ↓
+                               Update SearchDocument
+                                              ↓
+                          Item appears in search immediately!
+```
+
+### Configuration
+
+Event sync settings:
+- `REDIS_URL`: Redis connection for event stream
+- `REDIS_STREAM_NAME`: Stream name (default: `search:events`)
+- `SYNC_SERVICE_USERNAME`: Service account for fallback sync
+- `SYNC_SERVICE_PASSWORD`: Service account password
+
+### Monitoring
+
+Check event consumer logs:
+```bash
+docker logs horizon_search | grep "event_consumer"
+```
+
+Common log messages:
+- `"Starting event consumer for stream 'search:events'"` - Consumer started
+- `"Processing entity.created for items:..."` - Event being processed
+- `"Upserted search document for items:..."` - Index updated
+- `"Periodic fallback sync completed"` - Hourly backup sync finished
+
 ## API Documentation
 
 Once the service is running, visit:
@@ -104,14 +160,17 @@ Key environment variables:
 search-service/
 ├── alembic/              # Database migrations
 ├── app/
-│   ├── api/              # API endpoints (future)
+│   ├── api/              # API endpoints
 │   ├── models/           # Data models
-│   ├── services/         # Business logic (future)
+│   ├── services/         # Business logic & sync service
+│   ├── workers/          # Background event consumer
 │   ├── config.py         # Configuration
 │   ├── database.py       # Database setup
 │   ├── dependencies.py   # FastAPI dependencies
 │   ├── logging_config.py # Logging configuration
 │   ├── main.py           # FastAPI application
+│   ├── query_parser.py   # Search query parser
+│   ├── search_engine.py  # Full-text search engine
 │   └── security.py       # JWT handling
 ├── tests/                # Test suite
 ├── .env.example          # Example environment variables

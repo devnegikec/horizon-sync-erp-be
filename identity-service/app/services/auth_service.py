@@ -324,7 +324,7 @@ class AuthService:
 
     def _handle_failed_login(self, user: User):
         """Handle failed login attempt"""
-        failed_attempts = user.failed_login_attempts + 1
+        failed_attempts = (user.failed_login_attempts or 0) + 1
         update_data = {"failed_login_attempts": failed_attempts}
 
         # Lock account after 5 failed attempts

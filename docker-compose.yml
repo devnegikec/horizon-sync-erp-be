@@ -19,8 +19,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +34,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -107,12 +106,16 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
       IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_NAME: search:events
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
     ports:
       - "8001:8001"
       - "5679:5679"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       identity-service:
         condition: service_started
@@ -150,6 +153,8 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
       CORE_SERVICE_URL: http://core-service:8001
+      SYNC_SERVICE_USERNAME: ${SYNC_SERVICE_USERNAME:-devendera.negi@gmail.com}
+      SYNC_SERVICE_PASSWORD: ${SYNC_SERVICE_PASSWORD:-Test@123}
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}

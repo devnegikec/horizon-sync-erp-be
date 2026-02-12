@@ -57,3 +57,9 @@ Thumbs.db
 
 # Docker volumes (if local)
 postgres_data/
+
+search-service/.hypothesis
+search-service/.dockerignore
+search-service//.gitignore
+search-service/alembic/script.py.mako
+search-service/pyproject.toml

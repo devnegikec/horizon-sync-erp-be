@@ -19,6 +19,20 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Create enum types used in this migration
+    op.execute(
+        "CREATE TYPE valuationmethod AS ENUM ('fifo', 'lifo', 'moving_average', 'standard')"
+    )
+    op.execute(
+        "CREATE TYPE itemtype AS ENUM ('stock', 'non_stock', 'service', 'fixed_asset')"
+    )
+    op.execute(
+        "CREATE TYPE itemstatus AS ENUM ('active', 'inactive', 'discontinued')"
+    )
+    op.execute(
+        "CREATE TYPE warehousetype AS ENUM ('warehouse', 'store', 'virtual', 'transit')"
+    )
+
     # Create item_groups table
     op.create_table(
         "item_groups",
