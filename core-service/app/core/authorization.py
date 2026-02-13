@@ -79,3 +79,11 @@ PAYMENT_CREATE = "payment.create"
 JOURNAL_ENTRY_READ = "journal_entry.read"
 JOURNAL_ENTRY_CREATE = "journal_entry.create"
 JOURNAL_ENTRY_UPDATE = "journal_entry.update"
+
+# Quotation and Sales Order
+QUOTATION_READ = "quotation.read"
+QUOTATION_CREATE = "quotation.create"
+QUOTATION_UPDATE = "quotation.update"
+SALES_ORDER_READ = "sales_order.read"
+SALES_ORDER_CREATE = "sales_order.create"
+SALES_ORDER_UPDATE = "sales_order.update"

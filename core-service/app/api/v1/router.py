@@ -21,6 +21,8 @@ from app.api.v1.endpoints import (
     purchase_receipts,
     put_away_rules,
     quality_inspections,
+    quotations,
+    sales_orders,
     serial_numbers,
     stock_entries,
     stock_levels,
@@ -100,4 +102,11 @@ api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"]
 api_router.include_router(payments.router, prefix="/payments", tags=["Payments"])
 api_router.include_router(
     journal_entries.router, prefix="/journal-entries", tags=["Journal Entries"]
+)
+# Quotation and Sales Order
+api_router.include_router(
+    quotations.router, prefix="/quotations", tags=["Quotations"]
+)
+api_router.include_router(
+    sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
 )

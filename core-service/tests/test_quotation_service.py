@@ -7,7 +7,9 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import ResourceNotFoundException
-from app.models.base import QuotationStatus
+from app.models.base import QuotationStatus, CustomerStatus, ItemStatus, ItemType, ValuationMethod
+from app.models.customer import Customer
+from app.models.item import Item
 from app.services.quotation_service import QuotationService
 
 
@@ -18,25 +20,65 @@ def quotation_service(db_session):
 
 
 @pytest.fixture
-def test_quotation_data(mock_current_user):
+def test_customer(db_session, mock_current_user):
+    """Create a test customer in the database"""
+    customer = Customer(
+        id=uuid.uuid4(),
+        organization_id=mock_current_user.organization_id,
+        customer_name="Test Customer",
+        customer_code="CUST-001",
+        email="customer@test.com",
+        status=CustomerStatus.ACTIVE,
+    )
+    db_session.add(customer)
+    db_session.commit()
+    db_session.refresh(customer)
+    return customer
+
+
+@pytest.fixture
+def test_items(db_session, mock_current_user):
+    """Create test items in the database"""
+    items = []
+    for i in range(2):
+        item = Item(
+            id=uuid.uuid4(),
+            organization_id=mock_current_user.organization_id,
+            item_code=f"ITEM-{i+1:03d}",
+            item_name=f"Test Item {i+1}",
+            item_type=ItemType.STOCK,
+            uom="Nos" if i == 0 else "Kg",
+            status=ItemStatus.ACTIVE,
+            valuation_method=ValuationMethod.FIFO,
+        )
+        db_session.add(item)
+        items.append(item)
+    db_session.commit()
+    for item in items:
+        db_session.refresh(item)
+    return items
+
+
+@pytest.fixture
+def test_quotation_data(mock_current_user, test_customer, test_items):
     """Sample quotation data for testing"""
     return {
         "quotation_no": "QTN-2024-001",
-        "customer_id": uuid.uuid4(),
+        "customer_id": test_customer.id,
         "quotation_date": datetime.now(UTC),
         "valid_until": datetime.now(UTC),
         "currency": "INR",
         "remarks": "Test quotation",
         "items": [
             {
-                "item_id": uuid.uuid4(),
+                "item_id": test_items[0].id,
                 "qty": Decimal("10.000"),
                 "uom": "Nos",
                 "rate": Decimal("100.00"),
                 "sort_order": 0,
             },
             {
-                "item_id": uuid.uuid4(),
+                "item_id": test_items[1].id,
                 "qty": Decimal("5.000"),
                 "uom": "Kg",
                 "rate": Decimal("200.00"),
@@ -184,7 +226,7 @@ class TestQuotationServiceUpdate:
         assert result["updated_by"] == mock_current_user.id
 
     def test_update_quotation_with_items(
-        self, quotation_service, test_quotation_data, mock_current_user
+        self, quotation_service, test_quotation_data, test_items, mock_current_user
     ):
         """Test updating quotation with new items recalculates grand_total"""
         created = quotation_service.create(
@@ -193,7 +235,7 @@ class TestQuotationServiceUpdate:
 
         new_items = [
             {
-                "item_id": uuid.uuid4(),
+                "item_id": test_items[0].id,  # Use existing item from fixture
                 "qty": Decimal("20.000"),
                 "uom": "Nos",
                 "rate": Decimal("50.00"),
@@ -539,7 +581,7 @@ class TestQuotationServiceSentImmutability:
         assert result["status"] == QuotationStatus.SENT.value
 
     def test_can_modify_items_when_draft(
-        self, quotation_service, test_quotation_data, mock_current_user
+        self, quotation_service, test_quotation_data, test_items, mock_current_user
     ):
         """Test that line items can be modified when quotation status is DRAFT"""
         created = quotation_service.create(
@@ -549,7 +591,7 @@ class TestQuotationServiceSentImmutability:
         # Update items while in DRAFT status
         new_items = [
             {
-                "item_id": uuid.uuid4(),
+                "item_id": test_items[0].id,  # Use existing item from fixture
                 "qty": Decimal("5.000"),
                 "uom": "Nos",
                 "rate": Decimal("100.00"),

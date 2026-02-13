@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException
 from app.models.base import SalesOrderStatus
+from app.models.customer import Customer
+from app.models.item import Item
 from app.models.sales_order import SalesOrderItem
 from app.repositories.sales_order_repository import SalesOrderRepository
 
@@ -28,6 +30,16 @@ class SalesOrderService:
 
         # Extract items and calculate grand_total
         items_data = payload.pop("items", [])
+        
+        # Validate customer_id belongs to same organization
+        if "customer_id" in payload:
+            self._validate_customer_organization(payload["customer_id"], organization_id)
+        
+        # Validate item_id in line items belongs to same organization
+        for item_data in items_data:
+            if "item_id" in item_data:
+                self._validate_item_organization(item_data["item_id"], organization_id)
+        
         grand_total = self._calculate_grand_total(items_data)
         payload["grand_total"] = grand_total
 
@@ -103,10 +115,19 @@ class SalesOrderService:
             payload["status"] = SalesOrderStatus(payload["status"])
 
         payload["updated_by"] = user_id
+        
+        # Validate customer_id if being updated
+        if "customer_id" in payload:
+            self._validate_customer_organization(payload["customer_id"], organization_id)
 
         # Handle items update if provided
         if "items" in data:
             items_data = data["items"]
+            
+            # Validate item_id in line items belongs to same organization
+            for item_data in items_data:
+                if "item_id" in item_data:
+                    self._validate_item_organization(item_data["item_id"], organization_id)
 
             # Delete existing items
             for item in sales_order.items:
@@ -143,56 +164,58 @@ class SalesOrderService:
         self.repo.delete(sales_order)
 
     def update_status(
-        self,
-        sales_order_id: UUID,
-        new_status: str,
-        organization_id: UUID,
-        user_id: UUID,
-    ) -> dict:
-        """Update sales order status with validation
+            self,
+            sales_order_id: UUID,
+            new_status: str,
+            organization_id: UUID,
+            user_id: UUID,
+        ) -> dict:
+            """Update sales order status with validation
 
-        Args:
-            sales_order_id: ID of the sales order to update
-            new_status: New status value (string)
-            organization_id: Organization ID for multi-tenancy
-            user_id: User ID for audit trail
+            Args:
+                sales_order_id: ID of the sales order to update
+                new_status: New status value (string)
+                organization_id: Organization ID for multi-tenancy
+                user_id: User ID for audit trail
 
-        Returns:
-            Updated sales order as dict
+            Returns:
+                Updated sales order as dict
 
-        Raises:
-            ResourceNotFoundException: If sales order not found
-            ValueError: If status transition is invalid
-        """
-        sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
-        if not sales_order:
-            raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
+            Raises:
+                ResourceNotFoundException: If sales order not found
+                ValueError: If status transition is invalid
+            """
+            sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
+            if not sales_order:
+                raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
 
-        # Convert string to enum
-        new_status_enum = SalesOrderStatus(new_status)
+            # Convert string to enum
+            new_status_enum = SalesOrderStatus(new_status)
 
-        # Validate status transition
-        self._validate_status_transition(sales_order.status, new_status_enum)
+            # Validate status transition (pass sales_order for CLOSED status validation)
+            self._validate_status_transition(
+                sales_order.status, new_status_enum, sales_order
+            )
 
-        # Prepare update payload
-        payload = {
-            "status": new_status_enum,
-            "updated_by": user_id,
-        }
+            # Prepare update payload
+            payload = {
+                "status": new_status_enum,
+                "updated_by": user_id,
+            }
 
-        # Set submitted_at when status changes to CONFIRMED
-        if (
-            new_status_enum == SalesOrderStatus.CONFIRMED
-            and sales_order.submitted_at is None
-        ):
-            from datetime import UTC, datetime
+            # Set submitted_at when status changes to CONFIRMED
+            if (
+                new_status_enum == SalesOrderStatus.CONFIRMED
+                and sales_order.submitted_at is None
+            ):
+                from datetime import UTC, datetime
 
-            payload["submitted_at"] = datetime.now(UTC)
+                payload["submitted_at"] = datetime.now(UTC)
 
-        # Update the sales order
-        self.repo.update(sales_order, payload)
-        self.db.refresh(sales_order)
-        return self._to_response(sales_order)
+            # Update the sales order
+            self.repo.update(sales_order, payload)
+            self.db.refresh(sales_order)
+            return self._to_response(sales_order)
 
     def convert_to_invoice(
         self,
@@ -308,54 +331,196 @@ class SalesOrderService:
             raise e
 
     def _validate_status_transition(
-        self, current_status: SalesOrderStatus, new_status: SalesOrderStatus
-    ) -> None:
-        """Validate status transition according to workflow rules
+            self,
+            current_status: SalesOrderStatus,
+            new_status: SalesOrderStatus,
+            sales_order=None,
+        ) -> None:
+            """Validate status transition according to workflow rules
 
-        Workflow: DRAFT → CONFIRMED → PARTIALLY_DELIVERED → DELIVERED → CLOSED
-        CANCELLED allowed from any state except CLOSED
+            Workflow: DRAFT → CONFIRMED → PARTIALLY_DELIVERED → DELIVERED → CLOSED
+            CANCELLED allowed from any state except CLOSED
+            CLOSED allowed from any state if all items are fully billed
+
+            Args:
+                current_status: Current status of the sales order
+                new_status: Requested new status
+                sales_order: Optional SalesOrder object for additional validation
+
+            Raises:
+                ValueError: If the status transition is not allowed
+            """
+            # No transition needed if status is the same
+            if current_status == new_status:
+                return
+
+            # CANCELLED can be set from any state except CLOSED
+            if new_status == SalesOrderStatus.CANCELLED:
+                if current_status == SalesOrderStatus.CLOSED:
+                    raise ValueError("Cannot cancel a sales order that is already CLOSED")
+                return
+
+            # Cannot transition from CANCELLED or CLOSED to any other status
+            if current_status in (SalesOrderStatus.CANCELLED, SalesOrderStatus.CLOSED):
+                raise ValueError(
+                    f"Cannot transition from {current_status.value} to {new_status.value}"
+                )
+
+            # Special handling for CLOSED status (Requirement 6.7)
+            # Allow transition to CLOSED from any status if all items are fully billed
+            if new_status == SalesOrderStatus.CLOSED:
+                if sales_order is None:
+                    raise ValueError(
+                        "Cannot validate CLOSED status transition without sales order data"
+                    )
+
+                # Check if all items are fully billed
+                all_items_fully_billed = all(
+                    item.billed_qty >= item.qty for item in sales_order.items
+                )
+
+                if not all_items_fully_billed:
+                    raise ValueError(
+                        "Cannot transition to CLOSED status: not all items are fully billed"
+                    )
+
+                # If fully billed, allow transition to CLOSED from any status
+                return
+
+            # Define valid transitions for the main workflow
+            valid_transitions = {
+                SalesOrderStatus.DRAFT: [SalesOrderStatus.CONFIRMED],
+                SalesOrderStatus.CONFIRMED: [
+                    SalesOrderStatus.PARTIALLY_DELIVERED,
+                    SalesOrderStatus.DELIVERED,
+                ],
+                SalesOrderStatus.PARTIALLY_DELIVERED: [SalesOrderStatus.DELIVERED],
+                SalesOrderStatus.DELIVERED: [SalesOrderStatus.CLOSED],
+            }
+
+            allowed_next_statuses = valid_transitions.get(current_status, [])
+
+            if new_status not in allowed_next_statuses:
+                raise ValueError(
+                    f"Invalid status transition from {current_status.value} to {new_status.value}. "
+                    f"Allowed transitions: {', '.join(s.value for s in allowed_next_statuses)}"
+                )
+
+    def convert_to_delivery_note(
+        self,
+        sales_order_id: UUID,
+        items_to_deliver: list[dict],
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> dict:
+        """Convert sales order to delivery note with partial delivery support
 
         Args:
-            current_status: Current status of the sales order
-            new_status: Requested new status
+            sales_order_id: ID of the sales order to convert
+            items_to_deliver: List of dicts with item_id and qty_to_deliver for each item
+            organization_id: Organization ID for multi-tenancy
+            user_id: User ID for audit trail
+
+        Returns:
+            Created delivery note as dict
 
         Raises:
-            ValueError: If the status transition is not allowed
+            ResourceNotFoundException: If sales order not found
+            ValueError: If delivery quantities exceed pending_delivery_qty
         """
-        # No transition needed if status is the same
-        if current_status == new_status:
-            return
+        from datetime import UTC, datetime
 
-        # CANCELLED can be set from any state except CLOSED
-        if new_status == SalesOrderStatus.CANCELLED:
-            if current_status == SalesOrderStatus.CLOSED:
-                raise ValueError("Cannot cancel a sales order that is already CLOSED")
-            return
+        from app.models.base import DocumentStatus
+        from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
 
-        # Cannot transition from CANCELLED or CLOSED to any other status
-        if current_status in (SalesOrderStatus.CANCELLED, SalesOrderStatus.CLOSED):
-            raise ValueError(
-                f"Cannot transition from {current_status.value} to {new_status.value}"
-            )
+        # Get sales order with items
+        sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
+        if not sales_order:
+            raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
 
-        # Define valid transitions for the main workflow
-        valid_transitions = {
-            SalesOrderStatus.DRAFT: [SalesOrderStatus.CONFIRMED],
-            SalesOrderStatus.CONFIRMED: [
-                SalesOrderStatus.PARTIALLY_DELIVERED,
-                SalesOrderStatus.DELIVERED,
-            ],
-            SalesOrderStatus.PARTIALLY_DELIVERED: [SalesOrderStatus.DELIVERED],
-            SalesOrderStatus.DELIVERED: [SalesOrderStatus.CLOSED],
-        }
+        # Validate delivery quantities
+        self._validate_delivery_quantities(sales_order, items_to_deliver)
 
-        allowed_next_statuses = valid_transitions.get(current_status, [])
+        # Use database transaction for atomicity
+        try:
+            # Create delivery note
+            delivery_note_data = {
+                "organization_id": organization_id,
+                "delivery_note_no": f"DN-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",  # Temporary, should use sequence
+                "customer_id": sales_order.customer_id,
+                "delivery_date": datetime.now(UTC),
+                "status": DocumentStatus.DRAFT,
+                "reference_type": "Sales Order",
+                "reference_id": sales_order.id,
+                "remarks": sales_order.remarks,
+                "created_by": user_id,
+                "updated_by": user_id,
+            }
 
-        if new_status not in allowed_next_statuses:
-            raise ValueError(
-                f"Invalid status transition from {current_status.value} to {new_status.value}. "
-                f"Allowed transitions: {', '.join(s.value for s in allowed_next_statuses)}"
-            )
+            # Create delivery note
+            delivery_note = DeliveryNote(**delivery_note_data)
+            self.db.add(delivery_note)
+            self.db.flush()  # Flush to get delivery note ID
+
+            # Create delivery note items
+            for item_to_deliver in items_to_deliver:
+                # Find the corresponding sales order item
+                so_item = next(
+                    (
+                        item
+                        for item in sales_order.items
+                        if item.id == item_to_deliver["item_id"]
+                    ),
+                    None,
+                )
+                if so_item:
+                    qty_to_deliver = Decimal(str(item_to_deliver["qty_to_deliver"]))
+                    
+                    dn_item_data = {
+                        "organization_id": organization_id,
+                        "delivery_note_id": delivery_note.id,
+                        "item_id": so_item.item_id,
+                        "qty": qty_to_deliver,
+                        "uom": so_item.uom,
+                        "rate": so_item.rate,
+                        "amount": qty_to_deliver * so_item.rate,
+                        "sort_order": so_item.sort_order,
+                    }
+                    
+                    dn_item = DeliveryNoteItem(**dn_item_data)
+                    self.db.add(dn_item)
+
+            # Update sales_order_item.delivered_qty for each delivered item
+            self._update_delivered_quantities(sales_order, items_to_deliver)
+
+            # Update sales order delivery status automatically
+            self._check_and_update_delivery_status(sales_order)
+
+            # Commit transaction
+            self.db.commit()
+            self.db.refresh(delivery_note)
+
+            # Return delivery note response
+            return {
+                "id": delivery_note.id,
+                "organization_id": delivery_note.organization_id,
+                "delivery_note_no": delivery_note.delivery_note_no,
+                "customer_id": delivery_note.customer_id,
+                "delivery_date": delivery_note.delivery_date,
+                "status": delivery_note.status.value,
+                "reference_type": delivery_note.reference_type,
+                "reference_id": delivery_note.reference_id,
+                "remarks": delivery_note.remarks,
+                "submitted_at": delivery_note.submitted_at,
+                "created_by": delivery_note.created_by,
+                "updated_by": delivery_note.updated_by,
+                "created_at": delivery_note.created_at,
+                "updated_at": delivery_note.updated_at,
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
     def _validate_billing_quantities(
         self, sales_order, items_to_bill: list[dict]
@@ -398,16 +563,81 @@ class SalesOrderService:
                     f"Billing quantity must be greater than 0 for item {item_id}"
                 )
 
-    def _update_billed_quantities(self, sales_order, items_to_bill: list[dict]) -> None:
-        """Update billed_qty for each billed item
+    def _validate_delivery_quantities(
+        self, sales_order, items_to_deliver: list[dict]
+    ) -> None:
+        """Validate that delivery quantities don't exceed pending_delivery_qty
 
         Args:
             sales_order: SalesOrder object with items
-            items_to_bill: List of dicts with item_id and qty_to_bill
+            items_to_deliver: List of dicts with item_id and qty_to_deliver
+
+        Raises:
+            ValueError: If any delivery quantity exceeds pending_delivery_qty
         """
-        for item_to_bill in items_to_bill:
-            item_id = item_to_bill["item_id"]
-            qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
+        for item_to_deliver in items_to_deliver:
+            item_id = item_to_deliver["item_id"]
+            qty_to_deliver = Decimal(str(item_to_deliver["qty_to_deliver"]))
+
+            # Find the corresponding sales order item
+            so_item = next(
+                (item for item in sales_order.items if item.id == item_id), None
+            )
+
+            if not so_item:
+                raise ValueError(
+                    f"Item {item_id} not found in sales order {sales_order.id}"
+                )
+
+            # Calculate pending_delivery_qty
+            pending_delivery_qty = so_item.qty - so_item.delivered_qty
+
+            # Validate quantity
+            if qty_to_deliver > pending_delivery_qty:
+                raise ValueError(
+                    f"Delivery quantity {qty_to_deliver} exceeds pending delivery quantity "
+                    f"{pending_delivery_qty} for item {item_id}"
+                )
+
+            if qty_to_deliver <= 0:
+                raise ValueError(
+                    f"Delivery quantity must be greater than 0 for item {item_id}"
+                )
+
+    def _update_billed_quantities(self, sales_order, items_to_bill: list[dict]) -> None:
+            """Update billed_qty for each billed item
+
+            Args:
+                sales_order: SalesOrder object with items
+                items_to_bill: List of dicts with item_id and qty_to_bill
+            """
+            for item_to_bill in items_to_bill:
+                item_id = item_to_bill["item_id"]
+                qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
+
+                # Find the corresponding sales order item
+                so_item = next(
+                    (item for item in sales_order.items if item.id == item_id), None
+                )
+
+                if so_item:
+                    so_item.billed_qty += qty_to_bill
+
+            # Check if sales order is fully billed
+            self._check_and_update_billing_status(sales_order)
+
+    def _update_delivered_quantities(
+        self, sales_order, items_to_deliver: list[dict]
+    ) -> None:
+        """Update delivered_qty for each delivered item
+
+        Args:
+            sales_order: SalesOrder object with items
+            items_to_deliver: List of dicts with item_id and qty_to_deliver
+        """
+        for item_to_deliver in items_to_deliver:
+            item_id = item_to_deliver["item_id"]
+            qty_to_deliver = Decimal(str(item_to_deliver["qty_to_deliver"]))
 
             # Find the corresponding sales order item
             so_item = next(
@@ -415,7 +645,112 @@ class SalesOrderService:
             )
 
             if so_item:
-                so_item.billed_qty += qty_to_bill
+                so_item.delivered_qty += qty_to_deliver
+
+    def _check_and_update_billing_status(self, sales_order) -> None:
+        """Check if sales order is fully billed and update status if needed
+
+        After updating billed quantities, this method checks if all items
+        have billed_qty equal to qty. If fully billed, the sales order
+        becomes eligible for status transition to CLOSED.
+
+        Args:
+            sales_order: SalesOrder object with items
+
+        Note:
+            This method does not automatically change the status to CLOSED.
+            It only ensures the sales order is in a state where CLOSED
+            status transition is allowed (per requirement 6.7).
+        """
+        # Check if all items are fully billed
+        all_items_fully_billed = all(
+            item.billed_qty >= item.qty for item in sales_order.items
+        )
+
+        # If fully billed and not already closed, the order is eligible for closure
+        # The actual status change to CLOSED should be done via update_status endpoint
+        # This method just ensures the data state allows for that transition
+        if all_items_fully_billed:
+            # Log or mark that the order is fully billed
+            # The status transition validation will allow CLOSED status
+            pass
+
+    def _check_and_update_delivery_status(self, sales_order) -> None:
+        """Check delivery status and update sales order status automatically
+
+        After updating delivered quantities, this method checks if:
+        - All items have delivered_qty = qty → Set status to DELIVERED
+        - Some items have delivered_qty > 0 → Set status to PARTIALLY_DELIVERED
+
+        Args:
+            sales_order: SalesOrder object with items
+
+        Note:
+            This method automatically updates the sales order status based on
+            delivery progress (per requirements 7.7 and 7.8).
+        """
+        # Check if all items are fully delivered
+        all_items_fully_delivered = all(
+            item.delivered_qty >= item.qty for item in sales_order.items
+        )
+
+        # Check if any items are partially delivered
+        any_items_delivered = any(item.delivered_qty > 0 for item in sales_order.items)
+
+        # Update status based on delivery progress
+        if all_items_fully_delivered:
+            # All items fully delivered → DELIVERED status
+            sales_order.status = SalesOrderStatus.DELIVERED
+        elif any_items_delivered:
+            # Some items delivered → PARTIALLY_DELIVERED status
+            sales_order.status = SalesOrderStatus.PARTIALLY_DELIVERED
+
+    def _validate_customer_organization(self, customer_id: UUID, organization_id: UUID) -> None:
+        """
+        Validate that customer_id belongs to the same organization_id.
+
+        Args:
+            customer_id: Customer ID to validate
+            organization_id: Expected organization ID
+
+        Raises:
+            ValueError: If customer doesn't exist or belongs to different organization
+        """
+        customer = self.db.query(Customer).filter(
+            Customer.id == customer_id
+        ).first()
+        
+        if not customer:
+            raise ValueError(f"Customer {customer_id} not found")
+        
+        if customer.organization_id != organization_id:
+            raise ValueError(
+                f"Customer {customer_id} belongs to a different organization"
+            )
+
+    def _validate_item_organization(self, item_id: UUID, organization_id: UUID) -> None:
+        """
+        Validate that item_id belongs to the same organization_id.
+
+        Args:
+            item_id: Item ID to validate
+            organization_id: Expected organization ID
+
+        Raises:
+            ValueError: If item doesn't exist or belongs to different organization
+        """
+        item = self.db.query(Item).filter(
+            Item.id == item_id
+        ).first()
+        
+        if not item:
+            raise ValueError(f"Item {item_id} not found")
+        
+        if item.organization_id != organization_id:
+            raise ValueError(
+                f"Item {item_id} belongs to a different organization"
+            )
+
 
     def _calculate_grand_total(self, items: list[dict]) -> Decimal:
         """Calculate grand total from line items"""

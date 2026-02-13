@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException
 from app.models.base import QuotationStatus
+from app.models.customer import Customer
+from app.models.item import Item
 from app.models.quotation import QuotationItem
 from app.repositories.quotation_repository import QuotationRepository
 
@@ -28,6 +30,16 @@ class QuotationService:
 
         # Extract items and calculate grand_total
         items_data = payload.pop("items", [])
+        
+        # Validate customer_id belongs to same organization
+        if "customer_id" in payload:
+            self._validate_customer_organization(payload["customer_id"], organization_id)
+        
+        # Validate item_id in line items belongs to same organization
+        for item_data in items_data:
+            if "item_id" in item_data:
+                self._validate_item_organization(item_data["item_id"], organization_id)
+        
         grand_total = self._calculate_grand_total(items_data)
         payload["grand_total"] = grand_total
 
@@ -104,10 +116,19 @@ class QuotationService:
             payload["status"] = QuotationStatus(payload["status"])
 
         payload["updated_by"] = user_id
+        
+        # Validate customer_id if being updated
+        if "customer_id" in payload:
+            self._validate_customer_organization(payload["customer_id"], organization_id)
 
         # Handle items update if provided
         if "items" in data:
             items_data = data["items"]
+            
+            # Validate item_id in line items belongs to same organization
+            for item_data in items_data:
+                if "item_id" in item_data:
+                    self._validate_item_organization(item_data["item_id"], organization_id)
 
             # Delete existing items
             for item in quotation.items:
@@ -319,6 +340,52 @@ class QuotationService:
                 f"Allowed transitions: {', '.join(s.value for s in allowed_next_states)}"
             )
 
+    def _validate_customer_organization(self, customer_id: UUID, organization_id: UUID) -> None:
+        """
+        Validate that customer_id belongs to the same organization_id.
+
+        Args:
+            customer_id: Customer ID to validate
+            organization_id: Expected organization ID
+
+        Raises:
+            ValueError: If customer doesn't exist or belongs to different organization
+        """
+        customer = self.db.query(Customer).filter(
+            Customer.id == customer_id
+        ).first()
+        
+        if not customer:
+            raise ValueError(f"Customer {customer_id} not found")
+        
+        if customer.organization_id != organization_id:
+            raise ValueError(
+                f"Customer {customer_id} belongs to a different organization"
+            )
+
+    def _validate_item_organization(self, item_id: UUID, organization_id: UUID) -> None:
+        """
+        Validate that item_id belongs to the same organization_id.
+
+        Args:
+            item_id: Item ID to validate
+            organization_id: Expected organization ID
+
+        Raises:
+            ValueError: If item doesn't exist or belongs to different organization
+        """
+        item = self.db.query(Item).filter(
+            Item.id == item_id
+        ).first()
+        
+        if not item:
+            raise ValueError(f"Item {item_id} not found")
+        
+        if item.organization_id != organization_id:
+            raise ValueError(
+                f"Item {item_id} belongs to a different organization"
+            )
+
     @staticmethod
     def _to_response(quotation) -> dict:
         return {
@@ -341,6 +408,8 @@ class QuotationService:
             "items": [
                 {
                     "id": item.id,
+                    "organization_id": item.organization_id,
+                    "quotation_id": item.quotation_id,
                     "item_id": item.item_id,
                     "qty": item.qty,
                     "uom": item.uom,
@@ -348,6 +417,8 @@ class QuotationService:
                     "amount": item.amount,
                     "sort_order": item.sort_order,
                     "extra_data": item.extra_data,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
                 }
                 for item in quotation.items
             ],
@@ -361,6 +432,7 @@ class QuotationService:
             "quotation_no": quotation.quotation_no,
             "customer_id": quotation.customer_id,
             "quotation_date": quotation.quotation_date,
+            "valid_until": quotation.valid_until,
             "status": quotation.status.value if quotation.status else None,
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,

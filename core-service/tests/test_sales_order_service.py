@@ -401,12 +401,50 @@ class TestSalesOrderStatusTransitions:
     def test_valid_transition_delivered_to_closed(
         self,
         db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
     ):
-        """Test valid transition from DELIVERED to CLOSED"""
+        """Test valid transition from DELIVERED to CLOSED requires sales order with fully billed items"""
         service = SalesOrderService(db_session)
 
+        # Create a sales order with fully billed items
+        data = {
+            "sales_order_no": "SO-TEST-001",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order_dict = service.create(data, organization_id, user_id)
+        
+        # Bill the full quantity
+        items_to_bill = [
+            {
+                "item_id": sales_order_dict["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),
+            }
+        ]
+        service.convert_to_invoice(
+            sales_order_dict["id"], items_to_bill, organization_id, user_id
+        )
+        
+        # Get the sales order object
+        from app.repositories.sales_order_repository import SalesOrderRepository
+        repo = SalesOrderRepository(db_session)
+        sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
+
+        # Should not raise an exception
         service._validate_status_transition(
-            SalesOrderStatus.DELIVERED, SalesOrderStatus.CLOSED
+            SalesOrderStatus.DELIVERED, SalesOrderStatus.CLOSED, sales_order
         )
 
     def test_cancelled_allowed_from_draft(
@@ -482,25 +520,77 @@ class TestSalesOrderStatusTransitions:
     def test_invalid_transition_draft_to_closed(
         self,
         db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
     ):
-        """Test invalid transition from DRAFT to CLOSED"""
+        """Test invalid transition from DRAFT to CLOSED without fully billed items"""
         service = SalesOrderService(db_session)
 
-        with pytest.raises(ValueError, match="Invalid status transition"):
+        # Create a sales order without billing
+        data = {
+            "sales_order_no": "SO-TEST-002",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order_dict = service.create(data, organization_id, user_id)
+        
+        # Get the sales order object
+        from app.repositories.sales_order_repository import SalesOrderRepository
+        repo = SalesOrderRepository(db_session)
+        sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
+
+        with pytest.raises(ValueError, match="not all items are fully billed"):
             service._validate_status_transition(
-                SalesOrderStatus.DRAFT, SalesOrderStatus.CLOSED
+                SalesOrderStatus.DRAFT, SalesOrderStatus.CLOSED, sales_order
             )
 
     def test_invalid_transition_confirmed_to_closed(
         self,
         db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
     ):
-        """Test invalid transition from CONFIRMED to CLOSED"""
+        """Test invalid transition from CONFIRMED to CLOSED without fully billed items"""
         service = SalesOrderService(db_session)
 
-        with pytest.raises(ValueError, match="Invalid status transition"):
+        # Create a sales order without billing
+        data = {
+            "sales_order_no": "SO-TEST-003",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order_dict = service.create(data, organization_id, user_id)
+        
+        # Get the sales order object
+        from app.repositories.sales_order_repository import SalesOrderRepository
+        repo = SalesOrderRepository(db_session)
+        sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
+
+        with pytest.raises(ValueError, match="not all items are fully billed"):
             service._validate_status_transition(
-                SalesOrderStatus.CONFIRMED, SalesOrderStatus.CLOSED
+                SalesOrderStatus.CONFIRMED, SalesOrderStatus.CLOSED, sales_order
             )
 
     def test_invalid_transition_from_cancelled(
@@ -771,6 +861,17 @@ class TestSalesOrderUpdateStatus:
         }
 
         created = service.create(data, organization_id, user_id)
+
+        # Bill the full quantity first (required for CLOSED status)
+        items_to_bill = [
+            {
+                "item_id": created["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),
+            }
+        ]
+        service.convert_to_invoice(
+            created["id"], items_to_bill, organization_id, user_id
+        )
 
         # Move through the workflow to CLOSED
         service.update_status(created["id"], "confirmed", organization_id, user_id)
@@ -1112,3 +1213,809 @@ class TestSalesOrderConvertToInvoice:
             service.convert_to_invoice(
                 sales_order["id"], items_to_bill, organization_id, user_id
             )
+
+
+class TestSalesOrderFullyBilledCheck:
+    """Tests for fully billed check logic (Requirement 6.7)"""
+
+    def test_fully_billed_allows_closed_status(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that fully billed sales order can transition to CLOSED"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-CLOSED-001",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Confirm the order
+        service.update_status(sales_order["id"], "confirmed", organization_id, user_id)
+
+        # Bill the full quantity
+        items_to_bill = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),
+            }
+        ]
+
+        service.convert_to_invoice(
+            sales_order["id"], items_to_bill, organization_id, user_id
+        )
+
+        # Verify sales order is fully billed
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["billed_qty"] == Decimal("10.000")
+        assert updated_so["items"][0]["pending_billing_qty"] == Decimal("0.000")
+
+        # Should be able to transition to CLOSED from CONFIRMED
+        result = service.update_status(
+            sales_order["id"], "closed", organization_id, user_id
+        )
+
+        assert result["status"] == "closed"
+
+    def test_partially_billed_prevents_closed_status(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that partially billed sales order cannot transition to CLOSED"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-CLOSED-002",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Confirm the order
+        service.update_status(sales_order["id"], "confirmed", organization_id, user_id)
+
+        # Bill only partial quantity
+        items_to_bill = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_bill": Decimal("5.000"),  # Only half
+            }
+        ]
+
+        service.convert_to_invoice(
+            sales_order["id"], items_to_bill, organization_id, user_id
+        )
+
+        # Verify sales order is partially billed
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["billed_qty"] == Decimal("5.000")
+        assert updated_so["items"][0]["pending_billing_qty"] == Decimal("5.000")
+
+        # Should NOT be able to transition to CLOSED
+        with pytest.raises(
+            ValueError, match="not all items are fully billed"
+        ):
+            service.update_status(
+                sales_order["id"], "closed", organization_id, user_id
+            )
+
+    def test_unbilled_prevents_closed_status(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that unbilled sales order cannot transition to CLOSED"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-CLOSED-003",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Confirm the order
+        service.update_status(sales_order["id"], "confirmed", organization_id, user_id)
+
+        # Don't bill anything
+
+        # Should NOT be able to transition to CLOSED
+        with pytest.raises(
+            ValueError, match="not all items are fully billed"
+        ):
+            service.update_status(
+                sales_order["id"], "closed", organization_id, user_id
+            )
+
+    def test_fully_billed_multiple_items_allows_closed(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that sales order with multiple fully billed items can transition to CLOSED"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order with multiple items
+        data = {
+            "sales_order_no": "SO-CLOSED-004",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                },
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("5.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("200.00"),
+                },
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Confirm the order
+        service.update_status(sales_order["id"], "confirmed", organization_id, user_id)
+
+        # Bill all items fully
+        items_to_bill = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),
+            },
+            {
+                "item_id": sales_order["items"][1]["id"],
+                "qty_to_bill": Decimal("5.000"),
+            },
+        ]
+
+        service.convert_to_invoice(
+            sales_order["id"], items_to_bill, organization_id, user_id
+        )
+
+        # Should be able to transition to CLOSED
+        result = service.update_status(
+            sales_order["id"], "closed", organization_id, user_id
+        )
+
+        assert result["status"] == "closed"
+
+    def test_partially_billed_multiple_items_prevents_closed(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that sales order with one partially billed item cannot transition to CLOSED"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order with multiple items
+        data = {
+            "sales_order_no": "SO-CLOSED-005",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                },
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("5.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("200.00"),
+                },
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Confirm the order
+        service.update_status(sales_order["id"], "confirmed", organization_id, user_id)
+
+        # Bill first item fully, second item partially
+        items_to_bill = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),  # Full
+            },
+            {
+                "item_id": sales_order["items"][1]["id"],
+                "qty_to_bill": Decimal("3.000"),  # Partial (3 out of 5)
+            },
+        ]
+
+        service.convert_to_invoice(
+            sales_order["id"], items_to_bill, organization_id, user_id
+        )
+
+        # Should NOT be able to transition to CLOSED
+        with pytest.raises(
+            ValueError, match="not all items are fully billed"
+        ):
+            service.update_status(
+                sales_order["id"], "closed", organization_id, user_id
+            )
+
+    def test_fully_billed_from_draft_allows_closed(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that fully billed sales order can transition to CLOSED even from DRAFT"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-CLOSED-006",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Bill the full quantity (even from DRAFT status)
+        items_to_bill = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_bill": Decimal("10.000"),
+            }
+        ]
+
+        service.convert_to_invoice(
+            sales_order["id"], items_to_bill, organization_id, user_id
+        )
+
+        # Should be able to transition to CLOSED from DRAFT if fully billed
+        result = service.update_status(
+            sales_order["id"], "closed", organization_id, user_id
+        )
+
+        assert result["status"] == "closed"
+
+
+class TestSalesOrderConvertToDeliveryNote:
+    """Tests for converting sales orders to delivery notes"""
+
+    def test_convert_to_delivery_note_full_delivery(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test converting a sales order to delivery note with full delivery"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-001",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "remarks": "Test order for delivery",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Convert to delivery note with full delivery
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("10.000"),
+            }
+        ]
+
+        delivery_note = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver, organization_id, user_id
+        )
+
+        # Verify delivery note
+        assert delivery_note["customer_id"] == customer.id
+        assert delivery_note["status"] == "draft"
+        assert delivery_note["reference_type"] == "Sales Order"
+        assert delivery_note["reference_id"] == sales_order["id"]
+        assert delivery_note["remarks"] == "Test order for delivery"
+
+        # Verify sales order item delivered_qty updated
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
+        assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("0.000")
+        
+        # Verify status automatically updated to DELIVERED
+        assert updated_so["status"] == "delivered"
+
+    def test_convert_to_delivery_note_partial_delivery(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test converting a sales order to delivery note with partial delivery"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-002",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Convert to delivery note with partial delivery (5 out of 10)
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("5.000"),
+            }
+        ]
+
+        delivery_note = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver, organization_id, user_id
+        )
+
+        # Verify delivery note created
+        assert delivery_note["customer_id"] == customer.id
+
+        # Verify sales order item delivered_qty updated
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("5.000")
+        assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("5.000")
+        
+        # Verify status automatically updated to PARTIALLY_DELIVERED
+        assert updated_so["status"] == "partially_delivered"
+
+    def test_convert_to_delivery_note_exceeds_pending_qty_raises_error(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that delivery quantity exceeding pending_delivery_qty raises error"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-003",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Try to deliver more than available
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("15.000"),  # More than ordered qty
+            }
+        ]
+
+        with pytest.raises(ValueError, match="exceeds pending delivery quantity"):
+            service.convert_to_delivery_note(
+                sales_order["id"], items_to_deliver, organization_id, user_id
+            )
+
+    def test_convert_to_delivery_note_multiple_partial_deliveries(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test multiple partial deliveries for the same sales order"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-004",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # First partial delivery (3 units)
+        items_to_deliver_1 = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("3.000"),
+            }
+        ]
+
+        delivery_note1 = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver_1, organization_id, user_id
+        )
+
+        assert delivery_note1["customer_id"] == customer.id
+
+        # Verify first update
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("3.000")
+        assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("7.000")
+        assert updated_so["status"] == "partially_delivered"
+
+        # Second partial delivery (4 units)
+        items_to_deliver_2 = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("4.000"),
+            }
+        ]
+
+        delivery_note2 = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver_2, organization_id, user_id
+        )
+
+        assert delivery_note2["customer_id"] == customer.id
+
+        # Verify second update
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("7.000")
+        assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("3.000")
+        assert updated_so["status"] == "partially_delivered"
+
+        # Third delivery (remaining 3 units)
+        items_to_deliver_3 = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("3.000"),
+            }
+        ]
+
+        delivery_note3 = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver_3, organization_id, user_id
+        )
+
+        # Verify final update - should be fully delivered
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
+        assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("0.000")
+        assert updated_so["status"] == "delivered"
+
+    def test_convert_to_delivery_note_zero_qty_raises_error(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that zero delivery quantity raises error"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-005",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Try to deliver zero quantity
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("0.000"),
+            }
+        ]
+
+        with pytest.raises(ValueError, match="must be greater than 0"):
+            service.convert_to_delivery_note(
+                sales_order["id"], items_to_deliver, organization_id, user_id
+            )
+
+    def test_convert_to_delivery_note_not_found_raises_error(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ):
+        """Test that converting non-existent sales order raises error"""
+        service = SalesOrderService(db_session)
+
+        fake_id = uuid.uuid4()
+        items_to_deliver = [
+            {
+                "item_id": uuid.uuid4(),
+                "qty_to_deliver": Decimal("5.000"),
+            }
+        ]
+
+        with pytest.raises(ResourceNotFoundException):
+            service.convert_to_delivery_note(
+                fake_id, items_to_deliver, organization_id, user_id
+            )
+
+    def test_convert_to_delivery_note_invalid_item_raises_error(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test that delivering an item not in the sales order raises error"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order
+        data = {
+            "sales_order_no": "SO-DN-006",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                    "sort_order": 0,
+                }
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Try to deliver an item that's not in the sales order
+        items_to_deliver = [
+            {
+                "item_id": uuid.uuid4(),  # Random item ID
+                "qty_to_deliver": Decimal("5.000"),
+            }
+        ]
+
+        with pytest.raises(ValueError, match="not found in sales order"):
+            service.convert_to_delivery_note(
+                sales_order["id"], items_to_deliver, organization_id, user_id
+            )
+
+    def test_convert_to_delivery_note_multiple_items(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test converting sales order with multiple items to delivery note"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order with multiple items
+        data = {
+            "sales_order_no": "SO-DN-007",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                },
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("5.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("200.00"),
+                },
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Deliver all items fully
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("10.000"),
+            },
+            {
+                "item_id": sales_order["items"][1]["id"],
+                "qty_to_deliver": Decimal("5.000"),
+            },
+        ]
+
+        delivery_note = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver, organization_id, user_id
+        )
+
+        # Verify delivery note created
+        assert delivery_note["customer_id"] == customer.id
+
+        # Verify all items delivered
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
+        assert updated_so["items"][1]["delivered_qty"] == Decimal("5.000")
+        assert updated_so["status"] == "delivered"
+
+    def test_convert_to_delivery_note_partial_multiple_items(
+        self,
+        db_session: Session,
+        organization_id: uuid.UUID,
+        user_id: uuid.UUID,
+        customer: Customer,
+        item: Item,
+    ):
+        """Test partial delivery of multiple items"""
+        service = SalesOrderService(db_session)
+
+        # Create sales order with multiple items
+        data = {
+            "sales_order_no": "SO-DN-008",
+            "customer_id": customer.id,
+            "order_date": datetime.now(UTC),
+            "currency": "USD",
+            "items": [
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("10.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("100.00"),
+                },
+                {
+                    "item_id": item.id,
+                    "qty": Decimal("5.000"),
+                    "uom": "Pcs",
+                    "rate": Decimal("200.00"),
+                },
+            ],
+        }
+
+        sales_order = service.create(data, organization_id, user_id)
+
+        # Deliver first item fully, second item partially
+        items_to_deliver = [
+            {
+                "item_id": sales_order["items"][0]["id"],
+                "qty_to_deliver": Decimal("10.000"),  # Full
+            },
+            {
+                "item_id": sales_order["items"][1]["id"],
+                "qty_to_deliver": Decimal("3.000"),  # Partial (3 out of 5)
+            },
+        ]
+
+        delivery_note = service.convert_to_delivery_note(
+            sales_order["id"], items_to_deliver, organization_id, user_id
+        )
+
+        # Verify delivery note created
+        assert delivery_note["customer_id"] == customer.id
+
+        # Verify delivery quantities
+        updated_so = service.get_by_id(sales_order["id"], organization_id)
+        assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
+        assert updated_so["items"][1]["delivered_qty"] == Decimal("3.000")
+        
+        # Status should be PARTIALLY_DELIVERED since not all items are fully delivered
+        assert updated_so["status"] == "partially_delivered"
