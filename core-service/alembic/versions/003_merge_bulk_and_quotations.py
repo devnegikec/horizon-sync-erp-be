@@ -1,7 +1,7 @@
 """Merge bulk import/export jobs and quotations/sales orders heads
 
 Revision ID: 003_merge_bulk_and_quotations
-Revises: 002_add_bulk_import_export_jobs, 002
+Revises: 002_add_bulk_import_export_jobs, 002, 001_add_customers_table
 Create Date: 2026-02-12 00:00:00.000000
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "003_merge_bulk_and_quotations"
-down_revision = ("002_add_bulk_import_export_jobs", "002")
+down_revision = ("002_add_bulk_import_export_jobs", "002", "001_add_customers_table")
 branch_labels = None
 depends_on = None
 
