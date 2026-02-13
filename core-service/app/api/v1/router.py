@@ -5,6 +5,8 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     batches,
+    bulk_export,
+    bulk_import,
     chart_of_accounts,
     customers,
     delivery_notes,
@@ -41,6 +43,9 @@ api_router.include_router(
 api_router.include_router(
     item_prices.router, prefix="/item-prices", tags=["Item Prices"]
 )
+# Bulk Operations
+api_router.include_router(bulk_import.router)
+api_router.include_router(bulk_export.router)
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["Warehouses"])
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["Suppliers"])

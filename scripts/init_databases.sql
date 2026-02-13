@@ -22,11 +22,17 @@ CREATE DATABASE identity_db;
 CREATE DATABASE core_db;
 
 -- ===========================================
+-- Create Search Database
+-- ===========================================
+CREATE DATABASE search_db;
+
+-- ===========================================
 -- Grant privileges to horizon_user
 -- ===========================================
 -- Note: horizon_user is created by POSTGRES_USER env var
 GRANT ALL PRIVILEGES ON DATABASE identity_db TO horizon_user;
 GRANT ALL PRIVILEGES ON DATABASE core_db TO horizon_user;
+GRANT ALL PRIVILEGES ON DATABASE search_db TO horizon_user;
 
 -- ===========================================
 -- Initialize Identity Database
@@ -194,3 +200,12 @@ CREATE TYPE readingtype AS ENUM (
     'text',
     'pass_fail'
 );
+
+-- ===========================================
+-- Initialize Search Database
+-- ===========================================
+-- Connect to search_db (must be explicit)
+\c search_db;
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";  -- For fuzzy text search

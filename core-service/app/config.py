@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Redis (for event publishing to search-service)
+    redis_url: str = "redis://redis:6379/0"
+    redis_stream_name: str = "search:events"
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE, case_sensitive=False, extra="ignore"
     )

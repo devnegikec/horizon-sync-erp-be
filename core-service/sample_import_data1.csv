@@ -1,0 +1,26 @@
+item_code,item_name,description,item_group_id,item_type,status,uom,standard_rate
+ITEM001,Laptop Computer,Dell XPS 13 Laptop with Intel i7,76fb273a-70cd-45a1-bbc7-fbb370f09b2b,Kilogram,Active,Nos,1299.99
+ITEM002,Office Chair,Ergonomic Office Chair with Lumbar Support,e07dc93d-1f02-4f1a-bf9d-255c1490f157,Stock,Active,Nos,299.99
+ITEM003,Desk Lamp,LED Desk Lamp with USB Charging,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,49.99
+ITEM004,Wireless Mouse,Logitech Wireless Mouse with Nano Receiver,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,29.99
+ITEM005,USB-C Cable,3 Pack USB-C Cables 6ft Each,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,19.99
+ITEM006,Keyboard,Mechanical RGB Keyboard with Cherry MX Switches,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,89.99
+ITEM007,Monitor Stand,Adjustable Monitor Stand with VESA Mount,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,69.99
+ITEM008,Webcam,1080p HD Webcam with Auto Focus,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,59.99
+ITEM009,Headphones,Wireless Bluetooth Headphones with Noise Cancellation,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,129.99
+ITEM010,Screen Protector,MacBook Pro Screen Protector 13 Inch,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,9.99
+ITEM011,Docking Station,USB-C Docking Station with 7 Ports,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,179.99
+ITEM012,Power Bank,20000mAh Power Bank with Fast Charging,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,49.99
+ITEM013,Mouse Pad,Large RGB Mouse Pad with Wireless Charging,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,39.99
+ITEM014,HDMI Cable,High Speed HDMI 2.1 Cable 6ft,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,19.99
+ITEM015,Phone Stand,Adjustable Phone Stand for Desk,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,14.99
+ITEM016,USB Hub,7 Port USB 3.0 Hub with Power Supply,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,39.99
+ITEM017,Desk Organizer,Bamboo Desk Organizer Set,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,34.99
+ITEM018,Laptop Cooler,Laptop Cooling Pad with 5 Fans,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,44.99
+ITEM019,Portable Monitor,15.6 inch Portable Monitor USB-C,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,249.99
+ITEM020,Document Camera,HD Document Camera for Teaching,550e8400-e29b-41d4-a716-446655440001,Stock,Active,Nos,299.99
+ITEM021,Thermal Printer,Thermal Printer for Labels,550e8400-e29b-41d4-a716-446655440001,Stock,Inactive,Nos,399.99
+ITEM022,Label Roll,4x6 White Label Roll 500 Count,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,24.99
+ITEM023,Ink Cartridge,Black Ink Cartridge HP Compatible,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,19.99
+ITEM024,Toner Cartridge,Toner Cartridge for LaserJet Printer,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,89.99
+ITEM025,Paper Ream,White Paper Ream 8.5x11 500 sheets,550e8400-e29b-41d4-a716-446655440002,Stock,Active,Nos,5.99

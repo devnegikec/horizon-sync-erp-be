@@ -1,14 +1,18 @@
 """Item service with business logic"""
 
+import logging
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateItemCodeException, ItemNotFoundException
+from app.events.publisher import get_event_publisher
 from app.models.base import ItemStatus, ItemType, ValuationMethod
 from app.models.item import Item
 from app.repositories.item_repository import ItemRepository
 from app.schemas.item import ItemCreate, ItemUpdate
+
+logger = logging.getLogger(__name__)
 
 
 class ItemService:
@@ -74,7 +78,24 @@ class ItemService:
             except (ValueError, KeyError):
                 item_dict["valuation_method"] = ValuationMethod.FIFO
 
-        return self.item_repo.create_item(item_dict)
+        # Create item
+        item = self.item_repo.create_item(item_dict)
+        
+        # Publish entity created event
+        try:
+            event_publisher = get_event_publisher()
+            # Convert SQLAlchemy model to dict
+            item_data = {k: v for k, v in item.__dict__.items() if not k.startswith('_')}
+            event_publisher.publish_entity_created(
+                entity_type="items",
+                entity_id=str(item.id),
+                organization_id=str(organization_id),
+                data=item_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish item created event: {e}")
+        
+        return item
 
     def get_item_by_id(
         self,
@@ -157,7 +178,24 @@ class ItemService:
             except (ValueError, KeyError):
                 del update_dict["valuation_method"]
 
-        return self.item_repo.update_item(item, update_dict)
+        # Update item
+        updated_item = self.item_repo.update_item(item, update_dict)
+        
+        # Publish entity updated event
+        try:
+            event_publisher = get_event_publisher()
+            # Convert SQLAlchemy model to dict
+            item_data = {k: v for k, v in updated_item.__dict__.items() if not k.startswith('_')}
+            event_publisher.publish_entity_updated(
+                entity_type="items",
+                entity_id=str(item_id),
+                organization_id=str(organization_id),
+                data=item_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish item updated event: {e}")
+        
+        return updated_item
 
     def delete_item(
         self,
@@ -184,7 +222,20 @@ class ItemService:
             raise ItemNotFoundException(f"Item with ID {item_id} not found")
 
         item.updated_by = user_id
-        return self.item_repo.soft_delete_item(item)
+        deleted_item = self.item_repo.soft_delete_item(item)
+        
+        # Publish entity deleted event
+        try:
+            event_publisher = get_event_publisher()
+            event_publisher.publish_entity_deleted(
+                entity_type="items",
+                entity_id=str(item_id),
+                organization_id=str(organization_id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish item deleted event: {e}")
+        
+        return deleted_item
 
     def get_items(
         self,
