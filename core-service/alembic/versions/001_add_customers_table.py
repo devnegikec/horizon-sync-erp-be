@@ -19,8 +19,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create enum types used in this migration
-    op.execute("CREATE TYPE customerstatus AS ENUM ('active', 'inactive', 'blocked')")
+    # Create enum types used in this migration - check if it exists first
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'customerstatus') THEN
+                CREATE TYPE customerstatus AS ENUM ('active', 'inactive', 'blocked');
+            END IF;
+        END$$;
+    """)
 
     # Create customers table
     op.create_table(
