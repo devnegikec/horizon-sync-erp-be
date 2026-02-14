@@ -85,7 +85,7 @@ class TestCreateItemPrice:
 
         assert response.status_code == 400
         data = response.json()
-        assert data["error"] == "VALIDATION_ERROR"
+        assert data["detail"]["code"] == "VALIDATION_ERROR"
 
     def test_create_item_price_invalid_item(self, client):
         """Test creating an item price with non-existent item fails"""
@@ -94,7 +94,7 @@ class TestCreateItemPrice:
         response = client.post("/api/v1/item-prices", json=price_data)
 
         assert response.status_code == 404
-        assert "item" in response.json()["message"].lower()
+        assert "item" in response.json()["detail"]["message"].lower()
 
     def test_create_item_price_invalid_date_range(self, client, test_item_data):
         """Test creating an item price with invalid date range fails"""
@@ -134,7 +134,7 @@ class TestCreateItemPrice:
         # Try to create duplicate
         response2 = client.post("/api/v1/item-prices", json=price_data)
         assert response2.status_code == 409
-        assert response2.json()["error"] == "DUPLICATE_ITEM_PRICE"
+        assert response2.json()["detail"]["code"] == "DUPLICATE_ITEM_PRICE"
 
 
 class TestBulkCreateItemPrices:
@@ -463,7 +463,7 @@ class TestGetItemPrice:
         response = client.get(f"/api/v1/item-prices/{fake_id}")
 
         assert response.status_code == 404
-        assert response.json()["error"] == "ITEM_PRICE_NOT_FOUND"
+        assert response.json()["detail"]["code"] == "ITEM_PRICE_NOT_FOUND"
 
 
 class TestGetItemPricesByItem:
@@ -573,7 +573,7 @@ class TestGetItemPricesByItem:
         response = client.get(f"/api/v1/item-prices/by-item/{fake_item_id}")
 
         assert response.status_code == 404
-        assert "item" in response.json()["message"].lower()
+        assert "item" in response.json()["detail"]["message"].lower()
 
 
 class TestUpdateItemPrice:
@@ -682,7 +682,7 @@ class TestUpdateItemPrice:
         response = client.put(f"/api/v1/item-prices/{price2_id}", json=update_data)
 
         assert response.status_code == 409
-        assert response.json()["error"] == "DUPLICATE_ITEM_PRICE"
+        assert response.json()["detail"]["code"] == "DUPLICATE_ITEM_PRICE"
 
 
 class TestDeleteItemPrice:
