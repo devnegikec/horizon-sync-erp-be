@@ -33,6 +33,21 @@ from app.schemas.warehouse import (
     WarehouseTreeNode,
     WarehouseUpdate,
 )
+from app.schemas.rfq import (
+    RecordQuoteRequest,
+    RFQCreate,
+    RFQLineCreate,
+    RFQLineResponse,
+    RFQListItem,
+    RFQListResponse,
+    RFQResponse,
+    RFQStatusUpdate,
+    RFQSupplierCreate,
+    RFQSupplierResponse,
+    RFQUpdate,
+    SupplierQuoteCreate,
+    SupplierQuoteResponse,
+)
 
 __all__ = [
     # Common
@@ -65,4 +80,18 @@ __all__ = [
     "WarehouseListItem",
     "WarehouseListResponse",
     "WarehouseTreeNode",
+    # RFQ
+    "RFQCreate",
+    "RFQUpdate",
+    "RFQResponse",
+    "RFQListItem",
+    "RFQListResponse",
+    "RFQStatusUpdate",
+    "RFQLineCreate",
+    "RFQLineResponse",
+    "RFQSupplierCreate",
+    "RFQSupplierResponse",
+    "SupplierQuoteCreate",
+    "SupplierQuoteResponse",
+    "RecordQuoteRequest",
 ]
