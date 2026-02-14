@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     items,
     journal_entries,
     landed_cost,
+    material_requests,
     payments,
     pick_lists,
     purchase_receipts,
@@ -109,4 +110,10 @@ api_router.include_router(
 )
 api_router.include_router(
     sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
+)
+# Sourcing Flow
+api_router.include_router(
+    material_requests.router,
+    prefix="/material-requests",
+    tags=["Material Requests"],
 )
