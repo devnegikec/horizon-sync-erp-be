@@ -65,8 +65,7 @@ class TestCreateItemGroup:
 
         assert response.status_code == 400
         data = response.json()
-        assert data["error"] == "VALIDATION_ERROR"
-        assert "details" in data
+        assert data["detail"]["code"] == "VALIDATION_ERROR"
 
     def test_create_item_group_duplicate_code(self, client, test_item_group_data):
         """Test creating an item group with duplicate code fails"""
@@ -77,7 +76,7 @@ class TestCreateItemGroup:
         # Try to create duplicate
         response2 = client.post("/api/v1/item-groups", json=test_item_group_data)
         assert response2.status_code == 409
-        assert response2.json()["error"] == "DUPLICATE_ITEM_GROUP_CODE"
+        assert response2.json()["detail"]["code"] == "DUPLICATE_ITEM_GROUP_CODE"
 
     def test_create_item_group_invalid_parent(self, client):
         """Test creating an item group with non-existent parent fails"""
@@ -86,7 +85,7 @@ class TestCreateItemGroup:
         response = client.post("/api/v1/item-groups", json=data)
 
         assert response.status_code == 404
-        assert "parent" in response.json()["message"].lower()
+        assert "parent" in response.json()["detail"]["message"].lower()
 
 
 class TestListItemGroups:
@@ -242,7 +241,7 @@ class TestGetItemGroup:
         response = client.get(f"/api/v1/item-groups/{fake_id}")
 
         assert response.status_code == 404
-        assert response.json()["error"] == "ITEM_GROUP_NOT_FOUND"
+        assert response.json()["detail"]["code"] == "ITEM_GROUP_NOT_FOUND"
 
 
 class TestGetItemGroupTree:
@@ -415,7 +414,7 @@ class TestDeleteItemGroup:
         response = client.delete(f"/api/v1/item-groups/{parent_id}")
 
         assert response.status_code == 409
-        assert "children" in response.json()["message"].lower()
+        assert "children" in response.json()["detail"]["message"].lower()
 
     def test_delete_item_group_with_children_force(self, client, test_item_group_data):
         """Test force deleting an item group with children"""
@@ -499,7 +498,7 @@ class TestItemGroupValidation:
         response = client.put(f"/api/v1/item-groups/{parent_id}", json=update_data)
 
         assert response.status_code == 400
-        assert "circular" in response.json()["message"].lower()
+        assert "circular" in response.json()["detail"]["message"].lower()
 
 
 class TestItemGroupPermissions:

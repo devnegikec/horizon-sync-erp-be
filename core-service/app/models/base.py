@@ -233,3 +233,46 @@ class SalesOrderStatus(str, enum.Enum):
     DELIVERED = "delivered"
     CLOSED = "closed"
     CANCELLED = "cancelled"
+
+
+# ===========================================
+# SOURCING/PROCUREMENT ENUMS
+# ===========================================
+
+
+class MaterialRequestStatus(str, enum.Enum):
+    """Material request status enumeration"""
+
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    PARTIALLY_QUOTED = "partially_quoted"
+    FULLY_QUOTED = "fully_quoted"
+    CANCELLED = "cancelled"
+
+
+class RFQStatus(str, enum.Enum):
+    """RFQ status enumeration"""
+
+    DRAFT = "draft"
+    SENT = "sent"
+    PARTIALLY_RESPONDED = "partially_responded"
+    FULLY_RESPONDED = "fully_responded"
+    CLOSED = "closed"
+
+
+class PurchaseOrderStatus(str, enum.Enum):
+    """Purchase order status enumeration"""
+
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    PARTIALLY_RECEIVED = "partially_received"
+    FULLY_RECEIVED = "fully_received"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+class TransactionType(str, enum.Enum):
+    """Transaction type enumeration for Transaction Engine"""
+
+    PURCHASE = "purchase"
+    SALES = "sales"
