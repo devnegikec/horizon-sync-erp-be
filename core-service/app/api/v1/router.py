@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     put_away_rules,
     quality_inspections,
     quotations,
+    rfqs,
     sales_orders,
     serial_numbers,
     stock_entries,
@@ -116,4 +117,9 @@ api_router.include_router(
     material_requests.router,
     prefix="/material-requests",
     tags=["Material Requests"],
+)
+api_router.include_router(
+    rfqs.router,
+    prefix="/rfqs",
+    tags=["RFQs"],
 )

@@ -110,3 +110,65 @@ def test_all_expected_sales_order_endpoints():
         
         for method in expected_methods:
             assert method in all_methods, f"Missing method {method} for route {expected_path}"
+
+
+
+def test_rfq_routes_registered():
+    """Test that RFQ routes are properly registered"""
+    all_routes = api_router.routes
+    rfq_routes = [r for r in all_routes if '/rfqs' in str(r.path)]
+    
+    # Should have at least 8 RFQ route patterns
+    assert len(rfq_routes) >= 8, f"Expected at least 8 RFQ routes, found {len(rfq_routes)}"
+    
+    # Verify the routes exist
+    route_paths = [str(r.path) for r in rfq_routes]
+    assert any('/rfqs' == path for path in route_paths), "Missing /rfqs route"
+    assert any('/rfqs/{rfq_id}' in path for path in route_paths), "Missing /rfqs/{rfq_id} route"
+
+
+def test_all_expected_rfq_endpoints():
+    """Test that all expected RFQ endpoints are registered"""
+    all_routes = api_router.routes
+    rfq_routes = [r for r in all_routes if '/rfqs' in str(r.path)]
+    
+    route_info = []
+    for route in rfq_routes:
+        path = str(route.path)
+        methods = list(route.methods) if hasattr(route, 'methods') else []
+        route_info.append((path, methods))
+    
+    # Expected endpoints
+    expected = [
+        ('/rfqs', ['POST', 'GET']),
+        ('/rfqs/{rfq_id}', ['GET', 'PUT', 'DELETE']),
+        ('/rfqs/{rfq_id}/send', ['POST']),
+        ('/rfqs/{rfq_id}/quotes', ['POST']),
+        ('/rfqs/{rfq_id}/close', ['POST']),
+    ]
+    
+    for expected_path, expected_methods in expected:
+        matching_routes = [r for r in route_info if r[0] == expected_path]
+        assert len(matching_routes) > 0, f"Missing route: {expected_path}"
+        
+        # Check that at least one of the expected methods exists
+        all_methods = set()
+        for _, methods in matching_routes:
+            all_methods.update(methods)
+        
+        for method in expected_methods:
+            assert method in all_methods, f"Missing method {method} for route {expected_path}"
+
+
+def test_material_request_routes_registered():
+    """Test that Material Request routes are properly registered"""
+    all_routes = api_router.routes
+    mr_routes = [r for r in all_routes if '/material-requests' in str(r.path)]
+    
+    # Should have at least 6 Material Request route patterns
+    assert len(mr_routes) >= 6, f"Expected at least 6 Material Request routes, found {len(mr_routes)}"
+    
+    # Verify the routes exist
+    route_paths = [str(r.path) for r in mr_routes]
+    assert any('/material-requests' == path for path in route_paths), "Missing /material-requests route"
+    assert any('/material-requests/{material_request_id}' in path for path in route_paths), "Missing /material-requests/{material_request_id} route"

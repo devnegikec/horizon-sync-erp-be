@@ -1,0 +1,425 @@
+{
+	"info": {
+		"_postman_id": "rfq-api-collection",
+		"name": "RFQ API",
+		"description": "Complete API collection for testing RFQ (Request for Quotation) endpoints with realistic data",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create RFQ from Material Request",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('rfq_id', response.id);",
+							"    pm.environment.set('rfq_line_id_1', response.line_items[0].id);",
+							"    if (response.line_items.length > 1) {",
+							"        pm.environment.set('rfq_line_id_2', response.line_items[1].id);",
+							"    }",
+							"    console.log('RFQ ID:', response.id);",
+							"    console.log('RFQ Line IDs:', response.line_items.map(l => l.id));",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"description": "JWT token from identity service"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"material_request_id\": \"{{material_request_id}}\",\n  \"closing_date\": \"2024-03-30\",\n  \"supplier_ids\": [\n    \"{{supplier_id_1}}\",\n    \"{{supplier_id_2}}\",\n    \"{{supplier_id_3}}\"\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs"]
+				},
+				"description": "Create a new RFQ from an existing Material Request with multiple suppliers"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Get RFQ by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}"]
+				},
+				"description": "Retrieve a specific RFQ by ID with all line items, suppliers, and quotes"
+			},
+			"response": []
+		},
+		{
+			"name": "3. List All RFQs",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs?page=1&page_size=20&sort_by=created_at&sort_order=desc",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs"],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "20"
+						},
+						{
+							"key": "sort_by",
+							"value": "created_at"
+						},
+						{
+							"key": "sort_order",
+							"value": "desc"
+						}
+					]
+				},
+				"description": "List all RFQs with pagination"
+			},
+			"response": []
+		},
+		{
+			"name": "4. List RFQs - Filter by Status (DRAFT)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs?status=draft&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs"],
+					"query": [
+						{
+							"key": "status",
+							"value": "draft"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter RFQs by DRAFT status"
+			},
+			"response": []
+		},
+		{
+			"name": "5. Update RFQ (DRAFT only)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"closing_date\": \"2024-04-05\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}"]
+				},
+				"description": "Update an RFQ (only works for DRAFT status) - change closing date"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Send RFQ to Suppliers",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}/send",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}", "send"]
+				},
+				"description": "Send RFQ to suppliers - changes status from DRAFT to SENT"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Record Supplier Quote - Supplier 1, Line 1",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"rfq_line_id\": \"{{rfq_line_id_1}}\",\n  \"supplier_id\": \"{{supplier_id_1}}\",\n  \"quoted_price\": 125.50,\n  \"quoted_delivery_date\": \"2024-03-20\",\n  \"supplier_notes\": \"Best quality materials, 5% discount for bulk orders\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}/quotes",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}", "quotes"]
+				},
+				"description": "Record a supplier quote for the first line item from supplier 1"
+			},
+			"response": []
+		},
+		{
+			"name": "8. Record Supplier Quote - Supplier 2, Line 1",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"rfq_line_id\": \"{{rfq_line_id_1}}\",\n  \"supplier_id\": \"{{supplier_id_2}}\",\n  \"quoted_price\": 118.75,\n  \"quoted_delivery_date\": \"2024-03-25\",\n  \"supplier_notes\": \"Competitive pricing, fast delivery available\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}/quotes",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}", "quotes"]
+				},
+				"description": "Record a supplier quote for the first line item from supplier 2"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Record Supplier Quote - Supplier 3, Line 1",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"rfq_line_id\": \"{{rfq_line_id_1}}\",\n  \"supplier_id\": \"{{supplier_id_3}}\",\n  \"quoted_price\": 132.00,\n  \"quoted_delivery_date\": \"2024-03-18\",\n  \"supplier_notes\": \"Premium quality, immediate availability\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}/quotes",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}", "quotes"]
+				},
+				"description": "Record a supplier quote for the first line item from supplier 3"
+			},
+			"response": []
+		},
+		{
+			"name": "10. Get RFQ with Quotes",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}"]
+				},
+				"description": "Retrieve RFQ to see all recorded quotes"
+			},
+			"response": []
+		},
+		{
+			"name": "11. List RFQs - Filter by Status (SENT)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs?status=sent&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs"],
+					"query": [
+						{
+							"key": "status",
+							"value": "sent"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter RFQs by SENT status"
+			},
+			"response": []
+		},
+		{
+			"name": "12. Close RFQ",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}/close",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}", "close"]
+				},
+				"description": "Close RFQ - changes status to CLOSED"
+			},
+			"response": []
+		},
+		{
+			"name": "13. Delete RFQ (DRAFT only)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id_to_delete}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id_to_delete}}"]
+				},
+				"description": "Delete an RFQ (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "14. Error Test - Create RFQ with Invalid Material Request",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"material_request_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"closing_date\": \"2024-03-30\",\n  \"supplier_ids\": [\n    \"{{supplier_id_1}}\"\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs"]
+				},
+				"description": "Test error - should return 404 Not Found (invalid Material Request ID)"
+			},
+			"response": []
+		},
+		{
+			"name": "15. Error Test - Update Sent RFQ",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"closing_date\": \"2024-04-10\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/rfqs/{{rfq_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "rfqs", "{{rfq_id}}"]
+				},
+				"description": "Test error - should return 409 Conflict (cannot update sent RFQ)"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8001",
+			"type": "string"
+		}
+	]
+}
