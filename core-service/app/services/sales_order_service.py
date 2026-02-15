@@ -785,6 +785,8 @@ class SalesOrderService:
             "items": [
                 {
                     "id": item.id,
+                    "organization_id": item.organization_id,
+                    "sales_order_id": item.sales_order_id,
                     "item_id": item.item_id,
                     "qty": item.qty,
                     "uom": item.uom,
@@ -795,6 +797,8 @@ class SalesOrderService:
                     "pending_billing_qty": item.qty - item.billed_qty,
                     "pending_delivery_qty": item.qty - item.delivered_qty,
                     "sort_order": item.sort_order,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
                     "extra_data": item.extra_data,
                 }
                 for item in sales_order.items
