@@ -1,5 +1,6 @@
 """Tax Template service for business logic"""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
@@ -9,6 +10,18 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ResourceNotFoundException
 from app.models.tax_template import TaxTemplate
 from app.repositories.tax_template_repository import TaxTemplateRepository
+
+
+@dataclass
+class TaxContext:
+    """Context for determining applicable tax template"""
+    organization_id: UUID
+    transaction_type: str  # "Sales" or "Purchase"
+    item_id: Optional[UUID] = None
+    item_group_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
+    supplier_id: Optional[UUID] = None
+    shipping_address: Optional[dict] = None
 
 
 class TaxTemplateService:
@@ -229,34 +242,28 @@ class TaxTemplateService:
         updated_template = self.repo.update(template, payload)
         return self._to_response(updated_template)
 
-    def get_applicable_template(self, context: dict) -> Optional[dict]:
+    def get_applicable_template(self, context: TaxContext) -> Optional[tuple]:
         """
         Get applicable tax template based on context using inheritance hierarchy.
 
         Args:
-            context: Dictionary containing:
-                - organization_id: UUID
-                - transaction_type: str (Sales or Purchase)
-                - item_id: Optional[UUID]
-                - item_group_id: Optional[UUID]
-                - customer_location: Optional[dict]
-                - supplier_location: Optional[dict]
+            context: TaxContext object containing transaction details
 
         Returns:
-            Dictionary with template and source, or None if no applicable template
+            Tuple of (template dict, source string), or None if no applicable template
         """
         result = self.repo.get_applicable_template(
-            organization_id=context["organization_id"],
-            transaction_type=context["transaction_type"],
-            item_id=context.get("item_id"),
-            item_group_id=context.get("item_group_id"),
-            customer_location=context.get("customer_location"),
-            supplier_location=context.get("supplier_location"),
+            organization_id=context.organization_id,
+            transaction_type=context.transaction_type,
+            item_id=context.item_id,
+            item_group_id=context.item_group_id,
+            customer_location=context.shipping_address,
+            supplier_location=None,
         )
 
         if result:
             template, source = result
-            return {"template": self._to_response(template), "source": source}
+            return (self._to_response(template), source)
 
         return None
 
