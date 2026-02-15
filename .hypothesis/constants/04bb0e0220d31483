@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/quality_inspections.py
+# hypothesis_version: 6.151.6
+
+[100, '/templates', '/{inspection_id}', '^(asc|desc)$', 'created_at', 'desc', 'inspection_date']

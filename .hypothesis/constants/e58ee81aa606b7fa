@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/schemas/stock_movement.py
+# hypothesis_version: 6.151.6
+
+['product', 'value', 'warehouse']

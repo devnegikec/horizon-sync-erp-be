@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/purchase_receipt_service.py
+# hypothesis_version: 6.151.6
+
+['created_at', 'created_by', 'desc', 'has_next', 'has_prev', 'id', 'items', 'organization_id', 'page', 'page_size', 'purchase_receipt_no', 'receipt_date', 'reference_id', 'reference_type', 'remarks', 'status', 'submitted_at', 'supplier_id', 'total_items', 'total_pages', 'updated_at', 'updated_by', 'warehouse_id']

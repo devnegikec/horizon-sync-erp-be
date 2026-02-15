@@ -96,6 +96,14 @@ class Item(Base):
     inspection_required_before_delivery = Column(Boolean, default=False)
     quality_inspection_template = Column(UUID(as_uuid=True), nullable=True)
 
+    # Tax Templates
+    sales_tax_template_id = Column(
+        UUID(as_uuid=True), ForeignKey("tax_templates.id"), nullable=True
+    )
+    purchase_tax_template_id = Column(
+        UUID(as_uuid=True), ForeignKey("tax_templates.id"), nullable=True
+    )
+
     # Additional Info
     barcode = Column(String(100), nullable=True)
     status = Column(

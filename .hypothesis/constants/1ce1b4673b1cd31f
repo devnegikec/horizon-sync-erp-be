@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/schemas/item_price.py
+# hypothesis_version: 6.151.6
+
+[100, 'Additional data', 'Created item prices', 'Creation timestamp', 'Currency code', 'Item UUID', 'Item UUID (required)', 'Item details', 'Item price', 'Item price UUID', 'List of item prices', 'Minimum quantity', 'Organization UUID', 'Pagination metadata', 'Price list UUID', 'Valid from date', 'Valid until date', '__dict__', 'before', 'currency', 'description', 'from_attributes', 'hex', 'id', 'item', 'item_code', 'item_name', 'item_type', 'uom', 'valid_from', 'valid_upto']

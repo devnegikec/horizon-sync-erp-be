@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/quality_inspection.py
+# hypothesis_version: 6.151.6
+
+[100, 255, 'CASCADE', 'QualityInspection', 'SET NULL', 'all, delete-orphan', 'inspection', 'inspectionstatus', 'inspectiontype', 'item_groups.id', 'items.id', 'parameters', 'quality_inspections', 'readings', 'readingtype', 'template']

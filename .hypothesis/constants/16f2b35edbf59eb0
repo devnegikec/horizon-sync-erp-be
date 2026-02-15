@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/bulk_export.py
+# hypothesis_version: 6.151.6
+
+['/bulk-export', '/quick', '/{job_id}/download', '/{job_id}/status', 'Access denied', 'Bulk Operations', 'COMPLETED', 'Content-Disposition', 'Export job not found', 'Failed to list jobs', 'List export jobs', 'Quick export items', 'application/json', 'application/pdf', 'csv', 'csv, xlsx, or json', 'file_content', 'item_group_id', 'item_type', 'json', 'pdf', 'search', 'status', 'success', 'text/csv', 'xlsx']

@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/transaction_engine.py
+# hypothesis_version: 6.151.6
+
+['0', 'PURCHASE', 'SALES', 'discount_amount', 'grand_total', 'line_totals', 'quantity', 'subtotal', 'tax_amount', 'unit_price']

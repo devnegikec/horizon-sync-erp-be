@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/bulk_import_job.py
+# hypothesis_version: 6.151.6
+
+[100, 255, 'COMPLETED', 'FAILED', 'PENDING', 'PROCESSING', 'bulk_import_jobs']

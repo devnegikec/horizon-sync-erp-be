@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/chart_of_accounts.py
+# hypothesis_version: 6.151.6
+
+[100, '/tree', '/{account_id}', 'Field to sort by', 'Filter by is_group', 'Get chart of account', 'Sort order', '^(asc|desc)$', 'account_code', 'asc']

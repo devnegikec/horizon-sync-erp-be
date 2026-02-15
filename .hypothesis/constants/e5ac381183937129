@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/warehouses.py
+# hypothesis_version: 6.151.6
+
+[100, '/tree', '/{warehouse_id}', 'Create warehouse', 'Delete warehouse', 'Field to sort by', 'Get warehouse', 'Get warehouse tree', 'List warehouses', 'Sort order', 'Update warehouse', '^(asc|desc)$', 'created_at', 'desc']

@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/config.py
+# hypothesis_version: 6.151.6
+
+[8001, ',', '.env', '0.0.0.0', '1.0.0', 'Core Service', 'HS256', 'INFO', 'development', 'ignore', 'redis://redis:6379/0', 'search:events']

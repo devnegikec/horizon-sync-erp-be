@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/router.py
+# hypothesis_version: 6.151.6
+
+['/batches', '/chart-of-accounts', '/customers', '/delivery-notes', '/invoices', '/item-groups', '/item-prices', '/items', '/journal-entries', '/landed-cost', '/material-requests', '/payments', '/pick-lists', '/purchase-receipts', '/put-away-rules', '/quality-inspections', '/quotations', '/rfqs', '/sales-orders', '/serial-numbers', '/stock-entries', '/stock-levels', '/stock-movements', '/stock-settings', '/suppliers', '/warehouses', 'Batches', 'Chart of Accounts', 'Customers', 'Delivery Notes', 'Invoices', 'Item Groups', 'Item Prices', 'Items', 'Journal Entries', 'Landed Cost', 'Material Requests', 'Payments', 'Pick Lists', 'Purchase Receipts', 'Put Away Rules', 'Quality Inspections', 'Quotations', 'RFQs', 'Sales Orders', 'Serial Numbers', 'Stock Entries', 'Stock Levels', 'Stock Movements', 'Stock Settings', 'Suppliers', 'Warehouses']

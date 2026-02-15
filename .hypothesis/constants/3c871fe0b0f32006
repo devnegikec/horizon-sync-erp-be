@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/pick_lists.py
+# hypothesis_version: 6.151.6
+
+[100, '/{pick_list_id}', '^(asc|desc)$', 'created_at', 'desc']

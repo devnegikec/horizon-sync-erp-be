@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/material_request.py
+# hypothesis_version: 6.151.6
+
+['CASCADE', 'MaterialRequest', 'MaterialRequestLine', 'RESTRICT', 'all, delete-orphan', 'items.id', 'line_items', 'material_request', 'material_requests', 'material_requests.id']

@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/events/schemas.py
+# hypothesis_version: 6.151.6
+
+['Organization ID', 'entity.created', 'entity.deleted', 'entity.updated']

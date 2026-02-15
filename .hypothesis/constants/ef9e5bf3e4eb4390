@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/batch_service.py
+# hypothesis_version: 6.151.6
+
+[100, 'created_at', 'desc', 'has_next', 'has_prev', 'organization_id', 'page', 'page_size', 'status', 'total_items', 'total_pages']

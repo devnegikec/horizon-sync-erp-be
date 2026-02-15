@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/stock_reconciliation.py
+# hypothesis_version: 6.151.6
+
+[100, 'CASCADE', 'Item', 'StockReconciliation', 'all, delete-orphan', 'items', 'items.id', 'reconciliation', 'stockentrystatus']

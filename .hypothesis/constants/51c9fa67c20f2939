@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/repositories/warehouse_repository.py
+# hypothesis_version: 6.151.6
+
+['active', 'created_at', 'desc', 'inactive', 'is_default', 'store', 'total', 'transit', 'value', 'virtual', 'warehouse']
