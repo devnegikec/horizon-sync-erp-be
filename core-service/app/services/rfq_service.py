@@ -5,9 +5,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationException
+from app.core.transaction import transactional
 from app.models.base import MaterialRequestStatus, RFQStatus
 from app.repositories.material_request_repository import MaterialRequestRepository
 from app.repositories.rfq_repository import RFQRepository
+from app.services.state_machine import StateMachine
+from app.services.status_transition_service import StatusTransitionService
 
 
 class RFQService:
@@ -17,7 +20,9 @@ class RFQService:
         self.db = db
         self.repo = RFQRepository(db)
         self.mr_repo = MaterialRequestRepository(db)
+        self.status_transition_service = StatusTransitionService(db)
 
+    @transactional
     def create_from_material_request(
         self,
         material_request_id: UUID,
@@ -95,8 +100,14 @@ class RFQService:
 
         # Refresh to get line items and suppliers
         self.db.refresh(rfq)
+        
+        # Update Material Request status to PARTIALLY_QUOTED
+        # (Workflow connection: Material Request → RFQ)
+        self._update_material_request_status(material_request_id, organization_id)
+        
         return self._to_response(rfq)
 
+    @transactional
     def add_suppliers(
         self,
         rfq_id: UUID,
@@ -149,6 +160,7 @@ class RFQService:
         self.db.refresh(rfq)
         return self._to_response(rfq)
 
+    @transactional
     def send(
         self, rfq_id: UUID, organization_id: UUID, user_id: UUID
     ) -> dict:
@@ -159,6 +171,9 @@ class RFQService:
         rfq = self.repo.get_by_id(rfq_id, organization_id)
         if not rfq:
             raise ResourceNotFoundException(f"RFQ {rfq_id} not found")
+
+        # Store previous status for logging
+        previous_status = rfq.status
 
         # Validate current status
         if rfq.status != RFQStatus.DRAFT:
@@ -175,14 +190,26 @@ class RFQService:
             raise ValidationException("Cannot send RFQ without suppliers")
 
         # Update status to SENT
+        new_status = RFQStatus.SENT
         update_data = {
-            "status": RFQStatus.SENT,
+            "status": new_status,
             "updated_by": user_id,
         }
         self.repo.update(rfq, update_data)
         self.db.refresh(rfq)
+
+        # Log status transition
+        self.status_transition_service.log_transition(
+            entity_type="RFQ",
+            entity_id=rfq_id,
+            previous_status=previous_status.value,
+            new_status=new_status.value,
+            user_id=user_id,
+        )
+
         return self._to_response(rfq)
 
+    @transactional
     def record_quote(
         self,
         rfq_id: UUID,
@@ -273,6 +300,11 @@ class RFQService:
             self.repo.update(rfq, update_data)
             self.db.refresh(rfq)
 
+        # Update Material Request status when quotes are recorded
+        # (Workflow connection: Material Request → RFQ)
+        if rfq.material_request_id:
+            self._update_material_request_status(rfq.material_request_id, organization_id)
+
         return self._to_response(rfq)
 
     def get_by_id(self, rfq_id: UUID, organization_id: UUID) -> dict:
@@ -315,6 +347,7 @@ class RFQService:
 
         return [self._to_list_item(x) for x in items], pagination
 
+    @transactional
     def update(
         self,
         rfq_id: UUID,
@@ -396,6 +429,7 @@ class RFQService:
 
         self.repo.delete(rfq)
 
+    @transactional
     def close(self, rfq_id: UUID, organization_id: UUID, user_id: UUID) -> dict:
         """
         Close RFQ.
@@ -405,29 +439,51 @@ class RFQService:
         if not rfq:
             raise ResourceNotFoundException(f"RFQ {rfq_id} not found")
 
-        # Validate current status - can close from any non-terminal state
-        if rfq.status == RFQStatus.CLOSED:
-            raise ValidationException("RFQ is already closed")
+        # Store previous status for logging
+        previous_status = rfq.status
+
+        # Validate state transition using state machine
+        state_machine = StateMachine("RFQ")
+        try:
+            state_machine.validate_transition(previous_status.value, "closed")
+        except ValueError as e:
+            raise ValidationException(str(e))
 
         # Update status
+        new_status = RFQStatus.CLOSED
         update_data = {
-            "status": RFQStatus.CLOSED,
+            "status": new_status,
             "updated_by": user_id,
         }
         self.repo.update(rfq, update_data)
         self.db.refresh(rfq)
+
+        # Log status transition
+        self.status_transition_service.log_transition(
+            entity_type="RFQ",
+            entity_id=rfq_id,
+            previous_status=previous_status.value,
+            new_status=new_status.value,
+            user_id=user_id,
+        )
+
         return self._to_response(rfq)
 
     @staticmethod
     def _to_response(rfq) -> dict:
         """Convert RFQ model to response dict"""
+        # Handle status - it might be an enum or a string
+        status_value = None
+        if rfq.status:
+            status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
+        
         return {
             "id": rfq.id,
             "organization_id": rfq.organization_id,
             "material_request_id": rfq.material_request_id,
             "reference_type": rfq.reference_type,
             "reference_id": rfq.reference_id,
-            "status": rfq.status.value if rfq.status else None,
+            "status": status_value,
             "closing_date": rfq.closing_date,
             "created_by": rfq.created_by,
             "updated_by": rfq.updated_by,
@@ -477,14 +533,63 @@ class RFQService:
         """Convert RFQ model to list item dict"""
         line_items_count = self.repo.get_line_items_count(rfq.id)
         suppliers_count = self.repo.get_suppliers_count(rfq.id)
+        
+        # Handle status - it might be an enum or a string
+        status_value = None
+        if rfq.status:
+            status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
+        
         return {
             "id": rfq.id,
             "organization_id": rfq.organization_id,
             "material_request_id": rfq.material_request_id,
-            "status": rfq.status.value if rfq.status else None,
+            "status": status_value,
             "closing_date": rfq.closing_date,
             "created_at": rfq.created_at,
             "created_by": rfq.created_by,
             "line_items_count": line_items_count,
             "suppliers_count": suppliers_count,
         }
+
+    def _update_material_request_status(
+        self, material_request_id: UUID, organization_id: UUID
+    ) -> None:
+        """
+        Update Material Request status when RFQ is created.
+        
+        Workflow connection: Material Request → RFQ
+        
+        - If all line items have RFQs with quotes, set to FULLY_QUOTED
+        - Otherwise, set to PARTIALLY_QUOTED
+        
+        Requirements: 8.2
+        """
+        mr = self.mr_repo.get_by_id(material_request_id, organization_id)
+        if not mr:
+            return
+
+        # Get all RFQs for this Material Request
+        rfqs = self.repo.get_rfqs_by_material_request(material_request_id, organization_id)
+
+        # Check if all line items have at least one quote
+        mr_item_ids = {str(line.item_id) for line in mr.line_items}
+        quoted_item_ids = set()
+
+        for rfq in rfqs:
+            for line in rfq.line_items:
+                if len(line.quotes) > 0:
+                    quoted_item_ids.add(str(line.item_id))
+
+        # Determine new status
+        if quoted_item_ids >= mr_item_ids:
+            # All items have quotes
+            new_status = MaterialRequestStatus.FULLY_QUOTED
+        else:
+            # Some items have quotes
+            new_status = MaterialRequestStatus.PARTIALLY_QUOTED
+
+        # Update Material Request status if changed
+        if mr.status != new_status:
+            update_data = {"status": new_status}
+            self.mr_repo.update(mr, update_data)
+

@@ -73,14 +73,14 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
 - [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement RFQ API
-  - [ ] 5.1 Create RFQ models and schemas
+- [x] 5. Implement RFQ API
+  - [x] 5.1 Create RFQ models and schemas
     - Define RFQ, RFQLine, RFQSupplier, and SupplierQuote SQLAlchemy models
     - Create Pydantic schemas for request/response validation
     - Implement status enum with values: DRAFT, SENT, PARTIALLY_RESPONDED, FULLY_RESPONDED, CLOSED
     - _Requirements: 2.5, 11.3, 11.4_
   
-  - [ ] 5.2 Implement RFQ service layer
+  - [x] 5.2 Implement RFQ service layer
     - Implement create_from_material_request() method
     - Copy all line items from source Material Request
     - Set reference_type as MATERIAL_REQUEST and reference_id
@@ -90,7 +90,7 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Implement record_quote() method to store supplier quotes
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.6, 9.1_
   
-  - [ ] 5.3 Create RFQ API endpoints
+  - [x] 5.3 Create RFQ API endpoints
     - POST /api/rfqs - Create new RFQ
     - GET /api/rfqs/:id - Retrieve RFQ
     - PUT /api/rfqs/:id - Update RFQ
@@ -117,14 +117,14 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test status transitions
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.6_
 
-- [ ] 6. Implement Purchase Order API
-  - [ ] 6.1 Create Purchase Order models and schemas
+- [x] 6. Implement Purchase Order API
+  - [x] 6.1 Create Purchase Order models and schemas
     - Define PurchaseOrder and PurchaseOrderLine SQLAlchemy models
     - Create Pydantic schemas for request/response validation
     - Implement status enum with values: DRAFT, SUBMITTED, PARTIALLY_RECEIVED, FULLY_RECEIVED, CLOSED, CANCELLED
     - _Requirements: 3.5, 11.5, 11.6_
   
-  - [ ] 6.2 Implement Purchase Order service layer
+  - [x] 6.2 Implement Purchase Order service layer
     - Implement create_from_rfq() method
     - Copy selected line items with supplier-quoted prices
     - Set party_type to SUPPLIER and party_id to selected supplier
@@ -135,7 +135,7 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Implement cancel() and close() methods with state validation
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6, 9.2_
   
-  - [ ] 6.3 Create Purchase Order API endpoints
+  - [x] 6.3 Create Purchase Order API endpoints
     - POST /api/purchase-orders - Create new Purchase Order
     - GET /api/purchase-orders/:id - Retrieve Purchase Order
     - PUT /api/purchase-orders/:id - Update Purchase Order
@@ -163,22 +163,22 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test modification prevention after submission
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6_
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement state machine and validation
-  - [ ] 8.1 Create state machine service
+- [x] 8. Implement state machine and validation
+  - [x] 8.1 Create state machine service
     - Define state transition maps for each document type (Material Request, RFQ, Purchase Order)
     - Implement can_transition() method to check if transition is valid
     - Implement validate_transition() method to enforce state machine rules
     - _Requirements: 8.1_
   
-  - [ ] 8.2 Implement status transition logging
+  - [x] 8.2 Implement status transition logging
     - Create status_transitions table insert logic
     - Log all status changes with timestamp, user_id, previous_status, new_status
     - _Requirements: 8.5_
   
-  - [ ] 8.3 Implement terminal state validation
+  - [x] 8.3 Implement terminal state validation
     - Prevent any status transitions from terminal states (CLOSED, CANCELLED, PAID)
     - _Requirements: 8.4_
   
@@ -196,20 +196,20 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test transition logging
     - _Requirements: 8.1, 8.4, 8.5_
 
-- [ ] 9. Implement Receipt Note integration
-  - [ ] 9.1 Create Receipt Note service wrapper
+- [x] 9. Implement Receipt Note integration
+  - [x] 9.1 Create Receipt Note service wrapper
     - Implement create_receipt_note() method using existing Purchase Receipt API
     - Set reference_type as PURCHASE_ORDER
     - Validate Purchase Order exists and has status SUBMITTED or PARTIALLY_RECEIVED
     - _Requirements: 5.1, 5.2_
   
-  - [ ] 9.2 Implement Purchase Order status update logic
+  - [x] 9.2 Implement Purchase Order status update logic
     - Calculate total received quantities for each line item
     - Update Purchase Order status to PARTIALLY_RECEIVED when some items received
     - Update Purchase Order status to FULLY_RECEIVED when all items received
     - _Requirements: 5.4, 5.5_
   
-  - [ ] 9.3 Implement stock increment integration
+  - [x] 9.3 Implement stock increment integration
     - Trigger Stock_Increment for each received line item
     - _Requirements: 5.3_
   
@@ -227,8 +227,8 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test stock increment
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 10. Implement Purchase Invoice integration
-  - [ ] 10.1 Create Purchase Invoice service wrapper
+- [x] 10. Implement Purchase Invoice integration
+  - [x] 10.1 Create Purchase Invoice service wrapper
     - Implement create_purchase_invoice() method using existing Invoice API
     - Set invoice_type as PURCHASE
     - Set reference_type as PURCHASE_ORDER and reference_id
@@ -236,7 +236,7 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Invoke Transaction Engine with transaction_type PURCHASE
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
   
-  - [ ] 10.2 Implement three-way matching validation
+  - [x] 10.2 Implement three-way matching validation
     - Validate invoiced quantities do not exceed received quantities
     - Compare Purchase Order, Receipt Note, and Purchase Invoice line items
     - _Requirements: 6.5_
@@ -253,15 +253,15 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test three-way matching validation
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 11. Implement Payment Made integration
-  - [ ] 11.1 Create Payment Made service wrapper
+- [x] 11. Implement Payment Made integration
+  - [x] 11.1 Create Payment Made service wrapper
     - Implement create_payment() method using existing Payment API
     - Set payment_type as PAY
     - Set reference_type as PURCHASE_INVOICE and reference_id
     - Validate Purchase Invoice exists and has outstanding balance > 0
     - _Requirements: 7.1, 7.2, 7.3_
   
-  - [ ] 11.2 Implement invoice balance update logic
+  - [x] 11.2 Implement invoice balance update logic
     - Reduce outstanding balance by payment amount
     - Update Purchase Invoice status to PAID when balance reaches zero
     - _Requirements: 7.4, 7.5_
@@ -279,24 +279,24 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test status update to PAID
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 12. Checkpoint - Ensure all tests pass
+- [x] 12. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Implement error handling and API responses
-  - [ ] 13.1 Create error handler classes
+- [x] 13. Implement error handling and API responses
+  - [x] 13.1 Create error handler classes
     - Implement ValidationError with HTTP 400 and structured error details
     - Implement NotFoundError with HTTP 404 and entity information
     - Implement StateError with HTTP 409 and state conflict details
     - Implement IntegrationError with HTTP 502/503 and service information
     - _Requirements: 10.4, 10.5_
   
-  - [ ] 13.2 Implement API response formatting
+  - [x] 13.2 Implement API response formatting
     - Ensure all responses include standard fields: id, created_at, updated_at, created_by, status
     - Format validation errors with field and reason
     - Format not found errors with entity_type and entity_id
     - _Requirements: 10.3, 10.4, 10.5_
   
-  - [ ] 13.3 Add error handling middleware
+  - [x] 13.3 Add error handling middleware
     - Catch and format all exceptions
     - Return appropriate HTTP status codes
     - Log errors for debugging
@@ -315,14 +315,14 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test integration error responses
     - _Requirements: 10.4, 10.5_
 
-- [ ] 14. Implement pagination and filtering
-  - [ ] 14.1 Create pagination utility
+- [x] 14. Implement pagination and filtering
+  - [x] 14.1 Create pagination utility
     - Implement pagination logic with page, page_size parameters
     - Implement sorting with sort_by, sort_order parameters
     - Return paginated results with metadata (total_count, page, page_size)
     - _Requirements: 10.6_
   
-  - [ ] 14.2 Add pagination to all list endpoints
+  - [x] 14.2 Add pagination to all list endpoints
     - Apply pagination to Material Request list endpoint
     - Apply pagination to RFQ list endpoint
     - Apply pagination to Purchase Order list endpoint
@@ -338,14 +338,14 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test edge cases (empty results, single page)
     - _Requirements: 10.6_
 
-- [ ] 15. Implement database transaction management
-  - [ ] 15.1 Add transaction decorators
+- [x] 15. Implement database transaction management
+  - [x] 15.1 Add transaction decorators
     - Create @transactional decorator for service methods
     - Ensure all multi-step operations use transactions
     - Implement rollback on errors
     - _Requirements: 11.7_
   
-  - [ ] 15.2 Add database locking for concurrent operations
+  - [x] 15.2 Add database locking for concurrent operations
     - Use SELECT FOR UPDATE for Purchase Order status updates
     - Use SELECT FOR UPDATE for invoice balance updates
     - Prevent race conditions in status transitions
@@ -361,8 +361,8 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test foreign key constraint enforcement
     - _Requirements: 11.7_
 
-- [ ] 16. Integration and end-to-end wiring
-  - [ ] 16.1 Wire all components together
+- [x] 16. Integration and end-to-end wiring
+  - [x] 16.1 Wire all components together
     - Connect Material Request → RFQ workflow
     - Connect RFQ → Purchase Order workflow
     - Connect Purchase Order → Receipt Note workflow
@@ -370,7 +370,7 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Connect Purchase Invoice → Payment Made workflow
     - _Requirements: All requirements_
   
-  - [ ] 16.2 Create API documentation
+  - [x] 16.2 Create API documentation
     - Document all endpoints with request/response examples
     - Document error responses
     - Document workflow sequences
@@ -382,7 +382,7 @@ This implementation plan breaks down the sourcing flow feature into discrete cod
     - Test concurrent operations
     - _Requirements: All requirements_
 
-- [ ] 17. Final checkpoint - Ensure all tests pass
+- [x] 17. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
