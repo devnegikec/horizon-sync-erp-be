@@ -1,253 +1,257 @@
-"""Chart of Account repository for database operations"""
+"""Account repository for database operations"""
 
 from uuid import UUID
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.base import AccountType
-from app.models.chart_of_account import ChartOfAccount
+from app.models.base import AccountStatus, AccountType
+from app.models.chart_of_account import Account
 
 
-class ChartOfAccountRepository:
-    """Repository for chart of account database operations"""
+class AccountRepository:
+    """Repository for account database operations"""
 
     def __init__(self, db: Session):
         self.db = db
 
-    def create_chart_of_account(self, data: dict) -> ChartOfAccount:
+    def create(self, data: dict) -> Account:
         """
-        Create a new chart of account.
+        Create a new account.
 
         Args:
-            data: Dictionary containing chart of account data
+            data: Dictionary containing account data (must include organization_id)
 
         Returns:
-            Created ChartOfAccount object
+            Created Account object
+
+        Raises:
+            IntegrityError: If account code already exists for this organization (unique constraint violation)
         """
-        account = ChartOfAccount(**data)
+        account = Account(**data)
         self.db.add(account)
-        self.db.commit()
-        self.db.refresh(account)
-        return account
+        try:
+            self.db.commit()
+            self.db.refresh(account)
+            return account
+        except IntegrityError as e:
+            self.db.rollback()
+            raise e
 
-    def get_by_id(
-        self,
-        account_id: UUID,
-        organization_id: UUID,
-        include_parent: bool = False,
-    ) -> ChartOfAccount | None:
+    def get_by_id(self, account_id: UUID, organization_id: UUID) -> Account | None:
         """
-        Get chart of account by ID within an organization.
+        Get account by ID.
 
         Args:
-            account_id: Chart of account UUID
+            account_id: Account UUID
             organization_id: Organization UUID
-            include_parent: Whether to include parent relationship
 
         Returns:
-            ChartOfAccount object or None if not found
+            Account object or None if not found
         """
-        query = self.db.query(ChartOfAccount).filter(
-            ChartOfAccount.id == account_id,
-            ChartOfAccount.organization_id == organization_id,
-            ChartOfAccount.deleted_at.is_(None),
+        return (
+            self.db.query(Account)
+            .filter(Account.id == account_id, Account.organization_id == organization_id)
+            .first()
         )
 
-        if include_parent:
-            query = query.options(joinedload(ChartOfAccount.parent))
-
-        return query.first()
-
-    def get_by_code(
-        self, account_code: str, organization_id: UUID
-    ) -> ChartOfAccount | None:
+    def get_by_code(self, account_code: str, organization_id: UUID) -> Account | None:
         """
-        Get chart of account by code within an organization.
+        Get account by code.
 
         Args:
             account_code: Account code
             organization_id: Organization UUID
 
         Returns:
-            ChartOfAccount object or None if not found
+            Account object or None if not found
         """
         return (
-            self.db.query(ChartOfAccount)
+            self.db.query(Account)
             .filter(
-                ChartOfAccount.account_code == account_code,
-                ChartOfAccount.organization_id == organization_id,
-                ChartOfAccount.deleted_at.is_(None),
+                Account.account_code == account_code,
+                Account.organization_id == organization_id
             )
             .first()
         )
 
-    def update(self, account: ChartOfAccount, update_data: dict) -> ChartOfAccount:
+    def update(self, account: Account, update_data: dict) -> Account:
         """
-        Update chart of account fields.
+        Update account fields.
 
         Args:
-            account: ChartOfAccount object to update
+            account: Account object to update
             update_data: Dictionary of fields to update
 
         Returns:
-            Updated ChartOfAccount object
+            Updated Account object
+
+        Raises:
+            IntegrityError: If updated account code already exists
         """
         for key, value in update_data.items():
-            if hasattr(account, key) and value is not None:
+            if hasattr(account, key):
                 setattr(account, key, value)
 
-        self.db.commit()
-        self.db.refresh(account)
-        return account
+        try:
+            self.db.commit()
+            self.db.refresh(account)
+            return account
+        except IntegrityError as e:
+            self.db.rollback()
+            raise e
 
-    def soft_delete(self, account: ChartOfAccount) -> ChartOfAccount:
+    def delete(self, account: Account) -> None:
         """
-        Soft delete a chart of account.
+        Delete an account.
 
         Args:
-            account: ChartOfAccount object to delete
+            account: Account object to delete
 
-        Returns:
-            Deleted ChartOfAccount object
+        Raises:
+            IntegrityError: If account has child accounts (foreign key constraint)
         """
-        from datetime import UTC, datetime
+        try:
+            self.db.delete(account)
+            self.db.commit()
+        except IntegrityError as e:
+            self.db.rollback()
+            raise e
 
-        account.deleted_at = datetime.now(UTC)
-        self.db.commit()
-        self.db.refresh(account)
-        return account
-
-    def list_accounts(
+    def list_all(
         self,
         organization_id: UUID,
-        page: int = 1,
-        page_size: int = 20,
         account_type: AccountType | None = None,
+        status: AccountStatus | None = None,
         parent_account_id: UUID | None = None,
-        is_active: bool | None = None,
-        is_group: bool | None = None,
         search: str | None = None,
         sort_by: str = "account_code",
         sort_order: str = "asc",
-    ) -> tuple[list[ChartOfAccount], int]:
+    ) -> list[Account]:
         """
-        List chart of accounts with pagination and filters.
+        List all accounts with optional filtering.
 
         Args:
             organization_id: Organization UUID
-            page: Page number (1-indexed)
-            page_size: Number of items per page
             account_type: Filter by account type
+            status: Filter by account status
             parent_account_id: Filter by parent account
-            is_active: Filter by active status
-            is_group: Filter by is_group
-            search: Search term for code, name
+            search: Search term for code or name (case-insensitive)
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
 
         Returns:
-            Tuple of (list of accounts, total count)
+            List of accounts matching the filters
         """
-        query = self.db.query(ChartOfAccount).filter(
-            ChartOfAccount.organization_id == organization_id,
-            ChartOfAccount.deleted_at.is_(None),
-        )
+        query = self.db.query(Account).filter(Account.organization_id == organization_id)
 
+        # Apply filters
         if account_type is not None:
-            query = query.filter(ChartOfAccount.account_type == account_type)
+            query = query.filter(Account.account_type == account_type)
+
+        if status is not None:
+            query = query.filter(Account.status == status)
 
         if parent_account_id is not None:
-            query = query.filter(ChartOfAccount.parent_account_id == parent_account_id)
-
-        if is_active is not None:
-            query = query.filter(ChartOfAccount.is_active == is_active)
-
-        if is_group is not None:
-            query = query.filter(ChartOfAccount.is_group == is_group)
+            query = query.filter(Account.parent_account_id == parent_account_id)
 
         if search:
             search_term = f"%{search}%"
             query = query.filter(
                 or_(
-                    ChartOfAccount.account_code.ilike(search_term),
-                    ChartOfAccount.account_name.ilike(search_term),
+                    Account.account_code.ilike(search_term),
+                    Account.account_name.ilike(search_term),
                 )
             )
 
-        total_count = query.count()
-
-        sort_column = getattr(ChartOfAccount, sort_by, ChartOfAccount.account_code)
+        # Apply sorting
+        sort_column = getattr(Account, sort_by, Account.account_code)
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
 
-        offset = (page - 1) * page_size
-        accounts = query.offset(offset).limit(page_size).all()
+        return query.all()
 
-        return accounts, total_count
-
-    def account_code_exists(self, account_code: str, organization_id: UUID) -> bool:
+    def account_code_exists(self, account_code: str, organization_id: UUID, exclude_id: UUID | None = None) -> bool:
         """
-        Check if account code already exists in the organization.
+        Check if account code already exists.
 
         Args:
             account_code: Account code to check
             organization_id: Organization UUID
+            exclude_id: Optional account ID to exclude from check (for updates)
 
         Returns:
             True if code exists, False otherwise
         """
-        return (
-            self.db.query(ChartOfAccount)
-            .filter(
-                ChartOfAccount.account_code == account_code,
-                ChartOfAccount.organization_id == organization_id,
-                ChartOfAccount.deleted_at.is_(None),
-            )
-            .count()
-            > 0
+        query = self.db.query(Account).filter(
+            Account.account_code == account_code,
+            Account.organization_id == organization_id
         )
-
-    def get_all_accounts(self, organization_id: UUID) -> list[ChartOfAccount]:
-        """
-        Get all chart of accounts for an organization (for tree building).
-
-        Args:
-            organization_id: Organization UUID
-
-        Returns:
-            List of all chart of accounts
-        """
-        return (
-            self.db.query(ChartOfAccount)
-            .filter(
-                ChartOfAccount.organization_id == organization_id,
-                ChartOfAccount.deleted_at.is_(None),
-            )
-            .order_by(ChartOfAccount.account_code)
-            .all()
-        )
+        
+        if exclude_id is not None:
+            query = query.filter(Account.id != exclude_id)
+        
+        return query.count() > 0
 
     def has_children(self, account_id: UUID, organization_id: UUID) -> bool:
         """
-        Check if chart of account has child accounts.
+        Check if account has child accounts.
 
         Args:
-            account_id: Chart of account UUID
+            account_id: Account UUID
             organization_id: Organization UUID
 
         Returns:
             True if has children, False otherwise
         """
         return (
-            self.db.query(ChartOfAccount)
+            self.db.query(Account)
             .filter(
-                ChartOfAccount.parent_account_id == account_id,
-                ChartOfAccount.organization_id == organization_id,
-                ChartOfAccount.deleted_at.is_(None),
+                Account.parent_account_id == account_id,
+                Account.organization_id == organization_id
             )
             .count()
             > 0
+        )
+
+    def get_children(self, account_id: UUID, organization_id: UUID) -> list[Account]:
+        """
+        Get all child accounts of a parent account.
+
+        Args:
+            account_id: Parent account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of child accounts
+        """
+        return (
+            self.db.query(Account)
+            .filter(
+                Account.parent_account_id == account_id,
+                Account.organization_id == organization_id
+            )
+            .order_by(Account.account_code)
+            .all()
+        )
+
+    def get_with_parent(self, account_id: UUID, organization_id: UUID) -> Account | None:
+        """
+        Get account by ID with parent relationship loaded.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            Account object with parent loaded, or None if not found
+        """
+        return (
+            self.db.query(Account)
+            .options(joinedload(Account.parent_account))
+            .filter(Account.id == account_id, Account.organization_id == organization_id)
+            .first()
         )

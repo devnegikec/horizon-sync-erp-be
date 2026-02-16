@@ -74,14 +74,14 @@ class JournalEntryLine(Base):
     )
     account_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("chart_of_accounts.id", ondelete="CASCADE"),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
     debit = Column(Numeric(15, 2), default=0)
     credit = Column(Numeric(15, 2), default=0)
     against_account_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("chart_of_accounts.id", ondelete="SET NULL"),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
         nullable=True,
     )
     reference_type = Column(String(50), nullable=True)
