@@ -22,6 +22,10 @@ class ItemGroupBase(BaseModel):
     default_valuation_method: str | None = None
     default_uom: str | None = Field(None, max_length=50)
 
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
+
     # Status
     is_active: bool = True
 
@@ -47,6 +51,10 @@ class ItemGroupUpdate(BaseModel):
     # Defaults
     default_valuation_method: str | None = None
     default_uom: str | None = Field(None, max_length=50)
+
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
 
     # Status
     is_active: bool | None = None
@@ -81,6 +89,10 @@ class ItemGroupResponse(BaseModel):
     # Defaults
     default_valuation_method: str | None = None
     default_uom: str | None = None
+
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
 
     # Status
     is_active: bool

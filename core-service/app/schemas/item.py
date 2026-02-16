@@ -57,6 +57,11 @@ class ItemBase(BaseModel):
     # Quality Inspection
     inspection_required_before_purchase: bool = False
     inspection_required_before_delivery: bool = False
+    quality_inspection_template: UUID | None = None
+
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
@@ -65,6 +70,7 @@ class ItemBase(BaseModel):
     images: list[str] | None = None
     tags: list[str] | None = None
     custom_fields: dict | None = None
+    extra_data: dict | None = None
 
 
 class ItemCreate(ItemBase):
@@ -120,6 +126,11 @@ class ItemUpdate(BaseModel):
     # Quality Inspection
     inspection_required_before_purchase: bool | None = None
     inspection_required_before_delivery: bool | None = None
+    quality_inspection_template: UUID | None = None
+
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
@@ -128,6 +139,7 @@ class ItemUpdate(BaseModel):
     images: list[str] | None = None
     tags: list[str] | None = None
     custom_fields: dict | None = None
+    extra_data: dict | None = None
 
 
 class ItemGroupInfo(BaseModel):
@@ -191,6 +203,11 @@ class ItemResponse(BaseModel):
     # Quality Inspection
     inspection_required_before_purchase: bool
     inspection_required_before_delivery: bool
+    quality_inspection_template: UUID | None = None
+
+    # Tax Templates
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = None
@@ -199,6 +216,7 @@ class ItemResponse(BaseModel):
     images: list[str] | None = None
     tags: list[str] | None = None
     custom_fields: dict | None = None
+    extra_data: dict | None = None
 
     # Audit
     created_by: UUID | None = None

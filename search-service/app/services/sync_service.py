@@ -74,14 +74,33 @@ class SyncService:
 
     async def upsert_search_document(self, entity_type: str, entity: Dict[str, Any]):
         """Insert or update a SearchDocument for an entity."""
-        entity_id = str(entity.get("id") or entity.get("item_code") or entity.get("code"))
-        title = entity.get("item_name") or entity.get("name") or entity.get("title") or entity_id
-        content = entity.get("description") or ""
+        # Extract entity_id based on entity type
+        if entity_type == "tax_templates":
+            entity_id = str(entity.get("id", ""))
+            title = entity.get("template_name") or entity.get("template_code") or entity_id
+            content = entity.get("description") or ""
+        elif entity_type == "charge_templates":
+            entity_id = str(entity.get("id", ""))
+            title = entity.get("template_name") or entity.get("template_code") or entity_id
+            content = entity.get("description") or ""
+        else:
+            # Default handling for other entity types
+            entity_id = str(entity.get("id") or entity.get("item_code") or entity.get("code") or "")
+            title = entity.get("item_name") or entity.get("name") or entity.get("title") or entity_id
+            content = entity.get("description") or ""
+        
+        if not entity_id:
+            logger.error(f"Cannot upsert search document: missing entity_id for {entity_type}")
+            return
+        
+        # Build metadata excluding fields already used
+        excluded_fields = {"id", "item_code", "item_name", "name", "title", "description", "template_name", "template_code"}
         metadata = {
             k: v
             for k, v in entity.items()
-            if k not in ("id", "item_code", "item_name", "name", "title", "description")
+            if k not in excluded_fields
         }
+        
         # Upsert logic
         stmt = select(SearchDocument).where(
             SearchDocument.entity_id == entity_id, SearchDocument.entity_type == entity_type
