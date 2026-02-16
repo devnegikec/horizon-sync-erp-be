@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     material_requests,
     payments,
     pick_lists,
+    purchase_orders,
     purchase_receipts,
     put_away_rules,
     quality_inspections,
@@ -122,4 +123,9 @@ api_router.include_router(
     rfqs.router,
     prefix="/rfqs",
     tags=["RFQs"],
+)
+api_router.include_router(
+    purchase_orders.router,
+    prefix="/purchase-orders",
+    tags=["Purchase Orders"],
 )

@@ -18,15 +18,30 @@ class InvoiceRepository:
         self.db.refresh(inv)
         return inv
 
-    def get_by_id(self, invoice_id: UUID, organization_id: UUID) -> Invoice | None:
-        return (
+    def get_by_id(self, invoice_id: UUID, organization_id: UUID, for_update: bool = False) -> Invoice | None:
+        """
+        Get Invoice by ID.
+        
+        Args:
+            invoice_id: Invoice ID
+            organization_id: Organization ID
+            for_update: If True, use SELECT FOR UPDATE to lock the row for concurrent updates
+            
+        Returns:
+            Invoice or None
+        """
+        query = (
             self.db.query(Invoice)
             .filter(
                 Invoice.id == invoice_id,
                 Invoice.organization_id == organization_id,
             )
-            .first()
         )
+        
+        if for_update:
+            query = query.with_for_update()
+        
+        return query.first()
 
     def list_invoices(
         self,

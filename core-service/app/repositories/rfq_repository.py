@@ -151,3 +151,20 @@ class RFQRepository:
         self.db.commit()
         self.db.refresh(quote)
         return quote
+
+    def get_rfqs_by_material_request(
+        self, material_request_id: UUID, organization_id: UUID
+    ) -> list[RFQ]:
+        """Get all RFQs for a Material Request with line items and quotes"""
+        return (
+            self.db.query(RFQ)
+            .options(
+                joinedload(RFQ.line_items).joinedload(RFQLine.quotes),
+            )
+            .filter(
+                RFQ.material_request_id == material_request_id,
+                RFQ.organization_id == organization_id,
+                RFQ.deleted_at.is_(None),
+            )
+            .all()
+        )
