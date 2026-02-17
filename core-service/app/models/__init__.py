@@ -33,10 +33,12 @@ from app.models.base import (
 )
 from app.models.chart_of_account import Account
 from app.models.customer import Customer
+from app.models.exchange_rate import ExchangeRate
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.quotation import Quotation, QuotationItem
 from app.models.sales_order import SalesOrder, SalesOrderItem
+from app.models.system_config import SystemConfig
 from app.models.warehouse import Warehouse
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
@@ -90,12 +92,14 @@ __all__ = [
     # Models
     "Account",
     "Customer",
+    "ExchangeRate",
     "Item",
     "ItemGroup",
     "Quotation",
     "QuotationItem",
     "SalesOrder",
     "SalesOrderItem",
+    "SystemConfig",
     "Warehouse",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",

@@ -20,13 +20,22 @@ class ChartOfAccountBase(BaseModel):
         description="asset, liability, equity, income, expense",
     )
 
-    @field_validator('account_code', 'account_name', 'account_type')
+    @field_validator('account_code', 'account_name')
     @classmethod
     def validate_not_whitespace(cls, v: str) -> str:
         """Validate that string fields are not empty or whitespace-only"""
         if not v or not v.strip():
             raise ValueError('Field cannot be empty or whitespace-only')
         return v
+    
+    @field_validator('account_type')
+    @classmethod
+    def validate_account_type(cls, v: str) -> str:
+        """Validate and normalize account type to lowercase"""
+        if not v or not v.strip():
+            raise ValueError('Account type cannot be empty or whitespace-only')
+        # Convert to lowercase to match database enum
+        return v.strip().lower()
 
     # Hierarchy
     parent_account_id: UUID | None = None
@@ -36,6 +45,14 @@ class ChartOfAccountBase(BaseModel):
     
     # Status
     status: str = Field(default="active")
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate and normalize status to lowercase"""
+        if v:
+            return v.strip().lower()
+        return "active"
     
     # Posting Configuration
     is_posting_account: bool = True

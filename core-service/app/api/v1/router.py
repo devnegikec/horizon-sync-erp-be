@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     chart_of_accounts,
+    currency,
     customers,
     delivery_notes,
     invoices,
@@ -57,6 +58,7 @@ api_router.include_router(
     prefix="/chart-of-accounts",
     tags=["Chart of Accounts"],
 )
+api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])
 api_router.include_router(

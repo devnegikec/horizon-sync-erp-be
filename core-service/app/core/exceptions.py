@@ -202,6 +202,18 @@ class DuplicateAccountCodeException(CoreServiceException):
     pass
 
 
+class CurrencyNotFoundException(CoreServiceException):
+    """Raised when a currency is not found or not supported"""
+
+    pass
+
+
+class ExchangeRateNotFoundException(CoreServiceException):
+    """Raised when an exchange rate is not found for a currency pair and date"""
+
+    pass
+
+
 # ===========================================
 # GENERAL EXCEPTIONS
 # ===========================================

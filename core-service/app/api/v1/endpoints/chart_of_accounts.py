@@ -79,6 +79,7 @@ async def list_chart_of_accounts(
     ),
     is_active: bool | None = Query(None, description="Filter by active status"),
     is_group: bool | None = Query(None, description="Filter by is_group"),
+    currency: str | None = Query(None, description="Filter by currency code"),
     search: str | None = Query(None, description="Search in account code, name"),
     sort_by: str = Query("account_code", description="Field to sort by"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order"),
@@ -96,6 +97,7 @@ async def list_chart_of_accounts(
     - **account_type**: Filter by account type
     - **parent_account_id**: Filter by parent account
     - **is_active**, **is_group**: Filters
+    - **currency**: Filter by currency code
     - **search**: Search term for code, name
     - **sort_by**: Field to sort by (default: account_code)
     - **sort_order**: Sort order - asc or desc (default: asc)
@@ -112,6 +114,7 @@ async def list_chart_of_accounts(
         parent_account_id=parent_account_id,
         is_active=is_active,
         is_group=is_group,
+        currency=currency,
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
