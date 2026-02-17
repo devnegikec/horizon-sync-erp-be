@@ -7,6 +7,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -130,9 +131,19 @@ class BalanceCalculator:
             )
         )
         
-        result = query.first()
-        debit_total = result.debit_total or Decimal("0")
-        credit_total = result.credit_total or Decimal("0")
+        try:
+            result = query.first()
+            debit_total = result.debit_total or Decimal("0")
+            credit_total = result.credit_total or Decimal("0")
+        except (ProgrammingError, OperationalError) as error:
+            logger.warning(
+                "Balance query fallback to zero totals due to missing journal schema for account %s: %s",
+                account_id,
+                error,
+            )
+            self.db.rollback()
+            debit_total = Decimal("0")
+            credit_total = Decimal("0")
         
         # Calculate balance based on natural balance direction
         balance = self._get_natural_balance(account.account_type, debit_total, credit_total)
