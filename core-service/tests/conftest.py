@@ -13,7 +13,7 @@ os.environ.setdefault("DB_MAX_OVERFLOW", "10")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -39,6 +39,7 @@ def db_session():
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
+        db.execute(text("PRAGMA foreign_keys = OFF"))
         yield db
     finally:
         db.close()

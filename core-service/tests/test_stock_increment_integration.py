@@ -6,9 +6,12 @@ from decimal import Decimal
 
 import pytest
 
-from app.models.base import PurchaseOrderStatus
+from app.models.base import ItemType, PurchaseOrderStatus, WarehouseType
+from app.models.item import Item
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
 from app.models.stock_level import StockLevel
+from app.models.supplier import Supplier
+from app.models.warehouse import Warehouse
 from app.services.receipt_note_service import ReceiptNoteService
 from app.services.stock_level_service import StockLevelService
 
@@ -38,21 +41,54 @@ def test_user_id():
 
 
 @pytest.fixture
-def test_supplier_id():
-    """Test supplier ID"""
-    return uuid.uuid4()
+def test_supplier_id(db_session, test_organization_id, test_user_id):
+    """Create a real supplier and return its ID."""
+    supplier = Supplier(
+        organization_id=test_organization_id,
+        supplier_name="Stock Test Supplier",
+        supplier_code="SUP-STOCK-001",
+        email="stock-supplier@test.com",
+        created_by=test_user_id,
+        updated_by=test_user_id,
+    )
+    db_session.add(supplier)
+    db_session.commit()
+    db_session.refresh(supplier)
+    return supplier.id
 
 
 @pytest.fixture
-def test_item_id():
-    """Test item ID"""
-    return uuid.uuid4()
+def test_item_id(db_session, test_organization_id, test_user_id):
+    """Create a real item and return its ID."""
+    item = Item(
+        organization_id=test_organization_id,
+        item_code="ITEM-STOCK-001",
+        item_name="Stock Integration Item",
+        item_type=ItemType.STOCK,
+        created_by=test_user_id,
+        updated_by=test_user_id,
+    )
+    db_session.add(item)
+    db_session.commit()
+    db_session.refresh(item)
+    return item.id
 
 
 @pytest.fixture
-def test_warehouse_id():
-    """Test warehouse ID"""
-    return uuid.uuid4()
+def test_warehouse_id(db_session, test_organization_id, test_user_id):
+    """Create a real warehouse and return its ID."""
+    warehouse = Warehouse(
+        organization_id=test_organization_id,
+        code="WH-STOCK-001",
+        name="Stock Test Warehouse",
+        warehouse_type=WarehouseType.WAREHOUSE,
+        created_by=test_user_id,
+        updated_by=test_user_id,
+    )
+    db_session.add(warehouse)
+    db_session.commit()
+    db_session.refresh(warehouse)
+    return warehouse.id
 
 
 @pytest.fixture
@@ -314,8 +350,26 @@ class TestStockIncrementIntegration:
     ):
         """Test that Receipt Note with multiple items increments stock for all items"""
         # Create items
-        item_id_1 = uuid.uuid4()
-        item_id_2 = uuid.uuid4()
+        item_1 = Item(
+            organization_id=test_organization_id,
+            item_code="ITEM-STOCK-002",
+            item_name="Stock Integration Item 2",
+            item_type=ItemType.STOCK,
+            created_by=test_user_id,
+            updated_by=test_user_id,
+        )
+        item_2 = Item(
+            organization_id=test_organization_id,
+            item_code="ITEM-STOCK-003",
+            item_name="Stock Integration Item 3",
+            item_type=ItemType.STOCK,
+            created_by=test_user_id,
+            updated_by=test_user_id,
+        )
+        db_session.add_all([item_1, item_2])
+        db_session.commit()
+        db_session.refresh(item_1)
+        db_session.refresh(item_2)
 
         # Create Purchase Order with multiple items
         po = PurchaseOrder(
@@ -336,7 +390,7 @@ class TestStockIncrementIntegration:
         line1 = PurchaseOrderLine(
             organization_id=test_organization_id,
             purchase_order_id=po.id,
-            item_id=item_id_1,
+            item_id=item_1.id,
             quantity=Decimal("100.00"),
             unit_price=Decimal("10.00"),
             line_total=Decimal("1000.00"),
@@ -345,7 +399,7 @@ class TestStockIncrementIntegration:
         line2 = PurchaseOrderLine(
             organization_id=test_organization_id,
             purchase_order_id=po.id,
-            item_id=item_id_2,
+            item_id=item_2.id,
             quantity=Decimal("50.00"),
             unit_price=Decimal("20.00"),
             line_total=Decimal("1000.00"),
@@ -357,8 +411,8 @@ class TestStockIncrementIntegration:
         # Create Receipt Note with both items
         receipt_date = datetime.now()
         line_items = [
-            {"item_id": item_id_1, "qty": 60.0, "uom": "Nos"},
-            {"item_id": item_id_2, "qty": 30.0, "uom": "Nos"},
+            {"item_id": item_1.id, "qty": 60.0, "uom": "Nos"},
+            {"item_id": item_2.id, "qty": 30.0, "uom": "Nos"},
         ]
 
         receipt_note_service.create_receipt_note(
@@ -373,14 +427,14 @@ class TestStockIncrementIntegration:
 
         # Verify stock levels for both items
         stock_level_1 = stock_level_service.get(
-            item_id=item_id_1,
+            item_id=item_1.id,
             warehouse_id=test_warehouse_id,
             organization_id=test_organization_id,
         )
         assert stock_level_1.quantity_on_hand == 60
 
         stock_level_2 = stock_level_service.get(
-            item_id=item_id_2,
+            item_id=item_2.id,
             warehouse_id=test_warehouse_id,
             organization_id=test_organization_id,
         )

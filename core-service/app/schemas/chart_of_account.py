@@ -19,7 +19,6 @@ class ChartOfAccountBase(BaseModel):
         min_length=1,
         description="asset, liability, equity, income, expense",
     )
-    organization_id: UUID
 
     @field_validator('account_code', 'account_name', 'account_type')
     @classmethod
@@ -54,7 +53,7 @@ class ChartOfAccountCreate(ChartOfAccountBase):
 class ChartOfAccountUpdate(BaseModel):
     """Schema for updating a chart of account (all fields optional)"""
 
-    account_name: str | None = Field(None, min_length=1, max_length=200)
+    account_name: str | None = Field(None, min_length=1)
     
     # Hierarchy
     parent_account_id: UUID | None = None
@@ -93,7 +92,7 @@ class ChartOfAccountResponse(BaseModel):
 
     # Hierarchy
     parent_account_id: UUID | None = None
-    parent: ChartOfAccountParentInfo | None = None
+    parent: ChartOfAccountParentInfo | None = Field(default=None, validation_alias="parent_account")
     
     # Currency
     currency: str
@@ -152,6 +151,23 @@ class ChartOfAccountTreeNode(BaseModel):
     children: list["ChartOfAccountTreeNode"] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ChartOfAccountHierarchyResponse(BaseModel):
+    """Schema for account hierarchy response"""
+
+    account: ChartOfAccountResponse
+    ancestors: list[ChartOfAccountParentInfo]
+    children: list[ChartOfAccountParentInfo]
+    descendants_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChartOfAccountMoveParentRequest(BaseModel):
+    """Schema for moving account to new parent"""
+
+    new_parent_id: UUID = Field(..., description="New parent account UUID")
 
 
 # Update forward reference for recursive type

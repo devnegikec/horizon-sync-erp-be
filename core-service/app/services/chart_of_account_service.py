@@ -308,7 +308,7 @@ class ChartOfAccountService:
                 "Delete children first or use force=true."
             )
 
-        self.repo.delete(account)
+        self.repo.delete(account, check_children=not force)
 
     def get_list(
         self,
@@ -341,7 +341,7 @@ class ChartOfAccountService:
         Returns:
             Tuple of (list of accounts, pagination metadata)
         """
-        page_size = min(page_size, 100)
+        page_size = min(page_size, 1000)
 
         type_enum = None
         if account_type:
@@ -350,10 +350,15 @@ class ChartOfAccountService:
             except (ValueError, KeyError):
                 pass
 
+        status_enum = None
+        if is_active is not None:
+            status_enum = AccountStatus.ACTIVE if is_active else AccountStatus.INACTIVE
+
         # Use repository list_all method
         accounts = self.repo.list_all(
             organization_id=organization_id,
             account_type=type_enum,
+            status=status_enum,
             parent_account_id=parent_account_id,
             search=search,
             sort_by=sort_by,
@@ -370,7 +375,7 @@ class ChartOfAccountService:
         pagination = {
             "page": page,
             "page_size": page_size,
-            "total_items": total_count,
+            "total": total_count,
             "total_pages": total_pages,
             "has_next": page < total_pages,
             "has_prev": page > 1,
@@ -408,9 +413,8 @@ class ChartOfAccountService:
                 account_code=acc.account_code,
                 account_name=acc.account_name,
                 account_type=str(acc.account_type.value) if acc.account_type else "",
-                level=getattr(acc, 'level', 1),
-                is_group=getattr(acc, 'is_group', False),
-                is_active=getattr(acc, 'is_active', True),
+                status=str(acc.status.value) if acc.status else "active",
+                is_posting_account=acc.is_posting_account,
                 children=[build_node(c) for c in children],
             )
 
@@ -568,3 +572,107 @@ class ChartOfAccountService:
             raise ValidationError(
                 f"Cannot post to non-posting account '{account.account_code}' (parent accounts cannot receive postings)"
             )
+
+    # Hierarchy methods
+
+    def get_children(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all direct child accounts of a parent account.
+
+        Args:
+            account_id: Parent account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of child accounts
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_children(account_id, organization_id)
+
+    def get_ancestors(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all ancestor accounts from the account up to the root.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of ancestor accounts ordered from immediate parent to root
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_ancestors(account_id, organization_id)
+
+    def get_descendants(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all descendant accounts recursively.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of all descendant accounts (children, grandchildren, etc.)
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_descendants(account_id, organization_id)
+
+    def move_account(
+        self,
+        account_id: UUID,
+        new_parent_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> Account:
+        """
+        Move an account to a new parent.
+
+        Args:
+            account_id: Account UUID to move
+            new_parent_id: New parent account UUID
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Updated Account object
+
+        Raises:
+            ChartOfAccountNotFoundException: If account or new parent not found
+            CircularReferenceException: If move would create circular reference
+            ValidationError: If account types don't match
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        hierarchy_manager.move_account(account_id, new_parent_id, organization_id)
+
+        # Return the updated account
+        return self.get_by_id(account_id, organization_id, include_parent=True)
+

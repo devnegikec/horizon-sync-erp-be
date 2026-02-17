@@ -8,10 +8,9 @@ from fastapi import status
 
 
 @pytest.fixture
-def test_account_data(mock_current_user):
+def test_account_data():
     """Sample account data for testing"""
     return {
-        "organization_id": str(mock_current_user.organization_id),
         "account_code": "1000-01",
         "account_name": "Cash Account",
         "account_type": "asset",
@@ -19,10 +18,9 @@ def test_account_data(mock_current_user):
 
 
 @pytest.fixture
-def test_parent_account_data(mock_current_user):
+def test_parent_account_data():
     """Sample parent account data for testing"""
     return {
-        "organization_id": str(mock_current_user.organization_id),
         "account_code": "1000",
         "account_name": "Current Assets",
         "account_type": "asset",
@@ -54,7 +52,7 @@ class TestCreateAccount:
         # Try to create duplicate
         response2 = client.post("/api/v1/chart-of-accounts", json=test_account_data)
         assert response2.status_code == status.HTTP_409_CONFLICT
-        assert "already exists" in response2.json()["detail"].lower()
+        assert "already exists" in response2.json()["detail"]["message"].lower()
 
     def test_create_account_missing_required_fields(self, client):
         """Test validation error for missing required fields"""
@@ -63,37 +61,37 @@ class TestCreateAccount:
             # Missing account_code and account_type
         }
         response = client.post("/api/v1/chart-of-accounts", json=invalid_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_empty_code(self, client, test_account_data):
         """Test validation error for empty account code"""
         test_account_data["account_code"] = ""
         response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_empty_name(self, client, test_account_data):
         """Test validation error for empty account name"""
         test_account_data["account_name"] = ""
         response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_whitespace_only_code(self, client, test_account_data):
         """Test validation error for whitespace-only account code"""
         test_account_data["account_code"] = "   "
         response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_code_too_long(self, client, test_account_data):
         """Test validation error for account code exceeding 50 characters"""
         test_account_data["account_code"] = "A" * 51
         response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_name_too_long(self, client, test_account_data):
         """Test validation error for account name exceeding 200 characters"""
         test_account_data["account_name"] = "A" * 201
         response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_create_account_with_parent(
         self, client, test_parent_account_data, test_account_data
@@ -209,8 +207,8 @@ class TestUpdateAccount:
         # Update multiple fields
         update_data = {
             "account_name": "Updated Name",
-            "is_active": False,
-            "opening_balance": 1000.50,
+            "status": "inactive",
+            "is_posting_account": False,
         }
         response = client.put(
             f"/api/v1/chart-of-accounts/{account_id}", json=update_data
@@ -219,8 +217,8 @@ class TestUpdateAccount:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["account_name"] == "Updated Name"
-        assert data["is_active"] is False
-        assert float(data["opening_balance"]) == 1000.50
+        assert data["status"] == "inactive"
+        assert data["is_posting_account"] is False
 
     def test_update_account_name_too_long(self, client, test_account_data):
         """Test validation error for name exceeding 200 characters"""
@@ -235,7 +233,7 @@ class TestUpdateAccount:
         response = client.put(
             f"/api/v1/chart-of-accounts/{account_id}", json=update_data
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 class TestDeleteAccount:
@@ -279,8 +277,8 @@ class TestDeleteAccount:
 
         # Try to delete parent
         response = client.delete(f"/api/v1/chart-of-accounts/{parent_id}")
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "child" in response.json()["detail"].lower()
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "child" in response.json()["detail"]["message"].lower()
 
     def test_delete_account_with_children_force(
         self, client, test_parent_account_data, test_account_data
@@ -382,14 +380,14 @@ class TestListAccounts:
         # Create active account
         active_data = test_account_data.copy()
         active_data["account_code"] = "1000-01"
-        active_data["is_active"] = True
+        active_data["status"] = "active"
         client.post("/api/v1/chart-of-accounts", json=active_data)
 
         # Create inactive account
         inactive_data = test_account_data.copy()
         inactive_data["account_code"] = "1000-02"
         inactive_data["account_name"] = "Inactive Account"
-        inactive_data["is_active"] = False
+        inactive_data["status"] = "inactive"
         client.post("/api/v1/chart-of-accounts", json=inactive_data)
 
         # Filter by active status
@@ -398,7 +396,7 @@ class TestListAccounts:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["chart_of_accounts"]) == 1
-        assert data["chart_of_accounts"][0]["is_active"] is True
+        assert data["chart_of_accounts"][0]["status"] == "active"
 
     def test_list_accounts_search(self, client, test_account_data):
         """Test searching accounts by code or name"""
@@ -571,3 +569,300 @@ class TestAccountStatusManagement:
         # Can reactivate from archived
         reactivate_response = client.put(f"/api/v1/chart-of-accounts/{account_id}/activate")
         assert reactivate_response.json()["status"] == "active"
+
+
+
+class TestHierarchyEndpoints:
+    """Tests for hierarchy API endpoints"""
+
+    def test_get_account_hierarchy(self, client, test_parent_account_data, test_account_data):
+        """Test GET /api/v1/chart-of-accounts/:id/hierarchy"""
+        # Create parent account
+        parent_response = client.post("/api/v1/chart-of-accounts", json=test_parent_account_data)
+        assert parent_response.status_code == status.HTTP_201_CREATED
+        parent_id = parent_response.json()["id"]
+
+        # Create child account
+        test_account_data["parent_account_id"] = parent_id
+        child_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        assert child_response.status_code == status.HTTP_201_CREATED
+        child_id = child_response.json()["id"]
+
+        # Get hierarchy for child account
+        response = client.get(f"/api/v1/chart-of-accounts/{child_id}/hierarchy")
+        assert response.status_code == status.HTTP_200_OK
+        
+        data = response.json()
+        assert "account" in data
+        assert "ancestors" in data
+        assert "children" in data
+        assert "descendants_count" in data
+        assert data["account"]["id"] == child_id
+        assert len(data["ancestors"]) == 1
+        assert data["ancestors"][0]["id"] == parent_id
+
+    def test_get_children(self, client, test_parent_account_data, test_account_data):
+        """Test GET /api/v1/chart-of-accounts/:id/children"""
+        # Create parent account
+        parent_response = client.post("/api/v1/chart-of-accounts", json=test_parent_account_data)
+        assert parent_response.status_code == status.HTTP_201_CREATED
+        parent_id = parent_response.json()["id"]
+
+        # Create child accounts
+        child_ids = []
+        for i in range(3):
+            child_data = test_account_data.copy()
+            child_data["account_code"] = f"1000-0{i+1}"
+            child_data["account_name"] = f"Child Account {i+1}"
+            child_data["parent_account_id"] = parent_id
+            
+            child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
+            assert child_response.status_code == status.HTTP_201_CREATED
+            child_ids.append(child_response.json()["id"])
+
+        # Get children
+        response = client.get(f"/api/v1/chart-of-accounts/{parent_id}/children")
+        assert response.status_code == status.HTTP_200_OK
+        
+        children = response.json()
+        assert len(children) == 3
+        returned_ids = [child["id"] for child in children]
+        for child_id in child_ids:
+            assert child_id in returned_ids
+
+    def test_get_ancestors(self, client, mock_current_user):
+        """Test GET /api/v1/chart-of-accounts/:id/ancestors"""
+        # Create 3-level hierarchy: grandparent -> parent -> child
+        grandparent_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1000",
+            "account_name": "Assets",
+            "account_type": "asset",
+        }
+        grandparent_response = client.post("/api/v1/chart-of-accounts", json=grandparent_data)
+        assert grandparent_response.status_code == status.HTTP_201_CREATED
+        grandparent_id = grandparent_response.json()["id"]
+
+        parent_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1100",
+            "account_name": "Current Assets",
+            "account_type": "asset",
+            "parent_account_id": grandparent_id,
+        }
+        parent_response = client.post("/api/v1/chart-of-accounts", json=parent_data)
+        assert parent_response.status_code == status.HTTP_201_CREATED
+        parent_id = parent_response.json()["id"]
+
+        child_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1110",
+            "account_name": "Cash",
+            "account_type": "asset",
+            "parent_account_id": parent_id,
+        }
+        child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
+        assert child_response.status_code == status.HTTP_201_CREATED
+        child_id = child_response.json()["id"]
+
+        # Get ancestors of child
+        response = client.get(f"/api/v1/chart-of-accounts/{child_id}/ancestors")
+        assert response.status_code == status.HTTP_200_OK
+        
+        ancestors = response.json()
+        assert len(ancestors) == 2
+        # Ancestors should be ordered from immediate parent to root
+        assert ancestors[0]["id"] == parent_id
+        assert ancestors[1]["id"] == grandparent_id
+
+    def test_get_descendants(self, client, mock_current_user):
+        """Test GET /api/v1/chart-of-accounts/:id/descendants"""
+        # Create hierarchy: parent -> child -> grandchild
+        parent_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1000",
+            "account_name": "Assets",
+            "account_type": "asset",
+        }
+        parent_response = client.post("/api/v1/chart-of-accounts", json=parent_data)
+        assert parent_response.status_code == status.HTTP_201_CREATED
+        parent_id = parent_response.json()["id"]
+
+        child_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1100",
+            "account_name": "Current Assets",
+            "account_type": "asset",
+            "parent_account_id": parent_id,
+        }
+        child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
+        assert child_response.status_code == status.HTTP_201_CREATED
+        child_id = child_response.json()["id"]
+
+        grandchild_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1110",
+            "account_name": "Cash",
+            "account_type": "asset",
+            "parent_account_id": child_id,
+        }
+        grandchild_response = client.post("/api/v1/chart-of-accounts", json=grandchild_data)
+        assert grandchild_response.status_code == status.HTTP_201_CREATED
+        grandchild_id = grandchild_response.json()["id"]
+
+        # Get descendants of parent
+        response = client.get(f"/api/v1/chart-of-accounts/{parent_id}/descendants")
+        assert response.status_code == status.HTTP_200_OK
+        
+        descendants = response.json()
+        assert len(descendants) == 2
+        descendant_ids = [d["id"] for d in descendants]
+        assert child_id in descendant_ids
+        assert grandchild_id in descendant_ids
+
+    def test_move_account_to_new_parent(self, client, mock_current_user):
+        """Test PUT /api/v1/chart-of-accounts/:id/parent"""
+        # Create two parent accounts
+        parent1_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1000",
+            "account_name": "Current Assets",
+            "account_type": "asset",
+        }
+        parent1_response = client.post("/api/v1/chart-of-accounts", json=parent1_data)
+        assert parent1_response.status_code == status.HTTP_201_CREATED
+        parent1_id = parent1_response.json()["id"]
+
+        parent2_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1200",
+            "account_name": "Fixed Assets",
+            "account_type": "asset",
+        }
+        parent2_response = client.post("/api/v1/chart-of-accounts", json=parent2_data)
+        assert parent2_response.status_code == status.HTTP_201_CREATED
+        parent2_id = parent2_response.json()["id"]
+
+        # Create child under parent1
+        child_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1100",
+            "account_name": "Cash",
+            "account_type": "asset",
+            "parent_account_id": parent1_id,
+        }
+        child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
+        assert child_response.status_code == status.HTTP_201_CREATED
+        child_id = child_response.json()["id"]
+
+        # Move child to parent2
+        move_data = {"new_parent_id": parent2_id}
+        response = client.put(f"/api/v1/chart-of-accounts/{child_id}/parent", json=move_data)
+        assert response.status_code == status.HTTP_200_OK
+        
+        updated_account = response.json()
+        assert updated_account["parent_account_id"] == parent2_id
+
+        # Verify the move by checking children of both parents
+        parent1_children = client.get(f"/api/v1/chart-of-accounts/{parent1_id}/children")
+        assert len(parent1_children.json()) == 0
+
+        parent2_children = client.get(f"/api/v1/chart-of-accounts/{parent2_id}/children")
+        assert len(parent2_children.json()) == 1
+        assert parent2_children.json()[0]["id"] == child_id
+
+    def test_move_account_circular_reference(self, client, mock_current_user):
+        """Test that moving account to create circular reference is rejected"""
+        # Create parent -> child hierarchy
+        parent_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1000",
+            "account_name": "Assets",
+            "account_type": "asset",
+        }
+        parent_response = client.post("/api/v1/chart-of-accounts", json=parent_data)
+        assert parent_response.status_code == status.HTTP_201_CREATED
+        parent_id = parent_response.json()["id"]
+
+        child_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1100",
+            "account_name": "Current Assets",
+            "account_type": "asset",
+            "parent_account_id": parent_id,
+        }
+        child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
+        assert child_response.status_code == status.HTTP_201_CREATED
+        child_id = child_response.json()["id"]
+
+        # Try to move parent under child (would create circular reference)
+        move_data = {"new_parent_id": child_id}
+        response = client.put(f"/api/v1/chart-of-accounts/{parent_id}/parent", json=move_data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        # The error message should contain "circular"
+        error_message = str(response_data).lower()
+        assert "circular" in error_message
+
+    def test_move_account_type_mismatch(self, client, mock_current_user):
+        """Test that moving account to parent with different type is rejected"""
+        # Create asset parent
+        asset_parent_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "1000",
+            "account_name": "Assets",
+            "account_type": "asset",
+        }
+        asset_parent_response = client.post("/api/v1/chart-of-accounts", json=asset_parent_data)
+        assert asset_parent_response.status_code == status.HTTP_201_CREATED
+        asset_parent_id = asset_parent_response.json()["id"]
+
+        # Create liability account
+        liability_data = {
+            "organization_id": str(mock_current_user.organization_id),
+            "account_code": "2000",
+            "account_name": "Accounts Payable",
+            "account_type": "liability",
+        }
+        liability_response = client.post("/api/v1/chart-of-accounts", json=liability_data)
+        assert liability_response.status_code == status.HTTP_201_CREATED
+        liability_id = liability_response.json()["id"]
+
+        # Try to move liability under asset parent
+        move_data = {"new_parent_id": asset_parent_id}
+        response = client.put(f"/api/v1/chart-of-accounts/{liability_id}/parent", json=move_data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        # The error message should contain "type"
+        error_message = str(response_data).lower()
+        assert "type" in error_message
+
+    def test_get_hierarchy_nonexistent_account(self, client):
+        """Test hierarchy endpoint with nonexistent account"""
+        fake_id = str(uuid.uuid4())
+        response = client.get(f"/api/v1/chart-of-accounts/{fake_id}/hierarchy")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_get_children_no_children(self, client, test_account_data):
+        """Test getting children of account with no children"""
+        # Create account without children
+        response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        assert response.status_code == status.HTTP_201_CREATED
+        account_id = response.json()["id"]
+
+        # Get children
+        children_response = client.get(f"/api/v1/chart-of-accounts/{account_id}/children")
+        assert children_response.status_code == status.HTTP_200_OK
+        assert len(children_response.json()) == 0
+
+    def test_get_ancestors_root_account(self, client, test_account_data):
+        """Test getting ancestors of root account (should be empty)"""
+        # Create root account
+        response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        assert response.status_code == status.HTTP_201_CREATED
+        account_id = response.json()["id"]
+
+        # Get ancestors
+        ancestors_response = client.get(f"/api/v1/chart-of-accounts/{account_id}/ancestors")
+        assert ancestors_response.status_code == status.HTTP_200_OK
+        assert len(ancestors_response.json()) == 0
