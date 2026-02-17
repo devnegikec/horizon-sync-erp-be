@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import PaginationMeta
 
@@ -13,27 +13,36 @@ class ChartOfAccountBase(BaseModel):
     """Base chart of account schema with common fields"""
 
     account_code: str = Field(..., min_length=1, max_length=50)
-    account_name: str = Field(..., min_length=1, max_length=255)
+    account_name: str = Field(..., min_length=1, max_length=200)
     account_type: str = Field(
         ...,
+        min_length=1,
         description="asset, liability, equity, income, expense",
     )
+    organization_id: UUID
+
+    @field_validator('account_code', 'account_name', 'account_type')
+    @classmethod
+    def validate_not_whitespace(cls, v: str) -> str:
+        """Validate that string fields are not empty or whitespace-only"""
+        if not v or not v.strip():
+            raise ValueError('Field cannot be empty or whitespace-only')
+        return v
 
     # Hierarchy
     parent_account_id: UUID | None = None
-    level: int = Field(default=1, ge=1)
-    is_group: bool = False
-
-    # Balances
-    opening_balance: Decimal | float = 0
-    current_balance: Decimal | float = 0
-
+    
+    # Currency
+    currency: str = Field(default="USD", max_length=3)
+    
     # Status
-    is_active: bool = True
-
-    # Extra
-    tags: list | dict | None = None
-    extra_data: dict | None = None
+    status: str = Field(default="active")
+    
+    # Posting Configuration
+    is_posting_account: bool = True
+    
+    # Description
+    description: str | None = None
 
 
 class ChartOfAccountCreate(ChartOfAccountBase):
@@ -45,24 +54,22 @@ class ChartOfAccountCreate(ChartOfAccountBase):
 class ChartOfAccountUpdate(BaseModel):
     """Schema for updating a chart of account (all fields optional)"""
 
-    account_name: str | None = Field(None, min_length=1, max_length=255)
-    account_type: str | None = None
-
+    account_name: str | None = Field(None, min_length=1, max_length=200)
+    
     # Hierarchy
     parent_account_id: UUID | None = None
-    level: int | None = Field(None, ge=1)
-    is_group: bool | None = None
-
-    # Balances
-    opening_balance: Decimal | float | None = None
-    current_balance: Decimal | float | None = None
-
+    
+    # Currency
+    currency: str | None = Field(None, max_length=3)
+    
     # Status
-    is_active: bool | None = None
-
-    # Extra
-    tags: list | dict | None = None
-    extra_data: dict | None = None
+    status: str | None = None
+    
+    # Posting Configuration
+    is_posting_account: bool | None = None
+    
+    # Description
+    description: str | None = None
 
 
 class ChartOfAccountParentInfo(BaseModel):
@@ -87,23 +94,22 @@ class ChartOfAccountResponse(BaseModel):
     # Hierarchy
     parent_account_id: UUID | None = None
     parent: ChartOfAccountParentInfo | None = None
-    level: int
-    is_group: bool
-
-    # Balances
-    opening_balance: Decimal
-    current_balance: Decimal
-
+    
+    # Currency
+    currency: str
+    
     # Status
-    is_active: bool
-
-    # Extra
-    tags: list | dict | None = None
-    extra_data: dict | None = None
+    status: str
+    
+    # Posting Configuration
+    is_posting_account: bool
+    
+    # Description
+    description: str | None = None
 
     # Audit
-    created_by: UUID | None = None
-    updated_by: UUID | None = None
+    created_by: str
+    updated_by: str
     created_at: datetime
     updated_at: datetime
 
@@ -114,13 +120,14 @@ class ChartOfAccountListItem(BaseModel):
     """Schema for chart of account in list response (lighter version)"""
 
     id: UUID
+    organization_id: UUID
     account_code: str
     account_name: str
     account_type: str
     parent_account_id: UUID | None = None
-    level: int
-    is_group: bool
-    is_active: bool
+    currency: str
+    status: str
+    is_posting_account: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -140,9 +147,8 @@ class ChartOfAccountTreeNode(BaseModel):
     account_code: str
     account_name: str
     account_type: str
-    level: int
-    is_group: bool
-    is_active: bool
+    status: str
+    is_posting_account: bool
     children: list["ChartOfAccountTreeNode"] = []
 
     model_config = ConfigDict(from_attributes=True)

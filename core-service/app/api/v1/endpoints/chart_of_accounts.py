@@ -239,3 +239,93 @@ async def delete_chart_of_account(
         force=force,
     )
     return None
+
+
+@router.put(
+    "/{account_id}/activate",
+    response_model=ChartOfAccountResponse,
+    summary="Activate account",
+    description="Activate an account to allow transaction postings",
+)
+async def activate_account(
+    account_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Activate an account.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Returns:** Updated chart of account with ACTIVE status
+    """
+    service = ChartOfAccountService(db)
+    account = service.activate_account(
+        account_id=account_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ChartOfAccountResponse.model_validate(account)
+
+
+@router.put(
+    "/{account_id}/deactivate",
+    response_model=ChartOfAccountResponse,
+    summary="Deactivate account",
+    description="Deactivate an account to prevent transaction postings",
+)
+async def deactivate_account(
+    account_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deactivate an account.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Returns:** Updated chart of account with INACTIVE status
+    """
+    service = ChartOfAccountService(db)
+    account = service.deactivate_account(
+        account_id=account_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ChartOfAccountResponse.model_validate(account)
+
+
+@router.put(
+    "/{account_id}/archive",
+    response_model=ChartOfAccountResponse,
+    summary="Archive account",
+    description="Archive an account for historical purposes",
+)
+async def archive_account(
+    account_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Archive an account.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Returns:** Updated chart of account with ARCHIVED status
+    """
+    service = ChartOfAccountService(db)
+    account = service.archive_account(
+        account_id=account_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ChartOfAccountResponse.model_validate(account)
