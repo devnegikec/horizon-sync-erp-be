@@ -55,18 +55,17 @@ class ItemService:
         item_dict["updated_by"] = user_id
 
         # Convert string enums to actual enums (case-insensitive)
+        # ItemType and ItemStatus use lowercase values: "stock", "active", etc.
         if item_dict.get("item_type"):
             try:
-                # Normalize to uppercase for enum lookup
-                item_type_str = str(item_dict["item_type"]).upper()
+                item_type_str = str(item_dict["item_type"]).lower()
                 item_dict["item_type"] = ItemType(item_type_str)
             except (ValueError, KeyError):
                 item_dict["item_type"] = ItemType.STOCK
 
         if item_dict.get("status"):
             try:
-                # Normalize to uppercase for enum lookup
-                status_str = str(item_dict["status"]).upper()
+                status_str = str(item_dict["status"]).lower()
                 item_dict["status"] = ItemStatus(status_str)
             except (ValueError, KeyError):
                 item_dict["status"] = ItemStatus.ACTIVE
@@ -155,18 +154,17 @@ class ItemService:
         update_dict["updated_by"] = user_id
 
         # Convert string enums to actual enums (case-insensitive)
+        # ItemType and ItemStatus use lowercase values: "stock", "active", etc.
         if "item_type" in update_dict and update_dict["item_type"]:
             try:
-                # Normalize to uppercase for enum lookup
-                item_type_str = str(update_dict["item_type"]).upper()
+                item_type_str = str(update_dict["item_type"]).lower()
                 update_dict["item_type"] = ItemType(item_type_str)
             except (ValueError, KeyError):
                 del update_dict["item_type"]
 
         if "status" in update_dict and update_dict["status"]:
             try:
-                # Normalize to uppercase for enum lookup
-                status_str = str(update_dict["status"]).upper()
+                status_str = str(update_dict["status"]).lower()
                 update_dict["status"] = ItemStatus(status_str)
             except (ValueError, KeyError):
                 del update_dict["status"]

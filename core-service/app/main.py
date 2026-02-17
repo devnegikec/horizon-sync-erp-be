@@ -160,16 +160,22 @@ def create_error_response(status_code: int, message: str, code: str):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors"""
+    """Handle validation errors with field-level details for debugging"""
     errors = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error["loc"] if loc != "body")
-        errors.append({"field": field, "message": error["msg"]})
+        errors.append({"field": field or "body", "message": error["msg"]})
 
-    return create_error_response(
+    return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        message="Invalid input data",
-        code="VALIDATION_ERROR",
+        content={
+            "detail": {
+                "message": "Invalid input data",
+                "status_code": status.HTTP_400_BAD_REQUEST,
+                "code": "VALIDATION_ERROR",
+                "errors": errors,
+            }
+        },
     )
 
 
