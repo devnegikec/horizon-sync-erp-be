@@ -80,6 +80,7 @@ class Account(Base):
 
     # Relationships
     parent_account = relationship("Account", remote_side=[id], backref="child_accounts")
+    balances = relationship("AccountBalance", back_populates="account", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint('organization_id', 'account_code', name='unique_account_code_per_org'),
