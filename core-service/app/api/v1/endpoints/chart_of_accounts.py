@@ -711,3 +711,116 @@ async def get_account_balance_history(
         end_date=end_date,
         history=history_items
     )
+
+
+# Audit trail endpoints
+
+@router.get(
+    "/{account_id}/audit-trail",
+    response_model=dict,
+    summary="Get account audit trail",
+    description="Get audit history for an account with optional filtering",
+)
+async def get_account_audit_trail(
+    account_id: UUID,
+    action: str | None = Query(None, description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)"),
+    start_date: str | None = Query(None, description="Filter by start date (ISO format)"),
+    end_date: str | None = Query(None, description="Filter by end date (ISO format)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get audit trail for an account.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Query Parameters:**
+    - **action**: Filter by action type (optional)
+    - **start_date**: Filter by start date in ISO format (optional)
+    - **end_date**: Filter by end date in ISO format (optional)
+    - **page**: Page number (default: 1)
+    - **page_size**: Items per page (default: 50, max: 100)
+
+    **Returns:** Paginated audit trail entries ordered by timestamp (newest first)
+    """
+    from datetime import datetime
+    from fastapi import HTTPException
+    from app.services.audit_logger import AuditLogger
+    from app.schemas.audit_log import AuditLogEntryResponse, AuditTrailResponse
+    
+    # Verify account exists
+    service = ChartOfAccountService(db)
+    try:
+        service.get_by_id(account_id, current_user.organization_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Account not found: {str(e)}"
+        )
+    
+    # Parse dates if provided
+    start_datetime = None
+    end_datetime = None
+    
+    if start_date:
+        try:
+            start_datetime = datetime.fromisoformat(start_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid start_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+            )
+    
+    if end_date:
+        try:
+            end_datetime = datetime.fromisoformat(end_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid end_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+            )
+    
+    # Get audit trail
+    audit_logger = AuditLogger(db)
+    
+    # Calculate offset for pagination
+    offset = (page - 1) * page_size
+    
+    # Get audit entries
+    entries = audit_logger.get_audit_trail(
+        account_id=account_id,
+        action_filter=action,
+        start_date=start_datetime,
+        end_date=end_datetime,
+        limit=page_size,
+        offset=offset,
+    )
+    
+    # Get total count for pagination
+    total = audit_logger.get_audit_count(
+        account_id=account_id,
+        action_filter=action,
+        start_date=start_datetime,
+        end_date=end_datetime,
+    )
+    
+    # Convert to response models
+    items = [AuditLogEntryResponse.model_validate(entry) for entry in entries]
+    
+    # Calculate pagination metadata
+    total_pages = (total + page_size - 1) // page_size
+    
+    return AuditTrailResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )

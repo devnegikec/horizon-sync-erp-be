@@ -33,6 +33,7 @@ from app.models.base import (
 )
 from app.models.chart_of_account import Account
 from app.models.account_balance import AccountBalance
+from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.customer import Customer
 from app.models.exchange_rate import ExchangeRate
 from app.models.item import Item
@@ -93,6 +94,8 @@ __all__ = [
     # Models
     "Account",
     "AccountBalance",
+    "AccountAuditLog",
+    "AuditAction",
     "Customer",
     "ExchangeRate",
     "Item",

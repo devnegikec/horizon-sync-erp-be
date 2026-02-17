@@ -36,6 +36,10 @@ class ChartOfAccountService:
         # Import CurrencyService for currency validation
         from app.services.currency_service import CurrencyService
         self.currency_service = CurrencyService(db)
+        
+        # Import AuditLogger for audit trail
+        from app.services.audit_logger import AuditLogger
+        self.audit_logger = AuditLogger(db)
 
     def _validate_required_fields(self, account_code: str, account_name: str, account_type: str | None) -> None:
         """
@@ -190,7 +194,27 @@ class ChartOfAccountService:
                     "account_type must be one of: asset, liability, equity, income, expense"
                 )
 
-        return self.repo.create(account_dict)
+        account = self.repo.create(account_dict)
+        
+        # Log account creation
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.CREATE,
+            user_id=str(user_id),
+            new_values={
+                "account_code": account.account_code,
+                "account_name": account.account_name,
+                "account_type": account.account_type.value if account.account_type else None,
+                "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+                "currency": account.currency,
+                "status": account.status.value if account.status else None,
+                "is_posting_account": account.is_posting_account,
+                "description": account.description,
+            }
+        )
+        
+        return account
 
     def get_by_id(
         self,
@@ -301,7 +325,43 @@ class ChartOfAccountService:
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
-        return self.repo.update(account, update_dict)
+        # Capture old values before update for audit trail
+        old_values = {
+            "account_code": account.account_code,
+            "account_name": account.account_name,
+            "account_type": account.account_type.value if account.account_type else None,
+            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "currency": account.currency,
+            "status": account.status.value if account.status else None,
+            "is_posting_account": account.is_posting_account,
+            "description": account.description,
+        }
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Capture new values after update
+        new_values = {
+            "account_code": updated_account.account_code,
+            "account_name": updated_account.account_name,
+            "account_type": updated_account.account_type.value if updated_account.account_type else None,
+            "parent_account_id": str(updated_account.parent_account_id) if updated_account.parent_account_id else None,
+            "currency": updated_account.currency,
+            "status": updated_account.status.value if updated_account.status else None,
+            "is_posting_account": updated_account.is_posting_account,
+            "description": updated_account.description,
+        }
+        
+        # Log account update
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.UPDATE,
+            user_id=str(user_id) if user_id else "system",
+            old_values=old_values,
+            new_values=new_values,
+        )
+        
+        return updated_account
 
     def delete(
         self,
@@ -335,7 +395,28 @@ class ChartOfAccountService:
                 "Delete children first or use force=true."
             )
 
+        # Capture account values before deletion for audit trail
+        old_values = {
+            "account_code": account.account_code,
+            "account_name": account.account_name,
+            "account_type": account.account_type.value if account.account_type else None,
+            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "currency": account.currency,
+            "status": account.status.value if account.status else None,
+            "is_posting_account": account.is_posting_account,
+            "description": account.description,
+        }
+
         self.repo.delete(account, check_children=not force)
+        
+        # Log account deletion
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account_id,
+            action=AuditAction.DELETE,
+            user_id=str(user_id) if user_id else "system",
+            old_values=old_values,
+        )
 
     def get_list(
         self,
@@ -508,7 +589,22 @@ class ChartOfAccountService:
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
-        return self.repo.update(account, update_dict)
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.ACTIVE.value},
+        )
+        
+        return updated_account
 
     def deactivate_account(
         self,
@@ -540,7 +636,22 @@ class ChartOfAccountService:
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
-        return self.repo.update(account, update_dict)
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.INACTIVE.value},
+        )
+        
+        return updated_account
 
     def archive_account(
         self,
@@ -572,7 +683,22 @@ class ChartOfAccountService:
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
-        return self.repo.update(account, update_dict)
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.ARCHIVED.value},
+        )
+        
+        return updated_account
 
     def validate_posting_account(
         self,
