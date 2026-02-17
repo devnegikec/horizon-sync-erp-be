@@ -21,6 +21,7 @@ from app.core.exceptions import (
     CannotDeleteException,
     ChartOfAccountNotFoundException,
     CircularReferenceException,
+    CurrencyNotFoundException,
     CustomerNotFoundException,
     DuplicateAccountCodeException,
     DuplicateBatchNoException,
@@ -34,6 +35,7 @@ from app.core.exceptions import (
     DuplicateStockEntryNoException,
     DuplicateSupplierCodeException,
     DuplicateWarehouseCodeException,
+    ExchangeRateNotFoundException,
     IntegrationError,
     ItemGroupNotFoundException,
     ItemNotFoundException,
@@ -332,6 +334,30 @@ async def duplicate_account_code_exception_handler(
         status_code=status.HTTP_409_CONFLICT,
         message=str(exc),
         code="DUPLICATE_ACCOUNT_CODE",
+    )
+
+
+@app.exception_handler(CurrencyNotFoundException)
+async def currency_not_found_exception_handler(
+    request: Request, exc: CurrencyNotFoundException
+):
+    """Handle currency not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="CURRENCY_NOT_FOUND",
+    )
+
+
+@app.exception_handler(ExchangeRateNotFoundException)
+async def exchange_rate_not_found_exception_handler(
+    request: Request, exc: ExchangeRateNotFoundException
+):
+    """Handle exchange rate not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="EXCHANGE_RATE_NOT_FOUND",
     )
 
 

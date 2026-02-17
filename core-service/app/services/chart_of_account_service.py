@@ -32,6 +32,10 @@ class ChartOfAccountService:
         self.db = db
         self.repo = AccountRepository(db)
         self.account_code_pattern = account_code_pattern or self.DEFAULT_ACCOUNT_CODE_PATTERN
+        
+        # Import CurrencyService for currency validation
+        from app.services.currency_service import CurrencyService
+        self.currency_service = CurrencyService(db)
 
     def _validate_required_fields(self, account_code: str, account_name: str, account_type: str | None) -> None:
         """
@@ -96,6 +100,21 @@ class ChartOfAccountService:
                 f"Account code '{account_code}' does not match the required format pattern: {self.account_code_pattern}"
             )
 
+    def _validate_currency(self, currency: str) -> None:
+        """
+        Validate currency code format.
+
+        Args:
+            currency: Currency code to validate (ISO 4217 format)
+
+        Raises:
+            ValidationError: If currency code is invalid
+        """
+        if not currency or len(currency) != 3 or not currency.isupper() or not currency.isalpha():
+            raise ValidationError(
+                f"Invalid currency code '{currency}'. Must be 3 uppercase letters (ISO 4217 format)"
+            )
+
     def create(
         self,
         data: ChartOfAccountCreate,
@@ -130,6 +149,10 @@ class ChartOfAccountService:
 
         # Validate account code format
         self._validate_account_code_format(data.account_code)
+
+        # Validate currency if provided
+        if data.currency:
+            self._validate_currency(data.currency)
 
         # Check for duplicate account code
         if self.repo.account_code_exists(data.account_code, organization_id):
@@ -246,6 +269,10 @@ class ChartOfAccountService:
             if not update_dict["account_name"].strip():
                 raise ValidationError("Account name cannot be empty")
 
+        # Validate currency if being updated
+        if "currency" in update_dict and update_dict["currency"]:
+            self._validate_currency(update_dict["currency"])
+
         if "parent_account_id" in update_dict and update_dict["parent_account_id"]:
             parent_id = update_dict["parent_account_id"]
 
@@ -319,6 +346,7 @@ class ChartOfAccountService:
         parent_account_id: UUID | None = None,
         is_active: bool | None = None,
         is_group: bool | None = None,
+        currency: str | None = None,
         search: str | None = None,
         sort_by: str = "account_code",
         sort_order: str = "asc",
@@ -334,6 +362,7 @@ class ChartOfAccountService:
             parent_account_id: Filter by parent account
             is_active: Filter by active status (unused)
             is_group: Filter by is_group (unused)
+            currency: Filter by currency code
             search: Search term
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
@@ -364,6 +393,10 @@ class ChartOfAccountService:
             sort_by=sort_by,
             sort_order=sort_order,
         )
+        
+        # Apply currency filter if provided
+        if currency:
+            accounts = [a for a in accounts if a.currency == currency]
 
         # Simple pagination
         total_count = len(accounts)
