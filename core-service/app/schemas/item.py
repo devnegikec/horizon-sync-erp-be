@@ -252,3 +252,62 @@ class ItemListResponse(BaseModel):
 
     items: list[ItemListItem]
     pagination: PaginationMeta
+
+
+# --- Item Picker schemas ---
+
+
+class ItemPickerStockLevels(BaseModel):
+    """Aggregated stock levels for item picker"""
+
+    quantity_on_hand: int = 0
+    quantity_reserved: int = 0
+    quantity_available: int = 0
+
+
+class ItemPickerItemGroup(BaseModel):
+    """Item group info for item picker"""
+
+    id: UUID
+    name: str
+    code: str
+
+
+class TaxBreakupItem(BaseModel):
+    """Tax rule in breakup for item picker"""
+
+    rule_name: str
+    tax_type: str
+    rate: float
+    is_compound: bool = False
+
+
+class ItemPickerTaxInfo(BaseModel):
+    """Tax template info for item picker"""
+
+    id: UUID
+    template_name: str
+    template_code: str
+    is_compound: bool = False
+    breakup: list[TaxBreakupItem] = Field(default_factory=list)
+
+
+class ItemPickerItem(BaseModel):
+    """Item for picker/dropdown with stock, group, and tax info"""
+
+    id: UUID
+    item_code: str
+    item_name: str
+    uom: str
+    min_order_qty: int = 1
+    max_order_qty: int | None = None
+    standard_rate: Decimal | None = None
+    stock_levels: ItemPickerStockLevels = Field(default_factory=ItemPickerStockLevels)
+    item_group: ItemPickerItemGroup | None = None
+    tax_info: ItemPickerTaxInfo | None = None
+
+
+class ItemPickerListResponse(BaseModel):
+    """Response for item picker endpoint"""
+
+    items: list[ItemPickerItem]

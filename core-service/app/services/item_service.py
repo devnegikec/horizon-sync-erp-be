@@ -10,7 +10,17 @@ from app.events.publisher import get_event_publisher
 from app.models.base import ItemStatus, ItemType, ValuationMethod
 from app.models.item import Item
 from app.repositories.item_repository import ItemRepository
-from app.schemas.item import ItemCreate, ItemUpdate
+from app.repositories.stock_level_repository import StockLevelRepository
+from app.repositories.tax_template_repository import TaxTemplateRepository
+from app.schemas.item import (
+    ItemCreate,
+    ItemPickerItem,
+    ItemPickerItemGroup,
+    ItemPickerStockLevels,
+    ItemPickerTaxInfo,
+    ItemUpdate,
+    TaxBreakupItem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +31,8 @@ class ItemService:
     def __init__(self, db: Session):
         self.db = db
         self.item_repo = ItemRepository(db)
+        self.stock_level_repo = StockLevelRepository(db)
+        self.tax_template_repo = TaxTemplateRepository(db)
 
     def create_item(
         self,
@@ -79,21 +91,23 @@ class ItemService:
 
         # Create item
         item = self.item_repo.create_item(item_dict)
-        
+
         # Publish entity created event
         try:
             event_publisher = get_event_publisher()
             # Convert SQLAlchemy model to dict
-            item_data = {k: v for k, v in item.__dict__.items() if not k.startswith('_')}
+            item_data = {
+                k: v for k, v in item.__dict__.items() if not k.startswith("_")
+            }
             event_publisher.publish_entity_created(
                 entity_type="items",
                 entity_id=str(item.id),
                 organization_id=str(organization_id),
-                data=item_data
+                data=item_data,
             )
         except Exception as e:
             logger.error(f"Failed to publish item created event: {e}")
-        
+
         return item
 
     def get_item_by_id(
@@ -178,21 +192,23 @@ class ItemService:
 
         # Update item
         updated_item = self.item_repo.update_item(item, update_dict)
-        
+
         # Publish entity updated event
         try:
             event_publisher = get_event_publisher()
             # Convert SQLAlchemy model to dict
-            item_data = {k: v for k, v in updated_item.__dict__.items() if not k.startswith('_')}
+            item_data = {
+                k: v for k, v in updated_item.__dict__.items() if not k.startswith("_")
+            }
             event_publisher.publish_entity_updated(
                 entity_type="items",
                 entity_id=str(item_id),
                 organization_id=str(organization_id),
-                data=item_data
+                data=item_data,
             )
         except Exception as e:
             logger.error(f"Failed to publish item updated event: {e}")
-        
+
         return updated_item
 
     def delete_item(
@@ -221,18 +237,18 @@ class ItemService:
 
         item.updated_by = user_id
         deleted_item = self.item_repo.soft_delete_item(item)
-        
+
         # Publish entity deleted event
         try:
             event_publisher = get_event_publisher()
             event_publisher.publish_entity_deleted(
                 entity_type="items",
                 entity_id=str(item_id),
-                organization_id=str(organization_id)
+                organization_id=str(organization_id),
             )
         except Exception as e:
             logger.error(f"Failed to publish item deleted event: {e}")
-        
+
         return deleted_item
 
     def get_items(
@@ -312,3 +328,95 @@ class ItemService:
         }
 
         return items, pagination
+
+    def get_items_for_picker(
+        self,
+        organization_id: UUID,
+        search: str | None = None,
+        limit: int = 20,
+    ) -> list[ItemPickerItem]:
+        """
+        Get items for picker/dropdown with stock levels, item group, and tax info.
+        Searches by item name (and item_code, barcode) within the organization.
+        """
+        items, _ = self.item_repo.list_items(
+            organization_id=organization_id,
+            page=1,
+            page_size=min(limit, 50),
+            status=ItemStatus.ACTIVE,
+            search=search,
+            sort_by="item_name",
+            sort_order="asc",
+        )
+
+        if not items:
+            return []
+
+        item_ids = [item.id for item in items]
+        stock_agg = self.stock_level_repo.get_aggregated_by_products(
+            product_ids=item_ids,
+            organization_id=organization_id,
+        )
+
+        result = []
+        for item in items:
+            stock = stock_agg.get(
+                item.id,
+                {
+                    "quantity_on_hand": 0,
+                    "quantity_reserved": 0,
+                    "quantity_available": 0,
+                },
+            )
+
+            item_group = None
+            if item.item_group:
+                item_group = ItemPickerItemGroup(
+                    id=item.item_group.id,
+                    name=item.item_group.name,
+                    code=item.item_group.code,
+                )
+
+            tax_info = None
+            tax_result = self.tax_template_repo.get_applicable_template(
+                organization_id=organization_id,
+                transaction_type="Sales",
+                item_id=item.id,
+                item_group_id=item.item_group_id,
+            )
+            if tax_result:
+                template, _ = tax_result
+                breakup = [
+                    TaxBreakupItem(
+                        rule_name=rule.rule_name,
+                        tax_type=rule.tax_type,
+                        rate=float(rule.tax_rate or 0),
+                        is_compound=bool(rule.is_compound),
+                    )
+                    for rule in (template.tax_rules or [])
+                ]
+                is_compound = any(r.is_compound for r in (template.tax_rules or []))
+                tax_info = ItemPickerTaxInfo(
+                    id=template.id,
+                    template_name=template.template_name,
+                    template_code=template.template_code,
+                    is_compound=is_compound,
+                    breakup=breakup,
+                )
+
+            result.append(
+                ItemPickerItem(
+                    id=item.id,
+                    item_code=item.item_code,
+                    item_name=item.item_name,
+                    uom=item.uom or "Nos",
+                    min_order_qty=item.min_order_qty or 1,
+                    max_order_qty=item.max_order_qty,
+                    standard_rate=item.standard_rate,
+                    stock_levels=ItemPickerStockLevels(**stock),
+                    item_group=item_group,
+                    tax_info=tax_info,
+                )
+            )
+
+        return result

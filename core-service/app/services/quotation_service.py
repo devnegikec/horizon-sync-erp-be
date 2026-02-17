@@ -11,12 +11,22 @@ from app.models.customer import Customer
 from app.models.item import Item
 from app.models.quotation import QuotationItem
 from app.repositories.quotation_repository import QuotationRepository
+from app.repositories.stock_level_repository import StockLevelRepository
+from app.repositories.tax_template_repository import TaxTemplateRepository
+from app.services.tax_calculation_engine import (
+    LineItem,
+    TaxCalculationEngine,
+    TaxContext,
+)
 
 
 class QuotationService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = QuotationRepository(db)
+        self.stock_level_repo = StockLevelRepository(db)
+        self.tax_template_repo = TaxTemplateRepository(db)
+        self.tax_engine = TaxCalculationEngine(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         payload = dict(data)
@@ -28,35 +38,48 @@ class QuotationService:
         if payload.get("status"):
             payload["status"] = QuotationStatus(payload["status"])
 
-        # Extract items and calculate grand_total
+        # Extract items
         items_data = payload.pop("items", [])
-        
+
         # Validate customer_id belongs to same organization
         if "customer_id" in payload:
-            self._validate_customer_organization(payload["customer_id"], organization_id)
-        
+            self._validate_customer_organization(
+                payload["customer_id"], organization_id
+            )
+
         # Validate item_id in line items belongs to same organization
         for item_data in items_data:
             if "item_id" in item_data:
                 self._validate_item_organization(item_data["item_id"], organization_id)
-        
-        grand_total = self._calculate_grand_total(items_data)
-        payload["grand_total"] = grand_total
 
-        # Create quotation
+        # Create quotation first (we need quotation.id for item payloads)
         quotation = self.repo.create(payload)
 
-        # Create quotation items
+        customer = (
+            self.db.query(Customer)
+            .filter(Customer.id == payload["customer_id"])
+            .first()
+        )
+        shipping_address = (
+            {
+                "city": customer.city,
+                "state": customer.state,
+                "country": customer.country,
+            }
+            if customer and (customer.city or customer.state or customer.country)
+            else None
+        )
+
+        grand_total = Decimal("0")
         for item_data in items_data:
-            item_payload = dict(item_data)
-            item_payload["organization_id"] = organization_id
-            item_payload["quotation_id"] = quotation.id
-            # Calculate amount as qty * rate
-            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
-                str(item_payload["rate"])
+            item_payload = self._build_quotation_item_payload(
+                item_data, quotation.id, organization_id, shipping_address
             )
+            grand_total += item_payload["total_amount"]
             item = QuotationItem(**item_payload)
             self.db.add(item)
+
+        self.repo.update(quotation, {"grand_total": grand_total})
 
         self.db.commit()
         self.db.refresh(quotation)
@@ -101,57 +124,81 @@ class QuotationService:
     def update(
         self, quotation_id: UUID, data: dict, organization_id: UUID, user_id: UUID
     ) -> dict:
-        quotation = self.repo.get_by_id(quotation_id, organization_id)
-        if not quotation:
-            raise ResourceNotFoundException(f"Quotation {quotation_id} not found")
+        quotation = self._get_quotation_for_update(quotation_id, organization_id, data)
+        payload = self._prepare_update_payload(data, organization_id, user_id)
 
-        # Prevent line item modifications when status is SENT
-        if "items" in data and quotation.status == QuotationStatus.SENT:
-            raise ValueError("Cannot modify line items when quotation status is SENT")
-
-        payload = {k: v for k, v in data.items() if v is not None and k != "items"}
-
-        # Handle status enum conversion
-        if payload.get("status"):
-            payload["status"] = QuotationStatus(payload["status"])
-
-        payload["updated_by"] = user_id
-        
-        # Validate customer_id if being updated
-        if "customer_id" in payload:
-            self._validate_customer_organization(payload["customer_id"], organization_id)
-
-        # Handle items update if provided
         if "items" in data:
-            items_data = data["items"]
-            
-            # Validate item_id in line items belongs to same organization
-            for item_data in items_data:
-                if "item_id" in item_data:
-                    self._validate_item_organization(item_data["item_id"], organization_id)
-
-            # Delete existing items
-            for item in quotation.items:
-                self.db.delete(item)
-
-            # Create new items
-            for item_data in items_data:
-                item_payload = dict(item_data)
-                item_payload["organization_id"] = organization_id
-                item_payload["quotation_id"] = quotation.id
-                # Calculate amount as qty * rate
-                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
-                    str(item_payload["rate"])
-                )
-                item = QuotationItem(**item_payload)
-                self.db.add(item)
-
-            # Recalculate grand_total
-            payload["grand_total"] = self._calculate_grand_total(items_data)
+            payload["grand_total"] = self._update_quotation_items(
+                quotation, data["items"], organization_id
+            )
 
         self.repo.update(quotation, payload)
         self.db.refresh(quotation)
         return self._to_response(quotation)
+
+    def _get_quotation_for_update(
+        self, quotation_id: UUID, organization_id: UUID, data: dict
+    ):
+        quotation = self.repo.get_by_id(quotation_id, organization_id)
+        if not quotation:
+            raise ResourceNotFoundException(f"Quotation {quotation_id} not found")
+
+        if "items" in data and quotation.status == QuotationStatus.SENT:
+            raise ValueError("Cannot modify line items when quotation status is SENT")
+
+        return quotation
+
+    def _prepare_update_payload(
+        self, data: dict, organization_id: UUID, user_id: UUID
+    ) -> dict:
+        payload = {k: v for k, v in data.items() if v is not None and k != "items"}
+
+        if payload.get("status"):
+            payload["status"] = QuotationStatus(payload["status"])
+
+        payload["updated_by"] = user_id
+
+        if "customer_id" in payload:
+            self._validate_customer_organization(
+                payload["customer_id"], organization_id
+            )
+
+        return payload
+
+    def _update_quotation_items(
+        self, quotation, items_data: list, organization_id: UUID
+    ) -> Decimal:
+        for item_data in items_data:
+            if "item_id" in item_data:
+                self._validate_item_organization(item_data["item_id"], organization_id)
+
+        for item in quotation.items:
+            self.db.delete(item)
+
+        customer = quotation.customer
+        shipping_address = self._get_shipping_address(customer)
+
+        grand_total = Decimal("0")
+        for item_data in items_data:
+            item_payload = self._build_quotation_item_payload(
+                item_data, quotation.id, organization_id, shipping_address
+            )
+            grand_total += item_payload["total_amount"]
+            item = QuotationItem(**item_payload)
+            self.db.add(item)
+
+        return grand_total
+
+    def _get_shipping_address(self, customer) -> dict | None:
+        return (
+            {
+                "city": customer.city,
+                "state": customer.state,
+                "country": customer.country,
+            }
+            if customer and (customer.city or customer.state or customer.country)
+            else None
+        )
 
     def delete(self, quotation_id: UUID, organization_id: UUID) -> None:
         quotation = self.repo.get_by_id(quotation_id, organization_id)
@@ -205,14 +252,85 @@ class QuotationService:
         self.db.refresh(quotation)
         return self._to_response(quotation)
 
-    def _calculate_grand_total(self, items: list[dict]) -> Decimal:
-        """Calculate grand total from line items"""
-        total = Decimal("0")
-        for item in items:
-            qty = Decimal(str(item.get("qty", 0)))
-            rate = Decimal(str(item.get("rate", 0)))
-            total += qty * rate
-        return total
+    def _build_quotation_item_payload(
+        self,
+        item_data: dict,
+        quotation_id: UUID,
+        organization_id: UUID,
+        shipping_address: dict | None = None,
+    ) -> dict:
+        """Build quotation item payload with amount and tax calculation."""
+        qty = Decimal(str(item_data.get("qty", 0)))
+        rate = Decimal(str(item_data.get("rate", 0)))
+        amount = qty * rate
+
+        item_payload = {
+            "organization_id": organization_id,
+            "quotation_id": quotation_id,
+            "item_id": item_data["item_id"],
+            "qty": qty,
+            "uom": item_data.get("uom", "Nos"),
+            "rate": rate,
+            "amount": amount,
+            "sort_order": item_data.get("sort_order", 0),
+            "tax_template_id": None,
+            "tax_rate": Decimal("0"),
+            "tax_amount": Decimal("0"),
+            "total_amount": amount,
+        }
+
+        # Calculate tax using applicable template
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.id == item_data["item_id"],
+                Item.organization_id == organization_id,
+            )
+            .first()
+        )
+
+        if item:
+            tax_result = self.tax_engine.calculate_taxes(
+                [
+                    LineItem(
+                        item_id=item.id,
+                        qty=qty,
+                        rate=rate,
+                        amount=amount,
+                        is_tax_exempt=False,
+                        item_group_id=item.item_group_id,
+                    )
+                ],
+                TaxContext(
+                    organization_id=organization_id,
+                    transaction_type="Sales",
+                    item_id=item.id,
+                    item_group_id=item.item_group_id,
+                    shipping_address=shipping_address,
+                    customer_location=shipping_address,
+                ),
+            )
+
+            if tax_result.total_tax > 0 and tax_result.tax_breakdown:
+                first_entry = tax_result.tax_breakdown[0]
+                item_payload["tax_template_id"] = first_entry.tax_template_id
+                item_payload["tax_amount"] = tax_result.total_tax
+                item_payload["tax_rate"] = (
+                    (tax_result.total_tax / amount * 100) if amount else Decimal("0")
+                )
+                item_payload["total_amount"] = amount + tax_result.total_tax
+
+        # Allow override from request (e.g. explicit tax_template_id)
+        if item_data.get("tax_template_id"):
+            item_payload["tax_template_id"] = item_data["tax_template_id"]
+        if "tax_rate" in item_data and item_data["tax_rate"] is not None:
+            item_payload["tax_rate"] = Decimal(str(item_data["tax_rate"]))
+        if "tax_amount" in item_data and item_data["tax_amount"] is not None:
+            item_payload["tax_amount"] = Decimal(str(item_data["tax_amount"]))
+        if "total_amount" in item_data and item_data["total_amount"] is not None:
+            item_payload["total_amount"] = Decimal(str(item_data["total_amount"]))
+
+        return item_payload
 
     def convert_to_sales_order(
         self, quotation_id: UUID, organization_id: UUID, user_id: UUID
@@ -277,6 +395,10 @@ class QuotationService:
                         "rate": item.rate,
                         "amount": item.amount,
                         "sort_order": item.sort_order,
+                        "tax_template_id": item.tax_template_id,
+                        "tax_rate": item.tax_rate,
+                        "tax_amount": item.tax_amount,
+                        "total_amount": item.total_amount,
                     }
                     for item in quotation.items
                 ],
@@ -340,7 +462,9 @@ class QuotationService:
                 f"Allowed transitions: {', '.join(s.value for s in allowed_next_states)}"
             )
 
-    def _validate_customer_organization(self, customer_id: UUID, organization_id: UUID) -> None:
+    def _validate_customer_organization(
+        self, customer_id: UUID, organization_id: UUID
+    ) -> None:
         """
         Validate that customer_id belongs to the same organization_id.
 
@@ -351,13 +475,11 @@ class QuotationService:
         Raises:
             ValueError: If customer doesn't exist or belongs to different organization
         """
-        customer = self.db.query(Customer).filter(
-            Customer.id == customer_id
-        ).first()
-        
+        customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
+
         if not customer:
             raise ValueError(f"Customer {customer_id} not found")
-        
+
         if customer.organization_id != organization_id:
             raise ValueError(
                 f"Customer {customer_id} belongs to a different organization"
@@ -374,20 +496,94 @@ class QuotationService:
         Raises:
             ValueError: If item doesn't exist or belongs to different organization
         """
-        item = self.db.query(Item).filter(
-            Item.id == item_id
-        ).first()
-        
+        item = self.db.query(Item).filter(Item.id == item_id).first()
+
         if not item:
             raise ValueError(f"Item {item_id} not found")
-        
-        if item.organization_id != organization_id:
-            raise ValueError(
-                f"Item {item_id} belongs to a different organization"
-            )
 
-    @staticmethod
-    def _to_response(quotation) -> dict:
+        if item.organization_id != organization_id:
+            raise ValueError(f"Item {item_id} belongs to a different organization")
+
+    def _get_item_details(self, item: QuotationItem, organization_id: UUID) -> dict:
+        """Get comprehensive item details including stock levels, item group, and tax info."""
+        if not item.item:
+            return {
+                "item_code": None,
+                "item_name": None,
+                "uom": item.uom,
+                "min_order_qty": 1,
+                "max_order_qty": None,
+                "standard_rate": "0.00",
+                "stock_levels": {
+                    "quantity_on_hand": 0,
+                    "quantity_reserved": 0,
+                    "quantity_available": 0,
+                },
+                "item_group": None,
+                "tax_info": None,
+            }
+
+        # Get stock levels
+        stock_agg = self.stock_level_repo.get_aggregated_by_products(
+            product_ids=[item.item.id],
+            organization_id=organization_id,
+        )
+        stock = stock_agg.get(
+            item.item.id,
+            {"quantity_on_hand": 0, "quantity_reserved": 0, "quantity_available": 0},
+        )
+
+        # Build item group data
+        item_group = None
+        if item.item.item_group:
+            item_group = {
+                "id": item.item.item_group.id,
+                "name": item.item.item_group.name,
+                "code": item.item.item_group.code,
+            }
+
+        # Build tax info from the applied tax template
+        tax_info = None
+        if item.tax_template_id:
+            tax_result = self.tax_template_repo.get_applicable_template(
+                organization_id=organization_id,
+                transaction_type="Sales",
+                item_id=item.item.id,
+                item_group_id=item.item.item_group_id,
+            )
+            if tax_result:
+                template, _ = tax_result
+                breakup = [
+                    {
+                        "rule_name": rule.rule_name,
+                        "tax_type": rule.tax_type,
+                        "rate": float(rule.tax_rate or 0),
+                        "is_compound": bool(rule.is_compound),
+                    }
+                    for rule in (template.tax_rules or [])
+                ]
+                is_compound = any(r.get("is_compound", False) for r in breakup)
+                tax_info = {
+                    "id": template.id,
+                    "template_name": template.template_name,
+                    "template_code": template.template_code,
+                    "is_compound": is_compound,
+                    "breakup": breakup,
+                }
+
+        return {
+            "item_code": item.item.item_code,
+            "item_name": item.item.item_name,
+            "uom": item.item.uom or "Nos",
+            "min_order_qty": item.item.min_order_qty or 1,
+            "max_order_qty": item.item.max_order_qty,
+            "standard_rate": str(item.item.standard_rate or "0.00"),
+            "stock_levels": stock,
+            "item_group": item_group,
+            "tax_info": tax_info,
+        }
+
+    def _to_response(self, quotation) -> dict:
         return {
             "id": quotation.id,
             "organization_id": quotation.organization_id,
@@ -416,9 +612,14 @@ class QuotationService:
                     "rate": item.rate,
                     "amount": item.amount,
                     "sort_order": item.sort_order,
+                    "tax_template_id": item.tax_template_id,
+                    "tax_rate": item.tax_rate,
+                    "tax_amount": item.tax_amount,
+                    "total_amount": item.total_amount,
                     "extra_data": item.extra_data,
                     "created_at": item.created_at,
                     "updated_at": item.updated_at,
+                    **self._get_item_details(item, quotation.organization_id),
                 }
                 for item in quotation.items
             ],

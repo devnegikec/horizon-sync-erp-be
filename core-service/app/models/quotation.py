@@ -84,6 +84,15 @@ class QuotationItem(Base):
     rate = Column(Numeric(15, 2), nullable=False)
     amount = Column(Numeric(15, 2), nullable=False)
     sort_order = Column(Integer, default=0)
+    # Tax columns
+    tax_template_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("tax_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tax_rate = Column(Numeric(5, 2), default=0)
+    tax_amount = Column(Numeric(15, 2), default=0)
+    total_amount = Column(Numeric(15, 2), default=0)  # amount + tax_amount
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
