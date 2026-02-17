@@ -6,7 +6,8 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.base import MaterialRequestStatus, PurchaseOrderStatus, RFQStatus
+from app.models.base import ItemType, MaterialRequestStatus, PurchaseOrderStatus, RFQStatus
+from app.models.item import Item
 from app.models.material_request import MaterialRequest, MaterialRequestLine
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
 from app.models.rfq import RFQ, RFQLine, RFQSupplier
@@ -30,9 +31,20 @@ def test_user_id():
 
 
 @pytest.fixture
-def test_item_id():
-    """Test item ID"""
-    return uuid.uuid4()
+def test_item_id(db_session: Session, test_organization_id, test_user_id):
+    """Create a real item and return its ID for FK-safe line-item tests."""
+    item = Item(
+        organization_id=test_organization_id,
+        item_code="ITEM-STATUS-001",
+        item_name="Status Test Item",
+        item_type=ItemType.STOCK,
+        created_by=test_user_id,
+        updated_by=test_user_id,
+    )
+    db_session.add(item)
+    db_session.commit()
+    db_session.refresh(item)
+    return item.id
 
 
 @pytest.fixture

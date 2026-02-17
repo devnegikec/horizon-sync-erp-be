@@ -142,7 +142,7 @@ class AccountType(str, enum.Enum):
     ASSET = "asset"
     LIABILITY = "liability"
     EQUITY = "equity"
-    REVENUE = "revenue"
+    INCOME = "income"
     EXPENSE = "expense"
 
 

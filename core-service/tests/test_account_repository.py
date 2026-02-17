@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 from app.models.base import AccountStatus, AccountType
 from app.repositories.chart_of_account_repository import AccountRepository
@@ -13,6 +14,7 @@ from app.repositories.chart_of_account_repository import AccountRepository
 @pytest.fixture
 def account_repo(db_session):
     """Create an account repository instance"""
+    db_session.execute(text("PRAGMA foreign_keys = ON"))
     return AccountRepository(db_session)
 
 

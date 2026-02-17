@@ -15,6 +15,7 @@ from app.services.chart_of_account_service import ChartOfAccountService
 def test_account(db_session):
     """Create a test account"""
     account = Account(
+        organization_id=uuid.uuid4(),
         account_code="TEST-001",
         account_name="Test Account",
         account_type=AccountType.ASSET,
@@ -43,7 +44,8 @@ class TestAccountStatusManagement:
         
         # Activate
         user_id = uuid.uuid4()
-        result = service.activate_account(test_account.id, user_id)
+        organization_id = test_account.organization_id
+        result = service.activate_account(test_account.id, organization_id, user_id)
         
         assert result.status == AccountStatus.ACTIVE
         assert result.id == test_account.id
@@ -53,7 +55,8 @@ class TestAccountStatusManagement:
         service = ChartOfAccountService(db_session)
         
         user_id = uuid.uuid4()
-        result = service.deactivate_account(test_account.id, user_id)
+        organization_id = test_account.organization_id
+        result = service.deactivate_account(test_account.id, organization_id, user_id)
         
         assert result.status == AccountStatus.INACTIVE
         assert result.id == test_account.id
@@ -63,7 +66,8 @@ class TestAccountStatusManagement:
         service = ChartOfAccountService(db_session)
         
         user_id = uuid.uuid4()
-        result = service.archive_account(test_account.id, user_id)
+        organization_id = test_account.organization_id
+        result = service.archive_account(test_account.id, organization_id, user_id)
         
         assert result.status == AccountStatus.ARCHIVED
         assert result.id == test_account.id
@@ -73,59 +77,65 @@ class TestAccountStatusManagement:
         service = ChartOfAccountService(db_session)
         
         fake_id = uuid.uuid4()
+        organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
-            service.activate_account(fake_id)
+            service.activate_account(fake_id, organization_id)
 
     def test_deactivate_nonexistent_account(self, db_session):
         """Test deactivating a non-existent account raises exception"""
         service = ChartOfAccountService(db_session)
         
         fake_id = uuid.uuid4()
+        organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
-            service.deactivate_account(fake_id)
+            service.deactivate_account(fake_id, organization_id)
 
     def test_archive_nonexistent_account(self, db_session):
         """Test archiving a non-existent account raises exception"""
         service = ChartOfAccountService(db_session)
         
         fake_id = uuid.uuid4()
+        organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
-            service.archive_account(fake_id)
+            service.archive_account(fake_id, organization_id)
 
     def test_status_transitions(self, db_session, test_account):
         """Test multiple status transitions"""
         service = ChartOfAccountService(db_session)
         user_id = uuid.uuid4()
+        organization_id = test_account.organization_id
         
         # Start as active
         assert test_account.status == AccountStatus.ACTIVE
         
         # Deactivate
-        result = service.deactivate_account(test_account.id, user_id)
+        result = service.deactivate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.INACTIVE
         
         # Reactivate
-        result = service.activate_account(test_account.id, user_id)
+        result = service.activate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ACTIVE
         
         # Archive
-        result = service.archive_account(test_account.id, user_id)
+        result = service.archive_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ARCHIVED
         
         # Can reactivate from archived
-        result = service.activate_account(test_account.id, user_id)
+        result = service.activate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ACTIVE
 
     def test_validate_posting_account_active(self, db_session, test_account):
         """Test validating an active posting account succeeds"""
         service = ChartOfAccountService(db_session)
+        organization_id = test_account.organization_id
         
         # Should not raise exception
-        service.validate_posting_account(test_account.id)
+        service.validate_posting_account(test_account.id, organization_id)
 
     def test_validate_posting_account_inactive(self, db_session, test_account):
         """Test validating an inactive account raises exception"""
         service = ChartOfAccountService(db_session)
+        organization_id = test_account.organization_id
         
         # Deactivate account
         test_account.status = AccountStatus.INACTIVE
@@ -133,13 +143,14 @@ class TestAccountStatusManagement:
         
         # Should raise ValidationError
         with pytest.raises(ValidationError) as exc_info:
-            service.validate_posting_account(test_account.id)
+            service.validate_posting_account(test_account.id, organization_id)
         
         assert "inactive" in str(exc_info.value).lower()
 
     def test_validate_posting_account_not_posting(self, db_session, test_account):
         """Test validating a non-posting account raises exception"""
         service = ChartOfAccountService(db_session)
+        organization_id = test_account.organization_id
         
         # Make account non-posting
         test_account.is_posting_account = False
@@ -147,6 +158,6 @@ class TestAccountStatusManagement:
         
         # Should raise ValidationError
         with pytest.raises(ValidationError) as exc_info:
-            service.validate_posting_account(test_account.id)
+            service.validate_posting_account(test_account.id, organization_id)
         
         assert "non-posting" in str(exc_info.value).lower()

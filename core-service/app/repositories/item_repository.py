@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import inspect, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.base import ItemStatus, ItemType
@@ -179,9 +179,30 @@ class ItemRepository:
         # Get total count before pagination
         total_count = query.count()
 
-        # Apply sorting
-        sort_column = getattr(Item, sort_by, Item.created_at)
-        if sort_order == "desc":
+        # Apply sorting (schema-aware fallback to prevent runtime DB mismatches)
+        allowed_sort_fields = {
+            "id",
+            "item_code",
+            "item_name",
+            "status",
+            "created_at",
+            "updated_at",
+        }
+        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "created_at"
+
+        existing_columns: set[str] = set()
+        try:
+            table_columns = inspect(self.db.get_bind()).get_columns("items")
+            existing_columns = {column["name"] for column in table_columns}
+        except Exception:
+            existing_columns = set()
+
+        if existing_columns and requested_sort_field not in existing_columns:
+            requested_sort_field = "created_at" if "created_at" in existing_columns else "id"
+
+        sort_column = getattr(Item, requested_sort_field, Item.id)
+        normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"
+        if normalized_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())

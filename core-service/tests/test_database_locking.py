@@ -21,9 +21,11 @@ from app.core.exceptions import ResourceNotFoundException, ValidationException
 from app.models.base import (
     InvoiceStatus,
     InvoiceType,
+    ItemType,
     PurchaseOrderStatus,
 )
 from app.models.invoice import Invoice
+from app.models.item import Item
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
 from app.models.supplier import Supplier
 from app.repositories.invoice_repository import InvoiceRepository
@@ -69,9 +71,21 @@ def test_supplier(db_session: Session, test_organization_id):
 
 
 @pytest.fixture
-def test_item_id():
-    """Test item ID"""
-    return uuid.uuid4()
+def test_item(db_session: Session, test_organization_id, test_user_id):
+    """Create a test item used by purchase order lines."""
+    item = Item(
+        id=uuid.uuid4(),
+        organization_id=test_organization_id,
+        item_code="ITEM-LOCK-001",
+        item_name="Lock Test Item",
+        item_type=ItemType.STOCK,
+        created_by=test_user_id,
+        updated_by=test_user_id,
+    )
+    db_session.add(item)
+    db_session.commit()
+    db_session.refresh(item)
+    return item
 
 
 @pytest.fixture
@@ -80,7 +94,7 @@ def submitted_purchase_order(
     test_organization_id,
     test_user_id,
     test_supplier,
-    test_item_id,
+    test_item,
 ):
     """Create a submitted Purchase Order for testing"""
     po = PurchaseOrder(
@@ -105,7 +119,7 @@ def submitted_purchase_order(
         id=uuid.uuid4(),
         organization_id=test_organization_id,
         purchase_order_id=po.id,
-        item_id=test_item_id,
+        item_id=test_item.id,
         quantity=Decimal("100.00"),
         unit_price=Decimal("10.00"),
         line_total=Decimal("1000.00"),
@@ -189,7 +203,7 @@ class TestPurchaseOrderLocking:
         submitted_purchase_order,
         test_organization_id,
         test_user_id,
-        test_item_id,
+        test_item,
     ):
         """
         Test that update_received_quantities uses SELECT FOR UPDATE.
@@ -203,7 +217,7 @@ class TestPurchaseOrderLocking:
         
         # Update received quantities
         received_items = [
-            {"item_id": test_item_id, "qty": Decimal("50.00")}
+            {"item_id": test_item.id, "qty": Decimal("50.00")}
         ]
         
         result = service.update_received_quantities(
@@ -223,7 +237,7 @@ class TestPurchaseOrderLocking:
         submitted_purchase_order,
         test_organization_id,
         test_user_id,
-        test_item_id,
+        test_item,
     ):
         """
         Test that concurrent updates to received quantities are handled correctly.
@@ -241,7 +255,7 @@ class TestPurchaseOrderLocking:
         
         # First update
         received_items_1 = [
-            {"item_id": test_item_id, "qty": Decimal("30.00")}
+            {"item_id": test_item.id, "qty": Decimal("30.00")}
         ]
         result_1 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
@@ -252,7 +266,7 @@ class TestPurchaseOrderLocking:
         
         # Second update
         received_items_2 = [
-            {"item_id": test_item_id, "qty": Decimal("20.00")}
+            {"item_id": test_item.id, "qty": Decimal("20.00")}
         ]
         result_2 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
@@ -432,7 +446,7 @@ class TestRaceConditionPrevention:
         submitted_purchase_order,
         test_organization_id,
         test_user_id,
-        test_item_id,
+        test_item,
     ):
         """
         Test that SELECT FOR UPDATE prevents race conditions in PO status transitions.
@@ -447,7 +461,7 @@ class TestRaceConditionPrevention:
         # Simulate receiving items in multiple batches
         # First batch: 40 items
         received_items_1 = [
-            {"item_id": test_item_id, "qty": Decimal("40.00")}
+            {"item_id": test_item.id, "qty": Decimal("40.00")}
         ]
         result_1 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
@@ -459,7 +473,7 @@ class TestRaceConditionPrevention:
         
         # Second batch: 60 items (completing the order)
         received_items_2 = [
-            {"item_id": test_item_id, "qty": Decimal("60.00")}
+            {"item_id": test_item.id, "qty": Decimal("60.00")}
         ]
         result_2 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,

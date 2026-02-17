@@ -11,12 +11,13 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Text,
+    UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import AccountStatus, AccountType
+from app.models.types import UUID
 
 
 class Account(Base):
@@ -35,7 +36,6 @@ class Account(Base):
             AccountType,
             name="accounttype",
             create_type=False,
-            values_callable=lambda obj: [e.value for e in obj],
         ),
         nullable=False,
         index=True,
@@ -53,7 +53,6 @@ class Account(Base):
             AccountStatus,
             name="accountstatus",
             create_type=False,
-            values_callable=lambda obj: [e.value for e in obj],
         ),
         nullable=False,
         default=AccountStatus.ACTIVE,
@@ -79,6 +78,10 @@ class Account(Base):
 
     # Relationships
     parent_account = relationship("Account", remote_side=[id], backref="child_accounts")
+
+    __table_args__ = (
+        UniqueConstraint('organization_id', 'account_code', name='unique_account_code_per_org'),
+    )
 
     def __repr__(self):
         return f"<Account(id={self.id}, code='{self.account_code}', name='{self.account_name}', type='{self.account_type}')>"

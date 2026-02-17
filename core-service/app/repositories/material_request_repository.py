@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.material_request import MaterialRequest, MaterialRequestLine
@@ -62,8 +62,23 @@ class MaterialRequestRepository:
 
         total = q.count()
 
-        col = getattr(MaterialRequest, sort_by, MaterialRequest.created_at)
-        q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
+        allowed_sort_fields = {"id", "created_at", "updated_at", "status"}
+        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "created_at"
+
+        existing_columns: set[str] = set()
+        try:
+            table_columns = inspect(self.db.get_bind()).get_columns("material_requests")
+            existing_columns = {column["name"] for column in table_columns}
+        except Exception:
+            existing_columns = set()
+
+        if existing_columns:
+            if requested_sort_field not in existing_columns:
+                requested_sort_field = "created_at" if "created_at" in existing_columns else "id"
+
+        col = getattr(MaterialRequest, requested_sort_field, MaterialRequest.id)
+        normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"
+        q = q.order_by(col.desc() if normalized_order == "desc" else col.asc())
 
         items = q.offset((page - 1) * page_size).limit(page_size).all()
         return items, total

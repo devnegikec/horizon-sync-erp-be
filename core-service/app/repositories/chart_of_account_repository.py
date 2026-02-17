@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import String, cast, func, inspect, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -102,7 +102,7 @@ class AccountRepository:
             self.db.rollback()
             raise e
 
-    def delete(self, account: Account) -> None:
+    def delete(self, account: Account, check_children: bool = True) -> None:
         """
         Delete an account.
 
@@ -112,6 +112,23 @@ class AccountRepository:
         Raises:
             IntegrityError: If account has child accounts (foreign key constraint)
         """
+        if check_children:
+            has_child_accounts = (
+                self.db.query(Account)
+                .filter(
+                    Account.parent_account_id == account.id,
+                    Account.organization_id == account.organization_id,
+                )
+                .count()
+                > 0
+            )
+            if has_child_accounts:
+                raise IntegrityError(
+                    "Cannot delete account with child accounts",
+                    params=None,
+                    orig=None,
+                )
+
         try:
             self.db.delete(account)
             self.db.commit()
@@ -148,10 +165,16 @@ class AccountRepository:
 
         # Apply filters
         if account_type is not None:
-            query = query.filter(Account.account_type == account_type)
+            query = query.filter(
+                func.lower(cast(Account.account_type, String))
+                == str(account_type.value).lower()
+            )
 
         if status is not None:
-            query = query.filter(Account.status == status)
+            query = query.filter(
+                func.lower(cast(Account.status, String))
+                == str(status.value).lower()
+            )
 
         if parent_account_id is not None:
             query = query.filter(Account.parent_account_id == parent_account_id)
@@ -165,9 +188,33 @@ class AccountRepository:
                 )
             )
 
-        # Apply sorting
-        sort_column = getattr(Account, sort_by, Account.account_code)
-        if sort_order == "desc":
+        # Apply sorting (schema-aware fallback to avoid runtime DB mismatches)
+        allowed_sort_fields = {
+            "id",
+            "account_code",
+            "account_name",
+            "account_type",
+            "status",
+            "created_at",
+            "updated_at",
+        }
+        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "account_code"
+
+        existing_columns: set[str] = set()
+        try:
+            table_columns = inspect(self.db.get_bind()).get_columns("accounts")
+            existing_columns = {column["name"] for column in table_columns}
+        except Exception:
+            existing_columns = set()
+
+        if existing_columns and requested_sort_field not in existing_columns:
+            requested_sort_field = (
+                "created_at" if "created_at" in existing_columns else "account_code"
+            )
+
+        sort_column = getattr(Account, requested_sort_field, Account.account_code)
+        normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"
+        if normalized_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
