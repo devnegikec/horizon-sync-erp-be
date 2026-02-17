@@ -189,3 +189,46 @@ class ChartOfAccountMoveParentRequest(BaseModel):
 
 # Update forward reference for recursive type
 ChartOfAccountTreeNode.model_rebuild()
+
+
+# Balance schemas
+
+class AccountBalanceResponse(BaseModel):
+    """Schema for account balance response"""
+    
+    account_id: str
+    currency: str
+    debit_total: float
+    credit_total: float
+    balance: float
+    base_currency_balance: float
+    as_of_date: str
+    account_type: str
+    account_code: str
+    account_name: str
+    is_consolidated: bool = False
+    child_count: int = 0
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountBalancesRequest(BaseModel):
+    """Schema for requesting multiple account balances"""
+    
+    account_ids: list[UUID] = Field(..., description="List of account UUIDs")
+    as_of_date: str | None = Field(None, description="Date to calculate balances as of (YYYY-MM-DD)")
+
+
+class AccountBalancesResponse(BaseModel):
+    """Schema for multiple account balances response"""
+    
+    balances: list[AccountBalanceResponse]
+
+
+class AccountBalanceHistoryResponse(BaseModel):
+    """Schema for account balance history response"""
+    
+    account_id: str
+    start_date: str
+    end_date: str
+    history: list[AccountBalanceResponse]

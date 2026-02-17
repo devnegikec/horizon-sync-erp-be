@@ -8,6 +8,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.chart_of_account import (
+    AccountBalanceHistoryResponse,
+    AccountBalanceResponse,
+    AccountBalancesRequest,
     ChartOfAccountCreate,
     ChartOfAccountHierarchyResponse,
     ChartOfAccountListItem,
@@ -536,3 +539,175 @@ async def validate_posting_account(
         organization_id=current_user.organization_id,
     )
     return None
+
+
+
+# Balance endpoints
+
+@router.get(
+    "/{account_id}/balance",
+    response_model=ChartOfAccountResponse,
+    summary="Get account balance",
+    description="Get current or historical balance for an account",
+)
+async def get_account_balance(
+    account_id: UUID,
+    as_of_date: str | None = Query(None, description="Date to calculate balance as of (YYYY-MM-DD format)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get account balance.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Query Parameters:**
+    - **as_of_date**: Optional date to calculate balance as of (YYYY-MM-DD). Defaults to today.
+
+    **Returns:** Account balance information including debit/credit totals and net balance
+    """
+    from datetime import date
+    from app.services.balance_calculator import BalanceCalculator
+    from app.schemas.chart_of_account import AccountBalanceResponse
+    
+    # Parse date if provided
+    balance_date = None
+    if as_of_date:
+        try:
+            balance_date = date.fromisoformat(as_of_date)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Calculate balance
+    calculator = BalanceCalculator(db)
+    balance_data = calculator.calculate_balance(account_id, balance_date)
+    
+    if not balance_data:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Account not found: {account_id}"
+        )
+    
+    return AccountBalanceResponse(**balance_data)
+
+
+@router.post(
+    "/balances",
+    response_model=list[AccountBalanceResponse],
+    summary="Get multiple account balances",
+    description="Get balances for multiple accounts at once",
+)
+async def get_multiple_account_balances(
+    data: AccountBalancesRequest,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get balances for multiple accounts.
+
+    Requires authentication.
+
+    **Request Body:**
+    - **account_ids**: List of account UUIDs
+    - **as_of_date**: Optional date to calculate balances as of (YYYY-MM-DD)
+
+    **Returns:** List of account balance information
+    """
+    from datetime import date
+    from app.services.balance_calculator import BalanceCalculator
+    from app.schemas.chart_of_account import AccountBalanceResponse
+    
+    # Parse date if provided
+    balance_date = None
+    if data.as_of_date:
+        try:
+            balance_date = date.fromisoformat(data.as_of_date)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Calculate balances
+    calculator = BalanceCalculator(db)
+    balances = []
+    
+    for account_id in data.account_ids:
+        balance_data = calculator.calculate_balance(account_id, balance_date)
+        if balance_data:
+            balances.append(AccountBalanceResponse(**balance_data))
+    
+    return balances
+
+
+@router.get(
+    "/{account_id}/balance/history",
+    response_model=AccountBalanceHistoryResponse,
+    summary="Get account balance history",
+    description="Get balance history for an account over a date range",
+)
+async def get_account_balance_history(
+    account_id: UUID,
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get account balance history.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Chart of account UUID
+
+    **Query Parameters:**
+    - **start_date**: Start date (YYYY-MM-DD) - required
+    - **end_date**: End date (YYYY-MM-DD) - required
+
+    **Returns:** Balance history with daily snapshots
+    """
+    from datetime import date
+    from app.services.balance_calculator import BalanceCalculator
+    from app.schemas.chart_of_account import AccountBalanceResponse, AccountBalanceHistoryResponse
+    
+    # Parse dates
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Use YYYY-MM-DD"
+        )
+    
+    # Validate date range
+    if start > end:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be before or equal to end_date"
+        )
+    
+    # Calculate history
+    calculator = BalanceCalculator(db)
+    history_data = calculator.get_balance_history(account_id, start, end)
+    
+    history_items = [AccountBalanceResponse(**item) for item in history_data]
+    
+    return AccountBalanceHistoryResponse(
+        account_id=str(account_id),
+        start_date=start_date,
+        end_date=end_date,
+        history=history_items
+    )

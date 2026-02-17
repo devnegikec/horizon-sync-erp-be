@@ -32,6 +32,7 @@ from app.models.base import (
     WarehouseType,
 )
 from app.models.chart_of_account import Account
+from app.models.account_balance import AccountBalance
 from app.models.customer import Customer
 from app.models.exchange_rate import ExchangeRate
 from app.models.item import Item
@@ -91,6 +92,7 @@ __all__ = [
     "TransactionType",
     # Models
     "Account",
+    "AccountBalance",
     "Customer",
     "ExchangeRate",
     "Item",
