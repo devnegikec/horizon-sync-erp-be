@@ -58,6 +58,12 @@ api_router.include_router(
     prefix="/chart-of-accounts",
     tags=["Chart of Accounts"],
 )
+# Also register with /accounts prefix for config endpoints
+api_router.include_router(
+    chart_of_accounts.router,
+    prefix="/accounts",
+    tags=["Accounts"],
+)
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])
