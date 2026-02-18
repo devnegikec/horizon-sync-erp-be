@@ -508,10 +508,225 @@ async def move_account_to_parent(
 # Integration endpoints for other modules
 
 @router.post(
-    "/{account_id}/validate-posting",
+    "/validate-posting",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Validate account for posting",
     description="Validate that an account can receive transaction postings (for integration with other modules)",
+)
+async def validate_posting_account_by_id(
+    account_id: UUID = Query(..., description="Account UUID to validate"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate that an account can receive transaction postings.
+
+    This endpoint is used by other ERP modules (inventory, sourcing, etc.) to validate
+    accounts before posting transactions.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_id**: Chart of account UUID to validate
+
+    **Returns:** 
+    - 204 No Content if account is valid for posting
+    - 404 Not Found if account doesn't exist
+    - 422 Unprocessable Entity if account is inactive or not a posting account
+
+    **Validation Rules:**
+    - Account must exist
+    - Account must be ACTIVE
+    - Account must be a posting account (is_posting_account=true)
+    - Parent accounts with children cannot receive postings
+    """
+    service = ChartOfAccountService(db)
+    service.validate_posting_account(
+        account_id=account_id,
+        organization_id=current_user.organization_id,
+    )
+    return None
+
+
+@router.post(
+    "/validate-posting/bulk",
+    response_model=dict,
+    summary="Bulk validate accounts for posting",
+    description="Validate multiple accounts for posting in a single request",
+)
+async def bulk_validate_posting_accounts(
+    account_ids: list[UUID] = Query(default=[], description="List of account UUIDs to validate"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate multiple accounts for posting in a single request.
+
+    This endpoint is used by other ERP modules to validate multiple accounts at once.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_ids**: List of account UUIDs to validate
+
+    **Returns:** 
+    - Dictionary with validation results for each account
+      - valid: List of valid account IDs
+      - invalid: List of invalid account IDs with error messages
+
+    **Validation Rules:**
+    - Account must exist
+    - Account must be ACTIVE
+    - Account must be a posting account (is_posting_account=true)
+    - Parent accounts with children cannot receive postings
+    """
+    service = ChartOfAccountService(db)
+    
+    valid = []
+    invalid = []
+    
+    for account_id in account_ids:
+        try:
+            service.validate_posting_account(
+                account_id=account_id,
+                organization_id=current_user.organization_id,
+            )
+            valid.append(str(account_id))
+        except Exception as e:
+            invalid.append({
+                "account_id": str(account_id),
+                "error": str(e),
+            })
+    
+    return {
+        "valid": valid,
+        "invalid": invalid,
+        "valid_count": len(valid),
+        "invalid_count": len(invalid),
+    }
+
+
+@router.get(
+    "/by-code/{code}",
+    response_model=ChartOfAccountResponse,
+    summary="Get account by code",
+    description="Get account details by account code (for lookups by other modules)",
+)
+async def get_account_by_code(
+    code: str,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get account details by account code.
+
+    This endpoint is used by other ERP modules to lookup accounts by their code.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **code**: Account code (e.g., "1000-01")
+
+    **Returns:** Account details including parent info
+
+    **Raises:**
+    - 404 Not Found if account with the given code doesn't exist
+    """
+    from app.repositories.chart_of_account_repository import AccountRepository
+    
+    account_repo = AccountRepository(db)
+    account = account_repo.get_by_code(code, current_user.organization_id)
+    
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Account with code '{code}' not found"
+        )
+    
+    return ChartOfAccountResponse.model_validate(account)
+
+
+@router.post(
+    "/default/{transaction_type}",
+    response_model=ChartOfAccountResponse,
+    summary="Get default account for transaction type",
+    description="Get the default account configured for a specific transaction type",
+)
+async def get_default_account_for_transaction(
+    transaction_type: str,
+    scenario: str | None = Query(None, description="Optional scenario for multiple defaults per type"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the default account for a transaction type.
+
+    This endpoint is used by other ERP modules to get the configured default account
+    for specific transaction types (e.g., inventory_purchase, sales_revenue).
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **transaction_type**: Type of transaction (e.g., "inventory_purchase", "sales_revenue")
+
+    **Query Parameters:**
+    - **scenario**: Optional scenario for multiple defaults per type (e.g., "domestic", "international")
+
+    **Returns:** Default account details
+
+    **Raises:**
+    - 404 Not Found if no default account is configured for the transaction type
+    - 422 Unprocessable Entity if the configured account is invalid
+
+    **Common Transaction Types:**
+    - inventory_purchase: For inventory purchase transactions
+    - inventory_sale: For inventory sale transactions
+    - accounts_payable: For accounts payable
+    - accounts_receivable: For accounts receivable
+    - sales_revenue: For sales revenue
+    - purchase_expense: For purchase expenses
+    - cost_of_goods_sold: For COGS
+    - inventory_asset: For inventory assets
+    """
+    from app.services.default_account_service import DefaultAccountService
+    from app.repositories.chart_of_account_repository import AccountRepository
+    from app.core.exceptions import ValidationError
+    
+    default_service = DefaultAccountService(db)
+    account_repo = AccountRepository(db)
+    
+    try:
+        # Get default account configuration
+        default = default_service.get_default_account(
+            transaction_type=transaction_type,
+            organization_id=current_user.organization_id,
+            scenario=scenario,
+        )
+        
+        # Get the actual account
+        account = account_repo.get_by_id(default.account_id, current_user.organization_id)
+        
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Configured default account not found for transaction type '{transaction_type}'"
+            )
+        
+        return ChartOfAccountResponse.model_validate(account)
+    
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.post(
+    "/{account_id}/validate-posting",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Validate account for posting (deprecated)",
+    description="Validate that an account can receive transaction postings. Use POST /validate-posting instead.",
+    deprecated=True,
 )
 async def validate_posting_account(
     account_id: UUID,
@@ -520,6 +735,8 @@ async def validate_posting_account(
 ):
     """
     Validate that an account can receive transaction postings.
+
+    **DEPRECATED:** Use POST /api/v1/accounts/validate-posting instead.
 
     This endpoint is used by other ERP modules (inventory, sourcing, etc.) to validate
     accounts before posting transactions.

@@ -12,19 +12,19 @@ from app.services.balance_calculator import BalanceCalculator
 class TestBalanceCalculator:
     """Test balance calculator functionality"""
     
-    def test_natural_balance_asset_account(self, db_session, test_user):
+    def test_natural_balance_asset_account(self, db_session, sample_organization):
         """Test natural balance calculation for asset account"""
         # Create an asset account
         account = Account(
-            organization_id=test_user.organization_id,
+            organization_id=sample_organization.id,
             account_code="1000",
             account_name="Cash",
             account_type=AccountType.ASSET,
             currency="USD",
             status=AccountStatus.ACTIVE,
             is_posting_account=True,
-            created_by=str(test_user.id),
-            updated_by=str(test_user.id),
+            created_by="test-user",
+            updated_by="test-user",
         )
         db_session.add(account)
         db_session.commit()
@@ -41,7 +41,7 @@ class TestBalanceCalculator:
         
         assert balance == Decimal("500.00")
     
-    def test_natural_balance_liability_account(self, db_session, test_user):
+    def test_natural_balance_liability_account(self, db_session, sample_organization):
         """Test natural balance calculation for liability account"""
         calculator = BalanceCalculator(db_session)
         
@@ -54,19 +54,19 @@ class TestBalanceCalculator:
         
         assert balance == Decimal("500.00")
     
-    def test_calculate_balance_no_transactions(self, db_session, test_user):
+    def test_calculate_balance_no_transactions(self, db_session, sample_organization):
         """Test balance calculation for account with no transactions"""
         # Create an account
         account = Account(
-            organization_id=test_user.organization_id,
+            organization_id=sample_organization.id,
             account_code="1000",
             account_name="Cash",
             account_type=AccountType.ASSET,
             currency="USD",
             status=AccountStatus.ACTIVE,
             is_posting_account=True,
-            created_by=str(test_user.id),
-            updated_by=str(test_user.id),
+            created_by="test-user",
+            updated_by="test-user",
         )
         db_session.add(account)
         db_session.commit()
