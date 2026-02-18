@@ -98,6 +98,50 @@ def test_item_data(mock_current_user):
 @pytest.fixture
 def test_item_group_data(mock_current_user):
     """Sample item group data for testing"""
+
+
+@pytest.fixture
+def sample_accounts(db_session, mock_current_user):
+    """Create sample accounts for testing"""
+    from app.models.chart_of_account import Account
+    from app.models.base import AccountType, AccountStatus
+    
+    accounts = []
+    
+    # Create accounts of different types
+    account_data = [
+        ("1000", "Cash", AccountType.ASSET),
+        ("1100", "Accounts Receivable", AccountType.ASSET),
+        ("2000", "Accounts Payable", AccountType.LIABILITY),
+        ("2100", "Notes Payable", AccountType.LIABILITY),
+        ("3000", "Owner's Equity", AccountType.EQUITY),
+        ("4000", "Sales Revenue", AccountType.REVENUE),
+        ("4100", "Service Revenue", AccountType.REVENUE),
+        ("5000", "Cost of Goods Sold", AccountType.EXPENSE),
+        ("5100", "Rent Expense", AccountType.EXPENSE),
+    ]
+    
+    for code, name, acc_type in account_data:
+        account = Account(
+            account_code=code,
+            account_name=name,
+            account_type=acc_type,
+            organization_id=mock_current_user.organization_id,
+            currency="USD",
+            status=AccountStatus.ACTIVE,
+            is_posting_account=True,
+            created_by=str(mock_current_user.id),
+            updated_by=str(mock_current_user.id),
+        )
+        db_session.add(account)
+        accounts.append(account)
+    
+    db_session.commit()
+    
+    for account in accounts:
+        db_session.refresh(account)
+    
+    return accounts
     return {
         "name": "Test Electronics",
         "code": "TEST-ELEC-001",

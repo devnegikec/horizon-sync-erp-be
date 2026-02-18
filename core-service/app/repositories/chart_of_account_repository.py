@@ -145,9 +145,11 @@ class AccountRepository:
         search: str | None = None,
         sort_by: str = "account_code",
         sort_order: str = "asc",
+        limit: int | None = None,
+        offset: int | None = None,
     ) -> list[Account]:
         """
-        List all accounts with optional filtering.
+        List all accounts with optional filtering and pagination.
 
         Args:
             organization_id: Organization UUID
@@ -157,6 +159,8 @@ class AccountRepository:
             search: Search term for code or name (case-insensitive)
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            limit: Maximum number of records to return
+            offset: Number of records to skip
 
         Returns:
             List of accounts matching the filters
@@ -219,7 +223,63 @@ class AccountRepository:
         else:
             query = query.order_by(sort_column.asc())
 
+        # Apply pagination if limit/offset provided
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+
         return query.all()
+
+    def count_all(
+        self,
+        organization_id: UUID,
+        account_type: AccountType | None = None,
+        status: AccountStatus | None = None,
+        parent_account_id: UUID | None = None,
+        search: str | None = None,
+    ) -> int:
+        """
+        Count all accounts matching filters.
+
+        Args:
+            organization_id: Organization UUID
+            account_type: Filter by account type
+            status: Filter by account status
+            parent_account_id: Filter by parent account
+            search: Search term for code or name (case-insensitive)
+
+        Returns:
+            Total count of accounts matching the filters
+        """
+        query = self.db.query(Account).filter(Account.organization_id == organization_id)
+
+        # Apply filters (same as list_all)
+        if account_type is not None:
+            query = query.filter(
+                func.lower(cast(Account.account_type, String))
+                == str(account_type.value).lower()
+            )
+
+        if status is not None:
+            query = query.filter(
+                func.lower(cast(Account.status, String))
+                == str(status.value).lower()
+            )
+
+        if parent_account_id is not None:
+            query = query.filter(Account.parent_account_id == parent_account_id)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Account.account_code.ilike(search_term),
+                    Account.account_name.ilike(search_term),
+                )
+            )
+
+        return query.count()
 
     def account_code_exists(self, account_code: str, organization_id: UUID, exclude_id: UUID | None = None) -> bool:
         """
@@ -302,3 +362,142 @@ class AccountRepository:
             .filter(Account.id == account_id, Account.organization_id == organization_id)
             .first()
         )
+
+    def get_descendants_recursive(self, account_id: UUID, organization_id: UUID) -> list[Account]:
+        """
+        Get all descendant accounts using recursive CTE for optimal performance.
+
+        Args:
+            account_id: Parent account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of all descendant accounts
+        """
+        from sqlalchemy import text
+        
+        # Use recursive CTE for efficient hierarchy traversal
+        query = text("""
+            WITH RECURSIVE account_tree AS (
+                -- Base case: direct children
+                SELECT id, account_code, account_name, account_type, parent_account_id, 
+                       currency, status, is_posting_account, description,
+                       created_by, updated_by, created_at, updated_at, organization_id,
+                       1 as depth
+                FROM accounts
+                WHERE parent_account_id = :account_id 
+                  AND organization_id = :organization_id
+                
+                UNION ALL
+                
+                -- Recursive case: children of children
+                SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
+                       a.currency, a.status, a.is_posting_account, a.description,
+                       a.created_by, a.updated_by, a.created_at, a.updated_at, a.organization_id,
+                       at.depth + 1
+                FROM accounts a
+                INNER JOIN account_tree at ON a.parent_account_id = at.id
+                WHERE at.depth < 10  -- Prevent infinite loops
+                  AND a.organization_id = :organization_id
+            )
+            SELECT * FROM account_tree
+            ORDER BY depth, account_code
+        """)
+        
+        result = self.db.execute(
+            query,
+            {"account_id": str(account_id), "organization_id": str(organization_id)}
+        )
+        
+        # Convert results to Account objects
+        descendants = []
+        for row in result.mappings():
+            account = Account(
+                id=row["id"],
+                organization_id=row["organization_id"],
+                account_code=row["account_code"],
+                account_name=row["account_name"],
+                account_type=row["account_type"],
+                parent_account_id=row["parent_account_id"],
+                currency=row["currency"],
+                status=row["status"],
+                is_posting_account=row["is_posting_account"],
+                description=row["description"],
+                created_by=row["created_by"],
+                updated_by=row["updated_by"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            descendants.append(account)
+        
+        return descendants
+
+    def get_ancestors_recursive(self, account_id: UUID, organization_id: UUID) -> list[Account]:
+        """
+        Get all ancestor accounts using recursive CTE for optimal performance.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of ancestor accounts ordered from immediate parent to root
+        """
+        from sqlalchemy import text
+        
+        # Use recursive CTE for efficient hierarchy traversal
+        query = text("""
+            WITH RECURSIVE account_tree AS (
+                -- Base case: get the account itself
+                SELECT id, account_code, account_name, account_type, parent_account_id,
+                       currency, status, is_posting_account, description,
+                       created_by, updated_by, created_at, updated_at, organization_id,
+                       0 as depth
+                FROM accounts
+                WHERE id = :account_id 
+                  AND organization_id = :organization_id
+                
+                UNION ALL
+                
+                -- Recursive case: get parent
+                SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
+                       a.currency, a.status, a.is_posting_account, a.description,
+                       a.created_by, a.updated_by, a.created_at, a.updated_at, a.organization_id,
+                       at.depth + 1
+                FROM accounts a
+                INNER JOIN account_tree at ON a.id = at.parent_account_id
+                WHERE at.depth < 10  -- Prevent infinite loops
+                  AND a.organization_id = :organization_id
+            )
+            SELECT * FROM account_tree
+            WHERE depth > 0  -- Exclude the account itself
+            ORDER BY depth ASC
+        """)
+        
+        result = self.db.execute(
+            query,
+            {"account_id": str(account_id), "organization_id": str(organization_id)}
+        )
+        
+        # Convert results to Account objects
+        ancestors = []
+        for row in result.mappings():
+            account = Account(
+                id=row["id"],
+                organization_id=row["organization_id"],
+                account_code=row["account_code"],
+                account_name=row["account_name"],
+                account_type=row["account_type"],
+                parent_account_id=row["parent_account_id"],
+                currency=row["currency"],
+                status=row["status"],
+                is_posting_account=row["is_posting_account"],
+                description=row["description"],
+                created_by=row["created_by"],
+                updated_by=row["updated_by"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            ancestors.append(account)
+        
+        return ancestors

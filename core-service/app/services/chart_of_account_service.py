@@ -171,6 +171,11 @@ class ChartOfAccountService:
                 raise ChartOfAccountNotFoundException(
                     f"Parent account with ID {data.parent_account_id} not found"
                 )
+            # Validate parent account is active (Requirement 11.3)
+            if parent.status != AccountStatus.ACTIVE:
+                raise ValidationError(
+                    f"Parent account '{parent.account_code}' must be active. Current status: {parent.status.value}"
+                )
 
         account_dict = data.model_dump()
         
@@ -221,14 +226,16 @@ class ChartOfAccountService:
         account_id: UUID,
         organization_id: UUID,
         include_parent: bool = True,
+        use_cache: bool = True,
     ) -> Account:
         """
-        Get chart of account by ID.
+        Get chart of account by ID with optional caching.
 
         Args:
             account_id: Chart of account UUID
             organization_id: Organization UUID
             include_parent: Whether to include parent relationship
+            use_cache: Whether to use Redis cache (default: True)
 
         Returns:
             Account object
@@ -236,6 +243,17 @@ class ChartOfAccountService:
         Raises:
             ChartOfAccountNotFoundException: If account not found
         """
+        # Try cache first if enabled and not including parent
+        if use_cache and not include_parent:
+            from app.core.cache import cache, get_account_cache_key
+            cache_key = get_account_cache_key(account_id)
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                # Reconstruct account from cached data
+                account = Account(**cached_data)
+                return account
+        
+        # Fetch from database
         if include_parent:
             account = self.repo.get_with_parent(account_id, organization_id)
         else:
@@ -245,6 +263,30 @@ class ChartOfAccountService:
             raise ChartOfAccountNotFoundException(
                 f"Chart of account with ID {account_id} not found"
             )
+        
+        # Cache the account data if enabled and not including parent
+        if use_cache and not include_parent:
+            from app.core.cache import cache, get_account_cache_key
+            cache_key = get_account_cache_key(account_id)
+            # Convert account to dict for caching
+            account_dict = {
+                "id": str(account.id),
+                "organization_id": str(account.organization_id),
+                "account_code": account.account_code,
+                "account_name": account.account_name,
+                "account_type": account.account_type.value if account.account_type else None,
+                "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+                "currency": account.currency,
+                "status": account.status.value if account.status else None,
+                "is_posting_account": account.is_posting_account,
+                "description": account.description,
+                "created_by": account.created_by,
+                "updated_by": account.updated_by,
+                "created_at": account.created_at.isoformat() if account.created_at else None,
+                "updated_at": account.updated_at.isoformat() if account.updated_at else None,
+            }
+            cache.set(cache_key, account_dict, ttl=3600)  # Cache for 1 hour
+        
         return account
 
     def update(
@@ -308,6 +350,12 @@ class ChartOfAccountService:
                 raise ChartOfAccountNotFoundException(
                     f"Parent account with ID {parent_id} not found"
                 )
+            
+            # Validate parent account is active (Requirement 11.3)
+            if parent.status != AccountStatus.ACTIVE:
+                raise ValidationError(
+                    f"Parent account '{parent.account_code}' must be active. Current status: {parent.status.value}"
+                )
 
             if self._would_create_circular_reference(account_id, parent_id, organization_id):
                 raise CircularReferenceException(
@@ -316,11 +364,23 @@ class ChartOfAccountService:
 
         if "account_type" in update_dict and update_dict["account_type"]:
             try:
-                update_dict["account_type"] = AccountType(
+                new_account_type = AccountType(
                     str(update_dict["account_type"]).lower()
                 )
             except (ValueError, KeyError):
+                # Invalid account type value, remove from update
                 del update_dict["account_type"]
+            else:
+                # Check if account type is being changed
+                if account.account_type != new_account_type:
+                    # Prevent type change if account has transactions (Requirement 11.6)
+                    if self._has_transactions(account_id, organization_id):
+                        raise ValidationError(
+                            f"Cannot change account type for account '{account.account_code}' "
+                            "because it has existing transactions. Account type is immutable once transactions exist."
+                        )
+                
+                update_dict["account_type"] = new_account_type
 
         if user_id:
             update_dict["updated_by"] = str(user_id)
@@ -338,6 +398,10 @@ class ChartOfAccountService:
         }
 
         updated_account = self.repo.update(account, update_dict)
+        
+        # Invalidate cache for this account
+        from app.core.cache import invalidate_account_cache
+        invalidate_account_cache(account.id, organization_id)
         
         # Capture new values after update
         new_values = {
@@ -410,6 +474,10 @@ class ChartOfAccountService:
         # Delete the account first
         self.repo.delete(account, check_children=not force)
         
+        # Invalidate cache for this account
+        from app.core.cache import invalidate_account_cache
+        invalidate_account_cache(account_id, organization_id)
+        
         # Log account deletion AFTER deleting (audit log will be cascade deleted with account)
         # Note: In production, audit logs should be retained even after account deletion
         # This would require removing the foreign key constraint or using a different approach
@@ -471,7 +539,19 @@ class ChartOfAccountService:
         if is_active is not None:
             status_enum = AccountStatus.ACTIVE if is_active else AccountStatus.INACTIVE
 
-        # Use repository list_all method
+        # Calculate offset for pagination
+        offset = (page - 1) * page_size
+
+        # Get total count for pagination metadata
+        total_count = self.repo.count_all(
+            organization_id=organization_id,
+            account_type=type_enum,
+            status=status_enum,
+            parent_account_id=parent_account_id,
+            search=search,
+        )
+
+        # Get paginated accounts using limit/offset
         accounts = self.repo.list_all(
             organization_id=organization_id,
             account_type=type_enum,
@@ -480,17 +560,24 @@ class ChartOfAccountService:
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
+            limit=page_size,
+            offset=offset,
         )
         
-        # Apply currency filter if provided
+        # Apply currency filter if provided (post-query filter)
         if currency:
             accounts = [a for a in accounts if a.currency == currency]
-
-        # Simple pagination
-        total_count = len(accounts)
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        paginated_accounts = accounts[start_idx:end_idx]
+            # Recalculate total for currency filter
+            all_accounts = self.repo.list_all(
+                organization_id=organization_id,
+                account_type=type_enum,
+                status=status_enum,
+                parent_account_id=parent_account_id,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+            total_count = len([a for a in all_accounts if a.currency == currency])
 
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
@@ -502,18 +589,28 @@ class ChartOfAccountService:
             "has_prev": page > 1,
         }
 
-        return paginated_accounts, pagination
+        return accounts, pagination
 
-    def get_tree(self, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
+    def get_tree(self, organization_id: UUID, use_cache: bool = True) -> list[ChartOfAccountTreeNode]:
         """
-        Get chart of accounts as a tree structure.
+        Get chart of accounts as a tree structure with optional caching.
 
         Args:
             organization_id: Organization UUID
+            use_cache: Whether to use Redis cache (default: True)
 
         Returns:
             List of root-level account tree nodes
         """
+        # Try cache first if enabled
+        if use_cache:
+            from app.core.cache import cache, get_account_tree_cache_key
+            cache_key = get_account_tree_cache_key(organization_id)
+            cached_tree = cache.get(cache_key)
+            if cached_tree:
+                # Reconstruct tree nodes from cached data
+                return [ChartOfAccountTreeNode(**node) for node in cached_tree]
+        
         all_accounts = self.repo.list_all(organization_id=organization_id)
 
         root_nodes = []
@@ -539,7 +636,97 @@ class ChartOfAccountService:
                 children=[build_node(c) for c in children],
             )
 
-        return [build_node(a) for a in root_nodes]
+        tree = [build_node(a) for a in root_nodes]
+        
+        # Cache the tree if enabled
+        if use_cache:
+            from app.core.cache import cache, get_account_tree_cache_key
+            cache_key = get_account_tree_cache_key(organization_id)
+            # Convert tree to dict for caching
+            tree_dict = [node.model_dump() for node in tree]
+            cache.set(cache_key, tree_dict, ttl=1800)  # Cache for 30 minutes
+        
+        return tree
+
+    def get_tree_roots(self, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
+        """
+        Get only root-level accounts for lazy loading.
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            List of root-level account tree nodes without children
+        """
+        # Get only root accounts (no parent)
+        root_accounts = self.repo.list_all(
+            organization_id=organization_id,
+            parent_account_id=None,
+            sort_by="account_code",
+            sort_order="asc",
+        )
+
+        # Build tree nodes without children
+        tree_nodes = []
+        for account in root_accounts:
+            # Check if account has children
+            has_children = self.repo.has_children(account.id, organization_id)
+            
+            node = ChartOfAccountTreeNode(
+                id=account.id,
+                account_code=account.account_code,
+                account_name=account.account_name,
+                account_type=str(account.account_type.value) if account.account_type else "",
+                status=str(account.status.value) if account.status else "active",
+                is_posting_account=account.is_posting_account,
+                children=[] if has_children else [],  # Empty list indicates children can be loaded
+            )
+            tree_nodes.append(node)
+
+        return tree_nodes
+
+    def get_tree_children(self, account_id: UUID, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
+        """
+        Get immediate children of an account as tree nodes for lazy loading.
+
+        Args:
+            account_id: Parent account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of immediate child account tree nodes
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        # Validate account exists
+        account = self.repo.get_by_id(account_id, organization_id)
+        if not account:
+            raise ChartOfAccountNotFoundException(
+                f"Account with ID {account_id} not found"
+            )
+
+        # Get immediate children
+        children = self.repo.get_children(account_id, organization_id)
+
+        # Build tree nodes
+        tree_nodes = []
+        for child in children:
+            # Check if child has children
+            has_children = self.repo.has_children(child.id, organization_id)
+            
+            node = ChartOfAccountTreeNode(
+                id=child.id,
+                account_code=child.account_code,
+                account_name=child.account_name,
+                account_type=str(child.account_type.value) if child.account_type else "",
+                status=str(child.status.value) if child.status else "active",
+                is_posting_account=child.is_posting_account,
+                children=[] if has_children else [],  # Empty list indicates children can be loaded
+            )
+            tree_nodes.append(node)
+
+        return tree_nodes
 
     def _would_create_circular_reference(
         self, account_id: UUID, new_parent_id: UUID, organization_id: UUID
@@ -738,6 +925,32 @@ class ChartOfAccountService:
             raise ValidationError(
                 f"Cannot post to non-posting account '{account.account_code}' (parent accounts cannot receive postings)"
             )
+    def _has_transactions(self, account_id: UUID, organization_id: UUID) -> bool:
+        """
+        Check if an account has any transactions posted to it.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            True if account has transactions, False otherwise
+
+        Note:
+            This is a placeholder implementation. When the general ledger/journal entry
+            system is implemented, this method should query the transaction tables.
+            For now, it returns False to allow type changes until transactions exist.
+        """
+        # TODO: Implement actual transaction check when general ledger is added
+        # Example query when transactions table exists:
+        # from app.models.journal_entry import JournalEntry
+        # return self.db.query(JournalEntry).filter(
+        #     JournalEntry.account_id == account_id,
+        #     JournalEntry.organization_id == organization_id
+        # ).first() is not None
+
+        return False
+
 
     # Hierarchy methods
 
@@ -841,4 +1054,152 @@ class ChartOfAccountService:
 
         # Return the updated account
         return self.get_by_id(account_id, organization_id, include_parent=True)
+
+    # Bulk operations
+
+    def bulk_activate_accounts(
+        self,
+        account_ids: list[UUID],
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> dict:
+        """
+        Activate multiple accounts in bulk.
+
+        Args:
+            account_ids: List of account UUIDs to activate
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Dictionary with success count, failed count, and error details
+        """
+        results = {
+            "success_count": 0,
+            "failed_count": 0,
+            "errors": [],
+            "updated_ids": []
+        }
+
+        for account_id in account_ids:
+            try:
+                self.activate_account(account_id, organization_id, user_id)
+                results["success_count"] += 1
+                results["updated_ids"].append(str(account_id))
+            except Exception as e:
+                results["failed_count"] += 1
+                results["errors"].append({
+                    "account_id": str(account_id),
+                    "error": str(e)
+                })
+
+        return results
+
+    def bulk_deactivate_accounts(
+        self,
+        account_ids: list[UUID],
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> dict:
+        """
+        Deactivate multiple accounts in bulk.
+
+        Args:
+            account_ids: List of account UUIDs to deactivate
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Dictionary with success count, failed count, and error details
+        """
+        results = {
+            "success_count": 0,
+            "failed_count": 0,
+            "errors": [],
+            "updated_ids": []
+        }
+
+        for account_id in account_ids:
+            try:
+                self.deactivate_account(account_id, organization_id, user_id)
+                results["success_count"] += 1
+                results["updated_ids"].append(str(account_id))
+            except Exception as e:
+                results["failed_count"] += 1
+                results["errors"].append({
+                    "account_id": str(account_id),
+                    "error": str(e)
+                })
+
+        return results
+
+    def bulk_delete_accounts(
+        self,
+        account_ids: list[UUID],
+        organization_id: UUID,
+        user_id: UUID | None = None,
+        force: bool = False,
+    ) -> dict:
+        """
+        Delete multiple accounts in bulk with validation.
+
+        Args:
+            account_ids: List of account UUIDs to delete
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+            force: If True, delete even if has children
+
+        Returns:
+            Dictionary with success count, failed count, and error details
+        """
+        results = {
+            "success_count": 0,
+            "failed_count": 0,
+            "errors": [],
+            "deleted_ids": []
+        }
+
+        for account_id in account_ids:
+            try:
+                # Validate before deletion
+                account = self.repo.get_by_id(account_id, organization_id)
+                if not account:
+                    results["failed_count"] += 1
+                    results["errors"].append({
+                        "account_id": str(account_id),
+                        "error": "Account not found"
+                    })
+                    continue
+
+                # Check for children if not forcing
+                if not force and self.repo.has_children(account_id, organization_id):
+                    results["failed_count"] += 1
+                    results["errors"].append({
+                        "account_id": str(account_id),
+                        "account_code": account.account_code,
+                        "error": "Cannot delete account with child accounts"
+                    })
+                    continue
+
+                # Check for transactions (placeholder for now)
+                if self._has_transactions(account_id, organization_id):
+                    results["failed_count"] += 1
+                    results["errors"].append({
+                        "account_id": str(account_id),
+                        "account_code": account.account_code,
+                        "error": "Cannot delete account with existing transactions"
+                    })
+                    continue
+
+                self.delete(account_id, organization_id, user_id, force)
+                results["success_count"] += 1
+                results["deleted_ids"].append(str(account_id))
+            except Exception as e:
+                results["failed_count"] += 1
+                results["errors"].append({
+                    "account_id": str(account_id),
+                    "error": str(e)
+                })
+
+        return results
 

@@ -312,3 +312,174 @@ class ReportService:
             "difference": float(difference),
             "is_balanced": is_balanced,
         }
+    
+    def generate_financial_statement_grouped(
+        self,
+        organization_id: UUID,
+        status: Optional[AccountStatus] = None,
+        as_of_date: Optional[date] = None,
+    ) -> dict:
+        """
+        Generate financial statement with accounts grouped by type.
+        
+        Groups accounts by their account type (Asset, Liability, Equity, Revenue, Expense)
+        with proper ordering within each type group.
+        
+        Args:
+            organization_id: Organization UUID
+            status: Filter by account status (optional)
+            as_of_date: Date to calculate balances as of (defaults to today)
+            
+        Returns:
+            Dictionary containing grouped accounts by type
+        """
+        # Get all accounts
+        accounts = self.repo.list_all(
+            organization_id=organization_id,
+            status=status,
+            sort_by="account_code",
+            sort_order="asc"
+        )
+        
+        # Set default date
+        if as_of_date is None:
+            as_of_date = date.today()
+        
+        # Group accounts by type
+        grouped_accounts = {
+            AccountType.ASSET: [],
+            AccountType.LIABILITY: [],
+            AccountType.EQUITY: [],
+            AccountType.REVENUE: [],
+            AccountType.EXPENSE: [],
+        }
+        
+        for account in accounts:
+            if account.account_type:
+                # Calculate balance
+                balance_data = self.balance_calculator.calculate_balance(
+                    account.id,
+                    as_of_date=as_of_date,
+                    use_cache=True
+                )
+                
+                account_data = {
+                    "id": str(account.id),
+                    "account_code": account.account_code,
+                    "account_name": account.account_name,
+                    "account_type": account.account_type.value,
+                    "status": account.status.value if account.status else None,
+                    "currency": account.currency,
+                    "is_posting_account": account.is_posting_account,
+                    "balance": balance_data["balance"] if balance_data else 0.0,
+                    "base_currency_balance": balance_data["base_currency_balance"] if balance_data else 0.0,
+                }
+                
+                grouped_accounts[account.account_type].append(account_data)
+        
+        # Convert to list format with type labels
+        result_groups = []
+        for account_type in [AccountType.ASSET, AccountType.LIABILITY, AccountType.EQUITY, AccountType.REVENUE, AccountType.EXPENSE]:
+            if grouped_accounts[account_type]:
+                result_groups.append({
+                    "account_type": account_type.value,
+                    "accounts": grouped_accounts[account_type],
+                    "count": len(grouped_accounts[account_type])
+                })
+        
+        return {
+            "report_type": "financial_statement_grouped",
+            "organization_id": str(organization_id),
+            "as_of_date": as_of_date.isoformat(),
+            "filters": {
+                "status": status.value if status else None,
+            },
+            "total_accounts": sum(len(group["accounts"]) for group in result_groups),
+            "groups": result_groups,
+        }
+
+    def generate_financial_statement_grouped(
+        self,
+        organization_id: UUID,
+        status: Optional[AccountStatus] = None,
+        as_of_date: Optional[date] = None,
+    ) -> dict:
+        """
+        Generate financial statement with accounts grouped by type.
+
+        Groups accounts by their account type (Asset, Liability, Equity, Revenue, Expense)
+        with proper ordering within each type group.
+
+        Args:
+            organization_id: Organization UUID
+            status: Filter by account status (optional)
+            as_of_date: Date to calculate balances as of (defaults to today)
+
+        Returns:
+            Dictionary containing grouped accounts by type
+        """
+        # Get all accounts
+        accounts = self.repo.list_all(
+            organization_id=organization_id,
+            status=status,
+            sort_by="account_code",
+            sort_order="asc"
+        )
+
+        # Set default date
+        if as_of_date is None:
+            as_of_date = date.today()
+
+        # Group accounts by type
+        grouped_accounts = {
+            AccountType.ASSET: [],
+            AccountType.LIABILITY: [],
+            AccountType.EQUITY: [],
+            AccountType.REVENUE: [],
+            AccountType.EXPENSE: [],
+        }
+
+        for account in accounts:
+            if account.account_type:
+                # Calculate balance
+                balance_data = self.balance_calculator.calculate_balance(
+                    account.id,
+                    as_of_date=as_of_date,
+                    use_cache=True
+                )
+
+                account_data = {
+                    "id": str(account.id),
+                    "account_code": account.account_code,
+                    "account_name": account.account_name,
+                    "account_type": account.account_type.value,
+                    "status": account.status.value if account.status else None,
+                    "currency": account.currency,
+                    "is_posting_account": account.is_posting_account,
+                    "balance": balance_data["balance"] if balance_data else 0.0,
+                    "base_currency_balance": balance_data["base_currency_balance"] if balance_data else 0.0,
+                }
+
+                grouped_accounts[account.account_type].append(account_data)
+
+        # Convert to list format with type labels
+        result_groups = []
+        for account_type in [AccountType.ASSET, AccountType.LIABILITY, AccountType.EQUITY, AccountType.REVENUE, AccountType.EXPENSE]:
+            if grouped_accounts[account_type]:
+                result_groups.append({
+                    "account_type": account_type.value,
+                    "accounts": grouped_accounts[account_type],
+                    "count": len(grouped_accounts[account_type])
+                })
+
+        return {
+            "report_type": "financial_statement_grouped",
+            "organization_id": str(organization_id),
+            "as_of_date": as_of_date.isoformat(),
+            "filters": {
+                "status": status.value if status else None,
+            },
+            "total_accounts": sum(len(group["accounts"]) for group in result_groups),
+            "groups": result_groups,
+        }
+

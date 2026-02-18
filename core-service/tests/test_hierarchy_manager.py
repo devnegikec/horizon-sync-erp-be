@@ -147,6 +147,50 @@ class TestAddChild:
         with pytest.raises(ChartOfAccountNotFoundException):
             hierarchy_manager.add_child(parent.id, fake_child_id, organization_id)
 
+    def test_add_child_rejects_inactive_parent(
+        self, hierarchy_manager, db_session, organization_id
+    ):
+        """Test that adding child to inactive parent is rejected (Requirement 11.3)"""
+        from app.models.base import AccountStatus
+        
+        # Create parent and child accounts
+        parent = create_account(db_session, organization_id, "1000", "Assets")
+        child = create_account(db_session, organization_id, "1100", "Current Assets")
+        
+        # Deactivate parent
+        parent.status = AccountStatus.INACTIVE
+        db_session.commit()
+        db_session.refresh(parent)
+
+        # Attempt to add child should fail
+        with pytest.raises(ValidationError) as exc_info:
+            hierarchy_manager.add_child(parent.id, child.id, organization_id)
+
+        assert "must be active" in str(exc_info.value).lower()
+        assert parent.account_code in str(exc_info.value)
+
+    def test_add_child_rejects_archived_parent(
+        self, hierarchy_manager, db_session, organization_id
+    ):
+        """Test that adding child to archived parent is rejected (Requirement 11.3)"""
+        from app.models.base import AccountStatus
+        
+        # Create parent and child accounts
+        parent = create_account(db_session, organization_id, "1000", "Assets")
+        child = create_account(db_session, organization_id, "1100", "Current Assets")
+        
+        # Archive parent
+        parent.status = AccountStatus.ARCHIVED
+        db_session.commit()
+        db_session.refresh(parent)
+
+        # Attempt to add child should fail
+        with pytest.raises(ValidationError) as exc_info:
+            hierarchy_manager.add_child(parent.id, child.id, organization_id)
+
+        assert "must be active" in str(exc_info.value).lower()
+        assert parent.account_code in str(exc_info.value)
+
 
 class TestRemoveChild:
     """Test remove_child method"""
@@ -322,6 +366,56 @@ class TestMoveAccount:
         # Attempt to move grandparent under child should fail
         with pytest.raises(CircularReferenceException):
             hierarchy_manager.move_account(grandparent.id, child.id, organization_id)
+
+    def test_move_account_rejects_inactive_parent(
+        self, hierarchy_manager, db_session, organization_id
+    ):
+        """Test that moving to inactive parent is rejected (Requirement 11.3)"""
+        from app.models.base import AccountStatus
+        
+        # Create accounts
+        old_parent = create_account(db_session, organization_id, "1000", "Assets")
+        new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
+        account = create_account(
+            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+        )
+        
+        # Deactivate new parent
+        new_parent.status = AccountStatus.INACTIVE
+        db_session.commit()
+        db_session.refresh(new_parent)
+
+        # Attempt to move should fail
+        with pytest.raises(ValidationError) as exc_info:
+            hierarchy_manager.move_account(account.id, new_parent.id, organization_id)
+
+        assert "must be active" in str(exc_info.value).lower()
+        assert new_parent.account_code in str(exc_info.value)
+
+    def test_move_account_rejects_archived_parent(
+        self, hierarchy_manager, db_session, organization_id
+    ):
+        """Test that moving to archived parent is rejected (Requirement 11.3)"""
+        from app.models.base import AccountStatus
+        
+        # Create accounts
+        old_parent = create_account(db_session, organization_id, "1000", "Assets")
+        new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
+        account = create_account(
+            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+        )
+        
+        # Archive new parent
+        new_parent.status = AccountStatus.ARCHIVED
+        db_session.commit()
+        db_session.refresh(new_parent)
+
+        # Attempt to move should fail
+        with pytest.raises(ValidationError) as exc_info:
+            hierarchy_manager.move_account(account.id, new_parent.id, organization_id)
+
+        assert "must be active" in str(exc_info.value).lower()
+        assert new_parent.account_code in str(exc_info.value)
 
 
 class TestGetChildren:

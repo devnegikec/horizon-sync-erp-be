@@ -38,13 +38,20 @@ class HierarchyManager:
         Raises:
             ChartOfAccountNotFoundException: If parent or child account not found
             CircularReferenceException: If assignment would create circular reference
-            ValidationError: If account types don't match
+            ValidationError: If account types don't match or parent is not active
         """
         # Validate parent exists
         parent = self.repo.get_by_id(parent_id, organization_id)
         if not parent:
             raise ChartOfAccountNotFoundException(
                 f"Parent account with ID {parent_id} not found"
+            )
+        
+        # Validate parent account is active (Requirement 11.3)
+        from app.models.base import AccountStatus
+        if parent.status != AccountStatus.ACTIVE:
+            raise ValidationError(
+                f"Parent account '{parent.account_code}' must be active. Current status: {parent.status.value}"
             )
 
         # Validate child exists
@@ -126,7 +133,7 @@ class HierarchyManager:
         Raises:
             ChartOfAccountNotFoundException: If account or new parent not found
             CircularReferenceException: If move would create circular reference
-            ValidationError: If account types don't match
+            ValidationError: If account types don't match or parent is not active
         """
         # Validate account exists
         account = self.repo.get_by_id(account_id, organization_id)
@@ -140,6 +147,13 @@ class HierarchyManager:
         if not new_parent:
             raise ChartOfAccountNotFoundException(
                 f"New parent account with ID {new_parent_id} not found"
+            )
+        
+        # Validate parent account is active (Requirement 11.3)
+        from app.models.base import AccountStatus
+        if new_parent.status != AccountStatus.ACTIVE:
+            raise ValidationError(
+                f"Parent account '{new_parent.account_code}' must be active. Current status: {new_parent.status.value}"
             )
 
         # Validate account type consistency
@@ -233,6 +247,7 @@ class HierarchyManager:
         self,
         account_id: UUID,
         organization_id: UUID,
+        use_recursive_cte: bool = True,
     ) -> list[Account]:
         """
         Get all ancestor accounts from the account up to the root.
@@ -240,6 +255,7 @@ class HierarchyManager:
         Args:
             account_id: Account UUID
             organization_id: Organization UUID
+            use_recursive_cte: Use recursive CTE for better performance (default: True)
 
         Returns:
             List of ancestor accounts ordered from immediate parent to root
@@ -254,6 +270,11 @@ class HierarchyManager:
                 f"Account with ID {account_id} not found"
             )
 
+        # Use recursive CTE for better performance
+        if use_recursive_cte:
+            return self.repo.get_ancestors_recursive(account_id, organization_id)
+
+        # Fallback to iterative approach
         ancestors = []
         current_id = account.parent_account_id
 
@@ -278,6 +299,7 @@ class HierarchyManager:
         self,
         account_id: UUID,
         organization_id: UUID,
+        use_recursive_cte: bool = True,
     ) -> list[Account]:
         """
         Get all descendant accounts recursively.
@@ -285,6 +307,7 @@ class HierarchyManager:
         Args:
             account_id: Account UUID
             organization_id: Organization UUID
+            use_recursive_cte: Use recursive CTE for better performance (default: True)
 
         Returns:
             List of all descendant accounts (children, grandchildren, etc.)
@@ -299,6 +322,11 @@ class HierarchyManager:
                 f"Account with ID {account_id} not found"
             )
 
+        # Use recursive CTE for better performance
+        if use_recursive_cte:
+            return self.repo.get_descendants_recursive(account_id, organization_id)
+
+        # Fallback to iterative approach
         descendants = []
         visited = set()
 
