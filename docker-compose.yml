@@ -130,7 +130,7 @@ services:
         echo 'Waiting for Identity Service...' &&
         sleep 10 &&
         echo 'Running Core Service migrations...' &&
-        python -m alembic upgrade head &&
+        python -m alembic upgrade heads &&
         echo 'Starting Core Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m uvicorn app.main:app --host 0.0.0.0 --port 8001
       "

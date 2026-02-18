@@ -33,7 +33,6 @@ from app.models.base import (
 )
 from app.models.batch import Batch
 from app.models.charge_template import ChargeTemplate
-from app.models.chart_of_account import ChartOfAccount
 from app.models.chart_of_account import Account
 from app.models.account_balance import AccountBalance
 from app.models.account_audit_log import AccountAuditLog, AuditAction
@@ -123,7 +122,6 @@ __all__ = [
     "SystemConfig",
     "Warehouse",
     "Customer",
-    "ChartOfAccount",
     "Batch",
     "SerialNo",
     "StockEntry",
