@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/serial_numbers.py
+# hypothesis_version: 6.151.6
+
+[100, 500, '/{serial_no_id}', '^(asc|desc)$', 'created_at', 'desc']

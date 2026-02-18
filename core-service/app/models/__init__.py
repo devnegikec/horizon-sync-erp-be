@@ -31,6 +31,9 @@ from app.models.base import (
     ValuationMethod,
     WarehouseType,
 )
+from app.models.batch import Batch
+from app.models.charge_template import ChargeTemplate
+from app.models.chart_of_account import ChartOfAccount
 from app.models.chart_of_account import Account
 from app.models.account_balance import AccountBalance
 from app.models.account_audit_log import AccountAuditLog, AuditAction
@@ -41,6 +44,17 @@ from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.quotation import Quotation, QuotationItem
 from app.models.sales_order import SalesOrder, SalesOrderItem
+from app.models.serial_no import SerialNo
+from app.models.status_transition import StatusTransition
+from app.models.stock_entry import StockEntry, StockEntryItem
+from app.models.stock_level import StockLevel
+from app.models.stock_movement import StockMovement
+from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
+from app.models.tax_template import TaxRule, TaxTemplate
+from app.models.transaction_breakdown import (
+    TransactionChargeBreakdown,
+    TransactionTaxBreakdown,
+)
 from app.models.system_config import SystemConfig
 from app.models.warehouse import Warehouse
 
@@ -108,6 +122,21 @@ __all__ = [
     "SalesOrderItem",
     "SystemConfig",
     "Warehouse",
+    "Customer",
+    "ChartOfAccount",
+    "Batch",
+    "SerialNo",
+    "StockEntry",
+    "StockEntryItem",
+    "StockLevel",
+    "StockMovement",
+    "StockReconciliation",
+    "StockReconciliationItem",
+    "TaxTemplate",
+    "TaxRule",
+    "ChargeTemplate",
+    "TransactionTaxBreakdown",
+    "TransactionChargeBreakdown",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/dependencies.py
+# hypothesis_version: 6.151.6
+
+[5.0, 200, '*.*', '.', 'Authorization', 'Bearer', 'Invalid token type', 'WWW-Authenticate', 'access', 'email', 'organization_id', 'permissions', 'sub', 'system_admin', 'type', 'user', 'user_type']

@@ -1,0 +1,433 @@
+{
+	"info": {
+		"_postman_id": "tax-template-api-collection",
+		"name": "Tax Template API",
+		"description": "Complete API collection for testing Tax Template endpoints with realistic tax configurations",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Tax Template - GST 18%",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('tax_template_id_gst18', response.id);",
+							"    pm.environment.set('organization_id', response.organization_id);",
+							"    console.log('Tax Template ID (GST 18%):', response.id);",
+							"    pm.test('Status code is 201', function () {",
+							"        pm.response.to.have.status(201);",
+							"    });",
+							"    pm.test('Response has required fields', function () {",
+							"        pm.expect(response).to.have.property('id');",
+							"        pm.expect(response).to.have.property('template_code');",
+							"        pm.expect(response).to.have.property('tax_rules');",
+							"        pm.expect(response.tax_rules).to.be.an('array');",
+							"    });",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"description": "JWT token from identity service"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"organization_id\": \"{{organization_id}}\",\n  \"template_code\": \"GST_18\",\n  \"template_name\": \"GST 18%\",\n  \"description\": \"Standard GST rate for most goods and services\",\n  \"tax_category\": \"Output\",\n  \"is_default\": true,\n  \"is_active\": true,\n  \"applicability_rules\": {\n    \"transaction_type\": \"Sales\",\n    \"customer_location\": {\n      \"country\": \"IN\"\n    }\n  },\n  \"tax_rules\": [\n    {\n      \"rule_name\": \"CGST\",\n      \"tax_type\": \"CGST\",\n      \"description\": \"Central Goods and Services Tax\",\n      \"tax_rate\": 9.00,\n      \"account_head_id\": \"{{account_head_cgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 1\n    },\n    {\n      \"rule_name\": \"SGST\",\n      \"tax_type\": \"SGST\",\n      \"description\": \"State Goods and Services Tax\",\n      \"tax_rate\": 9.00,\n      \"account_head_id\": \"{{account_head_sgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 2\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates"]
+				},
+				"description": "Create a new tax template for GST 18% with CGST and SGST components"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Create Tax Template - GST 12%",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('tax_template_id_gst12', response.id);",
+							"    console.log('Tax Template ID (GST 12%):', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"organization_id\": \"{{organization_id}}\",\n  \"template_code\": \"GST_12\",\n  \"template_name\": \"GST 12%\",\n  \"description\": \"Reduced GST rate for specific goods\",\n  \"tax_category\": \"Output\",\n  \"is_default\": false,\n  \"is_active\": true,\n  \"applicability_rules\": {},\n  \"tax_rules\": [\n    {\n      \"rule_name\": \"CGST\",\n      \"tax_type\": \"CGST\",\n      \"tax_rate\": 6.00,\n      \"account_head_id\": \"{{account_head_cgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 1\n    },\n    {\n      \"rule_name\": \"SGST\",\n      \"tax_type\": \"SGST\",\n      \"tax_rate\": 6.00,\n      \"account_head_id\": \"{{account_head_sgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 2\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates"]
+				},
+				"description": "Create a tax template for GST 12%"
+			},
+			"response": []
+		},
+		{
+			"name": "3. Create Tax Template - GST with Compound CESS",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('tax_template_id_cess', response.id);",
+							"    console.log('Tax Template ID (with CESS):', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"organization_id\": \"{{organization_id}}\",\n  \"template_code\": \"GST_18_CESS\",\n  \"template_name\": \"GST 18% with CESS\",\n  \"description\": \"GST with compound CESS for luxury goods\",\n  \"tax_category\": \"Output\",\n  \"is_default\": false,\n  \"is_active\": true,\n  \"applicability_rules\": {},\n  \"tax_rules\": [\n    {\n      \"rule_name\": \"CGST\",\n      \"tax_type\": \"CGST\",\n      \"tax_rate\": 9.00,\n      \"account_head_id\": \"{{account_head_cgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 1\n    },\n    {\n      \"rule_name\": \"SGST\",\n      \"tax_type\": \"SGST\",\n      \"tax_rate\": 9.00,\n      \"account_head_id\": \"{{account_head_sgst}}\",\n      \"is_compound\": false,\n      \"sequence\": 2\n    },\n    {\n      \"rule_name\": \"CESS\",\n      \"tax_type\": \"CESS\",\n      \"description\": \"Compensation Cess (calculated on base + GST)\",\n      \"tax_rate\": 1.00,\n      \"account_head_id\": \"{{account_head_cess}}\",\n      \"is_compound\": true,\n      \"sequence\": 3\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates"]
+				},
+				"description": "Create a tax template with compound CESS tax"
+			},
+			"response": []
+		},
+		{
+			"name": "4. List Tax Templates",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test('Response has templates and pagination', function () {",
+							"    const response = pm.response.json();",
+							"    pm.expect(response).to.have.property('templates');",
+							"    pm.expect(response).to.have.property('pagination');",
+							"    pm.expect(response.templates).to.be.an('array');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates?page=1&limit=20",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates"],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "limit",
+							"value": "20"
+						}
+					]
+				},
+				"description": "List all tax templates with pagination"
+			},
+			"response": []
+		},
+		{
+			"name": "5. List Tax Templates - Filter by Output",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates?tax_category=Output&is_active=true",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates"],
+					"query": [
+						{
+							"key": "tax_category",
+							"value": "Output"
+						},
+						{
+							"key": "is_active",
+							"value": "true"
+						}
+					]
+				},
+				"description": "List tax templates filtered by Output category and active status"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Get Tax Template by ID",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test('Response has tax rules', function () {",
+							"    const response = pm.response.json();",
+							"    pm.expect(response).to.have.property('tax_rules');",
+							"    pm.expect(response.tax_rules).to.be.an('array');",
+							"    pm.expect(response.tax_rules.length).to.be.greaterThan(0);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates/{{tax_template_id_gst18}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates", "{{tax_template_id_gst18}}"]
+				},
+				"description": "Get a specific tax template by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Update Tax Template",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test('Template name was updated', function () {",
+							"    const response = pm.response.json();",
+							"    pm.expect(response.template_name).to.include('Updated');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"organization_id\": \"{{organization_id}}\",\n  \"template_name\": \"GST 18% - Updated\",\n  \"description\": \"Updated description for standard GST rate\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates/{{tax_template_id_gst18}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates", "{{tax_template_id_gst18}}"]
+				},
+				"description": "Update an existing tax template"
+			},
+			"response": []
+		},
+		{
+			"name": "8. Set Template as Default",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test('Template is marked as default', function () {",
+							"    const response = pm.response.json();",
+							"    pm.expect(response.is_default).to.be.true;",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates/{{tax_template_id_gst12}}/set-default",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates", "{{tax_template_id_gst12}}", "set-default"]
+				},
+				"description": "Set a tax template as the default for its category"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Get Applicable Tax Template",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 200', function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test('Response has template and source', function () {",
+							"    const response = pm.response.json();",
+							"    pm.expect(response).to.have.property('template');",
+							"    pm.expect(response).to.have.property('source');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates/applicable?transaction_type=Sales&item_id={{item_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates", "applicable"],
+					"query": [
+						{
+							"key": "transaction_type",
+							"value": "Sales"
+						},
+						{
+							"key": "item_id",
+							"value": "{{item_id}}"
+						}
+					]
+				},
+				"description": "Get the applicable tax template based on context (item, transaction type)"
+			},
+			"response": []
+		},
+		{
+			"name": "10. Delete Tax Template",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test('Status code is 204', function () {",
+							"    pm.response.to.have.status(204);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/tax-templates/{{tax_template_id_cess}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "tax-templates", "{{tax_template_id_cess}}"]
+				},
+				"description": "Soft delete a tax template (will fail if referenced by items or transactions)"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8001",
+			"type": "string"
+		}
+	]
+}

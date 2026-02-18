@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/stock_reconciliation_service.py
+# hypothesis_version: 6.151.6
+
+[100, 'created_by', 'current_qty', 'desc', 'has_next', 'has_prev', 'items', 'organization_id', 'page', 'page_size', 'posting_date', 'qty', 'qty_difference', 'reconciliation_id', 'status', 'total_items', 'total_pages', 'updated_by']

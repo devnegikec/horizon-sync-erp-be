@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/customers.py
+# hypothesis_version: 6.151.6
+
+[100, '/{customer_id}', 'Create customer', 'Delete customer', 'Field to sort by', 'Get customer', 'List customers', 'Sort order', 'Update customer', '^(asc|desc)$', 'created_at', 'desc']

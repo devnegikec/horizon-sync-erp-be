@@ -94,7 +94,9 @@ class PostgreSQLSearchEngine(SearchEngineInterface):
         'customers', 
         'suppliers',
         'warehouses',
-        'stock_entries'
+        'stock_entries',
+        'tax_templates',
+        'charge_templates'
     ]
     
     def __init__(self, db_session: AsyncSession):

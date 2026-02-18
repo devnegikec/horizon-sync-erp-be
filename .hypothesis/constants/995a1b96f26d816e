@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/sales_order.py
+# hypothesis_version: 6.151.6
+
+[100, 'CASCADE', 'Customer', 'INR', 'Item', 'SalesOrder', 'SalesOrderItem', 'all, delete-orphan', 'customers.id', 'items', 'items.id', 'sales_order', 'sales_order_items', 'sales_orders', 'sales_orders.id', 'salesorderstatus']

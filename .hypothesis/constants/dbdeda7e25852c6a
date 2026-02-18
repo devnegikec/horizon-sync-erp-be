@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/__init__.py
+# hypothesis_version: 6.151.6
+
+['batches', 'chart_of_accounts', 'customers', 'item_groups', 'item_prices', 'item_suppliers', 'items', 'put_away_rules', 'serial_numbers', 'stock_entries', 'stock_levels', 'stock_movements', 'stock_settings', 'suppliers', 'warehouses']

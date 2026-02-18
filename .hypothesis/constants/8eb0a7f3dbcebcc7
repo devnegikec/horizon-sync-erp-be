@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/pick_list_service.py
+# hypothesis_version: 6.151.6
+
+['completed_at', 'created_at', 'created_by', 'desc', 'has_next', 'has_prev', 'id', 'items', 'organization_id', 'page', 'page_size', 'pick_date', 'pick_list_no', 'reference_id', 'reference_type', 'remarks', 'status', 'total_items', 'total_pages', 'updated_at', 'updated_by', 'warehouse_id']

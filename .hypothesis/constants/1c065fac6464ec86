@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/events/publisher.py
+# hypothesis_version: 6.151.6
+
+['_', '__dict__', 'data', 'entity_id', 'entity_type', 'event_type', 'isoformat', 'organization_id', 'redis_stream_name', 'redis_url', 'search:events', 'timestamp']

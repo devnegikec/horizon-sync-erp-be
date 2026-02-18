@@ -120,6 +120,45 @@ def test_item_price_data(mock_current_user):
 
 
 @pytest.fixture
+def sample_organization_id(mock_current_user):
+    """Sample organization ID for testing"""
+    return mock_current_user.organization_id
+
+
+@pytest.fixture
+def sample_user_id(mock_current_user):
+    """Sample user ID for testing"""
+    return mock_current_user.id
+
+
+@pytest.fixture
+def sample_item_id(db_session, mock_current_user):
+    """Create a sample item and return its ID"""
+    from app.models.item import Item
+    
+    item = Item(
+        id=uuid.uuid4(),
+        organization_id=mock_current_user.organization_id,
+        item_code="TEST-ITEM-001",
+        item_name="Test Item",
+        item_type="stock",
+        uom="Nos",
+        maintain_stock=True,
+        standard_rate=100.00,
+        valuation_rate=75.00,
+        created_by=mock_current_user.id,
+        updated_by=mock_current_user.id,
+    )
+    db_session.add(item)
+    db_session.commit()
+    db_session.refresh(item)
+    return item.id
+
+
+@pytest.fixture
+def sample_account_head_id():
+    """Sample account head ID for testing"""
+    return uuid.uuid4()
 def auth_headers():
     """Return headers with Authorization for testing"""
     return {"Authorization": "Bearer test-token"}

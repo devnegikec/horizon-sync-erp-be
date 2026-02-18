@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/item_service.py
+# hypothesis_version: 6.151.6
+
+[100, '_', 'created_at', 'created_by', 'desc', 'has_next', 'has_prev', 'item_type', 'items', 'organization_id', 'page', 'page_size', 'status', 'total_items', 'total_pages', 'updated_by', 'valuation_method']

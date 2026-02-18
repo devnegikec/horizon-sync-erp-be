@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/material_request_service.py
+# hypothesis_version: 6.151.6
+
+['created_at', 'created_by', 'desc', 'description', 'has_next', 'has_prev', 'id', 'item_id', 'line_items', 'line_items_count', 'material_request_id', 'notes', 'organization_id', 'page', 'page_size', 'quantity', 'required_date', 'status', 'total_items', 'total_pages', 'updated_at', 'updated_by']

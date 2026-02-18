@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/stock_movement.py
+# hypothesis_version: 6.151.6
+
+['CASCADE', 'Item', 'Warehouse', 'items.id', 'movementtype', 'stock_movements']

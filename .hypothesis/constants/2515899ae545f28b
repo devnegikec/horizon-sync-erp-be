@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/repositories/material_request_repository.py
+# hypothesis_version: 6.151.6
+
+['created_at', 'desc']

@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/item_groups.py
+# hypothesis_version: 6.151.6
+
+[100, '/active', '/tree', '/{item_group_id}', 'Create item group', 'Delete item group', 'Field to sort by', 'Get item group', 'Get item group tree', 'List item groups', 'Search in name, code', 'Sort order', 'Update item group', '^(asc|desc)$', 'created_at', 'desc']

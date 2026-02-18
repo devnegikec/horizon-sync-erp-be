@@ -37,6 +37,14 @@ class ItemGroup(Base):
     default_uom = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
 
+    # Tax Templates
+    sales_tax_template_id = Column(
+        UUID(as_uuid=True), ForeignKey("tax_templates.id"), nullable=True
+    )
+    purchase_tax_template_id = Column(
+        UUID(as_uuid=True), ForeignKey("tax_templates.id"), nullable=True
+    )
+
     # Extra
     extra_data = Column(JSONB, nullable=True)
 

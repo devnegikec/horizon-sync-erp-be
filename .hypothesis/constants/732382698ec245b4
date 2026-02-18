@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/chart_of_account_service.py
+# hypothesis_version: 6.151.6
+
+[100, 'account_code', 'account_type', 'asc', 'created_by', 'has_next', 'has_prev', 'organization_id', 'page', 'page_size', 'parent_account_id', 'total_items', 'total_pages', 'updated_by']

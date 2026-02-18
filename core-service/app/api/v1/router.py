@@ -34,6 +34,7 @@ from app.api.v1.endpoints import (
     stock_reconciliations,
     stock_settings,
     suppliers,
+    tax_templates,
     warehouses,
 )
 
@@ -132,6 +133,11 @@ api_router.include_router(
     prefix="/rfqs",
     tags=["RFQs"],
 )
+# Tax and Charges
+api_router.include_router(
+    tax_templates.router,
+    prefix="/tax-templates",
+    tags=["Tax Templates"],
 api_router.include_router(
     purchase_orders.router,
     prefix="/purchase-orders",

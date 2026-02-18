@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/sales_order_service.py
+# hypothesis_version: 6.151.6
+
+['0', 'Customer', 'Sales Order', 'amount', 'billed_qty', 'created_at', 'created_by', 'currency', 'customer_id', 'delivered_qty', 'delivery_date', 'delivery_note_id', 'delivery_note_no', 'desc', 'due_date', 'extra_data', 'grand_total', 'has_next', 'has_prev', 'id', 'invoice_no', 'invoice_type', 'item_id', 'items', 'order_date', 'organization_id', 'outstanding_amount', 'page', 'page_size', 'party_id', 'party_type', 'pending_billing_qty', 'pending_delivery_qty', 'posting_date', 'qty', 'qty_to_bill', 'qty_to_deliver', 'rate', 'reference_id', 'reference_type', 'remarks', 'sales_order_id', 'sales_order_no', 'sort_order', 'status', 'submitted_at', 'total_items', 'total_pages', 'uom', 'updated_at', 'updated_by']

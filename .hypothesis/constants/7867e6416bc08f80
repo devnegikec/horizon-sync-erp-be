@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/purchase_order.py
+# hypothesis_version: 6.151.6
+
+['CASCADE', 'PurchaseOrder', 'PurchaseOrderLine', 'RESTRICT', 'SUPPLIER', 'all, delete-orphan', 'items.id', 'line_items', 'purchase_order', 'purchase_order_lines', 'purchase_orders', 'purchase_orders.id', 'purchaseorderstatus', 'rfqs.id', 'suppliers.id']

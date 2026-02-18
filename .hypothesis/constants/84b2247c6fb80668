@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/transaction_breakdown.py
+# hypothesis_version: 6.151.6
+
+[100, 255, 'charge_templates.id', 'tax_rules.id', 'tax_templates.id']

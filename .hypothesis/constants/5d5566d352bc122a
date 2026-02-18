@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/bulk_export_service.py
+# hypothesis_version: 6.151.6
+
+['error', 'file_content', 'hex', 'item_group_id', 'item_group_name', 'item_type', 'job_id', 'search', 'status', 'success', 'total_rows', 'value']

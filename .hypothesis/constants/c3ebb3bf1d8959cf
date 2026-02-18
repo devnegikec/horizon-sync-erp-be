@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/suppliers.py
+# hypothesis_version: 6.151.6
+
+[100, '/{supplier_id}', 'Create supplier', 'Delete supplier', 'Field to sort by', 'Get supplier', 'List suppliers', 'Sort order', 'Update supplier', '^(asc|desc)$', 'created_at', 'desc']

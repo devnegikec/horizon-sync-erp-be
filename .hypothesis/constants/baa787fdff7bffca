@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/stock_entry.py
+# hypothesis_version: 6.151.6
+
+[100, 'CASCADE', 'Item', 'SET NULL', 'StockEntry', 'StockEntryItem', 'Warehouse', 'all, delete-orphan', 'items', 'items.id', 'stock_entries', 'stock_entries.id', 'stock_entry', 'stock_entry_items', 'stockentrystatus', 'stockentrytype']
