@@ -43,7 +43,7 @@ def upgrade() -> None:
     
     # Create accounts table using raw SQL
     op.execute("""
-        CREATE TABLE accounts (
+        CREATE TABLE IF NOT EXISTS accounts (
             id UUID PRIMARY KEY,
             organization_id UUID NOT NULL,
             account_code VARCHAR(50) NOT NULL,
@@ -63,18 +63,21 @@ def upgrade() -> None:
     """)
     
     # Create indexes
-    op.create_index('ix_accounts_organization_id', 'accounts', ['organization_id'])
-    op.create_index('ix_accounts_account_code', 'accounts', ['account_code'])
-    op.create_index('ix_accounts_account_type', 'accounts', ['account_type'])
-    op.create_index('ix_accounts_parent_account_id', 'accounts', ['parent_account_id'])
-    op.create_index('ix_accounts_status', 'accounts', ['status'])
+    op.execute("CREATE INDEX IF NOT EXISTS ix_accounts_organization_id ON accounts (organization_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_accounts_account_code ON accounts (account_code)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_accounts_account_type ON accounts (account_type)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_accounts_parent_account_id ON accounts (parent_account_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_accounts_status ON accounts (status)")
     
     # Create composite unique constraint for organization_id + account_code
-    op.create_unique_constraint(
-        'uq_accounts_organization_account_code',
-        'accounts',
-        ['organization_id', 'account_code']
-    )
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_accounts_organization_account_code') THEN
+                ALTER TABLE accounts ADD CONSTRAINT uq_accounts_organization_account_code UNIQUE (organization_id, account_code);
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
