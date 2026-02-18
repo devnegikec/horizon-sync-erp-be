@@ -570,9 +570,13 @@ async def custom_validation_exception_handler(request: Request, exc: ValidationE
     # Log validation errors for debugging
     logger.warning(
         f"Validation error on {request.method} {request.url.path}: {exc.message}",
-        extra={"details": exc.details, "path": request.url.path, "method": request.method}
+        extra={
+            "details": exc.details,
+            "path": request.url.path,
+            "method": request.method,
+        },
     )
-    
+
     # Format validation errors with field and reason as per Requirement 10.4
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -594,10 +598,10 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
             "entity_type": exc.entity_type,
             "entity_id": exc.entity_id,
             "path": request.url.path,
-            "method": request.method
-        }
+            "method": request.method,
+        },
     )
-    
+
     # Format not found errors with entity_type and entity_id as per Requirement 10.5
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -620,10 +624,10 @@ async def state_error_handler(request: Request, exc: StateError):
             "current_state": exc.current_state,
             "required_state": exc.required_state,
             "path": request.url.path,
-            "method": request.method
-        }
+            "method": request.method,
+        },
     )
-    
+
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
         content={
@@ -646,10 +650,10 @@ async def integration_error_handler(request: Request, exc: IntegrationError):
             "details": exc.details,
             "status_code": exc.status_code,
             "path": request.url.path,
-            "method": request.method
-        }
+            "method": request.method,
+        },
     )
-    
+
     return JSONResponse(
         status_code=exc.status_code,
         content={
