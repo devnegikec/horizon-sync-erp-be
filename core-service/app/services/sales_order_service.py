@@ -11,12 +11,22 @@ from app.models.customer import Customer
 from app.models.item import Item
 from app.models.sales_order import SalesOrderItem
 from app.repositories.sales_order_repository import SalesOrderRepository
+from app.repositories.stock_level_repository import StockLevelRepository
+from app.repositories.tax_template_repository import TaxTemplateRepository
+from app.services.tax_calculation_engine import (
+    LineItem,
+    TaxCalculationEngine,
+    TaxContext,
+)
 
 
 class SalesOrderService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = SalesOrderRepository(db)
+        self.stock_level_repo = StockLevelRepository(db)
+        self.tax_template_repo = TaxTemplateRepository(db)
+        self.tax_engine = TaxCalculationEngine(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         payload = dict(data)
@@ -28,38 +38,48 @@ class SalesOrderService:
         if payload.get("status"):
             payload["status"] = SalesOrderStatus(payload["status"])
 
-        # Extract items and calculate grand_total
+        # Extract items
         items_data = payload.pop("items", [])
-        
+
         # Validate customer_id belongs to same organization
         if "customer_id" in payload:
-            self._validate_customer_organization(payload["customer_id"], organization_id)
-        
+            self._validate_customer_organization(
+                payload["customer_id"], organization_id
+            )
+
         # Validate item_id in line items belongs to same organization
         for item_data in items_data:
             if "item_id" in item_data:
                 self._validate_item_organization(item_data["item_id"], organization_id)
-        
-        grand_total = self._calculate_grand_total(items_data)
-        payload["grand_total"] = grand_total
 
-        # Create sales order
+        # Create sales order first (we need sales_order.id for item payloads)
         sales_order = self.repo.create(payload)
 
-        # Create sales order items
+        customer = (
+            self.db.query(Customer)
+            .filter(Customer.id == payload["customer_id"])
+            .first()
+        )
+        shipping_address = (
+            {
+                "city": customer.city,
+                "state": customer.state,
+                "country": customer.country,
+            }
+            if customer and (customer.city or customer.state or customer.country)
+            else None
+        )
+
+        grand_total = Decimal("0")
         for item_data in items_data:
-            item_payload = dict(item_data)
-            item_payload["organization_id"] = organization_id
-            item_payload["sales_order_id"] = sales_order.id
-            # Calculate amount as qty * rate
-            item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
-                str(item_payload["rate"])
+            item_payload = self._build_sales_order_item_payload(
+                item_data, sales_order.id, organization_id, shipping_address
             )
-            # Initialize billed_qty and delivered_qty to 0
-            item_payload["billed_qty"] = Decimal("0")
-            item_payload["delivered_qty"] = Decimal("0")
+            grand_total += item_payload["total_amount"]
             item = SalesOrderItem(**item_payload)
             self.db.add(item)
+
+        self.repo.update(sales_order, {"grand_total": grand_total})
 
         self.db.commit()
         self.db.refresh(sales_order)
@@ -115,43 +135,55 @@ class SalesOrderService:
             payload["status"] = SalesOrderStatus(payload["status"])
 
         payload["updated_by"] = user_id
-        
+
         # Validate customer_id if being updated
         if "customer_id" in payload:
-            self._validate_customer_organization(payload["customer_id"], organization_id)
+            self._validate_customer_organization(
+                payload["customer_id"], organization_id
+            )
 
         # Handle items update if provided
         if "items" in data:
             items_data = data["items"]
-            
+
             # Validate item_id in line items belongs to same organization
             for item_data in items_data:
                 if "item_id" in item_data:
-                    self._validate_item_organization(item_data["item_id"], organization_id)
+                    self._validate_item_organization(
+                        item_data["item_id"], organization_id
+                    )
 
             # Delete existing items
             for item in sales_order.items:
                 self.db.delete(item)
 
+            customer = sales_order.customer
+            shipping_address = (
+                {
+                    "city": customer.city,
+                    "state": customer.state,
+                    "country": customer.country,
+                }
+                if customer and (customer.city or customer.state or customer.country)
+                else None
+            )
+
             # Create new items
             for item_data in items_data:
-                item_payload = dict(item_data)
-                item_payload["organization_id"] = organization_id
-                item_payload["sales_order_id"] = sales_order.id
-                # Calculate amount as qty * rate
-                item_payload["amount"] = Decimal(str(item_payload["qty"])) * Decimal(
-                    str(item_payload["rate"])
+                item_payload = self._build_sales_order_item_payload(
+                    item_data, sales_order.id, organization_id, shipping_address
                 )
-                # Initialize billed_qty and delivered_qty to 0 if not provided
-                if "billed_qty" not in item_payload:
-                    item_payload["billed_qty"] = Decimal("0")
-                if "delivered_qty" not in item_payload:
-                    item_payload["delivered_qty"] = Decimal("0")
                 item = SalesOrderItem(**item_payload)
                 self.db.add(item)
 
-            # Recalculate grand_total
-            payload["grand_total"] = self._calculate_grand_total(items_data)
+            # Recalculate grand_total from built item payloads
+            grand_total = Decimal("0")
+            for item_data in items_data:
+                item_payload = self._build_sales_order_item_payload(
+                    item_data, sales_order.id, organization_id, shipping_address
+                )
+                grand_total += item_payload["total_amount"]
+            payload["grand_total"] = grand_total
 
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
@@ -164,58 +196,58 @@ class SalesOrderService:
         self.repo.delete(sales_order)
 
     def update_status(
-            self,
-            sales_order_id: UUID,
-            new_status: str,
-            organization_id: UUID,
-            user_id: UUID,
-        ) -> dict:
-            """Update sales order status with validation
+        self,
+        sales_order_id: UUID,
+        new_status: str,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> dict:
+        """Update sales order status with validation
 
-            Args:
-                sales_order_id: ID of the sales order to update
-                new_status: New status value (string)
-                organization_id: Organization ID for multi-tenancy
-                user_id: User ID for audit trail
+        Args:
+            sales_order_id: ID of the sales order to update
+            new_status: New status value (string)
+            organization_id: Organization ID for multi-tenancy
+            user_id: User ID for audit trail
 
-            Returns:
-                Updated sales order as dict
+        Returns:
+            Updated sales order as dict
 
-            Raises:
-                ResourceNotFoundException: If sales order not found
-                ValueError: If status transition is invalid
-            """
-            sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
-            if not sales_order:
-                raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
+        Raises:
+            ResourceNotFoundException: If sales order not found
+            ValueError: If status transition is invalid
+        """
+        sales_order = self.repo.get_by_id_with_items(sales_order_id, organization_id)
+        if not sales_order:
+            raise ResourceNotFoundException(f"Sales Order {sales_order_id} not found")
 
-            # Convert string to enum
-            new_status_enum = SalesOrderStatus(new_status)
+        # Convert string to enum
+        new_status_enum = SalesOrderStatus(new_status)
 
-            # Validate status transition (pass sales_order for CLOSED status validation)
-            self._validate_status_transition(
-                sales_order.status, new_status_enum, sales_order
-            )
+        # Validate status transition (pass sales_order for CLOSED status validation)
+        self._validate_status_transition(
+            sales_order.status, new_status_enum, sales_order
+        )
 
-            # Prepare update payload
-            payload = {
-                "status": new_status_enum,
-                "updated_by": user_id,
-            }
+        # Prepare update payload
+        payload = {
+            "status": new_status_enum,
+            "updated_by": user_id,
+        }
 
-            # Set submitted_at when status changes to CONFIRMED
-            if (
-                new_status_enum == SalesOrderStatus.CONFIRMED
-                and sales_order.submitted_at is None
-            ):
-                from datetime import UTC, datetime
+        # Set submitted_at when status changes to CONFIRMED
+        if (
+            new_status_enum == SalesOrderStatus.CONFIRMED
+            and sales_order.submitted_at is None
+        ):
+            from datetime import UTC, datetime
 
-                payload["submitted_at"] = datetime.now(UTC)
+            payload["submitted_at"] = datetime.now(UTC)
 
-            # Update the sales order
-            self.repo.update(sales_order, payload)
-            self.db.refresh(sales_order)
-            return self._to_response(sales_order)
+        # Update the sales order
+        self.repo.update(sales_order, payload)
+        self.db.refresh(sales_order)
+        return self._to_response(sales_order)
 
     def convert_to_invoice(
         self,
@@ -331,80 +363,80 @@ class SalesOrderService:
             raise e
 
     def _validate_status_transition(
-            self,
-            current_status: SalesOrderStatus,
-            new_status: SalesOrderStatus,
-            sales_order=None,
-        ) -> None:
-            """Validate status transition according to workflow rules
+        self,
+        current_status: SalesOrderStatus,
+        new_status: SalesOrderStatus,
+        sales_order=None,
+    ) -> None:
+        """Validate status transition according to workflow rules
 
-            Workflow: DRAFT → CONFIRMED → PARTIALLY_DELIVERED → DELIVERED → CLOSED
-            CANCELLED allowed from any state except CLOSED
-            CLOSED allowed from any state if all items are fully billed
+        Workflow: DRAFT → CONFIRMED → PARTIALLY_DELIVERED → DELIVERED → CLOSED
+        CANCELLED allowed from any state except CLOSED
+        CLOSED allowed from any state if all items are fully billed
 
-            Args:
-                current_status: Current status of the sales order
-                new_status: Requested new status
-                sales_order: Optional SalesOrder object for additional validation
+        Args:
+            current_status: Current status of the sales order
+            new_status: Requested new status
+            sales_order: Optional SalesOrder object for additional validation
 
-            Raises:
-                ValueError: If the status transition is not allowed
-            """
-            # No transition needed if status is the same
-            if current_status == new_status:
-                return
+        Raises:
+            ValueError: If the status transition is not allowed
+        """
+        # No transition needed if status is the same
+        if current_status == new_status:
+            return
 
-            # CANCELLED can be set from any state except CLOSED
-            if new_status == SalesOrderStatus.CANCELLED:
-                if current_status == SalesOrderStatus.CLOSED:
-                    raise ValueError("Cannot cancel a sales order that is already CLOSED")
-                return
+        # CANCELLED can be set from any state except CLOSED
+        if new_status == SalesOrderStatus.CANCELLED:
+            if current_status == SalesOrderStatus.CLOSED:
+                raise ValueError("Cannot cancel a sales order that is already CLOSED")
+            return
 
-            # Cannot transition from CANCELLED or CLOSED to any other status
-            if current_status in (SalesOrderStatus.CANCELLED, SalesOrderStatus.CLOSED):
+        # Cannot transition from CANCELLED or CLOSED to any other status
+        if current_status in (SalesOrderStatus.CANCELLED, SalesOrderStatus.CLOSED):
+            raise ValueError(
+                f"Cannot transition from {current_status.value} to {new_status.value}"
+            )
+
+        # Special handling for CLOSED status (Requirement 6.7)
+        # Allow transition to CLOSED from any status if all items are fully billed
+        if new_status == SalesOrderStatus.CLOSED:
+            if sales_order is None:
                 raise ValueError(
-                    f"Cannot transition from {current_status.value} to {new_status.value}"
+                    "Cannot validate CLOSED status transition without sales order data"
                 )
 
-            # Special handling for CLOSED status (Requirement 6.7)
-            # Allow transition to CLOSED from any status if all items are fully billed
-            if new_status == SalesOrderStatus.CLOSED:
-                if sales_order is None:
-                    raise ValueError(
-                        "Cannot validate CLOSED status transition without sales order data"
-                    )
+            # Check if all items are fully billed
+            all_items_fully_billed = all(
+                item.billed_qty >= item.qty for item in sales_order.items
+            )
 
-                # Check if all items are fully billed
-                all_items_fully_billed = all(
-                    item.billed_qty >= item.qty for item in sales_order.items
-                )
-
-                if not all_items_fully_billed:
-                    raise ValueError(
-                        "Cannot transition to CLOSED status: not all items are fully billed"
-                    )
-
-                # If fully billed, allow transition to CLOSED from any status
-                return
-
-            # Define valid transitions for the main workflow
-            valid_transitions = {
-                SalesOrderStatus.DRAFT: [SalesOrderStatus.CONFIRMED],
-                SalesOrderStatus.CONFIRMED: [
-                    SalesOrderStatus.PARTIALLY_DELIVERED,
-                    SalesOrderStatus.DELIVERED,
-                ],
-                SalesOrderStatus.PARTIALLY_DELIVERED: [SalesOrderStatus.DELIVERED],
-                SalesOrderStatus.DELIVERED: [SalesOrderStatus.CLOSED],
-            }
-
-            allowed_next_statuses = valid_transitions.get(current_status, [])
-
-            if new_status not in allowed_next_statuses:
+            if not all_items_fully_billed:
                 raise ValueError(
-                    f"Invalid status transition from {current_status.value} to {new_status.value}. "
-                    f"Allowed transitions: {', '.join(s.value for s in allowed_next_statuses)}"
+                    "Cannot transition to CLOSED status: not all items are fully billed"
                 )
+
+            # If fully billed, allow transition to CLOSED from any status
+            return
+
+        # Define valid transitions for the main workflow
+        valid_transitions = {
+            SalesOrderStatus.DRAFT: [SalesOrderStatus.CONFIRMED],
+            SalesOrderStatus.CONFIRMED: [
+                SalesOrderStatus.PARTIALLY_DELIVERED,
+                SalesOrderStatus.DELIVERED,
+            ],
+            SalesOrderStatus.PARTIALLY_DELIVERED: [SalesOrderStatus.DELIVERED],
+            SalesOrderStatus.DELIVERED: [SalesOrderStatus.CLOSED],
+        }
+
+        allowed_next_statuses = valid_transitions.get(current_status, [])
+
+        if new_status not in allowed_next_statuses:
+            raise ValueError(
+                f"Invalid status transition from {current_status.value} to {new_status.value}. "
+                f"Allowed transitions: {', '.join(s.value for s in allowed_next_statuses)}"
+            )
 
     def convert_to_delivery_note(
         self,
@@ -475,7 +507,7 @@ class SalesOrderService:
                 )
                 if so_item:
                     qty_to_deliver = Decimal(str(item_to_deliver["qty_to_deliver"]))
-                    
+
                     dn_item_data = {
                         "organization_id": organization_id,
                         "delivery_note_id": delivery_note.id,
@@ -486,7 +518,7 @@ class SalesOrderService:
                         "amount": qty_to_deliver * so_item.rate,
                         "sort_order": so_item.sort_order,
                     }
-                    
+
                     dn_item = DeliveryNoteItem(**dn_item_data)
                     self.db.add(dn_item)
 
@@ -605,26 +637,26 @@ class SalesOrderService:
                 )
 
     def _update_billed_quantities(self, sales_order, items_to_bill: list[dict]) -> None:
-            """Update billed_qty for each billed item
+        """Update billed_qty for each billed item
 
-            Args:
-                sales_order: SalesOrder object with items
-                items_to_bill: List of dicts with item_id and qty_to_bill
-            """
-            for item_to_bill in items_to_bill:
-                item_id = item_to_bill["item_id"]
-                qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
+        Args:
+            sales_order: SalesOrder object with items
+            items_to_bill: List of dicts with item_id and qty_to_bill
+        """
+        for item_to_bill in items_to_bill:
+            item_id = item_to_bill["item_id"]
+            qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
 
-                # Find the corresponding sales order item
-                so_item = next(
-                    (item for item in sales_order.items if item.id == item_id), None
-                )
+            # Find the corresponding sales order item
+            so_item = next(
+                (item for item in sales_order.items if item.id == item_id), None
+            )
 
-                if so_item:
-                    so_item.billed_qty += qty_to_bill
+            if so_item:
+                so_item.billed_qty += qty_to_bill
 
-            # Check if sales order is fully billed
-            self._check_and_update_billing_status(sales_order)
+        # Check if sales order is fully billed
+        self._check_and_update_billing_status(sales_order)
 
     def _update_delivered_quantities(
         self, sales_order, items_to_deliver: list[dict]
@@ -705,7 +737,9 @@ class SalesOrderService:
             # Some items delivered → PARTIALLY_DELIVERED status
             sales_order.status = SalesOrderStatus.PARTIALLY_DELIVERED
 
-    def _validate_customer_organization(self, customer_id: UUID, organization_id: UUID) -> None:
+    def _validate_customer_organization(
+        self, customer_id: UUID, organization_id: UUID
+    ) -> None:
         """
         Validate that customer_id belongs to the same organization_id.
 
@@ -716,13 +750,11 @@ class SalesOrderService:
         Raises:
             ValueError: If customer doesn't exist or belongs to different organization
         """
-        customer = self.db.query(Customer).filter(
-            Customer.id == customer_id
-        ).first()
-        
+        customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
+
         if not customer:
             raise ValueError(f"Customer {customer_id} not found")
-        
+
         if customer.organization_id != organization_id:
             raise ValueError(
                 f"Customer {customer_id} belongs to a different organization"
@@ -739,27 +771,194 @@ class SalesOrderService:
         Raises:
             ValueError: If item doesn't exist or belongs to different organization
         """
-        item = self.db.query(Item).filter(
-            Item.id == item_id
-        ).first()
-        
+        item = self.db.query(Item).filter(Item.id == item_id).first()
+
         if not item:
             raise ValueError(f"Item {item_id} not found")
-        
+
         if item.organization_id != organization_id:
-            raise ValueError(
-                f"Item {item_id} belongs to a different organization"
+            raise ValueError(f"Item {item_id} belongs to a different organization")
+
+    def _build_sales_order_item_payload(
+        self,
+        item_data: dict,
+        sales_order_id: UUID,
+        organization_id: UUID,
+        shipping_address: dict | None = None,
+    ) -> dict:
+        """Build sales order item payload with amount and tax calculation."""
+        qty = Decimal(str(item_data.get("qty", 0)))
+        rate = Decimal(str(item_data.get("rate", 0)))
+        amount = qty * rate
+
+        item_payload = {
+            "organization_id": organization_id,
+            "sales_order_id": sales_order_id,
+            "item_id": item_data["item_id"],
+            "qty": qty,
+            "uom": item_data.get("uom", "Nos"),
+            "rate": rate,
+            "amount": amount,
+            "billed_qty": Decimal("0"),
+            "delivered_qty": Decimal("0"),
+            "sort_order": item_data.get("sort_order", 0),
+            "tax_template_id": None,
+            "tax_rate": Decimal("0"),
+            "tax_amount": Decimal("0"),
+            "total_amount": amount,
+        }
+
+        # Calculate tax using applicable template
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.id == item_data["item_id"],
+                Item.organization_id == organization_id,
+            )
+            .first()
+        )
+
+        if item:
+            tax_result = self.tax_engine.calculate_taxes(
+                [
+                    LineItem(
+                        item_id=item.id,
+                        qty=qty,
+                        rate=rate,
+                        amount=amount,
+                        is_tax_exempt=False,
+                        item_group_id=item.item_group_id,
+                    )
+                ],
+                TaxContext(
+                    organization_id=organization_id,
+                    transaction_type="Sales",
+                    item_id=item.id,
+                    item_group_id=item.item_group_id,
+                    shipping_address=shipping_address,
+                    customer_location=shipping_address,
+                ),
             )
 
+            if tax_result.total_tax > 0 and tax_result.tax_breakdown:
+                first_entry = tax_result.tax_breakdown[0]
+                item_payload["tax_template_id"] = first_entry.tax_template_id
+                item_payload["tax_amount"] = tax_result.total_tax
+                item_payload["tax_rate"] = (
+                    (tax_result.total_tax / amount * 100) if amount else Decimal("0")
+                )
+                item_payload["total_amount"] = amount + tax_result.total_tax
+
+        # Allow override from request (e.g. explicit tax_template_id)
+        if item_data.get("tax_template_id"):
+            item_payload["tax_template_id"] = item_data["tax_template_id"]
+        if "tax_rate" in item_data and item_data["tax_rate"] is not None:
+            item_payload["tax_rate"] = Decimal(str(item_data["tax_rate"]))
+        if "tax_amount" in item_data and item_data["tax_amount"] is not None:
+            item_payload["tax_amount"] = Decimal(str(item_data["tax_amount"]))
+        if "total_amount" in item_data and item_data["total_amount"] is not None:
+            item_payload["total_amount"] = Decimal(str(item_data["total_amount"]))
+
+        # Keep existing billed_qty and delivered_qty if provided
+        if "billed_qty" in item_data and item_data["billed_qty"] is not None:
+            item_payload["billed_qty"] = Decimal(str(item_data["billed_qty"]))
+        if "delivered_qty" in item_data and item_data["delivered_qty"] is not None:
+            item_payload["delivered_qty"] = Decimal(str(item_data["delivered_qty"]))
+
+        return item_payload
 
     def _calculate_grand_total(self, items: list[dict]) -> Decimal:
-        """Calculate grand total from line items"""
+        """Calculate grand total from line items including tax amounts"""
         total = Decimal("0")
         for item in items:
-            qty = Decimal(str(item.get("qty", 0)))
-            rate = Decimal(str(item.get("rate", 0)))
-            total += qty * rate
+            if "total_amount" in item:
+                total += Decimal(str(item.get("total_amount", 0)))
+            else:
+                qty = Decimal(str(item.get("qty", 0)))
+                rate = Decimal(str(item.get("rate", 0)))
+                amount = qty * rate
+                tax_amount = Decimal(str(item.get("tax_amount", 0)))
+                total += amount + tax_amount
         return total
+
+    def _get_item_details(self, item: SalesOrderItem, organization_id: UUID) -> dict:
+        """Get comprehensive item details including stock levels, item group, and tax info."""
+        if not item.item:
+            return {
+                "item_code": None,
+                "item_name": None,
+                "uom": item.uom,
+                "min_order_qty": 1,
+                "max_order_qty": None,
+                "standard_rate": "0.00",
+                "stock_levels": {
+                    "quantity_on_hand": 0,
+                    "quantity_reserved": 0,
+                    "quantity_available": 0,
+                },
+                "item_group": None,
+                "tax_info": None,
+            }
+
+        # Get stock levels
+        stock_agg = self.stock_level_repo.get_aggregated_by_products(
+            product_ids=[item.item.id],
+            organization_id=organization_id,
+        )
+        stock = stock_agg.get(
+            item.item.id,
+            {"quantity_on_hand": 0, "quantity_reserved": 0, "quantity_available": 0},
+        )
+
+        # Build item group data
+        item_group = None
+        if item.item.item_group:
+            item_group = {
+                "id": item.item.item_group.id,
+                "name": item.item.item_group.name,
+                "code": item.item.item_group.code,
+            }
+
+        # Build tax info from the applied tax template
+        tax_info = None
+        if item.tax_template_id:
+            tax_result = self.tax_template_repo.get_applicable_template(
+                organization_id=organization_id,
+                transaction_type="Sales",
+                item_id=item.item.id,
+                item_group_id=item.item.item_group_id,
+            )
+            if tax_result:
+                template, _ = tax_result
+                breakup = [
+                    {
+                        "rule_name": rule.rule_name,
+                        "tax_type": rule.tax_type,
+                        "rate": float(rule.tax_rate or 0),
+                        "is_compound": bool(rule.is_compound),
+                    }
+                    for rule in (template.tax_rules or [])
+                ]
+                is_compound = any(r.get("is_compound", False) for r in breakup)
+                tax_info = {
+                    "id": template.id,
+                    "template_name": template.template_name,
+                    "template_code": template.template_code,
+                    "is_compound": is_compound,
+                    "breakup": breakup,
+                }
+
+        return {
+            "item_code": item.item.item_code,
+            "item_name": item.item.item_name,
+            "uom": item.item.uom or "Nos",
+            "min_order_qty": item.item.min_order_qty or 1,
+            "max_order_qty": item.item.max_order_qty,
+            "standard_rate": str(item.item.standard_rate or "0.00"),
+            "stock_levels": stock,
+            "item_group": item_group,
+            "tax_info": tax_info,
+        }
 
     def _to_response(self, sales_order) -> dict:
         """Convert sales order to response dict with pending quantities"""
@@ -797,9 +996,14 @@ class SalesOrderService:
                     "pending_billing_qty": item.qty - item.billed_qty,
                     "pending_delivery_qty": item.qty - item.delivered_qty,
                     "sort_order": item.sort_order,
+                    "tax_template_id": item.tax_template_id,
+                    "tax_rate": item.tax_rate,
+                    "tax_amount": item.tax_amount,
+                    "total_amount": item.total_amount,
                     "created_at": item.created_at,
                     "updated_at": item.updated_at,
                     "extra_data": item.extra_data,
+                    **self._get_item_details(item, sales_order.organization_id),
                 }
                 for item in sales_order.items
             ],

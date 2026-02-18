@@ -9,6 +9,33 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+class SalesOrderItemStockLevels(BaseModel):
+    quantity_on_hand: int = 0
+    quantity_reserved: int = 0
+    quantity_available: int = 0
+
+
+class SalesOrderItemGroup(BaseModel):
+    id: UUID
+    name: str
+    code: str
+
+
+class SalesOrderTaxBreakupItem(BaseModel):
+    rule_name: str
+    tax_type: str
+    rate: float
+    is_compound: bool
+
+
+class SalesOrderTaxInfo(BaseModel):
+    id: UUID
+    template_name: str
+    template_code: str
+    is_compound: bool
+    breakup: list[SalesOrderTaxBreakupItem]
+
+
 class SalesOrderItemBase(BaseModel):
     item_id: UUID
     qty: Decimal | float = Field(..., gt=0)
@@ -16,16 +43,35 @@ class SalesOrderItemBase(BaseModel):
     rate: Decimal | float = Field(..., ge=0)
     amount: Decimal | float = Field(..., ge=0)
     sort_order: int = 0
+    # Tax fields (optional on create - auto-calculated from item's tax template)
+    tax_template_id: UUID | None = None
+    tax_rate: Decimal | float = Field(
+        default=0, ge=0, description="Tax % at order time"
+    )
+    tax_amount: Decimal | float = Field(
+        default=0, ge=0, description="Tax currency value"
+    )
+    total_amount: Decimal | float = Field(
+        default=0, ge=0, description="amount + tax_amount"
+    )
 
 
 class SalesOrderItemCreate(SalesOrderItemBase):
-    pass
+    """tax_template_id optional - tax calculated from item's applicable template if omitted"""
 
 
 class SalesOrderItemResponse(SalesOrderItemBase):
     id: UUID
     organization_id: UUID
     sales_order_id: UUID
+    item_code: str | None = None
+    item_name: str | None = None
+    min_order_qty: int = 1
+    max_order_qty: int | None = None
+    standard_rate: str = "0.00"
+    stock_levels: SalesOrderItemStockLevels
+    item_group: SalesOrderItemGroup | None = None
+    tax_info: SalesOrderTaxInfo | None = None
     billed_qty: Decimal | float = 0
     delivered_qty: Decimal | float = 0
     pending_billing_qty: Decimal | float = 0
@@ -126,4 +172,7 @@ class ConvertToDeliveryNoteResponse(BaseModel):
 
 
 class SalesOrderStatusUpdate(BaseModel):
-    status: str = Field(..., pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$")
+    status: str = Field(
+        ...,
+        pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
+    )

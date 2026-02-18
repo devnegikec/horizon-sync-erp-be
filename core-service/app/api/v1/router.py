@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     item_groups,
     item_prices,
     items,
+    items_picker,
     journal_entries,
     landed_cost,
     material_requests,
@@ -41,6 +42,8 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 # Include endpoint routers
+# Item picker MUST be before items router so /items/picker matches before /items/{item_id}
+api_router.include_router(items_picker.router, prefix="/items/picker", tags=["Items"])
 api_router.include_router(items.router, prefix="/items", tags=["Items"])
 api_router.include_router(
     item_groups.router, prefix="/item-groups", tags=["Item Groups"]
@@ -116,9 +119,7 @@ api_router.include_router(
     journal_entries.router, prefix="/journal-entries", tags=["Journal Entries"]
 )
 # Quotation and Sales Order
-api_router.include_router(
-    quotations.router, prefix="/quotations", tags=["Quotations"]
-)
+api_router.include_router(quotations.router, prefix="/quotations", tags=["Quotations"])
 api_router.include_router(
     sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
 )

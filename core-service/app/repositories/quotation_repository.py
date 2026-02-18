@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.models.quotation import Quotation
+from app.models.item import Item
+from app.models.quotation import Quotation, QuotationItem
 
 
 class QuotationRepository:
@@ -21,6 +22,11 @@ class QuotationRepository:
     def get_by_id(self, quotation_id: UUID, organization_id: UUID) -> Quotation | None:
         return (
             self.db.query(Quotation)
+            .options(
+                joinedload(Quotation.items)
+                .joinedload(QuotationItem.item)
+                .joinedload(Item.item_group)
+            )
             .filter(
                 Quotation.id == quotation_id,
                 Quotation.organization_id == organization_id,

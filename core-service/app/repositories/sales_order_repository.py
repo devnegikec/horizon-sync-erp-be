@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.models.item import Item
 from app.models.sales_order import SalesOrder, SalesOrderItem
 
 
@@ -36,7 +37,11 @@ class SalesOrderRepository:
     ) -> SalesOrder | None:
         return (
             self.db.query(SalesOrder)
-            .options(joinedload(SalesOrder.items))
+            .options(
+                joinedload(SalesOrder.items)
+                .joinedload(SalesOrderItem.item)
+                .joinedload(Item.item_group)
+            )
             .filter(
                 SalesOrder.id == sales_order_id,
                 SalesOrder.organization_id == organization_id,

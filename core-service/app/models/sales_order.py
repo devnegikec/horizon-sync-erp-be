@@ -13,12 +13,11 @@ from sqlalchemy import (
     String,
     Text,
 )
-from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import SalesOrderStatus
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class SalesOrder(Base):
@@ -88,6 +87,15 @@ class SalesOrderItem(Base):
     billed_qty = Column(Numeric(15, 3), default=0, nullable=False)
     delivered_qty = Column(Numeric(15, 3), default=0, nullable=False)
     sort_order = Column(Integer, default=0)
+    # Tax columns
+    tax_template_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("tax_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tax_rate = Column(Numeric(5, 2), default=0)
+    tax_amount = Column(Numeric(15, 2), default=0)
+    total_amount = Column(Numeric(15, 2), default=0)  # amount + tax_amount
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
