@@ -824,3 +824,356 @@ async def get_account_audit_trail(
         has_next=page < total_pages,
         has_prev=page > 1,
     )
+
+
+# Reporting and Export endpoints
+
+@router.get(
+    "/report/chart",
+    response_model=dict,
+    summary="Generate Chart of Accounts report",
+    description="Generate a comprehensive Chart of Accounts report with balances",
+)
+async def generate_chart_of_accounts_report(
+    account_type: str | None = Query(None, description="Filter by account type"),
+    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
+    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate Chart of Accounts report.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_type**: Filter by account type (asset, liability, equity, income, expense) - optional
+    - **status**: Filter by status (active, inactive, archived) - optional
+    - **as_of_date**: Date to calculate balances as of (YYYY-MM-DD) - optional, defaults to today
+
+    **Returns:** Report data with all accounts, their details, and current balances
+    """
+    from datetime import date
+    from fastapi import HTTPException
+    from app.models.base import AccountType, AccountStatus
+    from app.services.report_service import ReportService
+    
+    # Parse account type
+    type_enum = None
+    if account_type:
+        try:
+            type_enum = AccountType(account_type.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+            )
+    
+    # Parse status
+    status_enum = None
+    if status:
+        try:
+            status_enum = AccountStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: active, inactive, archived"
+            )
+    
+    # Parse date
+    balance_date = None
+    if as_of_date:
+        try:
+            balance_date = date.fromisoformat(as_of_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Generate report
+    report_service = ReportService(db)
+    report = report_service.generate_chart_of_accounts_report(
+        organization_id=current_user.organization_id,
+        account_type=type_enum,
+        status=status_enum,
+        as_of_date=balance_date,
+    )
+    
+    return report
+
+
+@router.get(
+    "/report/hierarchical",
+    response_model=dict,
+    summary="Generate hierarchical report",
+    description="Generate a hierarchical report showing accounts in tree structure",
+)
+async def generate_hierarchical_report(
+    account_type: str | None = Query(None, description="Filter by account type"),
+    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
+    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate hierarchical report.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_type**: Filter by account type (asset, liability, equity, income, expense) - optional
+    - **status**: Filter by status (active, inactive, archived) - optional
+    - **as_of_date**: Date to calculate balances as of (YYYY-MM-DD) - optional, defaults to today
+
+    **Returns:** Report data with accounts in tree structure showing parent-child relationships
+    """
+    from datetime import date
+    from fastapi import HTTPException
+    from app.models.base import AccountType, AccountStatus
+    from app.services.report_service import ReportService
+    
+    # Parse account type
+    type_enum = None
+    if account_type:
+        try:
+            type_enum = AccountType(account_type.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+            )
+    
+    # Parse status
+    status_enum = None
+    if status:
+        try:
+            status_enum = AccountStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: active, inactive, archived"
+            )
+    
+    # Parse date
+    balance_date = None
+    if as_of_date:
+        try:
+            balance_date = date.fromisoformat(as_of_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Generate report
+    report_service = ReportService(db)
+    report = report_service.generate_hierarchical_report(
+        organization_id=current_user.organization_id,
+        account_type=type_enum,
+        status=status_enum,
+        as_of_date=balance_date,
+    )
+    
+    return report
+
+
+@router.get(
+    "/report/trial-balance",
+    response_model=dict,
+    summary="Generate trial balance report",
+    description="Generate a trial balance report showing posting accounts with debit/credit balances",
+)
+async def generate_trial_balance_report(
+    account_type: str | None = Query(None, description="Filter by account type"),
+    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate trial balance report.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_type**: Filter by account type (asset, liability, equity, income, expense) - optional
+    - **as_of_date**: Date to calculate balances as of (YYYY-MM-DD) - optional, defaults to today
+
+    **Returns:** Trial balance report with posting accounts and their debit/credit balances.
+              The report includes total debits, total credits, and balance verification.
+    """
+    from datetime import date
+    from fastapi import HTTPException
+    from app.models.base import AccountType
+    from app.services.report_service import ReportService
+    
+    # Parse account type
+    type_enum = None
+    if account_type:
+        try:
+            type_enum = AccountType(account_type.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+            )
+    
+    # Parse date
+    balance_date = None
+    if as_of_date:
+        try:
+            balance_date = date.fromisoformat(as_of_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Generate report
+    report_service = ReportService(db)
+    report = report_service.generate_trial_balance(
+        organization_id=current_user.organization_id,
+        account_type=type_enum,
+        as_of_date=balance_date,
+    )
+    
+    return report
+
+
+@router.get(
+    "/export",
+    summary="Export Chart of Accounts",
+    description="Export Chart of Accounts data in various formats (CSV, JSON, XLSX, PDF)",
+)
+async def export_chart_of_accounts(
+    format: str = Query(..., description="Export format: csv, json, xlsx, or pdf"),
+    account_type: str | None = Query(None, description="Filter by account type"),
+    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
+    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Export Chart of Accounts data.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **format**: Export format - csv, json, xlsx, or pdf (required)
+    - **account_type**: Filter by account type (asset, liability, equity, income, expense) - optional
+    - **status**: Filter by status (active, inactive, archived) - optional
+    - **as_of_date**: Date to calculate balances as of (YYYY-MM-DD) - optional, defaults to today
+
+    **Returns:** File download with appropriate content-type header
+    """
+    from datetime import date
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+    from app.models.base import AccountType, AccountStatus
+    from app.services.report_service import ReportService
+    from app.services.export_service import ExportService
+    
+    # Validate format
+    valid_formats = ["csv", "json", "xlsx", "pdf"]
+    if format.lower() not in valid_formats:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid format. Must be one of: {', '.join(valid_formats)}"
+        )
+    
+    # Parse account type
+    type_enum = None
+    if account_type:
+        try:
+            type_enum = AccountType(account_type.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+            )
+    
+    # Parse status
+    status_enum = None
+    if status:
+        try:
+            status_enum = AccountStatus(status.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: active, inactive, archived"
+            )
+    
+    # Parse date
+    balance_date = None
+    if as_of_date:
+        try:
+            balance_date = date.fromisoformat(as_of_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+    
+    # Initialize services
+    report_service = ReportService(db)
+    export_service = ExportService(report_service)
+    
+    # Generate export based on format
+    format_lower = format.lower()
+    
+    try:
+        if format_lower == "csv":
+            data = export_service.export_to_csv(
+                organization_id=current_user.organization_id,
+                account_type=type_enum,
+                status=status_enum,
+                as_of_date=balance_date,
+            )
+            media_type = "text/csv"
+            filename = f"chart_of_accounts_{date.today().isoformat()}.csv"
+        
+        elif format_lower == "json":
+            data = export_service.export_to_json(
+                organization_id=current_user.organization_id,
+                account_type=type_enum,
+                status=status_enum,
+                as_of_date=balance_date,
+            )
+            media_type = "application/json"
+            filename = f"chart_of_accounts_{date.today().isoformat()}.json"
+        
+        elif format_lower == "xlsx":
+            data = export_service.export_to_xlsx(
+                organization_id=current_user.organization_id,
+                account_type=type_enum,
+                status=status_enum,
+                as_of_date=balance_date,
+            )
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = f"chart_of_accounts_{date.today().isoformat()}.xlsx"
+        
+        elif format_lower == "pdf":
+            data = export_service.export_to_pdf(
+                organization_id=current_user.organization_id,
+                account_type=type_enum,
+                status=status_enum,
+                as_of_date=balance_date,
+            )
+            media_type = "application/pdf"
+            filename = f"chart_of_accounts_{date.today().isoformat()}.pdf"
+        
+        # Return file download response
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    
+    except Exception as e:
+        logger.error(f"Export failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Export failed: {str(e)}"
+        )
