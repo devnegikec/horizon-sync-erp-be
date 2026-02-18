@@ -26,8 +26,8 @@ class TestCreateItem:
 
         assert response.status_code == 400  # Validation error
         data = response.json()
-        assert data["error"] == "VALIDATION_ERROR"
-        assert "details" in data  # FastAPI returns validation errors in 'details'
+        assert data["detail"]["code"] == "VALIDATION_ERROR"
+        assert "detail" in data  # FastAPI returns validation errors in 'detail'
 
     def test_create_item_duplicate_code(self, client, test_item_data):
         """Test creating an item with duplicate code fails"""
@@ -38,7 +38,7 @@ class TestCreateItem:
         # Try to create duplicate
         response2 = client.post("/api/v1/items", json=test_item_data)
         assert response2.status_code == 409
-        assert response2.json()["error"] == "DUPLICATE_ITEM_CODE"
+        assert response2.json()["detail"]["code"] == "DUPLICATE_ITEM_CODE"
 
 
 class TestListItems:
@@ -100,7 +100,7 @@ class TestGetItem:
         response = client.get(f"/api/v1/items/{fake_id}")
 
         assert response.status_code == 404
-        assert response.json()["error"] == "ITEM_NOT_FOUND"
+        assert response.json()["detail"]["code"] == "ITEM_NOT_FOUND"
 
 
 class TestUpdateItem:

@@ -13,7 +13,7 @@ os.environ.setdefault("DB_MAX_OVERFLOW", "10")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -39,6 +39,7 @@ def db_session():
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
+        db.execute(text("PRAGMA foreign_keys = OFF"))
         yield db
     finally:
         db.close()
@@ -158,3 +159,80 @@ def sample_item_id(db_session, mock_current_user):
 def sample_account_head_id():
     """Sample account head ID for testing"""
     return uuid.uuid4()
+def auth_headers():
+    """Return headers with Authorization for testing"""
+    return {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture
+def sample_organization(mock_current_user):
+    """Create a sample organization for testing"""
+    # Return a simple object with an id attribute
+    class Organization:
+        def __init__(self, id):
+            self.id = id
+    
+    return Organization(id=mock_current_user.organization_id)
+
+
+@pytest.fixture
+def sample_account(db_session, mock_current_user):
+    """Create a sample account for testing"""
+    from app.models.chart_of_account import Account
+    from app.models.base import AccountType, AccountStatus
+    
+    account = Account(
+        account_code="1000-01",
+        account_name="Test Asset Account",
+        account_type=AccountType.ASSET,
+        currency="USD",
+        status=AccountStatus.ACTIVE,
+        is_posting_account=True,
+        organization_id=mock_current_user.organization_id,
+        created_by=str(mock_current_user.id),
+        updated_by=str(mock_current_user.id),
+    )
+    db_session.add(account)
+    db_session.commit()
+    db_session.refresh(account)
+    return account
+
+
+@pytest.fixture
+def sample_parent_account(db_session, mock_current_user):
+    """Create a sample parent account with children for testing"""
+    from app.models.chart_of_account import Account
+    from app.models.base import AccountType, AccountStatus
+    
+    # Create parent account
+    parent = Account(
+        account_code="1000-00",
+        account_name="Parent Asset Account",
+        account_type=AccountType.ASSET,
+        currency="USD",
+        status=AccountStatus.ACTIVE,
+        is_posting_account=False,  # Parent accounts cannot be posting accounts
+        organization_id=mock_current_user.organization_id,
+        created_by=str(mock_current_user.id),
+        updated_by=str(mock_current_user.id),
+    )
+    db_session.add(parent)
+    db_session.flush()
+    
+    # Create child account
+    child = Account(
+        account_code="1000-01-CHILD",
+        account_name="Child Asset Account",
+        account_type=AccountType.ASSET,
+        currency="USD",
+        status=AccountStatus.ACTIVE,
+        is_posting_account=True,
+        parent_account_id=parent.id,
+        organization_id=mock_current_user.organization_id,
+        created_by=str(mock_current_user.id),
+        updated_by=str(mock_current_user.id),
+    )
+    db_session.add(child)
+    db_session.commit()
+    db_session.refresh(parent)
+    return parent

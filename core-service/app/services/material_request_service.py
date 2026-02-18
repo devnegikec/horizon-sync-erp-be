@@ -5,8 +5,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationException
+from app.core.transaction import transactional
 from app.models.base import MaterialRequestStatus
 from app.repositories.material_request_repository import MaterialRequestRepository
+from app.services.state_machine import StateMachine
+from app.services.status_transition_service import StatusTransitionService
 
 
 class MaterialRequestService:
@@ -15,7 +18,9 @@ class MaterialRequestService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = MaterialRequestRepository(db)
+        self.status_transition_service = StatusTransitionService(db)
 
+    @transactional
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         """
         Create a new Material Request with DRAFT status.
@@ -102,6 +107,7 @@ class MaterialRequestService:
 
         return [self._to_list_item(x) for x in items], pagination
 
+    @transactional
     def update(
         self,
         material_request_id: UUID,
@@ -176,6 +182,7 @@ class MaterialRequestService:
 
         self.repo.delete(mr)
 
+    @transactional
     def submit(
         self, material_request_id: UUID, organization_id: UUID, user_id: UUID
     ) -> dict:
@@ -189,11 +196,15 @@ class MaterialRequestService:
                 f"Material Request {material_request_id} not found"
             )
 
-        # Validate current status
-        if mr.status != MaterialRequestStatus.DRAFT:
-            raise ValidationException(
-                f"Cannot submit Material Request in {mr.status.value} status. Only DRAFT can be submitted."
-            )
+        # Store previous status for logging
+        previous_status = mr.status
+
+        # Validate state transition using state machine
+        state_machine = StateMachine("MATERIAL_REQUEST")
+        try:
+            state_machine.validate_transition(previous_status.value, "submitted")
+        except ValueError as e:
+            raise ValidationException(str(e))
 
         # Validate line items exist
         if not mr.line_items:
@@ -209,14 +220,26 @@ class MaterialRequestService:
                 )
 
         # Update status
+        new_status = MaterialRequestStatus.SUBMITTED
         update_data = {
-            "status": MaterialRequestStatus.SUBMITTED,
+            "status": new_status,
             "updated_by": user_id,
         }
         self.repo.update(mr, update_data)
         self.db.refresh(mr)
+
+        # Log status transition
+        self.status_transition_service.log_transition(
+            entity_type="MATERIAL_REQUEST",
+            entity_id=material_request_id,
+            previous_status=previous_status.value,
+            new_status=new_status.value,
+            user_id=user_id,
+        )
+
         return self._to_response(mr)
 
+    @transactional
     def cancel(
         self, material_request_id: UUID, organization_id: UUID, user_id: UUID
     ) -> dict:
@@ -230,22 +253,34 @@ class MaterialRequestService:
                 f"Material Request {material_request_id} not found"
             )
 
-        # Validate current status - can cancel from DRAFT or SUBMITTED
-        if mr.status not in [
-            MaterialRequestStatus.DRAFT,
-            MaterialRequestStatus.SUBMITTED,
-        ]:
-            raise ValidationException(
-                f"Cannot cancel Material Request in {mr.status.value} status"
-            )
+        # Store previous status for logging
+        previous_status = mr.status
+
+        # Validate state transition using state machine
+        state_machine = StateMachine("MATERIAL_REQUEST")
+        try:
+            state_machine.validate_transition(previous_status.value, "cancelled")
+        except ValueError as e:
+            raise ValidationException(str(e))
 
         # Update status
+        new_status = MaterialRequestStatus.CANCELLED
         update_data = {
-            "status": MaterialRequestStatus.CANCELLED,
+            "status": new_status,
             "updated_by": user_id,
         }
         self.repo.update(mr, update_data)
         self.db.refresh(mr)
+
+        # Log status transition
+        self.status_transition_service.log_transition(
+            entity_type="MATERIAL_REQUEST",
+            entity_id=material_request_id,
+            previous_status=previous_status.value,
+            new_status=new_status.value,
+            user_id=user_id,
+        )
+
         return self._to_response(mr)
 
     @staticmethod

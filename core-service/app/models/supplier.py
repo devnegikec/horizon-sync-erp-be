@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Enum, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from app.models.types import UUID
 
 from app.database import Base
 from app.models.base import SupplierStatus

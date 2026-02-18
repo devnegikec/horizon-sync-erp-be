@@ -202,6 +202,18 @@ class DuplicateAccountCodeException(CoreServiceException):
     pass
 
 
+class CurrencyNotFoundException(CoreServiceException):
+    """Raised when a currency is not found or not supported"""
+
+    pass
+
+
+class ExchangeRateNotFoundException(CoreServiceException):
+    """Raised when an exchange rate is not found for a currency pair and date"""
+
+    pass
+
+
 # ===========================================
 # GENERAL EXCEPTIONS
 # ===========================================
@@ -220,9 +232,19 @@ class AuthorizationError(CoreServiceException):
 
 
 class ValidationError(CoreServiceException):
-    """Raised when validation fails"""
-
-    pass
+    """Raised when validation fails (HTTP 400)
+    
+    Attributes:
+        message: Human-readable error message
+        details: List of validation errors with field and reason
+    """
+    
+    def __init__(self, message: str, details: list[dict[str, str]] = None):
+        super().__init__(message)
+        self.message = message
+        self.details = details or []
+        self.status_code = 400
+        self.error_code = "VALIDATION_ERROR"
 
 
 class ValidationException(CoreServiceException):
@@ -247,3 +269,63 @@ class ResourceNotFoundException(CoreServiceException):
     """Raised when a resource (e.g. quality template, inspection) is not found"""
 
     pass
+
+
+# ===========================================
+# SOURCING FLOW ERROR HANDLERS
+# ===========================================
+
+
+class NotFoundError(CoreServiceException):
+    """Raised when a referenced entity is not found (HTTP 404)
+    
+    Attributes:
+        message: Human-readable error message
+        entity_type: Type of entity that was not found
+        entity_id: ID of the entity that was not found
+    """
+    
+    def __init__(self, message: str, entity_type: str, entity_id: str):
+        super().__init__(message)
+        self.message = message
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.status_code = 404
+        self.error_code = "NOT_FOUND"
+
+
+class StateError(CoreServiceException):
+    """Raised when an operation conflicts with current state (HTTP 409)
+    
+    Attributes:
+        message: Human-readable error message
+        current_state: Current state of the entity
+        required_state: List of valid states for the operation
+    """
+    
+    def __init__(self, message: str, current_state: str, required_state: list[str]):
+        super().__init__(message)
+        self.message = message
+        self.current_state = current_state
+        self.required_state = required_state
+        self.status_code = 409
+        self.error_code = "STATE_CONFLICT"
+
+
+class IntegrationError(CoreServiceException):
+    """Raised when external API calls fail (HTTP 502/503)
+    
+    Attributes:
+        message: Human-readable error message
+        service: Name of the external service that failed
+        details: Optional additional details about the failure
+        status_code: HTTP status code (502 or 503)
+    """
+    
+    def __init__(self, message: str, service: str, details: str = None, status_code: int = 502):
+        super().__init__(message)
+        self.message = message
+        self.service = service
+        self.details = details
+        self.status_code = status_code if status_code in [502, 503] else 502
+        self.error_code = "INTEGRATION_ERROR"

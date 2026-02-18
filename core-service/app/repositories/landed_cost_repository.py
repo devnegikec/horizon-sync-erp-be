@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.base import DocumentStatus
 from app.models.landed_cost import LandedCostVoucher
 
 
@@ -55,7 +56,7 @@ class LandedCostRepository:
             LandedCostVoucher.organization_id == organization_id
         )
         if status is not None:
-            q = q.filter(LandedCostVoucher.status == status)
+            q = q.filter(LandedCostVoucher.status == DocumentStatus(status))
         total = q.count()
         col = getattr(LandedCostVoucher, sort_by, LandedCostVoucher.created_at)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())

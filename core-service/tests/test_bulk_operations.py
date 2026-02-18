@@ -152,9 +152,9 @@ class TestFileGenerator:
 class TestBulkImportRepository:
     """Test bulk import repository"""
 
-    def test_create_job(self, db: Session):
+    def test_create_job(self, db_session: Session):
         """Test creating import job"""
-        repo = BulkImportRepository(db)
+        repo = BulkImportRepository(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -169,9 +169,9 @@ class TestBulkImportRepository:
         assert job.organization_id == org_id
         assert job.status == BulkImportJobStatus.PENDING
 
-    def test_get_job_by_id(self, db: Session):
+    def test_get_job_by_id(self, db_session: Session):
         """Test getting job by ID"""
-        repo = BulkImportRepository(db)
+        repo = BulkImportRepository(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -186,9 +186,9 @@ class TestBulkImportRepository:
         assert retrieved is not None
         assert retrieved.id == job.id
 
-    def test_update_job_status(self, db: Session):
+    def test_update_job_status(self, db_session: Session):
         """Test updating job status"""
-        repo = BulkImportRepository(db)
+        repo = BulkImportRepository(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -209,9 +209,9 @@ class TestBulkImportRepository:
 class TestBulkExportRepository:
     """Test bulk export repository"""
 
-    def test_create_job(self, db: Session):
+    def test_create_job(self, db_session: Session):
         """Test creating export job"""
-        repo = BulkExportRepository(db)
+        repo = BulkExportRepository(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -233,9 +233,9 @@ class TestBulkImportService:
     """Test bulk import service"""
 
     @pytest.mark.asyncio
-    async def test_create_import_job(self, db: Session):
+    async def test_create_import_job(self, db_session: Session):
         """Test creating import job via service"""
-        service = BulkImportService(db)
+        service = BulkImportService(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -250,9 +250,9 @@ class TestBulkImportService:
         assert job.status == BulkImportJobStatus.PENDING
 
     @pytest.mark.asyncio
-    async def test_process_import_valid_csv(self, db: Session):
+    async def test_process_import_valid_csv(self, db_session: Session):
         """Test processing valid CSV import"""
-        service = BulkImportService(db)
+        service = BulkImportService(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -280,7 +280,7 @@ class TestBulkImportService:
         assert result["failed_rows"] == 0
 
         # Verify items were created
-        items = db.query(Item).filter(Item.organization_id == org_id).all()
+        items = db_session.query(Item).filter(Item.organization_id == org_id).all()
         assert len(items) == 2
 
 
@@ -288,9 +288,9 @@ class TestBulkExportService:
     """Test bulk export service"""
 
     @pytest.mark.asyncio
-    async def test_create_export_job(self, db: Session):
+    async def test_create_export_job(self, db_session: Session):
         """Test creating export job via service"""
-        service = BulkExportService(db)
+        service = BulkExportService(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -305,9 +305,9 @@ class TestBulkExportService:
         assert job.file_format == "csv"
 
     @pytest.mark.asyncio
-    async def test_process_export_csv(self, db: Session):
+    async def test_process_export_csv(self, db_session: Session):
         """Test processing export to CSV"""
-        service = BulkExportService(db)
+        service = BulkExportService(db_session)
         org_id = uuid4()
         user_id = uuid4()
 
@@ -318,8 +318,8 @@ class TestBulkExportService:
                 item_code=f"ITEM{i+1:03d}",
                 item_name=f"Test Item {i+1}",
             )
-            db.add(item)
-        db.commit()
+            db_session.add(item)
+        db_session.commit()
 
         # Create export job
         job = await service.create_export_job(

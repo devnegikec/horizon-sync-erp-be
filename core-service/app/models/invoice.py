@@ -11,7 +11,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from app.models.types import UUID
 
 from app.database import Base
 from app.models.base import InvoiceStatus, InvoiceType

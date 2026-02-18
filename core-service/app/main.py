@@ -21,6 +21,7 @@ from app.core.exceptions import (
     CannotDeleteException,
     ChartOfAccountNotFoundException,
     CircularReferenceException,
+    CurrencyNotFoundException,
     CustomerNotFoundException,
     DuplicateAccountCodeException,
     DuplicateBatchNoException,
@@ -34,13 +35,17 @@ from app.core.exceptions import (
     DuplicateStockEntryNoException,
     DuplicateSupplierCodeException,
     DuplicateWarehouseCodeException,
+    ExchangeRateNotFoundException,
+    IntegrationError,
     ItemGroupNotFoundException,
     ItemNotFoundException,
     ItemPriceNotFoundException,
     ItemSupplierNotFoundException,
+    NotFoundError,
     PutAwayRuleNotFoundException,
     ResourceNotFoundException,
     SerialNoNotFoundException,
+    StateError,
     StockEntryItemNotFoundException,
     StockEntryNotFoundException,
     StockLevelNotFoundException,
@@ -332,6 +337,30 @@ async def duplicate_account_code_exception_handler(
     )
 
 
+@app.exception_handler(CurrencyNotFoundException)
+async def currency_not_found_exception_handler(
+    request: Request, exc: CurrencyNotFoundException
+):
+    """Handle currency not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="CURRENCY_NOT_FOUND",
+    )
+
+
+@app.exception_handler(ExchangeRateNotFoundException)
+async def exchange_rate_not_found_exception_handler(
+    request: Request, exc: ExchangeRateNotFoundException
+):
+    """Handle exchange rate not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="EXCHANGE_RATE_NOT_FOUND",
+    )
+
+
 # ----- Phase 2: Item-Related exception handlers -----
 
 
@@ -531,11 +560,98 @@ async def validation_exception_handler_custom(
 
 @app.exception_handler(ValidationError)
 async def custom_validation_exception_handler(request: Request, exc: ValidationError):
-    """Handle custom validation errors"""
-    return create_error_response(
+    """Handle custom validation errors with structured details"""
+    # Log validation errors for debugging
+    logger.warning(
+        f"Validation error on {request.method} {request.url.path}: {exc.message}",
+        extra={"details": exc.details, "path": request.url.path, "method": request.method}
+    )
+    
+    # Format validation errors with field and reason as per Requirement 10.4
+    return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        message=str(exc),
-        code="VALIDATION_FAILED",
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "details": exc.details,  # List of {field, reason} dicts
+        },
+    )
+
+
+@app.exception_handler(NotFoundError)
+async def not_found_error_handler(request: Request, exc: NotFoundError):
+    """Handle not found errors with entity information"""
+    # Log not found errors for debugging
+    logger.info(
+        f"Entity not found on {request.method} {request.url.path}: {exc.entity_type} with ID {exc.entity_id}",
+        extra={
+            "entity_type": exc.entity_type,
+            "entity_id": exc.entity_id,
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+    
+    # Format not found errors with entity_type and entity_id as per Requirement 10.5
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "entity_type": exc.entity_type,
+            "entity_id": exc.entity_id,
+        },
+    )
+
+
+@app.exception_handler(StateError)
+async def state_error_handler(request: Request, exc: StateError):
+    """Handle state conflict errors"""
+    # Log state errors for debugging
+    logger.warning(
+        f"State conflict on {request.method} {request.url.path}: {exc.message}",
+        extra={
+            "current_state": exc.current_state,
+            "required_state": exc.required_state,
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "current_state": exc.current_state,
+            "required_state": exc.required_state,
+        },
+    )
+
+
+@app.exception_handler(IntegrationError)
+async def integration_error_handler(request: Request, exc: IntegrationError):
+    """Handle integration errors with external services"""
+    # Log integration errors for debugging
+    logger.error(
+        f"Integration error on {request.method} {request.url.path}: {exc.service} - {exc.message}",
+        extra={
+            "service": exc.service,
+            "details": exc.details,
+            "status_code": exc.status_code,
+            "path": request.url.path,
+            "method": request.method
+        }
+    )
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "service": exc.service,
+            "details": exc.details,
+        },
     )
 
 

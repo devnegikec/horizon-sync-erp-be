@@ -143,7 +143,16 @@ class AccountType(str, enum.Enum):
     LIABILITY = "liability"
     EQUITY = "equity"
     INCOME = "income"
+    REVENUE = "income"
     EXPENSE = "expense"
+
+
+class AccountStatus(str, enum.Enum):
+    """Account status enumeration"""
+
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    ARCHIVED = "archived"
 
 
 class InvoiceType(str, enum.Enum):

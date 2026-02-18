@@ -1,5 +1,6 @@
 """Chart of Account service with business logic"""
 
+import re
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -11,9 +12,9 @@ from app.core.exceptions import (
     DuplicateAccountCodeException,
     ValidationError,
 )
-from app.models.base import AccountType
-from app.models.chart_of_account import ChartOfAccount
-from app.repositories.chart_of_account_repository import ChartOfAccountRepository
+from app.models.base import AccountStatus, AccountType
+from app.models.chart_of_account import Account
+from app.repositories.chart_of_account_repository import AccountRepository
 from app.schemas.chart_of_account import (
     ChartOfAccountCreate,
     ChartOfAccountTreeNode,
@@ -24,16 +25,106 @@ from app.schemas.chart_of_account import (
 class ChartOfAccountService:
     """Service for chart of account operations"""
 
-    def __init__(self, db: Session):
+    # Default account code format pattern (can be overridden via configuration)
+    DEFAULT_ACCOUNT_CODE_PATTERN = r"^[A-Za-z0-9\-]+$"
+
+    def __init__(self, db: Session, account_code_pattern: str | None = None):
         self.db = db
-        self.repo = ChartOfAccountRepository(db)
+        self.repo = AccountRepository(db)
+        self.account_code_pattern = account_code_pattern or self.DEFAULT_ACCOUNT_CODE_PATTERN
+        
+        # Import CurrencyService for currency validation
+        from app.services.currency_service import CurrencyService
+        self.currency_service = CurrencyService(db)
+        
+        # Import AuditLogger for audit trail
+        from app.services.audit_logger import AuditLogger
+        self.audit_logger = AuditLogger(db)
+
+    def _validate_required_fields(self, account_code: str, account_name: str, account_type: str | None) -> None:
+        """
+        Validate required fields for account creation.
+
+        Args:
+            account_code: Account code to validate
+            account_name: Account name to validate
+            account_type: Account type to validate
+
+        Raises:
+            ValidationError: If any required field is missing or invalid
+        """
+        errors = []
+
+        if not account_code or not account_code.strip():
+            errors.append("Account code is required and cannot be empty")
+
+        if not account_name or not account_name.strip():
+            errors.append("Account name is required and cannot be empty")
+
+        if not account_type or not account_type.strip():
+            errors.append("Account type is required and cannot be empty")
+
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    def _validate_field_lengths(self, account_code: str, account_name: str) -> None:
+        """
+        Validate field length constraints.
+
+        Args:
+            account_code: Account code to validate (max 50 chars)
+            account_name: Account name to validate (max 200 chars)
+
+        Raises:
+            ValidationError: If field lengths exceed limits
+        """
+        errors = []
+
+        if len(account_code) > 50:
+            errors.append(f"Account code must not exceed 50 characters (got {len(account_code)})")
+
+        if len(account_name) > 200:
+            errors.append(f"Account name must not exceed 200 characters (got {len(account_name)})")
+
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    def _validate_account_code_format(self, account_code: str) -> None:
+        """
+        Validate account code against configured format pattern.
+
+        Args:
+            account_code: Account code to validate
+
+        Raises:
+            ValidationError: If account code doesn't match the configured pattern
+        """
+        if not re.match(self.account_code_pattern, account_code):
+            raise ValidationError(
+                f"Account code '{account_code}' does not match the required format pattern: {self.account_code_pattern}"
+            )
+
+    def _validate_currency(self, currency: str) -> None:
+        """
+        Validate currency code format.
+
+        Args:
+            currency: Currency code to validate (ISO 4217 format)
+
+        Raises:
+            ValidationError: If currency code is invalid
+        """
+        if not currency or len(currency) != 3 or not currency.isupper() or not currency.isalpha():
+            raise ValidationError(
+                f"Invalid currency code '{currency}'. Must be 3 uppercase letters (ISO 4217 format)"
+            )
 
     def create(
         self,
         data: ChartOfAccountCreate,
         organization_id: UUID,
         user_id: UUID,
-    ) -> ChartOfAccount:
+    ) -> Account:
         """
         Create a new chart of account.
 
@@ -43,17 +134,37 @@ class ChartOfAccountService:
             user_id: User UUID creating the account
 
         Returns:
-            Created ChartOfAccount object
+            Created Account object
 
         Raises:
+            ValidationError: If validation fails
             DuplicateAccountCodeException: If account code already exists
             ChartOfAccountNotFoundException: If parent account not found
         """
+        # Validate required fields
+        self._validate_required_fields(
+            data.account_code,
+            data.account_name,
+            data.account_type
+        )
+
+        # Validate field lengths
+        self._validate_field_lengths(data.account_code, data.account_name)
+
+        # Validate account code format
+        self._validate_account_code_format(data.account_code)
+
+        # Validate currency if provided
+        if data.currency:
+            self._validate_currency(data.currency)
+
+        # Check for duplicate account code
         if self.repo.account_code_exists(data.account_code, organization_id):
             raise DuplicateAccountCodeException(
                 f"Account with code '{data.account_code}' already exists"
             )
 
+        # Validate parent account if specified
         if data.parent_account_id:
             parent = self.repo.get_by_id(data.parent_account_id, organization_id)
             if not parent:
@@ -62,9 +173,16 @@ class ChartOfAccountService:
                 )
 
         account_dict = data.model_dump()
+        
+        # Remove fields that don't exist in the Account model
+        fields_to_remove = ['level', 'is_group', 'opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
+        for field in fields_to_remove:
+            account_dict.pop(field, None)
+        
+        # Add organization_id
         account_dict["organization_id"] = organization_id
-        account_dict["created_by"] = user_id
-        account_dict["updated_by"] = user_id
+        account_dict["created_by"] = str(user_id)
+        account_dict["updated_by"] = str(user_id)
 
         if account_dict.get("account_type"):
             try:
@@ -76,14 +194,34 @@ class ChartOfAccountService:
                     "account_type must be one of: asset, liability, equity, income, expense"
                 )
 
-        return self.repo.create_chart_of_account(account_dict)
+        account = self.repo.create(account_dict)
+        
+        # Log account creation
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.CREATE,
+            user_id=str(user_id),
+            new_values={
+                "account_code": account.account_code,
+                "account_name": account.account_name,
+                "account_type": account.account_type.value if account.account_type else None,
+                "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+                "currency": account.currency,
+                "status": account.status.value if account.status else None,
+                "is_posting_account": account.is_posting_account,
+                "description": account.description,
+            }
+        )
+        
+        return account
 
     def get_by_id(
         self,
         account_id: UUID,
         organization_id: UUID,
         include_parent: bool = True,
-    ) -> ChartOfAccount:
+    ) -> Account:
         """
         Get chart of account by ID.
 
@@ -93,14 +231,16 @@ class ChartOfAccountService:
             include_parent: Whether to include parent relationship
 
         Returns:
-            ChartOfAccount object
+            Account object
 
         Raises:
             ChartOfAccountNotFoundException: If account not found
         """
-        account = self.repo.get_by_id(
-            account_id, organization_id, include_parent=include_parent
-        )
+        if include_parent:
+            account = self.repo.get_with_parent(account_id, organization_id)
+        else:
+            account = self.repo.get_by_id(account_id, organization_id)
+            
         if not account:
             raise ChartOfAccountNotFoundException(
                 f"Chart of account with ID {account_id} not found"
@@ -112,8 +252,8 @@ class ChartOfAccountService:
         account_id: UUID,
         data: ChartOfAccountUpdate,
         organization_id: UUID,
-        user_id: UUID,
-    ) -> ChartOfAccount:
+        user_id: UUID | None = None,
+    ) -> Account:
         """
         Update a chart of account.
 
@@ -124,9 +264,10 @@ class ChartOfAccountService:
             user_id: User UUID updating the account
 
         Returns:
-            Updated ChartOfAccount object
+            Updated Account object
 
         Raises:
+            ValidationError: If validation fails
             ChartOfAccountNotFoundException: If account not found
             CircularReferenceException: If parent would create circular reference
         """
@@ -137,6 +278,24 @@ class ChartOfAccountService:
             )
 
         update_dict = data.model_dump(exclude_unset=True)
+        
+        # Remove fields that don't exist in the Account model
+        fields_to_remove = ['level', 'is_group', 'opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
+        for field in fields_to_remove:
+            update_dict.pop(field, None)
+
+        # Validate field lengths if being updated
+        if "account_name" in update_dict and update_dict["account_name"]:
+            if len(update_dict["account_name"]) > 200:
+                raise ValidationError(
+                    f"Account name must not exceed 200 characters (got {len(update_dict['account_name'])})"
+                )
+            if not update_dict["account_name"].strip():
+                raise ValidationError("Account name cannot be empty")
+
+        # Validate currency if being updated
+        if "currency" in update_dict and update_dict["currency"]:
+            self._validate_currency(update_dict["currency"])
 
         if "parent_account_id" in update_dict and update_dict["parent_account_id"]:
             parent_id = update_dict["parent_account_id"]
@@ -150,9 +309,7 @@ class ChartOfAccountService:
                     f"Parent account with ID {parent_id} not found"
                 )
 
-            if self._would_create_circular_reference(
-                account_id, parent_id, organization_id
-            ):
+            if self._would_create_circular_reference(account_id, parent_id, organization_id):
                 raise CircularReferenceException(
                     "This parent assignment would create a circular reference"
                 )
@@ -165,28 +322,62 @@ class ChartOfAccountService:
             except (ValueError, KeyError):
                 del update_dict["account_type"]
 
-        update_dict["updated_by"] = user_id
+        if user_id:
+            update_dict["updated_by"] = str(user_id)
 
-        return self.repo.update(account, update_dict)
+        # Capture old values before update for audit trail
+        old_values = {
+            "account_code": account.account_code,
+            "account_name": account.account_name,
+            "account_type": account.account_type.value if account.account_type else None,
+            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "currency": account.currency,
+            "status": account.status.value if account.status else None,
+            "is_posting_account": account.is_posting_account,
+            "description": account.description,
+        }
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Capture new values after update
+        new_values = {
+            "account_code": updated_account.account_code,
+            "account_name": updated_account.account_name,
+            "account_type": updated_account.account_type.value if updated_account.account_type else None,
+            "parent_account_id": str(updated_account.parent_account_id) if updated_account.parent_account_id else None,
+            "currency": updated_account.currency,
+            "status": updated_account.status.value if updated_account.status else None,
+            "is_posting_account": updated_account.is_posting_account,
+            "description": updated_account.description,
+        }
+        
+        # Log account update
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.UPDATE,
+            user_id=str(user_id) if user_id else "system",
+            old_values=old_values,
+            new_values=new_values,
+        )
+        
+        return updated_account
 
     def delete(
         self,
         account_id: UUID,
         organization_id: UUID,
-        user_id: UUID,
+        user_id: UUID | None = None,
         force: bool = False,
-    ) -> ChartOfAccount:
+    ) -> None:
         """
-        Soft delete a chart of account.
+        Delete a chart of account.
 
         Args:
             account_id: Chart of account UUID
             organization_id: Organization UUID
-            user_id: User UUID deleting the account
+            user_id: User UUID deleting the account (unused, for API compatibility)
             force: If True, delete even if has children
-
-        Returns:
-            Deleted ChartOfAccount object
 
         Raises:
             ChartOfAccountNotFoundException: If account not found
@@ -204,8 +395,35 @@ class ChartOfAccountService:
                 "Delete children first or use force=true."
             )
 
-        account.updated_by = user_id
-        return self.repo.soft_delete(account)
+        # Capture account values before deletion for audit trail
+        old_values = {
+            "account_code": account.account_code,
+            "account_name": account.account_name,
+            "account_type": account.account_type.value if account.account_type else None,
+            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "currency": account.currency,
+            "status": account.status.value if account.status else None,
+            "is_posting_account": account.is_posting_account,
+            "description": account.description,
+        }
+
+        # Delete the account first
+        self.repo.delete(account, check_children=not force)
+        
+        # Log account deletion AFTER deleting (audit log will be cascade deleted with account)
+        # Note: In production, audit logs should be retained even after account deletion
+        # This would require removing the foreign key constraint or using a different approach
+        from app.models.account_audit_log import AuditAction
+        try:
+            self.audit_logger.log_account_change(
+                account_id=account_id,
+                action=AuditAction.DELETE,
+                user_id=str(user_id) if user_id else "system",
+                old_values=old_values,
+            )
+        except Exception:
+            # Ignore audit log errors for deletions since the account no longer exists
+            pass
 
     def get_list(
         self,
@@ -216,10 +434,11 @@ class ChartOfAccountService:
         parent_account_id: UUID | None = None,
         is_active: bool | None = None,
         is_group: bool | None = None,
+        currency: str | None = None,
         search: str | None = None,
         sort_by: str = "account_code",
         sort_order: str = "asc",
-    ) -> tuple[list[ChartOfAccount], dict]:
+    ) -> tuple[list[Account], dict]:
         """
         Get paginated list of chart of accounts with filters.
 
@@ -229,8 +448,9 @@ class ChartOfAccountService:
             page_size: Number of items per page
             account_type: Filter by type (asset, liability, equity, income, expense)
             parent_account_id: Filter by parent account
-            is_active: Filter by active status
-            is_group: Filter by is_group
+            is_active: Filter by active status (unused)
+            is_group: Filter by is_group (unused)
+            currency: Filter by currency code
             search: Search term
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
@@ -238,7 +458,7 @@ class ChartOfAccountService:
         Returns:
             Tuple of (list of accounts, pagination metadata)
         """
-        page_size = min(page_size, 100)
+        page_size = min(page_size, 1000)
 
         type_enum = None
         if account_type:
@@ -247,30 +467,42 @@ class ChartOfAccountService:
             except (ValueError, KeyError):
                 pass
 
-        accounts, total_count = self.repo.list_accounts(
+        status_enum = None
+        if is_active is not None:
+            status_enum = AccountStatus.ACTIVE if is_active else AccountStatus.INACTIVE
+
+        # Use repository list_all method
+        accounts = self.repo.list_all(
             organization_id=organization_id,
-            page=page,
-            page_size=page_size,
             account_type=type_enum,
+            status=status_enum,
             parent_account_id=parent_account_id,
-            is_active=is_active,
-            is_group=is_group,
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
         )
+        
+        # Apply currency filter if provided
+        if currency:
+            accounts = [a for a in accounts if a.currency == currency]
+
+        # Simple pagination
+        total_count = len(accounts)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_accounts = accounts[start_idx:end_idx]
 
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
             "page": page,
             "page_size": page_size,
-            "total_items": total_count,
+            "total": total_count,
             "total_pages": total_pages,
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
 
-        return accounts, pagination
+        return paginated_accounts, pagination
 
     def get_tree(self, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
         """
@@ -282,7 +514,7 @@ class ChartOfAccountService:
         Returns:
             List of root-level account tree nodes
         """
-        all_accounts = self.repo.get_all_accounts(organization_id)
+        all_accounts = self.repo.list_all(organization_id=organization_id)
 
         root_nodes = []
         children_map: dict[UUID, list] = {}
@@ -295,16 +527,15 @@ class ChartOfAccountService:
             else:
                 root_nodes.append(account)
 
-        def build_node(acc: ChartOfAccount) -> ChartOfAccountTreeNode:
+        def build_node(acc: Account) -> ChartOfAccountTreeNode:
             children = children_map.get(acc.id, [])
             return ChartOfAccountTreeNode(
                 id=acc.id,
                 account_code=acc.account_code,
                 account_name=acc.account_name,
                 account_type=str(acc.account_type.value) if acc.account_type else "",
-                level=acc.level,
-                is_group=acc.is_group,
-                is_active=acc.is_active,
+                status=str(acc.status.value) if acc.status else "active",
+                is_posting_account=acc.is_posting_account,
                 children=[build_node(c) for c in children],
             )
 
@@ -334,3 +565,280 @@ class ChartOfAccountService:
             current_id = parent.parent_account_id
 
         return False
+
+    def activate_account(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> Account:
+        """
+        Activate an account.
+
+        Args:
+            account_id: Account UUID to activate
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Updated Account object with ACTIVE status
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        account = self.repo.get_by_id(account_id, organization_id)
+        if not account:
+            raise ChartOfAccountNotFoundException(
+                f"Chart of account with ID {account_id} not found"
+            )
+
+        update_dict = {"status": AccountStatus.ACTIVE}
+        if user_id:
+            update_dict["updated_by"] = str(user_id)
+
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.ACTIVE.value},
+        )
+        
+        return updated_account
+
+    def deactivate_account(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> Account:
+        """
+        Deactivate an account.
+
+        Args:
+            account_id: Account UUID to deactivate
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Updated Account object with INACTIVE status
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        account = self.repo.get_by_id(account_id, organization_id)
+        if not account:
+            raise ChartOfAccountNotFoundException(
+                f"Chart of account with ID {account_id} not found"
+            )
+
+        update_dict = {"status": AccountStatus.INACTIVE}
+        if user_id:
+            update_dict["updated_by"] = str(user_id)
+
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.INACTIVE.value},
+        )
+        
+        return updated_account
+
+    def archive_account(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> Account:
+        """
+        Archive an account.
+
+        Args:
+            account_id: Account UUID to archive
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Updated Account object with ARCHIVED status
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        account = self.repo.get_by_id(account_id, organization_id)
+        if not account:
+            raise ChartOfAccountNotFoundException(
+                f"Chart of account with ID {account_id} not found"
+            )
+
+        update_dict = {"status": AccountStatus.ARCHIVED}
+        if user_id:
+            update_dict["updated_by"] = str(user_id)
+
+        # Capture old status
+        old_status = account.status.value if account.status else None
+
+        updated_account = self.repo.update(account, update_dict)
+        
+        # Log status change
+        from app.models.account_audit_log import AuditAction
+        self.audit_logger.log_account_change(
+            account_id=account.id,
+            action=AuditAction.STATUS_CHANGE,
+            user_id=str(user_id) if user_id else "system",
+            old_values={"status": old_status},
+            new_values={"status": AccountStatus.ARCHIVED.value},
+        )
+        
+        return updated_account
+
+    def validate_posting_account(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        """
+        Validate that an account can receive transaction postings.
+
+        Args:
+            account_id: Account UUID to validate
+            organization_id: Organization UUID
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+            ValidationError: If account is inactive or not a posting account
+        """
+        account = self.repo.get_by_id(account_id, organization_id)
+        if not account:
+            raise ChartOfAccountNotFoundException(
+                f"Chart of account with ID {account_id} not found"
+            )
+
+        if account.status != AccountStatus.ACTIVE:
+            raise ValidationError(
+                f"Cannot post to inactive account '{account.account_code}' (status: {account.status.value})"
+            )
+
+        if not account.is_posting_account:
+            raise ValidationError(
+                f"Cannot post to non-posting account '{account.account_code}' (parent accounts cannot receive postings)"
+            )
+
+    # Hierarchy methods
+
+    def get_children(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all direct child accounts of a parent account.
+
+        Args:
+            account_id: Parent account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of child accounts
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_children(account_id, organization_id)
+
+    def get_ancestors(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all ancestor accounts from the account up to the root.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of ancestor accounts ordered from immediate parent to root
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_ancestors(account_id, organization_id)
+
+    def get_descendants(
+        self,
+        account_id: UUID,
+        organization_id: UUID,
+    ) -> list[Account]:
+        """
+        Get all descendant accounts recursively.
+
+        Args:
+            account_id: Account UUID
+            organization_id: Organization UUID
+
+        Returns:
+            List of all descendant accounts (children, grandchildren, etc.)
+
+        Raises:
+            ChartOfAccountNotFoundException: If account not found
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        return hierarchy_manager.get_descendants(account_id, organization_id)
+
+    def move_account(
+        self,
+        account_id: UUID,
+        new_parent_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> Account:
+        """
+        Move an account to a new parent.
+
+        Args:
+            account_id: Account UUID to move
+            new_parent_id: New parent account UUID
+            organization_id: Organization UUID
+            user_id: User UUID performing the action
+
+        Returns:
+            Updated Account object
+
+        Raises:
+            ChartOfAccountNotFoundException: If account or new parent not found
+            CircularReferenceException: If move would create circular reference
+            ValidationError: If account types don't match
+        """
+        from app.services.hierarchy_manager import HierarchyManager
+
+        hierarchy_manager = HierarchyManager(self.db)
+        hierarchy_manager.move_account(account_id, new_parent_id, organization_id)
+
+        # Return the updated account
+        return self.get_by_id(account_id, organization_id, include_parent=True)
+

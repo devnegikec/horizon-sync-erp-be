@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     chart_of_accounts,
+    currency,
     customers,
     delivery_notes,
     invoices,
@@ -19,6 +20,7 @@ from app.api.v1.endpoints import (
     material_requests,
     payments,
     pick_lists,
+    purchase_orders,
     purchase_receipts,
     put_away_rules,
     quality_inspections,
@@ -57,6 +59,13 @@ api_router.include_router(
     prefix="/chart-of-accounts",
     tags=["Chart of Accounts"],
 )
+# Also register with /accounts prefix for config endpoints
+api_router.include_router(
+    chart_of_accounts.router,
+    prefix="/accounts",
+    tags=["Accounts"],
+)
+api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])
 api_router.include_router(
@@ -129,4 +138,8 @@ api_router.include_router(
     tax_templates.router,
     prefix="/tax-templates",
     tags=["Tax Templates"],
+api_router.include_router(
+    purchase_orders.router,
+    prefix="/purchase-orders",
+    tags=["Purchase Orders"],
 )
