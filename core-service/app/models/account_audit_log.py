@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Column, DateTime, ForeignKey, String, JSON
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -39,8 +39,8 @@ class AccountAuditLog(Base):
         default=lambda: datetime.now(UTC),
         index=True
     )
-    changes = Column(JSONB, nullable=False)
-    audit_metadata = Column(JSONB, nullable=True)
+    changes = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    audit_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
 
     # Relationship
     account = relationship("Account", backref="audit_logs")
