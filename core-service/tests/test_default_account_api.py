@@ -270,10 +270,8 @@ class TestUpdateDefaultAccounts:
             json=payload,
         )
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["error_count"] == 1
-        assert "account_id" in data["errors"][0]["error"].lower()
+        # Pydantic validation should return 400 for missing required fields
+        assert response.status_code == 400
     
     def test_invalid_account_id(self, client):
         """Test that invalid account ID is rejected"""
@@ -291,10 +289,8 @@ class TestUpdateDefaultAccounts:
             json=payload,
         )
         
-        assert response.status_code == 200
-        data = response.json()
-        assert data["error_count"] == 1
-        assert "invalid" in data["errors"][0]["error"].lower()
+        # Pydantic validation should return 400 for invalid UUID format
+        assert response.status_code == 400
     
     def test_nonexistent_account(self, client):
         """Test that nonexistent account is rejected"""

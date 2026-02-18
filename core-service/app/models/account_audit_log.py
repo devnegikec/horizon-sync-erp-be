@@ -42,8 +42,8 @@ class AccountAuditLog(Base):
     changes = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     audit_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
 
-    # Relationship
-    account = relationship("Account", backref="audit_logs")
+    # Relationship (no backref to avoid cascade issues on account deletion)
+    account = relationship("Account")
 
     def __repr__(self):
         return f"<AccountAuditLog(id={self.id}, account_id={self.account_id}, action='{self.action}', timestamp='{self.timestamp}')>"
