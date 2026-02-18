@@ -1,9 +1,12 @@
 """Chart of Accounts management API endpoints"""
 
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
@@ -20,6 +23,10 @@ from app.schemas.chart_of_account import (
     ChartOfAccountResponse,
     ChartOfAccountTreeNode,
     ChartOfAccountUpdate,
+)
+from app.schemas.default_account import (
+    AccountCodeFormatUpdateRequest,
+    DefaultAccountBulkUpdateRequest,
 )
 from app.schemas.common import PaginationMeta
 from app.services.chart_of_account_service import ChartOfAccountService
@@ -1177,3 +1184,241 @@ async def export_chart_of_accounts(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Export failed: {str(e)}"
         )
+
+
+# ============================================================================
+# Default Accounts Configuration Endpoints
+# ============================================================================
+
+@router.get(
+    "/config/defaults",
+    response_model=list,
+    summary="Get default account mappings",
+    description="Get all default account mappings for transaction types",
+)
+async def get_default_accounts(
+    transaction_type: str | None = Query(None, description="Filter by transaction type"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all default account mappings for the organization.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **transaction_type**: Optional filter by transaction type
+
+    **Returns:** List of default account mappings with account details
+    """
+    from app.services.default_account_service import DefaultAccountService
+    from app.repositories.chart_of_account_repository import AccountRepository
+    
+    service = DefaultAccountService(db)
+    account_repo = AccountRepository(db)
+    
+    # Get default accounts
+    defaults = service.list_default_accounts(
+        organization_id=current_user.organization_id,
+        transaction_type=transaction_type,
+    )
+    
+    # Enrich with account details
+    result = []
+    for default in defaults:
+        account = account_repo.get_by_id(default.account_id, current_user.organization_id)
+        result.append({
+            "id": str(default.id),
+            "organization_id": str(default.organization_id),
+            "transaction_type": default.transaction_type,
+            "scenario": default.scenario,
+            "account_id": str(default.account_id),
+            "account_code": account.account_code if account else None,
+            "account_name": account.account_name if account else None,
+            "account_type": account.account_type.value if account else None,
+        })
+    
+    return result
+
+
+@router.put(
+    "/config/defaults",
+    response_model=dict,
+    summary="Update default account mappings",
+    description="Create or update default account mappings for transaction types",
+)
+async def update_default_accounts(
+    request: "DefaultAccountBulkUpdateRequest",
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Create or update default account mappings.
+
+    Requires authentication.
+
+    **Request Body:**
+    - **defaults**: List of default account mappings
+      - **transaction_type**: Type of transaction (required)
+      - **scenario**: Optional scenario for multiple defaults per type
+      - **account_id**: UUID of the account to use as default (required)
+
+    **Returns:** Summary of updated mappings
+    """
+    from app.services.default_account_service import DefaultAccountService
+    from app.core.exceptions import ValidationError, ChartOfAccountNotFoundException
+    
+    service = DefaultAccountService(db)
+    
+    updated = []
+    errors = []
+    
+    for default_data in request.defaults:
+        try:
+            # Set default account
+            default = service.set_default_account(
+                transaction_type=default_data.transaction_type,
+                account_id=default_data.account_id,
+                organization_id=current_user.organization_id,
+                scenario=default_data.scenario,
+            )
+            
+            updated.append({
+                "transaction_type": default.transaction_type,
+                "scenario": default.scenario,
+                "account_id": str(default.account_id),
+            })
+        
+        except ValidationError as e:
+            errors.append({
+                "error": str(e),
+                "transaction_type": default_data.transaction_type,
+            })
+        except ChartOfAccountNotFoundException as e:
+            errors.append({
+                "error": str(e),
+                "transaction_type": default_data.transaction_type,
+            })
+        except Exception as e:
+            logger.error(f"Unexpected error updating default account: {str(e)}")
+            errors.append({
+                "error": f"Unexpected error: {str(e)}",
+                "transaction_type": default_data.transaction_type,
+            })
+    
+    return {
+        "updated": updated,
+        "errors": errors,
+        "success_count": len(updated),
+        "error_count": len(errors),
+    }
+
+
+@router.get(
+    "/config/format",
+    response_model=dict,
+    summary="Get account code format pattern",
+    description="Get the configured account code format pattern",
+)
+async def get_account_code_format(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the configured account code format pattern.
+
+    Requires authentication.
+
+    **Returns:** Account code format configuration with pattern and example
+    """
+    from app.models.system_config import SystemConfig
+    
+    # Get format pattern from system config
+    config = db.query(SystemConfig).filter(
+        SystemConfig.key == "account_code_format"
+    ).first()
+    
+    if not config:
+        # Return default format if not configured
+        return {
+            "format_pattern": "^[0-9]{4}-[0-9]{2}$",
+            "example": "1000-01",
+        }
+    
+    # Generate example based on pattern
+    example = None
+    pattern = config.value
+    
+    # Simple example generation for common patterns
+    if pattern == "^[0-9]{4}-[0-9]{2}$":
+        example = "1000-01"
+    elif pattern == "^[0-9]{4}$":
+        example = "1000"
+    elif pattern == "^[A-Z]{2}-[0-9]{4}$":
+        example = "AS-1000"
+    
+    return {
+        "format_pattern": pattern,
+        "example": example,
+    }
+
+
+@router.put(
+    "/config/format",
+    response_model=dict,
+    summary="Update account code format pattern",
+    description="Update the account code format pattern",
+)
+async def update_account_code_format(
+    format_pattern: str = Query(..., description="Regex pattern for account code format"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update the account code format pattern.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **format_pattern**: Regex pattern for account code format (required)
+
+    **Returns:** Updated format configuration
+    """
+    from app.models.system_config import SystemConfig
+    import re
+    
+    # Validate the pattern is a valid regex
+    try:
+        re.compile(format_pattern)
+    except re.error as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid regex pattern: {str(e)}"
+        )
+    
+    # Get or create system config entry
+    config = db.query(SystemConfig).filter(
+        SystemConfig.key == "account_code_format"
+    ).first()
+    
+    if config:
+        # Update existing
+        config.value = format_pattern
+        config.updated_by = str(current_user.id)
+    else:
+        # Create new
+        config = SystemConfig(
+            key="account_code_format",
+            value=format_pattern,
+            updated_by=str(current_user.id),
+        )
+        db.add(config)
+    
+    db.commit()
+    db.refresh(config)
+    
+    return {
+        "format_pattern": config.value,
+        "updated_at": config.updated_at.isoformat(),
+        "updated_by": config.updated_by,
+    }

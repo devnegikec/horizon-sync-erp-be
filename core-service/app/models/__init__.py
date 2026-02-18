@@ -35,6 +35,7 @@ from app.models.chart_of_account import Account
 from app.models.account_balance import AccountBalance
 from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.customer import Customer
+from app.models.default_account import DefaultAccount
 from app.models.exchange_rate import ExchangeRate
 from app.models.item import Item
 from app.models.item_group import ItemGroup
@@ -97,6 +98,7 @@ __all__ = [
     "AccountAuditLog",
     "AuditAction",
     "Customer",
+    "DefaultAccount",
     "ExchangeRate",
     "Item",
     "ItemGroup",
