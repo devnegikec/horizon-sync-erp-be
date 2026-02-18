@@ -144,6 +144,7 @@ async def list_chart_of_accounts(
     description="Get chart of accounts as a hierarchical tree structure",
 )
 async def get_chart_of_accounts_tree(
+    lazy_load: bool = Query(False, description="Return only root nodes for lazy loading"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -152,10 +153,43 @@ async def get_chart_of_accounts_tree(
 
     Requires authentication.
 
-    **Returns:** List of root-level accounts with nested children
+    **Query Parameters:**
+    - **lazy_load**: If true, returns only root-level nodes without children for lazy loading
+
+    **Returns:** List of root-level accounts with nested children (or without if lazy_load=true)
     """
     service = ChartOfAccountService(db)
+    
+    if lazy_load:
+        # Return only root nodes without children for lazy loading
+        return service.get_tree_roots(current_user.organization_id)
+    
     return service.get_tree(current_user.organization_id)
+
+
+@router.get(
+    "/tree/{account_id}/children",
+    response_model=list[ChartOfAccountTreeNode],
+    summary="Get tree node children",
+    description="Get immediate children of a tree node for lazy loading",
+)
+async def get_tree_node_children(
+    account_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get immediate children of a tree node for lazy loading.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **account_id**: Parent account UUID
+
+    **Returns:** List of immediate child accounts as tree nodes
+    """
+    service = ChartOfAccountService(db)
+    return service.get_tree_children(account_id, current_user.organization_id)
 
 
 @router.get(
@@ -345,6 +379,117 @@ async def archive_account(
         user_id=current_user.id,
     )
     return ChartOfAccountResponse.model_validate(account)
+
+
+# Bulk operations endpoints
+
+@router.post(
+    "/bulk/activate",
+    response_model=dict,
+    summary="Bulk activate accounts",
+    description="Activate multiple accounts in a single operation",
+)
+async def bulk_activate_accounts(
+    account_ids: list[UUID] = Query(..., description="List of account UUIDs to activate"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Activate multiple accounts in bulk.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_ids**: List of account UUIDs to activate
+
+    **Returns:** 
+    - **success_count**: Number of accounts successfully activated
+    - **failed_count**: Number of accounts that failed to activate
+    - **errors**: List of errors for failed activations
+    - **updated_ids**: List of successfully updated account IDs
+    """
+    service = ChartOfAccountService(db)
+    results = service.bulk_activate_accounts(
+        account_ids=account_ids,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return results
+
+
+@router.post(
+    "/bulk/deactivate",
+    response_model=dict,
+    summary="Bulk deactivate accounts",
+    description="Deactivate multiple accounts in a single operation",
+)
+async def bulk_deactivate_accounts(
+    account_ids: list[UUID] = Query(..., description="List of account UUIDs to deactivate"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deactivate multiple accounts in bulk.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_ids**: List of account UUIDs to deactivate
+
+    **Returns:** 
+    - **success_count**: Number of accounts successfully deactivated
+    - **failed_count**: Number of accounts that failed to deactivate
+    - **errors**: List of errors for failed deactivations
+    - **updated_ids**: List of successfully updated account IDs
+    """
+    service = ChartOfAccountService(db)
+    results = service.bulk_deactivate_accounts(
+        account_ids=account_ids,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return results
+
+
+@router.delete(
+    "/bulk/delete",
+    response_model=dict,
+    summary="Bulk delete accounts",
+    description="Delete multiple accounts with validation",
+)
+async def bulk_delete_accounts(
+    account_ids: list[UUID] = Query(..., description="List of account UUIDs to delete"),
+    force: bool = Query(False, description="Force delete even if has children"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete multiple accounts in bulk with validation.
+
+    Requires authentication.
+
+    **Query Parameters:**
+    - **account_ids**: List of account UUIDs to delete
+    - **force**: If true, delete even if account has children
+
+    **Returns:** 
+    - **success_count**: Number of accounts successfully deleted
+    - **failed_count**: Number of accounts that failed to delete
+    - **errors**: List of errors for failed deletions (includes account_code and reason)
+    - **deleted_ids**: List of successfully deleted account IDs
+
+    **Validation:**
+    - Accounts with child accounts cannot be deleted unless force=true
+    - Accounts with transactions cannot be deleted
+    """
+    service = ChartOfAccountService(db)
+    results = service.bulk_delete_accounts(
+        account_ids=account_ids,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        force=force,
+    )
+    return results
 
 
 # Hierarchy endpoints

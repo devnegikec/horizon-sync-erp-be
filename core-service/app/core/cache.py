@@ -164,3 +164,66 @@ def invalidate_account_balance_cache(account_id: UUID) -> int:
     """
     pattern = f"balance:account:{account_id}:*"
     return cache.delete_pattern(pattern)
+
+
+def get_account_cache_key(account_id: UUID) -> str:
+    """
+    Generate cache key for account data
+    
+    Args:
+        account_id: Account UUID
+        
+    Returns:
+        Cache key string
+    """
+    return f"account:{account_id}"
+
+
+def get_account_tree_cache_key(organization_id: UUID) -> str:
+    """
+    Generate cache key for account tree
+    
+    Args:
+        organization_id: Organization UUID
+        
+    Returns:
+        Cache key string
+    """
+    return f"account:tree:{organization_id}"
+
+
+def get_account_children_cache_key(account_id: UUID) -> str:
+    """
+    Generate cache key for account children
+    
+    Args:
+        account_id: Account UUID
+        
+    Returns:
+        Cache key string
+    """
+    return f"account:children:{account_id}"
+
+
+def invalidate_account_cache(account_id: UUID, organization_id: UUID) -> int:
+    """
+    Invalidate all cached data for an account
+    
+    Args:
+        account_id: Account UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        Number of cache entries deleted
+    """
+    count = 0
+    # Invalidate account data
+    count += 1 if cache.delete(get_account_cache_key(account_id)) else 0
+    # Invalidate account children
+    count += 1 if cache.delete(get_account_children_cache_key(account_id)) else 0
+    # Invalidate organization tree
+    count += 1 if cache.delete(get_account_tree_cache_key(organization_id)) else 0
+    # Invalidate balances
+    count += invalidate_account_balance_cache(account_id)
+    return count
+

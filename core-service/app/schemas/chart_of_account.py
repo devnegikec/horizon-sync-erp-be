@@ -72,6 +72,9 @@ class ChartOfAccountUpdate(BaseModel):
 
     account_name: str | None = Field(None, min_length=1)
     
+    # Account Type
+    account_type: str | None = None
+    
     # Hierarchy
     parent_account_id: UUID | None = None
     
