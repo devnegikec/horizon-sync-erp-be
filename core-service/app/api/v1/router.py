@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
+    admin,
     batches,
     bulk_export,
     bulk_import,
@@ -40,6 +41,9 @@ from app.api.v1.endpoints import (
 )
 
 api_router = APIRouter()
+
+# Admin endpoints (development only)
+api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 # Include endpoint routers
 # Item picker MUST be before items router so /items/picker matches before /items/{item_id}
