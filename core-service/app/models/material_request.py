@@ -4,12 +4,15 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Numeric, String, Text
-from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import MaterialRequestStatus, MaterialRequestType, MaterialRequestPriority
-from app.models.types import JSONB
+from app.models.base import (
+    MaterialRequestPriority,
+    MaterialRequestStatus,
+    MaterialRequestType,
+)
+from app.models.types import JSONB, UUID
 
 
 class MaterialRequest(Base):
@@ -121,7 +124,9 @@ class MaterialRequestLine(Base):
 
     # Quantity and details
     quantity = Column(Numeric(15, 4), nullable=False)
-    uom = Column(String(50), nullable=True)  # Unit of Measure (Kgs, Boxes, Pallets, etc.)
+    uom = Column(
+        String(50), nullable=True
+    )  # Unit of Measure (Kgs, Boxes, Pallets, etc.)
     required_date = Column(Date, nullable=False)
     description = Column(Text, nullable=True)
 

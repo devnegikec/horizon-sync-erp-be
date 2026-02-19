@@ -43,6 +43,7 @@ class MaterialRequestService:
         if not request_no:
             # Generate format: MR-YYYY-NNNN
             from datetime import datetime
+
             year = datetime.now().year
             # Get count of MRs this year for this org
             count = self.repo.count_by_year(organization_id, year)
@@ -186,7 +187,9 @@ class MaterialRequestService:
             "request_no": data.get("request_no", mr.request_no),
             "type": data.get("type", mr.type),
             "priority": data.get("priority", mr.priority),
-            "target_warehouse_id": data.get("target_warehouse_id", mr.target_warehouse_id),
+            "target_warehouse_id": data.get(
+                "target_warehouse_id", mr.target_warehouse_id
+            ),
             "requested_by": data.get("requested_by", mr.requested_by),
             "department": data.get("department", mr.department),
             "notes": data.get("notes", mr.notes),

@@ -13,13 +13,23 @@ class MaterialRequestLineBase(BaseModel):
     """Base schema for Material Request Line"""
 
     item_id: UUID
-    quantity: Decimal | float = Field(..., gt=0, description="Quantity must be positive")
-    uom: str | None = Field(None, max_length=50, description="Unit of Measure (Kgs, Boxes, Pallets, etc.)")
+    quantity: Decimal | float = Field(
+        ..., gt=0, description="Quantity must be positive"
+    )
+    uom: str | None = Field(
+        None, max_length=50, description="Unit of Measure (Kgs, Boxes, Pallets, etc.)"
+    )
     required_date: date
     description: str | None = None
-    estimated_unit_cost: Decimal | float | None = Field(None, ge=0, description="Estimated cost per unit")
-    requested_for: str | None = Field(None, max_length=255, description="Employee name or ID")
-    requested_for_department: str | None = Field(None, max_length=100, description="Department name")
+    estimated_unit_cost: Decimal | float | None = Field(
+        None, ge=0, description="Estimated cost per unit"
+    )
+    requested_for: str | None = Field(
+        None, max_length=255, description="Employee name or ID"
+    )
+    requested_for_department: str | None = Field(
+        None, max_length=100, description="Department name"
+    )
 
 
 class MaterialRequestLineCreate(MaterialRequestLineBase):
@@ -42,20 +52,28 @@ class MaterialRequestLineResponse(MaterialRequestLineBase):
 class MaterialRequestBase(BaseModel):
     """Base schema for Material Request"""
 
-    request_no: str | None = Field(None, max_length=50, description="Human-readable reference number (e.g., MR-2024-001)")
+    request_no: str | None = Field(
+        None,
+        max_length=50,
+        description="Human-readable reference number (e.g., MR-2024-001)",
+    )
     type: str = Field(
         "purchase",
         pattern="^(purchase|transfer|issue)$",
-        description="Request type: purchase (buy from vendor), transfer (move between warehouses), issue (give to department)"
+        description="Request type: purchase (buy from vendor), transfer (move between warehouses), issue (give to department)",
     )
     priority: str = Field(
         "medium",
         pattern="^(low|medium|high|urgent)$",
-        description="Priority level for procurement officer"
+        description="Priority level for procurement officer",
     )
-    target_warehouse_id: UUID | None = Field(None, description="Target warehouse where goods should land")
+    target_warehouse_id: UUID | None = Field(
+        None, description="Target warehouse where goods should land"
+    )
     requested_by: UUID | None = Field(None, description="User ID who requested this")
-    department: str | None = Field(None, max_length=100, description="Department requesting the materials")
+    department: str | None = Field(
+        None, max_length=100, description="Department requesting the materials"
+    )
     notes: str | None = None
 
 
