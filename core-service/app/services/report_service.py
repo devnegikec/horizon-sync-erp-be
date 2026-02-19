@@ -168,6 +168,7 @@ class ReportService:
                 # For parent accounts, calculate consolidated balance
                 balance_data = self.balance_calculator.calculate_consolidated_balance(
                     account.id,
+                    organization_id=organization_id,
                     as_of_date=as_of_date,
                     use_cache=True
                 )

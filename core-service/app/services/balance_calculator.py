@@ -116,6 +116,7 @@ class BalanceCalculator:
             as_of_date = date.today()
         
         # Query journal entry lines for this account up to the specified date
+        # IMPORTANT: Filter by organization_id to ensure multi-tenancy isolation
         query = (
             self.db.query(
                 func.sum(JournalEntryLine.debit).label("debit_total"),
@@ -125,6 +126,8 @@ class BalanceCalculator:
             .filter(
                 and_(
                     JournalEntryLine.account_id == account_id,
+                    JournalEntryLine.organization_id == account.organization_id,
+                    JournalEntry.organization_id == account.organization_id,
                     JournalEntry.status == JournalStatus.POSTED,
                     func.date(JournalEntry.posting_date) <= as_of_date
                 )
@@ -189,6 +192,7 @@ class BalanceCalculator:
     def calculate_consolidated_balance(
         self,
         parent_account_id: UUID,
+        organization_id: UUID,
         as_of_date: Optional[date] = None,
         use_cache: bool = True
     ) -> Optional[dict]:
@@ -197,6 +201,7 @@ class BalanceCalculator:
         
         Args:
             parent_account_id: Parent account UUID
+            organization_id: Organization UUID
             as_of_date: Date to calculate balance as of (defaults to today)
             use_cache: Whether to use cached balances
             
@@ -210,7 +215,10 @@ class BalanceCalculator:
             return None
         
         # Get all descendant accounts
-        descendants = self.hierarchy_manager.get_descendants(parent_account_id)
+        descendants = self.hierarchy_manager.get_descendants(
+            parent_account_id,
+            organization_id,
+        )
         
         # If no descendants, calculate balance for the parent itself
         if not descendants:

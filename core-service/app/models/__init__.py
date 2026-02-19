@@ -39,6 +39,7 @@ from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.customer import Customer
 from app.models.default_account import DefaultAccount
 from app.models.exchange_rate import ExchangeRate
+from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.quotation import Quotation, QuotationItem
@@ -115,6 +116,8 @@ __all__ = [
     "ExchangeRate",
     "Item",
     "ItemGroup",
+    "JournalEntry",
+    "JournalEntryLine",
     "Quotation",
     "QuotationItem",
     "SalesOrder",
