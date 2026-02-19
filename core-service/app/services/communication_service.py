@@ -1,5 +1,6 @@
 """Communication service"""
 
+import base64
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -13,12 +14,14 @@ from app.models.base import (
     RecipientType,
 )
 from app.repositories.communication_repository import CommunicationRepository
+from app.services.email_service import EmailService
 
 
 class CommunicationService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = CommunicationRepository(db)
+        self.email_service = EmailService()
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         """
@@ -175,7 +178,7 @@ class CommunicationService:
             "delivered_at": comm.delivered_at,
             "failed_at": comm.failed_at,
             "error_message": comm.error_message,
-            "metadata": comm.metadata,
+            "extra_data": comm.extra_data,
             "created_at": comm.created_at,
             "updated_at": comm.updated_at,
         }
@@ -200,3 +203,134 @@ class CommunicationService:
             "sent_at": comm.sent_at,
             "created_at": comm.created_at,
         }
+
+
+    async def send_email(
+        self,
+        to: str,
+        subject: str,
+        message: str,
+        organization_id: UUID,
+        user_id: UUID,
+        cc: list[str] | None = None,
+        html_message: str | None = None,
+        attachments: list[dict] | None = None,
+        doc_type: str | None = None,
+        doc_id: str | None = None,
+        doc_no: str | None = None,
+    ) -> dict:
+        """
+        Send an email and log the communication.
+
+        Args:
+            to: Recipient email address
+            subject: Email subject
+            message: Email body (plain text)
+            organization_id: Organization ID
+            user_id: User ID sending the email
+            cc: List of CC email addresses
+            html_message: Optional HTML version of email
+            attachments: List of attachment dicts with filename, content (base64), content_type
+            doc_type: Optional document type for logging
+            doc_id: Optional document ID for logging
+            doc_no: Optional document number for logging
+
+        Returns:
+            dict with status, message, and communication_id
+        """
+        # Process attachments - decode base64 content
+        processed_attachments = []
+        if attachments:
+            for att in attachments:
+                try:
+                    content = att.get("content", "")
+                    # If content is string (base64), decode it
+                    if isinstance(content, str):
+                        content = base64.b64decode(content)
+                    
+                    processed_attachments.append({
+                        "filename": att.get("filename", "attachment"),
+                        "content": content,
+                        "content_type": att.get("content_type"),
+                    })
+                except Exception as e:
+                    raise ValueError(f"Invalid attachment: {str(e)}")
+
+        # Send email
+        try:
+            result = await self.email_service.send_email(
+                subject=subject,
+                recipient=to,
+                body=message,
+                cc=cc,
+                attachments=processed_attachments if processed_attachments else None,
+                html_body=html_message,
+            )
+
+            # Create communication log
+            log_data = {
+                "organization_id": organization_id,
+                "channel": CommunicationChannel.EMAIL,
+                "recipient": to,
+                "sender_id": user_id,
+                "subject": subject,
+                "message": message,
+                "status": CommunicationStatus.SENT if result["status"] == "sent" else CommunicationStatus.PENDING,
+                "extra_data": {
+                    "cc": cc,
+                    "has_attachments": len(processed_attachments) > 0 if processed_attachments else False,
+                    "attachment_count": len(processed_attachments) if processed_attachments else 0,
+                    "attachment_names": [a["filename"] for a in processed_attachments] if processed_attachments else [],
+                },
+            }
+
+            # Add document info if provided
+            if doc_type and doc_id:
+                log_data["doc_type"] = CommunicationDocType(doc_type)
+                log_data["doc_id"] = UUID(doc_id)
+                log_data["doc_no"] = doc_no
+                log_data["version"] = 1
+
+            # Set sent_at if sent successfully
+            if result["status"] == "sent":
+                log_data["sent_at"] = datetime.now(UTC)
+
+            comm = self.repo.create(log_data)
+
+            return {
+                "status": result["status"],
+                "message": result["message"],
+                "communication_id": str(comm.id),
+            }
+
+        except Exception as e:
+            # Log failed attempt
+            log_data = {
+                "organization_id": organization_id,
+                "channel": CommunicationChannel.EMAIL,
+                "recipient": to,
+                "sender_id": user_id,
+                "subject": subject,
+                "message": message,
+                "status": CommunicationStatus.FAILED,
+                "failed_at": datetime.now(UTC),
+                "error_message": str(e),
+                "extra_data": {
+                    "cc": cc,
+                    "has_attachments": len(processed_attachments) > 0 if processed_attachments else False,
+                },
+            }
+
+            if doc_type and doc_id:
+                log_data["doc_type"] = CommunicationDocType(doc_type)
+                log_data["doc_id"] = UUID(doc_id)
+                log_data["doc_no"] = doc_no
+                log_data["version"] = 1
+
+            comm = self.repo.create(log_data)
+
+            return {
+                "status": "failed",
+                "message": f"Failed to send email: {str(e)}",
+                "communication_id": str(comm.id),
+            }

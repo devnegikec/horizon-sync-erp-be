@@ -64,9 +64,9 @@ services:
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
+      SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
     ports:

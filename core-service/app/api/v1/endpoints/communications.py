@@ -14,6 +14,8 @@ from app.schemas.communication import (
     CommunicationListResponse,
     CommunicationResponse,
     CommunicationStatusUpdate,
+    SendEmailRequest,
+    SendEmailResponse,
 )
 from app.services.communication_service import CommunicationService
 
@@ -129,3 +131,37 @@ async def delete_communication(
     svc = CommunicationService(db)
     svc.delete(communication_id, current_user.organization_id)
     return None
+
+
+
+@router.post("/send", response_model=SendEmailResponse)
+async def send_email(
+    body: SendEmailRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Send an email with optional CC and attachments, and log the communication.
+
+    This endpoint:
+    1. Sends the email via SMTP
+    2. Automatically logs the communication
+    3. Returns the communication log ID for tracking
+
+    Attachments should be provided as base64-encoded content.
+    """
+    svc = CommunicationService(db)
+    result = await svc.send_email(
+        to=body.to,
+        subject=body.subject,
+        message=body.message,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        cc=body.cc,
+        html_message=body.html_message,
+        attachments=body.attachments,
+        doc_type=body.doc_type,
+        doc_id=body.doc_id,
+        doc_no=body.doc_no,
+    )
+    return SendEmailResponse(**result)

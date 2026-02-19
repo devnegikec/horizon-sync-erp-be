@@ -26,7 +26,7 @@ class CommunicationBase(BaseModel):
     sender_email: str | None = Field(None, max_length=255)
     subject: str | None = Field(None, max_length=500)
     message: str | None = None
-    metadata: dict | None = None
+    extra_data: dict | None = None
 
 
 class CommunicationCreate(CommunicationBase):
@@ -74,3 +74,33 @@ class CommunicationStatusUpdate(BaseModel):
         ..., pattern="^(pending|sent|delivered|failed|bounced)$"
     )
     error_message: str | None = None
+
+
+class EmailAttachment(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content: bytes
+    content_type: str | None = Field(None, max_length=100)
+
+
+class SendEmailRequest(BaseModel):
+    to: str = Field(..., min_length=1, max_length=255, description="Recipient email")
+    cc: list[str] | None = Field(None, description="CC recipients")
+    subject: str = Field(..., min_length=1, max_length=500)
+    message: str = Field(..., min_length=1, description="Email body (plain text)")
+    html_message: str | None = Field(None, description="HTML version of email body")
+    attachments: list[dict] | None = Field(
+        None, description="List of attachments with filename, content (base64), content_type"
+    )
+    # Optional: Link to a document for logging
+    doc_type: str | None = Field(
+        None,
+        pattern="^(quotation|sales_order|purchase_order|invoice|delivery_note|purchase_receipt|payment|rfq|material_request)$",
+    )
+    doc_id: str | None = None
+    doc_no: str | None = Field(None, max_length=100)
+
+
+class SendEmailResponse(BaseModel):
+    status: str
+    message: str
+    communication_id: str | None = None

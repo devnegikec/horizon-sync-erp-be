@@ -17,7 +17,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"doc_type\": \"quotation\",\n  \"doc_id\": \"{{quotation_id}}\",\n  \"doc_no\": \"QTN-001\",\n  \"version\": 1,\n  \"channel\": \"email\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"customer@example.com\",\n  \"recipient_name\": \"John Doe\",\n  \"sender_name\": \"Sales Team\",\n  \"sender_email\": \"sales@company.com\",\n  \"subject\": \"Quotation QTN-001\",\n  \"message\": \"Please find attached your quotation.\",\n  \"metadata\": {\n    \"template_id\": \"quotation_template_v1\",\n    \"attachments\": [\"quotation.pdf\"],\n    \"provider\": \"sendgrid\",\n    \"provider_message_id\": \"msg_123456\"\n  }\n}"
+          "raw": "{\n  \"doc_type\": \"quotation\",\n  \"doc_id\": \"{{quotation_id}}\",\n  \"doc_no\": \"QTN-001\",\n  \"version\": 1,\n  \"channel\": \"email\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"customer@example.com\",\n  \"recipient_name\": \"John Doe\",\n  \"sender_name\": \"Sales Team\",\n  \"sender_email\": \"sales@company.com\",\n  \"subject\": \"Quotation QTN-001\",\n  \"message\": \"Please find attached your quotation.\",\n  \"extra_data\": {\n    \"template_id\": \"quotation_template_v1\",\n    \"attachments\": [\"quotation.pdf\"],\n    \"provider\": \"sendgrid\",\n    \"provider_message_id\": \"msg_123456\"\n  }\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/v1/communications",
@@ -39,7 +39,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"doc_type\": \"invoice\",\n  \"doc_id\": \"{{invoice_id}}\",\n  \"doc_no\": \"INV-001\",\n  \"version\": 1,\n  \"channel\": \"whatsapp\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Jane Smith\",\n  \"message\": \"Your invoice INV-001 is ready. Total: $1,500.00\",\n  \"metadata\": {\n    \"whatsapp_template\": \"invoice_notification\",\n    \"attachment_url\": \"https://example.com/invoice.pdf\"\n  }\n}"
+          "raw": "{\n  \"doc_type\": \"invoice\",\n  \"doc_id\": \"{{invoice_id}}\",\n  \"doc_no\": \"INV-001\",\n  \"version\": 1,\n  \"channel\": \"whatsapp\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Jane Smith\",\n  \"message\": \"Your invoice INV-001 is ready. Total: $1,500.00\",\n  \"extra_data\": {\n    \"whatsapp_template\": \"invoice_notification\",\n    \"attachment_url\": \"https://example.com/invoice.pdf\"\n  }\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/v1/communications",
@@ -61,7 +61,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"doc_type\": \"sales_order\",\n  \"doc_id\": \"{{sales_order_id}}\",\n  \"doc_no\": \"SO-001\",\n  \"version\": 1,\n  \"channel\": \"sms\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Bob Johnson\",\n  \"message\": \"Your order SO-001 has been confirmed and will be delivered by Feb 25.\",\n  \"metadata\": {\n    \"sms_provider\": \"twilio\",\n    \"sms_id\": \"SM123456\"\n  }\n}"
+          "raw": "{\n  \"doc_type\": \"sales_order\",\n  \"doc_id\": \"{{sales_order_id}}\",\n  \"doc_no\": \"SO-001\",\n  \"version\": 1,\n  \"channel\": \"sms\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Bob Johnson\",\n  \"message\": \"Your order SO-001 has been confirmed and will be delivered by Feb 25.\",\n  \"extra_data\": {\n    \"sms_provider\": \"twilio\",\n    \"sms_id\": \"SM123456\"\n  }\n}"
         },
         "url": {
           "raw": "{{base_url}}/api/v1/communications",

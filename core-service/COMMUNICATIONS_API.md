@@ -13,10 +13,50 @@ Track emails, SMS, WhatsApp messages, and webhooks sent for various documents li
 - **Version control**: Track document version sent in each communication
 - **Status tracking**: Monitor delivery status (pending, sent, delivered, failed, bounced)
 - **Recipient categorization**: Classify recipients as customers, suppliers, employees, or other
-- **Metadata storage**: Store additional data like template IDs, attachment links, provider IDs
+- **Metadata storage**: Store additional data like template IDs, attachment links, provider IDs in `extra_data` field
 - **Comprehensive filtering**: Filter by document type, channel, status, recipient type
 
 ## Endpoints
+
+### Send Email (with automatic logging)
+
+```
+POST /api/v1/communications/send
+```
+
+Send an email via SMTP and automatically log the communication. Supports CC, HTML, and attachments.
+
+**Request Body:**
+
+```json
+{
+  "to": "customer@example.com",
+  "cc": ["manager@example.com"],
+  "subject": "Your Quotation QTN-001",
+  "message": "Dear Customer,\n\nPlease find attached your quotation.\n\nBest regards,\nSales Team",
+  "html_message": "<html><body><h1>Your Quotation</h1><p>Please find attached...</p></body></html>",
+  "attachments": [
+    {
+      "filename": "quotation.pdf",
+      "content": "base64_encoded_content_here",
+      "content_type": "application/pdf"
+    }
+  ],
+  "doc_type": "quotation",
+  "doc_id": "9bf9eecf-715b-4ed6-ab0f-3ea569bffb4d",
+  "doc_no": "QTN-001"
+}
+```
+
+**Response:** `200 OK`
+
+```json
+{
+  "status": "sent",
+  "message": "Email sent successfully to customer@example.com",
+  "communication_id": "c71b994c-258f-42f6-973a-c31a5fd5eb78"
+}
+```
 
 ### Create Communication Log
 
@@ -42,7 +82,7 @@ Create a new communication log entry when sending a document.
   "sender_email": "sales@company.com",
   "subject": "Quotation QTN-001",
   "message": "Please find attached quotation...",
-  "metadata": {
+  "extra_data": {
     "template_id": "quotation_template_v1",
     "attachments": ["quotation.pdf"],
     "provider": "sendgrid",
@@ -75,7 +115,7 @@ Create a new communication log entry when sending a document.
   "delivered_at": null,
   "failed_at": null,
   "error_message": null,
-  "metadata": {
+  "extra_data": {
     "template_id": "quotation_template_v1",
     "attachments": ["quotation.pdf"],
     "provider": "sendgrid",
@@ -227,7 +267,7 @@ POST /api/v1/communications
   "recipient": "customer@example.com",
   "recipient_name": "John Doe",
   "subject": "Quotation QTN-001",
-  "metadata": {
+  "extra_data": {
     "template_id": "quotation_email_template",
     "attachments": ["quotation.pdf"]
   }
@@ -248,7 +288,7 @@ POST /api/v1/communications
   "recipient": "+1234567890",
   "recipient_name": "Jane Smith",
   "message": "Your invoice INV-001 is ready",
-  "metadata": {
+  "extra_data": {
     "whatsapp_template": "invoice_notification",
     "attachment_url": "https://example.com/invoice.pdf"
   }
@@ -315,7 +355,7 @@ async def send_quotation_email(quotation_id: UUID, recipient_email: str):
         "channel": "email",
         "recipient": recipient_email,
         "status": "sent" if result.success else "failed",
-        "metadata": {
+        "extra_data": {
             "provider_message_id": result.message_id
         }
     })
@@ -324,7 +364,7 @@ async def send_quotation_email(quotation_id: UUID, recipient_email: str):
 ## Notes
 
 - All timestamps are in UTC with timezone information
-- The `metadata` field is flexible JSONB - store any provider-specific data
+- The `extra_data` field is flexible JSONB - store any provider-specific data
 - Version tracking helps identify which document revision was sent
 - Status updates are typically automated via webhooks from communication providers
 - Communications are organization-scoped for multi-tenancy
