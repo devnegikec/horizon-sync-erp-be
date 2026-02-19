@@ -25,6 +25,7 @@ class MaterialRequestService:
         """
         Create a new Material Request with DRAFT status.
         Validates that all line items have positive quantities.
+        Auto-generates request_no if not provided.
         """
         # Validate line items
         line_items = data.get("line_items", [])
@@ -37,10 +38,26 @@ class MaterialRequestService:
                     f"Line item {idx}: quantity must be greater than zero"
                 )
 
+        # Auto-generate request_no if not provided
+        request_no = data.get("request_no")
+        if not request_no:
+            # Generate format: MR-YYYY-NNNN
+            from datetime import datetime
+            year = datetime.now().year
+            # Get count of MRs this year for this org
+            count = self.repo.count_by_year(organization_id, year)
+            request_no = f"MR-{year}-{count + 1:04d}"
+
         # Prepare Material Request data
         mr_data = {
             "organization_id": organization_id,
+            "request_no": request_no,
+            "type": data.get("type", "purchase"),
+            "priority": data.get("priority", "medium"),
             "status": MaterialRequestStatus.DRAFT,
+            "target_warehouse_id": data.get("target_warehouse_id"),
+            "requested_by": data.get("requested_by", user_id),
+            "department": data.get("department"),
             "notes": data.get("notes"),
             "created_by": user_id,
             "updated_by": user_id,
@@ -56,8 +73,12 @@ class MaterialRequestService:
                 "material_request_id": mr.id,
                 "item_id": item["item_id"],
                 "quantity": item["quantity"],
+                "uom": item.get("uom"),
                 "required_date": item["required_date"],
                 "description": item.get("description"),
+                "estimated_unit_cost": item.get("estimated_unit_cost"),
+                "requested_for": item.get("requested_for"),
+                "requested_for_department": item.get("requested_for_department"),
             }
             self.repo.create_line_item(line_data)
 
@@ -151,13 +172,23 @@ class MaterialRequestService:
                     "material_request_id": mr.id,
                     "item_id": item["item_id"],
                     "quantity": item["quantity"],
+                    "uom": item.get("uom"),
                     "required_date": item["required_date"],
                     "description": item.get("description"),
+                    "estimated_unit_cost": item.get("estimated_unit_cost"),
+                    "requested_for": item.get("requested_for"),
+                    "requested_for_department": item.get("requested_for_department"),
                 }
                 self.repo.create_line_item(line_data)
 
         # Update Material Request fields
         update_data = {
+            "request_no": data.get("request_no", mr.request_no),
+            "type": data.get("type", mr.type),
+            "priority": data.get("priority", mr.priority),
+            "target_warehouse_id": data.get("target_warehouse_id", mr.target_warehouse_id),
+            "requested_by": data.get("requested_by", mr.requested_by),
+            "department": data.get("department", mr.department),
             "notes": data.get("notes", mr.notes),
             "updated_by": user_id,
         }
@@ -289,7 +320,13 @@ class MaterialRequestService:
         return {
             "id": mr.id,
             "organization_id": mr.organization_id,
+            "request_no": mr.request_no,
+            "type": mr.type.value if mr.type else "purchase",
+            "priority": mr.priority.value if mr.priority else "medium",
             "status": mr.status.value if mr.status else None,
+            "target_warehouse_id": mr.target_warehouse_id,
+            "requested_by": mr.requested_by,
+            "department": mr.department,
             "notes": mr.notes,
             "created_by": mr.created_by,
             "updated_by": mr.updated_by,
@@ -302,8 +339,12 @@ class MaterialRequestService:
                     "material_request_id": line.material_request_id,
                     "item_id": line.item_id,
                     "quantity": line.quantity,
+                    "uom": line.uom,
                     "required_date": line.required_date,
                     "description": line.description,
+                    "estimated_unit_cost": line.estimated_unit_cost,
+                    "requested_for": line.requested_for,
+                    "requested_for_department": line.requested_for_department,
                     "created_at": line.created_at,
                     "updated_at": line.updated_at,
                 }
@@ -317,7 +358,11 @@ class MaterialRequestService:
         return {
             "id": mr.id,
             "organization_id": mr.organization_id,
+            "request_no": mr.request_no,
+            "type": mr.type.value if mr.type else "purchase",
+            "priority": mr.priority.value if mr.priority else "medium",
             "status": mr.status.value if mr.status else None,
+            "department": mr.department,
             "created_at": mr.created_at,
             "created_by": mr.created_by,
             "line_items_count": line_items_count,

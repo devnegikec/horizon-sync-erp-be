@@ -8,7 +8,7 @@ from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import MaterialRequestStatus
+from app.models.base import MaterialRequestStatus, MaterialRequestType, MaterialRequestPriority
 from app.models.types import JSONB
 
 
@@ -19,6 +19,33 @@ class MaterialRequest(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+
+    # Human-readable reference number
+    request_no = Column(String(50), nullable=True, index=True)
+
+    # Request Type: purchase, transfer, or issue
+    type = Column(
+        Enum(
+            MaterialRequestType,
+            name="materialrequesttype",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=MaterialRequestType.PURCHASE,
+        nullable=False,
+    )
+
+    # Priority: low, medium, high, urgent
+    priority = Column(
+        Enum(
+            MaterialRequestPriority,
+            name="materialrequestpriority",
+            create_type=False,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=MaterialRequestPriority.MEDIUM,
+        nullable=False,
+    )
 
     # Status
     status = Column(
@@ -31,6 +58,18 @@ class MaterialRequest(Base):
         default=MaterialRequestStatus.DRAFT,
         nullable=False,
     )
+
+    # Target warehouse where goods should land
+    target_warehouse_id = Column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
+
+    # Who requested this (employee/user)
+    requested_by = Column(UUID(as_uuid=True), nullable=True)
+
+    # Department requesting the materials
+    department = Column(String(100), nullable=True)
 
     # Notes
     notes = Column(Text, nullable=True)
@@ -57,7 +96,7 @@ class MaterialRequest(Base):
     )
 
     def __repr__(self):
-        return f"<MaterialRequest(id={self.id}, status='{self.status}')>"
+        return f"<MaterialRequest(id={self.id}, request_no='{self.request_no}', status='{self.status}')>"
 
 
 class MaterialRequestLine(Base):
@@ -82,8 +121,16 @@ class MaterialRequestLine(Base):
 
     # Quantity and details
     quantity = Column(Numeric(15, 4), nullable=False)
+    uom = Column(String(50), nullable=True)  # Unit of Measure (Kgs, Boxes, Pallets, etc.)
     required_date = Column(Date, nullable=False)
     description = Column(Text, nullable=True)
+
+    # Estimated cost for approval workflow
+    estimated_unit_cost = Column(Numeric(15, 4), nullable=True)
+
+    # Who/which department is this for (internal customer)
+    requested_for = Column(String(255), nullable=True)  # Employee name or ID
+    requested_for_department = Column(String(100), nullable=True)
 
     # Extra
     extra_data = Column(JSONB, nullable=True)
@@ -100,4 +147,4 @@ class MaterialRequestLine(Base):
     material_request = relationship("MaterialRequest", back_populates="line_items")
 
     def __repr__(self):
-        return f"<MaterialRequestLine(id={self.id}, item_id={self.item_id}, quantity={self.quantity})>"
+        return f"<MaterialRequestLine(id={self.id}, item_id={self.item_id}, quantity={self.quantity}, uom='{self.uom}')>"

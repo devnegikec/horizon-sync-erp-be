@@ -119,3 +119,20 @@ class MaterialRequestRepository:
             .filter(MaterialRequestLine.material_request_id == material_request_id)
             .scalar()
         )
+
+    def count_by_year(self, organization_id: UUID, year: int) -> int:
+        """Count Material Requests created in a specific year for an organization"""
+        from datetime import datetime
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year, 12, 31, 23, 59, 59)
+        
+        return (
+            self.db.query(func.count(MaterialRequest.id))
+            .filter(
+                MaterialRequest.organization_id == organization_id,
+                MaterialRequest.created_at >= start_date,
+                MaterialRequest.created_at <= end_date,
+                MaterialRequest.deleted_at.is_(None),
+            )
+            .scalar()
+        )

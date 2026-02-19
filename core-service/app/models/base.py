@@ -249,6 +249,23 @@ class SalesOrderStatus(str, enum.Enum):
 # ===========================================
 
 
+class MaterialRequestType(str, enum.Enum):
+    """Material request type enumeration"""
+
+    PURCHASE = "purchase"  # Buy from vendor
+    TRANSFER = "transfer"  # Move from Warehouse A to B
+    ISSUE = "issue"  # Give to a department
+
+
+class MaterialRequestPriority(str, enum.Enum):
+    """Material request priority enumeration"""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
 class MaterialRequestStatus(str, enum.Enum):
     """Material request status enumeration"""
 
