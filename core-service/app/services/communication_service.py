@@ -204,7 +204,6 @@ class CommunicationService:
             "created_at": comm.created_at,
         }
 
-
     async def send_email(
         self,
         to: str,
@@ -247,12 +246,14 @@ class CommunicationService:
                     # If content is string (base64), decode it
                     if isinstance(content, str):
                         content = base64.b64decode(content)
-                    
-                    processed_attachments.append({
-                        "filename": att.get("filename", "attachment"),
-                        "content": content,
-                        "content_type": att.get("content_type"),
-                    })
+
+                    processed_attachments.append(
+                        {
+                            "filename": att.get("filename", "attachment"),
+                            "content": content,
+                            "content_type": att.get("content_type"),
+                        }
+                    )
                 except Exception as e:
                     raise ValueError(f"Invalid attachment: {str(e)}")
 
@@ -275,12 +276,20 @@ class CommunicationService:
                 "sender_id": user_id,
                 "subject": subject,
                 "message": message,
-                "status": CommunicationStatus.SENT if result["status"] == "sent" else CommunicationStatus.PENDING,
+                "status": CommunicationStatus.SENT
+                if result["status"] == "sent"
+                else CommunicationStatus.PENDING,
                 "extra_data": {
                     "cc": cc,
-                    "has_attachments": len(processed_attachments) > 0 if processed_attachments else False,
-                    "attachment_count": len(processed_attachments) if processed_attachments else 0,
-                    "attachment_names": [a["filename"] for a in processed_attachments] if processed_attachments else [],
+                    "has_attachments": len(processed_attachments) > 0
+                    if processed_attachments
+                    else False,
+                    "attachment_count": len(processed_attachments)
+                    if processed_attachments
+                    else 0,
+                    "attachment_names": [a["filename"] for a in processed_attachments]
+                    if processed_attachments
+                    else [],
                 },
             }
 
@@ -317,7 +326,9 @@ class CommunicationService:
                 "error_message": str(e),
                 "extra_data": {
                     "cc": cc,
-                    "has_attachments": len(processed_attachments) > 0 if processed_attachments else False,
+                    "has_attachments": len(processed_attachments) > 0
+                    if processed_attachments
+                    else False,
                 },
             }
 

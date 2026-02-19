@@ -4,7 +4,6 @@ import logging
 import mimetypes
 import ssl
 from email.message import EmailMessage
-from pathlib import Path
 
 import aiosmtplib
 
@@ -69,9 +68,7 @@ class EmailService:
         logger.info(f"  Host: {settings.smtp_host}")
         logger.info(f"  Port: {settings.smtp_port}")
         logger.info(f"  Username: {settings.smtp_username}")
-        logger.info(
-            f"  Password: {'SET' if settings.smtp_password else 'NOT SET'}"
-        )
+        logger.info(f"  Password: {'SET' if settings.smtp_password else 'NOT SET'}")
         logger.info(f"  From Email: {settings.smtp_from_email}")
         logger.info(f"  From Name: {settings.smtp_from_name}")
 

@@ -5,6 +5,7 @@
 The `/api/v1/communications/send` endpoint was failing with a 500 error due to:
 
 1. **Database column mismatch**: The table had `metadata` column but code expected `extra_data`
+
    - **Fixed**: Renamed column from `metadata` to `extra_data`
 
 2. **Missing SMTP configuration**: Email settings were not in `.env` file

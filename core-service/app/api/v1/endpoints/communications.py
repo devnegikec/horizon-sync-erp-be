@@ -133,7 +133,6 @@ async def delete_communication(
     return None
 
 
-
 @router.post("/send", response_model=SendEmailResponse)
 async def send_email(
     body: SendEmailRequest,

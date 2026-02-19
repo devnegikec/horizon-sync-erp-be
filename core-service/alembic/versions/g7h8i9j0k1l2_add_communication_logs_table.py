@@ -23,7 +23,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create communication_logs table and related enums if they do not exist"""
-    
+
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
     existing_tables = inspector.get_table_names()
@@ -33,17 +33,17 @@ def upgrade() -> None:
         "communicationdoctype": "('quotation', 'sales_order', 'purchase_order', 'invoice', 'delivery_note', 'purchase_receipt', 'payment', 'rfq', 'material_request')",
         "communicationchannel": "('email', 'whatsapp', 'sms', 'webhook')",
         "communicationstatus": "('pending', 'sent', 'delivered', 'failed', 'bounced')",
-        "recipienttype": "('customer', 'supplier', 'employee', 'other')"
+        "recipienttype": "('customer', 'supplier', 'employee', 'other')",
     }
 
     for name, values in enums.items():
         op.execute(
             f"""
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{name}') THEN 
-                    CREATE TYPE {name} AS ENUM {values}; 
-                END IF; 
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{name}') THEN
+                    CREATE TYPE {name} AS ENUM {values};
+                END IF;
             END $$;
             """
         )
@@ -62,8 +62,15 @@ def upgrade() -> None:
             sa.Column(
                 "doc_type",
                 ENUM(
-                    "quotation", "sales_order", "purchase_order", "invoice",
-                    "delivery_note", "purchase_receipt", "payment", "rfq", "material_request",
+                    "quotation",
+                    "sales_order",
+                    "purchase_order",
+                    "invoice",
+                    "delivery_note",
+                    "purchase_receipt",
+                    "payment",
+                    "rfq",
+                    "material_request",
                     name="communicationdoctype",
                     create_type=False,
                 ),
@@ -74,12 +81,26 @@ def upgrade() -> None:
             sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
             sa.Column(
                 "channel",
-                ENUM("email", "whatsapp", "sms", "webhook", name="communicationchannel", create_type=False),
+                ENUM(
+                    "email",
+                    "whatsapp",
+                    "sms",
+                    "webhook",
+                    name="communicationchannel",
+                    create_type=False,
+                ),
                 nullable=False,
             ),
             sa.Column(
                 "recipient_type",
-                ENUM("customer", "supplier", "employee", "other", name="recipienttype", create_type=False),
+                ENUM(
+                    "customer",
+                    "supplier",
+                    "employee",
+                    "other",
+                    name="recipienttype",
+                    create_type=False,
+                ),
                 nullable=True,
             ),
             sa.Column("recipient", sa.String(255), nullable=False),
@@ -91,7 +112,15 @@ def upgrade() -> None:
             sa.Column("message", sa.Text(), nullable=True),
             sa.Column(
                 "status",
-                ENUM("pending", "sent", "delivered", "failed", "bounced", name="communicationstatus", create_type=False),
+                ENUM(
+                    "pending",
+                    "sent",
+                    "delivered",
+                    "failed",
+                    "bounced",
+                    name="communicationstatus",
+                    create_type=False,
+                ),
                 nullable=False,
                 server_default="pending",
             ),

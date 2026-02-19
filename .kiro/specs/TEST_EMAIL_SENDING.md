@@ -177,6 +177,7 @@ SMTP Configuration:
    ```
 
 3. **Check Gmail App Password:**
+
    - Make sure 2FA is enabled on devnegikec@gmail.com
    - Verify the app password is correct: yzmfmjpyjsecjqns
    - Generate new app password if needed: https://myaccount.google.com/apppasswords

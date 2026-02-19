@@ -70,9 +70,7 @@ class CommunicationListResponse(BaseModel):
 
 
 class CommunicationStatusUpdate(BaseModel):
-    status: str = Field(
-        ..., pattern="^(pending|sent|delivered|failed|bounced)$"
-    )
+    status: str = Field(..., pattern="^(pending|sent|delivered|failed|bounced)$")
     error_message: str | None = None
 
 
@@ -89,7 +87,8 @@ class SendEmailRequest(BaseModel):
     message: str = Field(..., min_length=1, description="Email body (plain text)")
     html_message: str | None = Field(None, description="HTML version of email body")
     attachments: list[dict] | None = Field(
-        None, description="List of attachments with filename, content (base64), content_type"
+        None,
+        description="List of attachments with filename, content (base64), content_type",
     )
     # Optional: Link to a document for logging
     doc_type: str | None = Field(
