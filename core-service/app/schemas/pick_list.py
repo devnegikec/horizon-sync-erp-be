@@ -23,18 +23,15 @@ class PickListItemCreate(PickListItemBase):
     pass
 
 
-class PickListItemResponse(BaseModel):
+class PickListResponse(PickListBase):
     id: UUID
     organization_id: UUID
-    pick_list_id: UUID
-    item_id: UUID
-    warehouse_id: UUID
-    qty: Decimal
-    picked_qty: Decimal
-    uom: str
-    batch_no: str | None
-    sort_order: int
+    completed_at: datetime | None = None
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
     created_at: datetime
+    updated_at: datetime
+    items: list[PickListItemResponse] = []
     model_config = ConfigDict(from_attributes=True)
 
 
