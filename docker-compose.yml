@@ -61,7 +61,7 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-4320}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -109,7 +109,7 @@ services:
       IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM_NAME: search:events
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -165,7 +165,7 @@ services:
       SYNC_SERVICE_USERNAME: ${SYNC_SERVICE_USERNAME:-devendera.negi@gmail.com}
       SYNC_SERVICE_PASSWORD: ${SYNC_SERVICE_PASSWORD:-Test@123}
       REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
       SEARCH_MAX_RESULTS: ${SEARCH_MAX_RESULTS:-1000}
       SEARCH_DEFAULT_PAGE_SIZE: ${SEARCH_DEFAULT_PAGE_SIZE:-20}
