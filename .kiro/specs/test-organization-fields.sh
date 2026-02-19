@@ -77,7 +77,7 @@ FIELDS=(
 MISSING_FIELDS=()
 for field in "${FIELDS[@]}"; do
   HAS_FIELD=$(echo "$ORG_RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print('$field' in data)" 2>/dev/null)
-  
+
   if [ "$HAS_FIELD" = "True" ]; then
     echo "✅ Field '$field' is present"
   else
