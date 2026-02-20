@@ -25,12 +25,12 @@ class PurchaseOrderRepository:
     def get_by_id(self, po_id: UUID, organization_id: UUID, for_update: bool = False) -> PurchaseOrder | None:
         """
         Get Purchase Order by ID with all relationships.
-        
+
         Args:
             po_id: Purchase Order ID
             organization_id: Organization ID
             for_update: If True, use SELECT FOR UPDATE to lock the row for concurrent updates
-            
+
         Returns:
             PurchaseOrder or None
         """
@@ -43,10 +43,10 @@ class PurchaseOrderRepository:
                 PurchaseOrder.deleted_at.is_(None),
             )
         )
-        
+
         if for_update:
             query = query.with_for_update()
-        
+
         return query.first()
 
     def list_purchase_orders(

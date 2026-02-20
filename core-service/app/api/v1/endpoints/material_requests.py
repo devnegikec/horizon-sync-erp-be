@@ -91,7 +91,7 @@ async def get_workflow_status(
 ):
     """
     Get complete workflow status for a Material Request.
-    
+
     Traces the full sourcing flow: MR → RFQs → Purchase Orders → Receipts → Invoices → Payments.
     Requires material_request.read permission.
     """

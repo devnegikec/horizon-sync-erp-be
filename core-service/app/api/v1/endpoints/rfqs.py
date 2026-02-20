@@ -34,12 +34,12 @@ async def create_rfq(
 ):
     """
     Create new RFQ.
-    
+
     Can be created from a Material Request or standalone.
     Requires rfq.create permission.
     """
     svc = RFQService(db)
-    
+
     # If material_request_id is provided, create from Material Request
     if body.material_request_id:
         data = svc.create_from_material_request(
@@ -52,7 +52,7 @@ async def create_rfq(
     else:
         # Create standalone RFQ (not implemented in service yet, but schema supports it)
         raise NotImplementedError("Standalone RFQ creation not yet implemented")
-    
+
     return RFQResponse.model_validate(data)
 
 
@@ -73,7 +73,7 @@ async def list_rfqs(
 ):
     """
     List RFQs with pagination.
-    
+
     Supports filtering by status, material_request_id, sorting, and search.
     Requires rfq.read permission.
     """
@@ -102,7 +102,7 @@ async def get_rfq(
 ):
     """
     Retrieve RFQ by ID.
-    
+
     Returns complete RFQ details including line items, suppliers, and quotes.
     Requires rfq.read permission.
     """
@@ -120,7 +120,7 @@ async def update_rfq(
 ):
     """
     Update RFQ (DRAFT only).
-    
+
     Only RFQs in DRAFT status can be modified.
     Requires rfq.update permission.
     """
@@ -142,7 +142,7 @@ async def delete_rfq(
 ):
     """
     Delete RFQ (DRAFT only).
-    
+
     Only RFQs in DRAFT status can be deleted.
     Requires rfq.update permission.
     """
@@ -159,7 +159,7 @@ async def send_rfq(
 ):
     """
     Send RFQ to suppliers.
-    
+
     Changes status from DRAFT to SENT.
     Requires rfq.update permission.
     """
@@ -177,7 +177,7 @@ async def record_quote(
 ):
     """
     Record supplier quote for an RFQ line item.
-    
+
     Validates RFQ line and supplier association.
     Automatically updates RFQ status based on quote completeness.
     Requires rfq.update permission.
@@ -203,7 +203,7 @@ async def close_rfq(
 ):
     """
     Close RFQ.
-    
+
     Changes status to CLOSED.
     Requires rfq.update permission.
     """
