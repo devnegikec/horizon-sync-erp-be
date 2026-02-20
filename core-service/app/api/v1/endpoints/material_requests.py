@@ -14,6 +14,7 @@ from app.schemas.material_request import (
     MaterialRequestListResponse,
     MaterialRequestResponse,
     MaterialRequestUpdate,
+    WorkflowStatusResponse,
 )
 from app.services.material_request_service import MaterialRequestService
 
@@ -80,6 +81,23 @@ async def get_material_request(
     svc = MaterialRequestService(db)
     data = svc.get_by_id(material_request_id, current_user.organization_id)
     return MaterialRequestResponse.model_validate(data)
+
+
+@router.get("/{material_request_id}/workflow", response_model=WorkflowStatusResponse)
+async def get_workflow_status(
+    material_request_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(MATERIAL_REQUEST_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get complete workflow status for a Material Request.
+    
+    Traces the full sourcing flow: MR → RFQs → Purchase Orders → Receipts → Invoices → Payments.
+    Requires material_request.read permission.
+    """
+    svc = MaterialRequestService(db)
+    data = svc.get_workflow_status(material_request_id, current_user.organization_id)
+    return WorkflowStatusResponse.model_validate(data)
 
 
 @router.put("/{material_request_id}", response_model=MaterialRequestResponse)

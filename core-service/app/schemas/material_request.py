@@ -145,3 +145,55 @@ class MaterialRequestStatusUpdate(BaseModel):
         ...,
         pattern="^(draft|submitted|partially_quoted|fully_quoted|cancelled)$",
     )
+
+
+class WorkflowRFQItem(BaseModel):
+    """RFQ item in workflow status"""
+    id: UUID
+    status: str
+    closing_date: date | None = None
+    created_at: datetime
+
+
+class WorkflowPurchaseOrderItem(BaseModel):
+    """Purchase Order item in workflow status"""
+    id: UUID
+    status: str
+    party_id: UUID
+    grand_total: Decimal
+    created_at: datetime
+
+
+class WorkflowReceiptItem(BaseModel):
+    """Receipt item in workflow status"""
+    id: UUID
+    purchase_receipt_no: str
+    receipt_date: datetime
+    status: str
+
+
+class WorkflowInvoiceItem(BaseModel):
+    """Invoice item in workflow status"""
+    id: UUID
+    invoice_no: str
+    status: str
+    grand_total: Decimal
+
+
+class WorkflowPaymentItem(BaseModel):
+    """Payment item in workflow status"""
+    id: UUID
+    payment_no: str
+    amount: Decimal
+    status: str
+    posting_date: datetime
+
+
+class WorkflowStatusResponse(BaseModel):
+    """Complete workflow status for a Material Request"""
+    material_request: MaterialRequestResponse
+    rfqs: list[WorkflowRFQItem] = []
+    purchase_orders: list[WorkflowPurchaseOrderItem] = []
+    receipts: list[WorkflowReceiptItem] = []
+    invoices: list[WorkflowInvoiceItem] = []
+    payments: list[WorkflowPaymentItem] = []

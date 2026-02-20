@@ -55,6 +55,7 @@ class PurchaseOrderRepository:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        rfq_id: UUID | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         search: str | None = None,
@@ -67,6 +68,9 @@ class PurchaseOrderRepository:
 
         if status is not None:
             q = q.filter(PurchaseOrder.status == status)
+
+        if rfq_id is not None:
+            q = q.filter(PurchaseOrder.rfq_id == rfq_id)
 
         total = q.count()
 

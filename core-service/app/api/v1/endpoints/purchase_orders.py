@@ -74,6 +74,7 @@ async def list_purchase_orders(
         None,
         pattern="^(DRAFT|SUBMITTED|PARTIALLY_RECEIVED|FULLY_RECEIVED|CLOSED|CANCELLED|draft|submitted|partially_received|fully_received|closed|cancelled)$",
     ),
+    rfq_id: UUID | None = Query(None, description="Filter by RFQ ID"),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     search: str | None = Query(None, description="Search in Purchase Order details"),
@@ -83,7 +84,7 @@ async def list_purchase_orders(
     """
     List Purchase Orders with pagination.
     
-    Supports filtering by status, sorting, and search.
+    Supports filtering by status, rfq_id, sorting, and search.
     Requires purchase_order.read permission.
     """
     svc = PurchaseOrderService(db)
@@ -92,6 +93,7 @@ async def list_purchase_orders(
         page=page,
         page_size=page_size,
         status=status.lower() if status else None,
+        rfq_id=rfq_id,
         sort_by=sort_by,
         sort_order=sort_order,
         search=search,

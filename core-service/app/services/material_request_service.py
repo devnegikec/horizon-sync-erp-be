@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ResourceNotFoundException, ValidationException
 from app.core.transaction import transactional
 from app.models.base import MaterialRequestStatus
+from app.models.invoice import Invoice
+from app.models.payment import Payment
+from app.models.purchase_order import PurchaseOrder
+from app.models.purchase_receipt import PurchaseReceipt
+from app.models.rfq import RFQ
 from app.repositories.material_request_repository import MaterialRequestRepository
 from app.services.state_machine import StateMachine
 from app.services.status_transition_service import StatusTransitionService
@@ -316,6 +321,149 @@ class MaterialRequestService:
         )
 
         return self._to_response(mr)
+
+    def get_workflow_status(
+        self, material_request_id: UUID, organization_id: UUID
+    ) -> dict:
+        """
+        Get complete workflow status for a Material Request.
+        Traces: MR → RFQs → Purchase Orders → Receipts → Invoices → Payments
+        """
+        mr = self.repo.get_by_id(material_request_id, organization_id)
+        if not mr:
+            raise ResourceNotFoundException(
+                f"Material Request {material_request_id} not found"
+            )
+
+        # Get RFQs linked to this MR
+        rfqs = (
+            self.db.query(RFQ)
+            .filter(
+                RFQ.material_request_id == material_request_id,
+                RFQ.organization_id == organization_id,
+                RFQ.deleted_at.is_(None),
+            )
+            .all()
+        )
+
+        rfq_ids = [rfq.id for rfq in rfqs]
+
+        # Get Purchase Orders linked to those RFQs
+        purchase_orders = []
+        if rfq_ids:
+            purchase_orders = (
+                self.db.query(PurchaseOrder)
+                .filter(
+                    PurchaseOrder.rfq_id.in_(rfq_ids),
+                    PurchaseOrder.organization_id == organization_id,
+                    PurchaseOrder.deleted_at.is_(None),
+                )
+                .all()
+            )
+
+        po_ids = [po.id for po in purchase_orders]
+
+        # Get Receipts linked to those POs (via reference_id)
+        receipts = []
+        if po_ids:
+            receipts = (
+                self.db.query(PurchaseReceipt)
+                .filter(
+                    PurchaseReceipt.reference_id.in_(po_ids),
+                    PurchaseReceipt.organization_id == organization_id,
+                )
+                .all()
+            )
+
+        # Get Invoices linked to those POs (via reference_id)
+        invoices = []
+        if po_ids:
+            invoices = (
+                self.db.query(Invoice)
+                .filter(
+                    Invoice.reference_id.in_(po_ids),
+                    Invoice.organization_id == organization_id,
+                )
+                .all()
+            )
+
+        invoice_ids = [inv.id for inv in invoices]
+
+        # Get Payments linked to those Invoices (via extra_data or reference)
+        payments = []
+        if invoice_ids:
+            # Payments reference invoices via party_id matching and reference
+            payments = (
+                self.db.query(Payment)
+                .filter(
+                    Payment.organization_id == organization_id,
+                )
+                .all()
+            )
+            # Filter payments that reference our invoices via extra_data
+            # Since payments don't have a direct reference_id to invoices,
+            # we match by party_id from the POs
+            supplier_ids = list({po.party_id for po in purchase_orders})
+            if supplier_ids:
+                payments = (
+                    self.db.query(Payment)
+                    .filter(
+                        Payment.party_id.in_(supplier_ids),
+                        Payment.organization_id == organization_id,
+                    )
+                    .all()
+                )
+
+        return {
+            "material_request": self._to_response(mr),
+            "rfqs": [
+                {
+                    "id": rfq.id,
+                    "status": rfq.status.value if hasattr(rfq.status, "value") else rfq.status,
+                    "closing_date": rfq.closing_date,
+                    "created_at": rfq.created_at,
+                }
+                for rfq in rfqs
+            ],
+            "purchase_orders": [
+                {
+                    "id": po.id,
+                    "status": po.status.value if hasattr(po.status, "value") else po.status,
+                    "party_id": po.party_id,
+                    "grand_total": po.grand_total,
+                    "created_at": po.created_at,
+                }
+                for po in purchase_orders
+            ],
+            "receipts": [
+                {
+                    "id": r.id,
+                    "purchase_receipt_no": r.purchase_receipt_no,
+                    "receipt_date": r.receipt_date,
+                    "status": r.status.value if hasattr(r.status, "value") else r.status,
+                }
+                for r in receipts
+            ],
+            "invoices": [
+                {
+                    "id": inv.id,
+                    "invoice_no": inv.invoice_no,
+                    "status": inv.status.value if hasattr(inv.status, "value") else inv.status,
+                    "grand_total": inv.grand_total,
+                }
+                for inv in invoices
+            ],
+            "payments": [
+                {
+                    "id": p.id,
+                    "payment_no": p.payment_no,
+                    "amount": p.amount,
+                    "status": p.status.value if hasattr(p.status, "value") else p.status,
+                    "posting_date": p.posting_date,
+                }
+                for p in payments
+            ],
+        }
 
     @staticmethod
     def _to_response(mr) -> dict:

@@ -64,6 +64,7 @@ async def list_rfqs(
         None,
         pattern="^(DRAFT|SENT|PARTIALLY_RESPONDED|FULLY_RESPONDED|CLOSED|draft|sent|partially_responded|fully_responded|closed)$",
     ),
+    material_request_id: UUID | None = Query(None, description="Filter by Material Request ID"),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     search: str | None = Query(None, description="Search in RFQ details"),
@@ -73,7 +74,7 @@ async def list_rfqs(
     """
     List RFQs with pagination.
     
-    Supports filtering by status, sorting, and search.
+    Supports filtering by status, material_request_id, sorting, and search.
     Requires rfq.read permission.
     """
     svc = RFQService(db)
@@ -82,6 +83,7 @@ async def list_rfqs(
         page=page,
         page_size=page_size,
         status=status.upper() if status else None,
+        material_request_id=material_request_id,
         sort_by=sort_by,
         sort_order=sort_order,
         search=search,
