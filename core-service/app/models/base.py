@@ -285,3 +285,50 @@ class TransactionType(str, enum.Enum):
 
     PURCHASE = "purchase"
     SALES = "sales"
+
+
+# ===========================================
+# PAYMENT FLOW ENUMS
+# ===========================================
+
+
+class PaymentEntryType(str, enum.Enum):
+    """Payment entry type enumeration"""
+
+    CUSTOMER_PAYMENT = "Customer_Payment"
+    SUPPLIER_PAYMENT = "Supplier_Payment"
+
+
+class PaymentMode(str, enum.Enum):
+    """Payment mode enumeration"""
+
+    CASH = "Cash"
+    CHECK = "Check"
+    BANK_TRANSFER = "Bank_Transfer"
+
+
+class PaymentEntryStatus(str, enum.Enum):
+    """Payment entry status enumeration"""
+
+    DRAFT = "Draft"
+    CONFIRMED = "Confirmed"
+    CANCELLED = "Cancelled"
+
+
+class PaymentSource(str, enum.Enum):
+    """Payment source enumeration"""
+
+    MANUAL = "Manual"
+    STRIPE = "Stripe"
+    RAZORPAY = "Razorpay"
+
+
+class PaymentAuditAction(str, enum.Enum):
+    """Payment audit action enumeration"""
+
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    CONFIRM = "CONFIRM"
+    CANCEL = "CANCEL"
+    ALLOCATE = "ALLOCATE"
+    DEALLOCATE = "DEALLOCATE"

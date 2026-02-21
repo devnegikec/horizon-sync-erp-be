@@ -73,6 +73,24 @@ class JournalEntryRepository:
         self.db.refresh(je)
         return je
 
+    def get_by_reference(
+        self,
+        reference_type: str,
+        reference_id: UUID,
+        organization_id: UUID,
+        load_lines: bool = True,
+    ) -> JournalEntry | None:
+        """Get journal entry by reference type and ID"""
+        q = self.db.query(JournalEntry).filter(
+            JournalEntry.reference_type == reference_type,
+            JournalEntry.reference_id == reference_id,
+            JournalEntry.organization_id == organization_id,
+        )
+        je = q.first()
+        if je and load_lines:
+            _ = je.lines
+        return je
+
     def delete(self, je: JournalEntry) -> None:
         self.db.delete(je)
         self.db.commit()
