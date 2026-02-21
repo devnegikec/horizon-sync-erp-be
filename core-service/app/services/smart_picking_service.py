@@ -51,9 +51,7 @@ class SmartPickingService:
             .first()
         )
         if not so:
-            raise ResourceNotFoundException(
-                f"Sales order {sales_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"Sales order {sales_order_id} not found")
 
         allowed = {SalesOrderStatus.CONFIRMED, SalesOrderStatus.PARTIALLY_DELIVERED}
         if so.status not in allowed:
@@ -159,9 +157,7 @@ class SmartPickingService:
             .first()
         )
         if not so:
-            raise ResourceNotFoundException(
-                f"Sales order {sales_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"Sales order {sales_order_id} not found")
 
         allowed = {SalesOrderStatus.CONFIRMED, SalesOrderStatus.PARTIALLY_DELIVERED}
         if so.status not in allowed:
@@ -452,9 +448,7 @@ class SmartPickingService:
 
         # Update SO status based on delivery completeness
         self.db.refresh(so)
-        all_delivered = all(
-            soi.delivered_qty >= soi.qty for soi in so.items
-        )
+        all_delivered = all(soi.delivered_qty >= soi.qty for soi in so.items)
         if all_delivered:
             so.status = SalesOrderStatus.DELIVERED
         else:

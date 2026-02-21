@@ -6,11 +6,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ── Suggest Allocation ──────────────────────────────────────────────
+
 
 class AllocationSuggestionItem(BaseModel):
     """Single warehouse allocation suggestion for one item."""
+
     item_id: UUID
     item_code: str
     item_name: str
@@ -24,6 +25,7 @@ class AllocationSuggestionItem(BaseModel):
 
 class AllocationSuggestionResponse(BaseModel):
     """Full allocation suggestion for a sales order."""
+
     sales_order_id: UUID
     sales_order_no: str
     customer_id: UUID
@@ -35,6 +37,7 @@ class AllocationSuggestionResponse(BaseModel):
 
 
 # ── Create Smart Pick List ─────────────────────────────────────────
+
 
 class SmartPickAllocation(BaseModel):
     item_id: UUID
@@ -61,6 +64,7 @@ class SmartPickListResponse(BaseModel):
 
 
 # ── Delivery Note from Pick List ───────────────────────────────────
+
 
 class DeliveryNoteFromPickListRequest(BaseModel):
     pick_list_id: UUID
