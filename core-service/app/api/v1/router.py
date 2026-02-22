@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     chart_of_accounts,
+    communications,
     currency,
     customers,
     delivery_notes,
@@ -30,6 +31,7 @@ from app.api.v1.endpoints import (
     rfqs,
     sales_orders,
     serial_numbers,
+    smart_picking,
     stock_entries,
     stock_levels,
     stock_movements,
@@ -148,4 +150,16 @@ api_router.include_router(
     purchase_orders.router,
     prefix="/purchase-orders",
     tags=["Purchase Orders"],
+)
+# Communications
+api_router.include_router(
+    communications.router,
+    prefix="/communications",
+    tags=["Communications"],
+)
+# Smart Picking
+api_router.include_router(
+    smart_picking.router,
+    prefix="/smart-picking",
+    tags=["Smart Picking"],
 )

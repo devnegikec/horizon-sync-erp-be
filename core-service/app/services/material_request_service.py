@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ResourceNotFoundException, ValidationException
 from app.core.transaction import transactional
 from app.models.base import MaterialRequestStatus
+from app.models.invoice import Invoice
+from app.models.payment import Payment
+from app.models.purchase_order import PurchaseOrder
+from app.models.purchase_receipt import PurchaseReceipt
+from app.models.rfq import RFQ
 from app.repositories.material_request_repository import MaterialRequestRepository
 from app.services.state_machine import StateMachine
 from app.services.status_transition_service import StatusTransitionService
@@ -25,6 +30,7 @@ class MaterialRequestService:
         """
         Create a new Material Request with DRAFT status.
         Validates that all line items have positive quantities.
+        Auto-generates request_no if not provided.
         """
         # Validate line items
         line_items = data.get("line_items", [])
@@ -37,10 +43,27 @@ class MaterialRequestService:
                     f"Line item {idx}: quantity must be greater than zero"
                 )
 
+        # Auto-generate request_no if not provided
+        request_no = data.get("request_no")
+        if not request_no:
+            # Generate format: MR-YYYY-NNNN
+            from datetime import datetime
+
+            year = datetime.now().year
+            # Get count of MRs this year for this org
+            count = self.repo.count_by_year(organization_id, year)
+            request_no = f"MR-{year}-{count + 1:04d}"
+
         # Prepare Material Request data
         mr_data = {
             "organization_id": organization_id,
+            "request_no": request_no,
+            "type": data.get("type", "purchase"),
+            "priority": data.get("priority", "medium"),
             "status": MaterialRequestStatus.DRAFT,
+            "target_warehouse_id": data.get("target_warehouse_id"),
+            "requested_by": data.get("requested_by", user_id),
+            "department": data.get("department"),
             "notes": data.get("notes"),
             "created_by": user_id,
             "updated_by": user_id,
@@ -56,8 +79,12 @@ class MaterialRequestService:
                 "material_request_id": mr.id,
                 "item_id": item["item_id"],
                 "quantity": item["quantity"],
+                "uom": item.get("uom"),
                 "required_date": item["required_date"],
                 "description": item.get("description"),
+                "estimated_unit_cost": item.get("estimated_unit_cost"),
+                "requested_for": item.get("requested_for"),
+                "requested_for_department": item.get("requested_for_department"),
             }
             self.repo.create_line_item(line_data)
 
@@ -151,13 +178,25 @@ class MaterialRequestService:
                     "material_request_id": mr.id,
                     "item_id": item["item_id"],
                     "quantity": item["quantity"],
+                    "uom": item.get("uom"),
                     "required_date": item["required_date"],
                     "description": item.get("description"),
+                    "estimated_unit_cost": item.get("estimated_unit_cost"),
+                    "requested_for": item.get("requested_for"),
+                    "requested_for_department": item.get("requested_for_department"),
                 }
                 self.repo.create_line_item(line_data)
 
         # Update Material Request fields
         update_data = {
+            "request_no": data.get("request_no", mr.request_no),
+            "type": data.get("type", mr.type),
+            "priority": data.get("priority", mr.priority),
+            "target_warehouse_id": data.get(
+                "target_warehouse_id", mr.target_warehouse_id
+            ),
+            "requested_by": data.get("requested_by", mr.requested_by),
+            "department": data.get("department", mr.department),
             "notes": data.get("notes", mr.notes),
             "updated_by": user_id,
         }
@@ -283,13 +322,162 @@ class MaterialRequestService:
 
         return self._to_response(mr)
 
+    def get_workflow_status(
+        self, material_request_id: UUID, organization_id: UUID
+    ) -> dict:
+        """
+        Get complete workflow status for a Material Request.
+        Traces: MR → RFQs → Purchase Orders → Receipts → Invoices → Payments
+        """
+        mr = self.repo.get_by_id(material_request_id, organization_id)
+        if not mr:
+            raise ResourceNotFoundException(
+                f"Material Request {material_request_id} not found"
+            )
+
+        # Get RFQs linked to this MR
+        rfqs = (
+            self.db.query(RFQ)
+            .filter(
+                RFQ.material_request_id == material_request_id,
+                RFQ.organization_id == organization_id,
+                RFQ.deleted_at.is_(None),
+            )
+            .all()
+        )
+
+        rfq_ids = [rfq.id for rfq in rfqs]
+
+        # Get Purchase Orders linked to those RFQs
+        purchase_orders = []
+        if rfq_ids:
+            purchase_orders = (
+                self.db.query(PurchaseOrder)
+                .filter(
+                    PurchaseOrder.rfq_id.in_(rfq_ids),
+                    PurchaseOrder.organization_id == organization_id,
+                    PurchaseOrder.deleted_at.is_(None),
+                )
+                .all()
+            )
+
+        po_ids = [po.id for po in purchase_orders]
+
+        # Get Receipts linked to those POs (via reference_id)
+        receipts = []
+        if po_ids:
+            receipts = (
+                self.db.query(PurchaseReceipt)
+                .filter(
+                    PurchaseReceipt.reference_id.in_(po_ids),
+                    PurchaseReceipt.organization_id == organization_id,
+                )
+                .all()
+            )
+
+        # Get Invoices linked to those POs (via reference_id)
+        invoices = []
+        if po_ids:
+            invoices = (
+                self.db.query(Invoice)
+                .filter(
+                    Invoice.reference_id.in_(po_ids),
+                    Invoice.organization_id == organization_id,
+                )
+                .all()
+            )
+
+        invoice_ids = [inv.id for inv in invoices]
+
+        # Get Payments linked to those Invoices (via extra_data or reference)
+        payments = []
+        if invoice_ids:
+            # Payments reference invoices via party_id matching and reference
+            payments = (
+                self.db.query(Payment)
+                .filter(
+                    Payment.organization_id == organization_id,
+                )
+                .all()
+            )
+            # Filter payments that reference our invoices via extra_data
+            # Since payments don't have a direct reference_id to invoices,
+            # we match by party_id from the POs
+            supplier_ids = list({po.party_id for po in purchase_orders})
+            if supplier_ids:
+                payments = (
+                    self.db.query(Payment)
+                    .filter(
+                        Payment.party_id.in_(supplier_ids),
+                        Payment.organization_id == organization_id,
+                    )
+                    .all()
+                )
+
+        return {
+            "material_request": self._to_response(mr),
+            "rfqs": [
+                {
+                    "id": rfq.id,
+                    "status": rfq.status.value if hasattr(rfq.status, "value") else rfq.status,
+                    "closing_date": rfq.closing_date,
+                    "created_at": rfq.created_at,
+                }
+                for rfq in rfqs
+            ],
+            "purchase_orders": [
+                {
+                    "id": po.id,
+                    "status": po.status.value if hasattr(po.status, "value") else po.status,
+                    "party_id": po.party_id,
+                    "grand_total": po.grand_total,
+                    "created_at": po.created_at,
+                }
+                for po in purchase_orders
+            ],
+            "receipts": [
+                {
+                    "id": r.id,
+                    "purchase_receipt_no": r.purchase_receipt_no,
+                    "receipt_date": r.receipt_date,
+                    "status": r.status.value if hasattr(r.status, "value") else r.status,
+                }
+                for r in receipts
+            ],
+            "invoices": [
+                {
+                    "id": inv.id,
+                    "invoice_no": inv.invoice_no,
+                    "status": inv.status.value if hasattr(inv.status, "value") else inv.status,
+                    "grand_total": inv.grand_total,
+                }
+                for inv in invoices
+            ],
+            "payments": [
+                {
+                    "id": p.id,
+                    "payment_no": p.payment_no,
+                    "amount": p.amount,
+                    "status": p.status.value if hasattr(p.status, "value") else p.status,
+                    "posting_date": p.posting_date,
+                }
+                for p in payments
+            ],
+        }
+
     @staticmethod
     def _to_response(mr) -> dict:
         """Convert Material Request model to response dict"""
         return {
             "id": mr.id,
             "organization_id": mr.organization_id,
+            "request_no": mr.request_no,
+            "type": mr.type.value if mr.type else "purchase",
+            "priority": mr.priority.value if mr.priority else "medium",
             "status": mr.status.value if mr.status else None,
+            "target_warehouse_id": mr.target_warehouse_id,
+            "requested_by": mr.requested_by,
+            "department": mr.department,
             "notes": mr.notes,
             "created_by": mr.created_by,
             "updated_by": mr.updated_by,
@@ -302,8 +490,12 @@ class MaterialRequestService:
                     "material_request_id": line.material_request_id,
                     "item_id": line.item_id,
                     "quantity": line.quantity,
+                    "uom": line.uom,
                     "required_date": line.required_date,
                     "description": line.description,
+                    "estimated_unit_cost": line.estimated_unit_cost,
+                    "requested_for": line.requested_for,
+                    "requested_for_department": line.requested_for_department,
                     "created_at": line.created_at,
                     "updated_at": line.updated_at,
                 }
@@ -317,7 +509,11 @@ class MaterialRequestService:
         return {
             "id": mr.id,
             "organization_id": mr.organization_id,
+            "request_no": mr.request_no,
+            "type": mr.type.value if mr.type else "purchase",
+            "priority": mr.priority.value if mr.priority else "medium",
             "status": mr.status.value if mr.status else None,
+            "department": mr.department,
             "created_at": mr.created_at,
             "created_by": mr.created_by,
             "line_items_count": line_items_count,

@@ -249,6 +249,23 @@ class SalesOrderStatus(str, enum.Enum):
 # ===========================================
 
 
+class MaterialRequestType(str, enum.Enum):
+    """Material request type enumeration"""
+
+    PURCHASE = "purchase"  # Buy from vendor
+    TRANSFER = "transfer"  # Move from Warehouse A to B
+    ISSUE = "issue"  # Give to a department
+
+
+class MaterialRequestPriority(str, enum.Enum):
+    """Material request priority enumeration"""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
 class MaterialRequestStatus(str, enum.Enum):
     """Material request status enumeration"""
 
@@ -285,3 +302,50 @@ class TransactionType(str, enum.Enum):
 
     PURCHASE = "purchase"
     SALES = "sales"
+
+
+# ===========================================
+# COMMUNICATION ENUMS
+# ===========================================
+
+
+class CommunicationDocType(str, enum.Enum):
+    """Communication document type enumeration"""
+
+    QUOTATION = "quotation"
+    SALES_ORDER = "sales_order"
+    PURCHASE_ORDER = "purchase_order"
+    INVOICE = "invoice"
+    DELIVERY_NOTE = "delivery_note"
+    PURCHASE_RECEIPT = "purchase_receipt"
+    PAYMENT = "payment"
+    RFQ = "rfq"
+    MATERIAL_REQUEST = "material_request"
+
+
+class CommunicationChannel(str, enum.Enum):
+    """Communication channel enumeration"""
+
+    EMAIL = "email"
+    WHATSAPP = "whatsapp"
+    SMS = "sms"
+    WEBHOOK = "webhook"
+
+
+class CommunicationStatus(str, enum.Enum):
+    """Communication status enumeration"""
+
+    PENDING = "pending"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    BOUNCED = "bounced"
+
+
+class RecipientType(str, enum.Enum):
+    """Recipient type enumeration"""
+
+    CUSTOMER = "customer"
+    SUPPLIER = "supplier"
+    EMPLOYEE = "employee"
+    OTHER = "other"

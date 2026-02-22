@@ -19,6 +19,9 @@ python-jose[cryptography]==3.3.0
 # HTTP Client (for identity-service calls)
 httpx==0.25.2
 
+# Email
+aiosmtplib==3.0.1
+
 # Redis (for event publishing)
 redis==5.0.1
 

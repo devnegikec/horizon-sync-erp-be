@@ -231,6 +231,7 @@ class PurchaseOrderService:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        rfq_id: UUID | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         search: str | None = None,
@@ -241,6 +242,7 @@ class PurchaseOrderService:
             page=page,
             page_size=page_size,
             status=status,
+            rfq_id=rfq_id,
             sort_by=sort_by,
             sort_order=sort_order,
             search=search,
@@ -589,18 +591,18 @@ class PurchaseOrderService:
         """
         Update received quantities for Purchase Order line items.
         Calculates and updates Purchase Order status based on received quantities.
-        
+
         Uses SELECT FOR UPDATE to prevent race conditions in concurrent status updates.
-        
+
         Args:
             po_id: Purchase Order ID
             received_items: List of dicts with item_id and qty
             organization_id: Organization ID
             user_id: User ID for status transition logging
-            
+
         Returns:
             dict: Updated Purchase Order response
-            
+
         Requirements: 5.4, 5.5, 11.7
         """
         # Requirement 11.7: Use SELECT FOR UPDATE to lock the row for concurrent updates
@@ -655,11 +657,11 @@ class PurchaseOrderService:
     def _calculate_po_status(self, po) -> PurchaseOrderStatus:
         """
         Calculate Purchase Order status based on received quantities.
-        
+
         - FULLY_RECEIVED: All line items have received_quantity == quantity
         - PARTIALLY_RECEIVED: Some line items have received_quantity > 0 but < quantity
         - SUBMITTED: No items received yet
-        
+
         Requirements: 5.4, 5.5
         """
         if not po.line_items:
@@ -707,12 +709,12 @@ class PurchaseOrderService:
     ) -> None:
         """
         Close RFQ after Purchase Order is created.
-        
+
         Workflow connection: RFQ → Purchase Order
-        
+
         When a Purchase Order is created from an RFQ, the RFQ should be closed
         to indicate that the procurement process has moved forward.
-        
+
         Requirements: 2.5
         """
         rfq = self.rfq_repo.get_by_id(rfq_id, organization_id)

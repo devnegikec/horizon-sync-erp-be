@@ -71,6 +71,7 @@ class PickListResponse(PickListBase):
     updated_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
+    items: list[PickListItemResponse] = []
     model_config = ConfigDict(from_attributes=True)
 
 

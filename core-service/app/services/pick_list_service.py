@@ -99,6 +99,22 @@ class PickListService:
             "updated_by": pl.updated_by,
             "created_at": pl.created_at,
             "updated_at": pl.updated_at,
+            "items": [
+                {
+                    "id": item.id,
+                    "organization_id": item.organization_id,
+                    "pick_list_id": item.pick_list_id,
+                    "item_id": item.item_id,
+                    "warehouse_id": item.warehouse_id,
+                    "qty": item.qty,
+                    "picked_qty": item.picked_qty,
+                    "uom": item.uom,
+                    "batch_no": item.batch_no,
+                    "sort_order": item.sort_order,
+                    "created_at": item.created_at,
+                }
+                for item in pl.items
+            ],
         }
 
     @staticmethod

@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -48,6 +49,7 @@ class Quotation(Base):
     grand_total = Column(Numeric(15, 2), default=0)
     currency = Column(String(10), default="INR")
     remarks = Column(Text, nullable=True)
+    converted_to_sales_order = Column(Boolean, default=False, nullable=False)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
     created_by = Column(UUID(as_uuid=True), nullable=True)

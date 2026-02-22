@@ -16,6 +16,13 @@ class OrganizationBase(BaseModel):
     email: str | None = Field(None, max_length=255)
     phone: str | None = Field(None, max_length=20)
     website: str | None = Field(None, max_length=255)
+    address_line1: str | None = Field(None, max_length=255)
+    address_line2: str | None = Field(None, max_length=255)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
+    country: str | None = Field(None, max_length=100)
+    logo_url: str | None = Field(None, max_length=500)
     organization_type: str | None = Field(
         None, pattern="^(enterprise|business|startup|individual)$"
     )
@@ -38,12 +45,21 @@ class OrganizationUpdate(BaseModel):
     email: str | None = Field(None, max_length=255)
     phone: str | None = Field(None, max_length=20)
     website: str | None = Field(None, max_length=255)
+    address_line1: str | None = Field(None, max_length=255)
+    address_line2: str | None = Field(None, max_length=255)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
+    country: str | None = Field(None, max_length=100)
+    logo_url: str | None = Field(None, max_length=500)
     organization_type: str | None = Field(
         None, pattern="^(enterprise|business|startup|individual)$"
     )
     industry: str | None = Field(None, max_length=100)
     status: str | None = Field(None, pattern="^(active|inactive|suspended|trial)$")
     is_active: bool | None = None
+    settings: dict | None = None
+    extra_data: dict | None = None
 
 
 class OrganizationResponse(OrganizationBase):
@@ -54,6 +70,8 @@ class OrganizationResponse(OrganizationBase):
     is_active: bool
     status: str
     organization_type: str
+    settings: dict | None = None
+    extra_data: dict | None = None
     created_at: datetime
     updated_at: datetime
 
