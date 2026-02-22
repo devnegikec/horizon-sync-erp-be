@@ -95,9 +95,11 @@ class InvoiceService:
         # Get customer or supplier details based on party_type
         party_details = None
         party_type_lower = inv.party_type.lower() if inv.party_type else None
-        
+
         if party_type_lower == "customer":
-            customer = self.db.query(Customer).filter(Customer.id == inv.party_id).first()
+            customer = (
+                self.db.query(Customer).filter(Customer.id == inv.party_id).first()
+            )
             if customer:
                 party_details = {
                     "customer_name": customer.customer_name,
@@ -115,7 +117,9 @@ class InvoiceService:
                     "status": customer.status.value if customer.status else None,
                 }
         elif party_type_lower == "supplier":
-            supplier = self.db.query(Supplier).filter(Supplier.id == inv.party_id).first()
+            supplier = (
+                self.db.query(Supplier).filter(Supplier.id == inv.party_id).first()
+            )
             if supplier:
                 party_details = {
                     "supplier_name": supplier.supplier_name,
@@ -164,7 +168,7 @@ class InvoiceService:
                 response["supplier"] = party_details
 
         # Add items if they exist
-        if hasattr(inv, 'items') and inv.items:
+        if hasattr(inv, "items") and inv.items:
             response["items"] = [
                 {
                     "id": item.id,
@@ -223,7 +227,7 @@ class InvoiceService:
         tax_template_id = None
         tax_rate = "0.00"
         tax_amount = "0.00"
-        
+
         # Try to get tax template from item's default or organization settings
         tax_result = self.tax_template_repo.get_applicable_template(
             organization_id=organization_id,
@@ -231,23 +235,24 @@ class InvoiceService:
             item_id=item.id,
             item_group_id=item.item_group_id,
         )
-        
+
         if tax_result:
             template, _ = tax_result
             tax_template_id = template.id
-            
+
             # Calculate tax rate from template rules
             total_tax_rate = sum(
                 float(rule.tax_rate or 0) for rule in (template.tax_rules or [])
             )
             tax_rate = f"{total_tax_rate:.2f}"
-            
+
             # Calculate tax amount
             from decimal import Decimal
+
             amount = Decimal(str(invoice_item.amount or 0))
             tax_amount_decimal = amount * Decimal(str(total_tax_rate)) / Decimal("100")
             tax_amount = f"{tax_amount_decimal:.2f}"
-            
+
             # Build tax info breakup
             breakup = [
                 {
@@ -269,6 +274,7 @@ class InvoiceService:
 
         # Calculate total amount (amount + tax)
         from decimal import Decimal
+
         amount = Decimal(str(invoice_item.amount or 0))
         tax_amt = Decimal(str(tax_amount))
         total_amount = f"{(amount + tax_amt):.2f}"

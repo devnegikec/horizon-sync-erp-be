@@ -18,20 +18,22 @@ class InvoiceRepository:
         self.db.refresh(inv)
         return inv
 
-    def get_by_id(self, invoice_id: UUID, organization_id: UUID, for_update: bool = False) -> Invoice | None:
+    def get_by_id(
+        self, invoice_id: UUID, organization_id: UUID, for_update: bool = False
+    ) -> Invoice | None:
         """
         Get Invoice by ID with items and customer eagerly loaded.
-        
+
         Args:
             invoice_id: Invoice ID
             organization_id: Organization ID
             for_update: If True, use SELECT FOR UPDATE to lock the row for concurrent updates
-            
+
         Returns:
             Invoice or None
         """
         from sqlalchemy.orm import joinedload
-        
+
         query = (
             self.db.query(Invoice)
             .options(joinedload(Invoice.items))
@@ -40,10 +42,10 @@ class InvoiceRepository:
                 Invoice.organization_id == organization_id,
             )
         )
-        
+
         if for_update:
             query = query.with_for_update()
-        
+
         return query.first()
 
     def list_invoices(

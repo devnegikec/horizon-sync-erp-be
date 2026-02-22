@@ -35,6 +35,7 @@ Enhanced invoice items in the `GET /api/v1/invoices/{id}` endpoint to include co
 ### Files Modified
 
 1. **`core-service/app/services/invoice_service.py`**
+
    - Added `StockLevelRepository` and `TaxTemplateRepository` imports
    - Added `_get_item_details()` method to fetch comprehensive item information
    - Updated `_to_response()` to include item details using spread operator
@@ -47,11 +48,13 @@ Enhanced invoice items in the `GET /api/v1/invoices/{id}` endpoint to include co
 For each invoice item, the service:
 
 1. **Fetches item details** from the `items` table:
+
    - description
    - min_order_qty, max_order_qty
    - standard_rate
 
 2. **Retrieves applicable tax template**:
+
    - Queries `tax_templates` based on organization, transaction type, item, and item_group
    - Calculates total tax rate from all tax rules
    - Computes tax amount: `amount × tax_rate / 100`

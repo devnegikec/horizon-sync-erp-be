@@ -14,11 +14,10 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import relationship
-from app.models.types import UUID
 
 from app.database import Base
 from app.models.base import InvoiceStatus, InvoiceType
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class Invoice(Base):
@@ -70,7 +69,9 @@ class Invoice(Base):
     )
 
     # Relationships
-    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
+    items = relationship(
+        "InvoiceItem", back_populates="invoice", cascade="all, delete-orphan"
+    )
 
 
 class InvoiceItem(Base):

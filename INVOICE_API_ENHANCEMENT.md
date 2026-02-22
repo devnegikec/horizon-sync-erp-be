@@ -55,6 +55,7 @@ query = (
 Updated `_to_response()` method to include:
 
 1. **Customer details** (when `party_type == "customer"`):
+
    - customer_name
    - customer_code
    - email
@@ -70,6 +71,7 @@ Updated `_to_response()` method to include:
    - status
 
 2. **Supplier details** (when `party_type == "supplier"`):
+
    - supplier_name
    - supplier_code
    - email
@@ -268,6 +270,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
    - Verify `items` array is present
 
 3. **Test invoice without items**:
+
    - Verify response doesn't include `items` key or includes empty array
 
 4. **Test invoice with deleted customer/supplier**:

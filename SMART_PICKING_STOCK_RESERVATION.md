@@ -146,12 +146,14 @@ If no stock exists for an item:
 ### Backend Tests
 
 1. **Test stock reservation on confirmation**:
+
    - Confirm SO with sufficient stock in single warehouse
    - Confirm SO requiring multi-warehouse split
    - Verify stock_levels updated correctly
    - Verify multiple sales_order_items created
 
 2. **Test insufficient stock scenarios**:
+
    - Confirm SO with insufficient total stock
    - Verify error message and no partial reservation
 
@@ -162,6 +164,7 @@ If no stock exists for an item:
 ### Frontend Tests
 
 1. **Display reserved stock**:
+
    - Show `quantity_reserved` column in allocation table
    - Verify reserved stock is displayed correctly
 

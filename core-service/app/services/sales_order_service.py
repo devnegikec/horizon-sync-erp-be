@@ -282,7 +282,6 @@ class SalesOrderService:
         from app.models.item import Item
         from app.models.sales_order import SalesOrderItem
         from app.models.stock_level import StockLevel
-        from app.models.warehouse import Warehouse
 
         # Collect original items to process
         original_items = list(sales_order.items)
@@ -307,9 +306,7 @@ class SalesOrderService:
             )
 
             if not stock_rows:
-                raise ValidationError(
-                    f"No stock available for item {so_item.item_id}"
-                )
+                raise ValidationError(f"No stock available for item {so_item.item_id}")
 
             # Calculate total available stock
             total_available = sum(sl.quantity_available for sl in stock_rows)
@@ -370,7 +367,11 @@ class SalesOrderService:
                 proportion = first_alloc["qty"] / so_item.qty
                 so_item.qty = first_alloc["qty"]
                 so_item.amount = so_item.rate * first_alloc["qty"]
-                so_item.tax_amount = so_item.tax_amount * proportion if so_item.tax_amount else Decimal("0")
+                so_item.tax_amount = (
+                    so_item.tax_amount * proportion
+                    if so_item.tax_amount
+                    else Decimal("0")
+                )
                 so_item.total_amount = so_item.amount + so_item.tax_amount
 
                 # Reserve stock for first allocation
@@ -390,7 +391,9 @@ class SalesOrderService:
 
                 # Create new items for remaining allocations
                 for alloc in allocations[1:]:
-                    proportion = alloc["qty"] / (so_item.qty + sum(a["qty"] for a in allocations[1:]))
+                    proportion = alloc["qty"] / (
+                        so_item.qty + sum(a["qty"] for a in allocations[1:])
+                    )
                     new_item = SalesOrderItem(
                         id=uuid.uuid4(),
                         organization_id=organization_id,
@@ -405,8 +408,15 @@ class SalesOrderService:
                         sort_order=so_item.sort_order,
                         tax_template_id=so_item.tax_template_id,
                         tax_rate=so_item.tax_rate,
-                        tax_amount=(so_item.tax_amount / (so_item.qty / alloc["qty"])) if so_item.tax_amount else Decimal("0"),
-                        total_amount=(so_item.rate * alloc["qty"]) + ((so_item.tax_amount / (so_item.qty / alloc["qty"])) if so_item.tax_amount else Decimal("0")),
+                        tax_amount=(so_item.tax_amount / (so_item.qty / alloc["qty"]))
+                        if so_item.tax_amount
+                        else Decimal("0"),
+                        total_amount=(so_item.rate * alloc["qty"])
+                        + (
+                            (so_item.tax_amount / (so_item.qty / alloc["qty"]))
+                            if so_item.tax_amount
+                            else Decimal("0")
+                        ),
                         extra_data={"warehouse_id": str(alloc["warehouse_id"])},
                     )
                     new_items_to_add.append(new_item)
