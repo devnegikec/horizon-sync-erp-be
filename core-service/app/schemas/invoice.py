@@ -40,6 +40,64 @@ class InvoiceUpdate(BaseModel):
     remarks: str | None = None
 
 
+class CustomerDetails(BaseModel):
+    customer_name: str
+    customer_code: str
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+    status: str | None = None
+
+
+class SupplierDetails(BaseModel):
+    supplier_name: str
+    supplier_code: str
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+    status: str | None = None
+
+
+class InvoiceItemResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    invoice_id: UUID
+    item_id: UUID | None = None
+    item_code: str | None = None
+    item_name: str | None = None
+    description: str | None = None
+    qty: Decimal
+    uom: str
+    rate: Decimal | None = None
+    amount: Decimal | None = None
+    sort_order: int | None = None
+    tax_template_id: str | None = None
+    tax_rate: str | None = None
+    tax_amount: str | None = None
+    total_amount: str | None = None
+    min_order_qty: int | None = None
+    max_order_qty: int | None = None
+    standard_rate: str | None = None
+    tax_info: dict | None = None
+    extra_data: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class InvoiceResponse(InvoiceBase):
     id: UUID
     organization_id: UUID
@@ -48,6 +106,9 @@ class InvoiceResponse(InvoiceBase):
     updated_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
+    customer: CustomerDetails | None = None
+    supplier: SupplierDetails | None = None
+    items: list[InvoiceItemResponse] | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -20,7 +20,7 @@ class InvoiceRepository:
 
     def get_by_id(self, invoice_id: UUID, organization_id: UUID, for_update: bool = False) -> Invoice | None:
         """
-        Get Invoice by ID.
+        Get Invoice by ID with items and customer eagerly loaded.
         
         Args:
             invoice_id: Invoice ID
@@ -30,8 +30,11 @@ class InvoiceRepository:
         Returns:
             Invoice or None
         """
+        from sqlalchemy.orm import joinedload
+        
         query = (
             self.db.query(Invoice)
+            .options(joinedload(Invoice.items))
             .filter(
                 Invoice.id == invoice_id,
                 Invoice.organization_id == organization_id,

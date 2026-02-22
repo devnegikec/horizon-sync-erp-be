@@ -29,14 +29,30 @@ Build a Smart Picking module that enables users to:
 ## Workflow Diagram
 
 ```
-Sales Order (confirmed) → Suggest Allocation → Review/Edit Suggestions
-       → Create Pick List (reserves stock) → Create Delivery Note (deducts stock, creates audit trail)
+Sales Order (draft) → Confirm Order (auto-reserves stock, splits items across warehouses)
+       → Suggest Allocation → Review/Edit Suggestions
+       → Create Pick List (reserves additional stock if needed) → Create Delivery Note (deducts stock, creates audit trail)
 ```
 
 **Status Transitions:**
 
 - Pick List: `DRAFT` → `COMPLETED` (on delivery note creation)
-- Sales Order: `CONFIRMED` → `PARTIALLY_DELIVERED` → `DELIVERED`
+- Sales Order: `DRAFT` → `CONFIRMED` (auto-reserves stock) → `PARTIALLY_DELIVERED` → `DELIVERED`
+
+**Important: Stock Reservation on Sales Order Confirmation**
+
+When a sales order is confirmed (status changes from `DRAFT` to `CONFIRMED`), the system automatically:
+
+1. **Reserves stock** across warehouses using the same allocation logic as Smart Picking
+2. **Splits sales_order_items** if an item needs to be fulfilled from multiple warehouses
+3. **Updates stock_levels**: `quantity_reserved++`, `quantity_available--`
+4. **Stores warehouse_id** in `sales_order_items.extra_data` for each allocation
+
+This means:
+
+- The `quantity_reserved` field in allocation suggestions shows stock already reserved by confirmed orders
+- The `current_available` field shows stock available for new reservations
+- Multiple `sales_order_items` entries may exist for the same item if split across warehouses
 
 ## API Endpoints Reference
 
@@ -91,6 +107,7 @@ Authorization: Bearer {token}
       "warehouse_name": "Main Warehouse",
       "suggested_qty": 50,
       "current_available": 120,
+      "quantity_reserved": 30,
       "uom": "Pieces"
     },
     {
@@ -102,6 +119,7 @@ Authorization: Bearer {token}
       "warehouse_name": "Secondary Warehouse",
       "suggested_qty": 10,
       "current_available": 30,
+      "quantity_reserved": 5,
       "uom": "Pieces"
     }
   ],
@@ -290,6 +308,7 @@ export interface AllocationSuggestionItem {
   warehouse_name: string;
   suggested_qty: number;
   current_available: number;
+  quantity_reserved: number;
   uom: string;
 }
 
@@ -657,6 +676,7 @@ export const AllocationSuggestionView: React.FC<
             <th>Item</th>
             <th>Warehouse</th>
             <th>Available</th>
+            <th>Reserved</th>
             <th>Suggested Qty</th>
             <th>Allocate Qty</th>
             <th>UOM</th>
@@ -674,6 +694,7 @@ export const AllocationSuggestionView: React.FC<
                 <small>{suggestion.warehouse_code}</small>
               </td>
               <td>{suggestion.current_available}</td>
+              <td>{suggestion.quantity_reserved}</td>
               <td>{suggestion.suggested_qty}</td>
               <td>
                 <input

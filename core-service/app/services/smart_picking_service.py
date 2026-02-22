@@ -106,6 +106,7 @@ class SmartPickingService:
                         "warehouse_name": wh.name if wh else "",
                         "suggested_qty": alloc_qty,
                         "current_available": sl.quantity_available,
+                        "quantity_reserved": sl.quantity_reserved or 0,
                         "uom": so_item.uom,
                     }
                 )

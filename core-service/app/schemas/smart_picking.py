@@ -20,6 +20,7 @@ class AllocationSuggestionItem(BaseModel):
     warehouse_name: str
     suggested_qty: Decimal
     current_available: int
+    quantity_reserved: int
     uom: str
 
 

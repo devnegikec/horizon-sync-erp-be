@@ -7,10 +7,13 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
+    ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
 )
+from sqlalchemy.orm import relationship
 from app.models.types import UUID
 
 from app.database import Base
@@ -65,3 +68,42 @@ class Invoice(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    # Relationships
+    items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
+
+
+class InvoiceItem(Base):
+    __tablename__ = "invoice_items"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    invoice_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    item_code = Column(String(100), nullable=True)
+    item_name = Column(String(255), nullable=True)
+    qty = Column(Numeric(15, 3), nullable=False)
+    uom = Column(String(50), nullable=False)
+    rate = Column(Numeric(15, 2), nullable=True)
+    amount = Column(Numeric(15, 2), nullable=True)
+    sort_order = Column(Integer, default=0)
+    extra_data = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    # Relationships
+    invoice = relationship("Invoice", back_populates="items")
+    item = relationship("Item")
