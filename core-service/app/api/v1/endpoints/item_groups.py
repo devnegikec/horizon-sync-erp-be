@@ -15,10 +15,34 @@ from app.schemas.item_group import (
     ItemGroupResponse,
     ItemGroupTreeNode,
     ItemGroupUpdate,
+    TaxInfo,
+    TaxRuleBreakup,
 )
 from app.services.item_group_service import ItemGroupService
 
 router = APIRouter()
+
+
+def _build_tax_info(tax_template) -> TaxInfo | None:
+    """Build TaxInfo schema from a TaxTemplate ORM object."""
+    if tax_template is None:
+        return None
+    has_compound = any(r.is_compound for r in tax_template.tax_rules)
+    return TaxInfo(
+        id=tax_template.id,
+        template_name=tax_template.template_name,
+        template_code=tax_template.template_code,
+        is_compound=has_compound,
+        breakup=[
+            TaxRuleBreakup(
+                rule_name=r.rule_name,
+                tax_type=r.tax_type,
+                rate=float(r.tax_rate),
+                is_compound=r.is_compound,
+            )
+            for r in tax_template.tax_rules
+        ],
+    )
 
 
 @router.post(
@@ -104,8 +128,13 @@ async def list_item_groups(
         sort_order=sort_order,
     )
 
-    # Convert to response schema
-    item_group_items = [ItemGroupListItem.model_validate(ig) for ig in item_groups]
+    # Convert to response schema with tax info
+    item_group_items = []
+    for ig in item_groups:
+        item = ItemGroupListItem.model_validate(ig)
+        item.sales_tax_info = _build_tax_info(ig.sales_tax_template)
+        item.purchase_tax_info = _build_tax_info(ig.purchase_tax_template)
+        item_group_items.append(item)
 
     return ItemGroupListResponse(
         item_groups=item_group_items, pagination=PaginationMeta(**pagination)

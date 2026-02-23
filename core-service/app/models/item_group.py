@@ -62,6 +62,12 @@ class ItemGroup(Base):
     # Relationships
     parent = relationship("ItemGroup", remote_side=[id], backref="children")
     items = relationship("Item", back_populates="item_group")
+    sales_tax_template = relationship(
+        "TaxTemplate", foreign_keys=[sales_tax_template_id], lazy="select"
+    )
+    purchase_tax_template = relationship(
+        "TaxTemplate", foreign_keys=[purchase_tax_template_id], lazy="select"
+    )
 
     def __repr__(self):
         return f"<ItemGroup(id={self.id}, code='{self.code}', name='{self.name}')>"

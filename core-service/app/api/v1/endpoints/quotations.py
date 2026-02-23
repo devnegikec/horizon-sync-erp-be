@@ -1,8 +1,9 @@
 """Quotations API endpoints"""
 
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import QUOTATION_CREATE, QUOTATION_READ, QUOTATION_UPDATE
@@ -18,7 +19,11 @@ from app.schemas.quotation import (
     QuotationStatusUpdate,
     QuotationUpdate,
 )
+from app.services.organization_client import organization_client
 from app.services.quotation_service import QuotationService
+from app.utils.naming_series import extract_number_from_document_no
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,12 +31,37 @@ router = APIRouter()
 @router.post("", response_model=QuotationResponse, status_code=status.HTTP_201_CREATED)
 async def create_quotation(
     body: QuotationCreate,
+    request: Request,
     current_user: CurrentUser = Depends(require_permission(QUOTATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create quotation. Requires quotation.create."""
     svc = QuotationService(db)
     data = svc.create(body.model_dump(), current_user.organization_id, current_user.id)
+    
+    # Update naming series in identity service (async, non-blocking)
+    # Extract the number from quotation_no (e.g., "QT-0035" -> 35)
+    if data.get("quotation_no"):
+        current_number = extract_number_from_document_no(data["quotation_no"])
+        
+        if current_number is not None:
+            # Get the auth token from request headers
+            auth_header = request.headers.get("Authorization", "")
+            
+            try:
+                # Update naming series asynchronously
+                await organization_client.update_naming_series(
+                    organization_id=current_user.organization_id,
+                    document_type="quotation",
+                    current_number=current_number,
+                    auth_token=auth_header.replace("Bearer ", ""),
+                )
+            except Exception as e:
+                # Log error but don't fail the quotation creation
+                logger.error(
+                    f"Failed to update naming series for quotation {data['quotation_no']}: {e}"
+                )
+    
     return QuotationResponse.model_validate(data)
 
 

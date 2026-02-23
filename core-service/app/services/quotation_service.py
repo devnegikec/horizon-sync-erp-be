@@ -34,6 +34,18 @@ class QuotationService:
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
 
+        # Auto-generate quotation_no if not provided
+        quotation_no = payload.get("quotation_no")
+        if not quotation_no:
+            # Generate format: QT-YYYY-NNNN
+            from datetime import datetime
+
+            year = datetime.now().year
+            # Get count of quotations this year for this org
+            count = self.repo.count_by_year(organization_id, year)
+            quotation_no = f"QT-{year}-{count + 1:04d}"
+            payload["quotation_no"] = quotation_no
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = QuotationStatus(payload["status"])

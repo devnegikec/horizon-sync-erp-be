@@ -1,0 +1,65 @@
+{
+  "naming_series": {
+    "rfq": {
+      "prefix": "RFQ-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "invoice": {
+      "prefix": "INV-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "payment": {
+      "prefix": "PAY-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "pick_list": {
+      "prefix": "PL-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "quotation": {
+      "prefix": "QT-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "sales_order": {
+      "prefix": "SO-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "delivery_note": {
+      "prefix": "DN-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "purchase_order": {
+      "prefix": "PO-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "material_request": {
+      "prefix": "MR-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    },
+    "purchase_receipt": {
+      "prefix": "PR-",
+      "padding": 4,
+      "separator": "-",
+      "current_number": 35
+    }
+  },
+  "fiscal_year_start": "01-01"
+}
