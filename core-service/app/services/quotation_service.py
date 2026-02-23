@@ -600,11 +600,27 @@ class QuotationService:
         }
 
     def _to_response(self, quotation) -> dict:
+        customer = quotation.customer
         return {
             "id": quotation.id,
             "organization_id": quotation.organization_id,
             "quotation_no": quotation.quotation_no,
             "customer_id": quotation.customer_id,
+            "customer": {
+                "id": customer.id,
+                "name": customer.customer_name,
+                "code": customer.customer_code,
+                "email": customer.email,
+                "phone": customer.phone,
+                "address": customer.address,
+                "address_line1": customer.address_line1,
+                "address_line2": customer.address_line2,
+                "city": customer.city,
+                "state": customer.state,
+                "postal_code": customer.postal_code,
+                "country": customer.country,
+                "tax_number": customer.tax_number,
+            } if customer else None,
             "quotation_date": quotation.quotation_date,
             "valid_until": quotation.valid_until,
             "status": quotation.status.value if quotation.status else None,
@@ -644,11 +660,16 @@ class QuotationService:
 
     @staticmethod
     def _to_list_item(quotation) -> dict:
+        customer = quotation.customer
         return {
             "id": quotation.id,
             "organization_id": quotation.organization_id,
             "quotation_no": quotation.quotation_no,
-            "customer_id": quotation.customer_id,
+            "customer": {
+                "id": customer.id,
+                "name": customer.customer_name,
+                "code": customer.customer_code,
+            } if customer else None,
             "quotation_date": quotation.quotation_date,
             "valid_until": quotation.valid_until,
             "status": quotation.status.value if quotation.status else None,
