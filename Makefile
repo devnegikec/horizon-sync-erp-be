@@ -166,13 +166,13 @@ seed:
 
 migrate:
 	docker compose exec identity-service python -m alembic upgrade head
-	docker compose exec core-service python -m alembic upgrade heads
+	docker compose exec core-service python -m alembic upgrade head
 
 migrate-identity:
 	docker compose exec identity-service python -m alembic upgrade head
 
 migrate-core:
-	docker compose exec core-service python -m alembic upgrade heads
+	docker compose exec core-service python -m alembic upgrade head
 
 # ===========================================
 # Shell Access
