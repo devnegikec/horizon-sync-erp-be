@@ -68,3 +68,17 @@ class QuotationRepository:
     def delete(self, quotation: Quotation) -> None:
         self.db.delete(quotation)
         self.db.commit()
+
+    def count_by_year(self, organization_id: UUID, year: int) -> int:
+        """Count quotations for a given organization and year"""
+        from sqlalchemy import extract, func
+
+        return (
+            self.db.query(func.count(Quotation.id))
+            .filter(
+                Quotation.organization_id == organization_id,
+                extract("year", Quotation.created_at) == year,
+            )
+            .scalar()
+            or 0
+        )

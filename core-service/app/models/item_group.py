@@ -4,12 +4,11 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, String, Text
-from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import ValuationMethod
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class ItemGroup(Base):
@@ -62,6 +61,12 @@ class ItemGroup(Base):
     # Relationships
     parent = relationship("ItemGroup", remote_side=[id], backref="children")
     items = relationship("Item", back_populates="item_group")
+    sales_tax_template = relationship(
+        "TaxTemplate", foreign_keys=[sales_tax_template_id], lazy="select"
+    )
+    purchase_tax_template = relationship(
+        "TaxTemplate", foreign_keys=[purchase_tax_template_id], lazy="select"
+    )
 
     def __repr__(self):
         return f"<ItemGroup(id={self.id}, code='{self.code}', name='{self.name}')>"

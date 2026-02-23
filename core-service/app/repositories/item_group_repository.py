@@ -141,6 +141,8 @@ class ItemGroupRepository:
         Returns:
             Tuple of (list of item groups, total count)
         """
+        from app.models.tax_template import TaxTemplate
+
         query = self.db.query(ItemGroup).filter(
             ItemGroup.organization_id == organization_id,
             ItemGroup.deleted_at.is_(None),
@@ -164,6 +166,15 @@ class ItemGroupRepository:
 
         # Get total count before pagination
         total_count = query.count()
+
+        # Eager-load parent and tax templates with their rules
+        query = query.options(
+            joinedload(ItemGroup.parent),
+            joinedload(ItemGroup.sales_tax_template).joinedload(TaxTemplate.tax_rules),
+            joinedload(ItemGroup.purchase_tax_template).joinedload(
+                TaxTemplate.tax_rules
+            ),
+        )
 
         # Apply sorting
         sort_column = getattr(ItemGroup, sort_by, ItemGroup.created_at)

@@ -91,7 +91,21 @@ class QuotationBase(BaseModel):
     converted_to_sales_order: bool = False
 
 
-class QuotationCreate(QuotationBase):
+class QuotationCreate(BaseModel):
+    """Create quotation schema - quotation_no is auto-generated"""
+
+    quotation_no: str | None = Field(
+        None, min_length=1, max_length=100, description="Auto-generated if not provided"
+    )
+    customer_id: UUID
+    quotation_date: datetime
+    valid_until: datetime | None = None
+    status: str = Field(
+        default="draft", pattern="^(draft|sent|accepted|rejected|expired)$"
+    )
+    grand_total: Decimal | float = 0
+    currency: str = Field(default="INR", max_length=10)
+    remarks: str | None = None
     items: list[QuotationItemCreate] = []
 
 

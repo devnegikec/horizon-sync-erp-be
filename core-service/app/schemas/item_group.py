@@ -73,6 +73,29 @@ class ItemGroupParentInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TaxRuleBreakup(BaseModel):
+    """Individual tax rule within a tax template"""
+
+    rule_name: str
+    tax_type: str
+    rate: float
+    is_compound: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaxInfo(BaseModel):
+    """Tax template info with breakup rules"""
+
+    id: UUID
+    template_name: str
+    template_code: str
+    is_compound: bool
+    breakup: list[TaxRuleBreakup]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ItemGroupResponse(BaseModel):
     """Schema for item group response"""
 
@@ -110,14 +133,20 @@ class ItemGroupResponse(BaseModel):
 
 
 class ItemGroupListItem(BaseModel):
-    """Schema for item group in list response (lighter version)"""
+    """Schema for item group in list response"""
 
     id: UUID
     name: str
     code: str
+    description: str | None = None
     parent_id: UUID | None = None
+    parent: ItemGroupParentInfo | None = None
     default_valuation_method: str | None = None
     default_uom: str | None = None
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
+    sales_tax_info: TaxInfo | None = None
+    purchase_tax_info: TaxInfo | None = None
     is_active: bool
     created_at: datetime
 
