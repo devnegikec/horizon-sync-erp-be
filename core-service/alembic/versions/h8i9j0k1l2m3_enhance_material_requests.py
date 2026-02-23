@@ -1,7 +1,7 @@
 """enhance material requests
 
 Revision ID: h8i9j0k1l2m3
-Revises: g7h8i9j0k1l2
+Revises: k1l2m3n4o5p6
 Create Date: 2026-02-19 15:30:00.000000
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "h8i9j0k1l2m3"
-down_revision = "g7h8i9j0k1l2"
+down_revision = "k1l2m3n4o5p6"
 branch_labels = None
 depends_on = None
 

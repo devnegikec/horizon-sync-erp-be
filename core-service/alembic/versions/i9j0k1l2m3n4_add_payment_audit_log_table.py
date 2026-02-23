@@ -1,7 +1,7 @@
 """add payment_audit_log table
 
 Revision ID: i9j0k1l2m3n4
-Revises: h8i9j0k1l2m3
+Revises: l2m3n4o5p6q7
 Create Date: 2024-01-16 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'i9j0k1l2m3n4'
-down_revision = 'h8i9j0k1l2m3'
+down_revision = 'l2m3n4o5p6q7'
 branch_labels = None
 depends_on = None
 

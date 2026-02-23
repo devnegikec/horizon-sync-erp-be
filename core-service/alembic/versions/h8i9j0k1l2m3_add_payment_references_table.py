@@ -1,7 +1,7 @@
 """add payment_references table
 
-Revision ID: h8i9j0k1l2m3
-Revises: g7h8i9j0k1l2
+Revision ID: l2m3n4o5p6q7
+Revises: h8i9j0k1l2m3
 Create Date: 2024-01-16 11:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers, used by Alembic.
-revision = 'h8i9j0k1l2m3'
-down_revision = 'g7h8i9j0k1l2'
+revision = 'l2m3n4o5p6q7'
+down_revision = 'h8i9j0k1l2m3'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """add journal entry tables
 
-Revision ID: f6g7h8i9j0k1
-Revises: e5f6g7h8i9j0
+Revision ID: j0k1l2m3n4o5
+Revises: f6g7h8i9j0k1
 Create Date: 2024-01-15 12:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
-revision = 'f6g7h8i9j0k1'
-down_revision = 'e5f6g7h8i9j0'
+revision = 'j0k1l2m3n4o5'
+down_revision = 'f6g7h8i9j0k1'
 branch_labels = None
 depends_on = None
 
