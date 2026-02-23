@@ -3,6 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
@@ -77,9 +78,12 @@ class AllocationService:
             )
 
         if allocated_amount > invoice_outstanding_balance:
-            raise ValidationError(
-                f"Allocation amount {allocated_amount} exceeds invoice outstanding balance {invoice_outstanding_balance}"
+            msg = (
+                f"Allocation amount {allocated_amount} exceeds invoice outstanding balance {invoice_outstanding_balance}. "
             )
+            if invoice_outstanding_balance == 0:
+                msg += "The invoice may already be fully allocated or have no amount set. Check the invoice total and existing allocations."
+            raise ValidationError(msg)
 
     def _validate_invoice_belongs_to_party(
         self,
@@ -141,22 +145,52 @@ class AllocationService:
         Raises:
             ValidationError: If invoice not found
         """
-        # Get invoice
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+        # Get invoice (without items to avoid querying invoice_items columns that may not exist)
+        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
             )
 
         # Get total allocated amount for this invoice
-        total_allocated = self.reference_repo.get_total_allocated_for_invoice(
+        total_allocated_raw = self.reference_repo.get_total_allocated_for_invoice(
             invoice_id, organization_id
         )
 
-        # Calculate outstanding balance
-        # Invoice model uses 'grand_total' field
-        invoice_amount = getattr(invoice, 'grand_total', Decimal('0.00'))
-        outstanding_balance = invoice_amount - total_allocated
+        # Outstanding = how much can still be allocated. Use all available sources
+        # and take the maximum so we don't undercount when one source is 0/unset.
+        def _to_decimal(v):
+            if v is None:
+                return Decimal("0")
+            return Decimal(str(v))
+
+        total_allocated = _to_decimal(total_allocated_raw)
+
+        total_from_header = _to_decimal(
+            getattr(invoice, "grand_total", None) or getattr(invoice, "total_amount", None)
+        )
+        balance_due = _to_decimal(getattr(invoice, "balance_due", None))
+        try:
+            total_from_items = self.invoice_repo.get_invoice_total_from_items(
+                invoice_id, organization_id
+            )
+        except Exception:
+            # invoice_items may lack amount column or table may differ; don't fail allocation.
+            # Roll back so the current transaction is not left aborted for later INSERT.
+            self.db.rollback()
+            total_from_items = Decimal("0")
+
+        # Take the max of: balance_due, (total - allocated), (sum items - allocated)
+        # so allocation works whether amounts live in header, balance_due, or line items.
+        outstanding_from_header = max(Decimal("0"), total_from_header - total_allocated)
+        outstanding_from_balance_due = balance_due  # already "current due" in many setups
+        outstanding_from_items = max(Decimal("0"), total_from_items - total_allocated)
+
+        outstanding_balance = max(
+            outstanding_from_header,
+            outstanding_from_balance_due,
+            outstanding_from_items,
+        )
 
         return outstanding_balance
 
@@ -197,15 +231,20 @@ class AllocationService:
                 f"Payment with ID {payment_id} not found or does not belong to organization"
             )
 
-        # Validate payment is in Draft status
-        if payment.status != PaymentEntryStatus.DRAFT:
+        # Validate payment is in Draft status (support both enum and string from DB)
+        status_val = getattr(payment.status, "value", payment.status)
+        is_draft = (
+            payment.status == PaymentEntryStatus.DRAFT
+            or (str(status_val or "").lower() == "draft")
+        )
+        if not is_draft:
             raise ValidationError(
-                f"Cannot allocate payment in {payment.status.value} status. "
+                f"Cannot allocate payment in {status_val} status. "
                 "Payment must be in Draft status to modify allocations."
             )
 
-        # Get invoice
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+        # Get invoice (without items to avoid querying invoice_items columns that may not exist)
+        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -268,7 +307,14 @@ class AllocationService:
             "created_by": user_id,
         }
 
-        payment_reference = self.reference_repo.create(payment_reference_data)
+        try:
+            payment_reference = self.reference_repo.create(payment_reference_data)
+        except SQLIntegrityError as e:
+            if "unique" in (e.orig.args[0] if e.orig else "").lower() or "unique_payment_references" in str(e):
+                raise ValidationError(
+                    "An allocation for this payment and invoice already exists."
+                ) from e
+            raise
 
         # Create audit log entry for ALLOCATE action
         audit_log_data = {
@@ -341,10 +387,15 @@ class AllocationService:
                 f"Payment with ID {payment_id} not found or does not belong to organization"
             )
 
-        # Validate payment is in Draft status
-        if payment.status != PaymentEntryStatus.DRAFT:
+        # Validate payment is in Draft status (support both enum and string from DB)
+        status_val = getattr(payment.status, "value", payment.status)
+        is_draft = (
+            payment.status == PaymentEntryStatus.DRAFT
+            or (str(status_val or "").lower() == "draft")
+        )
+        if not is_draft:
             raise ValidationError(
-                f"Cannot allocate payment in {payment.status.value} status. "
+                f"Cannot allocate payment in {status_val} status. "
                 "Payment must be in Draft status to modify allocations."
             )
 
@@ -382,8 +433,8 @@ class AllocationService:
                         f"Allocation {idx}: allocated_amount must have at most 2 decimal places"
                     )
 
-            # Get invoice
-            invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+            # Get invoice (without items to avoid querying invoice_items columns that may not exist)
+            invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
             if not invoice:
                 raise ValidationError(
                     f"Allocation {idx}: Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -690,8 +741,8 @@ class AllocationService:
         """
         from app.schemas.payment_reference import PaymentReferenceResponse
 
-        # Validate invoice exists
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+        # Validate invoice exists (without items to avoid querying invoice_items columns that may not exist)
+        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"

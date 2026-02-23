@@ -236,7 +236,7 @@ class JournalPostingService:
             "total_debit": base_amount,
             "total_credit": base_amount,
             "remarks": f"Payment received from customer - {payment_entry.payment_mode.value}",
-            "status": "Posted",
+            "status": "posted",
             "lines": [
                 {
                     "account_id": debit_account_id,
@@ -354,7 +354,7 @@ class JournalPostingService:
             "total_debit": original_entry["total_credit"],  # Swap totals
             "total_credit": original_entry["total_debit"],  # Swap totals
             "remarks": f"Reversal of payment entry - Cancellation reason: {payment_entry.cancellation_reason or 'Not specified'}",
-            "status": "Posted",
+            "status": "posted",
             "lines": reversing_lines,
         }
 

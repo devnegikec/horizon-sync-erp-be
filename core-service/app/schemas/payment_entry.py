@@ -182,6 +182,12 @@ class PaymentEntryResponse(BaseModel):
     # Relationships
     payment_references: list[PaymentReferenceInfo] = []
 
+    # Party display (customer/supplier name and contact; populated for detail/list)
+    party_name: str | None = None
+    party_code: str | None = None
+    party_email: str | None = None
+    party_phone: str | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -202,6 +208,12 @@ class PaymentEntryListItem(BaseModel):
     receipt_number: str | None = None
     unallocated_amount: Decimal
     created_at: datetime
+
+    # Party display (customer or supplier name and contact)
+    party_name: str | None = None
+    party_code: str | None = None
+    party_email: str | None = None
+    party_phone: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

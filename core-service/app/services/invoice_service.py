@@ -137,16 +137,21 @@ class InvoiceService:
                     "status": supplier.status.value if supplier.status else None,
                 }
 
+        # Support both string and enum for invoice_type/status (DB uses String columns)
+        inv_type = inv.invoice_type
+        inv_type_val = getattr(inv_type, "value", inv_type) if inv_type else None
+        st = inv.status
+        status_val = getattr(st, "value", st) if st else None
         response = {
             "id": inv.id,
             "organization_id": inv.organization_id,
             "invoice_no": inv.invoice_no,
-            "invoice_type": inv.invoice_type.value if inv.invoice_type else None,
+            "invoice_type": inv_type_val,
             "party_id": inv.party_id,
             "party_type": inv.party_type,
             "posting_date": inv.posting_date,
             "due_date": inv.due_date,
-            "status": inv.status.value if inv.status else None,
+            "status": status_val,
             "grand_total": inv.grand_total,
             "outstanding_amount": inv.outstanding_amount,
             "currency": inv.currency,
@@ -293,14 +298,20 @@ class InvoiceService:
 
     @staticmethod
     def _to_list_item(inv) -> dict:
+        # invoice_type and status are String columns in DB; support both str and enum
+        inv_type = inv.invoice_type
+        inv_type_val = getattr(inv_type, "value", inv_type) if inv_type else None
+        st = inv.status
+        status_val = getattr(st, "value", st) if st else None
         return {
             "id": inv.id,
             "organization_id": inv.organization_id,
             "invoice_no": inv.invoice_no,
-            "invoice_type": inv.invoice_type.value if inv.invoice_type else None,
+            "invoice_type": inv_type_val,
             "party_id": inv.party_id,
-            "status": inv.status.value if inv.status else None,
+            "status": status_val,
             "posting_date": inv.posting_date,
             "grand_total": inv.grand_total,
+            "outstanding_amount": getattr(inv, "outstanding_amount", None),
             "created_at": inv.created_at,
         }
