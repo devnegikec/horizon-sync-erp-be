@@ -195,6 +195,7 @@ class OrganizationService:
             "state": getattr(org, "state", None),
             "postal_code": getattr(org, "postal_code", None),
             "country": getattr(org, "country", None),
+            "logo_url": org.logo_url,
             "organization_type": org.organization_type.value
             if org.organization_type
             else None,
@@ -202,6 +203,8 @@ class OrganizationService:
             "status": org.status.value if org.status else None,
             "is_active": org.is_active,
             "owner_id": org.owner_id,
+            "settings": org.settings,
+            "extra_data": org.extra_data,
             "created_at": org.created_at,
             "updated_at": org.updated_at,
         }

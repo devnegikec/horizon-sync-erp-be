@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
 
+    # Email/SMTP Configuration
+    email_enabled: bool = True
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "noreply@example.com"
+    smtp_from_name: str = "Horizon Sync ERP"
+    smtp_validate_certs: bool = True
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE, case_sensitive=False, extra="ignore"
     )

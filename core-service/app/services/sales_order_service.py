@@ -1,5 +1,6 @@
 """Sales Order service"""
 
+import uuid
 from decimal import Decimal
 from uuid import UUID
 
@@ -229,6 +230,13 @@ class SalesOrderService:
             sales_order.status, new_status_enum, sales_order
         )
 
+        # If confirming the order, reserve stock and split items across warehouses
+        if (
+            new_status_enum == SalesOrderStatus.CONFIRMED
+            and sales_order.status == SalesOrderStatus.DRAFT
+        ):
+            self._reserve_stock_and_split_items(sales_order, organization_id, user_id)
+
         # Prepare update payload
         payload = {
             "status": new_status_enum,
@@ -248,6 +256,191 @@ class SalesOrderService:
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
         return self._to_response(sales_order)
+
+    def _reserve_stock_and_split_items(
+        self, sales_order, organization_id: UUID, user_id: UUID
+    ) -> None:
+        """Reserve stock and split sales order items across warehouses when confirming.
+
+        For each SO item, queries stock_levels ordered by quantity_available DESC
+        and splits the required qty across warehouses. Creates multiple sales_order_items
+        entries if an item needs to be fulfilled from multiple warehouses.
+
+        Updates stock_levels: quantity_reserved++, quantity_available--
+
+        Args:
+            sales_order: SalesOrder object with items
+            organization_id: Organization ID
+            user_id: User ID for audit trail
+
+        Raises:
+            ValidationError: If insufficient stock available
+        """
+        from decimal import Decimal
+
+        from app.core.exceptions import ValidationError
+        from app.models.item import Item
+        from app.models.sales_order import SalesOrderItem
+        from app.models.stock_level import StockLevel
+
+        # Collect original items to process
+        original_items = list(sales_order.items)
+
+        # Track new items to add
+        new_items_to_add = []
+
+        # Process each original item
+        for so_item in original_items:
+            remaining_qty = so_item.qty
+
+            # Fetch stock levels ordered by availability (richest first)
+            stock_rows = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == so_item.item_id,
+                    StockLevel.organization_id == organization_id,
+                    StockLevel.quantity_available > 0,
+                )
+                .order_by(StockLevel.quantity_available.desc())
+                .all()
+            )
+
+            if not stock_rows:
+                raise ValidationError(f"No stock available for item {so_item.item_id}")
+
+            # Calculate total available stock
+            total_available = sum(sl.quantity_available for sl in stock_rows)
+            if total_available < int(remaining_qty):
+                item = self.db.query(Item).filter(Item.id == so_item.item_id).first()
+                item_name = item.item_name if item else str(so_item.item_id)
+                raise ValidationError(
+                    f"Insufficient stock for item {item_name}: "
+                    f"required={int(remaining_qty)}, available={total_available}"
+                )
+
+            # Split across warehouses
+            allocations = []
+            for sl in stock_rows:
+                if remaining_qty <= 0:
+                    break
+
+                alloc_qty = min(Decimal(str(sl.quantity_available)), remaining_qty)
+                allocations.append(
+                    {
+                        "warehouse_id": sl.warehouse_id,
+                        "qty": alloc_qty,
+                    }
+                )
+                remaining_qty -= alloc_qty
+
+            # If only one warehouse, update the existing item with warehouse_id
+            if len(allocations) == 1:
+                # Add warehouse_id to extra_data
+                if so_item.extra_data is None:
+                    so_item.extra_data = {}
+                so_item.extra_data["warehouse_id"] = str(allocations[0]["warehouse_id"])
+
+                # Reserve stock
+                sl = (
+                    self.db.query(StockLevel)
+                    .filter(
+                        StockLevel.product_id == so_item.item_id,
+                        StockLevel.warehouse_id == allocations[0]["warehouse_id"],
+                        StockLevel.organization_id == organization_id,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                qty_int = int(allocations[0]["qty"])
+                sl.quantity_reserved = (sl.quantity_reserved or 0) + qty_int
+                sl.quantity_available = (sl.quantity_available or 0) - qty_int
+
+            # If multiple warehouses, create additional items
+            else:
+                # Update the first allocation on the existing item
+                first_alloc = allocations[0]
+                if so_item.extra_data is None:
+                    so_item.extra_data = {}
+                so_item.extra_data["warehouse_id"] = str(first_alloc["warehouse_id"])
+
+                # Adjust qty, amount, tax_amount, total_amount proportionally
+                proportion = first_alloc["qty"] / so_item.qty
+                so_item.qty = first_alloc["qty"]
+                so_item.amount = so_item.rate * first_alloc["qty"]
+                so_item.tax_amount = (
+                    so_item.tax_amount * proportion
+                    if so_item.tax_amount
+                    else Decimal("0")
+                )
+                so_item.total_amount = so_item.amount + so_item.tax_amount
+
+                # Reserve stock for first allocation
+                sl = (
+                    self.db.query(StockLevel)
+                    .filter(
+                        StockLevel.product_id == so_item.item_id,
+                        StockLevel.warehouse_id == first_alloc["warehouse_id"],
+                        StockLevel.organization_id == organization_id,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                qty_int = int(first_alloc["qty"])
+                sl.quantity_reserved = (sl.quantity_reserved or 0) + qty_int
+                sl.quantity_available = (sl.quantity_available or 0) - qty_int
+
+                # Create new items for remaining allocations
+                for alloc in allocations[1:]:
+                    proportion = alloc["qty"] / (
+                        so_item.qty + sum(a["qty"] for a in allocations[1:])
+                    )
+                    new_item = SalesOrderItem(
+                        id=uuid.uuid4(),
+                        organization_id=organization_id,
+                        sales_order_id=sales_order.id,
+                        item_id=so_item.item_id,
+                        qty=alloc["qty"],
+                        uom=so_item.uom,
+                        rate=so_item.rate,
+                        amount=so_item.rate * alloc["qty"],
+                        billed_qty=Decimal("0"),
+                        delivered_qty=Decimal("0"),
+                        sort_order=so_item.sort_order,
+                        tax_template_id=so_item.tax_template_id,
+                        tax_rate=so_item.tax_rate,
+                        tax_amount=(so_item.tax_amount / (so_item.qty / alloc["qty"]))
+                        if so_item.tax_amount
+                        else Decimal("0"),
+                        total_amount=(so_item.rate * alloc["qty"])
+                        + (
+                            (so_item.tax_amount / (so_item.qty / alloc["qty"]))
+                            if so_item.tax_amount
+                            else Decimal("0")
+                        ),
+                        extra_data={"warehouse_id": str(alloc["warehouse_id"])},
+                    )
+                    new_items_to_add.append(new_item)
+
+                    # Reserve stock for this allocation
+                    sl = (
+                        self.db.query(StockLevel)
+                        .filter(
+                            StockLevel.product_id == so_item.item_id,
+                            StockLevel.warehouse_id == alloc["warehouse_id"],
+                            StockLevel.organization_id == organization_id,
+                        )
+                        .with_for_update()
+                        .first()
+                    )
+                    qty_int = int(alloc["qty"])
+                    sl.quantity_reserved = (sl.quantity_reserved or 0) + qty_int
+                    sl.quantity_available = (sl.quantity_available or 0) - qty_int
+
+        # Add new items to the session
+        for new_item in new_items_to_add:
+            self.db.add(new_item)
+
+        self.db.flush()
 
     def convert_to_invoice(
         self,

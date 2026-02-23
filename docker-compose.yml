@@ -19,7 +19,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,7 +35,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,13 +61,13 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-4320}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
+      SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
     ports:
@@ -108,7 +109,15 @@ services:
       IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM_NAME: search:events
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync ERP}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
     ports:
       - "8001:8001"
       - "5679:5679"
@@ -156,7 +165,7 @@ services:
       SYNC_SERVICE_USERNAME: ${SYNC_SERVICE_USERNAME:-devendera.negi@gmail.com}
       SYNC_SERVICE_PASSWORD: ${SYNC_SERVICE_PASSWORD:-Test@123}
       REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:3000,http://localhost:3001}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
       SEARCH_MAX_RESULTS: ${SEARCH_MAX_RESULTS:-1000}
       SEARCH_DEFAULT_PAGE_SIZE: ${SEARCH_DEFAULT_PAGE_SIZE:-20}

@@ -100,11 +100,11 @@ class RFQService:
 
         # Refresh to get line items and suppliers
         self.db.refresh(rfq)
-        
+
         # Update Material Request status to PARTIALLY_QUOTED
         # (Workflow connection: Material Request → RFQ)
         self._update_material_request_status(material_request_id, organization_id)
-        
+
         return self._to_response(rfq)
 
     @transactional
@@ -320,6 +320,7 @@ class RFQService:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        material_request_id: UUID | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         search: str | None = None,
@@ -330,6 +331,7 @@ class RFQService:
             page=page,
             page_size=page_size,
             status=status,
+            material_request_id=material_request_id,
             sort_by=sort_by,
             sort_order=sort_order,
             search=search,
@@ -476,7 +478,7 @@ class RFQService:
         status_value = None
         if rfq.status:
             status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
-        
+
         return {
             "id": rfq.id,
             "organization_id": rfq.organization_id,
@@ -533,12 +535,12 @@ class RFQService:
         """Convert RFQ model to list item dict"""
         line_items_count = self.repo.get_line_items_count(rfq.id)
         suppliers_count = self.repo.get_suppliers_count(rfq.id)
-        
+
         # Handle status - it might be an enum or a string
         status_value = None
         if rfq.status:
             status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
-        
+
         return {
             "id": rfq.id,
             "organization_id": rfq.organization_id,
@@ -556,12 +558,12 @@ class RFQService:
     ) -> None:
         """
         Update Material Request status when RFQ is created.
-        
+
         Workflow connection: Material Request → RFQ
-        
+
         - If all line items have RFQs with quotes, set to FULLY_QUOTED
         - Otherwise, set to PARTIALLY_QUOTED
-        
+
         Requirements: 8.2
         """
         mr = self.mr_repo.get_by_id(material_request_id, organization_id)
@@ -592,4 +594,3 @@ class RFQService:
         if mr.status != new_status:
             update_data = {"status": new_status}
             self.mr_repo.update(mr, update_data)
-

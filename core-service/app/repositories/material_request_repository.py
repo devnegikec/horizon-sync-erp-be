@@ -63,7 +63,9 @@ class MaterialRequestRepository:
         total = q.count()
 
         allowed_sort_fields = {"id", "created_at", "updated_at", "status"}
-        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "created_at"
+        requested_sort_field = (
+            sort_by if sort_by in allowed_sort_fields else "created_at"
+        )
 
         existing_columns: set[str] = set()
         try:
@@ -74,7 +76,9 @@ class MaterialRequestRepository:
 
         if existing_columns:
             if requested_sort_field not in existing_columns:
-                requested_sort_field = "created_at" if "created_at" in existing_columns else "id"
+                requested_sort_field = (
+                    "created_at" if "created_at" in existing_columns else "id"
+                )
 
         col = getattr(MaterialRequest, requested_sort_field, MaterialRequest.id)
         normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"
@@ -117,5 +121,23 @@ class MaterialRequestRepository:
         return (
             self.db.query(func.count(MaterialRequestLine.id))
             .filter(MaterialRequestLine.material_request_id == material_request_id)
+            .scalar()
+        )
+
+    def count_by_year(self, organization_id: UUID, year: int) -> int:
+        """Count Material Requests created in a specific year for an organization"""
+        from datetime import datetime
+
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year, 12, 31, 23, 59, 59)
+
+        return (
+            self.db.query(func.count(MaterialRequest.id))
+            .filter(
+                MaterialRequest.organization_id == organization_id,
+                MaterialRequest.created_at >= start_date,
+                MaterialRequest.created_at <= end_date,
+                MaterialRequest.deleted_at.is_(None),
+            )
             .scalar()
         )

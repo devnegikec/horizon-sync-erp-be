@@ -6,13 +6,20 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException
 from app.models.base import InvoiceStatus, InvoiceType
+from app.models.customer import Customer
+from app.models.item import Item
+from app.models.supplier import Supplier
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.stock_level_repository import StockLevelRepository
+from app.repositories.tax_template_repository import TaxTemplateRepository
 
 
 class InvoiceService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = InvoiceRepository(db)
+        self.stock_level_repo = StockLevelRepository(db)
+        self.tax_template_repo = TaxTemplateRepository(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         payload = dict(data)
@@ -84,9 +91,53 @@ class InvoiceService:
             raise ResourceNotFoundException(f"Invoice {invoice_id} not found")
         self.repo.delete(inv)
 
-    @staticmethod
-    def _to_response(inv) -> dict:
-        return {
+    def _to_response(self, inv) -> dict:
+        # Get customer or supplier details based on party_type
+        party_details = None
+        party_type_lower = inv.party_type.lower() if inv.party_type else None
+
+        if party_type_lower == "customer":
+            customer = (
+                self.db.query(Customer).filter(Customer.id == inv.party_id).first()
+            )
+            if customer:
+                party_details = {
+                    "customer_name": customer.customer_name,
+                    "customer_code": customer.customer_code,
+                    "email": customer.email,
+                    "phone": customer.phone,
+                    "address": customer.address,
+                    "address_line1": customer.address_line1,
+                    "address_line2": customer.address_line2,
+                    "city": customer.city,
+                    "state": customer.state,
+                    "postal_code": customer.postal_code,
+                    "country": customer.country,
+                    "tax_number": customer.tax_number,
+                    "status": customer.status.value if customer.status else None,
+                }
+        elif party_type_lower == "supplier":
+            supplier = (
+                self.db.query(Supplier).filter(Supplier.id == inv.party_id).first()
+            )
+            if supplier:
+                party_details = {
+                    "supplier_name": supplier.supplier_name,
+                    "supplier_code": supplier.supplier_code,
+                    "email": supplier.email,
+                    "phone": supplier.phone,
+                    "address": supplier.address,
+                    "address_line1": supplier.address_line1,
+                    "address_line2": supplier.address_line2,
+                    "city": supplier.city,
+                    "state": supplier.state,
+                    "postal_code": supplier.postal_code,
+                    "country": supplier.country,
+                    "tax_number": supplier.tax_number,
+                    "status": supplier.status.value if supplier.status else None,
+                }
+
+        response = {
             "id": inv.id,
             "organization_id": inv.organization_id,
             "invoice_no": inv.invoice_no,
@@ -107,6 +158,137 @@ class InvoiceService:
             "updated_by": inv.updated_by,
             "created_at": inv.created_at,
             "updated_at": inv.updated_at,
+        }
+
+        # Add customer or supplier details
+        if party_details:
+            if party_type_lower == "customer":
+                response["customer"] = party_details
+            else:
+                response["supplier"] = party_details
+
+        # Add items if they exist
+        if hasattr(inv, "items") and inv.items:
+            response["items"] = [
+                {
+                    "id": item.id,
+                    "organization_id": item.organization_id,
+                    "invoice_id": item.invoice_id,
+                    "item_id": item.item_id,
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "qty": item.qty,
+                    "uom": item.uom,
+                    "rate": item.rate,
+                    "amount": item.amount,
+                    "sort_order": item.sort_order,
+                    "extra_data": item.extra_data,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
+                    **self._get_item_details(item, inv.organization_id),
+                }
+                for item in inv.items
+            ]
+
+        return response
+
+    def _get_item_details(self, invoice_item, organization_id: UUID) -> dict:
+        """Get comprehensive item details including description, tax info, and order quantities."""
+        if not invoice_item.item_id:
+            return {
+                "description": None,
+                "min_order_qty": 1,
+                "max_order_qty": None,
+                "standard_rate": "0.00",
+                "tax_template_id": None,
+                "tax_rate": "0.00",
+                "tax_amount": "0.00",
+                "total_amount": str(invoice_item.amount or "0.00"),
+                "tax_info": None,
+            }
+
+        # Fetch item details
+        item = self.db.query(Item).filter(Item.id == invoice_item.item_id).first()
+        if not item:
+            return {
+                "description": None,
+                "min_order_qty": 1,
+                "max_order_qty": None,
+                "standard_rate": "0.00",
+                "tax_template_id": None,
+                "tax_rate": "0.00",
+                "tax_amount": "0.00",
+                "total_amount": str(invoice_item.amount or "0.00"),
+                "tax_info": None,
+            }
+
+        # Get tax template for this item
+        tax_info = None
+        tax_template_id = None
+        tax_rate = "0.00"
+        tax_amount = "0.00"
+
+        # Try to get tax template from item's default or organization settings
+        tax_result = self.tax_template_repo.get_applicable_template(
+            organization_id=organization_id,
+            transaction_type="Sales",  # Adjust based on invoice_type if needed
+            item_id=item.id,
+            item_group_id=item.item_group_id,
+        )
+
+        if tax_result:
+            template, _ = tax_result
+            tax_template_id = template.id
+
+            # Calculate tax rate from template rules
+            total_tax_rate = sum(
+                float(rule.tax_rate or 0) for rule in (template.tax_rules or [])
+            )
+            tax_rate = f"{total_tax_rate:.2f}"
+
+            # Calculate tax amount
+            from decimal import Decimal
+
+            amount = Decimal(str(invoice_item.amount or 0))
+            tax_amount_decimal = amount * Decimal(str(total_tax_rate)) / Decimal("100")
+            tax_amount = f"{tax_amount_decimal:.2f}"
+
+            # Build tax info breakup
+            breakup = [
+                {
+                    "rule_name": rule.rule_name,
+                    "tax_type": rule.tax_type,
+                    "rate": float(rule.tax_rate or 0),
+                    "is_compound": bool(rule.is_compound),
+                }
+                for rule in (template.tax_rules or [])
+            ]
+            is_compound = any(r.get("is_compound", False) for r in breakup)
+            tax_info = {
+                "id": str(template.id),
+                "template_name": template.template_name,
+                "template_code": template.template_code,
+                "is_compound": is_compound,
+                "breakup": breakup,
+            }
+
+        # Calculate total amount (amount + tax)
+        from decimal import Decimal
+
+        amount = Decimal(str(invoice_item.amount or 0))
+        tax_amt = Decimal(str(tax_amount))
+        total_amount = f"{(amount + tax_amt):.2f}"
+
+        return {
+            "description": item.description,
+            "min_order_qty": item.min_order_qty or 1,
+            "max_order_qty": item.max_order_qty,
+            "standard_rate": str(item.standard_rate or "0.00"),
+            "tax_template_id": str(tax_template_id) if tax_template_id else None,
+            "tax_rate": tax_rate,
+            "tax_amount": tax_amount,
+            "total_amount": total_amount,
+            "tax_info": tax_info,
         }
 
     @staticmethod

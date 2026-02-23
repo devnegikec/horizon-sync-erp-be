@@ -44,6 +44,7 @@ class RFQRepository:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        material_request_id: UUID | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         search: str | None = None,
@@ -56,6 +57,9 @@ class RFQRepository:
 
         if status is not None:
             q = q.filter(RFQ.status == status)
+
+        if material_request_id is not None:
+            q = q.filter(RFQ.material_request_id == material_request_id)
 
         total = q.count()
 

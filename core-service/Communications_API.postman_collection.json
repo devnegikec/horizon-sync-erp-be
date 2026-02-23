@@ -1,0 +1,311 @@
+{
+  "info": {
+    "name": "Communications API",
+    "description": "API endpoints for managing communication logs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Communication - Email",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"doc_type\": \"quotation\",\n  \"doc_id\": \"{{quotation_id}}\",\n  \"doc_no\": \"QTN-001\",\n  \"version\": 1,\n  \"channel\": \"email\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"customer@example.com\",\n  \"recipient_name\": \"John Doe\",\n  \"sender_name\": \"Sales Team\",\n  \"sender_email\": \"sales@company.com\",\n  \"subject\": \"Quotation QTN-001\",\n  \"message\": \"Please find attached your quotation.\",\n  \"extra_data\": {\n    \"template_id\": \"quotation_template_v1\",\n    \"attachments\": [\"quotation.pdf\"],\n    \"provider\": \"sendgrid\",\n    \"provider_message_id\": \"msg_123456\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create Communication - WhatsApp",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"doc_type\": \"invoice\",\n  \"doc_id\": \"{{invoice_id}}\",\n  \"doc_no\": \"INV-001\",\n  \"version\": 1,\n  \"channel\": \"whatsapp\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Jane Smith\",\n  \"message\": \"Your invoice INV-001 is ready. Total: $1,500.00\",\n  \"extra_data\": {\n    \"whatsapp_template\": \"invoice_notification\",\n    \"attachment_url\": \"https://example.com/invoice.pdf\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create Communication - SMS",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"doc_type\": \"sales_order\",\n  \"doc_id\": \"{{sales_order_id}}\",\n  \"doc_no\": \"SO-001\",\n  \"version\": 1,\n  \"channel\": \"sms\",\n  \"recipient_type\": \"customer\",\n  \"recipient\": \"+1234567890\",\n  \"recipient_name\": \"Bob Johnson\",\n  \"message\": \"Your order SO-001 has been confirmed and will be delivered by Feb 25.\",\n  \"extra_data\": {\n    \"sms_provider\": \"twilio\",\n    \"sms_id\": \"SM123456\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List All Communications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications?page=1&page_size=20",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "page_size",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Communications by Document",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications?doc_id={{quotation_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"],
+          "query": [
+            {
+              "key": "doc_id",
+              "value": "{{quotation_id}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Communications by Type",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications?doc_type=quotation",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"],
+          "query": [
+            {
+              "key": "doc_type",
+              "value": "quotation"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Communications by Channel",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications?channel=email",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"],
+          "query": [
+            {
+              "key": "channel",
+              "value": "email"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Failed Communications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications?status=failed",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications"],
+          "query": [
+            {
+              "key": "status",
+              "value": "failed"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Communication by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications/{{communication_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications", "{{communication_id}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update Status - Sent",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"sent\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications/{{communication_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": [
+            "api",
+            "v1",
+            "communications",
+            "{{communication_id}}",
+            "status"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update Status - Delivered",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"delivered\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications/{{communication_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": [
+            "api",
+            "v1",
+            "communications",
+            "{{communication_id}}",
+            "status"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update Status - Failed",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"failed\",\n  \"error_message\": \"Email address not found\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications/{{communication_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": [
+            "api",
+            "v1",
+            "communications",
+            "{{communication_id}}",
+            "status"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Communication",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/communications/{{communication_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "communications", "{{communication_id}}"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "communication_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "quotation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invoice_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sales_order_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

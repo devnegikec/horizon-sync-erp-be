@@ -88,6 +88,7 @@ class QuotationBase(BaseModel):
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     remarks: str | None = None
+    converted_to_sales_order: bool = False
 
 
 class QuotationCreate(QuotationBase):
@@ -123,6 +124,7 @@ class QuotationListItem(BaseModel):
     quotation_date: datetime
     valid_until: datetime | None = None
     grand_total: Decimal
+    converted_to_sales_order: bool = False
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

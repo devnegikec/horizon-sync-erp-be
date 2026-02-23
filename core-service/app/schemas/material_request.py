@@ -13,9 +13,23 @@ class MaterialRequestLineBase(BaseModel):
     """Base schema for Material Request Line"""
 
     item_id: UUID
-    quantity: Decimal | float = Field(..., gt=0, description="Quantity must be positive")
+    quantity: Decimal | float = Field(
+        ..., gt=0, description="Quantity must be positive"
+    )
+    uom: str | None = Field(
+        None, max_length=50, description="Unit of Measure (Kgs, Boxes, Pallets, etc.)"
+    )
     required_date: date
     description: str | None = None
+    estimated_unit_cost: Decimal | float | None = Field(
+        None, ge=0, description="Estimated cost per unit"
+    )
+    requested_for: str | None = Field(
+        None, max_length=255, description="Employee name or ID"
+    )
+    requested_for_department: str | None = Field(
+        None, max_length=100, description="Department name"
+    )
 
 
 class MaterialRequestLineCreate(MaterialRequestLineBase):
@@ -38,6 +52,28 @@ class MaterialRequestLineResponse(MaterialRequestLineBase):
 class MaterialRequestBase(BaseModel):
     """Base schema for Material Request"""
 
+    request_no: str | None = Field(
+        None,
+        max_length=50,
+        description="Human-readable reference number (e.g., MR-2024-001)",
+    )
+    type: str = Field(
+        "purchase",
+        pattern="^(purchase|transfer|issue)$",
+        description="Request type: purchase (buy from vendor), transfer (move between warehouses), issue (give to department)",
+    )
+    priority: str = Field(
+        "medium",
+        pattern="^(low|medium|high|urgent)$",
+        description="Priority level for procurement officer",
+    )
+    target_warehouse_id: UUID | None = Field(
+        None, description="Target warehouse where goods should land"
+    )
+    requested_by: UUID | None = Field(None, description="User ID who requested this")
+    department: str | None = Field(
+        None, max_length=100, description="Department requesting the materials"
+    )
     notes: str | None = None
 
 
@@ -52,6 +88,12 @@ class MaterialRequestCreate(MaterialRequestBase):
 class MaterialRequestUpdate(BaseModel):
     """Schema for updating Material Request (DRAFT only)"""
 
+    request_no: str | None = Field(None, max_length=50)
+    type: str | None = Field(None, pattern="^(purchase|transfer|issue)$")
+    priority: str | None = Field(None, pattern="^(low|medium|high|urgent)$")
+    target_warehouse_id: UUID | None = None
+    requested_by: UUID | None = None
+    department: str | None = Field(None, max_length=100)
     notes: str | None = None
     line_items: list[MaterialRequestLineCreate] | None = None
 
@@ -78,7 +120,11 @@ class MaterialRequestListItem(BaseModel):
 
     id: UUID
     organization_id: UUID
+    request_no: str | None = None
+    type: str
+    priority: str
     status: str
+    department: str | None = None
     created_at: datetime
     created_by: UUID | None = None
     line_items_count: int = 0
@@ -99,3 +145,55 @@ class MaterialRequestStatusUpdate(BaseModel):
         ...,
         pattern="^(draft|submitted|partially_quoted|fully_quoted|cancelled)$",
     )
+
+
+class WorkflowRFQItem(BaseModel):
+    """RFQ item in workflow status"""
+    id: UUID
+    status: str
+    closing_date: date | None = None
+    created_at: datetime
+
+
+class WorkflowPurchaseOrderItem(BaseModel):
+    """Purchase Order item in workflow status"""
+    id: UUID
+    status: str
+    party_id: UUID
+    grand_total: Decimal
+    created_at: datetime
+
+
+class WorkflowReceiptItem(BaseModel):
+    """Receipt item in workflow status"""
+    id: UUID
+    purchase_receipt_no: str
+    receipt_date: datetime
+    status: str
+
+
+class WorkflowInvoiceItem(BaseModel):
+    """Invoice item in workflow status"""
+    id: UUID
+    invoice_no: str
+    status: str
+    grand_total: Decimal
+
+
+class WorkflowPaymentItem(BaseModel):
+    """Payment item in workflow status"""
+    id: UUID
+    payment_no: str
+    amount: Decimal
+    status: str
+    posting_date: datetime
+
+
+class WorkflowStatusResponse(BaseModel):
+    """Complete workflow status for a Material Request"""
+    material_request: MaterialRequestResponse
+    rfqs: list[WorkflowRFQItem] = []
+    purchase_orders: list[WorkflowPurchaseOrderItem] = []
+    receipts: list[WorkflowReceiptItem] = []
+    invoices: list[WorkflowInvoiceItem] = []
+    payments: list[WorkflowPaymentItem] = []

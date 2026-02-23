@@ -410,6 +410,10 @@ class QuotationService:
                 sales_order_data, organization_id, user_id
             )
 
+            # Mark quotation as converted to sales order
+            self.repo.update(quotation, {"converted_to_sales_order": True})
+            self.db.commit()
+
             return sales_order
 
         except Exception as e:
@@ -595,6 +599,7 @@ class QuotationService:
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
             "remarks": quotation.remarks,
+            "converted_to_sales_order": quotation.converted_to_sales_order,
             "submitted_at": quotation.submitted_at,
             "extra_data": quotation.extra_data,
             "created_by": quotation.created_by,
@@ -637,5 +642,6 @@ class QuotationService:
             "status": quotation.status.value if quotation.status else None,
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
+            "converted_to_sales_order": quotation.converted_to_sales_order,
             "created_at": quotation.created_at,
         }
