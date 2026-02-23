@@ -227,3 +227,242 @@ def invalidate_account_cache(account_id: UUID, organization_id: UUID) -> int:
     count += invalidate_account_balance_cache(account_id)
     return count
 
+
+
+# Payment-specific cache utilities
+
+def get_payment_cache_key(payment_id: UUID) -> str:
+    """
+    Generate cache key for payment entry data.
+    
+    Args:
+        payment_id: Payment UUID
+        
+    Returns:
+        Cache key string
+    """
+    return f"payment:entry:{payment_id}"
+
+
+def get_payment_list_cache_key(
+    organization_id: UUID,
+    status: Optional[str] = None,
+    payment_mode: Optional[str] = None,
+    party_id: Optional[UUID] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> str:
+    """
+    Generate cache key for payment list queries.
+    
+    Args:
+        organization_id: Organization UUID
+        status: Payment status filter
+        payment_mode: Payment mode filter
+        party_id: Party ID filter
+        page: Page number
+        page_size: Page size
+        
+    Returns:
+        Cache key string
+    """
+    filters = []
+    if status:
+        filters.append(f"status:{status}")
+    if payment_mode:
+        filters.append(f"mode:{payment_mode}")
+    if party_id:
+        filters.append(f"party:{party_id}")
+    
+    filter_str = ":".join(filters) if filters else "all"
+    return f"payment:list:{organization_id}:{filter_str}:page:{page}:size:{page_size}"
+
+
+def get_unpaid_invoices_cache_key(party_id: UUID, organization_id: UUID) -> str:
+    """
+    Generate cache key for unpaid invoices list.
+    
+    This is used when loading invoices for payment allocation.
+    
+    Args:
+        party_id: Customer or Supplier UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        Cache key string
+    """
+    return f"invoices:unpaid:{organization_id}:{party_id}"
+
+
+def invalidate_payment_cache(payment_id: UUID, organization_id: UUID) -> int:
+    """
+    Invalidate all cached data for a payment.
+    
+    This should be called when a payment is created, updated, confirmed, or cancelled.
+    
+    Args:
+        payment_id: Payment UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        Number of cache entries deleted
+    """
+    count = 0
+    # Invalidate payment data
+    count += 1 if cache.delete(get_payment_cache_key(payment_id)) else 0
+    # Invalidate payment lists for this organization
+    pattern = f"payment:list:{organization_id}:*"
+    count += cache.delete_pattern(pattern)
+    return count
+
+
+def invalidate_invoice_cache(invoice_id: UUID, party_id: UUID, organization_id: UUID) -> int:
+    """
+    Invalidate cached data for an invoice.
+    
+    This should be called when invoice payment status changes.
+    
+    Args:
+        invoice_id: Invoice UUID
+        party_id: Customer or Supplier UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        Number of cache entries deleted
+    """
+    count = 0
+    # Invalidate unpaid invoices list for this party
+    count += 1 if cache.delete(get_unpaid_invoices_cache_key(party_id, organization_id)) else 0
+    return count
+
+
+def cache_payment_entry(payment_id: UUID, payment_data: dict, ttl: int = 300) -> bool:
+    """
+    Cache payment entry data.
+    
+    Args:
+        payment_id: Payment UUID
+        payment_data: Payment data dictionary
+        ttl: Time to live in seconds (default: 5 minutes)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    key = get_payment_cache_key(payment_id)
+    return cache.set(key, payment_data, ttl)
+
+
+def get_cached_payment_entry(payment_id: UUID) -> Optional[dict]:
+    """
+    Get cached payment entry data.
+    
+    Args:
+        payment_id: Payment UUID
+        
+    Returns:
+        Cached payment data or None if not found
+    """
+    key = get_payment_cache_key(payment_id)
+    return cache.get(key)
+
+
+def cache_payment_list(
+    organization_id: UUID,
+    filters: dict,
+    page: int,
+    page_size: int,
+    payment_data: dict,
+    ttl: int = 180,
+) -> bool:
+    """
+    Cache payment list query results.
+    
+    Args:
+        organization_id: Organization UUID
+        filters: Filter parameters
+        page: Page number
+        page_size: Page size
+        payment_data: Payment list data dictionary
+        ttl: Time to live in seconds (default: 3 minutes)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    key = get_payment_list_cache_key(
+        organization_id=organization_id,
+        status=filters.get("status"),
+        payment_mode=filters.get("payment_mode"),
+        party_id=filters.get("party_id"),
+        page=page,
+        page_size=page_size,
+    )
+    return cache.set(key, payment_data, ttl)
+
+
+def get_cached_payment_list(
+    organization_id: UUID,
+    filters: dict,
+    page: int,
+    page_size: int,
+) -> Optional[dict]:
+    """
+    Get cached payment list query results.
+    
+    Args:
+        organization_id: Organization UUID
+        filters: Filter parameters
+        page: Page number
+        page_size: Page size
+        
+    Returns:
+        Cached payment list data or None if not found
+    """
+    key = get_payment_list_cache_key(
+        organization_id=organization_id,
+        status=filters.get("status"),
+        payment_mode=filters.get("payment_mode"),
+        party_id=filters.get("party_id"),
+        page=page,
+        page_size=page_size,
+    )
+    return cache.get(key)
+
+
+def cache_unpaid_invoices(
+    party_id: UUID,
+    organization_id: UUID,
+    invoice_data: list,
+    ttl: int = 300,
+) -> bool:
+    """
+    Cache unpaid invoices list for a party.
+    
+    Args:
+        party_id: Customer or Supplier UUID
+        organization_id: Organization UUID
+        invoice_data: List of invoice dictionaries
+        ttl: Time to live in seconds (default: 5 minutes)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    key = get_unpaid_invoices_cache_key(party_id, organization_id)
+    return cache.set(key, invoice_data, ttl)
+
+
+def get_cached_unpaid_invoices(
+    party_id: UUID,
+    organization_id: UUID,
+) -> Optional[list]:
+    """
+    Get cached unpaid invoices list for a party.
+    
+    Args:
+        party_id: Customer or Supplier UUID
+        organization_id: Organization UUID
+        
+    Returns:
+        Cached invoice list or None if not found
+    """
+    key = get_unpaid_invoices_cache_key(party_id, organization_id)
+    return cache.get(key)

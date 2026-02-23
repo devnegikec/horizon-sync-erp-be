@@ -74,6 +74,15 @@ class JournalEntryService:
         self.db.refresh(je)
         return self._to_response(je)
 
+    def get_by_reference(
+        self, reference_type: str, reference_id: UUID, organization_id: UUID
+    ) -> dict | None:
+        """Get journal entry by reference type and ID"""
+        je = self.repo.get_by_reference(reference_type, reference_id, organization_id)
+        if not je:
+            return None
+        return self._to_response(je)
+
     def delete(self, entry_id: UUID, organization_id: UUID) -> None:
         je = self.repo.get_by_id(entry_id, organization_id)
         if not je:
