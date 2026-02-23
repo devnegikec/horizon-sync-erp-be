@@ -103,8 +103,8 @@ class InvoiceStatusService:
 
         Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7
         """
-        # Get invoice
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+        # Get invoice (without items to avoid querying invoice_items columns that may not exist)
+        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -113,8 +113,11 @@ class InvoiceStatusService:
         # Calculate total allocated payments
         total_allocated = self._calculate_total_allocated(invoice_id, organization_id)
 
-        # Calculate outstanding balance
-        invoice_amount = invoice.grand_total
+        # Calculate outstanding balance (guard against None from DB)
+        invoice_amount = getattr(invoice, "grand_total", None) or getattr(invoice, "total_amount", None)
+        if invoice_amount is None:
+            invoice_amount = Decimal("0")
+        invoice_amount = Decimal(str(invoice_amount))
         outstanding_balance = invoice_amount - total_allocated
 
         # Determine new status
@@ -153,8 +156,8 @@ class InvoiceStatusService:
 
         Requirements: 4.7, 13.3
         """
-        # Get invoice
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id)
+        # Get invoice (without items to avoid querying invoice_items columns that may not exist)
+        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"

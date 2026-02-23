@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     currency,
     customers,
     delivery_notes,
+    document_numbering,
     invoices,
     item_groups,
     item_prices,
@@ -162,4 +163,10 @@ api_router.include_router(
     smart_picking.router,
     prefix="/smart-picking",
     tags=["Smart Picking"],
+)
+# Settings: Document Numbering Series
+api_router.include_router(
+    document_numbering.router,
+    prefix="/settings/document-numbering",
+    tags=["Settings - Document Numbering"],
 )

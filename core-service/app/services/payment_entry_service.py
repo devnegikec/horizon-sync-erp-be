@@ -227,7 +227,12 @@ class PaymentEntryService:
             data.party_id, organization_id, party_type
         )
 
-        # Prepare payment entry data
+        # Assign receipt number at creation (configurable Document Numbering Series)
+        from app.services.document_numbering_service import DocumentNumberingService
+        doc_num_svc = DocumentNumberingService(self.db)
+        receipt_number = doc_num_svc.get_next_number(
+            organization_id, "payment", reference_date=data.payment_date
+        )
         payment_data = {
             "organization_id": organization_id,
             "payment_type": PaymentEntryType(data.payment_type),
@@ -237,6 +242,7 @@ class PaymentEntryService:
             "payment_date": data.payment_date,
             "payment_mode": data.payment_mode,
             "reference_no": data.reference_no,
+            "receipt_number": receipt_number,
             # Set defaults
             "status": PaymentEntryStatus.DRAFT,
             "source": PaymentSource.MANUAL,
@@ -245,7 +251,6 @@ class PaymentEntryService:
             "updated_by": user_id,
         }
 
-        # Create payment entry using repository
         try:
             payment_entry = self.repo.create(payment_data)
         except IntegrityError as e:
@@ -269,6 +274,7 @@ class PaymentEntryService:
                 "reference_no": payment_entry.reference_no,
                 "status": payment_entry.status.value,
                 "source": payment_entry.source.value,
+                "receipt_number": payment_entry.receipt_number,
             },
             "timestamp": datetime.now(UTC),
         })
@@ -276,8 +282,8 @@ class PaymentEntryService:
         # Invalidate payment list cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
 
-        # Convert to PaymentEntryResponse and return
-        return PaymentEntryResponse.model_validate(payment_entry)
+        # Convert to PaymentEntryResponse with party display and return
+        return self._to_payment_entry_response(payment_entry, organization_id)
 
     def update_payment_entry(
         self,
@@ -376,8 +382,8 @@ class PaymentEntryService:
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
 
-        # Convert to PaymentEntryResponse and return
-        return PaymentEntryResponse.model_validate(updated_payment)
+        # Convert to PaymentEntryResponse with party display and return
+        return self._to_payment_entry_response(updated_payment, organization_id)
 
     def get_payment_entry(
         self,
@@ -417,12 +423,9 @@ class PaymentEntryService:
                 f"Payment entry with ID {payment_id} not found or does not belong to organization"
             )
 
-        # Convert to PaymentEntryResponse
-        response = PaymentEntryResponse.model_validate(payment_entry)
-        
-        # Cache the result (5 minute TTL)
+        # Convert to PaymentEntryResponse with party display and cache
+        response = self._to_payment_entry_response(payment_entry, organization_id)
         cache_payment_entry(payment_id, response.model_dump(mode="json"), ttl=300)
-        
         return response
 
     def list_payment_entries(
@@ -556,10 +559,40 @@ class PaymentEntryService:
         has_next = page < total_pages
         has_previous = page > 1
 
-        # Convert to PaymentEntryListItem
-        payment_entry_items = [
-            PaymentEntryListItem.model_validate(entry) for entry in payment_entries
-        ]
+        # Enrich with party name and contact (batch load customers/suppliers)
+        party_info = self._get_party_display_maps(
+            organization_id, payment_entries
+        )
+
+        # Convert to PaymentEntryListItem with party display fields
+        payment_entry_items = []
+        for entry in payment_entries:
+            info = party_info.get(entry.party_id) or {}
+            item_dict = {
+                "id": entry.id,
+                "organization_id": entry.organization_id,
+                "payment_type": entry.payment_type.value
+                    if hasattr(entry.payment_type, "value") else str(entry.payment_type),
+                "party_id": entry.party_id,
+                "amount": entry.amount,
+                "currency_code": entry.currency_code,
+                "payment_date": entry.payment_date,
+                "payment_mode": entry.payment_mode.value
+                    if hasattr(entry.payment_mode, "value") else str(entry.payment_mode),
+                "reference_no": getattr(entry, "reference_no", None),
+                "status": entry.status.value
+                    if hasattr(entry.status, "value") else str(entry.status),
+                "source": entry.source.value
+                    if hasattr(entry.source, "value") else str(entry.source),
+                "receipt_number": getattr(entry, "receipt_number", None),
+                "unallocated_amount": entry.unallocated_amount,
+                "created_at": entry.created_at,
+                "party_name": info.get("name"),
+                "party_code": info.get("code"),
+                "party_email": info.get("email"),
+                "party_phone": info.get("phone"),
+            }
+            payment_entry_items.append(PaymentEntryListItem.model_validate(item_dict))
 
         # Create pagination metadata
         pagination = PaginationMeta(
@@ -610,6 +643,78 @@ class PaymentEntryService:
 
         # Delete payment entry (cascade deletes references and audit logs)
         self.repo.delete(payment_entry)
+
+    def _get_party_display_maps(
+        self, organization_id: UUID, payment_entries: list
+    ) -> dict:
+        """
+        Batch-load party (customer/supplier) name and contact for list display.
+        Returns dict: party_id -> { "name", "code", "email", "phone" }.
+        """
+        from app.models.base import PaymentEntryType
+        from app.models.customer import Customer
+        from app.models.supplier import Supplier
+
+        customer_ids = [
+            p.party_id for p in payment_entries
+            if getattr(p.payment_type, "value", str(p.payment_type)) == PaymentEntryType.CUSTOMER_PAYMENT.value
+        ]
+        supplier_ids = [
+            p.party_id for p in payment_entries
+            if getattr(p.payment_type, "value", str(p.payment_type)) == PaymentEntryType.SUPPLIER_PAYMENT.value
+        ]
+
+        result = {}
+        if customer_ids:
+            customers = (
+                self.db.query(Customer)
+                .filter(
+                    Customer.id.in_(customer_ids),
+                    Customer.organization_id == organization_id,
+                )
+                .all()
+            )
+            for c in customers:
+                result[c.id] = {
+                    "name": c.customer_name,
+                    "code": getattr(c, "customer_code", None),
+                    "email": getattr(c, "email", None),
+                    "phone": getattr(c, "phone", None),
+                }
+        if supplier_ids:
+            suppliers = (
+                self.db.query(Supplier)
+                .filter(
+                    Supplier.id.in_(supplier_ids),
+                    Supplier.organization_id == organization_id,
+                )
+                .all()
+            )
+            for s in suppliers:
+                result[s.id] = {
+                    "name": s.supplier_name,
+                    "code": getattr(s, "supplier_code", None),
+                    "email": getattr(s, "email", None),
+                    "phone": getattr(s, "phone", None),
+                }
+        return result
+
+    def _to_payment_entry_response(
+        self, payment_entry, organization_id: UUID
+    ) -> "PaymentEntryResponse":
+        """Build PaymentEntryResponse with party name and contact populated."""
+        from app.schemas.payment_entry import PaymentEntryResponse
+
+        base = PaymentEntryResponse.model_validate(payment_entry)
+        d = base.model_dump(mode="json")
+        party_info = self._get_party_display_maps(
+            organization_id, [payment_entry]
+        ).get(payment_entry.party_id) or {}
+        d["party_name"] = party_info.get("name")
+        d["party_code"] = party_info.get("code")
+        d["party_email"] = party_info.get("email")
+        d["party_phone"] = party_info.get("phone")
+        return PaymentEntryResponse.model_validate(d)
 
     def confirm_payment(
         self,
@@ -675,16 +780,20 @@ class PaymentEntryService:
                 f"Cannot confirm payment: {str(e)}"
             )
 
-        # Generate unique receipt_number (format: RCP-{year}-{sequence})
-        receipt_number = self._generate_receipt_number(organization_id, payment_entry.payment_date)
-
-        # Update payment status to Confirmed and set receipt_number
+        # Use receipt_number already assigned at create; generate only for legacy drafts via Document Numbering
+        old_receipt = getattr(payment_entry, "receipt_number", None)
+        if not old_receipt:
+            from app.services.document_numbering_service import DocumentNumberingService
+            doc_num_svc = DocumentNumberingService(self.db)
+            old_receipt = doc_num_svc.get_next_number(
+                organization_id, "payment", reference_date=payment_entry.payment_date
+            )
+        receipt_number = old_receipt
         update_dict = {
             "status": PaymentEntryStatus.CONFIRMED,
             "receipt_number": receipt_number,
             "updated_by": user_id,
         }
-
         try:
             updated_payment = self.repo.update(payment_entry, update_dict)
         except ValueError as e:
@@ -715,7 +824,7 @@ class PaymentEntryService:
             "user_id": user_id,
             "old_values": {
                 "status": PaymentEntryStatus.DRAFT.value,
-                "receipt_number": None,
+                "receipt_number": old_receipt,
             },
             "new_values": {
                 "status": PaymentEntryStatus.CONFIRMED.value,
@@ -727,8 +836,8 @@ class PaymentEntryService:
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
 
-        # Convert to PaymentEntryResponse and return
-        return PaymentEntryResponse.model_validate(updated_payment)
+        # Convert to PaymentEntryResponse with party display and return
+        return self._to_payment_entry_response(updated_payment, organization_id)
 
     def cancel_payment(
         self,
@@ -879,8 +988,29 @@ class PaymentEntryService:
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
 
-        # Convert to PaymentEntryResponse and return
-        return PaymentEntryResponse.model_validate(payment_entry)
+        # Convert to PaymentEntryResponse with party display and return
+        return self._to_payment_entry_response(payment_entry, organization_id)
+
+    def _ensure_receipt_sequence_exists(self, year: int) -> None:
+        """
+        Create sequence receipt_seq_{year} if it does not exist (for future years).
+        Current year and next are created by migration; this handles 2027+.
+        """
+        from sqlalchemy import text
+
+        seq_name = f"receipt_seq_{year}"
+        self.db.execute(text(f"CREATE SEQUENCE IF NOT EXISTS {seq_name} START 1"))
+
+    def _get_next_receipt_sequence(self, year: int) -> int:
+        """
+        Get next value from receipt_seq_{year}. Atomic; no race conditions.
+        Ensures sequence exists (for first use of a new year), then returns nextval.
+        """
+        self._ensure_receipt_sequence_exists(year)
+        from sqlalchemy import text
+
+        result = self.db.execute(text(f"SELECT nextval('receipt_seq_{year}')"))
+        return result.scalar()
 
     def _generate_receipt_number(
         self,
@@ -888,55 +1018,10 @@ class PaymentEntryService:
         payment_date: datetime,
     ) -> str:
         """
-        Generate unique receipt number in format: RCP-{year}-{sequence}.
-
-        Args:
-            organization_id: Organization UUID
-            payment_date: Payment date to extract year
-
-        Returns:
-            Unique receipt number string
-
-        Raises:
-            ValidationError: If receipt number generation fails
+        Generate unique receipt number using PostgreSQL sequence per year.
+        Format: RCP-{year}-{sequence:05d}. Atomic; one sequence per year (e.g. receipt_seq_2026).
         """
-        from sqlalchemy import func, extract
-        from app.models.payment_entry import PaymentEntry
-
-        # Extract year from payment_date
         year = payment_date.year
-
-        # Query database for max sequence number for current year
-        # Receipt numbers follow format: RCP-{year}-{sequence}
-        # We need to find the highest sequence number for this year
-        max_receipt = (
-            self.db.query(func.max(PaymentEntry.receipt_number))
-            .filter(
-                PaymentEntry.organization_id == organization_id,
-                PaymentEntry.receipt_number.like(f"RCP-{year}-%"),
-            )
-            .scalar()
-        )
-
-        # Increment sequence number
-        if max_receipt:
-            # Extract sequence from format RCP-{year}-{sequence}
-            try:
-                parts = max_receipt.split("-")
-                if len(parts) == 3 and parts[0] == "RCP" and parts[1] == str(year):
-                    sequence = int(parts[2]) + 1
-                else:
-                    # Invalid format, start from 1
-                    sequence = 1
-            except (ValueError, IndexError):
-                # Failed to parse, start from 1
-                sequence = 1
-        else:
-            # No receipts for this year yet, start from 1
-            sequence = 1
-
-        # Format receipt number with zero-padding (5 digits)
-        receipt_number = f"RCP-{year}-{sequence:05d}"
-
-        return receipt_number
+        sequence = self._get_next_receipt_sequence(year)
+        return f"RCP-{year}-{sequence:05d}"
 

@@ -121,6 +121,7 @@ class InvoiceListItem(BaseModel):
     status: str
     posting_date: datetime
     grand_total: Decimal
+    outstanding_amount: Decimal | float | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

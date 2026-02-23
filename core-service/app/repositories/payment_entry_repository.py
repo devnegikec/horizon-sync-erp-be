@@ -374,3 +374,20 @@ class PaymentEntryRepository:
             .count()
             > 0
         )
+
+    def receipt_number_exists_globally(self, receipt_number: str) -> bool:
+        """
+        Check if receipt number already exists (unique constraint is global).
+
+        Args:
+            receipt_number: Receipt number to check
+
+        Returns:
+            True if receipt number exists in any organization, False otherwise
+        """
+        return (
+            self.db.query(PaymentEntry)
+            .filter(PaymentEntry.receipt_number == receipt_number)
+            .count()
+            > 0
+        )

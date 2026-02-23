@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy.exc import IntegrityError as SQLIntegrityError
+
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.core.exceptions import NotFoundError, ValidationError
@@ -400,11 +402,17 @@ async def create_allocation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    except SQLIntegrityError as e:
+        logger.warning(f"Integrity error creating allocation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An allocation for this payment and invoice already exists."
+        )
     except Exception as e:
         logger.error(f"Error creating allocation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while creating allocation"
+            detail=f"An unexpected error occurred while creating allocation: {str(e)}"
         )
 
 
