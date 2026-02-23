@@ -23,28 +23,34 @@ Automatic synchronization of document numbering between Core Service and Identit
 ### New Files
 
 1. **`core-service/app/services/organization_client.py`**
+
    - HTTP client for communicating with Identity Service
    - Methods: `update_naming_series()`, `get_organization_settings()`
    - Uses `httpx` for async HTTP requests
 
 2. **`core-service/app/utils/naming_series.py`**
+
    - Utility functions for parsing document numbers
    - `extract_number_from_document_no()` - Extract number from "QT-0035" → 35
    - `get_document_type_from_prefix()` - Map "QT" → "quotation"
    - `should_update_naming_series()` - Validate document number format
 
 3. **`core-service/app/utils/__init__.py`**
+
    - Package initialization for utils module
 
 4. **`core-service/tests/test_naming_series.py`**
+
    - Comprehensive unit tests for naming series utilities
    - Tests for all edge cases and error scenarios
 
 5. **`core-service/test_naming_series_standalone.py`**
+
    - Standalone test script (no dependencies required)
    - Quick validation of utility functions
 
 6. **`core-service/NAMING_SERIES_AUTO_UPDATE.md`**
+
    - Complete technical documentation
    - Architecture diagrams, API flows, troubleshooting
 
@@ -122,7 +128,10 @@ const namingSeries = response.data.naming_series.quotation;
 const nextNumber = namingSeries.current_number + 1;
 
 // Display: QT-0036
-const nextQuotationNo = `${namingSeries.prefix}${String(nextNumber).padStart(4, "0")}`;
+const nextQuotationNo = `${namingSeries.prefix}${String(nextNumber).padStart(
+  4,
+  "0",
+)}`;
 ```
 
 ## Extending to Other Documents

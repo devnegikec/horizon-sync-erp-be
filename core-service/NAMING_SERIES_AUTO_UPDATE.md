@@ -194,16 +194,19 @@ Already included in `core-service/requirements.txt`.
 ### Scenarios
 
 1. **Identity Service Unavailable**
+
    - Error logged: "Request error while updating naming series"
    - Quotation creation: ✅ Succeeds
    - Naming series update: ❌ Fails silently
 
 2. **Timeout (>10 seconds)**
+
    - Error logged: "Timeout while updating naming series"
    - Quotation creation: ✅ Succeeds
    - Naming series update: ❌ Fails silently
 
 3. **Invalid Auth Token**
+
    - Error logged: "Failed to update naming series: 401"
    - Quotation creation: ✅ Succeeds
    - Naming series update: ❌ Fails silently

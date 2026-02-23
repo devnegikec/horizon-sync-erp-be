@@ -38,16 +38,16 @@ async def create_quotation(
     """Create quotation. Requires quotation.create."""
     svc = QuotationService(db)
     data = svc.create(body.model_dump(), current_user.organization_id, current_user.id)
-    
+
     # Update naming series in identity service (async, non-blocking)
     # Extract the number from quotation_no (e.g., "QT-0035" -> 35)
     if data.get("quotation_no"):
         current_number = extract_number_from_document_no(data["quotation_no"])
-        
+
         if current_number is not None:
             # Get the auth token from request headers
             auth_header = request.headers.get("Authorization", "")
-            
+
             try:
                 # Update naming series asynchronously
                 await organization_client.update_naming_series(
@@ -61,7 +61,7 @@ async def create_quotation(
                 logger.error(
                     f"Failed to update naming series for quotation {data['quotation_no']}: {e}"
                 )
-    
+
     return QuotationResponse.model_validate(data)
 
 
@@ -137,7 +137,6 @@ async def delete_quotation(
     return None
 
 
-
 @router.put("/{quotation_id}/status", response_model=QuotationResponse)
 async def update_quotation_status(
     quotation_id: UUID,
@@ -154,7 +153,6 @@ async def update_quotation_status(
         current_user.id,
     )
     return QuotationResponse.model_validate(data)
-
 
 
 @router.post(

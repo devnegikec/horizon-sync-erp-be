@@ -48,13 +48,7 @@ class OrganizationClient:
         url = f"{self.base_url}/api/v1/identity/organizations/{organization_id}"
 
         # Prepare the payload to update naming_series
-        payload = {
-            "naming_series": {
-                document_type: {
-                    "current_number": current_number
-                }
-            }
-        }
+        payload = {"naming_series": {document_type: {"current_number": current_number}}}
 
         headers = {
             "Authorization": f"Bearer {auth_token}",
@@ -83,14 +77,10 @@ class OrganizationClient:
             )
             return False
         except httpx.RequestError as e:
-            logger.error(
-                f"Request error while updating naming series: {e}"
-            )
+            logger.error(f"Request error while updating naming series: {e}")
             return False
         except Exception as e:
-            logger.error(
-                f"Unexpected error while updating naming series: {e}"
-            )
+            logger.error(f"Unexpected error while updating naming series: {e}")
             return False
 
     async def get_organization_settings(

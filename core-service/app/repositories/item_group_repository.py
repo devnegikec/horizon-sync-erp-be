@@ -170,9 +170,7 @@ class ItemGroupRepository:
         # Eager-load parent and tax templates with their rules
         query = query.options(
             joinedload(ItemGroup.parent),
-            joinedload(ItemGroup.sales_tax_template).joinedload(
-                TaxTemplate.tax_rules
-            ),
+            joinedload(ItemGroup.sales_tax_template).joinedload(TaxTemplate.tax_rules),
             joinedload(ItemGroup.purchase_tax_template).joinedload(
                 TaxTemplate.tax_rules
             ),

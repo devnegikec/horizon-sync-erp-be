@@ -93,7 +93,10 @@ class QuotationBase(BaseModel):
 
 class QuotationCreate(BaseModel):
     """Create quotation schema - quotation_no is auto-generated"""
-    quotation_no: str | None = Field(None, min_length=1, max_length=100, description="Auto-generated if not provided")
+
+    quotation_no: str | None = Field(
+        None, min_length=1, max_length=100, description="Auto-generated if not provided"
+    )
     customer_id: UUID
     quotation_date: datetime
     valid_until: datetime | None = None
