@@ -9,6 +9,40 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+# ── Customer schemas (defined first so they can be referenced below) ──────────
+
+class QuotationCustomerInfo(BaseModel):
+    """Minimal customer info used in list responses"""
+
+    id: UUID
+    name: str
+    code: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuotationCustomerDetail(BaseModel):
+    """Full customer info used in detail / PDF responses"""
+
+    id: UUID
+    name: str
+    code: str
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Item-level schemas ────────────────────────────────────────────────────────
+
 class QuotationItemStockLevels(BaseModel):
     quantity_on_hand: int = 0
     quantity_reserved: int = 0
@@ -45,15 +79,9 @@ class QuotationItemBase(BaseModel):
     sort_order: int = 0
     # Tax fields (optional on create - auto-calculated from item's tax template)
     tax_template_id: UUID | None = None
-    tax_rate: Decimal | float = Field(
-        default=0, ge=0, description="Tax % at quote time"
-    )
-    tax_amount: Decimal | float = Field(
-        default=0, ge=0, description="Tax currency value"
-    )
-    total_amount: Decimal | float = Field(
-        default=0, ge=0, description="amount + tax_amount"
-    )
+    tax_rate: Decimal | float = Field(default=0, ge=0, description="Tax % at quote time")
+    tax_amount: Decimal | float = Field(default=0, ge=0, description="Tax currency value")
+    total_amount: Decimal | float = Field(default=0, ge=0, description="amount + tax_amount")
 
 
 class QuotationItemCreate(QuotationItemBase):
@@ -77,14 +105,14 @@ class QuotationItemResponse(QuotationItemBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ── Quotation schemas ─────────────────────────────────────────────────────────
+
 class QuotationBase(BaseModel):
     quotation_no: str = Field(..., min_length=1, max_length=100)
     customer_id: UUID
     quotation_date: datetime
     valid_until: datetime | None = None
-    status: str = Field(
-        default="draft", pattern="^(draft|sent|accepted|rejected|expired)$"
-    )
+    status: str = Field(default="draft", pattern="^(draft|sent|accepted|rejected|expired)$")
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     remarks: str | None = None
@@ -100,9 +128,7 @@ class QuotationCreate(BaseModel):
     customer_id: UUID
     quotation_date: datetime
     valid_until: datetime | None = None
-    status: str = Field(
-        default="draft", pattern="^(draft|sent|accepted|rejected|expired)$"
-    )
+    status: str = Field(default="draft", pattern="^(draft|sent|accepted|rejected|expired)$")
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     remarks: str | None = None
@@ -120,6 +146,7 @@ class QuotationUpdate(BaseModel):
 class QuotationResponse(QuotationBase):
     id: UUID
     organization_id: UUID
+    customer: QuotationCustomerDetail | None = None
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -133,7 +160,7 @@ class QuotationListItem(BaseModel):
     id: UUID
     organization_id: UUID
     quotation_no: str
-    customer_id: UUID
+    customer: QuotationCustomerInfo | None = None
     status: str
     quotation_date: datetime
     valid_until: datetime | None = None

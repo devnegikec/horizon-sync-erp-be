@@ -23,9 +23,10 @@ class QuotationRepository:
         return (
             self.db.query(Quotation)
             .options(
+                joinedload(Quotation.customer),
                 joinedload(Quotation.items)
                 .joinedload(QuotationItem.item)
-                .joinedload(Item.item_group)
+                .joinedload(Item.item_group),
             )
             .filter(
                 Quotation.id == quotation_id,
@@ -44,7 +45,9 @@ class QuotationRepository:
         sort_by: str = "quotation_date",
         sort_order: str = "desc",
     ) -> tuple[list[Quotation], int]:
-        q = self.db.query(Quotation).filter(
+        q = self.db.query(Quotation).options(
+            joinedload(Quotation.customer)
+        ).filter(
             Quotation.organization_id == organization_id
         )
         if customer_id is not None:
