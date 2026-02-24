@@ -26,7 +26,7 @@ class PurchaseReceiptItemCreate(PurchaseReceiptItemBase):
 
 
 class PurchaseReceiptBase(BaseModel):
-    purchase_receipt_no: str = Field(..., min_length=1, max_length=100)
+    purchase_receipt_no: str | None = Field(None, min_length=1, max_length=100)
     supplier_id: UUID
     receipt_date: datetime
     status: str = Field(default="draft", pattern="^(draft|submitted|cancelled)$")

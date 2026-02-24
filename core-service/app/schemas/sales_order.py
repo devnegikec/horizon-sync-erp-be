@@ -82,7 +82,7 @@ class SalesOrderItemResponse(SalesOrderItemBase):
 
 
 class SalesOrderBase(BaseModel):
-    sales_order_no: str = Field(..., min_length=1, max_length=100)
+    sales_order_no: str | None = Field(None, min_length=1, max_length=100)
     customer_id: UUID
     order_date: datetime
     delivery_date: datetime | None = None

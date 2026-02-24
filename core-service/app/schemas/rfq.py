@@ -87,6 +87,7 @@ class RFQSupplierResponse(RFQSupplierBase):
 class RFQBase(BaseModel):
     """Base schema for RFQ"""
 
+    rfq_no: str | None = Field(None, min_length=1, max_length=100)
     closing_date: date
 
 
@@ -138,6 +139,7 @@ class RFQListItem(BaseModel):
 
     id: UUID
     organization_id: UUID
+    rfq_no: str | None = None
     material_request_id: UUID | None = None
     status: str
     closing_date: date

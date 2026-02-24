@@ -9,6 +9,7 @@ from app.core.transaction import transactional
 from app.models.base import MaterialRequestStatus, RFQStatus
 from app.repositories.material_request_repository import MaterialRequestRepository
 from app.repositories.rfq_repository import RFQRepository
+from app.services.document_numbering_service import DocumentNumberingService
 from app.services.state_machine import StateMachine
 from app.services.status_transition_service import StatusTransitionService
 
@@ -66,6 +67,7 @@ class RFQService:
         # Create RFQ
         rfq_data = {
             "organization_id": organization_id,
+            "rfq_no": DocumentNumberingService(self.db).get_next_number(organization_id, "rfq"),
             "material_request_id": material_request_id,
             "reference_type": "MATERIAL_REQUEST",
             "reference_id": material_request_id,
@@ -482,6 +484,7 @@ class RFQService:
         return {
             "id": rfq.id,
             "organization_id": rfq.organization_id,
+            "rfq_no": rfq.rfq_no,
             "material_request_id": rfq.material_request_id,
             "reference_type": rfq.reference_type,
             "reference_id": rfq.reference_id,

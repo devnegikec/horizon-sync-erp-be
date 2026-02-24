@@ -37,13 +37,10 @@ class QuotationService:
         # Auto-generate quotation_no if not provided
         quotation_no = payload.get("quotation_no")
         if not quotation_no:
-            # Generate format: QT-YYYY-NNNN
-            from datetime import datetime
-
-            year = datetime.now().year
-            # Get count of quotations this year for this org
-            count = self.repo.count_by_year(organization_id, year)
-            quotation_no = f"QT-{year}-{count + 1:04d}"
+            from app.services.document_numbering_service import DocumentNumberingService
+            quotation_no = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "quotation"
+            )
             payload["quotation_no"] = quotation_no
 
         # Handle status enum conversion

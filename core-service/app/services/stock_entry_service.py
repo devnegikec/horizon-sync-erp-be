@@ -47,6 +47,13 @@ class StockEntryService:
     def create(
         self, data: StockEntryCreate, organization_id: UUID, user_id: UUID
     ) -> StockEntry:
+        # Auto-generate stock_entry_no if not provided
+        if not data.stock_entry_no:
+            from app.services.document_numbering_service import DocumentNumberingService
+            data.stock_entry_no = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "stock_entry"
+            )
+
         if self.repo.get_by_no(data.stock_entry_no, organization_id):
             raise DuplicateStockEntryNoException(
                 f"Stock entry with number '{data.stock_entry_no}' already exists"

@@ -12,7 +12,7 @@ from app.schemas.common import PaginationMeta
 class ItemBase(BaseModel):
     """Base item schema with common fields"""
 
-    item_code: str = Field(..., min_length=1, max_length=100)
+    item_code: str | None = Field(None, min_length=1, max_length=100)
     item_name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
 

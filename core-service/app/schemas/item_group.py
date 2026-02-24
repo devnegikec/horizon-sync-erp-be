@@ -12,7 +12,7 @@ class ItemGroupBase(BaseModel):
     """Base item group schema with common fields"""
 
     name: str = Field(..., min_length=1, max_length=255)
-    code: str = Field(..., min_length=1, max_length=50)
+    code: str | None = Field(None, min_length=1, max_length=50)
     description: str | None = None
 
     # Hierarchy

@@ -28,6 +28,9 @@ DOCUMENT_TYPES = [
     "purchase_receipt",
     "payment",
     "item",
+    "item_group",
+    "stock_entry",
+    "stock_reconciliation",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -43,6 +46,9 @@ DEFAULT_PREFIXES = {
     "purchase_receipt": "PR",
     "payment": "RCP",
     "item": "ITM",
+    "item_group": "IG",
+    "stock_entry": "SE",
+    "stock_reconciliation": "SREC",
 }
 
 

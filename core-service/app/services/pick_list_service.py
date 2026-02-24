@@ -19,6 +19,12 @@ class PickListService:
         payload["organization_id"] = organization_id
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
+        # Auto-generate pick_list_no if not provided
+        if not payload.get("pick_list_no"):
+            from app.services.document_numbering_service import DocumentNumberingService
+            payload["pick_list_no"] = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "pick_list"
+            )
         if payload.get("status"):
             payload["status"] = PickListStatus(payload["status"])
         items = data.get("items") or []

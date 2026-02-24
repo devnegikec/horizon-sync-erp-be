@@ -10,7 +10,7 @@ from app.schemas.common import PaginationMeta
 
 
 class InvoiceBase(BaseModel):
-    invoice_no: str = Field(..., min_length=1, max_length=100)
+    invoice_no: str | None = Field(None, min_length=1, max_length=100)
     invoice_type: str = Field(..., pattern="^(sales|purchase)$")
     party_id: UUID
     party_type: str = Field(..., min_length=1, max_length=20)

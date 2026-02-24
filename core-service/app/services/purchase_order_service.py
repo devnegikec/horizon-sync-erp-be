@@ -11,6 +11,7 @@ from app.models.base import PurchaseOrderStatus, RFQStatus
 from app.repositories.purchase_order_repository import PurchaseOrderRepository
 from app.repositories.rfq_repository import RFQRepository
 from app.repositories.supplier_repository import SupplierRepository
+from app.services.document_numbering_service import DocumentNumberingService
 from app.services.state_machine import StateMachine
 from app.services.status_transition_service import StatusTransitionService
 from app.services.transaction_engine import (
@@ -94,8 +95,8 @@ class PurchaseOrderService:
         # Create Purchase Order
         po_data = {
             "organization_id": organization_id,
+            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(organization_id, "purchase_order"),
             "rfq_id": rfq_id,
-            "reference_type": "RFQ",
             "reference_id": rfq_id,
             "party_type": "SUPPLIER",
             "party_id": supplier_id,
@@ -184,6 +185,7 @@ class PurchaseOrderService:
         # Create Purchase Order
         po_data = {
             "organization_id": organization_id,
+            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(organization_id, "purchase_order"),
             "rfq_id": rfq_id,
             "reference_type": "RFQ" if rfq_id else None,
             "reference_id": rfq_id,
@@ -548,6 +550,7 @@ class PurchaseOrderService:
         return {
             "id": po.id,
             "organization_id": po.organization_id,
+            "purchase_order_no": po.purchase_order_no,
             "rfq_id": po.rfq_id,
             "reference_type": po.reference_type,
             "reference_id": po.reference_id,

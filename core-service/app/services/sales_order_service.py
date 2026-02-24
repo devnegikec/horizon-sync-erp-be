@@ -35,6 +35,13 @@ class SalesOrderService:
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
 
+        # Auto-generate sales_order_no if not provided
+        if not payload.get("sales_order_no"):
+            from app.services.document_numbering_service import DocumentNumberingService
+            payload["sales_order_no"] = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "sales_order"
+            )
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = SalesOrderStatus(payload["status"])
