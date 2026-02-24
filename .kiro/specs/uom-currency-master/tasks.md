@@ -120,25 +120,25 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - Inject `UOMService` via dependency
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-  - [ ] 6.2 Create UOM Conversion endpoints in `core-service/app/api/v1/endpoints/uom_conversions.py`
+  - [~] 6.2 Create UOM Conversion endpoints in `core-service/app/api/v1/endpoints/uom_conversions.py`
     - `POST /uom-conversions` → 201, `GET /uom-conversions` → 200 (filterable by `item_id`), `GET /uom-conversions/{id}` → 200, `PATCH /uom-conversions/{id}` → 200, `DELETE /uom-conversions/{id}` → 204
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 6.3 Create Currency Master endpoints in `core-service/app/api/v1/endpoints/currencies.py`
+  - [~] 6.3 Create Currency Master endpoints in `core-service/app/api/v1/endpoints/currencies.py`
     - `POST /currencies` → 201, `GET /currencies` → 200 (paginated, search), `GET /currencies/{id}` → 200, `PATCH /currencies/{id}` → 200, `DELETE /currencies/{id}` → 204
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-  - [ ] 6.4 Create Exchange Rate endpoints in `core-service/app/api/v1/endpoints/exchange_rates.py`
+  - [~] 6.4 Create Exchange Rate endpoints in `core-service/app/api/v1/endpoints/exchange_rates.py`
     - `POST /exchange-rates` → 201, `GET /exchange-rates` → 200 (filterable by `from_currency`, `to_currency`, `start_date`, `end_date`), `GET /exchange-rates/{id}` → 200, `PUT /exchange-rates/{id}` → 200, `DELETE /exchange-rates/{id}` → 204
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6_
 
 - [ ] 7. Register routers and verify backward compatibility
-  - [ ] 7.1 Register new routers in `core-service/app/api/v1/router.py`
+  - [~] 7.1 Register new routers in `core-service/app/api/v1/router.py`
     - Import and include `uoms`, `uom_conversions`, `currencies`, `exchange_rates` routers with prefixes `/uoms`, `/uom-conversions`, `/currencies`, `/exchange-rates` and appropriate tags
     - Ensure existing `currency.router` at `/currency` prefix remains unchanged
     - _Requirements: 4.10_
 
-  - [ ] 7.2 Verify existing `/api/v1/currency/*` endpoints still function
+  - [~] 7.2 Verify existing `/api/v1/currency/*` endpoints still function
     - Confirm the existing currency router import and registration is untouched
     - Verify the enhanced ExchangeRate model (nullable `organization_id`) doesn't break existing queries
     - _Requirements: 4.10_
@@ -147,7 +147,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Write unit and integration tests
-  - [ ] 9.1 Write UOM service unit tests in `core-service/tests/test_uom_service.py`
+  - [~] 9.1 Write UOM service unit tests in `core-service/tests/test_uom_service.py`
     - Test create with valid data, duplicate name detection (409), duplicate abbreviation detection (409), get by ID, list with pagination, update, soft-delete, not-found (404), org isolation
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
 
@@ -159,7 +159,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - **Property 5: Organization isolation on reads**
     - **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8**
 
-  - [ ] 9.3 Write UOM Conversion service unit tests in `core-service/tests/test_uom_conversion_service.py`
+  - [~] 9.3 Write UOM Conversion service unit tests in `core-service/tests/test_uom_conversion_service.py`
     - Test create with valid data, duplicate triple detection (409), item not found (404), positive factor validation (422), get, list filtered by item_id, update, soft-delete, convert_quantity forward/reverse/identity/missing
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 5.1, 5.2, 5.3, 5.4_
 
@@ -171,7 +171,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - **Property 10: Positive value validation**
     - **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.6, 2.7, 2.10**
 
-  - [ ] 9.5 Write Currency Master service unit tests in `core-service/tests/test_currency_master_service.py`
+  - [~] 9.5 Write Currency Master service unit tests in `core-service/tests/test_currency_master_service.py`
     - Test create with valid data, duplicate code detection (409), code format validation (422), base currency toggle, get, list, update, soft-delete, not-found (404), org isolation
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9_
 
@@ -183,7 +183,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - **Property 15: Currency duplicate code detection**
     - **Validates: Requirements 3.1, 3.2, 3.3, 3.5, 3.6, 3.7, 3.8**
 
-  - [ ] 9.7 Write Exchange Rate service unit tests in `core-service/tests/test_exchange_rate_service.py`
+  - [~] 9.7 Write Exchange Rate service unit tests in `core-service/tests/test_exchange_rate_service.py`
     - Test create with valid data, upsert idempotence, same-currency rejection (422), positive rate validation (422), get, list with filters, update, hard-delete, org-scoped queries
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9_
 
@@ -194,7 +194,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - **Property 19: Exchange Rate hard delete**
     - **Validates: Requirements 4.2, 4.4, 4.6, 4.7, 4.8, 4.9**
 
-  - [ ] 9.9 Write backward compatibility test in `core-service/tests/test_exchange_rate_backward_compat.py`
+  - [~] 9.9 Write backward compatibility test in `core-service/tests/test_exchange_rate_backward_compat.py`
     - Verify existing `/api/v1/currency/exchange-rates` endpoints still work after model enhancement
     - Verify records without `organization_id` (null) are still queryable via legacy endpoints
     - _Requirements: 4.10_
