@@ -52,8 +52,13 @@ class SalesOrderItemBase(BaseModel):
         default=0, ge=0, description="Tax currency value"
     )
     total_amount: Decimal | float = Field(
-        default=0, ge=0, description="amount + tax_amount"
+        default=0, ge=0, description="amount - discount_amount + tax_amount"
     )
+    discount_type: str = Field(
+        default="percentage", pattern="^(flat|percentage)$", description="Discount type"
+    )
+    discount_value: Decimal | float = Field(default=0, ge=0, description="Discount % or fixed amount")
+    discount_amount: Decimal | float = Field(default=0, ge=0, description="Computed discount amount")
 
 
 class SalesOrderItemCreate(SalesOrderItemBase):

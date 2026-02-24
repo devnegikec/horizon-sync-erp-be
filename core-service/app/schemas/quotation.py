@@ -81,7 +81,11 @@ class QuotationItemBase(BaseModel):
     tax_template_id: UUID | None = None
     tax_rate: Decimal | float = Field(default=0, ge=0, description="Tax % at quote time")
     tax_amount: Decimal | float = Field(default=0, ge=0, description="Tax currency value")
-    total_amount: Decimal | float = Field(default=0, ge=0, description="amount + tax_amount")
+    total_amount: Decimal | float = Field(default=0, ge=0, description="amount - discount_amount + tax_amount")
+    # Discount: type 'flat' | 'percentage', value (fixed amount or %), computed discount_amount
+    discount_type: str = Field(default="percentage", pattern="^(flat|percentage)$", description="Discount type")
+    discount_value: Decimal | float = Field(default=0, ge=0, description="Discount: % or fixed amount")
+    discount_amount: Decimal | float = Field(default=0, ge=0, description="Computed discount amount")
 
 
 class QuotationItemCreate(QuotationItemBase):
@@ -117,6 +121,9 @@ class QuotationBase(BaseModel):
     currency: str = Field(default="INR", max_length=10)
     remarks: str | None = None
     converted_to_sales_order: bool = False
+    discount_type: str = Field(default="percentage", pattern="^(flat|percentage)$", description="Discount on total")
+    discount_value: Decimal | float = Field(default=0, ge=0, description="Discount % or fixed amount on total")
+    discount_amount: Decimal | float = Field(default=0, ge=0, description="Computed discount on total")
 
 
 class QuotationCreate(BaseModel):
@@ -132,6 +139,9 @@ class QuotationCreate(BaseModel):
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     remarks: str | None = None
+    discount_type: str | None = Field(default="percentage", pattern="^(flat|percentage)$")
+    discount_value: Decimal | float = Field(default=0, ge=0)
+    discount_amount: Decimal | float = Field(default=0, ge=0)
     items: list[QuotationItemCreate] = []
 
 
@@ -140,6 +150,9 @@ class QuotationUpdate(BaseModel):
     valid_until: datetime | None = None
     status: str | None = Field(None, pattern="^(draft|sent|accepted|rejected|expired)$")
     remarks: str | None = None
+    discount_type: str | None = Field(None, pattern="^(flat|percentage)$")
+    discount_value: Decimal | float | None = None
+    discount_amount: Decimal | float | None = None
     items: list[QuotationItemCreate] | None = None
 
 
