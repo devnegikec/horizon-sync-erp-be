@@ -461,7 +461,7 @@ class QuotationService:
                 timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
                 sales_order_no = f"SO-{timestamp}"
 
-            # Prepare sales order data
+            # Prepare sales order data (carry forward document-level discount from quotation)
             sales_order_data = {
                 "sales_order_no": sales_order_no,
                 "customer_id": quotation.customer_id,
@@ -471,6 +471,9 @@ class QuotationService:
                 "reference_type": "Quotation",
                 "reference_id": quotation.id,
                 "remarks": quotation.remarks,
+                "discount_type": getattr(quotation, "discount_type", None) or "percentage",
+                "discount_value": getattr(quotation, "discount_value", None) or 0,
+                "discount_amount": getattr(quotation, "discount_amount", None) or 0,
                 "items": [
                     {
                         "item_id": item.item_id,

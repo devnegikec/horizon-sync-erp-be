@@ -78,16 +78,25 @@ class SalesOrderService:
             else None
         )
 
-        grand_total = Decimal("0")
+        subtotal = Decimal("0")
         for item_data in items_data:
             item_payload = self._build_sales_order_item_payload(
                 item_data, sales_order.id, organization_id, shipping_address
             )
-            grand_total += item_payload["total_amount"]
+            subtotal += item_payload["total_amount"]
             item = SalesOrderItem(**item_payload)
             self.db.add(item)
 
-        self.repo.update(sales_order, {"grand_total": grand_total})
+        discount_amount = Decimal(str(payload.get("discount_amount") or 0))
+        grand_total = subtotal - discount_amount
+        update_data = {"grand_total": grand_total}
+        if "discount_type" in payload:
+            update_data["discount_type"] = payload.get("discount_type") or "percentage"
+        if "discount_value" in payload:
+            update_data["discount_value"] = payload.get("discount_value")
+        if "discount_amount" in payload:
+            update_data["discount_amount"] = discount_amount
+        self.repo.update(sales_order, update_data)
 
         self.db.commit()
         self.db.refresh(sales_order)
@@ -184,14 +193,33 @@ class SalesOrderService:
                 item = SalesOrderItem(**item_payload)
                 self.db.add(item)
 
-            # Recalculate grand_total from built item payloads
-            grand_total = Decimal("0")
+            # Recalculate subtotal and apply document discount
+            subtotal = Decimal("0")
             for item_data in items_data:
                 item_payload = self._build_sales_order_item_payload(
                     item_data, sales_order.id, organization_id, shipping_address
                 )
-                grand_total += item_payload["total_amount"]
-            payload["grand_total"] = grand_total
+                subtotal += item_payload["total_amount"]
+            discount_amount = Decimal(str(data.get("discount_amount") or 0))
+            payload["grand_total"] = subtotal - discount_amount
+            if "discount_type" in data:
+                payload["discount_type"] = data.get("discount_type") or "percentage"
+            if "discount_value" in data:
+                payload["discount_value"] = data.get("discount_value")
+            if "discount_amount" in data:
+                payload["discount_amount"] = discount_amount
+
+        # Document discount only (no items update)
+        elif "discount_type" in data or "discount_value" in data or "discount_amount" in data:
+            subtotal = sum(
+                (getattr(item, "total_amount", None) or item.amount or Decimal("0"))
+                for item in sales_order.items
+            )
+            discount_amount = Decimal(str(data.get("discount_amount") or 0))
+            payload["grand_total"] = subtotal - discount_amount
+            payload["discount_type"] = data.get("discount_type") or getattr(sales_order, "discount_type", None) or "percentage"
+            payload["discount_value"] = data.get("discount_value") if data.get("discount_value") is not None else getattr(sales_order, "discount_value", None)
+            payload["discount_amount"] = discount_amount
 
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
@@ -1212,6 +1240,9 @@ class SalesOrderService:
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,
             "currency": sales_order.currency,
+            "discount_type": getattr(sales_order, "discount_type", None) or "percentage",
+            "discount_value": getattr(sales_order, "discount_value", None) or 0,
+            "discount_amount": getattr(sales_order, "discount_amount", None) or 0,
             "reference_type": sales_order.reference_type,
             "reference_id": sales_order.reference_id,
             "remarks": sales_order.remarks,

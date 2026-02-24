@@ -1,9 +1,10 @@
 """add_accounts_table_for_chart_of_accounts
 
 Revision ID: 610526d12875
-Revises: 008
+Revises: 009
 Create Date: 2026-02-17 00:33:50.272217
 
+Linear path: 008 -> 009 -> 610526d12875 -> ... -> l2m3n4o5p6q7r8 -> 010_merge -> 011 -> 012
 """
 from collections.abc import Sequence
 from typing import Union
@@ -12,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "610526d12875"
-down_revision: Union[str, None] = "008"
+down_revision: Union[str, None] = "009"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
