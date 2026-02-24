@@ -1,0 +1,220 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Fault Condition** - Journal Entry Tables Missing
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: Scope the property to concrete failing cases: balance queries for accounts that should have journal entries
+  - Test that balance_calculator.calculate_balance(account_id) raises ProgrammingError or OperationalError due to missing journal_entry_lines table
+  - Test that direct query `SELECT * FROM journal_entries LIMIT 1` fails with "relation does not exist"
+  - Test that JournalEntry and JournalEntryLine are NOT in app.models module exports
+  - Test that Alembic autogenerate does NOT detect journal entry models
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found:
+    - Database error: "ProgrammingError: relation 'journal_entries' does not exist"
+    - Balance calculator fallback: returns zero balances instead of actual values
+    - Model import error: AttributeError when accessing JournalEntry from app.models
+    - Alembic detection: empty migration generated
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.3, 1.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Balance Calculation Logic Unchanged
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for balance calculation components that don't involve database queries:
+    - Natural balance direction calculation (Assets/Expenses: Debit - Credit, Liabilities/Equity/Revenue: Credit - Debit)
+    - Currency conversion using CurrencyService
+    - Consolidated balance calculation using HierarchyManager
+    - Redis caching of balance results
+    - Zero balance handling for accounts without entries
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Property: For all account types, natural balance direction follows existing logic
+    - Property: For all multi-currency accounts, conversion uses CurrencyService with same parameters
+    - Property: For all parent accounts, consolidated balance aggregates children using HierarchyManager
+    - Property: For all balance queries, cache keys and TTL remain unchanged
+    - Property: For all accounts without journal entries, balance returns zero
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.7_
+
+- [x] 3. Fix for journal entry integration
+
+  - [x] 3.1 Import journal entry models in app/models/__init__.py
+    - Add import statement: `from app.models.journal_entry import JournalEntry, JournalEntryLine`
+    - Location: After existing model imports (around line 40, after DefaultAccount import)
+    - Add "JournalEntry" and "JournalEntryLine" to __all__ list in Models section
+    - Verify models are now accessible via `from app.models import JournalEntry, JournalEntryLine`
+    - _Bug_Condition: isBugCondition(input) where input.requires_journal_query == True AND database_table_exists("journal_entries") == False_
+    - _Expected_Behavior: Models imported and exported, enabling Alembic detection_
+    - _Preservation: Existing model imports and exports remain unchanged_
+    - _Requirements: 2.3_
+
+  - [x] 3.2 Create Alembic migration for journal entry tables
+    - Create new migration file: `alembic revision -m "add journal entry tables"`
+    - Migration filename pattern: `YYYYMMDDHHMMSS_add_journal_entry_tables.py`
+    - **upgrade() function**:
+      - Create journalstatus enum type: `CREATE TYPE IF NOT EXISTS journalstatus AS ENUM ('draft', 'posted', 'cancelled')`
+      - Create journal_entries table with columns:
+        - id (UUID, PK, default: gen_random_uuid())
+        - organization_id (UUID, NOT NULL, indexed)
+        - entry_no (VARCHAR(100), NOT NULL)
+        - posting_date (TIMESTAMP WITH TIME ZONE, NOT NULL, default: now())
+        - status (journalstatus, NOT NULL, default: 'draft')
+        - voucher_type (VARCHAR(50))
+        - reference_type (VARCHAR(50))
+        - reference_id (UUID)
+        - total_debit (NUMERIC(15,2), NOT NULL, default: 0)
+        - total_credit (NUMERIC(15,2), NOT NULL, default: 0)
+        - remarks (TEXT)
+        - posted_at (TIMESTAMP WITH TIME ZONE)
+        - extra_data (JSONB)
+        - created_by (UUID)
+        - updated_by (UUID)
+        - created_at (TIMESTAMP WITH TIME ZONE, NOT NULL, default: now())
+        - updated_at (TIMESTAMP WITH TIME ZONE, NOT NULL, default: now())
+        - UNIQUE constraint on (organization_id, entry_no)
+      - Create journal_entry_lines table with columns:
+        - id (UUID, PK, default: gen_random_uuid())
+        - organization_id (UUID, NOT NULL, indexed)
+        - journal_entry_id (UUID, NOT NULL, FK → journal_entries.id CASCADE DELETE)
+        - account_id (UUID, NOT NULL, FK → accounts.id CASCADE DELETE)
+        - debit (NUMERIC(15,2), NOT NULL, default: 0)
+        - credit (NUMERIC(15,2), NOT NULL, default: 0)
+        - against_account_id (UUID, FK → accounts.id SET NULL)
+        - reference_type (VARCHAR(50))
+        - reference_id (UUID)
+        - remarks (TEXT)
+        - sort_order (INTEGER, NOT NULL, default: 0)
+        - created_at (TIMESTAMP WITH TIME ZONE, NOT NULL, default: now())
+        - updated_at (TIMESTAMP WITH TIME ZONE, NOT NULL, default: now())
+      - Create indexes:
+        - idx_journal_entries_organization_id on journal_entries(organization_id)
+        - idx_journal_entries_posting_date on journal_entries(posting_date)
+        - idx_journal_entries_status on journal_entries(status)
+        - idx_journal_entries_org_status_date on journal_entries(organization_id, status, posting_date)
+        - idx_journal_entry_lines_organization_id on journal_entry_lines(organization_id)
+        - idx_journal_entry_lines_journal_entry_id on journal_entry_lines(journal_entry_id)
+        - idx_journal_entry_lines_account_id on journal_entry_lines(account_id)
+        - idx_journal_entry_lines_account_journal on journal_entry_lines(account_id, journal_entry_id)
+    - **downgrade() function**:
+      - Drop indexes in reverse order
+      - Drop journal_entry_lines table
+      - Drop journal_entries table
+      - Note: Do NOT drop journalstatus enum (may be used by other tables)
+    - Test migration: `alembic upgrade head` should succeed
+    - Test downgrade: `alembic downgrade -1` should succeed
+    - _Bug_Condition: isBugCondition(input) where database_table_exists("journal_entries") == False_
+    - _Expected_Behavior: Tables created with all columns, constraints, indexes from design_
+    - _Preservation: Existing migrations continue to execute successfully_
+    - _Requirements: 2.1, 2.4, 3.5_
+
+  - [x] 3.3 Create seed data script for journal entries
+    - Create file: `seed_journal_entries.py` in core-service root directory
+    - Follow pattern from `seed_chart_of_accounts.py`:
+      - Database URL from environment variable or default
+      - Organization ID and user ID for audit fields
+      - Use SQLAlchemy text() for raw SQL to avoid model relationship issues
+      - Transaction-based approach for data consistency
+      - Check for existing entries to allow re-running
+    - Create 5-10 sample journal entries covering common scenarios:
+      - Opening balance entry: Debit Cash (1110), Credit Owner's Capital (3100)
+      - Purchase transaction: Debit Inventory (1130), Credit Accounts Payable (2110)
+      - Sales transaction: Debit Accounts Receivable (1120), Credit Sales Revenue (4110); Debit Material Costs (5110), Credit Inventory (1130)
+      - Expense payment: Debit Salaries (5210), Credit Cash (1110)
+      - Depreciation entry: Debit Depreciation Expense, Credit Accumulated Depreciation
+    - Each journal entry structure:
+      - Unique entry_no (e.g., "JE-2024-001", "JE-2024-002")
+      - Status set to "posted" for inclusion in balance calculations
+      - Posting date 30-90 days in the past
+      - Balanced debits and credits (total_debit == total_credit)
+      - 2-4 journal entry lines showing double-entry bookkeeping
+    - Use account codes from chart of accounts seed data
+    - Display summary: number of entries created, total debits/credits, affected accounts
+    - Test script: `python seed_journal_entries.py` should succeed
+    - _Bug_Condition: isBugCondition(input) where input.requires_journal_query == True_
+    - _Expected_Behavior: Sample journal entries persisted for testing balance calculations_
+    - _Preservation: Existing seed scripts remain unchanged_
+    - _Requirements: 2.5, 2.7_
+
+  - [x] 3.4 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Journal Entry Tables Exist and Are Queryable
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - Verify balance_calculator.calculate_balance(account_id) executes successfully without ProgrammingError
+    - Verify direct query `SELECT * FROM journal_entries LIMIT 1` succeeds
+    - Verify JournalEntry and JournalEntryLine are accessible from app.models
+    - Verify Alembic autogenerate detects journal entry models
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.5 Verify preservation tests still pass
+    - **Property 2: Preservation** - Balance Calculation Logic Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - Verify natural balance direction calculation unchanged
+    - Verify currency conversion using CurrencyService unchanged
+    - Verify consolidated balance calculation using HierarchyManager unchanged
+    - Verify Redis caching behavior unchanged
+    - Verify zero balance handling for accounts without entries unchanged
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions)
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.7_
+
+- [x] 4. Integration verification
+
+  - [x] 4.1 Verify balance calculator integration
+    - Run seed_journal_entries.py to populate sample data
+    - Query balance for Cash account (1110) - should show non-zero debit_total
+    - Query balance for Accounts Payable account (2110) - should show non-zero credit_total
+    - Query balance for Sales Revenue account (4110) - should show non-zero credit_total
+    - Verify balances match expected values from seed data journal entries
+    - Verify no ProgrammingError or OperationalError exceptions occur
+    - _Requirements: 2.1, 2.2, 2.5_
+
+  - [x] 4.2 Verify model relationships and foreign keys
+    - Create a test journal entry with 2 lines programmatically
+    - Verify journal_entry.lines relationship returns correct lines
+    - Verify journal_entry_line.journal_entry relationship returns parent entry
+    - Delete journal entry and verify lines are cascade deleted
+    - Verify foreign key to accounts table works correctly
+    - _Requirements: 2.4, 2.5, 2.6_
+
+  - [x] 4.3 Verify multi-tenancy isolation
+    - Create journal entries for organization A
+    - Create journal entries for organization B
+    - Query balances for organization A - should only include org A entries
+    - Query balances for organization B - should only include org B entries
+    - Verify organization_id filtering works correctly
+    - _Requirements: 2.1, 2.2_
+
+  - [x] 4.4 Verify journal entry service integration
+    - Use journal_entry_service.create_journal_entry() to create a new entry
+    - Verify entry is persisted to database
+    - Use journal_entry_service.post_journal_entry() to post the entry
+    - Verify status changes to 'posted' and posted_at is set
+    - Query balance for affected accounts - should reflect new entry
+    - _Requirements: 2.5, 2.6_
+
+  - [x] 4.5 Verify performance with indexes
+    - Create 1000+ journal entry lines for a single account
+    - Query balance for that account
+    - Verify query completes in reasonable time (<100ms)
+    - Check query plan to confirm indexes are used
+    - Verify idx_journal_entry_lines_account_journal index improves performance
+    - _Requirements: 2.1, 2.4_
+
+- [x] 5. Checkpoint - Ensure all tests pass
+  - Run all unit tests: `pytest tests/`
+  - Run all property-based tests
+  - Run all integration tests
+  - Verify no regressions in existing functionality
+  - Verify balance calculations return accurate non-zero values for accounts with journal entries
+  - Verify balance calculations return zero for accounts without journal entries
+  - Ask the user if questions arise
