@@ -48,6 +48,37 @@ class DuplicateWarehouseCodeException(CoreServiceException):
     pass
 
 
+class UOMNotFoundException(CoreServiceException):
+    """Raised when a UOM is not found"""
+
+    pass
+
+
+class DuplicateUOMNameException(CoreServiceException):
+    """Raised when UOM name already exists in the organization"""
+
+    pass
+
+
+class DuplicateUOMAbbreviationException(CoreServiceException):
+    """Raised when UOM abbreviation already exists in the organization"""
+
+    pass
+
+
+class UOMConversionNotFoundException(CoreServiceException):
+    """Raised when a UOM conversion is not found"""
+
+    pass
+
+
+class DuplicateUOMConversionException(CoreServiceException):
+    """Raised when UOM conversion (item_id, from_uom, to_uom) already exists in the organization"""
+
+    pass
+
+
+
 class BatchNotFoundException(CoreServiceException):
     """Raised when a batch is not found"""
 
@@ -204,6 +235,12 @@ class DuplicateAccountCodeException(CoreServiceException):
 
 class CurrencyNotFoundException(CoreServiceException):
     """Raised when a currency is not found or not supported"""
+
+    pass
+
+
+class DuplicateCurrencyCodeException(CoreServiceException):
+    """Raised when currency code already exists in the organization"""
 
     pass
 

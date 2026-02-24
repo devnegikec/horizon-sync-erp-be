@@ -25,6 +25,7 @@ from app.core.exceptions import (
     CustomerNotFoundException,
     DuplicateAccountCodeException,
     DuplicateBatchNoException,
+    DuplicateCurrencyCodeException,
     DuplicateCustomerCodeException,
     DuplicateItemCodeException,
     DuplicateItemGroupCodeException,
@@ -34,7 +35,11 @@ from app.core.exceptions import (
     DuplicateSerialNoException,
     DuplicateStockEntryNoException,
     DuplicateSupplierCodeException,
+    DuplicateUOMAbbreviationException,
+    DuplicateUOMConversionException,
+    DuplicateUOMNameException,
     DuplicateWarehouseCodeException,
+    UOMConversionNotFoundException,
     ExchangeRateNotFoundException,
     IntegrationError,
     ItemGroupNotFoundException,
@@ -54,6 +59,7 @@ from app.core.exceptions import (
     StockReconciliationNotFoundException,
     StockSettingsNotFoundException,
     SupplierNotFoundException,
+    UOMNotFoundException,
     ValidationError,
     ValidationException,
     WarehouseNotFoundException,
@@ -271,6 +277,66 @@ async def duplicate_warehouse_code_exception_handler(
     )
 
 
+@app.exception_handler(UOMNotFoundException)
+async def uom_not_found_exception_handler(
+    request: Request, exc: UOMNotFoundException
+):
+    """Handle UOM not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="UOM_NOT_FOUND",
+    )
+
+
+@app.exception_handler(DuplicateUOMNameException)
+async def duplicate_uom_name_exception_handler(
+    request: Request, exc: DuplicateUOMNameException
+):
+    """Handle duplicate UOM name errors"""
+    return create_error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        code="DUPLICATE_UOM_NAME",
+    )
+
+
+@app.exception_handler(DuplicateUOMAbbreviationException)
+async def duplicate_uom_abbreviation_exception_handler(
+    request: Request, exc: DuplicateUOMAbbreviationException
+):
+    """Handle duplicate UOM abbreviation errors"""
+    return create_error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        code="DUPLICATE_UOM_ABBREVIATION",
+    )
+
+
+@app.exception_handler(UOMConversionNotFoundException)
+async def uom_conversion_not_found_exception_handler(
+    request: Request, exc: UOMConversionNotFoundException
+):
+    """Handle UOM conversion not found errors"""
+    return create_error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        message=str(exc),
+        code="UOM_CONVERSION_NOT_FOUND",
+    )
+
+
+@app.exception_handler(DuplicateUOMConversionException)
+async def duplicate_uom_conversion_exception_handler(
+    request: Request, exc: DuplicateUOMConversionException
+):
+    """Handle duplicate UOM conversion errors"""
+    return create_error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        code="DUPLICATE_UOM_CONVERSION",
+    )
+
+
 @app.exception_handler(CustomerNotFoundException)
 async def customer_not_found_exception_handler(
     request: Request, exc: CustomerNotFoundException
@@ -352,6 +418,18 @@ async def currency_not_found_exception_handler(
         status_code=status.HTTP_404_NOT_FOUND,
         message=str(exc),
         code="CURRENCY_NOT_FOUND",
+    )
+
+
+@app.exception_handler(DuplicateCurrencyCodeException)
+async def duplicate_currency_code_exception_handler(
+    request: Request, exc: DuplicateCurrencyCodeException
+):
+    """Handle duplicate currency code errors"""
+    return create_error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        message=str(exc),
+        code="DUPLICATE_CURRENCY_CODE",
     )
 
 
