@@ -69,24 +69,24 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - Implement `get_by_item_and_pair(item_id, from_uom, to_uom, organization_id)` for uniqueness checks and `convert_quantity` lookups
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 3.3 Create Currency Master repository in `core-service/app/repositories/currency_master_repository.py`
+  - [~] 3.3 Create Currency Master repository in `core-service/app/repositories/currency_master_repository.py`
     - Implement `create`, `get_by_id` (org-scoped, excludes soft-deleted), `list` (paginated, org-scoped, optional search), `update`, `soft_delete`
     - Implement `get_by_code(code, organization_id)` for uniqueness checks
     - Implement `clear_base_currency(organization_id)` to set `is_base_currency = false` on all currencies in org
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ] 3.4 Create Exchange Rate repository in `core-service/app/repositories/exchange_rate_repository.py`
+  - [~] 3.4 Create Exchange Rate repository in `core-service/app/repositories/exchange_rate_repository.py`
     - Implement `create`, `get_by_id` (org-scoped), `list` (paginated, filterable by `from_currency`, `to_currency`, `start_date`, `end_date`), `update`, `hard_delete`
     - Implement `get_by_currency_pair_and_date(org_id, from_currency, to_currency, effective_date)` for upsert logic
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6_
 
 - [ ] 4. Create service layer
-  - [ ] 4.1 Create UOM service in `core-service/app/services/uom_service.py`
+  - [~] 4.1 Create UOM service in `core-service/app/services/uom_service.py`
     - Implement `create_uom`: check duplicate name and abbreviation within org (HTTP 409), then delegate to repository
     - Implement `get_uom`, `list_uoms`, `update_uom` (check duplicates on name/abbreviation change), `delete_uom`
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7_
 
-  - [ ] 4.2 Create UOM Conversion service in `core-service/app/services/uom_conversion_service.py`
+  - [~] 4.2 Create UOM Conversion service in `core-service/app/services/uom_conversion_service.py`
     - Implement `create_conversion`: validate item exists in org (HTTP 404), check duplicate (item_id, from_uom, to_uom) within org (HTTP 409)
     - Implement `get_conversion`, `list_conversions`, `update_conversion`, `delete_conversion`
     - Implement `convert_quantity(item_id, from_uom, to_uom, quantity, organization_id)`: identity check → forward lookup → reverse lookup → raise ValidationError
@@ -99,12 +99,12 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
     - **Property 23: convert_quantity raises on missing conversion** — raises ValidationError when no conversion exists
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
 
-  - [ ] 4.4 Create Currency Master service in `core-service/app/services/currency_master_service.py`
+  - [~] 4.4 Create Currency Master service in `core-service/app/services/currency_master_service.py`
     - Implement `create_currency`: check duplicate code within org (HTTP 409), enforce base currency toggle (clear others if `is_base_currency=true`)
     - Implement `get_currency`, `list_currencies`, `update_currency` (enforce base currency toggle on update), `delete_currency`
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.9_
 
-  - [ ] 4.5 Create Exchange Rate service in `core-service/app/services/exchange_rate_service.py`
+  - [~] 4.5 Create Exchange Rate service in `core-service/app/services/exchange_rate_service.py`
     - Implement `create_exchange_rate`: validate `from_currency != to_currency` (HTTP 422), implement upsert logic (update existing if same org/pair/date exists)
     - Implement `get_exchange_rate`, `list_exchange_rates`, `update_exchange_rate`, `delete_exchange_rate` (hard delete)
     - Default `effective_date` to today if not provided; always set `organization_id` and `captured_at`
@@ -114,7 +114,7 @@ Implement four master-data entities (UOM, UOM Conversion, Currency Master, Excha
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. Create API endpoint layer
-  - [ ] 6.1 Create UOM endpoints in `core-service/app/api/v1/endpoints/uoms.py`
+  - [~] 6.1 Create UOM endpoints in `core-service/app/api/v1/endpoints/uoms.py`
     - `POST /uoms` → 201, `GET /uoms` → 200 (paginated, search query param), `GET /uoms/{id}` → 200, `PATCH /uoms/{id}` → 200, `DELETE /uoms/{id}` → 204
     - Use `get_current_active_user` for auth, `require_permission` for authorization
     - Inject `UOMService` via dependency
