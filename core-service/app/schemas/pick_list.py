@@ -39,7 +39,7 @@ class PickListItemResponse(BaseModel):
 
 
 class PickListBase(BaseModel):
-    pick_list_no: str = Field(..., min_length=1, max_length=100)
+    pick_list_no: str | None = Field(None, min_length=1, max_length=100)
     warehouse_id: UUID
     status: str = Field(
         default="draft", pattern="^(draft|in_progress|completed|cancelled)$"

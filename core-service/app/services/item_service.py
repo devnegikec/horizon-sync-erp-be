@@ -54,6 +54,13 @@ class ItemService:
         Raises:
             DuplicateItemCodeException: If item code already exists
         """
+        # Auto-generate item_code if not provided
+        if not item_data.item_code:
+            from app.services.document_numbering_service import DocumentNumberingService
+            item_data.item_code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "item"
+            )
+
         # Check if item code already exists
         if self.item_repo.item_code_exists(item_data.item_code, organization_id):
             raise DuplicateItemCodeException(

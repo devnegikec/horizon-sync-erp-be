@@ -19,6 +19,7 @@ class PurchaseOrder(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    purchase_order_no = Column(String(100), nullable=True, index=True)
 
     # Reference to RFQ (optional)
     rfq_id = Column(

@@ -48,6 +48,13 @@ class ItemGroupService:
             DuplicateItemGroupCodeException: If item group code already exists
             ItemGroupNotFoundException: If parent item group not found
         """
+        # Auto-generate code if not provided
+        if not item_group_data.code:
+            from app.services.document_numbering_service import DocumentNumberingService
+            item_group_data.code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "item_group"
+            )
+
         # Check if item group code already exists
         if self.item_group_repo.item_group_code_exists(
             item_group_data.code, organization_id

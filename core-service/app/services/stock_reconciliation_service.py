@@ -40,6 +40,13 @@ class StockReconciliationService:
     def create(
         self, data: StockReconciliationCreate, organization_id: UUID, user_id: UUID
     ) -> StockReconciliation:
+        # Auto-generate reconciliation_no if not provided
+        if not data.reconciliation_no:
+            from app.services.document_numbering_service import DocumentNumberingService
+            data.reconciliation_no = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "stock_reconciliation"
+            )
+
         if self.repo.get_by_no(data.reconciliation_no, organization_id):
             raise DuplicateReconciliationNoException(
                 f"Reconciliation with number '{data.reconciliation_no}' already exists"

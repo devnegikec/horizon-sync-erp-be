@@ -63,7 +63,7 @@ class StockReconciliationItemResponse(BaseModel):
 
 
 class StockReconciliationBase(BaseModel):
-    reconciliation_no: str = Field(..., min_length=1, max_length=100)
+    reconciliation_no: str | None = Field(None, min_length=1, max_length=100)
     purpose: str | None = Field(None, max_length=100)
     posting_date: datetime
     posting_time: str | None = Field(None, max_length=10)

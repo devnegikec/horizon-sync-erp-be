@@ -19,6 +19,7 @@ class RFQ(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    rfq_no = Column(String(100), nullable=True, index=True)
 
     # Reference to Material Request
     material_request_id = Column(

@@ -39,6 +39,7 @@ class PurchaseOrderLineResponse(PurchaseOrderLineBase):
 class PurchaseOrderBase(BaseModel):
     """Base schema for Purchase Order"""
 
+    purchase_order_no: str | None = Field(None, min_length=1, max_length=100)
     party_id: UUID = Field(..., description="Supplier ID")
     tax_rate: Decimal | float | None = Field(None, ge=0, le=1, description="Tax rate (0-1)")
     discount_amount: Decimal | float | None = Field(None, ge=0, description="Discount amount")
@@ -93,6 +94,7 @@ class PurchaseOrderListItem(BaseModel):
 
     id: UUID
     organization_id: UUID
+    purchase_order_no: str | None = None
     rfq_id: UUID | None = None
     party_id: UUID
     status: str

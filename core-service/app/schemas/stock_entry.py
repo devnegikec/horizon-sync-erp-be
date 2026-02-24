@@ -82,7 +82,7 @@ class StockEntryItemResponse(BaseModel):
 
 
 class StockEntryBase(BaseModel):
-    stock_entry_no: str = Field(..., min_length=1, max_length=100)
+    stock_entry_no: str | None = Field(None, min_length=1, max_length=100)
     stock_entry_type: str  # material_receipt, material_issue, material_transfer, etc.
     from_warehouse_id: UUID | None = None
     to_warehouse_id: UUID | None = None

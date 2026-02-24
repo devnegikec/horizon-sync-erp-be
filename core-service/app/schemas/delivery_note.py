@@ -50,7 +50,7 @@ class DeliveryNoteItemResponse(DeliveryNoteItemBase):
 
 
 class DeliveryNoteBase(BaseModel):
-    delivery_note_no: str = Field(..., min_length=1, max_length=100)
+    delivery_note_no: str | None = Field(None, min_length=1, max_length=100)
     customer_id: UUID
     delivery_date: datetime
     status: str = Field(default="draft", pattern="^(draft|submitted|cancelled)$")

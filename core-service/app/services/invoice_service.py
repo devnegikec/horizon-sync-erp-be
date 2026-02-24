@@ -26,6 +26,12 @@ class InvoiceService:
         payload["organization_id"] = organization_id
         payload["created_by"] = user_id
         payload["updated_by"] = user_id
+        # Auto-generate invoice_no if not provided
+        if not payload.get("invoice_no"):
+            from app.services.document_numbering_service import DocumentNumberingService
+            payload["invoice_no"] = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "invoice"
+            )
         if payload.get("invoice_type"):
             payload["invoice_type"] = InvoiceType(payload["invoice_type"])
         if payload.get("status"):
