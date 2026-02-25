@@ -26,16 +26,18 @@ class Invoice(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     invoice_no = Column(String(100), nullable=False)
-    invoice_date = Column(
+    # DB column is 'posting_date'; expose as posting_date and as invoice_date for compatibility
+    posting_date = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     due_date = Column(DateTime(timezone=True), nullable=True)
     invoice_type = Column(String(50), nullable=False)
     status = Column(String(50), default="Draft", nullable=False)
-    customer_id = Column(UUID(as_uuid=True), nullable=True)
-    supplier_id = Column(UUID(as_uuid=True), nullable=True)
+    party_id = Column(UUID(as_uuid=True), nullable=True)  # customer or supplier by invoice_type
     total_amount = Column(Numeric(15, 2), default=0)
     tax_amount = Column(Numeric(15, 2), default=0)
+    discount_type = Column(String(20), default="percentage", nullable=True)
+    discount_value = Column(Numeric(15, 2), default=0, nullable=True)
     discount_amount = Column(Numeric(15, 2), default=0)
     total_paid = Column(Numeric(15, 2), default=0)
     balance_due = Column(Numeric(15, 2), default=0)
@@ -52,11 +54,6 @@ class Invoice(Base):
     )
     
     @property
-    def party_id(self):
-        """Get party ID based on invoice type"""
-        return self.customer_id if self.invoice_type == 'SALES' else self.supplier_id
-    
-    @property
     def party_type(self):
         """Get party type based on invoice type"""
         return 'Customer' if self.invoice_type == 'SALES' else 'Supplier'
@@ -70,11 +67,11 @@ class Invoice(Base):
     def outstanding_amount(self):
         """Alias for balance_due for backward compatibility"""
         return self.balance_due
-    
+
     @property
-    def posting_date(self):
-        """Alias for invoice_date for backward compatibility"""
-        return self.invoice_date
+    def invoice_date(self):
+        """Alias for posting_date for backward compatibility"""
+        return self.posting_date
 
     # Relationships
     items = relationship(
