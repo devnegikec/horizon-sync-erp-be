@@ -178,6 +178,10 @@ class QuotationListItem(BaseModel):
     quotation_date: datetime
     valid_until: datetime | None = None
     grand_total: Decimal
+    currency: str = "INR"
+    discount_type: str | None = None
+    discount_value: Decimal | float | None = None
+    discount_amount: Decimal | float | None = None
     converted_to_sales_order: bool = False
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)

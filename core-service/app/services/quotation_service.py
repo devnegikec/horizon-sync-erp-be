@@ -759,6 +759,9 @@ class QuotationService:
             "status": quotation.status.value if quotation.status else None,
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
+            "discount_type": getattr(quotation, "discount_type", None),
+            "discount_value": getattr(quotation, "discount_value", None),
+            "discount_amount": getattr(quotation, "discount_amount", None),
             "converted_to_sales_order": quotation.converted_to_sales_order,
             "created_at": quotation.created_at,
         }
