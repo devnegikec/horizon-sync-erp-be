@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice, InvoiceItem
@@ -84,18 +84,7 @@ class InvoiceRepository:
     ) -> tuple[list[Invoice], int]:
         q = self.db.query(Invoice).filter(Invoice.organization_id == organization_id)
         if party_id is not None:
-            # party_id is a @property; filter by actual columns (customer_id / supplier_id)
-            if invoice_type == "sales":
-                q = q.filter(Invoice.customer_id == party_id)
-            elif invoice_type == "purchase":
-                q = q.filter(Invoice.supplier_id == party_id)
-            else:
-                q = q.filter(
-                    or_(
-                        Invoice.customer_id == party_id,
-                        Invoice.supplier_id == party_id,
-                    )
-                )
+            q = q.filter(Invoice.party_id == party_id)
         if status is not None:
             q = q.filter(Invoice.status == status)
         if invoice_type is not None:
@@ -103,9 +92,9 @@ class InvoiceRepository:
             db_invoice_type = invoice_type.upper() if isinstance(invoice_type, str) else invoice_type
             q = q.filter(Invoice.invoice_type == db_invoice_type)
         total = q.count()
-        # Map API sort field names to actual DB columns (posting_date, grand_total, outstanding_amount are @property aliases)
+        # Map API sort field names to actual DB columns (grand_total, outstanding_amount are @property aliases)
         sort_column_map = {
-            "posting_date": Invoice.invoice_date,
+            "posting_date": Invoice.posting_date,
             "grand_total": Invoice.total_amount,
             "outstanding_amount": Invoice.balance_due,
         }

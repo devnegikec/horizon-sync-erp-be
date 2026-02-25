@@ -78,16 +78,25 @@ class SalesOrderService:
             else None
         )
 
-        grand_total = Decimal("0")
+        subtotal = Decimal("0")
         for item_data in items_data:
             item_payload = self._build_sales_order_item_payload(
                 item_data, sales_order.id, organization_id, shipping_address
             )
-            grand_total += item_payload["total_amount"]
+            subtotal += item_payload["total_amount"]
             item = SalesOrderItem(**item_payload)
             self.db.add(item)
 
-        self.repo.update(sales_order, {"grand_total": grand_total})
+        discount_amount = Decimal(str(payload.get("discount_amount") or 0))
+        grand_total = subtotal - discount_amount
+        update_data = {"grand_total": grand_total}
+        if "discount_type" in payload:
+            update_data["discount_type"] = payload.get("discount_type") or "percentage"
+        if "discount_value" in payload:
+            update_data["discount_value"] = payload.get("discount_value")
+        if "discount_amount" in payload:
+            update_data["discount_amount"] = discount_amount
+        self.repo.update(sales_order, update_data)
 
         self.db.commit()
         self.db.refresh(sales_order)
@@ -184,14 +193,33 @@ class SalesOrderService:
                 item = SalesOrderItem(**item_payload)
                 self.db.add(item)
 
-            # Recalculate grand_total from built item payloads
-            grand_total = Decimal("0")
+            # Recalculate subtotal and apply document discount
+            subtotal = Decimal("0")
             for item_data in items_data:
                 item_payload = self._build_sales_order_item_payload(
                     item_data, sales_order.id, organization_id, shipping_address
                 )
-                grand_total += item_payload["total_amount"]
-            payload["grand_total"] = grand_total
+                subtotal += item_payload["total_amount"]
+            discount_amount = Decimal(str(data.get("discount_amount") or 0))
+            payload["grand_total"] = subtotal - discount_amount
+            if "discount_type" in data:
+                payload["discount_type"] = data.get("discount_type") or "percentage"
+            if "discount_value" in data:
+                payload["discount_value"] = data.get("discount_value")
+            if "discount_amount" in data:
+                payload["discount_amount"] = discount_amount
+
+        # Document discount only (no items update)
+        elif "discount_type" in data or "discount_value" in data or "discount_amount" in data:
+            subtotal = sum(
+                (getattr(item, "total_amount", None) or item.amount or Decimal("0"))
+                for item in sales_order.items
+            )
+            discount_amount = Decimal(str(data.get("discount_amount") or 0))
+            payload["grand_total"] = subtotal - discount_amount
+            payload["discount_type"] = data.get("discount_type") or getattr(sales_order, "discount_type", None) or "percentage"
+            payload["discount_value"] = data.get("discount_value") if data.get("discount_value") is not None else getattr(sales_order, "discount_value", None)
+            payload["discount_amount"] = discount_amount
 
         self.repo.update(sales_order, payload)
         self.db.refresh(sales_order)
@@ -370,16 +398,19 @@ class SalesOrderService:
                     so_item.extra_data = {}
                 so_item.extra_data["warehouse_id"] = str(first_alloc["warehouse_id"])
 
-                # Adjust qty, amount, tax_amount, total_amount proportionally
+                # Adjust qty, amount, discount, tax_amount, total_amount proportionally
                 proportion = first_alloc["qty"] / so_item.qty
                 so_item.qty = first_alloc["qty"]
                 so_item.amount = so_item.rate * first_alloc["qty"]
+                so_item.discount_amount = (
+                    getattr(so_item, "discount_amount", None) or Decimal("0")
+                ) * proportion
                 so_item.tax_amount = (
                     so_item.tax_amount * proportion
                     if so_item.tax_amount
                     else Decimal("0")
                 )
-                so_item.total_amount = so_item.amount + so_item.tax_amount
+                so_item.total_amount = so_item.amount - so_item.discount_amount + so_item.tax_amount
 
                 # Reserve stock for first allocation
                 sl = (
@@ -401,6 +432,17 @@ class SalesOrderService:
                     proportion = alloc["qty"] / (
                         so_item.qty + sum(a["qty"] for a in allocations[1:])
                     )
+                    alloc_discount = (
+                        (getattr(so_item, "discount_amount", None) or Decimal("0"))
+                        * alloc["qty"]
+                        / (so_item.qty + sum(a["qty"] for a in allocations[1:]))
+                    )
+                    alloc_tax = (
+                        (so_item.tax_amount / (so_item.qty / alloc["qty"]))
+                        if so_item.tax_amount
+                        else Decimal("0")
+                    )
+                    alloc_amount = so_item.rate * alloc["qty"]
                     new_item = SalesOrderItem(
                         id=uuid.uuid4(),
                         organization_id=organization_id,
@@ -409,21 +451,17 @@ class SalesOrderService:
                         qty=alloc["qty"],
                         uom=so_item.uom,
                         rate=so_item.rate,
-                        amount=so_item.rate * alloc["qty"],
+                        amount=alloc_amount,
                         billed_qty=Decimal("0"),
                         delivered_qty=Decimal("0"),
                         sort_order=so_item.sort_order,
+                        discount_type=getattr(so_item, "discount_type", None) or "percentage",
+                        discount_value=getattr(so_item, "discount_value", None) or 0,
+                        discount_amount=alloc_discount,
                         tax_template_id=so_item.tax_template_id,
                         tax_rate=so_item.tax_rate,
-                        tax_amount=(so_item.tax_amount / (so_item.qty / alloc["qty"]))
-                        if so_item.tax_amount
-                        else Decimal("0"),
-                        total_amount=(so_item.rate * alloc["qty"])
-                        + (
-                            (so_item.tax_amount / (so_item.qty / alloc["qty"]))
-                            if so_item.tax_amount
-                            else Decimal("0")
-                        ),
+                        tax_amount=alloc_tax,
+                        total_amount=alloc_amount - alloc_discount + alloc_tax,
                         extra_data={"warehouse_id": str(alloc["warehouse_id"])},
                     )
                     new_items_to_add.append(new_item)
@@ -503,10 +541,9 @@ class SalesOrderService:
                 "updated_by": user_id,
             }
 
-            # Calculate grand_total from items_to_bill
+            # Calculate grand_total from items_to_bill (use line total so discount/tax are reflected)
             grand_total = Decimal("0")
             for item_to_bill in items_to_bill:
-                # Find the corresponding sales order item
                 so_item = next(
                     (
                         item
@@ -517,7 +554,12 @@ class SalesOrderService:
                 )
                 if so_item:
                     qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
-                    grand_total += qty_to_bill * so_item.rate
+                    # Proportional line total (rate includes discount and tax effect)
+                    line_total = getattr(so_item, "total_amount", None) or (so_item.amount + getattr(so_item, "tax_amount", 0) - getattr(so_item, "discount_amount", 0))
+                    if so_item.qty and so_item.qty > 0:
+                        grand_total += (line_total / so_item.qty) * qty_to_bill
+                    else:
+                        grand_total += qty_to_bill * so_item.rate
 
             invoice_data["grand_total"] = grand_total
             invoice_data["outstanding_amount"] = grand_total
@@ -979,6 +1021,19 @@ class SalesOrderService:
         if item.organization_id != organization_id:
             raise ValueError(f"Item {item_id} belongs to a different organization")
 
+    @staticmethod
+    def _compute_discount_amount(
+        amount: Decimal,
+        discount_type: str,
+        discount_value: Decimal,
+    ) -> Decimal:
+        """Compute discount amount from type and value. Tax is applied on (amount - discount_amount)."""
+        if discount_value <= 0:
+            return Decimal("0")
+        if discount_type == "percentage":
+            return (amount * discount_value / 100).quantize(Decimal("0.01"))
+        return min(discount_value, amount)
+
     def _build_sales_order_item_payload(
         self,
         item_data: dict,
@@ -986,10 +1041,18 @@ class SalesOrderService:
         organization_id: UUID,
         shipping_address: dict | None = None,
     ) -> dict:
-        """Build sales order item payload with amount and tax calculation."""
+        """Build sales order item payload with amount, discount, and tax calculation.
+        Order: amount = qty*rate, discount on amount, tax on (amount - discount_amount), total = net + tax.
+        """
         qty = Decimal(str(item_data.get("qty", 0)))
         rate = Decimal(str(item_data.get("rate", 0)))
         amount = qty * rate
+        discount_type = (item_data.get("discount_type") or "percentage").lower()
+        if discount_type not in ("flat", "percentage"):
+            discount_type = "percentage"
+        discount_value = Decimal(str(item_data.get("discount_value") or 0))
+        discount_amount = self._compute_discount_amount(amount, discount_type, discount_value)
+        net_amount = amount - discount_amount
 
         item_payload = {
             "organization_id": organization_id,
@@ -1002,13 +1065,16 @@ class SalesOrderService:
             "billed_qty": Decimal("0"),
             "delivered_qty": Decimal("0"),
             "sort_order": item_data.get("sort_order", 0),
+            "discount_type": discount_type,
+            "discount_value": discount_value,
+            "discount_amount": discount_amount,
             "tax_template_id": None,
             "tax_rate": Decimal("0"),
             "tax_amount": Decimal("0"),
-            "total_amount": amount,
+            "total_amount": net_amount,
         }
 
-        # Calculate tax using applicable template
+        # Tax is applied on net amount (after discount)
         item = (
             self.db.query(Item)
             .filter(
@@ -1018,14 +1084,14 @@ class SalesOrderService:
             .first()
         )
 
-        if item:
+        if item and net_amount > 0:
             tax_result = self.tax_engine.calculate_taxes(
                 [
                     LineItem(
                         item_id=item.id,
                         qty=qty,
                         rate=rate,
-                        amount=amount,
+                        amount=net_amount,
                         is_tax_exempt=False,
                         item_group_id=item.item_group_id,
                     )
@@ -1045,11 +1111,11 @@ class SalesOrderService:
                 item_payload["tax_template_id"] = first_entry.tax_template_id
                 item_payload["tax_amount"] = tax_result.total_tax
                 item_payload["tax_rate"] = (
-                    (tax_result.total_tax / amount * 100) if amount else Decimal("0")
+                    (tax_result.total_tax / net_amount * 100) if net_amount else Decimal("0")
                 )
-                item_payload["total_amount"] = amount + tax_result.total_tax
+                item_payload["total_amount"] = net_amount + tax_result.total_tax
 
-        # Allow override from request (e.g. explicit tax_template_id)
+        # Allow override from request (e.g. from quotation or explicit values)
         if item_data.get("tax_template_id"):
             item_payload["tax_template_id"] = item_data["tax_template_id"]
         if "tax_rate" in item_data and item_data["tax_rate"] is not None:
@@ -1058,6 +1124,8 @@ class SalesOrderService:
             item_payload["tax_amount"] = Decimal(str(item_data["tax_amount"]))
         if "total_amount" in item_data and item_data["total_amount"] is not None:
             item_payload["total_amount"] = Decimal(str(item_data["total_amount"]))
+        if "discount_amount" in item_data and item_data["discount_amount"] is not None:
+            item_payload["discount_amount"] = Decimal(str(item_data["discount_amount"]))
 
         # Keep existing billed_qty and delivered_qty if provided
         if "billed_qty" in item_data and item_data["billed_qty"] is not None:
@@ -1172,6 +1240,9 @@ class SalesOrderService:
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,
             "currency": sales_order.currency,
+            "discount_type": getattr(sales_order, "discount_type", None) or "percentage",
+            "discount_value": getattr(sales_order, "discount_value", None) or 0,
+            "discount_amount": getattr(sales_order, "discount_amount", None) or 0,
             "reference_type": sales_order.reference_type,
             "reference_id": sales_order.reference_id,
             "remarks": sales_order.remarks,
@@ -1196,6 +1267,9 @@ class SalesOrderService:
                     "pending_billing_qty": item.qty - item.billed_qty,
                     "pending_delivery_qty": item.qty - item.delivered_qty,
                     "sort_order": item.sort_order,
+                    "discount_type": getattr(item, "discount_type", None) or "percentage",
+                    "discount_value": getattr(item, "discount_value", None) or 0,
+                    "discount_amount": getattr(item, "discount_amount", None) or 0,
                     "tax_template_id": item.tax_template_id,
                     "tax_rate": item.tax_rate,
                     "tax_amount": item.tax_amount,

@@ -10,7 +10,12 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import (
+    IntegrityError,
+    OperationalError,
+    ProgrammingError,
+    SQLAlchemyError,
+)
 
 from app.api.v1.router import api_router
 from app.config import settings
@@ -667,21 +672,50 @@ async def integration_error_handler(request: Request, exc: IntegrationError):
 
 @app.exception_handler(SQLAlchemyError)
 async def database_exception_handler(request: Request, exc: SQLAlchemyError):
-    """Handle database errors"""
-    logger.error(f"Database error: {exc}")
+    """Handle database errors with appropriate status codes and safe client messages.
+
+    - IntegrityError (constraint violations) → 409 Conflict
+    - OperationalError / ProgrammingError (connection, schema, SQL) → 503 Service Unavailable
+    - Other SQLAlchemyError → 503 Service Unavailable
+
+    Full exception is logged server-side; clients receive generic, safe messages.
+    """
+    logger.exception(
+        "Database error on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    if isinstance(exc, IntegrityError):
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            message="The request conflicts with current data. It may be a duplicate or violate a constraint.",
+            code="DATABASE_CONSTRAINT_ERROR",
+        )
+    if isinstance(exc, (OperationalError, ProgrammingError)):
+        return create_error_response(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            message="Service is temporarily unavailable. Please try again later.",
+            code="SERVICE_UNAVAILABLE",
+        )
     return create_error_response(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        message="A database error occurred",
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        message="Service is temporarily unavailable. Please try again later.",
         code="DATABASE_ERROR",
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Handle general errors"""
-    logger.error(f"Unexpected error: {exc}")
+    """Handle unexpected errors. Log fully; return safe message and 500 only for unknown errors."""
+    logger.exception(
+        "Unexpected error on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
     return create_error_response(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        message="An unexpected error occurred",
+        message="An unexpected error occurred. Please try again later.",
         code="INTERNAL_SERVER_ERROR",
     )

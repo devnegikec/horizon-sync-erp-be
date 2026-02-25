@@ -49,6 +49,10 @@ class Quotation(Base):
     grand_total = Column(Numeric(15, 2), default=0)
     currency = Column(String(10), default="INR")
     remarks = Column(Text, nullable=True)
+    # Document-level discount on total (sum of line totals)
+    discount_type = Column(String(20), default="percentage", nullable=True)
+    discount_value = Column(Numeric(15, 2), default=0, nullable=True)
+    discount_amount = Column(Numeric(15, 2), default=0, nullable=True)
     converted_to_sales_order = Column(Boolean, default=False, nullable=False)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
@@ -93,7 +97,11 @@ class QuotationItem(Base):
     )
     tax_rate = Column(Numeric(5, 2), default=0)
     tax_amount = Column(Numeric(15, 2), default=0)
-    total_amount = Column(Numeric(15, 2), default=0)  # amount + tax_amount
+    total_amount = Column(Numeric(15, 2), default=0)  # amount - discount_amount + tax_amount
+    # Discount: type 'flat' | 'percentage', value (fixed amount or %), computed discount_amount
+    discount_type = Column(String(20), default="percentage", nullable=True)
+    discount_value = Column(Numeric(15, 2), default=0, nullable=True)
+    discount_amount = Column(Numeric(15, 2), default=0, nullable=True)
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(

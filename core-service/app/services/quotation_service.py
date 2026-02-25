@@ -79,16 +79,30 @@ class QuotationService:
             else None
         )
 
-        grand_total = Decimal("0")
+        subtotal = Decimal("0")
         for item_data in items_data:
             item_payload = self._build_quotation_item_payload(
                 item_data, quotation.id, organization_id, shipping_address
             )
-            grand_total += item_payload["total_amount"]
+            subtotal += item_payload["total_amount"]
             item = QuotationItem(**item_payload)
             self.db.add(item)
 
-        self.repo.update(quotation, {"grand_total": grand_total})
+        discount_type = (payload.get("discount_type") or "percentage").lower()
+        if discount_type not in ("flat", "percentage"):
+            discount_type = "percentage"
+        discount_value = Decimal(str(payload.get("discount_value") or 0))
+        discount_amount = self._compute_document_discount(subtotal, discount_type, discount_value)
+        grand_total = max(Decimal("0"), subtotal - discount_amount)
+        self.repo.update(
+            quotation,
+            {
+                "grand_total": grand_total,
+                "discount_type": discount_type,
+                "discount_value": discount_value,
+                "discount_amount": discount_amount,
+            },
+        )
 
         self.db.commit()
         self.db.refresh(quotation)
@@ -137,9 +151,30 @@ class QuotationService:
         payload = self._prepare_update_payload(data, organization_id, user_id)
 
         if "items" in data:
-            payload["grand_total"] = self._update_quotation_items(
+            subtotal = self._update_quotation_items(
                 quotation, data["items"], organization_id
             )
+            discount_type = (data.get("discount_type") or getattr(quotation, "discount_type", None) or "percentage").lower()
+            if discount_type not in ("flat", "percentage"):
+                discount_type = "percentage"
+            discount_value = Decimal(str(data.get("discount_value", getattr(quotation, "discount_value", 0)) or 0))
+            discount_amount = self._compute_document_discount(subtotal, discount_type, discount_value)
+            payload["grand_total"] = max(Decimal("0"), subtotal - discount_amount)
+            payload["discount_type"] = discount_type
+            payload["discount_value"] = discount_value
+            payload["discount_amount"] = discount_amount
+        elif "discount_type" in data or "discount_value" in data:
+            self.db.refresh(quotation)
+            subtotal = sum(Decimal(str(item.total_amount or 0)) for item in quotation.items)
+            discount_type = (data.get("discount_type") or getattr(quotation, "discount_type", None) or "percentage").lower()
+            if discount_type not in ("flat", "percentage"):
+                discount_type = "percentage"
+            discount_value = Decimal(str(data.get("discount_value", getattr(quotation, "discount_value", 0)) or 0))
+            discount_amount = self._compute_document_discount(subtotal, discount_type, discount_value)
+            payload["grand_total"] = max(Decimal("0"), subtotal - discount_amount)
+            payload["discount_type"] = discount_type
+            payload["discount_value"] = discount_value
+            payload["discount_amount"] = discount_amount
 
         self.repo.update(quotation, payload)
         self.db.refresh(quotation)
@@ -261,6 +296,33 @@ class QuotationService:
         self.db.refresh(quotation)
         return self._to_response(quotation)
 
+    @staticmethod
+    def _compute_discount_amount(
+        amount: Decimal,
+        discount_type: str,
+        discount_value: Decimal,
+    ) -> Decimal:
+        """Compute discount amount from type and value. Tax is applied on (amount - discount_amount)."""
+        if discount_value <= 0:
+            return Decimal("0")
+        if discount_type == "percentage":
+            return (amount * discount_value / 100).quantize(Decimal("0.01"))
+        # flat
+        return min(discount_value, amount)
+
+    @staticmethod
+    def _compute_document_discount(
+        subtotal: Decimal,
+        discount_type: str,
+        discount_value: Decimal,
+    ) -> Decimal:
+        """Compute document-level discount amount from type and value applied to subtotal."""
+        if discount_value <= 0:
+            return Decimal("0")
+        if (discount_type or "percentage").lower() == "percentage":
+            return (subtotal * discount_value / 100).quantize(Decimal("0.01"))
+        return min(discount_value, subtotal)
+
     def _build_quotation_item_payload(
         self,
         item_data: dict,
@@ -268,10 +330,18 @@ class QuotationService:
         organization_id: UUID,
         shipping_address: dict | None = None,
     ) -> dict:
-        """Build quotation item payload with amount and tax calculation."""
+        """Build quotation item payload with amount, discount, and tax calculation.
+        Order: amount = qty*rate, discount on amount, tax on (amount - discount_amount), total = net + tax.
+        """
         qty = Decimal(str(item_data.get("qty", 0)))
         rate = Decimal(str(item_data.get("rate", 0)))
         amount = qty * rate
+        discount_type = (item_data.get("discount_type") or "percentage").lower()
+        if discount_type not in ("flat", "percentage"):
+            discount_type = "percentage"
+        discount_value = Decimal(str(item_data.get("discount_value") or 0))
+        discount_amount = self._compute_discount_amount(amount, discount_type, discount_value)
+        net_amount = amount - discount_amount
 
         item_payload = {
             "organization_id": organization_id,
@@ -282,13 +352,16 @@ class QuotationService:
             "rate": rate,
             "amount": amount,
             "sort_order": item_data.get("sort_order", 0),
+            "discount_type": discount_type,
+            "discount_value": discount_value,
+            "discount_amount": discount_amount,
             "tax_template_id": None,
             "tax_rate": Decimal("0"),
             "tax_amount": Decimal("0"),
-            "total_amount": amount,
+            "total_amount": net_amount,
         }
 
-        # Calculate tax using applicable template
+        # Tax is applied on net amount (after discount)
         item = (
             self.db.query(Item)
             .filter(
@@ -298,14 +371,14 @@ class QuotationService:
             .first()
         )
 
-        if item:
+        if item and net_amount > 0:
             tax_result = self.tax_engine.calculate_taxes(
                 [
                     LineItem(
                         item_id=item.id,
                         qty=qty,
                         rate=rate,
-                        amount=amount,
+                        amount=net_amount,
                         is_tax_exempt=False,
                         item_group_id=item.item_group_id,
                     )
@@ -325,11 +398,11 @@ class QuotationService:
                 item_payload["tax_template_id"] = first_entry.tax_template_id
                 item_payload["tax_amount"] = tax_result.total_tax
                 item_payload["tax_rate"] = (
-                    (tax_result.total_tax / amount * 100) if amount else Decimal("0")
+                    (tax_result.total_tax / net_amount * 100) if net_amount else Decimal("0")
                 )
-                item_payload["total_amount"] = amount + tax_result.total_tax
+                item_payload["total_amount"] = net_amount + tax_result.total_tax
 
-        # Allow override from request (e.g. explicit tax_template_id)
+        # Allow override from request (e.g. explicit tax_template_id or pre-calculated totals)
         if item_data.get("tax_template_id"):
             item_payload["tax_template_id"] = item_data["tax_template_id"]
         if "tax_rate" in item_data and item_data["tax_rate"] is not None:
@@ -338,6 +411,8 @@ class QuotationService:
             item_payload["tax_amount"] = Decimal(str(item_data["tax_amount"]))
         if "total_amount" in item_data and item_data["total_amount"] is not None:
             item_payload["total_amount"] = Decimal(str(item_data["total_amount"]))
+        if "discount_amount" in item_data and item_data["discount_amount"] is not None:
+            item_payload["discount_amount"] = Decimal(str(item_data["discount_amount"]))
 
         return item_payload
 
@@ -386,7 +461,7 @@ class QuotationService:
                 timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
                 sales_order_no = f"SO-{timestamp}"
 
-            # Prepare sales order data
+            # Prepare sales order data (carry forward document-level discount from quotation)
             sales_order_data = {
                 "sales_order_no": sales_order_no,
                 "customer_id": quotation.customer_id,
@@ -396,6 +471,9 @@ class QuotationService:
                 "reference_type": "Quotation",
                 "reference_id": quotation.id,
                 "remarks": quotation.remarks,
+                "discount_type": getattr(quotation, "discount_type", None) or "percentage",
+                "discount_value": getattr(quotation, "discount_value", None) or 0,
+                "discount_amount": getattr(quotation, "discount_amount", None) or 0,
                 "items": [
                     {
                         "item_id": item.item_id,
@@ -404,6 +482,9 @@ class QuotationService:
                         "rate": item.rate,
                         "amount": item.amount,
                         "sort_order": item.sort_order,
+                        "discount_type": getattr(item, "discount_type", None) or "percentage",
+                        "discount_value": getattr(item, "discount_value", None) or 0,
+                        "discount_amount": getattr(item, "discount_amount", None) or 0,
                         "tax_template_id": item.tax_template_id,
                         "tax_rate": item.tax_rate,
                         "tax_amount": item.tax_amount,
@@ -624,6 +705,9 @@ class QuotationService:
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
             "remarks": quotation.remarks,
+            "discount_type": getattr(quotation, "discount_type", None) or "percentage",
+            "discount_value": getattr(quotation, "discount_value", None) or 0,
+            "discount_amount": getattr(quotation, "discount_amount", None) or 0,
             "converted_to_sales_order": quotation.converted_to_sales_order,
             "submitted_at": quotation.submitted_at,
             "extra_data": quotation.extra_data,
@@ -642,6 +726,9 @@ class QuotationService:
                     "rate": item.rate,
                     "amount": item.amount,
                     "sort_order": item.sort_order,
+                    "discount_type": getattr(item, "discount_type", None) or "percentage",
+                    "discount_value": getattr(item, "discount_value", None) or 0,
+                    "discount_amount": getattr(item, "discount_amount", None) or 0,
                     "tax_template_id": item.tax_template_id,
                     "tax_rate": item.tax_rate,
                     "tax_amount": item.tax_amount,
@@ -672,6 +759,9 @@ class QuotationService:
             "status": quotation.status.value if quotation.status else None,
             "grand_total": quotation.grand_total,
             "currency": quotation.currency,
+            "discount_type": getattr(quotation, "discount_type", None),
+            "discount_value": getattr(quotation, "discount_value", None),
+            "discount_amount": getattr(quotation, "discount_amount", None),
             "converted_to_sales_order": quotation.converted_to_sales_order,
             "created_at": quotation.created_at,
         }

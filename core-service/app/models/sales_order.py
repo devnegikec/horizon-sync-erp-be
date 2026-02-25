@@ -47,6 +47,10 @@ class SalesOrder(Base):
     )
     grand_total = Column(Numeric(15, 2), default=0)
     currency = Column(String(10), default="INR")
+    # Document-level discount (e.g. from converted quotation)
+    discount_type = Column(String(20), default="percentage", nullable=True)
+    discount_value = Column(Numeric(15, 2), default=0, nullable=True)
+    discount_amount = Column(Numeric(15, 2), default=0, nullable=True)
     reference_type = Column(String(50), nullable=True)
     reference_id = Column(UUID(as_uuid=True), nullable=True)
     remarks = Column(Text, nullable=True)
@@ -95,7 +99,10 @@ class SalesOrderItem(Base):
     )
     tax_rate = Column(Numeric(5, 2), default=0)
     tax_amount = Column(Numeric(15, 2), default=0)
-    total_amount = Column(Numeric(15, 2), default=0)  # amount + tax_amount
+    total_amount = Column(Numeric(15, 2), default=0)  # amount - discount_amount + tax_amount
+    discount_type = Column(String(20), default="percentage", nullable=True)
+    discount_value = Column(Numeric(15, 2), default=0, nullable=True)
+    discount_amount = Column(Numeric(15, 2), default=0, nullable=True)
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
