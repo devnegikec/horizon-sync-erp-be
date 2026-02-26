@@ -918,7 +918,7 @@ class PaymentEntryService:
             self.db.rollback()
             raise ValidationError(f"Failed to cancel payment entry: {str(e)}")
 
-        # Call JournalPostingService.reverse_payment_journal_entry()
+        # Call JournalPostingService.reverse_payment_journal_entry() if journal entry exists
         journal_service = JournalPostingService(self.db)
         try:
             journal_service.reverse_payment_journal_entry(
@@ -926,8 +926,21 @@ class PaymentEntryService:
                 organization_id=organization_id,
                 user_id=user_id,
             )
+        except ValidationError as ve:
+            # If the error is that no journal entry exists, continue with cancellation
+            # This can happen if confirm failed or payment was never properly confirmed
+            error_msg = str(ve).lower()
+            if "journal entry not found" in error_msg or "original journal entry not found" in error_msg:
+                # Log that we're cancelling without reversing journal entries
+                pass  # Continue with cancellation process
+            else:
+                # Other validation errors should fail the cancellation
+                self.db.rollback()
+                raise ValidationError(
+                    f"Failed to reverse journal entry: {str(ve)}. Payment cancellation failed."
+                )
         except Exception as e:
-            # Rollback payment status if journal reversal fails
+            # Rollback payment status if journal reversal fails for other reasons
             self.db.rollback()
             raise ValidationError(
                 f"Failed to reverse journal entry: {str(e)}. Payment cancellation failed."

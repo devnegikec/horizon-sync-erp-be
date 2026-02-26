@@ -915,7 +915,7 @@ async def validate_posting_account(
 
 @router.get(
     "/{account_id}/balance",
-    response_model=ChartOfAccountResponse,
+    response_model=AccountBalanceResponse,
     summary="Get account balance",
     description="Get current or historical balance for an account",
 )
