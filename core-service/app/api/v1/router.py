@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     batches,
     bulk_export,
     bulk_import,
+    stock_entry_bulk_import,
     chart_of_accounts,
     communications,
     currencies,
@@ -98,6 +99,11 @@ api_router.include_router(
 )
 api_router.include_router(
     stock_entries.router, prefix="/stock-entries", tags=["Stock Entries"]
+)
+api_router.include_router(
+    stock_entry_bulk_import.router,
+    prefix="/stock-entries/bulk",
+    tags=["Stock Entries"],
 )
 api_router.include_router(
     stock_levels.router, prefix="/stock-levels", tags=["Stock Levels"]
