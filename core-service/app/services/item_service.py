@@ -57,6 +57,7 @@ class ItemService:
         # Auto-generate item_code if not provided
         if not item_data.item_code:
             from app.services.document_numbering_service import DocumentNumberingService
+
             item_data.item_code = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "item"
             )
@@ -344,6 +345,7 @@ class ItemService:
     ) -> dict:
         """Return stock levels per product scoped to a single warehouse."""
         from app.models.stock_level import StockLevel
+
         rows = (
             self.db.query(StockLevel)
             .filter(
