@@ -25,6 +25,9 @@ class ExchangeRate(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+    # Organization scoping (nullable for backward compatibility with existing data)
+    organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+
     # Currency pair
     from_currency = Column(String(3), nullable=False)
     to_currency = Column(String(3), nullable=False)
@@ -35,6 +38,9 @@ class ExchangeRate(Base):
     # Effective date for historical tracking
     effective_date = Column(Date, nullable=False)
 
+    # Capture timestamp for audit trail
+    captured_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(UTC))
+
     # Audit fields
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
@@ -43,6 +49,7 @@ class ExchangeRate(Base):
         CheckConstraint('rate > 0', name='ck_exchange_rate_positive'),
         Index('ix_exchange_rates_currencies', 'from_currency', 'to_currency'),
         Index('ix_exchange_rates_effective_date', 'effective_date'),
+        Index('ix_exchange_rates_org_id', 'organization_id'),
     )
 
     def __repr__(self):

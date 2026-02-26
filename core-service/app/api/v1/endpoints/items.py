@@ -38,7 +38,7 @@ async def create_item(
     Requires authentication.
 
     **Request Body:**
-    - **item_code**: Unique item code (required)
+    - **item_code**: Unique item code (optional, auto-generated if not provided)
     - **item_name**: Item name (required)
     - **description**: Item description
     - **uom**: Unit of measure (default: Nos) (e.g. Kg, Nos, L, etc.)
