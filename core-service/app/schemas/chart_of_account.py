@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from app.schemas.common import PaginationMeta
 
@@ -101,6 +101,11 @@ class ChartOfAccountParentInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _serialize_status(v: str) -> str:
+    """Serialize status to lowercase for API (DB stores uppercase)."""
+    return v.lower() if v else "active"
+
+
 class ChartOfAccountResponse(BaseModel):
     """Schema for chart of account response"""
 
@@ -132,6 +137,10 @@ class ChartOfAccountResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_serializer("status")
+    def serialize_status(self, v: str) -> str:
+        return _serialize_status(v)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -148,6 +157,10 @@ class ChartOfAccountListItem(BaseModel):
     status: str
     is_posting_account: bool
     created_at: datetime
+
+    @field_serializer("status")
+    def serialize_status(self, v: str) -> str:
+        return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -169,6 +182,10 @@ class ChartOfAccountTreeNode(BaseModel):
     status: str
     is_posting_account: bool
     children: list["ChartOfAccountTreeNode"] = []
+
+    @field_serializer("status")
+    def serialize_status(self, v: str) -> str:
+        return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -142,17 +142,16 @@ class AccountType(str, enum.Enum):
     ASSET = "asset"
     LIABILITY = "liability"
     EQUITY = "equity"
-    INCOME = "income"
-    REVENUE = "income"
+    REVENUE = "revenue"
     EXPENSE = "expense"
 
 
 class AccountStatus(str, enum.Enum):
-    """Account status enumeration"""
+    """Account status enumeration (values match PostgreSQL accountstatus enum)."""
 
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    ARCHIVED = "archived"
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    ARCHIVED = "ARCHIVED"
 
 
 class InvoiceType(str, enum.Enum):

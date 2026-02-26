@@ -22,7 +22,7 @@ class TestAuditLogger:
             "account_name": "Test Account",
             "account_type": "asset",
             "currency": "USD",
-            "status": "active",
+            "status": "ACTIVE",
         }
 
         entry = audit_logger.log_account_change(
@@ -48,12 +48,12 @@ class TestAuditLogger:
 
         old_values = {
             "account_name": "Old Name",
-            "status": "active",
+            "status": "ACTIVE",
         }
 
         new_values = {
             "account_name": "New Name",
-            "status": "active",
+            "status": "ACTIVE",
         }
 
         entry = audit_logger.log_account_change(
@@ -80,8 +80,8 @@ class TestAuditLogger:
         account_id = uuid4()
         user_id = "test-user"
 
-        old_values = {"status": "active"}
-        new_values = {"status": "inactive"}
+        old_values = {"status": "ACTIVE"}
+        new_values = {"status": "INACTIVE"}
 
         entry = audit_logger.log_account_change(
             account_id=account_id,
@@ -95,8 +95,8 @@ class TestAuditLogger:
 
         assert entry.action == AuditAction.STATUS_CHANGE.value
         assert "status" in entry.changes
-        assert entry.changes["status"]["oldValue"] == "active"
-        assert entry.changes["status"]["newValue"] == "inactive"
+        assert entry.changes["status"]["oldValue"] == "ACTIVE"
+        assert entry.changes["status"]["newValue"] == "INACTIVE"
 
     def test_get_audit_trail(self, db_session):
         """Test retrieving audit trail"""
@@ -148,8 +148,8 @@ class TestAuditLogger:
             account_id=account_id,
             action=AuditAction.STATUS_CHANGE,
             user_id="user-3",
-            old_values={"status": "active"},
-            new_values={"status": "inactive"},
+            old_values={"status": "ACTIVE"},
+            new_values={"status": "INACTIVE"},
         )
 
         db_session.commit()

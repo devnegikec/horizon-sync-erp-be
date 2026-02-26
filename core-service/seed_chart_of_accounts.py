@@ -485,7 +485,7 @@ def seed_chart_of_accounts():
                         "currency": account_data["currency"],
                         "description": account_data.get("description", ""),
                         "is_posting": account_data.get("is_posting_account", True),
-                        "status": "active",
+                        "status": "ACTIVE",
                         "created_by": ADMIN_USER,
                         "updated_by": ADMIN_USER,
                         "created_at": datetime.now(UTC),

@@ -196,7 +196,15 @@ class ChartOfAccountService:
                 )
             except (ValueError, KeyError):
                 raise ValidationError(
-                    "account_type must be one of: asset, liability, equity, income, expense"
+                    "account_type must be one of: asset, liability, equity, revenue, expense"
+                )
+
+        if account_dict.get("status"):
+            try:
+                account_dict["status"] = AccountStatus(str(account_dict["status"]).upper())
+            except (ValueError, KeyError):
+                raise ValidationError(
+                    "status must be one of: active, inactive, archived"
                 )
 
         account = self.repo.create(account_dict)
@@ -382,6 +390,14 @@ class ChartOfAccountService:
                 
                 update_dict["account_type"] = new_account_type
 
+        if "status" in update_dict and update_dict["status"]:
+            try:
+                update_dict["status"] = AccountStatus(str(update_dict["status"]).upper())
+            except (ValueError, KeyError):
+                raise ValidationError(
+                    "status must be one of: active, inactive, archived"
+                )
+
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -514,7 +530,7 @@ class ChartOfAccountService:
             organization_id: Organization UUID
             page: Page number (1-indexed)
             page_size: Number of items per page
-            account_type: Filter by type (asset, liability, equity, income, expense)
+            account_type: Filter by type (asset, liability, equity, revenue, expense)
             parent_account_id: Filter by parent account
             is_active: Filter by active status (unused)
             is_group: Filter by is_group (unused)
@@ -779,7 +795,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.ACTIVE}
+        update_dict = {"status": AccountStatus.ACTIVE.value}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -826,7 +842,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.INACTIVE}
+        update_dict = {"status": AccountStatus.INACTIVE.value}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -873,7 +889,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.ARCHIVED}
+        update_dict = {"status": AccountStatus.ARCHIVED.value}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
