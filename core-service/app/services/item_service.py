@@ -336,15 +336,43 @@ class ItemService:
 
         return items, pagination
 
+    def _get_stock_by_warehouse(
+        self,
+        product_ids: list[UUID],
+        warehouse_id: UUID,
+        organization_id: UUID,
+    ) -> dict:
+        """Return stock levels per product scoped to a single warehouse."""
+        from app.models.stock_level import StockLevel
+        rows = (
+            self.db.query(StockLevel)
+            .filter(
+                StockLevel.organization_id == organization_id,
+                StockLevel.warehouse_id == warehouse_id,
+                StockLevel.product_id.in_(product_ids),
+            )
+            .all()
+        )
+        return {
+            row.product_id: {
+                "quantity_on_hand": int(row.quantity_on_hand or 0),
+                "quantity_reserved": int(row.quantity_reserved or 0),
+                "quantity_available": int(row.quantity_available or 0),
+            }
+            for row in rows
+        }
+
     def get_items_for_picker(
         self,
         organization_id: UUID,
         search: str | None = None,
         limit: int = 20,
+        warehouse_id: UUID | None = None,
     ) -> list[ItemPickerItem]:
         """
         Get items for picker/dropdown with stock levels, item group, and tax info.
         Searches by item name (and item_code, barcode) within the organization.
+        If warehouse_id is provided, stock levels are scoped to that warehouse only.
         """
         items, _ = self.item_repo.list_items(
             organization_id=organization_id,
@@ -360,10 +388,17 @@ class ItemService:
             return []
 
         item_ids = [item.id for item in items]
-        stock_agg = self.stock_level_repo.get_aggregated_by_products(
-            product_ids=item_ids,
-            organization_id=organization_id,
-        )
+
+        # Warehouse-scoped or aggregated stock levels
+        if warehouse_id:
+            stock_agg = self._get_stock_by_warehouse(
+                item_ids, warehouse_id, organization_id
+            )
+        else:
+            stock_agg = self.stock_level_repo.get_aggregated_by_products(
+                product_ids=item_ids,
+                organization_id=organization_id,
+            )
 
         result = []
         for item in items:
