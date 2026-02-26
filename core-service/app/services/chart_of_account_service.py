@@ -795,7 +795,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.ACTIVE.value}
+        update_dict = {"status": AccountStatus.ACTIVE}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -842,7 +842,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.INACTIVE.value}
+        update_dict = {"status": AccountStatus.INACTIVE}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -889,7 +889,7 @@ class ChartOfAccountService:
                 f"Chart of account with ID {account_id} not found"
             )
 
-        update_dict = {"status": AccountStatus.ARCHIVED.value}
+        update_dict = {"status": AccountStatus.ARCHIVED}
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
