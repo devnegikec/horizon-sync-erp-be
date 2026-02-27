@@ -59,6 +59,9 @@ class ChartOfAccountBase(BaseModel):
     
     # Description
     description: str | None = None
+    
+    # Balance fields
+    opening_balance: float | None = Field(default=None, description="Opening balance for the account")
 
 
 class ChartOfAccountCreate(ChartOfAccountBase):
@@ -81,17 +84,17 @@ class ChartOfAccountUpdate(BaseModel):
     # Currency
     currency: str | None = Field(None, max_length=3)
     
-    # Status (active, inactive, archived)
+    # Status
     status: str | None = None
-    
-    # Frontend-friendly: map is_active to status
-    is_active: bool | None = None
     
     # Posting Configuration
     is_posting_account: bool | None = None
     
     # Description
     description: str | None = None
+    
+    # Balance fields  
+    opening_balance: float | None = Field(None, description="Opening balance for the account")
 
 
 class ChartOfAccountParentInfo(BaseModel):
@@ -104,18 +107,9 @@ class ChartOfAccountParentInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-def _status_value(v) -> str:
-    """Get string value from status (handles Enum from ORM)."""
-    if v is None:
-        return "active"
-    if hasattr(v, "value"):
-        return str(v.value)
-    return str(v)
-
-
-def _serialize_status(v) -> str:
+def _serialize_status(v: str) -> str:
     """Serialize status to lowercase for API (DB stores uppercase)."""
-    return _status_value(v).lower()
+    return v.lower() if v else "active"
 
 
 class ChartOfAccountResponse(BaseModel):
@@ -142,6 +136,10 @@ class ChartOfAccountResponse(BaseModel):
     
     # Description
     description: str | None = None
+    
+    # Balance fields
+    opening_balance: float | None = Field(default=0.0, description="Opening balance for the account")
+    current_balance: float | None = Field(default=0.0, description="Current balance for the account")
 
     # Audit
     created_by: str
@@ -153,19 +151,11 @@ class ChartOfAccountResponse(BaseModel):
     @property
     def is_active(self) -> bool:
         """Compute is_active from status field"""
-        return _status_value(self.status).upper() == 'ACTIVE'
+        return str(self.status).upper() == 'ACTIVE'
 
     @field_serializer("status")
-    def serialize_status(self, v) -> str:
+    def serialize_status(self, v: str) -> str:
         return _serialize_status(v)
-
-    @field_serializer("account_type")
-    def serialize_account_type(self, v) -> str:
-        """Serialize account type (handles Enum from ORM)."""
-        if v is None:
-            return "asset"
-        val = getattr(v, "value", v)
-        return str(val).upper() if val else "ASSET"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -192,18 +182,15 @@ class ChartOfAccountListItem(BaseModel):
     @property
     def is_active(self) -> bool:
         """Compute is_active from status field"""
-        return _status_value(self.status).upper() == 'ACTIVE'
+        return str(self.status).upper() == 'ACTIVE'
 
     @field_serializer("account_type")
-    def serialize_account_type(self, v) -> str:
-        """Serialize account type to uppercase (handles Enum from ORM)."""
-        if v is None:
-            return "ASSET"
-        val = getattr(v, "value", v)
-        return str(val).upper() if val else "ASSET"
+    def serialize_account_type(self, v: str) -> str:
+        """Serialize account type to uppercase for frontend compatibility"""
+        return v.upper() if v else "ASSET"
 
     @field_serializer("status")
-    def serialize_status(self, v) -> str:
+    def serialize_status(self, v: str) -> str:
         return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)
@@ -231,10 +218,10 @@ class ChartOfAccountTreeNode(BaseModel):
     @property
     def is_active(self) -> bool:
         """Compute is_active from status field"""
-        return _status_value(self.status).upper() == 'ACTIVE'
+        return str(self.status).upper() == 'ACTIVE'
 
     @field_serializer("status")
-    def serialize_status(self, v) -> str:
+    def serialize_status(self, v: str) -> str:
         return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)

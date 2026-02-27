@@ -182,20 +182,28 @@ class ChartOfAccountService:
 
         account_dict = data.model_dump()
         
+        # Extract opening_balance before removing it (we'll create a journal entry for it)
+        opening_balance = account_dict.get('opening_balance')
+        
         # Remove fields that don't exist in the Account model or are calculated
-        fields_to_remove = ['opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
+        fields_to_remove = ['current_balance', 'tags', 'extra_data', 'is_active']
         for field in fields_to_remove:
             account_dict.pop(field, None)
         
+        # Remove opening_balance from account_dict (handled separately via journal entry)
+        account_dict.pop('opening_balance', None)
+        
         # Calculate hierarchy fields
-        level = 1
-        is_group = False  # Default to false, set to true if has children later
+        level = 1  # Default for root accounts
+        is_group = False  # Will be set to True if has children or is a parent
         
         if data.parent_account_id:
             parent = self.repo.get_by_id(data.parent_account_id, organization_id)
             if parent:
-                # Set level to parent level + 1, or default to 1 if parent level doesn't exist
-                level = getattr(parent, 'level', 0) + 1
+                # Set level to parent level + 1
+                # If parent level is 0, None, or missing, assume parent is level 1
+                parent_level = getattr(parent, 'level', 1) or 1
+                level = parent_level + 1
         
         # Set calculated fields
         account_dict['level'] = level
@@ -226,7 +234,32 @@ class ChartOfAccountService:
 
         account = self.repo.create(account_dict)
         
-        # Log account creation
+        # If this account has a parent, mark the parent as a group account
+        if data.parent_account_id:
+            parent = self.repo.get_by_id(data.parent_account_id, organization_id)
+            if parent and not parent.is_group:
+                parent.is_group = True
+                self.db.flush()
+                logger.info(f"Marked parent account {parent.account_code} as group account")
+        
+        # Create opening balance journal entry if opening_balance is provided and > 0
+        if opening_balance and float(opening_balance) != 0:
+            try:
+                self._create_opening_balance_entry(
+                    account=account,
+                    opening_balance=opening_balance,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                )
+                
+                # Flush to ensure journal entry is committed before balance calculation
+                self.db.flush()
+                
+            except Exception as e:
+                # Log error but don't fail account creation
+                logger.error(f"Failed to create opening balance entry for account {account.id}: {e}")
+        
+        # Log account creation 
         from app.models.account_audit_log import AuditAction
         self.audit_logger.log_account_change(
             account_id=account.id,
@@ -244,7 +277,178 @@ class ChartOfAccountService:
             }
         )
         
+        # Invalidate balance cache for this account
+        from app.core.cache import invalidate_account_balance_cache
+        invalidate_account_balance_cache(account.id)
+        
+        # Calculate and set balance fields for the response
+        from app.services.balance_calculator import BalanceCalculator
+        balance_calculator = BalanceCalculator(self.db)
+        
+        # Set opening_balance and current_balance on the account object
+        if not hasattr(account, 'opening_balance'):
+            account.opening_balance = float(opening_balance) if opening_balance else 0.0
+        if not hasattr(account, 'current_balance'):
+            account.current_balance = 0.0
+            
+        try:
+            balance_info = balance_calculator.calculate_balance(account.id, use_cache=False)
+            if balance_info:
+                # Set balance attributes from calculated values
+                balance_value = float(balance_info.get('balance', 0))
+                account.current_balance = balance_value
+                # For new accounts, opening balance equals current balance initially
+                if opening_balance:
+                    account.opening_balance = float(opening_balance)
+                else:
+                    account.opening_balance = balance_value
+            else:
+                account.current_balance = 0.0
+                account.opening_balance = float(opening_balance) if opening_balance else 0.0
+        except Exception as e:
+            # Log error but don't fail the entire request
+            logger.warning(f"Failed to calculate balance for new account {account.id}: {e}")
+            account.current_balance = 0.0
+            account.opening_balance = float(opening_balance) if opening_balance else 0.0
+        
         return account
+
+    def _create_opening_balance_entry(
+        self,
+        account: Account,
+        opening_balance,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """
+        Create a journal entry for the opening balance of a newly created account.
+        Creates a balanced entry with the account and an Opening Balance Equity account.
+
+        Args:
+            account: The newly created Account object
+            opening_balance: The opening balance amount (Decimal or float)
+            organization_id: Organization UUID
+            user_id: User UUID creating the entry
+
+        Raises:
+            Exception: Any exception during journal entry creation is logged but doesn't fail
+        """
+        from datetime import datetime
+        from decimal import Decimal
+        from app.services.journal_entry_service import JournalEntryService
+        from app.models.base import JournalStatus, AccountType
+
+        try:
+            # Convert to Decimal for precision
+            opening_amount = Decimal(str(opening_balance))
+            if opening_amount == 0:
+                logger.info(f"Opening balance is zero for account {account.account_code}, skipping journal entry")
+                return
+
+            # Determine if this is a debit or credit based on account type
+            is_debit_balance = account.account_type in (AccountType.ASSET, AccountType.EXPENSE)
+            
+            # Find or create Opening Balance Equity account
+            opening_balance_equity_account = self._get_or_create_opening_balance_equity_account(
+                organization_id, user_id
+            )
+            
+            if not opening_balance_equity_account:
+                logger.error(f"Failed to find/create Opening Balance Equity account for organization {organization_id}")
+                return
+
+            # Create balanced journal entry with two lines
+            je_data = {
+                "posting_date": datetime.now(),
+                "status": JournalStatus.POSTED.value,
+                "voucher_type": "Opening Balance",
+                "reference_type": "Account",
+                "reference_id": str(account.id),
+                "remarks": f"Opening balance for account {account.account_code} - {account.account_name}",
+                "lines": [
+                    {
+                        "account_id": str(account.id),
+                        "debit": float(opening_amount) if is_debit_balance else 0,
+                        "credit": float(opening_amount) if not is_debit_balance else 0,
+                        "remarks": "Opening balance",
+                        "organization_id": str(organization_id),
+                    },
+                    {
+                        "account_id": str(opening_balance_equity_account.id),
+                        "debit": float(opening_amount) if not is_debit_balance else 0,  # Reverse of account line
+                        "credit": float(opening_amount) if is_debit_balance else 0,     # Reverse of account line
+                        "remarks": f"Opening balance contra for {account.account_code}",
+                        "organization_id": str(organization_id),
+                    }
+                ],
+            }
+
+            # Create the journal entry
+            journal_service = JournalEntryService(self.db)
+            je_result = journal_service.create(
+                data=je_data,
+                organization_id=organization_id,
+                user_id=user_id,
+            )
+
+            logger.info(
+                f"Created balanced opening balance journal entry {je_result.get('entry_no')} for account {account.account_code} "
+                f"with amount {opening_amount}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create opening balance entry for account {account.id}: {str(e)}"
+            )
+            raise
+    
+    def _get_or_create_opening_balance_equity_account(
+        self, 
+        organization_id: UUID, 
+        user_id: UUID
+    ) -> Account | None:
+        """
+        Find or create an 'Opening Balance Equity' account for balancing opening balance entries.
+        
+        Args:
+            organization_id: Organization UUID
+            user_id: User UUID
+            
+        Returns:
+            Opening Balance Equity Account object or None if creation fails
+        """
+        from app.models.base import AccountType, AccountStatus
+        
+        try:
+            # First try to find existing opening balance equity account
+            existing_account = self.repo.get_by_code("OBE", organization_id)
+            if existing_account:
+                return existing_account
+            
+            # Create new Opening Balance Equity account
+            equity_account_data = {
+                "organization_id": organization_id,
+                "account_code": "OBE",
+                "account_name": "Opening Balance Equity",
+                "account_type": AccountType.EQUITY,
+                "currency": "USD",
+                "status": AccountStatus.ACTIVE,
+                "is_posting_account": True,
+                "level": 1,
+                "is_group": False,
+                "description": "System account for balancing opening balance entries",
+                "created_by": str(user_id),
+                "updated_by": str(user_id),
+            }
+            
+            opening_balance_account = self.repo.create(equity_account_data)
+            logger.info(f"Created Opening Balance Equity account {opening_balance_account.account_code} for organization {organization_id}")
+            
+            return opening_balance_account
+            
+        except Exception as e:
+            logger.error(f"Failed to create Opening Balance Equity account: {str(e)}")
+            return None
 
     def get_by_id(
         self,
@@ -312,6 +516,34 @@ class ChartOfAccountService:
             }
             cache.set(cache_key, account_dict, ttl=3600)  # Cache for 1 hour
         
+        # Calculate and set balance fields for the response
+        from app.services.balance_calculator import BalanceCalculator
+        balance_calculator = BalanceCalculator(self.db)
+        
+        # Ensure balance fields are set
+        if not hasattr(account, 'current_balance'):
+            account.current_balance = 0.0
+        if not hasattr(account, 'opening_balance'):
+            account.opening_balance = 0.0
+            
+        try:
+            balance_info = balance_calculator.calculate_balance(account.id, use_cache=use_cache)
+            if balance_info:
+                # Set balance attributes from calculated values
+                balance_value = float(balance_info.get('balance', 0))
+                account.current_balance = balance_value
+                # For existing accounts, we'll use the same value for opening balance for now
+                # In a full implementation, this should come from the first journal entry
+                account.opening_balance = balance_value
+            else:
+                account.current_balance = 0.0
+                account.opening_balance = 0.0
+        except Exception as e:
+            # Log error but don't fail the entire request
+            logger.warning(f"Failed to calculate balance for account {account.id}: {e}")
+            account.current_balance = 0.0
+            account.opening_balance = 0.0
+        
         return account
 
     def update(
@@ -346,10 +578,13 @@ class ChartOfAccountService:
 
         update_dict = data.model_dump(exclude_unset=True)
         
-        # Remove fields that don't exist in the Account model
-        fields_to_remove = ['level', 'is_group', 'opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
+        # Remove fields that don't exist in the Account model (except opening_balance)
+        fields_to_remove = ['level', 'is_group', 'current_balance', 'tags', 'extra_data', 'is_active']
         for field in fields_to_remove:
             update_dict.pop(field, None)
+        
+        # Handle opening balance separately (needs journal entry creation)
+        opening_balance = update_dict.pop('opening_balance', None)
 
         # Validate field lengths if being updated
         if "account_name" in update_dict and update_dict["account_name"]:
@@ -432,6 +667,38 @@ class ChartOfAccountService:
 
         updated_account = self.repo.update(account, update_dict)
         
+        # Handle opening balance update if provided
+        if opening_balance is not None and opening_balance != 0:
+            try:
+                # Create/update opening balance journal entry
+                self._create_opening_balance_entry(updated_account, float(opening_balance))
+                logger.info(f"Created opening balance entry for account {updated_account.account_code}: {opening_balance}")
+            except Exception as e:
+                logger.warning(f"Failed to create opening balance entry for account {updated_account.account_code}: {e}")
+        
+        # Handle parent is_group updates if parent changed
+        if "parent_account_id" in update_dict:
+            old_parent_id = account.parent_account_id
+            new_parent_id = updated_account.parent_account_id
+            
+            # Mark new parent as group account
+            if new_parent_id:
+                new_parent = self.repo.get_by_id(new_parent_id, organization_id)
+                if new_parent and not new_parent.is_group:
+                    new_parent.is_group = True
+                    self.db.flush()
+                    logger.info(f"Marked parent account {new_parent.account_code} as group account")
+            
+            # Check if old parent still has children
+            if old_parent_id:
+                old_parent = self.repo.get_by_id(old_parent_id, organization_id)
+                if old_parent and old_parent.is_group:
+                    has_children = self.repo.has_children(old_parent_id, organization_id)
+                    if not has_children:
+                        old_parent.is_group = False
+                        self.db.flush()
+                        logger.info(f"Unmarked parent account {old_parent.account_code} as group (no more children)")
+        
         # Invalidate cache for this account
         from app.core.cache import invalidate_account_cache
         invalidate_account_cache(account.id, organization_id)
@@ -503,9 +770,22 @@ class ChartOfAccountService:
             "is_posting_account": account.is_posting_account,
             "description": account.description,
         }
+        
+        # Store parent_account_id before deletion (to check is_group later)
+        parent_account_id = account.parent_account_id
 
         # Delete the account first
         self.repo.delete(account, check_children=not force)
+        
+        # If account had a parent, check if parent still has children
+        if parent_account_id:
+            parent = self.repo.get_by_id(parent_account_id, organization_id)
+            if parent and parent.is_group:
+                has_children = self.repo.has_children(parent_account_id, organization_id)
+                if not has_children:
+                    parent.is_group = False
+                    self.db.flush()
+                    logger.info(f"Unmarked parent account {parent.account_code} as group (no more children)")
         
         # Invalidate cache for this account
         from app.core.cache import invalidate_account_cache
@@ -597,6 +877,25 @@ class ChartOfAccountService:
             offset=offset,
         )
         
+        # Eagerly load parent_account relationship so parent details are available
+        from sqlalchemy.orm import joinedload
+        from app.models.chart_of_account import Account as AccountModel
+        account_ids = [a.id for a in accounts]
+        if account_ids:
+            from sqlalchemy import and_
+            # Re-fetch with eager loading of parent relationship
+            loaded_accounts = self.db.query(AccountModel).options(
+                joinedload(AccountModel.parent_account)
+            ).filter(
+                and_(
+                    AccountModel.organization_id == organization_id,
+                    AccountModel.id.in_(account_ids)
+                )
+            ).all()
+            # Maintain original sort order
+            order_map = {orig.id: i for i, orig in enumerate(accounts)}
+            accounts = sorted(loaded_accounts, key=lambda a: order_map.get(a.id, 9999))
+        
         # Apply currency filter if provided (post-query filter)
         if currency:
             accounts = [a for a in accounts if a.currency == currency]
@@ -617,17 +916,27 @@ class ChartOfAccountService:
         balance_calculator = BalanceCalculator(self.db)
         
         for account in accounts:
+            # Ensure all seriazable attributes are set
+            if not hasattr(account, 'current_balance'):
+                account.current_balance = 0.0
+            if not hasattr(account, 'opening_balance'):
+                account.opening_balance = 0.0
+            
             try:
                 balance_info = balance_calculator.calculate_balance(account.id)
                 if balance_info:
-                    # Set current_balance as an attribute so Pydantic can serialize it
-                    account.current_balance = float(balance_info.get('balance', 0))
+                    # Set balance attributes from calculated values
+                    balance_value = float(balance_info.get('balance', 0))
+                    account.current_balance = balance_value
+                    account.opening_balance = balance_value
                 else:
                     account.current_balance = 0.0
+                    account.opening_balance = 0.0
             except Exception as e:
                 # Log error but don't fail the entire request
                 logger.warning(f"Failed to calculate balance for account {account.id}: {e}")
                 account.current_balance = 0.0
+                account.opening_balance = 0.0
 
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {
