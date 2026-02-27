@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -46,6 +47,8 @@ class Account(Base):
     parent_account_id = Column(
         UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True, index=True
     )
+    level = Column(Integer, nullable=False, default=1)
+    is_group = Column(Boolean, nullable=False, default=False)
 
     # Currency and Status
     currency = Column(String(3), nullable=False, default="USD")

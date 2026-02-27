@@ -1,9 +1,12 @@
 """Chart of Account service with business logic"""
 
+import logging
 import re
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.exceptions import (
     CannotDeleteException,
@@ -179,10 +182,24 @@ class ChartOfAccountService:
 
         account_dict = data.model_dump()
         
-        # Remove fields that don't exist in the Account model
-        fields_to_remove = ['level', 'is_group', 'opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
+        # Remove fields that don't exist in the Account model or are calculated
+        fields_to_remove = ['opening_balance', 'current_balance', 'tags', 'extra_data', 'is_active']
         for field in fields_to_remove:
             account_dict.pop(field, None)
+        
+        # Calculate hierarchy fields
+        level = 1
+        is_group = False  # Default to false, set to true if has children later
+        
+        if data.parent_account_id:
+            parent = self.repo.get_by_id(data.parent_account_id, organization_id)
+            if parent:
+                # Set level to parent level + 1, or default to 1 if parent level doesn't exist
+                level = getattr(parent, 'level', 0) + 1
+        
+        # Set calculated fields
+        account_dict['level'] = level
+        account_dict['is_group'] = is_group
         
         # Add organization_id
         account_dict["organization_id"] = organization_id
@@ -196,7 +213,15 @@ class ChartOfAccountService:
                 )
             except (ValueError, KeyError):
                 raise ValidationError(
-                    "account_type must be one of: asset, liability, equity, income, expense"
+                    "account_type must be one of: asset, liability, equity, revenue, expense"
+                )
+
+        if account_dict.get("status"):
+            try:
+                account_dict["status"] = AccountStatus(str(account_dict["status"]).upper())
+            except (ValueError, KeyError):
+                raise ValidationError(
+                    "status must be one of: active, inactive, archived"
                 )
 
         account = self.repo.create(account_dict)
@@ -382,6 +407,14 @@ class ChartOfAccountService:
                 
                 update_dict["account_type"] = new_account_type
 
+        if "status" in update_dict and update_dict["status"]:
+            try:
+                update_dict["status"] = AccountStatus(str(update_dict["status"]).upper())
+            except (ValueError, KeyError):
+                raise ValidationError(
+                    "status must be one of: active, inactive, archived"
+                )
+
         if user_id:
             update_dict["updated_by"] = str(user_id)
 
@@ -514,7 +547,7 @@ class ChartOfAccountService:
             organization_id: Organization UUID
             page: Page number (1-indexed)
             page_size: Number of items per page
-            account_type: Filter by type (asset, liability, equity, income, expense)
+            account_type: Filter by type (asset, liability, equity, revenue, expense)
             parent_account_id: Filter by parent account
             is_active: Filter by active status (unused)
             is_group: Filter by is_group (unused)
@@ -578,6 +611,23 @@ class ChartOfAccountService:
                 sort_order=sort_order,
             )
             total_count = len([a for a in all_accounts if a.currency == currency])
+
+        # Add balance calculation for each account
+        from app.services.balance_calculator import BalanceCalculator
+        balance_calculator = BalanceCalculator(self.db)
+        
+        for account in accounts:
+            try:
+                balance_info = balance_calculator.calculate_balance(account.id)
+                if balance_info:
+                    # Set current_balance as an attribute so Pydantic can serialize it
+                    account.current_balance = float(balance_info.get('balance', 0))
+                else:
+                    account.current_balance = 0.0
+            except Exception as e:
+                # Log error but don't fail the entire request
+                logger.warning(f"Failed to calculate balance for account {account.id}: {e}")
+                account.current_balance = 0.0
 
         total_pages = (total_count + page_size - 1) // page_size
         pagination = {

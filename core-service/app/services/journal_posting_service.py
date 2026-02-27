@@ -176,6 +176,7 @@ class JournalPostingService:
                 f"Failed to convert {amount} {from_currency} to base currency {base_currency}: {str(e)}"
             )
 
+
     def post_payment_journal_entry(
         self,
         payment_entry,
@@ -183,11 +184,15 @@ class JournalPostingService:
         user_id: UUID,
     ):
         """
-        Create journal entry for customer payment.
+        Create journal entry for customer or supplier payment.
 
         For customer payments:
         - Debit: Bank/Cash/Checks_Received (based on payment_mode)
         - Credit: Accounts_Receivable
+
+        For supplier payments:
+        - Debit: Accounts_Payable
+        - Credit: Bank/Cash/Checks_Received (based on payment_mode)
 
         Args:
             payment_entry: PaymentEntry object
@@ -207,37 +212,24 @@ class JournalPostingService:
             organization_id=organization_id,
         )
 
-        # Determine debit account based on payment_mode
-        debit_account_id = self._get_payment_account_by_mode(
-            payment_mode=payment_entry.payment_mode.value,
-            organization_id=organization_id,
-        )
-
-        # Get Accounts Receivable account
-        ar_account = self.default_account_service.get_default_account(
-            transaction_type="accounts_receivable",
-            organization_id=organization_id,
-        )
-        credit_account_id = ar_account.account_id
-
-        # Convert payment amount to base currency if needed
         base_amount = self._convert_to_base_currency(
             amount=Decimal(str(payment_entry.amount)),
             from_currency=payment_entry.currency_code,
             organization_id=organization_id,
         )
 
-        # Create journal entry data
-        journal_entry_data = {
-            "posting_date": payment_entry.payment_date,
-            "voucher_type": "Payment Entry",
-            "reference_type": "PaymentEntry",
-            "reference_id": payment_entry.id,
-            "total_debit": base_amount,
-            "total_credit": base_amount,
-            "remarks": f"Payment received from customer - {payment_entry.payment_mode.value}",
-            "status": "posted",
-            "lines": [
+        if payment_entry.payment_type.value == "Customer_Payment":
+            # Customer payment: Debit payment account, Credit AR
+            debit_account_id = self._get_payment_account_by_mode(
+                payment_mode=payment_entry.payment_mode.value,
+                organization_id=organization_id,
+            )
+            credit_account_id = self.default_account_service.get_default_account(
+                transaction_type="accounts_receivable",
+                organization_id=organization_id,
+            ).account_id
+            remarks = f"Payment received from customer - {payment_entry.payment_mode.value}"
+            lines = [
                 {
                     "account_id": debit_account_id,
                     "debit": base_amount,
@@ -258,17 +250,58 @@ class JournalPostingService:
                     "remarks": "Accounts Receivable",
                     "sort_order": 2,
                 },
-            ],
+            ]
+        elif payment_entry.payment_type.value == "Supplier_Payment":
+            # Supplier payment: Debit AP, Credit payment account
+            debit_account_id = self.default_account_service.get_default_account(
+                transaction_type="accounts_payable",
+                organization_id=organization_id,
+            ).account_id
+            credit_account_id = self._get_payment_account_by_mode(
+                payment_mode=payment_entry.payment_mode.value,
+                organization_id=organization_id,
+            )
+            remarks = f"Supplier payment - {payment_entry.payment_mode.value}"
+            lines = [
+                {
+                    "account_id": debit_account_id,
+                    "debit": base_amount,
+                    "credit": Decimal("0.00"),
+                    "against_account_id": credit_account_id,
+                    "reference_type": "PaymentEntry",
+                    "reference_id": payment_entry.id,
+                    "remarks": "Accounts Payable",
+                    "sort_order": 1,
+                },
+                {
+                    "account_id": credit_account_id,
+                    "debit": Decimal("0.00"),
+                    "credit": base_amount,
+                    "against_account_id": debit_account_id,
+                    "reference_type": "PaymentEntry",
+                    "reference_id": payment_entry.id,
+                    "remarks": f"Supplier payment - {payment_entry.payment_mode.value}",
+                    "sort_order": 2,
+                },
+            ]
+        else:
+            raise ValidationError(f"Unsupported payment type: {payment_entry.payment_type.value}")
+
+        journal_entry_data = {
+            "posting_date": payment_entry.payment_date,
+            "voucher_type": "Payment Entry",
+            "reference_type": "PaymentEntry",
+            "reference_id": payment_entry.id,
+            "total_debit": base_amount,
+            "total_credit": base_amount,
+            "remarks": remarks,
+            "status": "posted",
+            "lines": lines,
         }
 
         # Validate debits equal credits
-        total_debit = sum(
-            line["debit"] for line in journal_entry_data["lines"]
-        )
-        total_credit = sum(
-            line["credit"] for line in journal_entry_data["lines"]
-        )
-
+        total_debit = sum(line["debit"] for line in journal_entry_data["lines"])
+        total_credit = sum(line["credit"] for line in journal_entry_data["lines"])
         if total_debit != total_credit:
             raise ValidationError(
                 f"Journal entry debits ({total_debit}) do not equal credits ({total_credit})"

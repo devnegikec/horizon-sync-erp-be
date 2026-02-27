@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer, field_validator
 
 from app.schemas.common import PaginationMeta
 
@@ -81,8 +81,11 @@ class ChartOfAccountUpdate(BaseModel):
     # Currency
     currency: str | None = Field(None, max_length=3)
     
-    # Status
+    # Status (active, inactive, archived)
     status: str | None = None
+    
+    # Frontend-friendly: map is_active to status
+    is_active: bool | None = None
     
     # Posting Configuration
     is_posting_account: bool | None = None
@@ -99,6 +102,20 @@ class ChartOfAccountParentInfo(BaseModel):
     account_name: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _status_value(v) -> str:
+    """Get string value from status (handles Enum from ORM)."""
+    if v is None:
+        return "active"
+    if hasattr(v, "value"):
+        return str(v.value)
+    return str(v)
+
+
+def _serialize_status(v) -> str:
+    """Serialize status to lowercase for API (DB stores uppercase)."""
+    return _status_value(v).lower()
 
 
 class ChartOfAccountResponse(BaseModel):
@@ -132,6 +149,24 @@ class ChartOfAccountResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @computed_field
+    @property
+    def is_active(self) -> bool:
+        """Compute is_active from status field"""
+        return _status_value(self.status).upper() == 'ACTIVE'
+
+    @field_serializer("status")
+    def serialize_status(self, v) -> str:
+        return _serialize_status(v)
+
+    @field_serializer("account_type")
+    def serialize_account_type(self, v) -> str:
+        """Serialize account type (handles Enum from ORM)."""
+        if v is None:
+            return "asset"
+        val = getattr(v, "value", v)
+        return str(val).upper() if val else "ASSET"
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -148,6 +183,28 @@ class ChartOfAccountListItem(BaseModel):
     status: str
     is_posting_account: bool
     created_at: datetime
+    
+    # Additional fields expected by frontend
+    level: int = Field(default=1, description="Account hierarchy level")
+    is_group: bool = Field(default=False, description="Whether account is a group account")
+    
+    @computed_field
+    @property
+    def is_active(self) -> bool:
+        """Compute is_active from status field"""
+        return _status_value(self.status).upper() == 'ACTIVE'
+
+    @field_serializer("account_type")
+    def serialize_account_type(self, v) -> str:
+        """Serialize account type to uppercase (handles Enum from ORM)."""
+        if v is None:
+            return "ASSET"
+        val = getattr(v, "value", v)
+        return str(val).upper() if val else "ASSET"
+
+    @field_serializer("status")
+    def serialize_status(self, v) -> str:
+        return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -169,6 +226,16 @@ class ChartOfAccountTreeNode(BaseModel):
     status: str
     is_posting_account: bool
     children: list["ChartOfAccountTreeNode"] = []
+
+    @computed_field
+    @property
+    def is_active(self) -> bool:
+        """Compute is_active from status field"""
+        return _status_value(self.status).upper() == 'ACTIVE'
+
+    @field_serializer("status")
+    def serialize_status(self, v) -> str:
+        return _serialize_status(v)
 
     model_config = ConfigDict(from_attributes=True)
 

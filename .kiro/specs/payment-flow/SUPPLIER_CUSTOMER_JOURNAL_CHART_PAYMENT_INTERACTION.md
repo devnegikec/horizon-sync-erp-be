@@ -65,13 +65,15 @@ This document describes how **customers/suppliers**, **chart of accounts**, **jo
 | **DefaultAccount** | `default_accounts` table | Maps `(organization_id, transaction_type, scenario)` → `account_id`. Used by payment journal posting to resolve “which account for cash?”, “which for AR?”, etc. |
 | **DefaultAccountService** | `default_account_service.py` | `get_default_account(transaction_type, organization_id, scenario)` – used by `JournalPostingService`. Validates account type matches transaction type (e.g. AR must be ASSET). |
 
+
 ### Transaction types used for payments
 
 - **Customer payment (confirm):**  
   - `cash` / `checks_received` / `bank` → account to **debit** (receipt side).  
   - `accounts_receivable` → account to **credit**.
-- **Supplier payment (validation only today):**  
-  - `accounts_payable` is **validated** as required, but **journal posting for supplier is not implemented** (see Section 5).
+- **Supplier payment (confirm):**  
+  - `accounts_payable` → account to **debit**.  
+  - `cash` / `checks_received` / `bank` → account to **credit**.
 
 ### Seeding
 
@@ -127,12 +129,14 @@ So: **Chart of Accounts** supplies the accounts; **DefaultAccount** supplies whi
 | **Confirm** | At least one allocation required. Default accounts validated (AR + cash/bank/checks for customer; AR + AP + cash/bank/checks for supplier). Then: status → Confirmed, then **JournalPostingService.post_payment_journal_entry()** creates one journal entry. | **Chart of Accounts**: lines use accounts from **DefaultAccount** (cash/bank/checks + AR). **Journal**: one posted entry, linked to payment via `reference_type`/`reference_id`. |
 | **Cancel** | Only Confirmed payments. User gives reason. Status → Cancelled, then **JournalPostingService.reverse_payment_journal_entry()** creates a reversing entry (same accounts, debits/credits swapped). | **Journal**: second entry (reversal) linked to same payment. **Chart of Accounts**: same accounts, opposite effect. |
 
-### Important limitation (supplier payment)
+
+### Supplier payment logic (now implemented)
 
 - **Validation** for confirm requires **accounts_payable** (and payment-mode account) when `payment_type == Supplier_Payment`.
-- **Actual posting** in `post_payment_journal_entry()` **does not branch** on payment type: it **always** debits the payment-mode account and **credits Accounts Receivable**. So:
-  - **Customer payments:** Correct (Debit Cash/Bank/Checks, Credit AR).
-  - **Supplier payments:** **Not implemented** in journal. Correct behaviour would be: Debit Accounts Payable, Credit Cash/Bank/Checks. Today, confirming a supplier payment would still post the “customer” entry (wrong). Implementing supplier payment posting would require branching in `post_payment_journal_entry()` and using the **accounts_payable** default account for the debit side (and payment account for credit).
+- **Actual posting** in `post_payment_journal_entry()` now branches on payment type:
+  - **Customer payments:** Debit Cash/Bank/Checks, Credit AR (unchanged).
+  - **Supplier payments:** Debit Accounts Payable, Credit Cash/Bank/Checks (new logic).
+  - Both use default accounts for mapping.
 
 ---
 

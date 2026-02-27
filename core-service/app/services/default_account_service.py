@@ -18,10 +18,10 @@ class DefaultAccountService:
     # Mapping of transaction types to appropriate account types
     TRANSACTION_TYPE_ACCOUNT_TYPES = {
         "inventory_purchase": [AccountType.ASSET, AccountType.EXPENSE],
-        "inventory_sale": [AccountType.INCOME],
+        "inventory_sale": [AccountType.REVENUE],
         "accounts_payable": [AccountType.LIABILITY],
         "accounts_receivable": [AccountType.ASSET],
-        "sales_revenue": [AccountType.INCOME],
+        "sales_revenue": [AccountType.REVENUE],
         "purchase_expense": [AccountType.EXPENSE],
         "cost_of_goods_sold": [AccountType.EXPENSE],
         "inventory_asset": [AccountType.ASSET],
@@ -30,7 +30,7 @@ class DefaultAccountService:
         "tax_payable": [AccountType.LIABILITY],
         "tax_receivable": [AccountType.ASSET],
         "discount_given": [AccountType.EXPENSE],
-        "discount_received": [AccountType.INCOME],
+        "discount_received": [AccountType.REVENUE],
         "freight_expense": [AccountType.EXPENSE],
         "shipping_charges": [AccountType.EXPENSE],
     }

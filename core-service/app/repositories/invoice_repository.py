@@ -88,8 +88,8 @@ class InvoiceRepository:
         if status is not None:
             q = q.filter(Invoice.status == status)
         if invoice_type is not None:
-            # API sends lowercase (sales/purchase); DB stores uppercase (SALES/PURCHASE)
-            db_invoice_type = invoice_type.upper() if isinstance(invoice_type, str) else invoice_type
+            # API sends lowercase (sales/purchase); DB stores lowercase (sales/purchase)
+            db_invoice_type = invoice_type.lower() if isinstance(invoice_type, str) else invoice_type
             q = q.filter(Invoice.invoice_type == db_invoice_type)
         total = q.count()
         # Map API sort field names to actual DB columns (grand_total, outstanding_amount are @property aliases)

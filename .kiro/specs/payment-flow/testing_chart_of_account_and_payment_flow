@@ -1,0 +1,82 @@
+This document outlines the architecture and testing procedures for the **Chart of Accounts (COA)** and **Payment Flow** within the ERP system, based on the provided technical specifications.
+
+---
+
+# Technical Overview: Chart of Accounts & Payment Integration
+
+## 1. Chart of Accounts (COA) Structure
+
+The COA serves as the foundational hierarchy for all financial transactions. It is organized by account types (Assets, Liabilities, Income, Expenses) to ensure accurate reporting.
+
+### Parent-Child Hierarchy
+
+* **Parent Accounts:** Act as "Summary" or "Header" nodes. They do not typically hold direct transactions but aggregate the balances of their children.
+* **Child Accounts:** These are the "Posting" accounts where actual journal entries are recorded.
+* **Default Mapping:** For the system to automate payments, specific child accounts must be mapped to **Transaction Types** (e.g., `cash`, `bank`, or `accounts_receivable`) in the `default_accounts` table.
+
+---
+
+## 2. Payment Lifecycle & Money Flow
+
+The system follows a strict three-step workflow to move money from a "Draft" state to the General Ledger.
+
+### Step 1: Create Draft Payment
+
+* **Action:** User defines the party (Customer/Supplier), amount, and payment mode.
+* **Impact:** Status is set to **Draft**. No ledger impact or journal entry is created at this stage.
+
+### Step 2: Allocation
+
+* **Action:** The user must link the payment to one or more existing invoices via the **InvoiceLinker**.
+* **Constraint:** The system **requires at least one allocation** before the payment can be confirmed.
+
+### Step 3: Confirmation & Journal Posting
+
+* **Action:** Upon confirmation, the `JournalPostingService` automatically generates a **Journal Entry**.
+* **Accounting Logic (Customer Payment):**
+* **Debit:** The account associated with the payment mode (e.g., Cash or Bank).
+* **Credit:** The `accounts_receivable` account.
+
+
+* **Immutability:** Once confirmed, the payment becomes immutable. Changes require a **Cancel** action, which triggers a reversal journal entry.
+
+---
+
+## 3. Testing Implementation Guide
+
+### Test Case: Verifying Hierarchy & Cash Flow
+
+To validate the setup, follow these steps in the test environment:
+
+1. **COA Setup:**
+* Create a Parent Account: `1100 - Cash & Equivalents` (Asset).
+* Create a Child Account: `1110 - Main Bank` (Asset) and link it to the parent.
+
+
+2. **Configuration:**
+* Ensure `1110 - Main Bank` is assigned as the default account for the `bank` payment mode.
+
+
+3. **Execution:**
+* Create a **Customer_Payment** for $100 in **Draft**.
+* Allocate the $100 to an outstanding invoice.
+* Click **Confirm**.
+
+
+4. **Verification:**
+* Check that a **Journal Entry** exists referencing the Payment ID.
+* Confirm that the **Child Account** (`1110`) shows a $100 debit.
+* Confirm that the **Parent Account** (`1100`) correctly reflects the $100 balance in summary reports.
+
+
+
+---
+
+## 4. Current Limitations & Known Issues
+
+* **Supplier Payments:** While validation exists, the actual journal posting for supplier payments (Debit AP, Credit Cash) is **not yet implemented**; it currently defaults to the customer payment logic.
+* **UI Filters:** There is a known bug where the Payment List filters do not trigger a refresh. **Fix 1** (updating the `usePayments` hook) must be applied to resolve this.
+
+---
+
+**Would you like me to generate a specific SQL validation script to help you verify these parent-child balances in your database?**
