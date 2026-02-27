@@ -219,6 +219,22 @@ async def get_chart_of_account(
         organization_id=current_user.organization_id,
         include_parent=True,
     )
+    
+    # Calculate and add balance
+    from app.services.balance_calculator import BalanceCalculator
+    balance_calculator = BalanceCalculator(db)
+    try:
+        balance_info = balance_calculator.calculate_balance(account.id)
+        if balance_info:
+            account.current_balance = float(balance_info.get('balance', 0))
+            account.opening_balance = float(balance_info.get('balance', 0))
+        else:
+            account.current_balance = 0.0
+            account.opening_balance = 0.0
+    except Exception:
+        account.current_balance = 0.0
+        account.opening_balance = 0.0
+    
     return ChartOfAccountResponse.model_validate(account)
 
 
