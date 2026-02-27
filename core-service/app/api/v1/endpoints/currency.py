@@ -1,8 +1,8 @@
 """Currency and Exchange Rate management API endpoints"""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -26,7 +26,7 @@ class ExchangeRateResponse(BaseModel):
     to_currency: str
     rate: Decimal
     effective_date: date
-    created_at: str
+    created_at: Union[str, datetime]
 
     class Config:
         from_attributes = True
@@ -127,7 +127,7 @@ async def set_base_currency(
     **Returns:** Updated base currency
     """
     service = CurrencyService(db)
-    service.set_base_currency(data.base_currency, current_user.id)
+    service.set_base_currency(data.base_currency, str(current_user.id))
     return BaseCurrencyResponse(base_currency=data.base_currency)
 
 

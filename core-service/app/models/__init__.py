@@ -65,6 +65,9 @@ from app.models.transaction_breakdown import (
     TransactionTaxBreakdown,
 )
 from app.models.system_config import SystemConfig
+from app.models.uom import UOM
+from app.models.uom_conversion import UOMConversion
+from app.models.currency_master import CurrencyMaster
 from app.models.warehouse import Warehouse
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
@@ -157,6 +160,9 @@ __all__ = [
     "ChargeTemplate",
     "TransactionTaxBreakdown",
     "TransactionChargeBreakdown",
+    "UOM",
+    "UOMConversion",
+    "CurrencyMaster",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

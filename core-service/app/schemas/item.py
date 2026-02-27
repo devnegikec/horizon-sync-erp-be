@@ -12,7 +12,7 @@ from app.schemas.common import PaginationMeta
 class ItemBase(BaseModel):
     """Base item schema with common fields"""
 
-    item_code: str | None = Field(None, min_length=1, max_length=100)
+    item_code: str | None = Field(None, max_length=100)
     item_name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
 
@@ -157,7 +157,7 @@ class ItemResponse(BaseModel):
 
     id: UUID
     organization_id: UUID
-    item_code: str
+    item_code: str | None = None
     item_name: str
     description: str | None = None
 
@@ -231,7 +231,7 @@ class ItemListItem(BaseModel):
     """Schema for item in list response (lighter version)"""
 
     id: UUID
-    item_code: str
+    item_code: str | None = None
     item_name: str
     item_type: str
     uom: str
@@ -296,7 +296,7 @@ class ItemPickerItem(BaseModel):
     """Item for picker/dropdown with stock, group, and tax info"""
 
     id: UUID
-    item_code: str
+    item_code: str | None = None
     item_name: str
     uom: str
     min_order_qty: int = 1

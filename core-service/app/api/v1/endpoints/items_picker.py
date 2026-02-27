@@ -1,5 +1,7 @@
 """Item picker API - separate router to avoid /picker matching /{item_id}"""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,9 @@ async def item_picker(
     search: str | None = Query(
         None, description="Search by item name, item code, or barcode"
     ),
+    warehouse_id: UUID | None = Query(
+        None, description="Filter stock levels to a specific warehouse"
+    ),
     limit: int = Query(
         20, ge=1, le=50, description="Maximum number of items to return"
     ),
@@ -35,6 +40,7 @@ async def item_picker(
 
     **Query Parameters:**
     - **search**: Optional search term (item name, code, or barcode)
+    - **warehouse_id**: Optional warehouse UUID — stock levels shown only for that warehouse
     - **limit**: Max items to return (default: 20, max: 50)
 
     **Returns:** List of items with stock_levels, item_group, and tax_info
@@ -44,5 +50,6 @@ async def item_picker(
         organization_id=current_user.organization_id,
         search=search,
         limit=limit,
+        warehouse_id=warehouse_id,
     )
     return ItemPickerListResponse(items=items)

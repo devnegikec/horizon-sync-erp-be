@@ -150,3 +150,42 @@ async def delete_stock_entry_item(
     """Remove a line item from a draft stock entry."""
     StockEntryService(db).delete_item(entry_id, item_id, current_user.organization_id)
     return None
+
+
+@router.post("/{entry_id}/submit", response_model=StockEntryResponse)
+async def submit_stock_entry(
+    entry_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Submit (confirm) a draft stock entry.
+
+    Updates stock levels and creates stock movement audit records based on entry type:
+    - material_receipt  → stock IN  to target_warehouse
+    - material_issue    → stock OUT from source_warehouse
+    - material_transfer → stock OUT from source, IN to target
+    - manufacture/repack → OUT raw materials, IN finished goods
+
+    Quantities are converted to the item's base UOM using uom_conversions before
+    updating stock_levels.
+    """
+    svc = StockEntryService(db)
+    e = svc.submit(entry_id, current_user.organization_id, current_user.id)
+    return stock_entry_to_response(e)
+
+
+@router.post("/{entry_id}/reprocess", response_model=StockEntryResponse)
+async def reprocess_stock_entry(
+    entry_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Reprocess stock levels for a submitted entry that was confirmed without
+    going through /submit (e.g. via direct status update).
+
+    Safe only when no stock movements exist yet for this entry.
+    Will raise 409 if movements already exist to prevent double-counting.
+    """
+    svc = StockEntryService(db)
+    e = svc.reprocess_stock_levels(entry_id, current_user.organization_id, current_user.id)
+    return stock_entry_to_response(e)

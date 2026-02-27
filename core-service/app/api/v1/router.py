@@ -10,10 +10,12 @@ from app.api.v1.endpoints import (
     bulk_import,
     chart_of_accounts,
     communications,
+    currencies,
     currency,
     customers,
     delivery_notes,
     document_numbering,
+    exchange_rates,
     invoices,
     item_groups,
     item_prices,
@@ -40,6 +42,8 @@ from app.api.v1.endpoints import (
     stock_settings,
     suppliers,
     tax_templates,
+    uom_conversions,
+    uoms,
     warehouses,
 )
 
@@ -76,6 +80,17 @@ api_router.include_router(
     tags=["Accounts"],
 )
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
+# UOM & Currency Master
+api_router.include_router(uoms.router, prefix="/uoms", tags=["UOMs"])
+api_router.include_router(
+    uom_conversions.router, prefix="/uom-conversions", tags=["UOM Conversions"]
+)
+api_router.include_router(
+    currencies.router, prefix="/currencies", tags=["Currencies"]
+)
+api_router.include_router(
+    exchange_rates.router, prefix="/exchange-rates", tags=["Exchange Rates"]
+)
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])
 api_router.include_router(
