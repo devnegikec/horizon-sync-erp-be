@@ -12,31 +12,31 @@ CREATE TABLE IF NOT EXISTS bulk_import_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL,
     created_by_id UUID NOT NULL,
-    
+
     -- File Information
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(255),
     mime_type VARCHAR(100) NOT NULL,
-    
+
     -- Job Status
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    
+
     -- Statistics
     total_rows INTEGER NOT NULL DEFAULT 0,
     successful_rows INTEGER NOT NULL DEFAULT 0,
     failed_rows INTEGER NOT NULL DEFAULT 0,
-    
+
     -- Error Details (JSON format for row-wise errors)
     error_details JSONB,
-    
+
     -- Summary information
     summary TEXT,
-    
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE,
-    
+
     -- Indexes
     CONSTRAINT chk_bulk_import_status CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'))
 );
@@ -54,33 +54,33 @@ CREATE TABLE IF NOT EXISTS bulk_export_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL,
     created_by_id UUID NOT NULL,
-    
+
     -- File Information
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(255),
     file_format VARCHAR(20) NOT NULL,
-    
+
     -- Job Status
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    
+
     -- Statistics
     total_rows VARCHAR(20) NOT NULL DEFAULT '0',
-    
+
     -- Filter Information (JSON format)
     filters JSONB,
-    
+
     -- Column Selection (JSON array)
     selected_columns JSONB,
-    
+
     -- Error Details
     error_message TEXT,
-    
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE,
     expires_at TIMESTAMP WITH TIME ZONE,
-    
+
     -- Constraints
     CONSTRAINT chk_bulk_export_status CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
     CONSTRAINT chk_bulk_export_format CHECK (file_format IN ('csv', 'xlsx', 'json', 'pdf'))
@@ -149,15 +149,15 @@ COMMENT ON COLUMN bulk_export_jobs.expires_at IS 'When the exported file expires
 -- =====================================================
 
 -- Verify tables were created
-SELECT 
-    table_name, 
-    table_type 
-FROM information_schema.tables 
+SELECT
+    table_name,
+    table_type
+FROM information_schema.tables
 WHERE table_name IN ('bulk_import_jobs', 'bulk_export_jobs')
 ORDER BY table_name;
 
 -- Verify columns
-SELECT 
+SELECT
     table_name,
     column_name,
     data_type,
@@ -172,7 +172,7 @@ ORDER BY table_name, ordinal_position;
 -- =====================================================
 
 -- Query to check import job status
--- SELECT 
+-- SELECT
 --     id,
 --     file_name,
 --     status,
@@ -186,7 +186,7 @@ ORDER BY table_name, ordinal_position;
 -- ORDER BY created_at DESC;
 
 -- Query to check export job status
--- SELECT 
+-- SELECT
 --     id,
 --     file_name,
 --     file_format,

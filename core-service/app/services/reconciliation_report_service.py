@@ -101,13 +101,13 @@ class ReconciliationReportService:
 
         for payment in payment_entries:
             total_payments_received += Decimal(str(payment.amount))
-            
+
             # Calculate allocated amount for this payment
             allocated_for_payment = self.reference_repo.get_total_allocated_for_payment(
                 payment.id, organization_id
             )
             total_allocated += allocated_for_payment
-            
+
             # Calculate unallocated amount
             unallocated = Decimal(str(payment.amount)) - allocated_for_payment
             total_unallocated += unallocated
@@ -122,7 +122,7 @@ class ReconciliationReportService:
                     "total_amount": Decimal("0.00"),
                     "payments": []
                 }
-            
+
             payments_by_status[status_key]["count"] += 1
             payments_by_status[status_key]["total_amount"] += Decimal(str(payment.amount))
             payments_by_status[status_key]["payments"].append(self._format_payment(payment, organization_id))
@@ -137,7 +137,7 @@ class ReconciliationReportService:
                     "total_amount": Decimal("0.00"),
                     "payments": []
                 }
-            
+
             payments_by_mode[mode_key]["count"] += 1
             payments_by_mode[mode_key]["total_amount"] += Decimal(str(payment.amount))
             payments_by_mode[mode_key]["payments"].append(self._format_payment(payment, organization_id))
@@ -213,7 +213,7 @@ class ReconciliationReportService:
                 "exchange_rate": str(ref.exchange_rate),
                 "allocated_amount_invoice_currency": str(ref.allocated_amount_invoice_currency),
             }
-            
+
             # Add invoice details if available
             if hasattr(ref, 'invoice') and ref.invoice:
                 invoice_data.update({
@@ -221,7 +221,7 @@ class ReconciliationReportService:
                     "invoice_date": ref.invoice.invoice_date.isoformat() if hasattr(ref.invoice, 'invoice_date') else None,
                     "invoice_amount": str(ref.invoice.grand_total) if hasattr(ref.invoice, 'grand_total') else None,
                 })
-            
+
             allocated_invoices.append(invoice_data)
 
         # Calculate total allocated for this payment

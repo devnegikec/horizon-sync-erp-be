@@ -32,11 +32,11 @@ class AllocationService:
         self.payment_repo = PaymentEntryRepository(db)
         self.reference_repo = PaymentReferenceRepository(db)
         self.invoice_repo = InvoiceRepository(db)
-        
+
         # Import PaymentAuditLogRepository for audit trail
         from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
         self.audit_logger = PaymentAuditLogRepository(db)
-        
+
         # Import InvoiceStatusService for automatic status updates
         from app.services.invoice_status_service import InvoiceStatusService
         self.invoice_status_service = InvoiceStatusService(db)
@@ -660,7 +660,7 @@ class AllocationService:
     ) -> list["PaymentReferenceResponse"]:
         """
         Get all allocations for a payment with invoice details.
-        
+
         Retrieves all payment_references for a payment and includes invoice details
         (invoice number, date, amount, outstanding balance) using eager loading
         to avoid N+1 queries.
@@ -724,7 +724,7 @@ class AllocationService:
     ) -> list["PaymentReferenceResponse"]:
         """
         Get all allocations for an invoice with payment details.
-        
+
         Retrieves all payment_references for an invoice and includes payment details
         (payment number, date, amount, mode, status, currency) using eager loading
         to avoid N+1 queries.
