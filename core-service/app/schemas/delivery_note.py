@@ -105,3 +105,25 @@ class DeliveryNoteListItem(BaseModel):
 class DeliveryNoteListResponse(BaseModel):
     delivery_notes: list[DeliveryNoteListItem]
     pagination: PaginationMeta
+
+
+class ConvertToInvoiceItemRequest(BaseModel):
+    """Single item to bill from a delivery note"""
+    item_id: UUID
+    qty_to_bill: Decimal | float = Field(..., gt=0)
+
+
+class ConvertToInvoiceRequest(BaseModel):
+    """Request body for converting a delivery note to an invoice.
+    Only delivered items (from the DN) can be billed."""
+    items: list[ConvertToInvoiceItemRequest] = Field(..., min_length=1)
+    due_date: datetime | None = None
+    remarks: str | None = None
+
+
+class ConvertToInvoiceResponse(BaseModel):
+    invoice_id: UUID
+    invoice_no: str
+    grand_total: Decimal
+    message: str = "Delivery note successfully converted to invoice"
+
