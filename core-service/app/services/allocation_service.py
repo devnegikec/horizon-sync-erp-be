@@ -167,9 +167,9 @@ class AllocationService:
         total_allocated = _to_decimal(total_allocated_raw)
 
         total_from_header = _to_decimal(
-            getattr(invoice, "grand_total", None) or getattr(invoice, "total_amount", None)
+            getattr(invoice, "grand_total", None)
         )
-        balance_due = _to_decimal(getattr(invoice, "balance_due", None))
+        balance_due = _to_decimal(getattr(invoice, "outstanding_amount", None))
         try:
             total_from_items = self.invoice_repo.get_invoice_total_from_items(
                 invoice_id, organization_id

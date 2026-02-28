@@ -75,7 +75,11 @@ class InvoiceService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(x) for x in items], pagination
+
+        # Batch-load party names/codes to avoid N+1 queries
+        party_map = self._build_party_map(items)
+
+        return [self._to_list_item(x, party_map) for x in items], pagination
 
     def update(
         self, invoice_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -163,7 +167,6 @@ class InvoiceService:
             "currency": inv.currency,
             "discount_type": getattr(inv, "discount_type", None) or "percentage",
             "discount_value": getattr(inv, "discount_value", None) or 0,
-            "discount_amount": getattr(inv, "discount_amount", None) or 0,
             "reference_type": getattr(inv, "reference_type", None),
             "reference_id": getattr(inv, "reference_id", None),
             "remarks": getattr(inv, "remarks", None),
@@ -305,19 +308,52 @@ class InvoiceService:
             "tax_info": tax_info,
         }
 
+    def _build_party_map(self, invoices: list) -> dict:
+        """Batch-load party name/code for a list of invoices."""
+        customer_ids = set()
+        supplier_ids = set()
+        for inv in invoices:
+            pt = (inv.party_type or "").lower()
+            if pt == "customer" and inv.party_id:
+                customer_ids.add(inv.party_id)
+            elif pt == "supplier" and inv.party_id:
+                supplier_ids.add(inv.party_id)
+
+        party_map: dict = {}
+        if customer_ids:
+            customers = (
+                self.db.query(Customer.id, Customer.customer_name, Customer.customer_code)
+                .filter(Customer.id.in_(customer_ids))
+                .all()
+            )
+            for c in customers:
+                party_map[c.id] = {"name": c.customer_name, "code": c.customer_code}
+        if supplier_ids:
+            suppliers = (
+                self.db.query(Supplier.id, Supplier.supplier_name, Supplier.supplier_code)
+                .filter(Supplier.id.in_(supplier_ids))
+                .all()
+            )
+            for s in suppliers:
+                party_map[s.id] = {"name": s.supplier_name, "code": s.supplier_code}
+        return party_map
+
     @staticmethod
-    def _to_list_item(inv) -> dict:
+    def _to_list_item(inv, party_map: dict | None = None) -> dict:
         # invoice_type and status are String columns in DB; support both str and enum
         inv_type = inv.invoice_type
         inv_type_val = getattr(inv_type, "value", inv_type) if inv_type else None
         st = inv.status
         status_val = getattr(st, "value", st) if st else None
+        party_info = (party_map or {}).get(inv.party_id) or {}
         return {
             "id": inv.id,
             "organization_id": inv.organization_id,
             "invoice_no": inv.invoice_no,
             "invoice_type": inv_type_val,
             "party_id": inv.party_id,
+            "party_name": party_info.get("name"),
+            "party_code": party_info.get("code"),
             "status": status_val,
             "posting_date": inv.posting_date,
             "grand_total": inv.grand_total,

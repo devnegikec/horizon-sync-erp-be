@@ -219,7 +219,7 @@ class ReconciliationReportService:
                 invoice_data.update({
                     "invoice_number": ref.invoice.invoice_number if hasattr(ref.invoice, 'invoice_number') else None,
                     "invoice_date": ref.invoice.invoice_date.isoformat() if hasattr(ref.invoice, 'invoice_date') else None,
-                    "invoice_amount": str(ref.invoice.total_amount) if hasattr(ref.invoice, 'total_amount') else None,
+                    "invoice_amount": str(ref.invoice.grand_total) if hasattr(ref.invoice, 'grand_total') else None,
                 })
             
             allocated_invoices.append(invoice_data)

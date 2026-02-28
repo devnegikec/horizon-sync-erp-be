@@ -38,6 +38,7 @@ class SalesOrderRepository:
         return (
             self.db.query(SalesOrder)
             .options(
+                joinedload(SalesOrder.customer),
                 joinedload(SalesOrder.items)
                 .joinedload(SalesOrderItem.item)
                 .joinedload(Item.item_group)
@@ -59,7 +60,9 @@ class SalesOrderRepository:
         sort_by: str = "order_date",
         sort_order: str = "desc",
     ) -> tuple[list[SalesOrder], int]:
-        q = self.db.query(SalesOrder).filter(
+        q = self.db.query(SalesOrder).options(
+            joinedload(SalesOrder.customer)
+        ).filter(
             SalesOrder.organization_id == organization_id
         )
         if customer_id is not None:

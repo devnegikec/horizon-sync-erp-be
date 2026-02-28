@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS bulk_export_jobs (
     
     -- Constraints
     CONSTRAINT chk_bulk_export_status CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    CONSTRAINT chk_bulk_export_format CHECK (file_format IN ('csv', 'xlsx', 'json'))
+    CONSTRAINT chk_bulk_export_format CHECK (file_format IN ('csv', 'xlsx', 'json', 'pdf'))
 );
 
 -- Create indexes for bulk_export_jobs
