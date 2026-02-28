@@ -41,6 +41,7 @@ from app.models.charge_template import ChargeTemplate
 from app.models.chart_of_account import Account
 from app.models.account_balance import AccountBalance
 from app.models.account_audit_log import AccountAuditLog, AuditAction
+from app.models.bank_account import BankAccount, BankAccountHistory
 from app.models.customer import Customer
 from app.models.default_account import DefaultAccount
 from app.models.exchange_rate import ExchangeRate

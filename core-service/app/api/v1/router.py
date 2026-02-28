@@ -5,6 +5,7 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     admin,
+    bank_accounts,
     batches,
     bulk_export,
     bulk_import,
@@ -74,11 +75,23 @@ api_router.include_router(
     prefix="/chart-of-accounts",
     tags=["Chart of Accounts"],
 )
+# Bank accounts integration
+api_router.include_router(
+    bank_accounts.router,
+    prefix="",  # No prefix since endpoints are already properly prefixed
+    tags=["Bank Accounts"],
+)
 # Also register with /accounts prefix for config endpoints
 api_router.include_router(
     chart_of_accounts.router,
     prefix="/accounts",
     tags=["Accounts"],
+)
+# Bank Accounts for banking integration
+api_router.include_router(
+    bank_accounts.router,
+    prefix="",
+    tags=["Bank Accounts"],
 )
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 # UOM & Currency Master

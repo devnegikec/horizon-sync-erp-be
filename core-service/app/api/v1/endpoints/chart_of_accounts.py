@@ -23,6 +23,7 @@ from app.schemas.chart_of_account import (
     ChartOfAccountResponse,
     ChartOfAccountTreeNode,
     ChartOfAccountUpdate,
+    ChartOfAccountWithBankingResponse,
 )
 from app.schemas.default_account import (
     AccountCodeFormatUpdateRequest,
@@ -93,6 +94,8 @@ async def list_chart_of_accounts(
     search: str | None = Query(None, description="Search in account code, name"),
     sort_by: str = Query("account_code", description="Field to sort by"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order"),
+    include_banking: bool = Query(False, description="Include banking information summary"),
+    bank_accounts_only: bool = Query(False, description="Show only accounts with bank links"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -111,8 +114,10 @@ async def list_chart_of_accounts(
     - **search**: Search term for code, name
     - **sort_by**: Field to sort by (default: account_code)
     - **sort_order**: Sort order - asc or desc (default: asc)
+    - **include_banking**: Include banking information summary for each account
+    - **bank_accounts_only**: Show only accounts that have linked bank accounts
 
-    **Returns:** Paginated list of chart of accounts
+    **Returns:** Paginated list of chart of accounts with optional banking information
     """
     service = ChartOfAccountService(db)
 
@@ -194,12 +199,13 @@ async def get_tree_node_children(
 
 @router.get(
     "/{account_id}",
-    response_model=ChartOfAccountResponse,
+    response_model=ChartOfAccountWithBankingResponse,
     summary="Get chart of account",
-    description="Get chart of account details by ID",
+    description="Get chart of account details by ID with optional banking information",
 )
 async def get_chart_of_account(
     account_id: UUID,
+    include_banking: bool = Query(True, description="Include banking information"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -210,8 +216,11 @@ async def get_chart_of_account(
 
     **Path Parameters:**
     - **account_id**: Chart of account UUID
+    
+    **Query Parameters:**
+    - **include_banking**: Include banking information summary (default: true)
 
-    **Returns:** Chart of account details including parent info
+    **Returns:** Chart of account details including parent info and optional banking information
     """
     service = ChartOfAccountService(db)
     account = service.get_by_id(
@@ -235,7 +244,14 @@ async def get_chart_of_account(
         account.current_balance = 0.0
         account.opening_balance = 0.0
     
-    return ChartOfAccountResponse.model_validate(account)
+    # Add banking information if requested
+    if include_banking:
+        banking_summary = account.get_banking_summary()
+        response_data = ChartOfAccountResponse.model_validate(account).model_dump()
+        response_data.update(banking_summary)
+        return ChartOfAccountWithBankingResponse(**response_data)
+    else:
+        return ChartOfAccountResponse.model_validate(account)
 
 
 @router.put(
