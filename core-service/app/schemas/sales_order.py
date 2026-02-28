@@ -9,6 +9,38 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+# ── Customer schemas ──────────────────────────────────────────────────────────
+
+class SalesOrderCustomerInfo(BaseModel):
+    """Minimal customer info used in list responses"""
+
+    id: UUID
+    name: str
+    code: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SalesOrderCustomerDetail(BaseModel):
+    """Full customer info used in detail responses"""
+
+    id: UUID
+    name: str
+    code: str
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    tax_number: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SalesOrderItemStockLevels(BaseModel):
     quantity_on_hand: int = 0
     quantity_reserved: int = 0
@@ -130,6 +162,7 @@ class SalesOrderUpdate(BaseModel):
 class SalesOrderResponse(SalesOrderBase):
     id: UUID
     organization_id: UUID
+    customer: SalesOrderCustomerDetail | None = None
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -144,6 +177,7 @@ class SalesOrderListItem(BaseModel):
     organization_id: UUID
     sales_order_no: str
     customer_id: UUID
+    customer: SalesOrderCustomerInfo | None = None
     status: str
     order_date: datetime
     grand_total: Decimal

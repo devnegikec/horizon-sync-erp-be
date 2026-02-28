@@ -1230,11 +1230,27 @@ class SalesOrderService:
 
     def _to_response(self, sales_order) -> dict:
         """Convert sales order to response dict with pending quantities"""
+        customer = sales_order.customer
         return {
             "id": sales_order.id,
             "organization_id": sales_order.organization_id,
             "sales_order_no": sales_order.sales_order_no,
             "customer_id": sales_order.customer_id,
+            "customer": {
+                "id": customer.id,
+                "name": customer.customer_name,
+                "code": customer.customer_code,
+                "email": customer.email,
+                "phone": customer.phone,
+                "address": customer.address,
+                "address_line1": customer.address_line1,
+                "address_line2": customer.address_line2,
+                "city": customer.city,
+                "state": customer.state,
+                "postal_code": customer.postal_code,
+                "country": customer.country,
+                "tax_number": customer.tax_number,
+            } if customer else None,
             "order_date": sales_order.order_date,
             "delivery_date": sales_order.delivery_date,
             "status": sales_order.status.value if sales_order.status else None,
@@ -1286,11 +1302,17 @@ class SalesOrderService:
     @staticmethod
     def _to_list_item(sales_order) -> dict:
         """Convert sales order to list item dict"""
+        customer = sales_order.customer
         return {
             "id": sales_order.id,
             "organization_id": sales_order.organization_id,
             "sales_order_no": sales_order.sales_order_no,
             "customer_id": sales_order.customer_id,
+            "customer": {
+                "id": customer.id,
+                "name": customer.customer_name,
+                "code": customer.customer_code,
+            } if customer else None,
             "order_date": sales_order.order_date,
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,

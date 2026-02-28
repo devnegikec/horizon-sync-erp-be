@@ -114,7 +114,7 @@ class InvoiceStatusService:
         total_allocated = self._calculate_total_allocated(invoice_id, organization_id)
 
         # Calculate outstanding balance (guard against None from DB)
-        invoice_amount = getattr(invoice, "grand_total", None) or getattr(invoice, "total_amount", None)
+        invoice_amount = getattr(invoice, "grand_total", None)
         if invoice_amount is None:
             invoice_amount = Decimal("0")
         invoice_amount = Decimal(str(invoice_amount))
@@ -123,10 +123,9 @@ class InvoiceStatusService:
         # Determine new status
         new_status = self._determine_invoice_status(invoice_amount, total_allocated)
 
-        # Update invoice status and outstanding_balance
+        # Update invoice status and outstanding_amount
         invoice.status = new_status
-        invoice.balance_due = outstanding_balance
-        invoice.total_paid = total_allocated
+        invoice.outstanding_amount = outstanding_balance
 
         # Commit changes
         self.db.commit()
