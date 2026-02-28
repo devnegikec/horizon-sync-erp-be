@@ -1,0 +1,28 @@
+item_code,item_name,uom,system_qty,actual_qty
+APP-AC-15,Split AC 1.5 Ton,SET,100,101
+APP-KTL-SS,Electric Kettle 1.7L,UNIT,100,99
+APP-MW-900,Smart Microwave Oven,UNIT,100,102
+CLE-SOL-5L,Multi-purpose Cleaner,BTL,100,100
+ELE-CAB-HD,HDMI Cable 2m,PCS,100,100
+ELE-SSD-1TB,NVMe SSD 1TB Gen4,PCS,100,100
+HZN-HD-02,Noise Cancelling Headphones,PCS,75,76
+HZN-KB-09,Mechanical Keyboard,PCS,95,94
+HZN-LP-01,Horizon Pro Laptop,UNIT,50,49
+HZN-MN-27,27-inch 4K Monitor,UNIT,35,36
+HZN-MO-05,Optical Gaming Mouse,PCS,199,198
+HZN-TAB-10,Horizon Tab 10,UNIT,100,100
+IEO-908,Red Tonic,BOX,100,90
+IND-PNT-BLU,Industrial Blue Paint,BAG,100,100
+MED-GLV-LAT,Latex Gloves (Box 100),BOX,100,120
+OFF-CH-ERGO,Ergonomic Task Chair,PCS,100,10
+OFF-DK-STD,Standing Desk (Manual),UNIT,100,10
+OFF-LMP-DSK,LED Desk Lamp,PCS,100,100
+OFF-PPR-A4,A4 Printer Paper,REM,100,100
+PKG-BOX-LRG,Corrugated Box Large,PCK,100,100
+PKG-TAPE-HVY,Heavy Duty Packing Tape,ROL,100,100
+PULP-FICTION-01,Pulp Fiction,PCS,100,99
+RAMBO-09,Rambo Mix,PCS,100,100
+RAW-ALU-6061,Aluminum Sheet 6061,KG,100,100
+RAW-ST-BAR,Steel Reinforcement Bar,MTR,100,100
+TOOL-SRW-SET,Screwdriver Set 24pc,SET,100,100
+TOOL-WRE-ADJ,"Adjustable Wrench 12""",PCS,100,100

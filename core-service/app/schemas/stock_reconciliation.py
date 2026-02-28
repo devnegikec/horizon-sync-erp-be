@@ -125,3 +125,25 @@ class StockReconciliationListItem(BaseModel):
 class StockReconciliationListResponse(BaseModel):
     stock_reconciliations: list[StockReconciliationListItem]
     pagination: PaginationMeta
+
+
+# ----- Wizard Flow Schemas -----
+
+
+class ReconciliationDiscrepancy(BaseModel):
+    item_id: UUID
+    item_code: str
+    item_name: str
+    system_qty: int
+    actual_qty: int
+    difference: int
+    uom: str
+
+
+class ReconciliationUploadPreview(BaseModel):
+    reconciliation_id: UUID
+    warehouse_id: UUID
+    status: str
+    discrepancies: list[ReconciliationDiscrepancy]
+    total_items: int
+    items_with_discrepancy: int

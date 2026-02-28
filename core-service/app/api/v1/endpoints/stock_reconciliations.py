@@ -1,14 +1,17 @@
 """Stock reconciliations and items API endpoints"""
 
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_reconciliation import (
+    ReconciliationUploadPreview,
     StockReconciliationCreate,
     StockReconciliationItemCreate,
     StockReconciliationItemResponse,
@@ -19,8 +22,115 @@ from app.schemas.stock_reconciliation import (
     StockReconciliationUpdate,
 )
 from app.services.stock_reconciliation_service import StockReconciliationService
+from app.services.stock_reconciliation_wizard_service import StockReconciliationWizardService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# =====================================================================
+# Wizard endpoints (must be before /{rec_id} to avoid path conflicts)
+# =====================================================================
+
+
+@router.get(
+    "/template",
+    summary="Download CSV template for stock reconciliation",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}, "description": "CSV template file"}},
+)
+async def download_reconciliation_template(
+    warehouse_id: UUID = Query(..., description="Warehouse to generate template for"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Download a CSV template pre-populated with current stock for the selected warehouse."""
+    svc = StockReconciliationWizardService(db)
+    try:
+        content = svc.generate_template_csv(warehouse_id, current_user.organization_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="stock_reconciliation_template.csv"'},
+    )
+
+
+@router.post(
+    "/upload",
+    response_model=ReconciliationUploadPreview,
+    status_code=status.HTTP_200_OK,
+    summary="Upload CSV and preview discrepancies",
+)
+async def upload_reconciliation(
+    warehouse_id: str = Form(..., description="Warehouse UUID"),
+    file: UploadFile = File(..., description="CSV file with actual_qty filled in"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a filled-in CSV template. The backend compares actual_qty vs system_qty
+    and returns a preview of discrepancies. No stock is adjusted yet.
+    """
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds the 10 MB limit.")
+
+    try:
+        wh_id = UUID(warehouse_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid warehouse_id format.")
+
+    svc = StockReconciliationWizardService(db)
+    try:
+        result = svc.upload_and_preview(wh_id, content, current_user.organization_id, current_user.id)
+    except Exception as exc:
+        logger.exception("Reconciliation upload failed")
+        status_code = getattr(exc, "status_code", 422)
+        detail = str(exc)
+        # Include per-row validation errors if available
+        if hasattr(exc, "details") and exc.details:
+            detail = {"message": str(exc), "errors": exc.details}
+        raise HTTPException(status_code=status_code, detail=detail)
+    return result
+
+
+@router.post(
+    "/{reconciliation_id}/confirm",
+    response_model=StockReconciliationResponse,
+    summary="Confirm and commit reconciliation adjustments",
+)
+async def confirm_reconciliation(
+    reconciliation_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    After reviewing discrepancies, confirm to commit stock adjustments.
+    Updates quantity_on_hand in stock_levels and creates stock_movement audit records.
+    """
+    svc = StockReconciliationWizardService(db)
+    try:
+        rec = svc.confirm(reconciliation_id, current_user.organization_id, current_user.id)
+    except Exception as exc:
+        logger.exception("Reconciliation confirm failed")
+        status_code = getattr(exc, "status_code", 422)
+        if "not found" in str(exc).lower():
+            status_code = 404
+        raise HTTPException(status_code=status_code, detail=str(exc))
+    return StockReconciliationResponse.model_validate(rec)
+
+
+# =====================================================================
+# Standard CRUD endpoints
+# =====================================================================
 
 
 @router.post(
@@ -42,6 +152,7 @@ async def list_stock_reconciliations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: str | None = Query(None),
+    warehouse_id: UUID | None = Query(None, description="Filter by warehouse"),
     search: str | None = None,
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
