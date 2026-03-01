@@ -95,8 +95,8 @@ class InvoiceRepository:
         # Map API sort field names to actual DB columns (grand_total, outstanding_amount are @property aliases)
         sort_column_map = {
             "posting_date": Invoice.posting_date,
-            "grand_total": Invoice.total_amount,
-            "outstanding_amount": Invoice.balance_due,
+            "grand_total": Invoice.grand_total,
+            "outstanding_amount": Invoice.outstanding_amount,
         }
         col = sort_column_map.get(sort_by) or getattr(Invoice, sort_by, None)
         if col is None:
