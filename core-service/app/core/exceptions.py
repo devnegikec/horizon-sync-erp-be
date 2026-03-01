@@ -366,3 +366,28 @@ class IntegrationError(CoreServiceException):
         self.details = details
         self.status_code = status_code if status_code in [502, 503] else 502
         self.error_code = "INTEGRATION_ERROR"
+
+
+# ===========================================
+# BANK ACCOUNT EXCEPTIONS
+# ===========================================
+
+
+class BankAccountNotFoundException(CoreServiceException):
+    """Raised when a bank account is not found"""
+    pass
+
+
+class DuplicateIbanException(CoreServiceException):
+    """Raised when IBAN already exists for the organization"""
+    pass
+
+
+class InvalidAccountStateException(CoreServiceException):
+    """Raised when trying to perform an invalid state transition"""
+    pass
+
+
+class UnauthorizedException(CoreServiceException):
+    """Raised when user doesn't have permission for the operation"""
+    pass

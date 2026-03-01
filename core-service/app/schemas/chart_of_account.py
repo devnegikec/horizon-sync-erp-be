@@ -289,3 +289,18 @@ class AccountBalanceHistoryResponse(BaseModel):
     start_date: str
     end_date: str
     history: list[AccountBalanceResponse]
+
+
+class ChartOfAccountWithBankingResponse(ChartOfAccountResponse):
+    """Enhanced schema for chart of account response with banking information"""
+    
+    # Banking summary fields
+    is_bank_enabled: bool = Field(default=False, description="Whether this account has linked bank accounts")
+    bank_accounts_count: int = Field(default=0, description="Number of linked bank accounts")
+    active_bank_accounts_count: int = Field(default=0, description="Number of active linked bank accounts")
+    primary_bank_name: str | None = Field(None, description="Name of primary bank")
+    primary_bank_masked_account: str | None = Field(None, description="Masked primary account number")
+    primary_bank_type: str | None = Field(None, description="Primary bank account type")
+    
+    class Config:
+        from_attributes = True

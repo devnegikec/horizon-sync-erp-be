@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
-revision = "017_fix_bulk_export_format"
-down_revision = "016_merge_heads"
+revision = "018_fix_bulk_export_format"
+down_revision = "017_add_bank_accounts_table"
 branch_labels = None
 depends_on = None
 
