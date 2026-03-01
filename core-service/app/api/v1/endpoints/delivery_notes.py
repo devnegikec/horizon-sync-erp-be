@@ -139,4 +139,3 @@ async def convert_delivery_note_to_invoice(
         remarks=body.remarks,
     )
     return ConvertToInvoiceResponse(**result)
-

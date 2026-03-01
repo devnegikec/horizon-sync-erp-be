@@ -126,4 +126,3 @@ class ConvertToInvoiceResponse(BaseModel):
     invoice_no: str
     grand_total: Decimal
     message: str = "Delivery note successfully converted to invoice"
-
