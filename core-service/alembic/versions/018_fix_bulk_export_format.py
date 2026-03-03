@@ -56,4 +56,3 @@ def downgrade() -> None:
 
     if "bulk_export_jobs" in existing_tables:
         op.drop_table("bulk_export_jobs")
-
