@@ -5,52 +5,59 @@
 ```typescript
 // types/pickList.types.ts
 
-export interface CustomerDetails {
+export interface NestedReference {
   id: string;
   name: string;
   code: string;
 }
 
-export interface WarehouseDetails {
+export interface ReferenceDetails {
   id: string;
+  reference_type: string;
   name: string;
   code: string;
 }
 
 export interface PickListItem {
   id: string;
-  item_id: string;
-  item_code?: string;
-  item_name?: string;
-  warehouse_id: string;
-  warehouse?: WarehouseDetails;
+  organization_id: string;
+  item: NestedReference | null;
+  warehouse: NestedReference | null;
   qty: number;
   picked_qty: number;
   uom: string;
+  batch_no: string | null;
+  sort_order: number;
+  created_at: string;
 }
 
 export interface PickList {
   id: string;
+  organization_id: string;
   pick_list_no: string;
+  warehouse_id: string;
+  warehouse: NestedReference | null;
   status: "draft" | "in_progress" | "completed" | "cancelled";
-  sales_order_id: string;
-  sales_order_no: string;
-  customer_id: string;
-  customer: CustomerDetails;
-  items: PickListItem[];
+  pick_date: string | null;
+  reference_type: string | null;
+  reference_id: string | null;
+  reference: ReferenceDetails | null;
   remarks: string | null;
+  completed_at: string | null;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
-  created_by: string | null;
+  items: PickListItem[];
 }
 
 export interface PickListListItem {
   id: string;
+  organization_id: string;
   pick_list_no: string;
+  warehouse_id: string;
   status: string;
-  sales_order_no: string;
-  customer: CustomerDetails;
-  items_count: number;
+  pick_date: string | null;
   created_at: string;
 }
 
@@ -209,37 +216,7 @@ export const PickListDetail: React.FC = () => {
         </span>
       </div>
 
-      {/* Customer Details */}
-      <div className="info-section">
-        <h3>Customer Information</h3>
-        <div className="info-grid">
-          <div className="info-item">
-            <label>Customer Code:</label>
-            <span>{pickList.customer.code}</span>
-          </div>
-          <div className="info-item">
-            <label>Customer Name:</label>
-            <span>{pickList.customer.name}</span>
-          </div>
-          <div className="info-item">
-            <label>Customer ID:</label>
-            <span>{pickList.customer.id}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Sales Order Reference */}
-      <div className="info-section">
-        <h3>Sales Order</h3>
-        <div className="info-item">
-          <label>Sales Order No:</label>
-          <a href={`/sales-orders/${pickList.sales_order_id}`}>
-            {pickList.sales_order_no}
-          </a>
-        </div>
-      </div>
-
-      {/* Pick List Items with Warehouse Details */}
+      {/* Pick List Items with Item and Warehouse Details */}
       <div className="items-section">
         <h3>Items to Pick</h3>
         <table className="pick-list-items-table">
@@ -258,8 +235,8 @@ export const PickListDetail: React.FC = () => {
           <tbody>
             {pickList.items.map((item) => (
               <tr key={item.id}>
-                <td>{item.item_code || item.item_id}</td>
-                <td>{item.item_name || "-"}</td>
+                <td>{item.item?.code || item.item_id}</td>
+                <td>{item.item?.name || "-"}</td>
                 <td>{item.warehouse?.name || "-"}</td>
                 <td>{item.warehouse?.code || "-"}</td>
                 <td>{item.qty}</td>
@@ -279,6 +256,42 @@ export const PickListDetail: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Reference Information */}
+      {pickList.reference && (
+        <div className="info-section">
+          <h3>Reference Document</h3>
+          <div className="info-grid">
+            <div className="info-item">
+              <label>Type:</label>
+              <span>{pickList.reference.reference_type}</span>
+            </div>
+            <div className="info-item">
+              <label>Document No:</label>
+              <a href={`/${pickList.reference.reference_type}s/${pickList.reference.id}`}>
+                {pickList.reference.code}
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warehouse Information */}
+      {pickList.warehouse && (
+        <div className="info-section">
+          <h3>Warehouse</h3>
+          <div className="info-grid">
+            <div className="info-item">
+              <label>Warehouse Code:</label>
+              <span>{pickList.warehouse.code}</span>
+            </div>
+            <div className="info-item">
+              <label>Warehouse Name:</label>
+              <span>{pickList.warehouse.name}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pickList.remarks && (
         <div className="info-section">
@@ -399,58 +412,130 @@ export const PickListList: React.FC = () => {
 
 ## Example API Response Format
 
-When calling `GET /api/v1/pick-lists/{id}`, the response should include:
+When calling `GET /api/v1/pick-lists/{id}`, the response now includes enriched nested objects:
 
 ```json
 {
-  "id": "uuid",
-  "pick_list_no": "PL-2025-0001",
-  "status": "draft",
-  "sales_order_id": "uuid",
-  "sales_order_no": "SO-2025-0001",
-  "customer_id": "08d25496-002c-4edb-b033-a76a9acfa674",
-  "customer": {
-    "id": "08d25496-002c-4edb-b033-a76a9acfa674",
-    "name": "Huge Rock",
-    "code": "HRU-01"
+  "id": "77487a86-15c5-4d1a-a7be-a5cc1b1fa0a6",
+  "organization_id": "bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150",
+  "pick_list_no": "PL-2026-0006",
+  "warehouse_id": "cbf290a6-91cb-4c93-b9a6-db408bb3c274",
+  "warehouse": {
+    "id": "cbf290a6-91cb-4c93-b9a6-db408bb3c274",
+    "name": "Main Warehouse",
+    "code": "WH-MAIN"
   },
+  "status": "completed",
+  "pick_date": "2026-03-02T17:33:22.591222Z",
+  "reference_type": "sales_order",
+  "reference_id": "9f03419b-98cf-44d6-9796-da53d0a1dc44",
+  "reference": {
+    "id": "9f03419b-98cf-44d6-9796-da53d0a1dc44",
+    "reference_type": "sales_order",
+    "name": "SO-2026-0001",
+    "code": "SO-2026-0001"
+  },
+  "remarks": null,
+  "completed_at": "2026-03-02T17:35:19.771769Z",
+  "created_by": "8d509f22-5fe5-4765-9496-3a236cae2af1",
+  "updated_by": "8d509f22-5fe5-4765-9496-3a236cae2af1",
+  "created_at": "2026-03-02T17:33:22.601133Z",
+  "updated_at": "2026-03-02T17:35:19.825475Z",
   "items": [
     {
-      "id": "uuid",
-      "item_id": "uuid",
-      "item_code": "ITEM-001",
-      "item_name": "Widget A",
-      "warehouse_id": "uuid",
+      "id": "5f88764e-2236-433d-a845-824212d18537",
+      "organization_id": "bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150",
+      "item": {
+        "id": "a17ac10b-58cc-4372-a567-0e02b2c3d010",
+        "name": "Widget A",
+        "code": "ITEM-001"
+      },
       "warehouse": {
-        "id": "uuid",
+        "id": "cbf290a6-91cb-4c93-b9a6-db408bb3c274",
         "name": "Main Warehouse",
         "code": "WH-MAIN"
       },
-      "qty": 50,
-      "picked_qty": 0,
-      "uom": "Pieces"
+      "qty": "50.000",
+      "picked_qty": "0.000",
+      "uom": "REM",
+      "batch_no": null,
+      "sort_order": 0,
+      "created_at": "2026-03-02T17:33:22.611530Z"
+    },
+    {
+      "id": "586256b3-b2af-45cf-bb98-a09fdea4f526",
+      "organization_id": "bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150",
+      "item": {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d478",
+        "name": "Widget B",
+        "code": "ITEM-002"
+      },
+      "warehouse": {
+        "id": "cbf290a6-91cb-4c93-b9a6-db408bb3c274",
+        "name": "Main Warehouse",
+        "code": "WH-MAIN"
+      },
+      "qty": "1.000",
+      "picked_qty": "0.000",
+      "uom": "UNIT",
+      "batch_no": null,
+      "sort_order": 1,
+      "created_at": "2026-03-02T17:33:22.611538Z"
     }
-  ],
-  "remarks": null,
-  "created_at": "2025-06-15T10:30:00Z",
-  "updated_at": "2025-06-15T10:30:00Z",
-  "created_by": "user@example.com"
+  ]
 }
 ```
 
 ## Key Points
 
-1. **Customer Details**: Always included in the format `{ id, name, code }`
-2. **Warehouse Details**: Included for each item in the format `{ id, name, code }`
-3. **Nested Structure**: Customer and warehouse are nested objects, not just IDs
-4. **Type Safety**: TypeScript types ensure proper structure throughout the app
-5. **Display**: Components can directly access `pickList.customer.name` and `item.warehouse.code`
+1. **Item Details**: Each item includes nested `item` object with `{ id, name, code }`
+2. **Warehouse Details**:
+   - Pick list level: `warehouse` object with `{ id, name, code }`
+   - Item level: Each item has its own `warehouse` object with `{ id, name, code }`
+3. **Reference Details**: Includes nested `reference` object with `{ id, reference_type, name, code }` for sales orders
+4. **Nested Structure**: All related entities are nested objects, not just IDs
+5. **Type Safety**: TypeScript types ensure proper structure throughout the app
+6. **Display**: Components can directly access:
+   - `pickList.warehouse.name`
+   - `pickList.reference.code`
+   - `item.item.name`
+   - `item.warehouse.code`
 
 ## Backend Requirements
 
-The backend API endpoint `/api/v1/pick-lists/{id}` must:
+The backend API endpoint `/api/v1/pick-lists/{id}` now:
 
-1. Join with `customers` table to get customer details
-2. Join with `warehouses` table for each pick list item
-3. Return nested objects (not just IDs) for customer and warehouse
-4. Include code, name, and id for both customer and warehouse entities
+1. ✅ Joins with `items` table to get item details (item_code, item_name)
+2. ✅ Joins with `warehouses_extended` table (Warehouse model) for:
+   - Pick list level warehouse details
+   - Each item's warehouse details
+3. ✅ Joins with `sales_orders` table for reference details
+4. ✅ Returns nested objects (not just IDs) for:
+   - `warehouse`: `{ id, name, code }`
+   - `reference`: `{ id, reference_type, name, code }`
+   - `items[].item`: `{ id, name, code }`
+   - `items[].warehouse`: `{ id, name, code }`
+
+## Changes Made
+
+### Backend Changes:
+
+1. **Service Layer** (`pick_list_service.py`):
+   - Added `_to_response_enriched()` method that performs joins
+   - Queries `Item`, `WarehouseExtended`, and `SalesOrder` tables
+   - Builds nested objects for all related entities
+
+2. **Schema Layer** (`pick_list.py`):
+   - Added `NestedReference` model for item/warehouse details
+   - Added `NestedReferenceWithType` model for reference details
+   - Updated `PickListItemResponse` to include `item` and `warehouse` nested objects
+   - Updated `PickListResponse` to include `warehouse` and `reference` nested objects
+
+3. **API Endpoint** (`pick_lists.py`):
+   - No changes needed - uses updated service method automatically
+
+### Frontend Changes:
+
+1. **TypeScript Types**: Updated to match new response structure
+2. **Components**: Updated to access nested properties (e.g., `item.item.name`, `item.warehouse.code`)
+3. **Service**: No changes needed - automatically handles new response format

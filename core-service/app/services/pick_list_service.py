@@ -36,7 +36,7 @@ class PickListService:
         pl = self.repo.get_by_id(pick_list_id, organization_id)
         if not pl:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
-        return self._to_response(pl)
+        return self._to_response_enriched(pl)
 
     def get_list(
         self,
@@ -121,6 +121,90 @@ class PickListService:
                 }
                 for item in pl.items
             ],
+        }
+
+    def _to_response_enriched(self, pl) -> dict:
+        """Enhanced response with item, warehouse, and reference details"""
+        from app.models.item import Item
+        from app.models.warehouse import Warehouse
+        from app.models.sales_order import SalesOrder
+        
+        # Get warehouse details for the pick list
+        warehouse = None
+        if pl.warehouse_id:
+            warehouse = self.db.query(Warehouse).filter(
+                Warehouse.id == pl.warehouse_id
+            ).first()
+        
+        # Get reference details (sales order)
+        reference = None
+        if pl.reference_type == "sales_order" and pl.reference_id:
+            so = self.db.query(SalesOrder).filter(
+                SalesOrder.id == pl.reference_id
+            ).first()
+            if so:
+                reference = {
+                    "id": str(so.id),
+                    "reference_type": "sales_order",
+                    "name": so.sales_order_no,
+                    "code": so.sales_order_no,
+                }
+        
+        # Build enriched items with item and warehouse details
+        enriched_items = []
+        for item in pl.items:
+            # Get item details
+            item_obj = self.db.query(Item).filter(Item.id == item.item_id).first()
+            
+            # Get warehouse details for this item
+            item_warehouse = self.db.query(Warehouse).filter(
+                Warehouse.id == item.warehouse_id
+            ).first()
+            
+            enriched_item = {
+                "id": item.id,
+                "organization_id": item.organization_id,
+                "item": {
+                    "id": str(item_obj.id),
+                    "name": item_obj.item_name,
+                    "code": item_obj.item_code,
+                } if item_obj else None,
+                "warehouse": {
+                    "id": str(item_warehouse.id),
+                    "name": item_warehouse.name,
+                    "code": item_warehouse.code,
+                } if item_warehouse else None,
+                "qty": item.qty,
+                "picked_qty": item.picked_qty,
+                "uom": item.uom,
+                "batch_no": item.batch_no,
+                "sort_order": item.sort_order,
+                "created_at": item.created_at,
+            }
+            enriched_items.append(enriched_item)
+        
+        return {
+            "id": pl.id,
+            "organization_id": pl.organization_id,
+            "pick_list_no": pl.pick_list_no,
+            "warehouse_id": pl.warehouse_id,
+            "warehouse": {
+                "id": str(warehouse.id),
+                "name": warehouse.name,
+                "code": warehouse.code,
+            } if warehouse else None,
+            "status": pl.status.value if pl.status else None,
+            "pick_date": pl.pick_date,
+            "reference_type": pl.reference_type,
+            "reference_id": pl.reference_id,
+            "reference": reference,
+            "remarks": pl.remarks,
+            "completed_at": pl.completed_at,
+            "created_by": pl.created_by,
+            "updated_by": pl.updated_by,
+            "created_at": pl.created_at,
+            "updated_at": pl.updated_at,
+            "items": enriched_items,
         }
 
     @staticmethod

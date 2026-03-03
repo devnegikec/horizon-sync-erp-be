@@ -9,6 +9,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.common import PaginationMeta
 
 
+class NestedReference(BaseModel):
+    """Nested reference details (id, name, code)"""
+    id: str
+    name: str
+    code: str
+
+
+class NestedReferenceWithType(BaseModel):
+    """Nested reference with type (for sales_order, etc.)"""
+    id: str
+    reference_type: str
+    name: str
+    code: str
+
+
 class PickListItemBase(BaseModel):
     item_id: UUID
     warehouse_id: UUID
@@ -26,9 +41,8 @@ class PickListItemCreate(PickListItemBase):
 class PickListItemResponse(BaseModel):
     id: UUID
     organization_id: UUID
-    pick_list_id: UUID
-    item_id: UUID
-    warehouse_id: UUID
+    item: NestedReference | None = None
+    warehouse: NestedReference | None = None
     qty: Decimal
     picked_qty: Decimal
     uom: str
@@ -66,6 +80,8 @@ class PickListUpdate(BaseModel):
 class PickListResponse(PickListBase):
     id: UUID
     organization_id: UUID
+    warehouse: NestedReference | None = None
+    reference: NestedReferenceWithType | None = None
     completed_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
