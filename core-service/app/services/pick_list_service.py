@@ -128,14 +128,14 @@ class PickListService:
         from app.models.item import Item
         from app.models.warehouse import Warehouse
         from app.models.sales_order import SalesOrder
-        
+
         # Get warehouse details for the pick list
         warehouse = None
         if pl.warehouse_id:
             warehouse = self.db.query(Warehouse).filter(
                 Warehouse.id == pl.warehouse_id
             ).first()
-        
+
         # Get reference details (sales order)
         reference = None
         if pl.reference_type == "sales_order" and pl.reference_id:
@@ -149,18 +149,18 @@ class PickListService:
                     "name": so.sales_order_no,
                     "code": so.sales_order_no,
                 }
-        
+
         # Build enriched items with item and warehouse details
         enriched_items = []
         for item in pl.items:
             # Get item details
             item_obj = self.db.query(Item).filter(Item.id == item.item_id).first()
-            
+
             # Get warehouse details for this item
             item_warehouse = self.db.query(Warehouse).filter(
                 Warehouse.id == item.warehouse_id
             ).first()
-            
+
             enriched_item = {
                 "id": item.id,
                 "organization_id": item.organization_id,
@@ -182,7 +182,7 @@ class PickListService:
                 "created_at": item.created_at,
             }
             enriched_items.append(enriched_item)
-        
+
         return {
             "id": pl.id,
             "organization_id": pl.organization_id,

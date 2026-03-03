@@ -521,11 +521,13 @@ The backend API endpoint `/api/v1/pick-lists/{id}` now:
 ### Backend Changes:
 
 1. **Service Layer** (`pick_list_service.py`):
+
    - Added `_to_response_enriched()` method that performs joins
    - Queries `Item`, `WarehouseExtended`, and `SalesOrder` tables
    - Builds nested objects for all related entities
 
 2. **Schema Layer** (`pick_list.py`):
+
    - Added `NestedReference` model for item/warehouse details
    - Added `NestedReferenceWithType` model for reference details
    - Updated `PickListItemResponse` to include `item` and `warehouse` nested objects

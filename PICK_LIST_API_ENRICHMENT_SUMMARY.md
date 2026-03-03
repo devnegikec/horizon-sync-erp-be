@@ -35,11 +35,13 @@ Updated response models:
 Added new method `_to_response_enriched()` that:
 
 1. **Queries related entities**:
+
    - `Item` table for item details (item_code, item_name)
    - `Warehouse` table for warehouse details (code, name)
    - `SalesOrder` table for reference details (sales_order_no)
 
 2. **Builds nested objects**:
+
    - Pick list level: `warehouse` object
    - Reference level: `reference` object with type
    - Item level: Each item gets `item` and `warehouse` objects
