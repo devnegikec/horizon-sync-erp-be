@@ -15,6 +15,8 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.smart_picking import (
     AllocationSuggestionResponse,
+    BulkDeliveryFromAllocationsRequest,
+    BulkDeliveryFromAllocationsResponse,
     DeliveryNoteFromPickListRequest,
     DeliveryNoteFromPickListResponse,
     SmartPickListCreate,
@@ -104,3 +106,35 @@ async def create_delivery_from_pick_list(
         remarks=body.remarks,
     )
     return DeliveryNoteFromPickListResponse(**data)
+
+
+@router.post(
+    "/bulk-delivery",
+    response_model=BulkDeliveryFromAllocationsResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_bulk_delivery(
+    body: BulkDeliveryFromAllocationsRequest,
+    current_user: CurrentUser = Depends(require_permission(DELIVERY_NOTE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Create pick lists grouped by warehouse and delivery notes in one call.
+
+    Allocations spanning multiple warehouses produce one pick list per
+    warehouse, each referencing the same sales order.  A delivery note is
+    then created from each pick list.  Everything runs in a single DB
+    transaction.
+
+    Requires: delivery_note.create
+    """
+    svc = SmartPickingService(db)
+    allocations = [a.model_dump() for a in body.allocations]
+    data = svc.create_bulk_delivery(
+        sales_order_id=body.sales_order_id,
+        allocations=allocations,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        delivery_date=body.delivery_date,
+        remarks=body.remarks,
+    )
+    return BulkDeliveryFromAllocationsResponse(**data)
