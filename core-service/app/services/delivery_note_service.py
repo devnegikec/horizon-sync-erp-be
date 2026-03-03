@@ -22,9 +22,10 @@ class DeliveryNoteService:
         # Auto-generate delivery_note_no if not provided
         if not payload.get("delivery_note_no"):
             from app.services.document_numbering_service import DocumentNumberingService
-            payload["delivery_note_no"] = DocumentNumberingService(self.db).get_next_number(
-                organization_id, "delivery_note"
-            )
+
+            payload["delivery_note_no"] = DocumentNumberingService(
+                self.db
+            ).get_next_number(organization_id, "delivery_note")
         if payload.get("status"):
             payload["status"] = DocumentStatus(payload["status"])
         items = data.get("items") or []
@@ -93,8 +94,191 @@ class DeliveryNoteService:
             )
         self.repo.delete(dn)
 
-    @staticmethod
-    def _to_response(dn) -> dict:
+    def convert_to_invoice(
+        self,
+        delivery_note_id: UUID,
+        items_to_bill: list[dict],
+        organization_id: UUID,
+        user_id: UUID,
+        due_date=None,
+        remarks: str | None = None,
+    ) -> dict:
+        """Convert a submitted delivery note to a sales invoice.
+
+        Only items present on the delivery note can be billed, and only up to
+        the delivered qty.  Creates an Invoice + InvoiceItems, links back to
+        the delivery note via reference_type/reference_id, and updates
+        billed_qty on the related sales order items when a SO reference exists.
+
+        Args:
+            delivery_note_id: Delivery note to convert
+            items_to_bill: List of {item_id (DN item UUID), qty_to_bill}
+            organization_id: Tenant
+            user_id: Audit trail
+            due_date: Optional invoice due date
+            remarks: Optional invoice remarks
+
+        Returns:
+            dict with invoice_id, invoice_no, grand_total
+
+        Raises:
+            ResourceNotFoundException: DN not found
+            StateError: DN not in submitted status
+            ValidationError: qty exceeds delivered qty or item not found
+        """
+        from datetime import UTC, datetime
+        from decimal import Decimal
+
+        from app.core.exceptions import StateError, ValidationError
+        from app.models.base import DocumentStatus, InvoiceStatus, InvoiceType
+        from app.models.invoice import Invoice, InvoiceItem
+        from app.models.item import Item
+        from app.models.sales_order import SalesOrder, SalesOrderItem
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        dn = self.repo.get_by_id(delivery_note_id, organization_id)
+        if not dn:
+            raise ResourceNotFoundException(
+                f"Delivery note {delivery_note_id} not found"
+            )
+
+        if dn.status != DocumentStatus.SUBMITTED:
+            raise StateError(
+                "Delivery note must be in submitted status to convert to invoice",
+                current_state=dn.status.value,
+                required_state=["submitted"],
+            )
+
+        # Build a lookup of DN items by id
+        dn_item_map = {item.id: item for item in dn.items}
+
+        # Validate every requested item
+        grand_total = Decimal("0")
+        validated_items: list[dict] = []
+        for req in items_to_bill:
+            dn_item_id = req["item_id"]
+            qty_to_bill = Decimal(str(req["qty_to_bill"]))
+
+            dn_item = dn_item_map.get(dn_item_id)
+            if not dn_item:
+                raise ValidationError(
+                    f"Item {dn_item_id} not found in delivery note {delivery_note_id}"
+                )
+
+            if qty_to_bill <= 0:
+                raise ValidationError(
+                    f"Billing quantity must be greater than 0 for item {dn_item_id}"
+                )
+
+            if qty_to_bill > dn_item.qty:
+                raise ValidationError(
+                    f"Billing quantity {qty_to_bill} exceeds delivered quantity "
+                    f"{dn_item.qty} for item {dn_item_id}"
+                )
+
+            rate = dn_item.rate or Decimal("0")
+            amount = qty_to_bill * rate
+            grand_total += amount
+
+            # Resolve item_code / item_name for the invoice line
+            item_obj = self.db.query(Item).filter(Item.id == dn_item.item_id).first()
+
+            validated_items.append(
+                {
+                    "dn_item": dn_item,
+                    "qty": qty_to_bill,
+                    "rate": rate,
+                    "amount": amount,
+                    "item_obj": item_obj,
+                }
+            )
+
+        try:
+            now = datetime.now(UTC)
+            invoice_no = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "invoice"
+            )
+
+            invoice = Invoice(
+                organization_id=organization_id,
+                invoice_no=invoice_no,
+                invoice_type=InvoiceType.SALES,
+                party_id=dn.customer_id,
+                party_type="Customer",
+                posting_date=now,
+                due_date=due_date,
+                status=InvoiceStatus.DRAFT,
+                grand_total=grand_total,
+                outstanding_amount=grand_total,
+                currency="INR",
+                reference_type="delivery_note",
+                reference_id=dn.id,
+                remarks=remarks or dn.remarks,
+                created_by=user_id,
+                updated_by=user_id,
+            )
+            self.db.add(invoice)
+            self.db.flush()
+
+            for idx, v in enumerate(validated_items):
+                dn_item = v["dn_item"]
+                item_obj = v["item_obj"]
+                inv_item = InvoiceItem(
+                    organization_id=organization_id,
+                    invoice_id=invoice.id,
+                    item_id=dn_item.item_id,
+                    item_code=item_obj.item_code if item_obj else None,
+                    item_name=item_obj.item_name if item_obj else None,
+                    qty=v["qty"],
+                    uom=dn_item.uom,
+                    rate=v["rate"],
+                    amount=v["amount"],
+                    sort_order=idx,
+                )
+                self.db.add(inv_item)
+
+            # If the DN was created from a sales order, update billed_qty
+            if dn.reference_type == "sales_order" and dn.reference_id:
+                so = (
+                    self.db.query(SalesOrder)
+                    .filter(
+                        SalesOrder.id == dn.reference_id,
+                        SalesOrder.organization_id == organization_id,
+                    )
+                    .first()
+                )
+                if so:
+                    for v in validated_items:
+                        dn_item = v["dn_item"]
+                        soi = (
+                            self.db.query(SalesOrderItem)
+                            .filter(
+                                SalesOrderItem.sales_order_id == so.id,
+                                SalesOrderItem.item_id == dn_item.item_id,
+                            )
+                            .first()
+                        )
+                        if soi:
+                            soi.billed_qty = (soi.billed_qty or 0) + v["qty"]
+
+            self.db.commit()
+            self.db.refresh(invoice)
+
+            return {
+                "invoice_id": invoice.id,
+                "invoice_no": invoice.invoice_no,
+                "grand_total": invoice.grand_total,
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def _to_response(self, dn) -> dict:
+        from app.models.item import Item
+        from app.models.pick_list import PickList
+        from app.models.sales_order import SalesOrder
+
         # Get customer data
         customer_data = None
         if dn.customer:
@@ -113,14 +297,54 @@ class DeliveryNoteService:
                 "warehouse_code": dn.warehouse.code,
             }
 
-        # Get items data
+        # Get reference data (sales_order or pick_list)
+        reference_data = None
+        if dn.reference_type and dn.reference_id:
+            if dn.reference_type == "sales_order":
+                ref_obj = (
+                    self.db.query(SalesOrder)
+                    .filter(SalesOrder.id == dn.reference_id)
+                    .first()
+                )
+                if ref_obj:
+                    reference_data = {
+                        "id": str(dn.reference_id),
+                        "reference_type": "sales_order",
+                        "name": ref_obj.sales_order_no,
+                        "code": ref_obj.sales_order_no,
+                    }
+            elif dn.reference_type == "pick_list":
+                ref_obj = (
+                    self.db.query(PickList)
+                    .filter(PickList.id == dn.reference_id)
+                    .first()
+                )
+                if ref_obj:
+                    reference_data = {
+                        "id": str(dn.reference_id),
+                        "reference_type": "pick_list",
+                        "name": ref_obj.pick_list_no,
+                        "code": ref_obj.pick_list_no,
+                    }
+
+        # Get items data with enriched item details
         items_data = []
         if hasattr(dn, "items") and dn.items:
             for item in dn.items:
+                # Get item details
+                item_obj = self.db.query(Item).filter(Item.id == item.item_id).first()
+                item_data = None
+                if item_obj:
+                    item_data = {
+                        "id": str(item_obj.id),
+                        "name": item_obj.item_name,
+                        "code": item_obj.item_code,
+                    }
+
                 items_data.append(
                     {
                         "id": item.id,
-                        "item_id": item.item_id,
+                        "item": item_data,
                         "qty": item.qty,
                         "uom": item.uom,
                         "rate": item.rate,
@@ -146,6 +370,7 @@ class DeliveryNoteService:
             "pick_list_id": dn.pick_list_id,
             "reference_type": dn.reference_type,
             "reference_id": dn.reference_id,
+            "reference": reference_data,
             "remarks": dn.remarks,
             "extra_data": dn.extra_data,
             "items": items_data,

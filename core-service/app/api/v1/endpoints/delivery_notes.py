@@ -14,6 +14,8 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
 from app.schemas.delivery_note import (
+    ConvertToInvoiceRequest,
+    ConvertToInvoiceResponse,
     DeliveryNoteCreate,
     DeliveryNoteListItem,
     DeliveryNoteListResponse,
@@ -107,3 +109,33 @@ async def delete_delivery_note(
     svc = DeliveryNoteService(db)
     svc.delete(delivery_note_id, current_user.organization_id)
     return None
+
+@router.post(
+    "/{delivery_note_id}/convert-to-invoice",
+    response_model=ConvertToInvoiceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def convert_delivery_note_to_invoice(
+    delivery_note_id: UUID,
+    body: ConvertToInvoiceRequest,
+    current_user: CurrentUser = Depends(require_permission(DELIVERY_NOTE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Convert a submitted delivery note to a sales invoice.
+
+    Only items on the delivery note can be billed, up to the delivered qty.
+    If the DN was created from a sales order, billed_qty on the SO items is
+    updated automatically.
+
+    Requires: delivery_note.update
+    """
+    svc = DeliveryNoteService(db)
+    result = svc.convert_to_invoice(
+        delivery_note_id=delivery_note_id,
+        items_to_bill=[item.model_dump() for item in body.items],
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        due_date=body.due_date,
+        remarks=body.remarks,
+    )
+    return ConvertToInvoiceResponse(**result)

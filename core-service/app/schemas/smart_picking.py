@@ -83,3 +83,38 @@ class DeliveryNoteFromPickListResponse(BaseModel):
     stock_movements_created: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Bulk Delivery (multi-warehouse → multiple pick lists) ──────────
+
+
+class BulkDeliveryFromAllocationsRequest(BaseModel):
+    """Create pick lists grouped by warehouse and delivery notes in one call.
+
+    Allocations spanning multiple warehouses produce one pick list per
+    warehouse, each referencing the same sales order.  A delivery note is
+    then created from each pick list.
+    """
+
+    sales_order_id: UUID
+    allocations: list[SmartPickAllocation] = Field(..., min_length=1)
+    delivery_date: datetime | None = None
+    remarks: str | None = None
+
+
+class BulkDeliveryPickListDetail(BaseModel):
+    pick_list_id: UUID
+    pick_list_no: str
+    warehouse_id: UUID
+    delivery_note: DeliveryNoteFromPickListResponse
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BulkDeliveryFromAllocationsResponse(BaseModel):
+    sales_order_id: UUID
+    sales_order_no: str
+    pick_lists_created: int
+    delivery_notes_created: int
+    total_stock_movements: int
+    details: list[BulkDeliveryPickListDetail]
+    model_config = ConfigDict(from_attributes=True)
