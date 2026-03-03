@@ -25,6 +25,21 @@ class WarehouseInfo(BaseModel):
     warehouse_code: str
 
 
+class NestedReference(BaseModel):
+    """Nested reference details (id, name, code)"""
+    id: str
+    name: str
+    code: str
+
+
+class NestedReferenceWithType(BaseModel):
+    """Nested reference with type (for sales_order, pick_list, etc.)"""
+    id: str
+    reference_type: str
+    name: str
+    code: str
+
+
 class DeliveryNoteItemBase(BaseModel):
     item_id: UUID
     qty: Decimal | float = Field(..., gt=0)
@@ -41,10 +56,18 @@ class DeliveryNoteItemCreate(DeliveryNoteItemBase):
     pass
 
 
-class DeliveryNoteItemResponse(DeliveryNoteItemBase):
-    """Delivery note item with extra data"""
-
+class DeliveryNoteItemResponse(BaseModel):
+    """Delivery note item with enriched item details"""
     id: UUID
+    item: NestedReference | None = None
+    qty: Decimal
+    uom: str
+    rate: Decimal | None = None
+    amount: Decimal | None = None
+    warehouse_id: UUID | None = None
+    batch_no: str | None = None
+    serial_nos: list[str] | None = None
+    sort_order: int
     extra_data: dict | None = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,6 +100,7 @@ class DeliveryNoteResponse(DeliveryNoteBase):
     organization_id: UUID
     customer: CustomerInfo | None = None
     warehouse: WarehouseInfo | None = None
+    reference: NestedReferenceWithType | None = None
     items: list[DeliveryNoteItemResponse] = Field(default_factory=list)
     extra_data: dict | None = None
     submitted_at: datetime | None = None

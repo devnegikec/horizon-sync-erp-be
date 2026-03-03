@@ -275,8 +275,11 @@ class DeliveryNoteService:
             raise e
 
 
-    @staticmethod
-    def _to_response(dn) -> dict:
+    def _to_response(self, dn) -> dict:
+        from app.models.item import Item
+        from app.models.sales_order import SalesOrder
+        from app.models.pick_list import PickList
+        
         # Get customer data
         customer_data = None
         if dn.customer:
@@ -295,14 +298,50 @@ class DeliveryNoteService:
                 "warehouse_code": dn.warehouse.code,
             }
 
-        # Get items data
+        # Get reference data (sales_order or pick_list)
+        reference_data = None
+        if dn.reference_type and dn.reference_id:
+            if dn.reference_type == "sales_order":
+                ref_obj = self.db.query(SalesOrder).filter(
+                    SalesOrder.id == dn.reference_id
+                ).first()
+                if ref_obj:
+                    reference_data = {
+                        "id": str(dn.reference_id),
+                        "reference_type": "sales_order",
+                        "name": ref_obj.sales_order_no,
+                        "code": ref_obj.sales_order_no,
+                    }
+            elif dn.reference_type == "pick_list":
+                ref_obj = self.db.query(PickList).filter(
+                    PickList.id == dn.reference_id
+                ).first()
+                if ref_obj:
+                    reference_data = {
+                        "id": str(dn.reference_id),
+                        "reference_type": "pick_list",
+                        "name": ref_obj.pick_list_no,
+                        "code": ref_obj.pick_list_no,
+                    }
+
+        # Get items data with enriched item details
         items_data = []
         if hasattr(dn, "items") and dn.items:
             for item in dn.items:
+                # Get item details
+                item_obj = self.db.query(Item).filter(Item.id == item.item_id).first()
+                item_data = None
+                if item_obj:
+                    item_data = {
+                        "id": str(item_obj.id),
+                        "name": item_obj.item_name,
+                        "code": item_obj.item_code,
+                    }
+                
                 items_data.append(
                     {
                         "id": item.id,
-                        "item_id": item.item_id,
+                        "item": item_data,
                         "qty": item.qty,
                         "uom": item.uom,
                         "rate": item.rate,
@@ -328,6 +367,7 @@ class DeliveryNoteService:
             "pick_list_id": dn.pick_list_id,
             "reference_type": dn.reference_type,
             "reference_id": dn.reference_id,
+            "reference": reference_data,
             "remarks": dn.remarks,
             "extra_data": dn.extra_data,
             "items": items_data,
