@@ -35,11 +35,13 @@ Updated response models:
 Updated `_to_response()` method to:
 
 1. **Query related entities**:
+
    - `Item` table for item details (item_code, item_name)
    - `SalesOrder` table for sales order reference details
    - `PickList` table for pick list reference details
 
 2. **Build nested objects**:
+
    - Reference level: `reference` object with type (sales_order or pick_list)
    - Item level: Each item gets `item` object with id, name, code
 

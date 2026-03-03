@@ -27,6 +27,7 @@ class WarehouseInfo(BaseModel):
 
 class NestedReference(BaseModel):
     """Nested reference details (id, name, code)"""
+
     id: str
     name: str
     code: str
@@ -34,6 +35,7 @@ class NestedReference(BaseModel):
 
 class NestedReferenceWithType(BaseModel):
     """Nested reference with type (for sales_order, pick_list, etc.)"""
+
     id: str
     reference_type: str
     name: str
@@ -58,6 +60,7 @@ class DeliveryNoteItemCreate(DeliveryNoteItemBase):
 
 class DeliveryNoteItemResponse(BaseModel):
     """Delivery note item with enriched item details"""
+
     id: UUID
     item: NestedReference | None = None
     qty: Decimal
@@ -133,6 +136,7 @@ class DeliveryNoteListResponse(BaseModel):
 
 class ConvertToInvoiceItemRequest(BaseModel):
     """Single item to bill from a delivery note"""
+
     item_id: UUID
     qty_to_bill: Decimal | float = Field(..., gt=0)
 
@@ -140,6 +144,7 @@ class ConvertToInvoiceItemRequest(BaseModel):
 class ConvertToInvoiceRequest(BaseModel):
     """Request body for converting a delivery note to an invoice.
     Only delivered items (from the DN) can be billed."""
+
     items: list[ConvertToInvoiceItemRequest] = Field(..., min_length=1)
     due_date: datetime | None = None
     remarks: str | None = None
