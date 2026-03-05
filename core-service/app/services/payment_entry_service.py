@@ -833,6 +833,9 @@ class PaymentEntryService:
             "timestamp": datetime.now(UTC),
         })
 
+        # Commit the transaction (payment status update, journal entry, audit log)
+        self.db.commit()
+
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
 

@@ -126,7 +126,7 @@ class PaymentEntryRepository:
                 setattr(payment_entry, key, value)
 
         try:
-            self.db.commit()
+            self.db.flush()  # Flush changes but don't commit - let service handle transaction
             self.db.refresh(payment_entry)
             return payment_entry
         except IntegrityError as e:

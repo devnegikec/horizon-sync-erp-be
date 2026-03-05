@@ -96,3 +96,4 @@ class JournalEntryLine(Base):
     )
 
     journal_entry = relationship("JournalEntry", back_populates="lines")
+    account = relationship("Account", foreign_keys=[account_id])
