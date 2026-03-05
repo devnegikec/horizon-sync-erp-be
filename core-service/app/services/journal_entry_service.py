@@ -121,13 +121,32 @@ class JournalEntryService:
 
     @staticmethod
     def _to_list_item(je) -> dict:
+        lines = []
+        if hasattr(je, 'lines') and je.lines:
+            for line in je.lines:
+                line_dict = {
+                    "id": line.id,
+                    "account_id": line.account_id,
+                    "debit": line.debit,
+                    "credit": line.credit,
+                    "remarks": line.remarks,
+                }
+                # Add account information if available
+                if hasattr(line, 'account') and line.account:
+                    line_dict["account_code"] = line.account.account_code
+                    line_dict["account_name"] = line.account.account_name
+                lines.append(line_dict)
+        
         return {
             "id": je.id,
             "organization_id": je.organization_id,
             "entry_no": je.entry_no,
             "status": je.status.value if je.status else None,
             "posting_date": je.posting_date,
+            "voucher_type": je.voucher_type,
             "total_debit": je.total_debit,
             "total_credit": je.total_credit,
+            "remarks": je.remarks,
+            "lines": lines,
             "created_at": je.created_at,
         }

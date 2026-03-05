@@ -57,14 +57,28 @@ class JournalEntryResponse(JournalEntryBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class JournalEntryLineResponse(BaseModel):
+    id: UUID
+    account_id: UUID
+    account_code: str | None = None
+    account_name: str | None = None
+    debit: Decimal
+    credit: Decimal
+    remarks: str | None = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class JournalEntryListItem(BaseModel):
     id: UUID
     organization_id: UUID
     entry_no: str
     status: str
     posting_date: datetime
+    voucher_type: str | None = None
     total_debit: Decimal
     total_credit: Decimal
+    remarks: str | None = None
+    lines: list[JournalEntryLineResponse] = []
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

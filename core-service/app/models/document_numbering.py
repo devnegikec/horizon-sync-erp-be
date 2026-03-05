@@ -31,6 +31,7 @@ DOCUMENT_TYPES = [
     "item_group",
     "stock_entry",
     "stock_reconciliation",
+    "journal_entry",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -49,6 +50,7 @@ DEFAULT_PREFIXES = {
     "item_group": "IG",
     "stock_entry": "SE",
     "stock_reconciliation": "SREC",
+    "journal_entry": "JE",
 }
 
 
