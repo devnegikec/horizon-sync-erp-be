@@ -5,12 +5,13 @@ from decimal import Decimal
 from typing import Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.currency_master import CurrencyMaster
 from app.models.exchange_rate import ExchangeRate
 from app.services.currency_service import CurrencyService
 
@@ -80,6 +81,34 @@ class CurrencyConversionResponse(BaseModel):
     effective_date: date
 
 
+class CurrencyItem(BaseModel):
+    """Single currency item"""
+
+    id: UUID
+    code: str
+    name: str
+    symbol: Optional[str] = None
+    is_base_currency: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class CurrencyCreate(BaseModel):
+    """Currency creation schema"""
+
+    code: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code (3 uppercase letters)")
+    name: str = Field(..., min_length=1, max_length=100, description="Currency name")
+    symbol: Optional[str] = Field(None, max_length=5, description="Currency symbol")
+
+
+class CurrencyListResponse(BaseModel):
+    """Currency list response schema"""
+
+    currencies: list[CurrencyItem]
+    base_currency: str
+
+
 # Base Currency Endpoints
 
 
@@ -129,6 +158,152 @@ async def set_base_currency(
     service = CurrencyService(db)
     service.set_base_currency(data.base_currency, str(current_user.id))
     return BaseCurrencyResponse(base_currency=data.base_currency)
+
+
+# Currency CRUD Endpoints
+
+
+@router.get(
+    "/currencies",
+    response_model=CurrencyListResponse,
+    summary="List currencies",
+    description="Get the list of currencies for the organization",
+)
+async def list_currencies(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all currencies for the organization.
+
+    Requires authentication.
+
+    **Returns:** List of currencies and the organization's base currency
+    """
+    service = CurrencyService(db)
+    base_currency = service.get_base_currency()
+
+    currencies = (
+        db.query(CurrencyMaster)
+        .filter(
+            CurrencyMaster.organization_id == current_user.organization_id,
+            CurrencyMaster.deleted_at.is_(None),
+        )
+        .order_by(CurrencyMaster.code)
+        .all()
+    )
+
+    return CurrencyListResponse(
+        currencies=[CurrencyItem.model_validate(c) for c in currencies],
+        base_currency=base_currency,
+    )
+
+
+@router.post(
+    "/currencies",
+    response_model=CurrencyItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create currency",
+    description="Add a new currency to the organization",
+)
+async def create_currency(
+    data: CurrencyCreate,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Add a new currency to the organization.
+
+    Requires authentication.
+
+    **Request Body:**
+    - **code**: ISO 4217 currency code (3 uppercase letters)
+    - **name**: Currency name
+    - **symbol**: Currency symbol (optional)
+
+    **Returns:** Created currency
+    """
+    code = data.code.upper()
+
+    # Check for duplicate (active) currency in the same org
+    existing = (
+        db.query(CurrencyMaster)
+        .filter(
+            CurrencyMaster.organization_id == current_user.organization_id,
+            CurrencyMaster.code == code,
+            CurrencyMaster.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Currency '{code}' already exists",
+        )
+
+    currency = CurrencyMaster(
+        organization_id=current_user.organization_id,
+        code=code,
+        name=data.name,
+        symbol=data.symbol,
+        is_base_currency=False,
+        created_by=current_user.id,
+        updated_by=current_user.id,
+    )
+    db.add(currency)
+    db.commit()
+    db.refresh(currency)
+
+    return CurrencyItem.model_validate(currency)
+
+
+@router.delete(
+    "/currencies/{currency_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete currency",
+    description="Soft-delete a currency from the organization",
+)
+async def delete_currency(
+    currency_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Soft-delete a currency.
+
+    Cannot delete the base currency.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **currency_id**: Currency UUID
+
+    **Returns:** 204 No Content on success
+    """
+    currency = (
+        db.query(CurrencyMaster)
+        .filter(
+            CurrencyMaster.id == currency_id,
+            CurrencyMaster.organization_id == current_user.organization_id,
+            CurrencyMaster.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not currency:
+        raise HTTPException(status_code=404, detail="Currency not found")
+
+    if currency.is_base_currency:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete the base currency",
+        )
+
+    currency.deleted_at = datetime.now()
+    currency.updated_by = current_user.id
+    db.commit()
+
+    return None
 
 
 # Exchange Rate Endpoints
@@ -308,8 +483,6 @@ async def update_exchange_rate(
     rate_record = db.query(ExchangeRate).filter(ExchangeRate.id == rate_id).first()
 
     if not rate_record:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Exchange rate not found")
 
     # Update fields
@@ -346,8 +519,6 @@ async def delete_exchange_rate(
     rate_record = db.query(ExchangeRate).filter(ExchangeRate.id == rate_id).first()
 
     if not rate_record:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Exchange rate not found")
 
     db.delete(rate_record)
@@ -401,4 +572,3 @@ async def convert_currency(
         converted_amount=converted_amount,
         effective_date=effective_date,
     )
-
