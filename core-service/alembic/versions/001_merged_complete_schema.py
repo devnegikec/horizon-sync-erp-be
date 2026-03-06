@@ -31,6 +31,11 @@ depends_on = None
 def upgrade() -> None:
     """Create all tables and indexes from merged heads"""
     connection = op.get_bind()
+
+    # Check which tables already exist so we can skip them
+    from sqlalchemy.engine.reflection import Inspector
+    inspector = Inspector.from_engine(connection)
+    existing_tables = set(inspector.get_table_names())
     
     # ======================
     # ENUMS
@@ -118,67 +123,71 @@ def upgrade() -> None:
     """))
     
     # Currency masters table
-    op.create_table(
-        'currency_masters',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('code', sa.String(3), nullable=False),
-        sa.Column('name', sa.String(100), nullable=False), 
-        sa.Column('symbol', sa.String(5), nullable=True),
-        sa.Column('is_base_currency', sa.Boolean, nullable=False, server_default='false'),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
+    if 'currency_masters' not in existing_tables:
+        op.create_table(
+            'currency_masters',
+            sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
+            sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('code', sa.String(3), nullable=False),
+            sa.Column('name', sa.String(100), nullable=False), 
+            sa.Column('symbol', sa.String(5), nullable=True),
+            sa.Column('is_base_currency', sa.Boolean, nullable=False, server_default='false'),
+            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+        )
     
     # Exchange rates table
-    op.create_table(
-        'exchange_rates',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('from_currency', sa.String(3), nullable=False),
-        sa.Column('to_currency', sa.String(3), nullable=False), 
-        sa.Column('rate', sa.Numeric(19, 6), nullable=False),
-        sa.Column('effective_date', sa.Date, nullable=False),
-        sa.Column('captured_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, default=sa.func.now()),
-        sa.UniqueConstraint('from_currency', 'to_currency', 'effective_date', name='uq_exchange_rate_currency_date'),
-        sa.CheckConstraint('rate > 0', name='ck_exchange_rate_positive'),
-    )
+    if 'exchange_rates' not in existing_tables:
+        op.create_table(
+            'exchange_rates',
+            sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
+            sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('from_currency', sa.String(3), nullable=False),
+            sa.Column('to_currency', sa.String(3), nullable=False), 
+            sa.Column('rate', sa.Numeric(19, 6), nullable=False),
+            sa.Column('effective_date', sa.Date, nullable=False),
+            sa.Column('captured_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, default=sa.func.now()),
+            sa.UniqueConstraint('from_currency', 'to_currency', 'effective_date', name='uq_exchange_rate_currency_date'),
+            sa.CheckConstraint('rate > 0', name='ck_exchange_rate_positive'),
+        )
     
     # UOMs table
-    op.create_table(
-        'uoms',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('name', sa.String(50), nullable=False),
-        sa.Column('abbreviation', sa.String(10), nullable=False),
-        sa.Column('description', sa.Text, nullable=True),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True), 
-        sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),  
-        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
+    if 'uoms' not in existing_tables:
+        op.create_table(
+            'uoms',
+            sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
+            sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('name', sa.String(50), nullable=False),
+            sa.Column('abbreviation', sa.String(10), nullable=False),
+            sa.Column('description', sa.Text, nullable=True),
+            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True), 
+            sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),  
+            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+        )
     
     # UOM conversions table  
-    op.create_table(
-        'uom_conversions',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('item_id', postgresql.UUID(as_uuid=True), nullable=False),  # Note: FK to items table if it exists
-        sa.Column('from_uom', sa.String(50), nullable=False),
-        sa.Column('to_uom', sa.String(50), nullable=False),
-        sa.Column('conversion_factor', sa.Numeric(19, 6), nullable=False),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True), 
-        sa.CheckConstraint('conversion_factor > 0', name='ck_uom_conv_positive_factor'),
-    )
+    if 'uom_conversions' not in existing_tables:
+        op.create_table(
+            'uom_conversions',
+            sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
+            sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('item_id', postgresql.UUID(as_uuid=True), nullable=False),  # Note: FK to items table if it exists
+            sa.Column('from_uom', sa.String(50), nullable=False),
+            sa.Column('to_uom', sa.String(50), nullable=False),
+            sa.Column('conversion_factor', sa.Numeric(19, 6), nullable=False),
+            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
+            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True), 
+            sa.CheckConstraint('conversion_factor > 0', name='ck_uom_conv_positive_factor'),
+        )
 
     # Payment entries table
     connection.execute(sa.text("""
@@ -232,43 +241,47 @@ def upgrade() -> None:
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_accounts_org_code ON accounts (organization_id, account_code)"))
     
     # Currency masters indexes
-    op.create_index('ix_currency_masters_org_id', 'currency_masters', ['organization_id'])
-    op.create_index('ix_currency_masters_organization_id', 'currency_masters', ['organization_id'])
-    op.create_index(
-        'uq_currency_org_code', 'currency_masters', ['organization_id', 'code'],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-    )
+    if 'currency_masters' not in existing_tables:
+        op.create_index('ix_currency_masters_org_id', 'currency_masters', ['organization_id'])
+        op.create_index('ix_currency_masters_organization_id', 'currency_masters', ['organization_id'])
+        op.create_index(
+            'uq_currency_org_code', 'currency_masters', ['organization_id', 'code'],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
     
     # Exchange rates indexes
-    op.create_index('ix_exchange_rates_org_id', 'exchange_rates', ['organization_id']) 
-    op.create_index('ix_exchange_rates_currencies', 'exchange_rates', ['from_currency', 'to_currency'])
-    op.create_index('ix_exchange_rates_effective_date', 'exchange_rates', ['effective_date'])
+    if 'exchange_rates' not in existing_tables:
+        op.create_index('ix_exchange_rates_org_id', 'exchange_rates', ['organization_id']) 
+        op.create_index('ix_exchange_rates_currencies', 'exchange_rates', ['from_currency', 'to_currency'])
+        op.create_index('ix_exchange_rates_effective_date', 'exchange_rates', ['effective_date'])
     
     # UOMs indexes
-    op.create_index('ix_uoms_org_id', 'uoms', ['organization_id'])
-    op.create_index('ix_uoms_organization_id', 'uoms', ['organization_id'])
-    op.create_index(
-        'uq_uom_org_name', 'uoms', ['organization_id', 'name'],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-    )
-    op.create_index(
-        'uq_uom_org_abbr', 'uoms', ['organization_id', 'abbreviation'],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-    )
+    if 'uoms' not in existing_tables:
+        op.create_index('ix_uoms_org_id', 'uoms', ['organization_id'])
+        op.create_index('ix_uoms_organization_id', 'uoms', ['organization_id'])
+        op.create_index(
+            'uq_uom_org_name', 'uoms', ['organization_id', 'name'],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
+        op.create_index(
+            'uq_uom_org_abbr', 'uoms', ['organization_id', 'abbreviation'],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
     
     # UOM conversions indexes
-    op.create_index('ix_uom_conversions_organization_id', 'uom_conversions', ['organization_id'])
-    op.create_index('ix_uom_conversions_item', 'uom_conversions', ['item_id'])
-    op.create_index(
-        'uq_uom_conv_org_item_pair',
-        'uom_conversions', 
-        ['organization_id', 'item_id', 'from_uom', 'to_uom'],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-    )
+    if 'uom_conversions' not in existing_tables:
+        op.create_index('ix_uom_conversions_organization_id', 'uom_conversions', ['organization_id'])
+        op.create_index('ix_uom_conversions_item', 'uom_conversions', ['item_id'])
+        op.create_index(
+            'uq_uom_conv_org_item_pair',
+            'uom_conversions', 
+            ['organization_id', 'item_id', 'from_uom', 'to_uom'],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
     
     # Payment entries indexes
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_date ON payment_entries(organization_id, payment_date)"))
