@@ -5,14 +5,14 @@ Revises: None
 Create Date: 2026-02-27
 
 This migration merges all the previous migration heads into a single comprehensive schema.
-It includes all tables from the currency/UOM branch (n4o5p6q7r8s9t0) and the main development 
+It includes all tables from the currency/UOM branch (n4o5p6q7r8s9t0) and the main development
 branch (465d2a56e62e), creating a clean baseline migration.
 
 Tables created:
 - accounts (with AccountType/AccountStatus enums)
-- payment_entries (with payment enums) 
+- payment_entries (with payment enums)
 - currency_masters
-- exchange_rates 
+- exchange_rates
 - uoms
 - uom_conversions
 - And all performance indexes and constraints
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = "001_merged_complete_schema" 
+revision = "001_merged_complete_schema"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -36,11 +36,11 @@ def upgrade() -> None:
     from sqlalchemy.engine.reflection import Inspector
     inspector = Inspector.from_engine(connection)
     existing_tables = set(inspector.get_table_names())
-    
+
     # ======================
     # ENUMS
     # ======================
-    
+
     # Account enums
     connection.execute(sa.text("""
         DO $$ BEGIN
@@ -61,7 +61,7 @@ def upgrade() -> None:
             WHEN duplicate_object THEN null;
         END $$;
     """))
-    
+
     # Payment enums
     connection.execute(sa.text("""
         DO $$ BEGIN
@@ -98,7 +98,7 @@ def upgrade() -> None:
     # ======================
     # TABLES
     # ======================
-    
+
     # Accounts table
     connection.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS accounts (
@@ -121,7 +121,7 @@ def upgrade() -> None:
             CONSTRAINT fk_accounts_parent_account_id FOREIGN KEY (parent_account_id) REFERENCES accounts(id)
         )
     """))
-    
+
     # Currency masters table
     if 'currency_masters' not in existing_tables:
         op.create_table(
@@ -129,7 +129,7 @@ def upgrade() -> None:
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
             sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
             sa.Column('code', sa.String(3), nullable=False),
-            sa.Column('name', sa.String(100), nullable=False), 
+            sa.Column('name', sa.String(100), nullable=False),
             sa.Column('symbol', sa.String(5), nullable=True),
             sa.Column('is_base_currency', sa.Boolean, nullable=False, server_default='false'),
             sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
@@ -138,7 +138,7 @@ def upgrade() -> None:
             sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
             sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         )
-    
+
     # Exchange rates table
     if 'exchange_rates' not in existing_tables:
         op.create_table(
@@ -146,7 +146,7 @@ def upgrade() -> None:
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
             sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column('from_currency', sa.String(3), nullable=False),
-            sa.Column('to_currency', sa.String(3), nullable=False), 
+            sa.Column('to_currency', sa.String(3), nullable=False),
             sa.Column('rate', sa.Numeric(19, 6), nullable=False),
             sa.Column('effective_date', sa.Date, nullable=False),
             sa.Column('captured_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
@@ -154,7 +154,7 @@ def upgrade() -> None:
             sa.UniqueConstraint('from_currency', 'to_currency', 'effective_date', name='uq_exchange_rate_currency_date'),
             sa.CheckConstraint('rate > 0', name='ck_exchange_rate_positive'),
         )
-    
+
     # UOMs table
     if 'uoms' not in existing_tables:
         op.create_table(
@@ -164,14 +164,14 @@ def upgrade() -> None:
             sa.Column('name', sa.String(50), nullable=False),
             sa.Column('abbreviation', sa.String(10), nullable=False),
             sa.Column('description', sa.Text, nullable=True),
-            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True), 
+            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),  
+            sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
             sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         )
-    
-    # UOM conversions table  
+
+    # UOM conversions table
     if 'uom_conversions' not in existing_tables:
         op.create_table(
             'uom_conversions',
@@ -185,7 +185,7 @@ def upgrade() -> None:
             sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
             sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True, default=sa.func.now()),
-            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True), 
+            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
             sa.CheckConstraint('conversion_factor > 0', name='ck_uom_conv_positive_factor'),
         )
 
@@ -225,21 +225,21 @@ def upgrade() -> None:
     """))
 
     # ======================
-    # INDEXES 
+    # INDEXES
     # ======================
-    
+
     # Accounts indexes
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_accounts_organization_id ON accounts (organization_id)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_accounts_account_code ON accounts (account_code)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_accounts_account_type ON accounts (account_type)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_accounts_parent_account_id ON accounts (parent_account_id)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_accounts_status ON accounts (status)"))
-    
+
     # Performance indexes for accounts
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_accounts_org_type ON accounts (organization_id, account_type)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_accounts_org_status ON accounts (organization_id, status)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_accounts_org_code ON accounts (organization_id, account_code)"))
-    
+
     # Currency masters indexes
     if 'currency_masters' not in existing_tables:
         op.create_index('ix_currency_masters_org_id', 'currency_masters', ['organization_id'])
@@ -249,13 +249,13 @@ def upgrade() -> None:
             unique=True,
             postgresql_where=sa.text("deleted_at IS NULL"),
         )
-    
+
     # Exchange rates indexes
     if 'exchange_rates' not in existing_tables:
-        op.create_index('ix_exchange_rates_org_id', 'exchange_rates', ['organization_id']) 
+        op.create_index('ix_exchange_rates_org_id', 'exchange_rates', ['organization_id'])
         op.create_index('ix_exchange_rates_currencies', 'exchange_rates', ['from_currency', 'to_currency'])
         op.create_index('ix_exchange_rates_effective_date', 'exchange_rates', ['effective_date'])
-    
+
     # UOMs indexes
     if 'uoms' not in existing_tables:
         op.create_index('ix_uoms_org_id', 'uoms', ['organization_id'])
@@ -270,19 +270,19 @@ def upgrade() -> None:
             unique=True,
             postgresql_where=sa.text("deleted_at IS NULL"),
         )
-    
+
     # UOM conversions indexes
     if 'uom_conversions' not in existing_tables:
         op.create_index('ix_uom_conversions_organization_id', 'uom_conversions', ['organization_id'])
         op.create_index('ix_uom_conversions_item', 'uom_conversions', ['item_id'])
         op.create_index(
             'uq_uom_conv_org_item_pair',
-            'uom_conversions', 
+            'uom_conversions',
             ['organization_id', 'item_id', 'from_uom', 'to_uom'],
             unique=True,
             postgresql_where=sa.text("deleted_at IS NULL"),
         )
-    
+
     # Payment entries indexes
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_date ON payment_entries(organization_id, payment_date)"))
     connection.execute(sa.text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_party ON payment_entries(organization_id, party_id)"))
@@ -293,7 +293,7 @@ def upgrade() -> None:
     # ======================
     # CONSTRAINTS
     # ======================
-    
+
     # Accounts unique constraint
     connection.execute(sa.text("""
         DO $$
@@ -303,13 +303,13 @@ def upgrade() -> None:
             END IF;
         END $$;
     """))
-    
+
     print("✅ All tables, indexes, and constraints created successfully")
     print("📋 Tables created:")
     print("   - accounts (with AccountType/AccountStatus enums)")
-    print("   - currency_masters")  
+    print("   - currency_masters")
     print("   - exchange_rates")
-    print("   - uoms") 
+    print("   - uoms")
     print("   - uom_conversions")
     print("   - payment_entries (with payment enums)")
     print("🚀 Database schema is now unified under single migration!")
@@ -318,18 +318,18 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Drop all tables and enums"""
     connection = op.get_bind()
-    
+
     # Drop tables in reverse order (considering FKs)
     connection.execute(sa.text("DROP TABLE IF EXISTS payment_entries"))
     op.drop_table('uom_conversions')
-    op.drop_table('uoms') 
+    op.drop_table('uoms')
     op.drop_table('exchange_rates')
     op.drop_table('currency_masters')
     connection.execute(sa.text("DROP TABLE IF EXISTS accounts"))
-    
+
     # Drop enums
     connection.execute(sa.text("DROP TYPE IF EXISTS payment_source"))
-    connection.execute(sa.text("DROP TYPE IF EXISTS payment_status")) 
+    connection.execute(sa.text("DROP TYPE IF EXISTS payment_status"))
     connection.execute(sa.text("DROP TYPE IF EXISTS payment_mode"))
     connection.execute(sa.text("DROP TYPE IF EXISTS payment_type"))
     connection.execute(sa.text("DROP TYPE IF EXISTS accountstatus"))

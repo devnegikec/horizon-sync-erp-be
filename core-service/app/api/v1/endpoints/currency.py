@@ -572,4 +572,3 @@ async def convert_currency(
         converted_amount=converted_amount,
         effective_date=effective_date,
     )
-
