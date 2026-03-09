@@ -498,6 +498,17 @@ class BankAccountService:
     ) -> None:
         """Validate business rules for creating a bank account"""
         
+        # Get GL account to check its type
+        gl_account = self._get_gl_account_by_id(gl_account_id, organization_id)
+        
+        # Validate GL account type - warn if not ASSET or LIABILITY
+        if gl_account.account_type not in ['asset', 'liability']:
+            logger.warning(
+                f"Bank account being linked to GL account {gl_account.account_code} "
+                f"of type {gl_account.account_type}. Bank accounts are typically linked to "
+                f"ASSET (for regular bank accounts) or LIABILITY (for credit cards/overdrafts) accounts."
+            )
+        
         # Check for duplicate IBAN within organization
         if data.iban:
             existing_iban = (
