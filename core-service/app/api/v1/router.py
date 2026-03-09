@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     put_away_rules,
     quality_inspections,
     quotations,
+    reconciliations,
     rfqs,
     sales_orders,
     serial_numbers,
@@ -92,6 +93,12 @@ api_router.include_router(
     bank_accounts.router,
     prefix="",
     tags=["Bank Accounts"],
+)
+# Bank Reconciliations
+api_router.include_router(
+    reconciliations.router,
+    prefix="/reconciliations",
+    tags=["Bank Reconciliations"],
 )
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 # UOM & Currency Master

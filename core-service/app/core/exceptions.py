@@ -391,3 +391,8 @@ class InvalidAccountStateException(CoreServiceException):
 class UnauthorizedException(CoreServiceException):
     """Raised when user doesn't have permission for the operation"""
     pass
+
+
+class ReconciledTransactionDeletionException(CoreServiceException):
+    """Raised when attempting to delete a bank account with reconciled transactions"""
+    pass

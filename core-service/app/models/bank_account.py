@@ -9,12 +9,14 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
+    JSON,
     Numeric,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -47,10 +49,13 @@ class BankAccount(Base):
     routing_number = Column(String(20), nullable=True)       # US banks, will be encrypted
     branch_name = Column(String(100), nullable=True)
     branch_code = Column(String(20), nullable=True)
-    sort_code = Column(String(10), nullable=True)            # UK banks
-    bsb_number = Column(String(10), nullable=True)           # Australian banks
+    sort_code = Column(String(10), nullable=True)            # UK banks, will be encrypted
+    bsb_number = Column(String(10), nullable=True)           # Australian banks, will be encrypted
+    ifsc_code = Column(String(11), nullable=True)            # Indian banks, will be encrypted
 
     # Account metadata
+    country_code = Column(String(2), nullable=False)         # ISO 3166-1 alpha-2 country code
+    currency = Column(String(3), nullable=False)             # ISO 4217 currency code
     account_type = Column(String(50), nullable=True)         # checking, savings, business
     account_purpose = Column(String(50), nullable=True)      # operating, payroll, tax
     is_primary = Column(Boolean, nullable=False, default=False)
@@ -90,6 +95,7 @@ class BankAccount(Base):
 
     # Relationships
     gl_account = relationship("Account", back_populates="bank_accounts")
+    transactions = relationship("BankTransaction", back_populates="bank_account", cascade="all, delete-orphan")
     history = relationship("BankAccountHistory", back_populates="bank_account", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -146,17 +152,19 @@ class BankAccountHistory(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bank_account_id = Column(
         UUID(as_uuid=True), 
-        ForeignKey("bank_accounts.id"), 
-        nullable=False
+        ForeignKey("bank_accounts.id", ondelete="CASCADE"), 
+        nullable=False,
+        index=True
     )
     action_type = Column(String(50), nullable=False)          # created, updated, activated, deactivated
-    old_values = Column(JSONB, nullable=True)
-    new_values = Column(JSONB, nullable=True)
+    old_values = Column(JSON, nullable=True)
+    new_values = Column(JSON, nullable=True)
     changed_by = Column(String(100), nullable=False)
     changed_at = Column(
         DateTime(timezone=True), 
         nullable=False, 
-        default=lambda: datetime.now(UTC)
+        default=lambda: datetime.now(UTC),
+        index=True
     )
     reason = Column(Text, nullable=True)
 

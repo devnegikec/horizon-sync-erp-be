@@ -23,6 +23,7 @@ class BankAccountBase(BaseModel):
     branch_code: Optional[str] = Field(None, max_length=20, description="Bank branch code")
     sort_code: Optional[str] = Field(None, max_length=10, description="Sort code (UK)")
     bsb_number: Optional[str] = Field(None, max_length=10, description="BSB number (Australia)")
+    ifsc_code: Optional[str] = Field(None, max_length=11, description="IFSC code (India)")
     
     # Account metadata
     account_type: Optional[str] = Field(None, max_length=50, description="Account type (checking, savings, etc.)")
@@ -101,6 +102,16 @@ class BankAccountBase(BaseModel):
                 raise ValueError('Invalid BSB number format. Must be 6 digits')
         return v
 
+    @field_validator('ifsc_code')
+    @classmethod
+    def validate_ifsc_code(cls, v: Optional[str]) -> Optional[str]:
+        """Validate Indian IFSC code format"""
+        if v:
+            v = v.upper().replace(' ', '')
+            if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', v):
+                raise ValueError('Invalid IFSC code format. Expected format: AAAA0BBBBBB (A=bank, 0=zero, B=branch)')
+        return v
+
     @field_validator('account_type')
     @classmethod
     def validate_account_type(cls, v: Optional[str]) -> Optional[str]:
@@ -150,6 +161,7 @@ class BankAccountUpdate(BaseModel):
     branch_code: Optional[str] = Field(None, max_length=20)
     sort_code: Optional[str] = Field(None, max_length=10)
     bsb_number: Optional[str] = Field(None, max_length=10)
+    ifsc_code: Optional[str] = Field(None, max_length=11)
     
     account_type: Optional[str] = Field(None, max_length=50)
     account_purpose: Optional[str] = Field(None, max_length=50)

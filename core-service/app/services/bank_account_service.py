@@ -14,8 +14,10 @@ from app.core.exceptions import (
     DuplicateIbanException,
     InvalidAccountStateException,
     UnauthorizedException,
+    ReconciledTransactionDeletionException,
 )
 from app.models.bank_account import BankAccount, BankAccountHistory
+from app.models.bank_transaction import BankTransaction
 from app.models.chart_of_account import Account
 from app.schemas.bank_account import (
     BankAccountCreate,
@@ -274,6 +276,26 @@ class BankAccountService:
         
         # Get existing bank account
         bank_account = self.get_bank_account_by_id(bank_account_id, organization_id)
+        
+        # Check for reconciled transactions
+        reconciled_count = (
+            self.db.query(func.count(BankTransaction.id))
+            .filter(
+                and_(
+                    BankTransaction.bank_account_id == bank_account_id,
+                    BankTransaction.transaction_status == 'reconciled'
+                )
+            )
+            .scalar()
+        )
+        
+        if reconciled_count > 0:
+            raise ReconciledTransactionDeletionException(
+                f"Cannot delete bank account {bank_account_id}: "
+                f"it has {reconciled_count} reconciled transaction(s). "
+                f"Reconciled transactions must not be deleted to maintain data integrity."
+            )
+        
         old_values = self._bank_account_to_dict(bank_account)
         
         # Create audit history before deletion
@@ -426,6 +448,26 @@ class BankAccountService:
                 account_type or "unspecified": count for account_type, count in type_stats
             }
         )
+
+    def get_bank_account_history(
+        self, 
+        bank_account_id: UUID, 
+        organization_id: UUID
+    ) -> List[BankAccountHistory]:
+        """Get complete audit history for a bank account"""
+        
+        # Validate bank account exists and belongs to organization
+        self.get_bank_account_by_id(bank_account_id, organization_id)
+        
+        # Get history records ordered by most recent first
+        history = (
+            self.db.query(BankAccountHistory)
+            .filter(BankAccountHistory.bank_account_id == bank_account_id)
+            .order_by(BankAccountHistory.changed_at.desc())
+            .all()
+        )
+        
+        return history
 
     # Private helper methods
 

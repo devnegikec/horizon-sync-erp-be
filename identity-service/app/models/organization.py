@@ -42,6 +42,7 @@ class Organization(Base):
     )
     industry = Column(String(100))
     tax_id = Column(String(100))
+    base_currency = Column(String(3), default="USD")  # ISO 4217 currency code
 
     # Branding
     logo_url = Column(String(500))
