@@ -44,9 +44,7 @@ class ExchangeRateService:
         """
         # Validate from_currency != to_currency
         if rate_data.from_currency == rate_data.to_currency:
-            raise ValidationException(
-                "from_currency and to_currency must be different"
-            )
+            raise ValidationException("from_currency and to_currency must be different")
 
         # Default effective_date to today if not provided
         effective_date = rate_data.effective_date or date.today()

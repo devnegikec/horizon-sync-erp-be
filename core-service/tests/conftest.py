@@ -103,11 +103,11 @@ def test_item_group_data(mock_current_user):
 @pytest.fixture
 def sample_accounts(db_session, mock_current_user):
     """Create sample accounts for testing"""
+    from app.models.base import AccountStatus, AccountType
     from app.models.chart_of_account import Account
-    from app.models.base import AccountType, AccountStatus
-    
+
     accounts = []
-    
+
     # Create accounts of different types
     account_data = [
         ("1000", "Cash", AccountType.ASSET),
@@ -120,7 +120,7 @@ def sample_accounts(db_session, mock_current_user):
         ("5000", "Cost of Goods Sold", AccountType.EXPENSE),
         ("5100", "Rent Expense", AccountType.EXPENSE),
     ]
-    
+
     for code, name, acc_type in account_data:
         account = Account(
             account_code=code,
@@ -135,12 +135,12 @@ def sample_accounts(db_session, mock_current_user):
         )
         db_session.add(account)
         accounts.append(account)
-    
+
     db_session.commit()
-    
+
     for account in accounts:
         db_session.refresh(account)
-    
+
     return accounts
     return {
         "name": "Test Electronics",
@@ -179,7 +179,7 @@ def sample_user_id(mock_current_user):
 def sample_item_id(db_session, mock_current_user):
     """Create a sample item and return its ID"""
     from app.models.item import Item
-    
+
     item = Item(
         id=uuid.uuid4(),
         organization_id=mock_current_user.organization_id,
@@ -203,6 +203,8 @@ def sample_item_id(db_session, mock_current_user):
 def sample_account_head_id():
     """Sample account head ID for testing"""
     return uuid.uuid4()
+
+
 def auth_headers():
     """Return headers with Authorization for testing"""
     return {"Authorization": "Bearer test-token"}
@@ -211,20 +213,21 @@ def auth_headers():
 @pytest.fixture
 def sample_organization(mock_current_user):
     """Create a sample organization for testing"""
+
     # Return a simple object with an id attribute
     class Organization:
         def __init__(self, id):
             self.id = id
-    
+
     return Organization(id=mock_current_user.organization_id)
 
 
 @pytest.fixture
 def sample_account(db_session, mock_current_user):
     """Create a sample account for testing"""
+    from app.models.base import AccountStatus, AccountType
     from app.models.chart_of_account import Account
-    from app.models.base import AccountType, AccountStatus
-    
+
     account = Account(
         account_code="1000-01",
         account_name="Test Asset Account",
@@ -245,9 +248,9 @@ def sample_account(db_session, mock_current_user):
 @pytest.fixture
 def sample_parent_account(db_session, mock_current_user):
     """Create a sample parent account with children for testing"""
+    from app.models.base import AccountStatus, AccountType
     from app.models.chart_of_account import Account
-    from app.models.base import AccountType, AccountStatus
-    
+
     # Create parent account
     parent = Account(
         account_code="1000-00",
@@ -262,7 +265,7 @@ def sample_parent_account(db_session, mock_current_user):
     )
     db_session.add(parent)
     db_session.flush()
-    
+
     # Create child account
     child = Account(
         account_code="1000-01-CHILD",

@@ -11,10 +11,9 @@ Usage:
 """
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
 
 # Database URL - can be overridden via environment variable
 DATABASE_URL = "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
@@ -116,7 +115,6 @@ accounts_data = [
         "description": "Contra asset account for depreciation",
         "parent_code": "1200",
     },
-
     # ============================================
     # LIABILITIES (2000-2999)
     # ============================================
@@ -180,7 +178,6 @@ accounts_data = [
         "description": "Loans and bonds payable",
         "parent_code": "2200",
     },
-
     # ============================================
     # EQUITY (3000-3999)
     # ============================================
@@ -216,7 +213,6 @@ accounts_data = [
         "description": "Owner withdrawals from the business",
         "parent_code": "3000",
     },
-
     # ============================================
     # INCOME/REVENUE (4000-4999)
     # ============================================
@@ -288,7 +284,6 @@ accounts_data = [
         "description": "Interest earned on investments",
         "parent_code": "4300",
     },
-
     # ============================================
     # EXPENSES (5000-5999)
     # ============================================
@@ -426,7 +421,7 @@ accounts_data = [
 def seed_chart_of_accounts():
     """Insert Chart of Accounts seed data using raw SQL to avoid model relationship issues"""
     engine = create_engine(DATABASE_URL)
-    
+
     with engine.connect() as conn:
         try:
             print("=" * 70)
@@ -450,20 +445,26 @@ def seed_chart_of_accounts():
                         SELECT id FROM accounts 
                         WHERE organization_id = :org_id AND account_code = :code
                     """),
-                    {"org_id": str(ORG_ID), "code": account_code}
+                    {"org_id": str(ORG_ID), "code": account_code},
                 )
                 existing = result.fetchone()
 
                 if existing:
-                    print(f"  ⊘ {account_code} - {account_data['account_name']} (already exists)")
+                    print(
+                        f"  ⊘ {account_code} - {account_data['account_name']} (already exists)"
+                    )
                     account_map[account_code] = existing[0]
                     skipped_count += 1
                     continue
 
                 # Create account without parent first
                 account_id = str(uuid.uuid4())
-                account_type_value = account_data["account_type"].value if hasattr(account_data["account_type"], 'value') else account_data["account_type"]
-                
+                account_type_value = (
+                    account_data["account_type"].value
+                    if hasattr(account_data["account_type"], "value")
+                    else account_data["account_type"]
+                )
+
                 conn.execute(
                     text("""
                         INSERT INTO accounts (
@@ -490,7 +491,7 @@ def seed_chart_of_accounts():
                         "updated_by": ADMIN_USER,
                         "created_at": datetime.now(UTC),
                         "updated_at": datetime.now(UTC),
-                    }
+                    },
                 )
 
                 account_map[account_code] = account_id
@@ -525,7 +526,7 @@ def seed_chart_of_accounts():
                                 SET parent_account_id = :parent_id
                                 WHERE id = :account_id
                             """),
-                            {"parent_id": parent_id, "account_id": account_id}
+                            {"parent_id": parent_id, "account_id": account_id},
                         )
                         hierarchy_count += 1
                         print(f"  ↳ {account_code} → parent: {parent_code}")
@@ -537,30 +538,36 @@ def seed_chart_of_accounts():
             print("\n" + "=" * 70)
             print("Seeding Complete!")
             print("=" * 70)
-            print(f"\n📊 Summary:")
+            print("\n📊 Summary:")
             print(f"  • Accounts created: {created_count}")
             print(f"  • Accounts skipped (already exist): {skipped_count}")
             print(f"  • Parent-child relationships: {hierarchy_count}")
 
             # Display account breakdown by type
-            print(f"\n📈 Account Breakdown by Type:")
+            print("\n📈 Account Breakdown by Type:")
             type_counts = {}
             for a in accounts_data:
-                account_type = a["account_type"].value if hasattr(a["account_type"], 'value') else a["account_type"]
+                account_type = (
+                    a["account_type"].value
+                    if hasattr(a["account_type"], "value")
+                    else a["account_type"]
+                )
                 type_counts[account_type] = type_counts.get(account_type, 0) + 1
-            
+
             for account_type, count in sorted(type_counts.items()):
                 print(f"  • {account_type.upper()}: {count} accounts")
 
             # Display sample accounts
-            print(f"\n💡 Sample Accounts:")
-            print(f"  • Assets: 1110 (Cash), 1120 (Accounts Receivable), 1130 (Inventory)")
-            print(f"  • Liabilities: 2110 (Accounts Payable), 2120 (Accrued Expenses)")
-            print(f"  • Equity: 3100 (Owner's Capital), 3200 (Retained Earnings)")
-            print(f"  • Income: 4110 (Domestic Sales), 4200 (Service Revenue)")
-            print(f"  • Expenses: 5110 (Material Costs), 5210 (Salaries and Wages)")
+            print("\n💡 Sample Accounts:")
+            print(
+                "  • Assets: 1110 (Cash), 1120 (Accounts Receivable), 1130 (Inventory)"
+            )
+            print("  • Liabilities: 2110 (Accounts Payable), 2120 (Accrued Expenses)")
+            print("  • Equity: 3100 (Owner's Capital), 3200 (Retained Earnings)")
+            print("  • Income: 4110 (Domestic Sales), 4200 (Service Revenue)")
+            print("  • Expenses: 5110 (Material Costs), 5210 (Salaries and Wages)")
 
-            print(f"\n✓ Chart of Accounts seed data inserted successfully!")
+            print("\n✓ Chart of Accounts seed data inserted successfully!")
             print("=" * 70)
 
         except Exception as e:

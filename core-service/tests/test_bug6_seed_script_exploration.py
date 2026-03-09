@@ -18,56 +18,59 @@ EXPECTED BEHAVIOR ON FIXED CODE:
 - Accounts will have proper parent-child relationships
 """
 
-import os
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
 import pytest
-from sqlalchemy import text
 
 
 def test_bug6_admin_seed_calls_wrong_script():
     """
     Test that admin seed endpoint calls scripts/seed_data.py (inventory script)
     instead of seed_chart_of_accounts.py (accounts script).
-    
+
     This test will PASS on unfixed code, confirming the bug exists.
     """
     # Get the admin.py file path
-    admin_file = Path(__file__).parent.parent / "app" / "api" / "v1" / "endpoints" / "admin.py"
-    
+    admin_file = (
+        Path(__file__).parent.parent / "app" / "api" / "v1" / "endpoints" / "admin.py"
+    )
+
     # Read the admin.py file
-    with open(admin_file, 'r') as f:
+    with open(admin_file) as f:
         content = f.read()
-    
+
     # Check that the script path points to scripts/seed_data.py
-    assert 'scripts" / "seed_data.py"' in content, \
+    assert 'scripts" / "seed_data.py"' in content, (
         "Admin endpoint should call scripts/seed_data.py (wrong script) on unfixed code"
-    
+    )
+
     # Verify it does NOT point to seed_chart_of_accounts.py
-    assert 'seed_chart_of_accounts.py' not in content, \
+    assert "seed_chart_of_accounts.py" not in content, (
         "Admin endpoint should NOT call seed_chart_of_accounts.py on unfixed code"
-    
-    print("\n✓ Counterexample confirmed: Admin endpoint calls wrong script (scripts/seed_data.py)")
+    )
+
+    print(
+        "\n✓ Counterexample confirmed: Admin endpoint calls wrong script (scripts/seed_data.py)"
+    )
 
 
 def test_bug6_seed_creates_accounts_without_parents(db_session, mock_current_user):
     """
     Test that when seed script runs, it creates accounts with NULL parent_account_id.
-    
+
     This simulates what happens when scripts/seed_data.py is called instead of
     seed_chart_of_accounts.py. The inventory seed script doesn't create chart of accounts
     with proper hierarchy.
-    
+
     This test will PASS on unfixed code, confirming accounts lack parent relationships.
     """
+    from app.models.base import AccountStatus, AccountType
     from app.models.chart_of_account import Account
-    from app.models.base import AccountType, AccountStatus
-    
+
     # Simulate what scripts/seed_data.py would do - create accounts without parent_account_id
     # (The inventory seed script doesn't create chart of accounts at all, but if it did,
     # it wouldn't set up the hierarchy)
-    
+
     # Create accounts without parent relationships (simulating wrong seed script behavior)
     accounts_without_parents = [
         {
@@ -89,7 +92,7 @@ def test_bug6_seed_creates_accounts_without_parents(db_session, mock_current_use
             "parent_account_id": None,  # Should have parent "1100" but doesn't
         },
     ]
-    
+
     created_accounts = []
     for acc_data in accounts_without_parents:
         account = Account(
@@ -106,30 +109,31 @@ def test_bug6_seed_creates_accounts_without_parents(db_session, mock_current_use
         )
         db_session.add(account)
         created_accounts.append(account)
-    
+
     db_session.commit()
-    
+
     # Verify all accounts have NULL parent_account_id (bug condition)
     for account in created_accounts:
         db_session.refresh(account)
-        assert account.parent_account_id is None, \
+        assert account.parent_account_id is None, (
             f"Account {account.account_code} should have NULL parent_account_id on unfixed code"
-    
+        )
+
     print("\n✓ Counterexample confirmed: Seeded accounts have NULL parent_account_id")
 
 
 def test_bug6_current_assets_has_no_parent(db_session, mock_current_user):
     """
     Test specific case: "1100 - Current Assets" has no parent account.
-    
+
     In the correct hierarchy, "1100 - Current Assets" should have parent "1000 - Assets".
     This test verifies that on unfixed code, this relationship is missing.
-    
+
     This test will PASS on unfixed code, confirming the specific bug case.
     """
+    from app.models.base import AccountStatus, AccountType
     from app.models.chart_of_account import Account
-    from app.models.base import AccountType, AccountStatus
-    
+
     # Create "1000 - Assets" (should be parent)
     assets_account = Account(
         account_code="1000",
@@ -145,7 +149,7 @@ def test_bug6_current_assets_has_no_parent(db_session, mock_current_user):
     )
     db_session.add(assets_account)
     db_session.flush()
-    
+
     # Create "1100 - Current Assets" WITHOUT parent (simulating bug)
     current_assets_account = Account(
         account_code="1100",
@@ -161,18 +165,20 @@ def test_bug6_current_assets_has_no_parent(db_session, mock_current_user):
     )
     db_session.add(current_assets_account)
     db_session.commit()
-    
+
     # Refresh to get latest data
     db_session.refresh(current_assets_account)
-    
+
     # Verify "1100 - Current Assets" has no parent (bug condition)
-    assert current_assets_account.parent_account_id is None, \
+    assert current_assets_account.parent_account_id is None, (
         "1100 - Current Assets should have NULL parent_account_id on unfixed code"
-    
+    )
+
     # Verify it does NOT have "1000 - Assets" as parent
-    assert current_assets_account.parent_account_id != assets_account.id, \
+    assert current_assets_account.parent_account_id != assets_account.id, (
         "1100 - Current Assets should NOT have 1000 - Assets as parent on unfixed code"
-    
+    )
+
     print("\n✓ Counterexample confirmed: '1100 - Current Assets' has no parent account")
     print(f"   Expected parent: {assets_account.id} (1000 - Assets)")
     print(f"   Actual parent: {current_assets_account.parent_account_id} (NULL)")
@@ -181,7 +187,7 @@ def test_bug6_current_assets_has_no_parent(db_session, mock_current_user):
 def test_bug6_counterexample_summary():
     """
     Document the counterexample for Bug 6.
-    
+
     This test always passes and serves as documentation of the bug.
     """
     counterexample = """
@@ -203,7 +209,7 @@ def test_bug6_counterexample_summary():
     - This will create accounts with proper parent-child hierarchy
     - "1100 - Current Assets" will have parent_account_id pointing to "1000 - Assets"
     """
-    
+
     print(counterexample)
     assert True, "Counterexample documented"
 

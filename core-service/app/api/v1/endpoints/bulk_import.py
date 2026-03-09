@@ -1,25 +1,22 @@
 """API endpoints for bulk item import operations"""
 
 import logging
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.bulk_operations import (
     BulkImportValidator,
     FileFormat,
-    ImportTemplate,
 )
-from app.dependencies import get_db, get_current_user
+from app.dependencies import get_current_user, get_db
 from app.schemas.bulk_operations import (
-    BulkImportJobCreate,
     BulkImportJobDetailResponse,
     BulkImportJobResponse,
     ImportErrorDetail,
-    PaginatedBulkImportResponse,
     ImportTemplateDownloadResponse,
+    PaginatedBulkImportResponse,
 )
 from app.services.bulk_import_service import BulkImportService
 

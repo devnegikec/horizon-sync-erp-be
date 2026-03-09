@@ -10,7 +10,6 @@ from app.core.exceptions import (
 )
 from app.models.base import AccountStatus, AccountType
 from app.models.chart_of_account import Account
-from app.models.default_account import DefaultAccount
 from app.services.default_account_service import DefaultAccountService
 
 
@@ -104,7 +103,6 @@ def inactive_account(db_session, organization_id):
 def default_account_service(db_session):
     """Create DefaultAccountService instance"""
     return DefaultAccountService(db_session)
-
 
 
 class TestSetDefaultAccount:
@@ -247,7 +245,6 @@ class TestSetDefaultAccount:
             organization_id, transaction_type="inventory_purchase"
         )
         assert len(defaults) == 2
-
 
 
 class TestGetDefaultAccount:

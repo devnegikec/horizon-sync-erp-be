@@ -1,10 +1,10 @@
 """Audit logger service for tracking account changes"""
 
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, desc
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.models.account_audit_log import AccountAuditLog, AuditAction
@@ -21,9 +21,9 @@ class AuditLogger:
         account_id: UUID,
         action: AuditAction,
         user_id: str,
-        old_values: Optional[Dict[str, Any]] = None,
-        new_values: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        old_values: dict[str, Any] | None = None,
+        new_values: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AccountAuditLog:
         """
         Log an account change with before/after values.
@@ -41,7 +41,7 @@ class AuditLogger:
         """
         # Build changes dictionary with old and new values
         changes = {}
-        
+
         if action == AuditAction.CREATE:
             # For CREATE, only new values matter
             changes = {"new": new_values or {}}
@@ -68,8 +68,8 @@ class AuditLogger:
         return audit_entry
 
     def _build_changes_dict(
-        self, old_values: Dict[str, Any], new_values: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
+        self, old_values: dict[str, Any], new_values: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
         """
         Build a changes dictionary showing only fields that changed.
 
@@ -121,12 +121,12 @@ class AuditLogger:
     def get_audit_trail(
         self,
         account_id: UUID,
-        action_filter: Optional[str] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        action_filter: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> List[AccountAuditLog]:
+    ) -> list[AccountAuditLog]:
         """
         Get audit trail for an account with optional filtering.
 
@@ -166,9 +166,9 @@ class AuditLogger:
     def get_audit_count(
         self,
         account_id: UUID,
-        action_filter: Optional[str] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        action_filter: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> int:
         """
         Get count of audit entries for pagination.

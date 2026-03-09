@@ -1,23 +1,25 @@
 """Tests for PaymentEntryService cancel_payment method"""
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
-from app.models.base import PaymentEntryStatus, PaymentAuditAction, PaymentSource, InvoiceType
+from app.models.base import (
+    PaymentAuditAction,
+    PaymentEntryStatus,
+    PaymentSource,
+)
 from app.models.customer import Customer
 from app.models.invoice import Invoice
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
-from app.services.payment_entry_service import PaymentEntryService
-from app.repositories.payment_entry_repository import PaymentEntryRepository
-from app.repositories.payment_reference_repository import PaymentReferenceRepository
 from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
-from app.services.invoice_status_service import InvoiceStatusService
+from app.repositories.payment_reference_repository import PaymentReferenceRepository
+from app.services.payment_entry_service import PaymentEntryService
 
 
 class TestCancelPayment:
@@ -28,7 +30,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         # Create customer
         customer = Customer(
             id=uuid4(),
@@ -39,7 +41,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         # Create confirmed payment entry
         payment_entry = PaymentEntry(
             id=uuid4(),
@@ -59,7 +61,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
         cancellation_reason = "Customer requested refund"
 
@@ -80,7 +82,9 @@ class TestCancelPayment:
         # Verify audit log entry created
         audit_repo = PaymentAuditLogRepository(db_session)
         audit_logs = audit_repo.get_by_payment_id(payment_entry.id, org_id)
-        cancel_logs = [log for log in audit_logs if log.action == PaymentAuditAction.CANCEL]
+        cancel_logs = [
+            log for log in audit_logs if log.action == PaymentAuditAction.CANCEL
+        ]
         assert len(cancel_logs) == 1
         assert cancel_logs[0].new_values["cancellation_reason"] == cancellation_reason
 
@@ -89,7 +93,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         customer = Customer(
             id=uuid4(),
             organization_id=org_id,
@@ -99,7 +103,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         # Create draft payment entry
         payment_entry = PaymentEntry(
             id=uuid4(),
@@ -117,7 +121,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
         cancellation_reason = "Test cancellation"
 
@@ -137,7 +141,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         customer = Customer(
             id=uuid4(),
             organization_id=org_id,
@@ -147,7 +151,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         payment_entry = PaymentEntry(
             id=uuid4(),
             organization_id=org_id,
@@ -166,7 +170,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
 
         # Act & Assert - Test with empty string
@@ -196,7 +200,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         customer = Customer(
             id=uuid4(),
             organization_id=org_id,
@@ -206,7 +210,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         # Create invoice with correct field name
         invoice = Invoice(
             id=uuid4(),
@@ -222,7 +226,7 @@ class TestCancelPayment:
         )
         db_session.add(invoice)
         db_session.commit()
-        
+
         # Create confirmed payment entry
         payment_entry = PaymentEntry(
             id=uuid4(),
@@ -242,7 +246,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         # Create payment reference
         payment_ref = PaymentReference(
             id=uuid4(),
@@ -256,7 +260,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_ref)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
         cancellation_reason = "Payment error"
 
@@ -282,7 +286,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         customer = Customer(
             id=uuid4(),
             organization_id=org_id,
@@ -292,7 +296,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         payment_entry = PaymentEntry(
             id=uuid4(),
             organization_id=org_id,
@@ -311,7 +315,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
         cancellation_reason = "Customer dispute"
 
@@ -326,7 +330,9 @@ class TestCancelPayment:
         # Assert
         audit_repo = PaymentAuditLogRepository(db_session)
         audit_logs = audit_repo.get_by_payment_id(payment_entry.id, org_id)
-        cancel_logs = [log for log in audit_logs if log.action == PaymentAuditAction.CANCEL]
+        cancel_logs = [
+            log for log in audit_logs if log.action == PaymentAuditAction.CANCEL
+        ]
 
         assert len(cancel_logs) == 1
         assert cancel_logs[0].action == PaymentAuditAction.CANCEL
@@ -360,7 +366,7 @@ class TestCancelPayment:
         # Arrange
         org_id = uuid4()
         user_id = uuid4()
-        
+
         customer = Customer(
             id=uuid4(),
             organization_id=org_id,
@@ -370,7 +376,7 @@ class TestCancelPayment:
         )
         db_session.add(customer)
         db_session.commit()
-        
+
         payment_entry = PaymentEntry(
             id=uuid4(),
             organization_id=org_id,
@@ -389,7 +395,7 @@ class TestCancelPayment:
         )
         db_session.add(payment_entry)
         db_session.commit()
-        
+
         service = PaymentEntryService(db_session)
         cancellation_reason = "  Reason with spaces  "
 

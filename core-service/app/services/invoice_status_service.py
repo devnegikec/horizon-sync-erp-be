@@ -104,7 +104,9 @@ class InvoiceStatusService:
         Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7
         """
         # Get invoice (without items to avoid querying invoice_items columns that may not exist)
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+        invoice = self.invoice_repo.get_by_id(
+            invoice_id, organization_id, load_items=False
+        )
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -156,7 +158,9 @@ class InvoiceStatusService:
         Requirements: 4.7, 13.3
         """
         # Get invoice (without items to avoid querying invoice_items columns that may not exist)
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+        invoice = self.invoice_repo.get_by_id(
+            invoice_id, organization_id, load_items=False
+        )
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"

@@ -1,10 +1,8 @@
 """Tests for audit trail functionality"""
 
-import pytest
 from uuid import uuid4
-from datetime import datetime, UTC
 
-from app.models.account_audit_log import AccountAuditLog, AuditAction
+from app.models.account_audit_log import AuditAction
 from app.services.audit_logger import AuditLogger
 
 

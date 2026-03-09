@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -16,8 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Database connection
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+    "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
 )
 
 
@@ -28,19 +28,21 @@ def seed_payment_test_data():
     db = SessionLocal()
 
     try:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("PAYMENT SYSTEM TEST DATA SEEDING")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         # Get organization ID from default_accounts
-        result = db.execute(text("SELECT DISTINCT organization_id FROM default_accounts LIMIT 1"))
+        result = db.execute(
+            text("SELECT DISTINCT organization_id FROM default_accounts LIMIT 1")
+        )
         org_row = result.fetchone()
-        
+
         if not org_row:
             print("❌ No organization found in default_accounts.")
             print("   Please ensure default accounts are configured first.")
             return
-        
+
         org_id = org_row[0]
         print(f"✓ Using Organization ID: {org_id}\n")
 
@@ -55,16 +57,25 @@ def seed_payment_test_data():
         print("-" * 60)
 
         # Check if customers already exist
-        result = db.execute(text("""
+        result = db.execute(
+            text("""
             SELECT id, customer_code, customer_name 
             FROM customers 
             WHERE organization_id = :org_id 
             AND customer_code IN ('CUST-001', 'CUST-002', 'CUST-003')
             ORDER BY customer_code
-        """), {"org_id": org_id})
-        
-        existing_customers = {row[1]: {"id": str(row[0]), "customer_code": row[1], "customer_name": row[2]} 
-                             for row in result.fetchall()}
+        """),
+            {"org_id": org_id},
+        )
+
+        existing_customers = {
+            row[1]: {
+                "id": str(row[0]),
+                "customer_code": row[1],
+                "customer_name": row[2],
+            }
+            for row in result.fetchall()
+        }
 
         customers_data = [
             {
@@ -99,11 +110,14 @@ def seed_payment_test_data():
                 # Use existing customer
                 customer = existing_customers[customer_data["customer_code"]]
                 customers.append(customer)
-                print(f"  ✓ Using existing customer: {customer['customer_name']} ({customer['customer_code']})")
+                print(
+                    f"  ✓ Using existing customer: {customer['customer_name']} ({customer['customer_code']})"
+                )
             else:
                 # Create new customer
                 customer_id = str(uuid4())
-                db.execute(text("""
+                db.execute(
+                    text("""
                     INSERT INTO customers (
                         id, organization_id, customer_code, customer_name, 
                         email, phone, address, credit_limit,
@@ -115,18 +129,24 @@ def seed_payment_test_data():
                         'active', 0.00,
                         :user_id, :user_id, NOW(), NOW()
                     )
-                """), {
-                    "id": customer_id,
-                    **customer_data,
-                    "org_id": org_id,
-                    "user_id": user_id,
-                })
-                customers.append({
-                    "id": customer_id,
-                    "customer_code": customer_data["customer_code"],
-                    "customer_name": customer_data["customer_name"],
-                })
-                print(f"  ✓ Created customer: {customer_data['customer_name']} ({customer_data['customer_code']})")
+                """),
+                    {
+                        "id": customer_id,
+                        **customer_data,
+                        "org_id": org_id,
+                        "user_id": user_id,
+                    },
+                )
+                customers.append(
+                    {
+                        "id": customer_id,
+                        "customer_code": customer_data["customer_code"],
+                        "customer_name": customer_data["customer_name"],
+                    }
+                )
+                print(
+                    f"  ✓ Created customer: {customer_data['customer_name']} ({customer_data['customer_code']})"
+                )
 
         print()
 
@@ -137,7 +157,7 @@ def seed_payment_test_data():
         print("-" * 60)
 
         today = datetime.now().date()
-        
+
         invoices = [
             {
                 "id": str(uuid4()),
@@ -212,7 +232,8 @@ def seed_payment_test_data():
         ]
 
         for invoice in invoices:
-            db.execute(text("""
+            db.execute(
+                text("""
                 INSERT INTO invoices (
                     id, organization_id, customer_id, invoice_number,
                     invoice_date, due_date, subtotal, tax_amount, total_amount,
@@ -224,25 +245,31 @@ def seed_payment_test_data():
                     :paid_amount, :balance_due, :status, :description,
                     'USD', :user_id, :user_id, NOW(), NOW()
                 )
-            """), {
-                **invoice,
-                "org_id": org_id,
-                "user_id": user_id,
-            })
-            print(f"  ✓ Created invoice: {invoice['invoice_number']} - ${invoice['total_amount']} ({invoice['status']})")
+            """),
+                {
+                    **invoice,
+                    "org_id": org_id,
+                    "user_id": user_id,
+                },
+            )
+            print(
+                f"  ✓ Created invoice: {invoice['invoice_number']} - ${invoice['total_amount']} ({invoice['status']})"
+            )
 
         print()
 
         # Commit all changes
         db.commit()
 
-        print("="*60)
+        print("=" * 60)
         print("✅ SEEDING COMPLETED SUCCESSFULLY")
-        print("="*60)
+        print("=" * 60)
         print("\nTest Data Summary:")
         print(f"  • Customers: {len(customers)}")
         print(f"  • Invoices: {len(invoices)}")
-        print(f"  • Total Invoice Amount: ${sum(inv['total_amount'] for inv in invoices)}")
+        print(
+            f"  • Total Invoice Amount: ${sum(inv['total_amount'] for inv in invoices)}"
+        )
         print()
         print("Next steps:")
         print("1. Restart backend server (if running)")
@@ -262,6 +289,7 @@ def seed_payment_test_data():
         db.rollback()
         print(f"\n❌ ERROR during seeding: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         db.close()

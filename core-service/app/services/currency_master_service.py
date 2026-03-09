@@ -44,9 +44,7 @@ class CurrencyMasterService:
             DuplicateCurrencyCodeException: If currency code already exists in org
         """
         # Check duplicate code within org
-        existing = self.currency_repo.get_by_code(
-            currency_data.code, organization_id
-        )
+        existing = self.currency_repo.get_by_code(currency_data.code, organization_id)
         if existing:
             raise DuplicateCurrencyCodeException(
                 f"Currency with code '{currency_data.code}' already exists in this organization"
@@ -84,9 +82,7 @@ class CurrencyMasterService:
         """
         currency = self.currency_repo.get_by_id(currency_id, organization_id)
         if not currency:
-            raise CurrencyNotFoundException(
-                f"Currency with ID {currency_id} not found"
-            )
+            raise CurrencyNotFoundException(f"Currency with ID {currency_id} not found")
         return currency
 
     def list_currencies(
@@ -159,9 +155,7 @@ class CurrencyMasterService:
         """
         currency = self.currency_repo.get_by_id(currency_id, organization_id)
         if not currency:
-            raise CurrencyNotFoundException(
-                f"Currency with ID {currency_id} not found"
-            )
+            raise CurrencyNotFoundException(f"Currency with ID {currency_id} not found")
 
         update_dict = currency_data.model_dump(exclude_unset=True)
 
@@ -195,9 +189,7 @@ class CurrencyMasterService:
         """
         currency = self.currency_repo.get_by_id(currency_id, organization_id)
         if not currency:
-            raise CurrencyNotFoundException(
-                f"Currency with ID {currency_id} not found"
-            )
+            raise CurrencyNotFoundException(f"Currency with ID {currency_id} not found")
 
         currency.updated_by = user_id
         return self.currency_repo.soft_delete(currency)

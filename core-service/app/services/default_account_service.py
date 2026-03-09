@@ -73,6 +73,7 @@ class DefaultAccountService:
 
         # Validate account exists and is active
         from app.repositories.chart_of_account_repository import AccountRepository
+
         account_repo = AccountRepository(self.db)
         account = account_repo.get_by_id(account_id, organization_id)
 

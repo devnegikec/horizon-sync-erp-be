@@ -45,10 +45,10 @@ class QuotationRepository:
         sort_by: str = "quotation_date",
         sort_order: str = "desc",
     ) -> tuple[list[Quotation], int]:
-        q = self.db.query(Quotation).options(
-            joinedload(Quotation.customer)
-        ).filter(
-            Quotation.organization_id == organization_id
+        q = (
+            self.db.query(Quotation)
+            .options(joinedload(Quotation.customer))
+            .filter(Quotation.organization_id == organization_id)
         )
         if customer_id is not None:
             q = q.filter(Quotation.customer_id == customer_id)

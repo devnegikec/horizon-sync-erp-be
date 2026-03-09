@@ -4,9 +4,9 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, String
-from app.models.types import UUID
 
 from app.database import Base
+from app.models.types import UUID
 
 
 class StatusTransition(Base):

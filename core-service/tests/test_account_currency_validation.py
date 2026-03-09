@@ -3,6 +3,7 @@
 import uuid
 
 import pytest
+
 from app.core.exceptions import ValidationError
 from app.schemas.chart_of_account import ChartOfAccountCreate, ChartOfAccountUpdate
 from app.services.chart_of_account_service import ChartOfAccountService
@@ -29,7 +30,9 @@ def user_id():
 class TestCurrencyValidation:
     """Test currency validation (Requirements 4.2, 11.5)"""
 
-    def test_valid_currency_code_accepted(self, account_service, organization_id, user_id):
+    def test_valid_currency_code_accepted(
+        self, account_service, organization_id, user_id
+    ):
         """Test that valid ISO 4217 currency codes are accepted"""
         valid_currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"]
 
@@ -55,7 +58,9 @@ class TestCurrencyValidation:
         account = account_service.create(data, organization_id, user_id)
         assert account.currency == "USD"
 
-    def test_lowercase_currency_rejected(self, account_service, organization_id, user_id):
+    def test_lowercase_currency_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that lowercase currency codes are rejected"""
         data = ChartOfAccountCreate(
             account_code="1000",
@@ -71,7 +76,9 @@ class TestCurrencyValidation:
         assert "3 uppercase letters" in str(exc_info.value)
         assert "ISO 4217" in str(exc_info.value)
 
-    def test_mixed_case_currency_rejected(self, account_service, organization_id, user_id):
+    def test_mixed_case_currency_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that mixed case currency codes are rejected"""
         data = ChartOfAccountCreate(
             account_code="1000",
@@ -86,7 +93,9 @@ class TestCurrencyValidation:
         assert "Invalid currency code" in str(exc_info.value)
         assert "3 uppercase letters" in str(exc_info.value)
 
-    def test_too_short_currency_rejected(self, account_service, organization_id, user_id):
+    def test_too_short_currency_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that currency codes shorter than 3 characters are rejected"""
         data = ChartOfAccountCreate(
             account_code="1000",
@@ -101,10 +110,12 @@ class TestCurrencyValidation:
         assert "Invalid currency code" in str(exc_info.value)
         assert "3 uppercase letters" in str(exc_info.value)
 
-    def test_too_long_currency_rejected(self, account_service, organization_id, user_id):
+    def test_too_long_currency_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that currency codes longer than 3 characters are rejected by Pydantic"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError) as exc_info:
             data = ChartOfAccountCreate(
                 account_code="1000",
@@ -115,7 +126,9 @@ class TestCurrencyValidation:
 
         assert "String should have at most 3 characters" in str(exc_info.value)
 
-    def test_empty_currency_uses_default(self, account_service, organization_id, user_id):
+    def test_empty_currency_uses_default(
+        self, account_service, organization_id, user_id
+    ):
         """Test that empty currency code defaults to USD"""
         data = ChartOfAccountCreate(
             account_code="1000",
@@ -143,7 +156,9 @@ class TestCurrencyValidation:
         assert "Invalid currency code" in str(exc_info.value)
         assert "3 uppercase letters" in str(exc_info.value)
 
-    def test_special_characters_currency_rejected(self, account_service, organization_id, user_id):
+    def test_special_characters_currency_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that currency codes with special characters are rejected"""
         invalid_currencies = ["US$", "U$D", "U-D", "U.D"]
 
@@ -177,7 +192,9 @@ class TestCurrencyUpdateValidation:
 
         # Update to EUR
         update_data = ChartOfAccountUpdate(currency="EUR")
-        updated_account = account_service.update(account.id, update_data, organization_id, user_id)
+        updated_account = account_service.update(
+            account.id, update_data, organization_id, user_id
+        )
 
         assert updated_account.currency == "EUR"
 
@@ -224,7 +241,9 @@ class TestCurrencyUpdateValidation:
 class TestMultiCurrencyAccounts:
     """Test creating accounts with different currencies"""
 
-    def test_create_accounts_with_different_currencies(self, account_service, organization_id, user_id):
+    def test_create_accounts_with_different_currencies(
+        self, account_service, organization_id, user_id
+    ):
         """Test that multiple accounts can have different currencies"""
         currencies = ["USD", "EUR", "GBP"]
         accounts = []

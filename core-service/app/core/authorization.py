@@ -107,4 +107,3 @@ EXCHANGE_RATE_READ = "exchange_rate.read"
 EXCHANGE_RATE_CREATE = "exchange_rate.create"
 EXCHANGE_RATE_UPDATE = "exchange_rate.update"
 EXCHANGE_RATE_DELETE = "exchange_rate.delete"
-

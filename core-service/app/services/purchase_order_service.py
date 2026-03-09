@@ -58,16 +58,12 @@ class PurchaseOrderService:
         # Validate RFQ has quotes
         has_quotes = any(len(line.quotes) > 0 for line in rfq.line_items)
         if not has_quotes:
-            raise ValidationException(
-                f"RFQ {rfq_id} does not have any supplier quotes"
-            )
+            raise ValidationException(f"RFQ {rfq_id} does not have any supplier quotes")
 
         # Validate supplier exists
         supplier = self.supplier_repo.get_supplier_by_id(supplier_id, organization_id)
         if not supplier:
-            raise ResourceNotFoundException(
-                f"Supplier {supplier_id} not found"
-            )
+            raise ResourceNotFoundException(f"Supplier {supplier_id} not found")
 
         # Validate line items
         if not line_items:
@@ -95,7 +91,9 @@ class PurchaseOrderService:
         # Create Purchase Order
         po_data = {
             "organization_id": organization_id,
-            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(organization_id, "purchase_order"),
+            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(
+                organization_id, "purchase_order"
+            ),
             "rfq_id": rfq_id,
             "reference_id": rfq_id,
             "party_type": "SUPPLIER",
@@ -134,8 +132,6 @@ class PurchaseOrderService:
 
         return self._to_response(po)
 
-
-
     @transactional
     def create(
         self,
@@ -155,9 +151,7 @@ class PurchaseOrderService:
         # Validate supplier exists
         supplier = self.supplier_repo.get_supplier_by_id(party_id, organization_id)
         if not supplier:
-            raise ResourceNotFoundException(
-                f"Supplier {party_id} not found"
-            )
+            raise ResourceNotFoundException(f"Supplier {party_id} not found")
 
         # Validate line items
         if not line_items:
@@ -185,7 +179,9 @@ class PurchaseOrderService:
         # Create Purchase Order
         po_data = {
             "organization_id": organization_id,
-            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(organization_id, "purchase_order"),
+            "purchase_order_no": DocumentNumberingService(self.db).get_next_number(
+                organization_id, "purchase_order"
+            ),
             "rfq_id": rfq_id,
             "reference_type": "RFQ" if rfq_id else None,
             "reference_id": rfq_id,
@@ -318,7 +314,9 @@ class PurchaseOrderService:
                 transaction_type="PURCHASE",
                 line_items=line_items,
                 tax_rate=Decimal(str(tax_rate)) if tax_rate else None,
-                discount_amount=Decimal(str(discount_amount)) if discount_amount else None,
+                discount_amount=Decimal(str(discount_amount))
+                if discount_amount
+                else None,
             )
             calculation = self.transaction_engine.calculate(engine_input)
 
@@ -372,17 +370,21 @@ class PurchaseOrderService:
                     transaction_type="PURCHASE",
                     line_items=line_items,
                     tax_rate=Decimal(str(tax_rate)) if tax_rate else None,
-                    discount_amount=Decimal(str(discount_amount)) if discount_amount else None,
+                    discount_amount=Decimal(str(discount_amount))
+                    if discount_amount
+                    else None,
                 )
                 calculation = self.transaction_engine.calculate(engine_input)
 
-                update_data.update({
-                    "subtotal": calculation.subtotal,
-                    "tax_amount": calculation.tax_amount,
-                    "tax_rate": tax_rate,
-                    "discount_amount": calculation.discount_amount,
-                    "grand_total": calculation.grand_total,
-                })
+                update_data.update(
+                    {
+                        "subtotal": calculation.subtotal,
+                        "tax_amount": calculation.tax_amount,
+                        "tax_rate": tax_rate,
+                        "discount_amount": calculation.discount_amount,
+                        "grand_total": calculation.grand_total,
+                    }
+                )
 
             self.repo.update(po, update_data)
 
@@ -404,9 +406,7 @@ class PurchaseOrderService:
         self.repo.delete(po)
 
     @transactional
-    def submit(
-        self, po_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> dict:
+    def submit(self, po_id: UUID, organization_id: UUID, user_id: UUID) -> dict:
         """
         Submit Purchase Order.
         Changes status from DRAFT to SUBMITTED.
@@ -428,16 +428,12 @@ class PurchaseOrderService:
 
         # Validate line items exist
         if not po.line_items:
-            raise ValidationException(
-                "Cannot submit Purchase Order without line items"
-            )
+            raise ValidationException("Cannot submit Purchase Order without line items")
 
         # Validate supplier exists
         supplier = self.supplier_repo.get_supplier_by_id(po.party_id, organization_id)
         if not supplier:
-            raise ResourceNotFoundException(
-                f"Supplier {po.party_id} not found"
-            )
+            raise ResourceNotFoundException(f"Supplier {po.party_id} not found")
 
         # Update status to SUBMITTED
         new_status = PurchaseOrderStatus.SUBMITTED
@@ -460,9 +456,7 @@ class PurchaseOrderService:
         return self._to_response(po)
 
     @transactional
-    def cancel(
-        self, po_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> dict:
+    def cancel(self, po_id: UUID, organization_id: UUID, user_id: UUID) -> dict:
         """
         Cancel Purchase Order.
         Changes status to CANCELLED.
@@ -502,9 +496,7 @@ class PurchaseOrderService:
         return self._to_response(po)
 
     @transactional
-    def close(
-        self, po_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> dict:
+    def close(self, po_id: UUID, organization_id: UUID, user_id: UUID) -> dict:
         """
         Close Purchase Order.
         Changes status to CLOSED.
@@ -687,7 +679,9 @@ class PurchaseOrderService:
 
         if all_fully_received:
             return PurchaseOrderStatus.FULLY_RECEIVED
-        elif any_partially_received or any(line.received_quantity > 0 for line in po.line_items):
+        elif any_partially_received or any(
+            line.received_quantity > 0 for line in po.line_items
+        ):
             return PurchaseOrderStatus.PARTIALLY_RECEIVED
         else:
             return po.status
@@ -707,9 +701,7 @@ class PurchaseOrderService:
             "line_items_count": line_items_count,
         }
 
-    def _close_rfq_after_po_creation(
-        self, rfq_id: UUID, organization_id: UUID
-    ) -> None:
+    def _close_rfq_after_po_creation(self, rfq_id: UUID, organization_id: UUID) -> None:
         """
         Close RFQ after Purchase Order is created.
 

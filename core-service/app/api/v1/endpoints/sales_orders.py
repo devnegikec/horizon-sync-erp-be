@@ -5,7 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import SALES_ORDER_CREATE, SALES_ORDER_READ, SALES_ORDER_UPDATE
+from app.core.authorization import (
+    SALES_ORDER_CREATE,
+    SALES_ORDER_READ,
+    SALES_ORDER_UPDATE,
+)
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
@@ -44,7 +48,8 @@ async def list_sales_orders(
     page_size: int = Query(20, ge=1, le=100),
     customer_id: UUID | None = None,
     status: str | None = Query(
-        None, pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$"
+        None,
+        pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     ),
     sort_by: str = Query("order_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -110,7 +115,6 @@ async def delete_sales_order(
     return None
 
 
-
 @router.put("/{sales_order_id}/status", response_model=SalesOrderResponse)
 async def update_sales_order_status(
     sales_order_id: UUID,
@@ -127,7 +131,6 @@ async def update_sales_order_status(
         current_user.id,
     )
     return SalesOrderResponse.model_validate(data)
-
 
 
 @router.post(
@@ -153,7 +156,6 @@ async def convert_sales_order_to_invoice(
         invoice_id=invoice["id"],
         invoice_no=invoice["invoice_no"],
     )
-
 
 
 @router.post(

@@ -8,7 +8,7 @@ import pytest
 from app.core.exceptions import ResourceNotFoundException, ValidationException
 from app.models.base import MaterialRequestStatus, RFQStatus
 from app.models.material_request import MaterialRequest, MaterialRequestLine
-from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
+from app.models.rfq import RFQ, RFQLine, RFQSupplier
 from app.repositories.material_request_repository import MaterialRequestRepository
 from app.repositories.rfq_repository import RFQRepository
 from app.services.rfq_service import RFQService

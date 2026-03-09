@@ -31,9 +31,9 @@ class TestListRoles:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.get("/api/v1/roles", headers=headers)
@@ -97,9 +97,9 @@ class TestGetRole:
             finally:
                 pass
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
         client_no_override.app.dependency_overrides[get_db] = override_get_db
 
         headers = {"Authorization": f"Bearer {access_token_other_user}"}
@@ -145,9 +145,9 @@ class TestCreateRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         role_data = {
             "code": "new_role",
@@ -178,9 +178,9 @@ class TestCreateRole:
         def override_get_current_active_user():
             return test_user_other_org
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         role_data = {
             "code": "new_role",
@@ -247,9 +247,9 @@ class TestUpdateRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         update_data = {"name": "Updated Role"}
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -280,9 +280,9 @@ class TestUpdateRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         update_data = {"name": "Hacked System Role"}
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -329,9 +329,9 @@ class TestDeleteRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.delete(
@@ -357,9 +357,9 @@ class TestDeleteRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.delete(
@@ -403,9 +403,9 @@ class TestGetRolePermissions:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.get(
@@ -439,9 +439,9 @@ class TestGetRolePermissions:
         def override_get_current_active_user():
             return test_user_other_org
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token_other_user}"}
         response = client_no_override.get(
@@ -482,9 +482,9 @@ class TestAssignPermissionToRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         perm_data = {"permission_id": str(test_permissions["role.read"].id)}
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -514,9 +514,9 @@ class TestAssignPermissionToRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         perm_data = {"permission_id": str(test_permissions["role.read"].id)}
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -567,9 +567,9 @@ class TestRemovePermissionFromRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.delete(
@@ -597,9 +597,9 @@ class TestRemovePermissionFromRole:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.delete(
@@ -644,9 +644,9 @@ class TestBulkAssignPermissions:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         bulk_data = {
             "permission_ids": [str(test_permissions["role.read"].id)],
@@ -679,9 +679,9 @@ class TestBulkAssignPermissions:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         bulk_data = {
             "permission_ids": [str(test_permissions["role.read"].id)],
@@ -728,9 +728,9 @@ class TestGetRoleUsers:
         def override_get_current_active_user():
             return test_user_without_permission
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token}"}
         response = client_no_override.get(
@@ -759,9 +759,9 @@ class TestGetRoleUsers:
         def override_get_current_active_user():
             return test_user_other_org
 
-        client_no_override.app.dependency_overrides[
-            get_current_active_user
-        ] = override_get_current_active_user
+        client_no_override.app.dependency_overrides[get_current_active_user] = (
+            override_get_current_active_user
+        )
 
         headers = {"Authorization": f"Bearer {access_token_other_user}"}
         response = client_no_override.get(

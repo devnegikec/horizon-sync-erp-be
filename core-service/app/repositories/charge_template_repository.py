@@ -1,6 +1,5 @@
 """Charge Template repository for database operations"""
 
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -32,7 +31,7 @@ class ChargeTemplateRepository:
 
     def get_by_id(
         self, template_id: UUID, organization_id: UUID
-    ) -> Optional[ChargeTemplate]:
+    ) -> ChargeTemplate | None:
         """
         Get charge template by ID within an organization.
 
@@ -55,7 +54,7 @@ class ChargeTemplateRepository:
 
     def get_by_code(
         self, template_code: str, organization_id: UUID
-    ) -> Optional[ChargeTemplate]:
+    ) -> ChargeTemplate | None:
         """
         Get charge template by code within an organization.
 
@@ -117,9 +116,9 @@ class ChargeTemplateRepository:
         organization_id: UUID,
         page: int = 1,
         page_size: int = 20,
-        charge_type: Optional[str] = None,
-        is_active: Optional[bool] = None,
-        search: Optional[str] = None,
+        charge_type: str | None = None,
+        is_active: bool | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[ChargeTemplate], int]:
@@ -179,8 +178,8 @@ class ChargeTemplateRepository:
         organization_id: UUID,
         transaction_type: str,
         net_total: float,
-        customer_location: Optional[dict] = None,
-        total_weight: Optional[float] = None,
+        customer_location: dict | None = None,
+        total_weight: float | None = None,
     ) -> list[ChargeTemplate]:
         """
         Get all applicable charge templates based on context.
@@ -220,8 +219,8 @@ class ChargeTemplateRepository:
         self,
         template: ChargeTemplate,
         net_total: float,
-        customer_location: Optional[dict] = None,
-        total_weight: Optional[float] = None,
+        customer_location: dict | None = None,
+        total_weight: float | None = None,
     ) -> bool:
         """
         Check if template's applicability rules match the given context.

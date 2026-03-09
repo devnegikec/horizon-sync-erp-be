@@ -4,11 +4,10 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Enum, Integer, String, Text
-from app.models.types import UUID
 
 from app.database import Base
 from app.models.base import SupplierStatus
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class Supplier(Base):

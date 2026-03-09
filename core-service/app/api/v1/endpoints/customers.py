@@ -40,7 +40,7 @@ async def create_customer(
 
     **Request Body:**
     - **customer_name**: Customer name (required)
-    - **customer_code**: Unique customer code (required)
+    - **customer_code**: Unique customer code (optional, auto-generated if not provided)
     - **email**, **phone**: Contact information
     - **address**, **city**, **state**, etc.: Address information
     - **tax_number**: Tax identification

@@ -8,19 +8,18 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
-    ForeignKey,
     Numeric,
     String,
     Text,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import (
+    PaymentEntryStatus,
     PaymentEntryType,
     PaymentMode,
-    PaymentEntryStatus,
     PaymentSource,
 )
 from app.models.types import UUID
@@ -120,13 +119,13 @@ class PaymentEntry(Base):
     def unallocated_amount(self) -> Decimal:
         """
         Calculate unallocated amount as payment amount minus sum of allocated amounts.
-        
+
         Returns:
             Decimal: The unallocated amount
         """
         if not self.payment_references:
             return Decimal(str(self.amount))
-        
+
         total_allocated = sum(
             Decimal(str(ref.allocated_amount)) for ref in self.payment_references
         )

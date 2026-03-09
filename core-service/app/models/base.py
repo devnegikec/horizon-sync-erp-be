@@ -348,7 +348,8 @@ class PaymentAuditAction(str, enum.Enum):
     CANCEL = "CANCEL"
     ALLOCATE = "ALLOCATE"
     DEALLOCATE = "DEALLOCATE"
-    
+
+
 # COMMUNICATION ENUMS
 # ===========================================
 

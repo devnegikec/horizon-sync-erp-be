@@ -425,7 +425,7 @@ class TestSalesOrderStatusTransitions:
         }
 
         sales_order_dict = service.create(data, organization_id, user_id)
-        
+
         # Bill the full quantity
         items_to_bill = [
             {
@@ -436,9 +436,10 @@ class TestSalesOrderStatusTransitions:
         service.convert_to_invoice(
             sales_order_dict["id"], items_to_bill, organization_id, user_id
         )
-        
+
         # Get the sales order object
         from app.repositories.sales_order_repository import SalesOrderRepository
+
         repo = SalesOrderRepository(db_session)
         sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
 
@@ -544,9 +545,10 @@ class TestSalesOrderStatusTransitions:
         }
 
         sales_order_dict = service.create(data, organization_id, user_id)
-        
+
         # Get the sales order object
         from app.repositories.sales_order_repository import SalesOrderRepository
+
         repo = SalesOrderRepository(db_session)
         sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
 
@@ -582,9 +584,10 @@ class TestSalesOrderStatusTransitions:
         }
 
         sales_order_dict = service.create(data, organization_id, user_id)
-        
+
         # Get the sales order object
         from app.repositories.sales_order_repository import SalesOrderRepository
+
         repo = SalesOrderRepository(db_session)
         sales_order = repo.get_by_id_with_items(sales_order_dict["id"], organization_id)
 
@@ -1324,12 +1327,8 @@ class TestSalesOrderFullyBilledCheck:
         assert updated_so["items"][0]["pending_billing_qty"] == Decimal("5.000")
 
         # Should NOT be able to transition to CLOSED
-        with pytest.raises(
-            ValueError, match="not all items are fully billed"
-        ):
-            service.update_status(
-                sales_order["id"], "closed", organization_id, user_id
-            )
+        with pytest.raises(ValueError, match="not all items are fully billed"):
+            service.update_status(sales_order["id"], "closed", organization_id, user_id)
 
     def test_unbilled_prevents_closed_status(
         self,
@@ -1366,12 +1365,8 @@ class TestSalesOrderFullyBilledCheck:
         # Don't bill anything
 
         # Should NOT be able to transition to CLOSED
-        with pytest.raises(
-            ValueError, match="not all items are fully billed"
-        ):
-            service.update_status(
-                sales_order["id"], "closed", organization_id, user_id
-            )
+        with pytest.raises(ValueError, match="not all items are fully billed"):
+            service.update_status(sales_order["id"], "closed", organization_id, user_id)
 
     def test_fully_billed_multiple_items_allows_closed(
         self,
@@ -1489,12 +1484,8 @@ class TestSalesOrderFullyBilledCheck:
         )
 
         # Should NOT be able to transition to CLOSED
-        with pytest.raises(
-            ValueError, match="not all items are fully billed"
-        ):
-            service.update_status(
-                sales_order["id"], "closed", organization_id, user_id
-            )
+        with pytest.raises(ValueError, match="not all items are fully billed"):
+            service.update_status(sales_order["id"], "closed", organization_id, user_id)
 
     def test_fully_billed_from_draft_allows_closed(
         self,
@@ -1602,7 +1593,7 @@ class TestSalesOrderConvertToDeliveryNote:
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
         assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("0.000")
-        
+
         # Verify status automatically updated to DELIVERED
         assert updated_so["status"] == "delivered"
 
@@ -1655,7 +1646,7 @@ class TestSalesOrderConvertToDeliveryNote:
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["delivered_qty"] == Decimal("5.000")
         assert updated_so["items"][0]["pending_delivery_qty"] == Decimal("5.000")
-        
+
         # Verify status automatically updated to PARTIALLY_DELIVERED
         assert updated_so["status"] == "partially_delivered"
 
@@ -2016,6 +2007,6 @@ class TestSalesOrderConvertToDeliveryNote:
         updated_so = service.get_by_id(sales_order["id"], organization_id)
         assert updated_so["items"][0]["delivered_qty"] == Decimal("10.000")
         assert updated_so["items"][1]["delivered_qty"] == Decimal("3.000")
-        
+
         # Status should be PARTIALLY_DELIVERED since not all items are fully delivered
         assert updated_so["status"] == "partially_delivered"

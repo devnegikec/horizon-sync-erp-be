@@ -22,6 +22,7 @@ class PickListService:
         # Auto-generate pick_list_no if not provided
         if not payload.get("pick_list_no"):
             from app.services.document_numbering_service import DocumentNumberingService
+
             payload["pick_list_no"] = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "pick_list"
             )
@@ -126,22 +127,24 @@ class PickListService:
     def _to_response_enriched(self, pl) -> dict:
         """Enhanced response with item, warehouse, and reference details"""
         from app.models.item import Item
-        from app.models.warehouse import Warehouse
         from app.models.sales_order import SalesOrder
+        from app.models.warehouse import Warehouse
 
         # Get warehouse details for the pick list
         warehouse = None
         if pl.warehouse_id:
-            warehouse = self.db.query(Warehouse).filter(
-                Warehouse.id == pl.warehouse_id
-            ).first()
+            warehouse = (
+                self.db.query(Warehouse).filter(Warehouse.id == pl.warehouse_id).first()
+            )
 
         # Get reference details (sales order)
         reference = None
         if pl.reference_type == "sales_order" and pl.reference_id:
-            so = self.db.query(SalesOrder).filter(
-                SalesOrder.id == pl.reference_id
-            ).first()
+            so = (
+                self.db.query(SalesOrder)
+                .filter(SalesOrder.id == pl.reference_id)
+                .first()
+            )
             if so:
                 reference = {
                     "id": str(so.id),
@@ -157,9 +160,11 @@ class PickListService:
             item_obj = self.db.query(Item).filter(Item.id == item.item_id).first()
 
             # Get warehouse details for this item
-            item_warehouse = self.db.query(Warehouse).filter(
-                Warehouse.id == item.warehouse_id
-            ).first()
+            item_warehouse = (
+                self.db.query(Warehouse)
+                .filter(Warehouse.id == item.warehouse_id)
+                .first()
+            )
 
             enriched_item = {
                 "id": item.id,
@@ -168,12 +173,16 @@ class PickListService:
                     "id": str(item_obj.id),
                     "name": item_obj.item_name,
                     "code": item_obj.item_code,
-                } if item_obj else None,
+                }
+                if item_obj
+                else None,
                 "warehouse": {
                     "id": str(item_warehouse.id),
                     "name": item_warehouse.name,
                     "code": item_warehouse.code,
-                } if item_warehouse else None,
+                }
+                if item_warehouse
+                else None,
                 "qty": item.qty,
                 "picked_qty": item.picked_qty,
                 "uom": item.uom,
@@ -192,7 +201,9 @@ class PickListService:
                 "id": str(warehouse.id),
                 "name": warehouse.name,
                 "code": warehouse.code,
-            } if warehouse else None,
+            }
+            if warehouse
+            else None,
             "status": pl.status.value if pl.status else None,
             "pick_date": pl.pick_date,
             "reference_type": pl.reference_type,

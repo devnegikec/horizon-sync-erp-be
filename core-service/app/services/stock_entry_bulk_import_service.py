@@ -6,7 +6,7 @@ import csv
 import io
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.models.item import Item
 from app.models.warehouse import Warehouse
-from app.services.stock_entry_service import StockEntryService
 from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+from app.services.stock_entry_service import StockEntryService
 
 logger = logging.getLogger(__name__)
 
@@ -137,10 +137,12 @@ def _str(v: str) -> str | None:
 def _parse_date(value: str, row: int, result: BulkImportResult) -> datetime | None:
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"):
         try:
-            return datetime.strptime(value.strip(), fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(value.strip(), fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
-    result.add_error(row, "Posting Date", f"Cannot parse date '{value}'. Use YYYY-MM-DD.")
+    result.add_error(
+        row, "Posting Date", f"Cannot parse date '{value}'. Use YYYY-MM-DD."
+    )
     return None
 
 
@@ -193,7 +195,9 @@ def _parse_rows(
         # --- entry type ---
         entry_type = _str(row.get("stock_entry_type", ""))
         if not entry_type:
-            result.add_error(row_num, "Stock Entry Type", "Stock Entry Type is required.")
+            result.add_error(
+                row_num, "Stock Entry Type", "Stock Entry Type is required."
+            )
             continue
         if entry_type.lower() not in VALID_ENTRY_TYPES:
             result.add_error(
@@ -216,14 +220,20 @@ def _parse_rows(
         if from_code:
             from_wh_id = cache.warehouse_id(from_code)
             if from_wh_id is None:
-                result.add_error(row_num, "From Warehouse Code", f"Warehouse '{from_code}' not found.")
+                result.add_error(
+                    row_num,
+                    "From Warehouse Code",
+                    f"Warehouse '{from_code}' not found.",
+                )
                 continue
 
         to_code = _str(row.get("to_warehouse_code", ""))
         if to_code:
             to_wh_id = cache.warehouse_id(to_code)
             if to_wh_id is None:
-                result.add_error(row_num, "To Warehouse Code", f"Warehouse '{to_code}' not found.")
+                result.add_error(
+                    row_num, "To Warehouse Code", f"Warehouse '{to_code}' not found."
+                )
                 continue
 
         # --- item ---
@@ -249,17 +259,33 @@ def _parse_rows(
         # --- warehouse presence rules (fail fast, same rules as submit) ---
         entry_type_lower = entry_type.lower()
         if entry_type_lower == "material_receipt" and not to_wh_id:
-            result.add_error(row_num, "To Warehouse Code", "To Warehouse Code is required for material_receipt.")
+            result.add_error(
+                row_num,
+                "To Warehouse Code",
+                "To Warehouse Code is required for material_receipt.",
+            )
             continue
         if entry_type_lower == "material_issue" and not from_wh_id:
-            result.add_error(row_num, "From Warehouse Code", "From Warehouse Code is required for material_issue.")
+            result.add_error(
+                row_num,
+                "From Warehouse Code",
+                "From Warehouse Code is required for material_issue.",
+            )
             continue
         if entry_type_lower in ("material_transfer", "send_to_subcontractor"):
             if not from_wh_id:
-                result.add_error(row_num, "From Warehouse Code", f"From Warehouse Code is required for {entry_type_lower}.")
+                result.add_error(
+                    row_num,
+                    "From Warehouse Code",
+                    f"From Warehouse Code is required for {entry_type_lower}.",
+                )
                 continue
             if not to_wh_id:
-                result.add_error(row_num, "To Warehouse Code", f"To Warehouse Code is required for {entry_type_lower}.")
+                result.add_error(
+                    row_num,
+                    "To Warehouse Code",
+                    f"To Warehouse Code is required for {entry_type_lower}.",
+                )
                 continue
 
         # --- optional fields ---
@@ -360,11 +386,15 @@ class StockEntryBulkImportService:
         self.db = db
         self.svc = StockEntryService(db)
 
-    def import_from_csv(self, content: bytes, organization_id: UUID, user_id: UUID) -> BulkImportResult:
+    def import_from_csv(
+        self, content: bytes, organization_id: UUID, user_id: UUID
+    ) -> BulkImportResult:
         headers, rows = _parse_csv(content)
         return self._process(headers, rows, organization_id, user_id)
 
-    def import_from_xlsx(self, content: bytes, organization_id: UUID, user_id: UUID) -> BulkImportResult:
+    def import_from_xlsx(
+        self, content: bytes, organization_id: UUID, user_id: UUID
+    ) -> BulkImportResult:
         headers, rows = _parse_xlsx(content)
         return self._process(headers, rows, organization_id, user_id)
 
@@ -382,7 +412,9 @@ class StockEntryBulkImportService:
         if missing:
             # Try to give friendly names back
             friendly = {h.replace("_", " ").title() for h in missing}
-            result.add_error(1, "headers", f"Missing required columns: {', '.join(sorted(friendly))}")
+            result.add_error(
+                1, "headers", f"Missing required columns: {', '.join(sorted(friendly))}"
+            )
             return result
 
         # Drop fully empty rows
@@ -394,7 +426,11 @@ class StockEntryBulkImportService:
             return result
 
         if result.total_rows > self.MAX_ROWS:
-            result.add_error(1, "file", f"Too many rows ({result.total_rows}). Maximum allowed: {self.MAX_ROWS}.")
+            result.add_error(
+                1,
+                "file",
+                f"Too many rows ({result.total_rows}). Maximum allowed: {self.MAX_ROWS}.",
+            )
             return result
 
         cache = _CodeCache(self.db, organization_id)
@@ -416,10 +452,66 @@ class StockEntryBulkImportService:
 # ---------------------------------------------------------------------------
 
 _SAMPLE_ROWS = [
-    ["material_receipt", "2025-01-15", "09:00", "", "WH-MAIN", "ITEM-001", "Widget A opening stock", "Opening stock receipt", "100", "Pieces", "25.00", "", ""],
-    ["material_receipt", "2025-01-15", "09:00", "", "WH-MAIN", "ITEM-002", "Widget B opening stock", "Opening stock receipt", "50", "Boxes", "10.00", "", "BATCH-001"],
-    ["material_issue", "2025-01-16", "14:30", "WH-MAIN", "", "ITEM-001", "Issued to production", "Production run #42", "20", "Pieces", "", "", ""],
-    ["material_transfer", "2025-01-17", "10:00", "WH-MAIN", "WH-SECONDARY", "ITEM-001", "", "Rebalancing stock", "30", "Pieces", "25.00", "", ""],
+    [
+        "material_receipt",
+        "2025-01-15",
+        "09:00",
+        "",
+        "WH-MAIN",
+        "ITEM-001",
+        "Widget A opening stock",
+        "Opening stock receipt",
+        "100",
+        "Pieces",
+        "25.00",
+        "",
+        "",
+    ],
+    [
+        "material_receipt",
+        "2025-01-15",
+        "09:00",
+        "",
+        "WH-MAIN",
+        "ITEM-002",
+        "Widget B opening stock",
+        "Opening stock receipt",
+        "50",
+        "Boxes",
+        "10.00",
+        "",
+        "BATCH-001",
+    ],
+    [
+        "material_issue",
+        "2025-01-16",
+        "14:30",
+        "WH-MAIN",
+        "",
+        "ITEM-001",
+        "Issued to production",
+        "Production run #42",
+        "20",
+        "Pieces",
+        "",
+        "",
+        "",
+    ],
+    [
+        "material_transfer",
+        "2025-01-17",
+        "10:00",
+        "WH-MAIN",
+        "WH-SECONDARY",
+        "ITEM-001",
+        "",
+        "Rebalancing stock",
+        "30",
+        "Pieces",
+        "25.00",
+        "",
+        "",
+    ],
 ]
 
 
@@ -437,7 +529,9 @@ def generate_xlsx_template() -> bytes:
     ws.title = "Stock Entries"
 
     header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+    header_fill = PatternFill(
+        start_color="2563EB", end_color="2563EB", fill_type="solid"
+    )
 
     ws.append(TEMPLATE_HEADERS)
     for cell in ws[1]:
@@ -449,8 +543,14 @@ def generate_xlsx_template() -> bytes:
         ws.append(row)
 
     # Auto-width
-    col_widths = [max(len(str(TEMPLATE_HEADERS[i])), max((len(str(r[i])) for r in _SAMPLE_ROWS), default=0)) + 4
-                  for i in range(len(TEMPLATE_HEADERS))]
+    col_widths = [
+        max(
+            len(str(TEMPLATE_HEADERS[i])),
+            max((len(str(r[i])) for r in _SAMPLE_ROWS), default=0),
+        )
+        + 4
+        for i in range(len(TEMPLATE_HEADERS))
+    ]
     for i, width in enumerate(col_widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = width
 
@@ -462,25 +562,47 @@ def generate_xlsx_template() -> bytes:
         cell.font = Font(bold=True)
 
     instructions = [
-        ("Stock Entry Type", "Yes", "Type of stock movement", "material_receipt | material_issue | material_transfer | manufacture | repack | send_to_subcontractor"),
-        ("Posting Date",     "Yes", "Date of the entry",      "YYYY-MM-DD  e.g. 2025-01-15"),
-        ("Posting Time",     "No",  "Time of the entry",      "HH:MM  e.g. 09:00"),
-        ("From Warehouse Code", "No", "Source warehouse code (required for issue/transfer)", "e.g. WH-MAIN"),
-        ("To Warehouse Code",   "No", "Target warehouse code (required for receipt/transfer)", "e.g. WH-SECONDARY"),
-        ("Item Code",        "Yes", "Item code as defined in the Items master", "e.g. ITEM-001"),
-        ("Description",      "No",  "Line item description",  ""),
-        ("Remarks",          "No",  "Notes for the entry",    ""),
-        ("Quantity",         "Yes", "Quantity (must be > 0)", "e.g. 100"),
-        ("UOM",              "Yes", "Unit of measure",        "e.g. Pieces, Kg, Boxes"),
-        ("Basic Rate",       "No",  "Unit cost",              "e.g. 25.00"),
-        ("Valuation Rate",   "No",  "Valuation rate",         "e.g. 25.00"),
-        ("Batch Number",     "No",  "Batch number if applicable", "e.g. BATCH-001"),
+        (
+            "Stock Entry Type",
+            "Yes",
+            "Type of stock movement",
+            "material_receipt | material_issue | material_transfer | manufacture | repack | send_to_subcontractor",
+        ),
+        ("Posting Date", "Yes", "Date of the entry", "YYYY-MM-DD  e.g. 2025-01-15"),
+        ("Posting Time", "No", "Time of the entry", "HH:MM  e.g. 09:00"),
+        (
+            "From Warehouse Code",
+            "No",
+            "Source warehouse code (required for issue/transfer)",
+            "e.g. WH-MAIN",
+        ),
+        (
+            "To Warehouse Code",
+            "No",
+            "Target warehouse code (required for receipt/transfer)",
+            "e.g. WH-SECONDARY",
+        ),
+        (
+            "Item Code",
+            "Yes",
+            "Item code as defined in the Items master",
+            "e.g. ITEM-001",
+        ),
+        ("Description", "No", "Line item description", ""),
+        ("Remarks", "No", "Notes for the entry", ""),
+        ("Quantity", "Yes", "Quantity (must be > 0)", "e.g. 100"),
+        ("UOM", "Yes", "Unit of measure", "e.g. Pieces, Kg, Boxes"),
+        ("Basic Rate", "No", "Unit cost", "e.g. 25.00"),
+        ("Valuation Rate", "No", "Valuation rate", "e.g. 25.00"),
+        ("Batch Number", "No", "Batch number if applicable", "e.g. BATCH-001"),
     ]
     for row in instructions:
         info.append(row)
 
     for col in info.columns:
-        info.column_dimensions[col[0].column_letter].width = max(len(str(c.value or "")) for c in col) + 4
+        info.column_dimensions[col[0].column_letter].width = (
+            max(len(str(c.value or "")) for c in col) + 4
+        )
 
     buf = io.BytesIO()
     wb.save(buf)

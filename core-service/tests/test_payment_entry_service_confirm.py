@@ -1,19 +1,17 @@
 """Tests for PaymentEntryService confirm_payment() method"""
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
-from app.models.base import PaymentEntryStatus, PaymentEntryType, PaymentMode, PaymentSource
-from app.models.payment_entry import PaymentEntry
-from app.models.payment_reference import PaymentReference
 from app.models.customer import Customer
 from app.models.invoice import Invoice
+from app.models.payment_reference import PaymentReference
 from app.schemas.payment_entry import PaymentEntryCreate
 from app.services.payment_entry_service import PaymentEntryService
 
@@ -23,7 +21,7 @@ def setup_test_data(db_session: Session):
     """Setup test data for payment confirmation tests"""
     org_id = uuid4()
     user_id = uuid4()
-    
+
     # Create customer
     customer = Customer(
         id=uuid4(),
@@ -33,7 +31,7 @@ def setup_test_data(db_session: Session):
         email="customer@example.com",
     )
     db_session.add(customer)
-    
+
     # Create invoice
     invoice = Invoice(
         id=uuid4(),
@@ -46,9 +44,9 @@ def setup_test_data(db_session: Session):
         status="Unpaid",
     )
     db_session.add(invoice)
-    
+
     db_session.commit()
-    
+
     return {
         "org_id": org_id,
         "user_id": user_id,
@@ -57,19 +55,21 @@ def setup_test_data(db_session: Session):
     }
 
 
-@patch('app.services.payment_entry_service.JournalPostingService')
-def test_confirm_payment_with_valid_data(mock_journal_service, db_session: Session, setup_test_data):
+@patch("app.services.payment_entry_service.JournalPostingService")
+def test_confirm_payment_with_valid_data(
+    mock_journal_service, db_session: Session, setup_test_data
+):
     """Test confirm payment with valid payment and allocations"""
     data = setup_test_data
-    
+
     # Mock journal posting service
     mock_journal_instance = Mock()
     mock_journal_service.return_value = mock_journal_instance
     mock_journal_instance._validate_default_accounts_configured.return_value = None
     mock_journal_instance.post_payment_journal_entry.return_value = {"id": uuid4()}
-    
+
     service = PaymentEntryService(db_session)
-    
+
     # Create payment entry
     payment_data = PaymentEntryCreate(
         payment_type="Customer_Payment",
@@ -80,13 +80,13 @@ def test_confirm_payment_with_valid_data(mock_journal_service, db_session: Sessi
         payment_mode="Bank_Transfer",
         reference_no="UTR123456",
     )
-    
+
     payment = service.create_payment_entry(
         data=payment_data,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Create allocation
     allocation = PaymentReference(
         id=uuid4(),
@@ -101,14 +101,14 @@ def test_confirm_payment_with_valid_data(mock_journal_service, db_session: Sessi
     )
     db_session.add(allocation)
     db_session.commit()
-    
+
     # Confirm payment
     confirmed = service.confirm_payment(
         payment_id=payment.id,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Assertions
     assert confirmed.status == "Confirmed"
     assert confirmed.receipt_number is not None
@@ -116,19 +116,21 @@ def test_confirm_payment_with_valid_data(mock_journal_service, db_session: Sessi
     assert str(datetime.now(UTC).year) in confirmed.receipt_number
 
 
-@patch('app.services.payment_entry_service.JournalPostingService')
-def test_confirm_payment_fails_when_not_draft(mock_journal_service, db_session: Session, setup_test_data):
+@patch("app.services.payment_entry_service.JournalPostingService")
+def test_confirm_payment_fails_when_not_draft(
+    mock_journal_service, db_session: Session, setup_test_data
+):
     """Test confirm fails when payment is not in Draft status"""
     data = setup_test_data
-    
+
     # Mock journal posting service
     mock_journal_instance = Mock()
     mock_journal_service.return_value = mock_journal_instance
     mock_journal_instance._validate_default_accounts_configured.return_value = None
     mock_journal_instance.post_payment_journal_entry.return_value = {"id": uuid4()}
-    
+
     service = PaymentEntryService(db_session)
-    
+
     # Create payment entry
     payment_data = PaymentEntryCreate(
         payment_type="Customer_Payment",
@@ -139,13 +141,13 @@ def test_confirm_payment_fails_when_not_draft(mock_journal_service, db_session: 
         payment_mode="Bank_Transfer",
         reference_no="UTR123456",
     )
-    
+
     payment = service.create_payment_entry(
         data=payment_data,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Create allocation
     allocation = PaymentReference(
         id=uuid4(),
@@ -160,14 +162,14 @@ def test_confirm_payment_fails_when_not_draft(mock_journal_service, db_session: 
     )
     db_session.add(allocation)
     db_session.commit()
-    
+
     # Confirm payment first time
     service.confirm_payment(
         payment_id=payment.id,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Try to confirm again - should fail
     with pytest.raises(ValidationError) as exc_info:
         service.confirm_payment(
@@ -175,15 +177,17 @@ def test_confirm_payment_fails_when_not_draft(mock_journal_service, db_session: 
             organization_id=data["org_id"],
             user_id=data["user_id"],
         )
-    
+
     assert "Only Draft payments can be confirmed" in str(exc_info.value)
 
 
-def test_confirm_payment_fails_when_no_allocations(db_session: Session, setup_test_data):
+def test_confirm_payment_fails_when_no_allocations(
+    db_session: Session, setup_test_data
+):
     """Test confirm fails when no allocations exist"""
     data = setup_test_data
     service = PaymentEntryService(db_session)
-    
+
     # Create payment entry without allocations
     payment_data = PaymentEntryCreate(
         payment_type="Customer_Payment",
@@ -194,13 +198,13 @@ def test_confirm_payment_fails_when_no_allocations(db_session: Session, setup_te
         payment_mode="Bank_Transfer",
         reference_no="UTR123456",
     )
-    
+
     payment = service.create_payment_entry(
         data=payment_data,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Try to confirm without allocations - should fail
     with pytest.raises(ValidationError) as exc_info:
         service.confirm_payment(
@@ -208,25 +212,27 @@ def test_confirm_payment_fails_when_no_allocations(db_session: Session, setup_te
             organization_id=data["org_id"],
             user_id=data["user_id"],
         )
-    
+
     assert "Cannot confirm payment without allocations" in str(exc_info.value)
 
 
-@patch('app.services.payment_entry_service.JournalPostingService')
-def test_receipt_number_generation_is_unique(mock_journal_service, db_session: Session, setup_test_data):
+@patch("app.services.payment_entry_service.JournalPostingService")
+def test_receipt_number_generation_is_unique(
+    mock_journal_service, db_session: Session, setup_test_data
+):
     """Test receipt number generation is unique"""
     data = setup_test_data
-    
+
     # Mock journal posting service
     mock_journal_instance = Mock()
     mock_journal_service.return_value = mock_journal_instance
     mock_journal_instance._validate_default_accounts_configured.return_value = None
     mock_journal_instance.post_payment_journal_entry.return_value = {"id": uuid4()}
-    
+
     service = PaymentEntryService(db_session)
-    
+
     receipt_numbers = []
-    
+
     # Create and confirm multiple payments
     for i in range(3):
         # Create payment entry
@@ -239,13 +245,13 @@ def test_receipt_number_generation_is_unique(mock_journal_service, db_session: S
             payment_mode="Bank_Transfer",
             reference_no=f"UTR{i}",
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=data["org_id"],
             user_id=data["user_id"],
         )
-        
+
         # Create allocation
         allocation = PaymentReference(
             id=uuid4(),
@@ -260,19 +266,19 @@ def test_receipt_number_generation_is_unique(mock_journal_service, db_session: S
         )
         db_session.add(allocation)
         db_session.commit()
-        
+
         # Confirm payment
         confirmed = service.confirm_payment(
             payment_id=payment.id,
             organization_id=data["org_id"],
             user_id=data["user_id"],
         )
-        
+
         receipt_numbers.append(confirmed.receipt_number)
-    
+
     # Verify all receipt numbers are unique
     assert len(receipt_numbers) == len(set(receipt_numbers))
-    
+
     # Verify they follow the expected format and sequence
     year = datetime.now(UTC).year
     assert receipt_numbers[0] == f"RCP-{year}-00001"
@@ -280,19 +286,21 @@ def test_receipt_number_generation_is_unique(mock_journal_service, db_session: S
     assert receipt_numbers[2] == f"RCP-{year}-00003"
 
 
-@patch('app.services.payment_entry_service.JournalPostingService')
-def test_confirm_creates_audit_log_entry(mock_journal_service, db_session: Session, setup_test_data):
+@patch("app.services.payment_entry_service.JournalPostingService")
+def test_confirm_creates_audit_log_entry(
+    mock_journal_service, db_session: Session, setup_test_data
+):
     """Test audit log entry is created on confirmation"""
     data = setup_test_data
-    
+
     # Mock journal posting service
     mock_journal_instance = Mock()
     mock_journal_service.return_value = mock_journal_instance
     mock_journal_instance._validate_default_accounts_configured.return_value = None
     mock_journal_instance.post_payment_journal_entry.return_value = {"id": uuid4()}
-    
+
     service = PaymentEntryService(db_session)
-    
+
     # Create payment entry
     payment_data = PaymentEntryCreate(
         payment_type="Customer_Payment",
@@ -303,13 +311,13 @@ def test_confirm_creates_audit_log_entry(mock_journal_service, db_session: Sessi
         payment_mode="Bank_Transfer",
         reference_no="UTR123456",
     )
-    
+
     payment = service.create_payment_entry(
         data=payment_data,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Create allocation
     allocation = PaymentReference(
         id=uuid4(),
@@ -324,23 +332,27 @@ def test_confirm_creates_audit_log_entry(mock_journal_service, db_session: Sessi
     )
     db_session.add(allocation)
     db_session.commit()
-    
+
     # Confirm payment
     service.confirm_payment(
         payment_id=payment.id,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Verify audit log entry exists
-    from app.models.payment_audit_log import PaymentAuditLog
     from app.models.base import PaymentAuditAction
-    
-    audit_logs = db_session.query(PaymentAuditLog).filter(
-        PaymentAuditLog.payment_id == payment.id,
-        PaymentAuditLog.action == PaymentAuditAction.CONFIRM,
-    ).all()
-    
+    from app.models.payment_audit_log import PaymentAuditLog
+
+    audit_logs = (
+        db_session.query(PaymentAuditLog)
+        .filter(
+            PaymentAuditLog.payment_id == payment.id,
+            PaymentAuditLog.action == PaymentAuditAction.CONFIRM,
+        )
+        .all()
+    )
+
     assert len(audit_logs) == 1
     audit_log = audit_logs[0]
     assert audit_log.user_id == data["user_id"]
@@ -349,20 +361,22 @@ def test_confirm_creates_audit_log_entry(mock_journal_service, db_session: Sessi
     assert audit_log.new_values["receipt_number"] is not None
 
 
-@patch('app.services.payment_entry_service.JournalPostingService')
-def test_confirm_fails_when_default_accounts_not_configured(mock_journal_service, db_session: Session, setup_test_data):
+@patch("app.services.payment_entry_service.JournalPostingService")
+def test_confirm_fails_when_default_accounts_not_configured(
+    mock_journal_service, db_session: Session, setup_test_data
+):
     """Test confirm fails when default accounts not configured"""
     data = setup_test_data
-    
+
     # Mock journal posting service to raise validation error
     mock_journal_instance = Mock()
     mock_journal_service.return_value = mock_journal_instance
-    mock_journal_instance._validate_default_accounts_configured.side_effect = ValidationError(
-        "Default account for 'bank' not configured"
+    mock_journal_instance._validate_default_accounts_configured.side_effect = (
+        ValidationError("Default account for 'bank' not configured")
     )
-    
+
     service = PaymentEntryService(db_session)
-    
+
     # Create payment entry
     payment_data = PaymentEntryCreate(
         payment_type="Customer_Payment",
@@ -373,13 +387,13 @@ def test_confirm_fails_when_default_accounts_not_configured(mock_journal_service
         payment_mode="Bank_Transfer",
         reference_no="UTR123456",
     )
-    
+
     payment = service.create_payment_entry(
         data=payment_data,
         organization_id=data["org_id"],
         user_id=data["user_id"],
     )
-    
+
     # Create allocation
     allocation = PaymentReference(
         id=uuid4(),
@@ -394,7 +408,7 @@ def test_confirm_fails_when_default_accounts_not_configured(mock_journal_service
     )
     db_session.add(allocation)
     db_session.commit()
-    
+
     # Try to confirm - should fail
     with pytest.raises(ValidationError) as exc_info:
         service.confirm_payment(
@@ -402,7 +416,6 @@ def test_confirm_fails_when_default_accounts_not_configured(mock_journal_service
             organization_id=data["org_id"],
             user_id=data["user_id"],
         )
-    
+
     assert "Cannot confirm payment" in str(exc_info.value)
     assert "Default account" in str(exc_info.value)
-

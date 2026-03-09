@@ -3,11 +3,10 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, Enum, Integer, String, Text
-from app.models.types import UUID
+from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from app.database import Base
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class BulkImportJobStatus:

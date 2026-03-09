@@ -1,6 +1,5 @@
 """Tax Template API endpoints"""
 
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,7 +37,7 @@ def create_tax_template(
 ):
     """
     Create a new tax template with tax rules.
-    
+
     Requires permission: tax_template.create
     """
     service = TaxTemplateService(db)
@@ -54,9 +53,11 @@ def create_tax_template(
     summary="List tax templates",
 )
 def list_tax_templates(
-    tax_category: Optional[str] = Query(None, description="Filter by tax category (Input/Output)"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    is_default: Optional[bool] = Query(None, description="Filter by default status"),
+    tax_category: str | None = Query(
+        None, description="Filter by tax category (Input/Output)"
+    ),
+    is_active: bool | None = Query(None, description="Filter by active status"),
+    is_default: bool | None = Query(None, description="Filter by default status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(TAX_TEMPLATE_READ)),
@@ -64,7 +65,7 @@ def list_tax_templates(
 ):
     """
     List all tax templates for the current organization with pagination and filtering.
-    
+
     Requires permission: tax_template.read
     """
     filters = {
@@ -77,17 +78,13 @@ def list_tax_templates(
         filters["is_active"] = is_active
     if is_default is not None:
         filters["is_default"] = is_default
-    
+
     service = TaxTemplateService(db)
     templates, pagination = service.list_templates(
-        current_user.organization_id,
-        filters
+        current_user.organization_id, filters
     )
-    
-    return {
-        "templates": templates,
-        "pagination": pagination
-    }
+
+    return {"templates": templates, "pagination": pagination}
 
 
 @router.get(
@@ -96,25 +93,25 @@ def list_tax_templates(
     summary="Get applicable tax template",
 )
 def get_applicable_tax_template(
-    item_id: Optional[UUID] = Query(None, description="Item ID"),
+    item_id: UUID | None = Query(None, description="Item ID"),
     transaction_type: str = Query(..., description="Transaction type (Sales/Purchase)"),
-    customer_id: Optional[UUID] = Query(None, description="Customer ID"),
-    supplier_id: Optional[UUID] = Query(None, description="Supplier ID"),
+    customer_id: UUID | None = Query(None, description="Customer ID"),
+    supplier_id: UUID | None = Query(None, description="Supplier ID"),
     current_user: CurrentUser = Depends(require_permission(TAX_TEMPLATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
     Get the applicable tax template for a given context.
-    
+
     Returns the template based on inheritance hierarchy:
     1. Item-level template
     2. Item group-level template
     3. Organization default template
-    
+
     Requires permission: tax_template.read
     """
     from app.services.tax_template_service import TaxContext
-    
+
     context = TaxContext(
         organization_id=current_user.organization_id,
         transaction_type=transaction_type,
@@ -122,21 +119,15 @@ def get_applicable_tax_template(
         customer_id=customer_id,
         supplier_id=supplier_id,
     )
-    
+
     service = TaxTemplateService(db)
     result = service.get_applicable_template(context)
-    
+
     if result is None:
-        return {
-            "template": None,
-            "source": None
-        }
-    
+        return {"template": None, "source": None}
+
     template, source = result
-    return {
-        "template": template,
-        "source": source
-    }
+    return {"template": template, "source": source}
 
 
 @router.get(
@@ -151,18 +142,17 @@ def get_tax_template(
 ):
     """
     Get a specific tax template by ID.
-    
+
     Requires permission: tax_template.read
     """
     service = TaxTemplateService(db)
     template = service.get_template(template_id, current_user.organization_id)
-    
+
     if not template:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tax template not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tax template not found"
         )
-    
+
     return template
 
 
@@ -179,20 +169,19 @@ def update_tax_template(
 ):
     """
     Update an existing tax template.
-    
+
     Requires permission: tax_template.update
     """
     service = TaxTemplateService(db)
     data = template_data.model_dump(exclude_unset=True)
     data["organization_id"] = current_user.organization_id
     template = service.update_template(template_id, data, current_user.id)
-    
+
     if not template:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tax template not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tax template not found"
         )
-    
+
     return template
 
 
@@ -208,20 +197,19 @@ def delete_tax_template(
 ):
     """
     Soft delete a tax template.
-    
+
     Will fail if the template is referenced by items, item groups, or active transactions.
-    
+
     Requires permission: tax_template.delete
     """
     service = TaxTemplateService(db)
     success = service.delete_template(template_id, current_user.organization_id)
-    
+
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tax template not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tax template not found"
         )
-    
+
     return None
 
 
@@ -237,33 +225,30 @@ def set_as_default(
 ):
     """
     Mark a tax template as the default for its tax category.
-    
+
     This will unmark any existing default template for the same organization and tax category.
-    
+
     Requires permission: tax_template.update
     """
     service = TaxTemplateService(db)
-    
+
     # Get the template to find its tax_category
     template = service.get_template(template_id, current_user.organization_id)
     if not template:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tax template not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tax template not found"
         )
-    
+
     success = service.set_as_default(
-        template_id,
-        current_user.organization_id,
-        template["tax_category"]
+        template_id, current_user.organization_id, template["tax_category"]
     )
-    
+
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to set template as default"
+            detail="Failed to set template as default",
         )
-    
+
     # Return the updated template
     updated_template = service.get_template(template_id, current_user.organization_id)
     return updated_template

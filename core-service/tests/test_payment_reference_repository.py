@@ -6,7 +6,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models.payment_reference import PaymentReference
 from app.repositories.payment_reference_repository import PaymentReferenceRepository
 
 
@@ -41,7 +40,11 @@ def test_user_id():
 
 
 def test_create_payment_reference(
-    payment_reference_repo, test_organization_id, test_payment_id, test_invoice_id, test_user_id
+    payment_reference_repo,
+    test_organization_id,
+    test_payment_id,
+    test_invoice_id,
+    test_user_id,
 ):
     """Test creating a payment reference"""
     data = {
@@ -64,7 +67,11 @@ def test_create_payment_reference(
 
 
 def test_create_duplicate_payment_invoice_fails(
-    payment_reference_repo, test_organization_id, test_payment_id, test_invoice_id, test_user_id
+    payment_reference_repo,
+    test_organization_id,
+    test_payment_id,
+    test_invoice_id,
+    test_user_id,
 ):
     """Test that creating duplicate payment-invoice reference fails"""
     data = {
@@ -110,7 +117,9 @@ def test_get_by_payment_id(
     payment_reference_repo.create(data_2)
 
     # Get all references for the payment
-    references = payment_reference_repo.get_by_payment_id(test_payment_id, test_organization_id)
+    references = payment_reference_repo.get_by_payment_id(
+        test_payment_id, test_organization_id
+    )
 
     assert len(references) == 2
     assert all(ref.payment_id == test_payment_id for ref in references)
@@ -143,14 +152,20 @@ def test_get_by_invoice_id(
     payment_reference_repo.create(data_2)
 
     # Get all references for the invoice
-    references = payment_reference_repo.get_by_invoice_id(test_invoice_id, test_organization_id)
+    references = payment_reference_repo.get_by_invoice_id(
+        test_invoice_id, test_organization_id
+    )
 
     assert len(references) == 2
     assert all(ref.invoice_id == test_invoice_id for ref in references)
 
 
 def test_delete_payment_reference(
-    payment_reference_repo, test_organization_id, test_payment_id, test_invoice_id, test_user_id
+    payment_reference_repo,
+    test_organization_id,
+    test_payment_id,
+    test_invoice_id,
+    test_user_id,
 ):
     """Test deleting a payment reference"""
     data = {
@@ -167,7 +182,9 @@ def test_delete_payment_reference(
     payment_reference_repo.delete(reference)
 
     # Verify it's deleted
-    references = payment_reference_repo.get_by_payment_id(test_payment_id, test_organization_id)
+    references = payment_reference_repo.get_by_payment_id(
+        test_payment_id, test_organization_id
+    )
     assert len(references) == 0
 
 

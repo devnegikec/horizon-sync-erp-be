@@ -23,9 +23,13 @@ class InvoiceBase(BaseModel):
     outstanding_amount: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     discount_type: str | None = Field(
-        default="percentage", pattern="^(flat|percentage)$", description="Document-level discount type"
+        default="percentage",
+        pattern="^(flat|percentage)$",
+        description="Document-level discount type",
     )
-    discount_value: Decimal | float | None = Field(default=0, ge=0, description="Discount % or fixed amount")
+    discount_value: Decimal | float | None = Field(
+        default=0, ge=0, description="Discount % or fixed amount"
+    )
     reference_type: str | None = None
     reference_id: UUID | None = None
     remarks: str | None = None
@@ -45,7 +49,9 @@ class InvoiceUpdate(BaseModel):
     discount_type: str | None = Field(
         None, pattern="^(flat|percentage)$", description="Document-level discount type"
     )
-    discount_value: Decimal | float | None = Field(default=None, ge=0, description="Discount % or fixed amount")
+    discount_value: Decimal | float | None = Field(
+        default=None, ge=0, description="Discount % or fixed amount"
+    )
     grand_total: Decimal | float | None = None
     outstanding_amount: Decimal | float | None = None
 

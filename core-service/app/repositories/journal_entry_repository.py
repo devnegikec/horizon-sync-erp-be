@@ -55,7 +55,7 @@ class JournalEntryRepository:
         sort_order: str = "desc",
     ) -> tuple[list[JournalEntry], int]:
         from sqlalchemy.orm import joinedload
-        
+
         q = self.db.query(JournalEntry).filter(
             JournalEntry.organization_id == organization_id
         )
@@ -65,7 +65,9 @@ class JournalEntryRepository:
         col = getattr(JournalEntry, sort_by, JournalEntry.created_at)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
         # Eagerly load lines and their account relationships
-        q = q.options(joinedload(JournalEntry.lines).joinedload(JournalEntryLine.account))
+        q = q.options(
+            joinedload(JournalEntry.lines).joinedload(JournalEntryLine.account)
+        )
         items = q.offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 

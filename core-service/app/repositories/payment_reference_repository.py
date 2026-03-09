@@ -1,7 +1,7 @@
 """Payment reference repository for database operations"""
 
-from uuid import UUID
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -66,7 +66,7 @@ class PaymentReferenceRepository:
     ) -> list[PaymentReference]:
         """
         Get all payment references for a payment with eager loaded invoice details.
-        
+
         Uses joinedload to avoid N+1 queries by loading invoice data in a single query.
 
         Args:
@@ -77,8 +77,8 @@ class PaymentReferenceRepository:
             List of PaymentReference objects with invoice relationship loaded
         """
         from sqlalchemy.orm import joinedload
-        from app.models.invoice import Invoice
-        
+
+
         return (
             self.db.query(PaymentReference)
             .options(joinedload(PaymentReference.invoice))
@@ -116,7 +116,7 @@ class PaymentReferenceRepository:
     ) -> list[PaymentReference]:
         """
         Get all payment references for an invoice with eager loaded payment details.
-        
+
         Uses joinedload to avoid N+1 queries by loading payment entry data in a single query.
 
         Args:
@@ -127,8 +127,8 @@ class PaymentReferenceRepository:
             List of PaymentReference objects with payment_entry relationship loaded
         """
         from sqlalchemy.orm import joinedload
-        from app.models.payment_entry import PaymentEntry
-        
+
+
         return (
             self.db.query(PaymentReference)
             .options(joinedload(PaymentReference.payment_entry))

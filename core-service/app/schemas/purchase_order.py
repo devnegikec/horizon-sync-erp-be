@@ -13,8 +13,12 @@ class PurchaseOrderLineBase(BaseModel):
     """Base schema for Purchase Order Line"""
 
     item_id: UUID
-    quantity: Decimal | float = Field(..., gt=0, description="Quantity must be positive")
-    unit_price: Decimal | float = Field(..., ge=0, description="Unit price must be non-negative")
+    quantity: Decimal | float = Field(
+        ..., gt=0, description="Quantity must be positive"
+    )
+    unit_price: Decimal | float = Field(
+        ..., ge=0, description="Unit price must be non-negative"
+    )
 
 
 class PurchaseOrderLineCreate(PurchaseOrderLineBase):
@@ -41,8 +45,12 @@ class PurchaseOrderBase(BaseModel):
 
     purchase_order_no: str | None = Field(None, min_length=1, max_length=100)
     party_id: UUID = Field(..., description="Supplier ID")
-    tax_rate: Decimal | float | None = Field(None, ge=0, le=1, description="Tax rate (0-1)")
-    discount_amount: Decimal | float | None = Field(None, ge=0, description="Discount amount")
+    tax_rate: Decimal | float | None = Field(
+        None, ge=0, le=1, description="Tax rate (0-1)"
+    )
+    discount_amount: Decimal | float | None = Field(
+        None, ge=0, description="Discount amount"
+    )
 
 
 class PurchaseOrderCreate(PurchaseOrderBase):

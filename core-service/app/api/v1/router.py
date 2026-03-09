@@ -9,7 +9,6 @@ from app.api.v1.endpoints import (
     batches,
     bulk_export,
     bulk_import,
-    stock_entry_bulk_import,
     chart_of_accounts,
     communications,
     currencies,
@@ -38,6 +37,7 @@ from app.api.v1.endpoints import (
     serial_numbers,
     smart_picking,
     stock_entries,
+    stock_entry_bulk_import,
     stock_levels,
     stock_movements,
     stock_reconciliations,
@@ -99,9 +99,7 @@ api_router.include_router(uoms.router, prefix="/uoms", tags=["UOMs"])
 api_router.include_router(
     uom_conversions.router, prefix="/uom-conversions", tags=["UOM Conversions"]
 )
-api_router.include_router(
-    currencies.router, prefix="/currencies", tags=["Currencies"]
-)
+api_router.include_router(currencies.router, prefix="/currencies", tags=["Currencies"])
 api_router.include_router(
     exchange_rates.router, prefix="/exchange-rates", tags=["Exchange Rates"]
 )

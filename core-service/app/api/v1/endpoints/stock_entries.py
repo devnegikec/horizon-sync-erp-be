@@ -187,5 +187,7 @@ async def reprocess_stock_entry(
     Will raise 409 if movements already exist to prevent double-counting.
     """
     svc = StockEntryService(db)
-    e = svc.reprocess_stock_levels(entry_id, current_user.organization_id, current_user.id)
+    e = svc.reprocess_stock_levels(
+        entry_id, current_user.organization_id, current_user.id
+    )
     return stock_entry_to_response(e)

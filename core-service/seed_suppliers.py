@@ -1,13 +1,13 @@
 """Seed suppliers data for testing"""
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models.supplier import Supplier
 from app.models.base import SupplierStatus
+from app.models.supplier import Supplier
 
 # Database URL
 DATABASE_URL = "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
@@ -79,7 +79,9 @@ def seed_suppliers():
             )
 
             if existing:
-                print(f"Supplier {supplier_data['supplier_code']} already exists, skipping...")
+                print(
+                    f"Supplier {supplier_data['supplier_code']} already exists, skipping..."
+                )
                 continue
 
             # Create new supplier
@@ -100,7 +102,9 @@ def seed_suppliers():
             )
 
             db.add(supplier)
-            print(f"Created supplier: {supplier.supplier_name} ({supplier.supplier_code})")
+            print(
+                f"Created supplier: {supplier.supplier_name} ({supplier.supplier_code})"
+            )
 
         db.commit()
         print("\n✓ Supplier seed data inserted successfully!")

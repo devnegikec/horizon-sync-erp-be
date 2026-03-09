@@ -32,7 +32,9 @@ def sample_uom(uom_service, sample_organization_id, sample_user_id):
 # ── Create ──────────────────────────────────────────────────────────────
 
 
-def test_create_uom_with_valid_data(uom_service, sample_organization_id, sample_user_id):
+def test_create_uom_with_valid_data(
+    uom_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 1.1"""
     data = UOMCreate(name="Pieces", abbreviation="Pcs", description="Count unit")
     uom = uom_service.create_uom(data, sample_organization_id, sample_user_id)
@@ -111,9 +113,7 @@ def test_list_uoms_with_pagination(uom_service, sample_organization_id, sample_u
     assert pagination["has_prev"] is False
 
     # Page 2
-    uoms_p2, pag_p2 = uom_service.list_uoms(
-        sample_organization_id, page=2, page_size=2
-    )
+    uoms_p2, pag_p2 = uom_service.list_uoms(sample_organization_id, page=2, page_size=2)
     assert len(uoms_p2) == 1
     assert pag_p2["has_next"] is False
     assert pag_p2["has_prev"] is True
@@ -132,9 +132,7 @@ def test_list_uoms_with_search(uom_service, sample_organization_id, sample_user_
         sample_user_id,
     )
 
-    uoms, pagination = uom_service.list_uoms(
-        sample_organization_id, search="kilo"
-    )
+    uoms, pagination = uom_service.list_uoms(sample_organization_id, search="kilo")
 
     assert len(uoms) == 1
     assert uoms[0].name == "Kilogram"
@@ -193,7 +191,9 @@ def test_update_uom_duplicate_name_raises_409(
 # ── Soft-delete ─────────────────────────────────────────────────────────
 
 
-def test_soft_delete_uom(uom_service, sample_uom, sample_organization_id, sample_user_id):
+def test_soft_delete_uom(
+    uom_service, sample_uom, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 1.5"""
     uom_service.delete_uom(sample_uom.id, sample_organization_id, sample_user_id)
 
@@ -256,4 +256,6 @@ def test_service_duplicate_check_ignores_soft_deleted(
 
     # After soft-delete, the repository should NOT find the old record
     assert uom_service.uom_repo.get_by_name("Kilogram", sample_organization_id) is None
-    assert uom_service.uom_repo.get_by_abbreviation("Kg", sample_organization_id) is None
+    assert (
+        uom_service.uom_repo.get_by_abbreviation("Kg", sample_organization_id) is None
+    )

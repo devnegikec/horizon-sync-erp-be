@@ -3,7 +3,16 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -22,7 +31,9 @@ from app.schemas.stock_reconciliation import (
     StockReconciliationUpdate,
 )
 from app.services.stock_reconciliation_service import StockReconciliationService
-from app.services.stock_reconciliation_wizard_service import StockReconciliationWizardService
+from app.services.stock_reconciliation_wizard_service import (
+    StockReconciliationWizardService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +65,9 @@ async def download_reconciliation_template(
     return Response(
         content=content,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="stock_reconciliation_template.csv"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="stock_reconciliation_template.csv"'
+        },
     )
 
 
@@ -90,7 +103,9 @@ async def upload_reconciliation(
 
     svc = StockReconciliationWizardService(db)
     try:
-        result = svc.upload_and_preview(wh_id, content, current_user.organization_id, current_user.id)
+        result = svc.upload_and_preview(
+            wh_id, content, current_user.organization_id, current_user.id
+        )
     except Exception as exc:
         logger.exception("Reconciliation upload failed")
         status_code = getattr(exc, "status_code", 422)
@@ -118,7 +133,9 @@ async def confirm_reconciliation(
     """
     svc = StockReconciliationWizardService(db)
     try:
-        rec = svc.confirm(reconciliation_id, current_user.organization_id, current_user.id)
+        rec = svc.confirm(
+            reconciliation_id, current_user.organization_id, current_user.id
+        )
     except Exception as exc:
         logger.exception("Reconciliation confirm failed")
         status_code = getattr(exc, "status_code", 422)

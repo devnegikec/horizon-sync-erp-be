@@ -33,7 +33,7 @@ class DefaultAccountResponse(BaseModel):
     transaction_type: str
     scenario: str | None
     account_id: UUID
-    
+
     # Include account details for convenience
     account_code: str | None = None
     account_name: str | None = None
@@ -52,15 +52,16 @@ class DefaultAccountBulkUpdateRequest(BaseModel):
     """Schema for bulk updating default accounts"""
 
     defaults: list[DefaultAccountCreate] = Field(
-        ..., 
-        description="List of default account mappings to create or update"
+        ..., description="List of default account mappings to create or update"
     )
 
 
 class AccountCodeFormatResponse(BaseModel):
     """Schema for account code format configuration"""
 
-    format_pattern: str = Field(..., description="Regex pattern for account code format")
+    format_pattern: str = Field(
+        ..., description="Regex pattern for account code format"
+    )
     example: str | None = Field(None, description="Example of a valid account code")
 
 
@@ -68,7 +69,5 @@ class AccountCodeFormatUpdateRequest(BaseModel):
     """Schema for updating account code format"""
 
     format_pattern: str = Field(
-        ..., 
-        min_length=1,
-        description="Regex pattern for account code format"
+        ..., min_length=1, description="Regex pattern for account code format"
     )

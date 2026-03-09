@@ -81,7 +81,9 @@ def upgrade() -> None:
             sa.Column("domain", sa.String(length=255), nullable=True),
             sa.Column("sso_enabled", sa.Boolean(), nullable=True),
             sa.Column("sso_provider", sa.String(length=50), nullable=True),
-            sa.Column("sso_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "sso_config", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column(
                 "status",
                 postgresql.ENUM(
@@ -96,14 +98,20 @@ def upgrade() -> None:
             ),
             sa.Column("is_active", sa.Boolean(), nullable=False),
             sa.Column("owner_id", postgresql.UUID(as_uuid=True), nullable=True),
-            sa.Column("settings", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-            sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "settings", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
+            sa.Column(
+                "extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(op.f("ix_organizations_id"), "organizations", ["id"], unique=False)
+        op.create_index(
+            op.f("ix_organizations_id"), "organizations", ["id"], unique=False
+        )
         op.create_index(
             op.f("ix_organizations_slug"), "organizations", ["slug"], unique=True
         )
@@ -150,7 +158,9 @@ def upgrade() -> None:
             sa.Column("mfa_enabled", sa.Boolean(), nullable=True),
             sa.Column("mfa_secret", sa.String(length=255), nullable=True),
             sa.Column(
-                "mfa_backup_codes", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+                "mfa_backup_codes",
+                postgresql.JSONB(astext_type=sa.Text()),
+                nullable=True,
             ),
             sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("last_login_ip", sa.String(length=45), nullable=True),
@@ -161,7 +171,9 @@ def upgrade() -> None:
             ),
             sa.Column("timezone", sa.String(length=50), nullable=True),
             sa.Column("language", sa.String(length=10), nullable=True),
-            sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -183,7 +195,9 @@ def upgrade() -> None:
             sa.Column("is_default", sa.Boolean(), nullable=True),
             sa.Column("hierarchy_level", sa.Integer(), nullable=True),
             sa.Column("is_active", sa.Boolean(), nullable=False),
-            sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.ForeignKeyConstraint(
@@ -235,12 +249,16 @@ def upgrade() -> None:
             sa.Column("module", sa.String(length=50), nullable=True),
             sa.Column("category", sa.String(length=50), nullable=True),
             sa.Column("is_active", sa.Boolean(), nullable=False),
-            sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(op.f("ix_permissions_code"), "permissions", ["code"], unique=True)
+        op.create_index(
+            op.f("ix_permissions_code"), "permissions", ["code"], unique=True
+        )
         op.create_index(op.f("ix_permissions_id"), "permissions", ["id"], unique=False)
 
     # Create refresh_tokens table
@@ -285,7 +303,10 @@ def upgrade() -> None:
             unique=True,
         )
         op.create_index(
-            op.f("ix_refresh_tokens_user_id"), "refresh_tokens", ["user_id"], unique=False
+            op.f("ix_refresh_tokens_user_id"),
+            "refresh_tokens",
+            ["user_id"],
+            unique=False,
         )
 
     # Create email_verifications table
@@ -316,7 +337,9 @@ def upgrade() -> None:
             sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
             sa.Column("role_id", postgresql.UUID(as_uuid=True), nullable=False),
             sa.Column("permission_id", postgresql.UUID(as_uuid=True), nullable=False),
-            sa.Column("conditions", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "conditions", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.ForeignKeyConstraint(
                 ["permission_id"], ["permissions.id"], ondelete="CASCADE"
             ),
@@ -350,7 +373,9 @@ def upgrade() -> None:
             sa.Column("invited_by_id", postgresql.UUID(as_uuid=True), nullable=True),
             sa.Column("invited_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("joined_at", sa.DateTime(timezone=True), nullable=True),
-            sa.Column("extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "extra_data", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+            ),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.ForeignKeyConstraint(

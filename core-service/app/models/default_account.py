@@ -29,13 +29,19 @@ class DefaultAccount(Base):
     scenario = Column(String(100), nullable=True)
 
     # Foreign key to accounts table
-    account_id = Column(UUID(as_uuid=True), ForeignKey('accounts.id', ondelete='RESTRICT'), nullable=False)
+    account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
 
     # Multi-tenancy support
     organization_id = Column(UUID(as_uuid=True), nullable=False)
 
     # Audit fields
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -47,10 +53,15 @@ class DefaultAccount(Base):
     account = relationship("Account", foreign_keys=[account_id])
 
     __table_args__ = (
-        UniqueConstraint('organization_id', 'transaction_type', 'scenario', name='uq_default_accounts_org_type_scenario'),
-        Index('idx_default_accounts_transaction_type', 'transaction_type'),
-        Index('idx_default_accounts_scenario', 'scenario'),
-        Index('idx_default_accounts_organization_id', 'organization_id'),
+        UniqueConstraint(
+            "organization_id",
+            "transaction_type",
+            "scenario",
+            name="uq_default_accounts_org_type_scenario",
+        ),
+        Index("idx_default_accounts_transaction_type", "transaction_type"),
+        Index("idx_default_accounts_scenario", "scenario"),
+        Index("idx_default_accounts_organization_id", "organization_id"),
     )
 
     def __repr__(self):

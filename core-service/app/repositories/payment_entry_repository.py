@@ -1,19 +1,14 @@
 """Payment entry repository for database operations"""
 
-from uuid import UUID
 from datetime import datetime
-from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy.orm import Session, selectinload
 
-from app.models.base import PaymentEntryStatus, PaymentMode, PaymentEntryType
+from app.models.base import PaymentEntryStatus, PaymentEntryType, PaymentMode
 from app.models.payment_entry import PaymentEntry
-from app.core.cache import (
-    get_cached_payment_list,
-    cache_payment_list,
-)
 
 
 class PaymentEntryRepository:
@@ -48,7 +43,7 @@ class PaymentEntryRepository:
     def get_by_id(self, payment_id: UUID, organization_id: UUID) -> PaymentEntry | None:
         """
         Get payment entry by ID with organization_id filtering.
-        
+
         Uses eager loading with selectinload to prevent N+1 queries when accessing
         payment_references relationship.
 
@@ -68,7 +63,7 @@ class PaymentEntryRepository:
             )
             .filter(
                 PaymentEntry.id == payment_id,
-                PaymentEntry.organization_id == organization_id
+                PaymentEntry.organization_id == organization_id,
             )
             .first()
         )
@@ -78,7 +73,7 @@ class PaymentEntryRepository:
     ) -> PaymentEntry | None:
         """
         Get payment entry by receipt number.
-        
+
         Uses eager loading with selectinload to prevent N+1 queries when accessing
         payment_references relationship.
 
@@ -98,7 +93,7 @@ class PaymentEntryRepository:
             )
             .filter(
                 PaymentEntry.receipt_number == receipt_number,
-                PaymentEntry.organization_id == organization_id
+                PaymentEntry.organization_id == organization_id,
             )
             .first()
         )
@@ -172,7 +167,7 @@ class PaymentEntryRepository:
     ) -> list[PaymentEntry]:
         """
         List payment entries with optional filtering and pagination.
-        
+
         Uses eager loading with selectinload to prevent N+1 queries when accessing
         payment_references relationship. This is critical for performance when
         loading lists of payments.
@@ -256,9 +251,13 @@ class PaymentEntryRepository:
             "created_at",
             "updated_at",
         }
-        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "payment_date"
-        sort_column = getattr(PaymentEntry, requested_sort_field, PaymentEntry.payment_date)
-        
+        requested_sort_field = (
+            sort_by if sort_by in allowed_sort_fields else "payment_date"
+        )
+        sort_column = getattr(
+            PaymentEntry, requested_sort_field, PaymentEntry.payment_date
+        )
+
         normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"
         if normalized_order == "desc":
             query = query.order_by(sort_column.desc())
@@ -352,9 +351,7 @@ class PaymentEntryRepository:
 
         return query.count()
 
-    def receipt_number_exists(
-        self, receipt_number: str, organization_id: UUID
-    ) -> bool:
+    def receipt_number_exists(self, receipt_number: str, organization_id: UUID) -> bool:
         """
         Check if receipt number already exists.
 
@@ -369,7 +366,7 @@ class PaymentEntryRepository:
             self.db.query(PaymentEntry)
             .filter(
                 PaymentEntry.receipt_number == receipt_number,
-                PaymentEntry.organization_id == organization_id
+                PaymentEntry.organization_id == organization_id,
             )
             .count()
             > 0

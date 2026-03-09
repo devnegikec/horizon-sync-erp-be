@@ -16,7 +16,11 @@ UOMS_DATA = [
     {"name": "Piece", "abbreviation": "PCS", "description": "Individual unit or piece"},
     {"name": "Dozen", "abbreviation": "DOZ", "description": "12 pieces"},
     {"name": "Pair", "abbreviation": "PR", "description": "Set of two"},
-    {"name": "Set", "abbreviation": "SET", "description": "Group of items sold together"},
+    {
+        "name": "Set",
+        "abbreviation": "SET",
+        "description": "Group of items sold together",
+    },
     {"name": "Box", "abbreviation": "BOX", "description": "Standard box packaging"},
     {"name": "Carton", "abbreviation": "CTN", "description": "Carton packaging"},
     {"name": "Pack", "abbreviation": "PCK", "description": "Packaged bundle"},
@@ -25,27 +29,75 @@ UOMS_DATA = [
     {"name": "Bundle", "abbreviation": "BDL", "description": "Bundled items"},
     # Weight
     {"name": "Kilogram", "abbreviation": "KG", "description": "Metric unit of weight"},
-    {"name": "Gram", "abbreviation": "GM", "description": "Metric unit of weight (1/1000 kg)"},
-    {"name": "Milligram", "abbreviation": "MG", "description": "Metric unit of weight (1/1000 g)"},
+    {
+        "name": "Gram",
+        "abbreviation": "GM",
+        "description": "Metric unit of weight (1/1000 kg)",
+    },
+    {
+        "name": "Milligram",
+        "abbreviation": "MG",
+        "description": "Metric unit of weight (1/1000 g)",
+    },
     {"name": "Metric Ton", "abbreviation": "MT", "description": "1000 kilograms"},
     {"name": "Pound", "abbreviation": "LB", "description": "Imperial unit of weight"},
-    {"name": "Ounce", "abbreviation": "OZ", "description": "Imperial unit of weight (1/16 lb)"},
+    {
+        "name": "Ounce",
+        "abbreviation": "OZ",
+        "description": "Imperial unit of weight (1/16 lb)",
+    },
     # Volume
     {"name": "Liter", "abbreviation": "LTR", "description": "Metric unit of volume"},
-    {"name": "Milliliter", "abbreviation": "ML", "description": "Metric unit of volume (1/1000 L)"},
-    {"name": "Cubic Meter", "abbreviation": "CBM", "description": "Metric unit of volume"},
+    {
+        "name": "Milliliter",
+        "abbreviation": "ML",
+        "description": "Metric unit of volume (1/1000 L)",
+    },
+    {
+        "name": "Cubic Meter",
+        "abbreviation": "CBM",
+        "description": "Metric unit of volume",
+    },
     {"name": "Gallon", "abbreviation": "GAL", "description": "Imperial unit of volume"},
     # Length
     {"name": "Meter", "abbreviation": "MTR", "description": "Metric unit of length"},
-    {"name": "Centimeter", "abbreviation": "CM", "description": "Metric unit of length (1/100 m)"},
-    {"name": "Millimeter", "abbreviation": "MM", "description": "Metric unit of length (1/1000 m)"},
-    {"name": "Kilometer", "abbreviation": "KM", "description": "Metric unit of length (1000 m)"},
+    {
+        "name": "Centimeter",
+        "abbreviation": "CM",
+        "description": "Metric unit of length (1/100 m)",
+    },
+    {
+        "name": "Millimeter",
+        "abbreviation": "MM",
+        "description": "Metric unit of length (1/1000 m)",
+    },
+    {
+        "name": "Kilometer",
+        "abbreviation": "KM",
+        "description": "Metric unit of length (1000 m)",
+    },
     {"name": "Inch", "abbreviation": "IN", "description": "Imperial unit of length"},
-    {"name": "Foot", "abbreviation": "FT", "description": "Imperial unit of length (12 inches)"},
-    {"name": "Yard", "abbreviation": "YD", "description": "Imperial unit of length (3 feet)"},
+    {
+        "name": "Foot",
+        "abbreviation": "FT",
+        "description": "Imperial unit of length (12 inches)",
+    },
+    {
+        "name": "Yard",
+        "abbreviation": "YD",
+        "description": "Imperial unit of length (3 feet)",
+    },
     # Area
-    {"name": "Square Meter", "abbreviation": "SQM", "description": "Metric unit of area"},
-    {"name": "Square Foot", "abbreviation": "SQF", "description": "Imperial unit of area"},
+    {
+        "name": "Square Meter",
+        "abbreviation": "SQM",
+        "description": "Metric unit of area",
+    },
+    {
+        "name": "Square Foot",
+        "abbreviation": "SQF",
+        "description": "Imperial unit of area",
+    },
     # Time / Service
     {"name": "Hour", "abbreviation": "HR", "description": "Unit of time"},
     {"name": "Day", "abbreviation": "DAY", "description": "Unit of time (24 hours)"},

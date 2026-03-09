@@ -97,7 +97,9 @@ class QuotationItem(Base):
     )
     tax_rate = Column(Numeric(5, 2), default=0)
     tax_amount = Column(Numeric(15, 2), default=0)
-    total_amount = Column(Numeric(15, 2), default=0)  # amount - discount_amount + tax_amount
+    total_amount = Column(
+        Numeric(15, 2), default=0
+    )  # amount - discount_amount + tax_amount
     # Discount: type 'flat' | 'percentage', value (fixed amount or %), computed discount_amount
     discount_type = Column(String(20), default="percentage", nullable=True)
     discount_value = Column(Numeric(15, 2), default=0, nullable=True)

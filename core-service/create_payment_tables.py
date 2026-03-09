@@ -1,53 +1,66 @@
 """Create payment tables directly in database"""
 
 import os
+
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+)
+
 
 def main():
     engine = create_engine(DATABASE_URL)
-    
+
     with engine.begin() as conn:
         print("Creating payment enum types...")
-        
+
         # Create enum types
-        conn.execute(text("""
+        conn.execute(
+            text("""
             DO $$ BEGIN
                 CREATE TYPE payment_type AS ENUM ('Customer_Payment', 'Supplier_Payment');
             EXCEPTION
                 WHEN duplicate_object THEN null;
             END $$;
-        """))
-        
-        conn.execute(text("""
+        """)
+        )
+
+        conn.execute(
+            text("""
             DO $$ BEGIN
                 CREATE TYPE payment_mode AS ENUM ('Cash', 'Check', 'Bank_Transfer');
             EXCEPTION
                 WHEN duplicate_object THEN null;
             END $$;
-        """))
-        
-        conn.execute(text("""
+        """)
+        )
+
+        conn.execute(
+            text("""
             DO $$ BEGIN
                 CREATE TYPE payment_status AS ENUM ('Draft', 'Confirmed', 'Cancelled');
             EXCEPTION
                 WHEN duplicate_object THEN null;
             END $$;
-        """))
-        
-        conn.execute(text("""
+        """)
+        )
+
+        conn.execute(
+            text("""
             DO $$ BEGIN
                 CREATE TYPE payment_source AS ENUM ('Manual', 'Stripe', 'Razorpay');
             EXCEPTION
                 WHEN duplicate_object THEN null;
             END $$;
-        """))
-        
+        """)
+        )
+
         print("✅ Created enum types")
-        
+
         print("\nCreating payment_entries table...")
-        conn.execute(text("""
+        conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS payment_entries (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 organization_id UUID NOT NULL,
@@ -80,19 +93,41 @@ def main():
                     (source = 'Manual')
                 )
             )
-        """))
+        """)
+        )
         print("✅ Created payment_entries table")
-        
+
         print("\nCreating indexes...")
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_date ON payment_entries(organization_id, payment_date)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_party ON payment_entries(organization_id, party_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_entries_org_status ON payment_entries(organization_id, status)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_entries_reference ON payment_entries(reference_no)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_entries_receipt ON payment_entries(receipt_number)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_entries_org_date ON payment_entries(organization_id, payment_date)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_entries_org_party ON payment_entries(organization_id, party_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_entries_org_status ON payment_entries(organization_id, status)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_entries_reference ON payment_entries(reference_no)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_entries_receipt ON payment_entries(receipt_number)"
+            )
+        )
         print("✅ Created indexes")
-        
+
         print("\nCreating payment_references table...")
-        conn.execute(text("""
+        conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS payment_references (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 organization_id UUID NOT NULL,
@@ -107,25 +142,41 @@ def main():
                 CONSTRAINT check_payment_references_amount CHECK (allocated_amount > 0),
                 CONSTRAINT uq_payment_references_payment_invoice UNIQUE (payment_id, invoice_id)
             )
-        """))
+        """)
+        )
         print("✅ Created payment_references table")
-        
+
         print("\nCreating payment_references indexes...")
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_references_payment ON payment_references(payment_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_references_invoice ON payment_references(invoice_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_references_org ON payment_references(organization_id)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_references_payment ON payment_references(payment_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_references_invoice ON payment_references(invoice_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_references_org ON payment_references(organization_id)"
+            )
+        )
         print("✅ Created payment_references indexes")
-        
+
         print("\nCreating payment_audit_log table...")
-        conn.execute(text("""
+        conn.execute(
+            text("""
             DO $$ BEGIN
                 CREATE TYPE payment_audit_action AS ENUM ('CREATE', 'UPDATE', 'CONFIRM', 'CANCEL', 'ALLOCATE', 'DEALLOCATE');
             EXCEPTION
                 WHEN duplicate_object THEN null;
             END $$;
-        """))
-        
-        conn.execute(text("""
+        """)
+        )
+
+        conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS payment_audit_log (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 organization_id UUID NOT NULL,
@@ -136,15 +187,25 @@ def main():
                 new_values JSONB,
                 timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
             )
-        """))
+        """)
+        )
         print("✅ Created payment_audit_log table")
-        
+
         print("\nCreating payment_audit_log indexes...")
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_audit_log_payment_time ON payment_audit_log(payment_id, timestamp)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_audit_log_org_time ON payment_audit_log(organization_id, timestamp)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_audit_log_payment_time ON payment_audit_log(payment_id, timestamp)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_payment_audit_log_org_time ON payment_audit_log(organization_id, timestamp)"
+            )
+        )
         print("✅ Created payment_audit_log indexes")
-        
+
         print("\n✅ All payment tables created successfully!")
+
 
 if __name__ == "__main__":
     main()

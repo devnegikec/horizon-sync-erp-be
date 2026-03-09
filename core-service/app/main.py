@@ -44,7 +44,6 @@ from app.core.exceptions import (
     DuplicateUOMConversionException,
     DuplicateUOMNameException,
     DuplicateWarehouseCodeException,
-    UOMConversionNotFoundException,
     ExchangeRateNotFoundException,
     IntegrationError,
     ItemGroupNotFoundException,
@@ -64,6 +63,7 @@ from app.core.exceptions import (
     StockReconciliationNotFoundException,
     StockSettingsNotFoundException,
     SupplierNotFoundException,
+    UOMConversionNotFoundException,
     UOMNotFoundException,
     ValidationError,
     ValidationException,
@@ -283,9 +283,7 @@ async def duplicate_warehouse_code_exception_handler(
 
 
 @app.exception_handler(UOMNotFoundException)
-async def uom_not_found_exception_handler(
-    request: Request, exc: UOMNotFoundException
-):
+async def uom_not_found_exception_handler(request: Request, exc: UOMNotFoundException):
     """Handle UOM not found errors"""
     return create_error_response(
         status_code=status.HTTP_404_NOT_FOUND,

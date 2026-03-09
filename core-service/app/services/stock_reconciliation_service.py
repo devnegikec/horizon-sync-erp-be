@@ -43,6 +43,7 @@ class StockReconciliationService:
         # Auto-generate reconciliation_no if not provided
         if not data.reconciliation_no:
             from app.services.document_numbering_service import DocumentNumberingService
+
             data.reconciliation_no = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "stock_reconciliation"
             )

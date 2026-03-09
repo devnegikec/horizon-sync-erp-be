@@ -46,9 +46,7 @@ class UOMService:
             DuplicateUOMAbbreviationException: If UOM abbreviation already exists in org
         """
         # Check duplicate name within org
-        existing_by_name = self.uom_repo.get_by_name(
-            uom_data.name, organization_id
-        )
+        existing_by_name = self.uom_repo.get_by_name(uom_data.name, organization_id)
         if existing_by_name:
             raise DuplicateUOMNameException(
                 f"UOM with name '{uom_data.name}' already exists in this organization"
@@ -181,7 +179,10 @@ class UOMService:
                 )
 
         # Check duplicate abbreviation only if abbreviation is changing
-        if "abbreviation" in update_dict and update_dict["abbreviation"] != uom.abbreviation:
+        if (
+            "abbreviation" in update_dict
+            and update_dict["abbreviation"] != uom.abbreviation
+        ):
             existing_by_abbr = self.uom_repo.get_by_abbreviation(
                 update_dict["abbreviation"], organization_id
             )

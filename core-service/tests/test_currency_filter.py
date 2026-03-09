@@ -1,6 +1,5 @@
 """Test currency filtering in chart of accounts API"""
 
-import pytest
 
 
 class TestCurrencyFilter:

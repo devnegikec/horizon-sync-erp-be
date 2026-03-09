@@ -6,7 +6,12 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.base import ItemType, MaterialRequestStatus, PurchaseOrderStatus, RFQStatus
+from app.models.base import (
+    ItemType,
+    MaterialRequestStatus,
+    PurchaseOrderStatus,
+    RFQStatus,
+)
 from app.models.item import Item
 from app.models.material_request import MaterialRequest, MaterialRequestLine
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine

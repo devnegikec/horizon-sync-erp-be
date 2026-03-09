@@ -4,11 +4,9 @@ import csv
 import io
 import json
 from enum import Enum
-from typing import Any
 
 import openpyxl
 import pandas as pd
-from pydantic import BaseModel, field_validator
 
 
 class FileFormat(str, Enum):
@@ -25,15 +23,40 @@ class BulkImportValidator:
 
     REQUIRED_FIELDS = {"item_code", "item_name"}
     VALID_COLUMNS = {
-        "item_code", "item_name", "description", "item_group_id", "item_group_name",
-        "item_type", "uom", "maintain_stock", "valuation_method",
-        "allow_negative_stock", "has_variants", "variant_of", "has_batch_no",
-        "has_serial_no", "batch_number_series", "serial_number_series",
-        "standard_rate", "valuation_rate", "enable_auto_reorder",
-        "reorder_level", "reorder_qty", "min_order_qty", "max_order_qty",
-        "weight_per_unit", "weight_uom", "inspection_required_before_purchase",
-        "inspection_required_before_delivery", "quality_inspection_template",
-        "barcode", "status", "image_url", "tags", "custom_fields", "extra_data"
+        "item_code",
+        "item_name",
+        "description",
+        "item_group_id",
+        "item_group_name",
+        "item_type",
+        "uom",
+        "maintain_stock",
+        "valuation_method",
+        "allow_negative_stock",
+        "has_variants",
+        "variant_of",
+        "has_batch_no",
+        "has_serial_no",
+        "batch_number_series",
+        "serial_number_series",
+        "standard_rate",
+        "valuation_rate",
+        "enable_auto_reorder",
+        "reorder_level",
+        "reorder_qty",
+        "min_order_qty",
+        "max_order_qty",
+        "weight_per_unit",
+        "weight_uom",
+        "inspection_required_before_purchase",
+        "inspection_required_before_delivery",
+        "quality_inspection_template",
+        "barcode",
+        "status",
+        "image_url",
+        "tags",
+        "custom_fields",
+        "extra_data",
     }
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
     MAX_ROWS = 10000
@@ -43,7 +66,9 @@ class BulkImportValidator:
         """
         Validate if all columns in the file are valid for Item model.
         """
-        invalid_columns = [col for col in columns if col not in BulkImportValidator.VALID_COLUMNS]
+        invalid_columns = [
+            col for col in columns if col not in BulkImportValidator.VALID_COLUMNS
+        ]
         if invalid_columns:
             return False, [f"Invalid columns found: {', '.join(invalid_columns)}"]
         return True, []
@@ -60,10 +85,16 @@ class BulkImportValidator:
             Tuple of (is_valid, error_message)
         """
         if file_size > BulkImportValidator.MAX_FILE_SIZE:
-            return False, f"File size exceeds {BulkImportValidator.MAX_FILE_SIZE / (1024 * 1024):.1f}MB limit"
+            return (
+                False,
+                f"File size exceeds {BulkImportValidator.MAX_FILE_SIZE / (1024 * 1024):.1f}MB limit",
+            )
         return True, None
+
     @staticmethod
-    def validate_file_format(mime_type: str, file_format: str) -> tuple[bool, str | None]:
+    def validate_file_format(
+        mime_type: str, file_format: str
+    ) -> tuple[bool, str | None]:
         """
         Validate file format.
 
@@ -76,7 +107,9 @@ class BulkImportValidator:
         """
         valid_formats = {
             "csv": ["text/csv", "application/csv"],
-            "xlsx": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+            "xlsx": [
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ],
             "json": ["application/json"],
         }
 
@@ -142,7 +175,9 @@ class FileParser:
             rows = []
             for row in reader:
                 # Strip whitespace from keys and values
-                cleaned_row = {k.strip(): v.strip() if v else None for k, v in row.items()}
+                cleaned_row = {
+                    k.strip(): v.strip() if v else None for k, v in row.items()
+                }
                 rows.append(cleaned_row)
             return rows
         except Exception as e:
@@ -169,7 +204,9 @@ class FileParser:
                 headers.append(cell.value)
 
             rows = []
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            for row_idx, row in enumerate(
+                ws.iter_rows(min_row=2, values_only=True), start=2
+            ):
                 row_dict = {}
                 for col_idx, value in enumerate(row):
                     header = headers[col_idx] if col_idx < len(headers) else None
@@ -270,7 +307,9 @@ class FileGenerator:
         return output.getvalue().encode("utf-8")
 
     @staticmethod
-    def generate_xlsx(data: list[dict], sheet_name: str = "Items", headers: list[str] | None = None) -> bytes:
+    def generate_xlsx(
+        data: list[dict], sheet_name: str = "Items", headers: list[str] | None = None
+    ) -> bytes:
         """
         Generate XLSX from data.
 
@@ -297,7 +336,7 @@ class FileGenerator:
         fieldnames = headers if headers else list(data[0].keys())
         rows = [[row.get(name) for name in fieldnames] for row in data]
         df = pd.DataFrame(rows, columns=fieldnames)
-            
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -317,7 +356,9 @@ class FileGenerator:
         return json.dumps({"items": data}, indent=2, default=str).encode("utf-8")
 
     @staticmethod
-    def generate_pdf(data: list[dict], headers: list[str] | None = None, title: str = "Exported Data") -> bytes:
+    def generate_pdf(
+        data: list[dict], headers: list[str] | None = None, title: str = "Exported Data"
+    ) -> bytes:
         """
         Generate PDF from data in tabular format.
 
@@ -329,10 +370,16 @@ class FileGenerator:
         Returns:
             PDF content as bytes
         """
-        from reportlab.lib.pagesizes import letter, landscape
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.pagesizes import landscape, letter
         from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import (
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
@@ -353,15 +400,19 @@ class FileGenerator:
                 table_data.append([str(row.get(name, "")) for name in fieldnames])
 
         table = Table(table_data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dbeafe")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dbeafe")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ]
+            )
+        )
         elements.append(table)
         doc.build(elements)
         pdf = buffer.getvalue()
@@ -369,7 +420,9 @@ class FileGenerator:
         return pdf
 
     @staticmethod
-    def generate_file(data: list[dict], file_format: str, headers: list[str] | None = None) -> bytes:
+    def generate_file(
+        data: list[dict], file_format: str, headers: list[str] | None = None
+    ) -> bytes:
         """
         Generate file based on format.
 
@@ -420,12 +473,18 @@ class ImportTemplate:
     @staticmethod
     def get_template_csv() -> bytes:
         """Get CSV template"""
-        return FileGenerator.generate_csv(ImportTemplate.get_template_data(), headers=ImportTemplate.get_template_columns())
+        return FileGenerator.generate_csv(
+            ImportTemplate.get_template_data(),
+            headers=ImportTemplate.get_template_columns(),
+        )
 
     @staticmethod
     def get_template_xlsx() -> bytes:
         """Get XLSX template"""
-        return FileGenerator.generate_xlsx(ImportTemplate.get_template_data(), headers=ImportTemplate.get_template_columns())
+        return FileGenerator.generate_xlsx(
+            ImportTemplate.get_template_data(),
+            headers=ImportTemplate.get_template_columns(),
+        )
 
     @staticmethod
     def get_template_json() -> bytes:

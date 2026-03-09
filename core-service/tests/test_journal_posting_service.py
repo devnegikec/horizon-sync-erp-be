@@ -1,9 +1,9 @@
 """Unit tests for JournalPostingService"""
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 import pytest
 
@@ -24,20 +24,22 @@ class TestJournalPostingService:
     def mock_journal_entry_service(self):
         """Create a mock journal entry service"""
         service = Mock()
-        service.create = Mock(return_value={
-            "id": uuid.uuid4(),
-            "entry_no": "JE-2024-001",
-            "status": "Posted",
-            "total_debit": Decimal("1000.00"),
-            "total_credit": Decimal("1000.00"),
-        })
+        service.create = Mock(
+            return_value={
+                "id": uuid.uuid4(),
+                "entry_no": "JE-2024-001",
+                "status": "Posted",
+                "total_debit": Decimal("1000.00"),
+                "total_credit": Decimal("1000.00"),
+            }
+        )
         return service
 
     @pytest.fixture
     def mock_default_account_service(self):
         """Create a mock default account service"""
         service = Mock()
-        
+
         def get_default_account(transaction_type, organization_id):
             account = Mock()
             if transaction_type == "cash":
@@ -51,7 +53,7 @@ class TestJournalPostingService:
             else:
                 raise ValidationError(f"Account not configured for {transaction_type}")
             return account
-        
+
         service.get_default_account = Mock(side_effect=get_default_account)
         return service
 
@@ -60,7 +62,9 @@ class TestJournalPostingService:
         """Create a mock currency service"""
         service = Mock()
         service.get_base_currency = Mock(return_value="USD")
-        service.convert = Mock(side_effect=lambda amount, from_currency, to_currency: amount)
+        service.convert = Mock(
+            side_effect=lambda amount, from_currency, to_currency: amount
+        )
         return service
 
     @pytest.fixture
@@ -115,7 +119,7 @@ class TestJournalPostingService:
         # Verify journal entry service was called
         journal_posting_service.journal_entry_service.create.assert_called_once()
         call_args = journal_posting_service.journal_entry_service.create.call_args
-        
+
         # Verify journal entry data structure
         journal_data = call_args[1]["data"]
         assert journal_data["reference_type"] == "PaymentEntry"
@@ -226,8 +230,12 @@ class TestJournalPostingService:
         user_id = uuid.uuid4()
 
         # Mock currency conversion
-        journal_posting_service.currency_service.get_base_currency = Mock(return_value="USD")
-        journal_posting_service.currency_service.convert = Mock(return_value=Decimal("1100.00"))
+        journal_posting_service.currency_service.get_base_currency = Mock(
+            return_value="USD"
+        )
+        journal_posting_service.currency_service.convert = Mock(
+            return_value=Decimal("1100.00")
+        )
 
         # Execute
         result = journal_posting_service.post_payment_journal_entry(
@@ -250,7 +258,7 @@ class TestJournalPostingService:
         """Test reversing journal entry for cancelled payment"""
         organization_id = uuid.uuid4()
         user_id = uuid.uuid4()
-        
+
         # Mock original journal entry
         original_je = Mock()
         original_je.id = uuid.uuid4()
@@ -270,7 +278,7 @@ class TestJournalPostingService:
                 remarks="Accounts Receivable",
             ),
         ]
-        
+
         # Mock get_by_reference to return original entry
         journal_posting_service.journal_entry_service.get_by_reference = Mock(
             return_value={
@@ -282,25 +290,25 @@ class TestJournalPostingService:
         journal_posting_service.journal_entry_service.repo.get_by_reference = Mock(
             return_value=original_je
         )
-        
+
         # Set cancellation reason
         sample_payment_entry.cancellation_reason = "Duplicate payment"
-        
+
         # Execute
         result = journal_posting_service.reverse_payment_journal_entry(
             payment_entry=sample_payment_entry,
             organization_id=organization_id,
             user_id=user_id,
         )
-        
+
         # Verify
         assert result is not None
         assert result["status"] == "Posted"
-        
+
         # Verify journal entry service was called
         journal_posting_service.journal_entry_service.create.assert_called()
         call_args = journal_posting_service.journal_entry_service.create.call_args
-        
+
         # Verify reversing journal entry data structure
         journal_data = call_args[1]["data"]
         assert journal_data["reference_type"] == "PaymentEntry"
@@ -310,13 +318,13 @@ class TestJournalPostingService:
         assert "Reversal" in journal_data["remarks"]
         assert "Duplicate payment" in journal_data["remarks"]
         assert len(journal_data["lines"]) == 2
-        
+
         # Verify debits and credits are swapped
         reversing_line_1 = journal_data["lines"][0]
         assert reversing_line_1["debit"] == Decimal("0.00")  # Original credit
         assert reversing_line_1["credit"] == Decimal("1000.00")  # Original debit
         assert "Reversal:" in reversing_line_1["remarks"]
-        
+
         reversing_line_2 = journal_data["lines"][1]
         assert reversing_line_2["debit"] == Decimal("1000.00")  # Original credit
         assert reversing_line_2["credit"] == Decimal("0.00")  # Original debit
@@ -330,12 +338,12 @@ class TestJournalPostingService:
         """Test reversing journal entry when original not found"""
         organization_id = uuid.uuid4()
         user_id = uuid.uuid4()
-        
+
         # Mock get_by_reference to return None
         journal_posting_service.journal_entry_service.get_by_reference = Mock(
             return_value=None
         )
-        
+
         # Execute and verify exception
         with pytest.raises(ValidationError) as exc_info:
             journal_posting_service.reverse_payment_journal_entry(
@@ -343,7 +351,7 @@ class TestJournalPostingService:
                 organization_id=organization_id,
                 user_id=user_id,
             )
-        
+
         assert "not found" in str(exc_info.value).lower()
 
     def test_reverse_payment_journal_entry_reference_tracking(
@@ -354,7 +362,7 @@ class TestJournalPostingService:
         """Test that reversing entry maintains reference tracking"""
         organization_id = uuid.uuid4()
         user_id = uuid.uuid4()
-        
+
         # Mock original journal entry with proper debit and credit lines
         original_je = Mock()
         original_je.id = uuid.uuid4()
@@ -374,7 +382,7 @@ class TestJournalPostingService:
                 remarks="Test credit",
             ),
         ]
-        
+
         journal_posting_service.journal_entry_service.get_by_reference = Mock(
             return_value={
                 "id": original_je.id,
@@ -385,23 +393,23 @@ class TestJournalPostingService:
         journal_posting_service.journal_entry_service.repo.get_by_reference = Mock(
             return_value=original_je
         )
-        
+
         sample_payment_entry.cancellation_reason = "Test cancellation"
-        
+
         # Execute
         result = journal_posting_service.reverse_payment_journal_entry(
             payment_entry=sample_payment_entry,
             organization_id=organization_id,
             user_id=user_id,
         )
-        
+
         # Verify reference tracking
         call_args = journal_posting_service.journal_entry_service.create.call_args
         journal_data = call_args[1]["data"]
-        
+
         assert journal_data["reference_type"] == "PaymentEntry"
         assert journal_data["reference_id"] == sample_payment_entry.id
-        
+
         # Verify all lines have reference tracking
         for line in journal_data["lines"]:
             assert line["reference_type"] == "PaymentEntry"

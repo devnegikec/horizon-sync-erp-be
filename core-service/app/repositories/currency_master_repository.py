@@ -30,7 +30,9 @@ class CurrencyMasterRepository:
         self.db.refresh(currency)
         return currency
 
-    def get_by_id(self, currency_id: UUID, organization_id: UUID) -> CurrencyMaster | None:
+    def get_by_id(
+        self, currency_id: UUID, organization_id: UUID
+    ) -> CurrencyMaster | None:
         """
         Get Currency by ID within an organization, excluding soft-deleted.
 
