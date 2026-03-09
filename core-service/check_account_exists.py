@@ -51,7 +51,7 @@ else:
 print("\nForeign key constraint on journal_entry_lines:")
 result = conn.execute(
     text("""
-    SELECT 
+    SELECT
         tc.constraint_name,
         kcu.column_name,
         ccu.table_name AS foreign_table_name,

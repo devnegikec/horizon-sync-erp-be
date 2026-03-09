@@ -6,9 +6,9 @@ engine = create_engine("postgresql://horizon_user:horizon_pass@localhost:5432/co
 conn = engine.connect()
 result = conn.execute(
     text("""
-    SELECT column_name, data_type 
-    FROM information_schema.columns 
-    WHERE table_name = 'customers' 
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'customers'
     ORDER BY ordinal_position
 """)
 )

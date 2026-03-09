@@ -24,8 +24,8 @@ def get_account_id(conn, account_code):
     """Get account ID by account code"""
     result = conn.execute(
         text("""
-            SELECT id, account_name, account_type 
-            FROM accounts 
+            SELECT id, account_name, account_type
+            FROM accounts
             WHERE organization_id = :org_id AND account_code = :code
         """),
         {"org_id": ORG_ID, "code": account_code},
@@ -40,7 +40,7 @@ def calculate_balance_from_journal_entries(conn, account_id):
     """Calculate balance for an account from journal entry lines"""
     result = conn.execute(
         text("""
-            SELECT 
+            SELECT
                 COALESCE(SUM(jel.debit), 0) as debit_total,
                 COALESCE(SUM(jel.credit), 0) as credit_total
             FROM journal_entry_lines jel

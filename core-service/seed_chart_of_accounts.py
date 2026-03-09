@@ -442,7 +442,7 @@ def seed_chart_of_accounts():
                 # Check if account already exists
                 result = conn.execute(
                     text("""
-                        SELECT id FROM accounts 
+                        SELECT id FROM accounts
                         WHERE organization_id = :org_id AND account_code = :code
                     """),
                     {"org_id": str(ORG_ID), "code": account_code},
@@ -522,7 +522,7 @@ def seed_chart_of_accounts():
                     if account_id and parent_id:
                         conn.execute(
                             text("""
-                                UPDATE accounts 
+                                UPDATE accounts
                                 SET parent_account_id = :parent_id
                                 WHERE id = :account_id
                             """),

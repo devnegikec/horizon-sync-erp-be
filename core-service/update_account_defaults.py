@@ -31,9 +31,9 @@ def update_account_defaults():
 
         # First, check which columns exist
         cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'accounts' 
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'accounts'
             AND column_name IN ('level', 'is_group', 'status')
         """)
         existing_cols = [row["column_name"] for row in cursor.fetchall()]
@@ -54,8 +54,8 @@ def update_account_defaults():
 
         # Update any NULL status values to ACTIVE
         cursor.execute("""
-            UPDATE accounts 
-            SET status = 'ACTIVE' 
+            UPDATE accounts
+            SET status = 'ACTIVE'
             WHERE status IS NULL OR status = ''
         """)
         status_updated = cursor.rowcount
@@ -66,20 +66,20 @@ def update_account_defaults():
             WITH RECURSIVE account_hierarchy AS (
                 -- Root accounts (no parent)
                 SELECT id, parent_account_id, 1 as level_calc
-                FROM accounts 
+                FROM accounts
                 WHERE parent_account_id IS NULL
-                
+
                 UNION ALL
-                
+
                 -- Child accounts
                 SELECT a.id, a.parent_account_id, ah.level_calc + 1
                 FROM accounts a
                 INNER JOIN account_hierarchy ah ON a.parent_account_id = ah.id
             )
-            UPDATE accounts 
+            UPDATE accounts
             SET level = ah.level_calc
             FROM account_hierarchy ah
-            WHERE accounts.id = ah.id 
+            WHERE accounts.id = ah.id
             AND accounts.level != ah.level_calc
         """)
         level_updated = cursor.rowcount
@@ -87,11 +87,11 @@ def update_account_defaults():
 
         # Update is_group for accounts that have children
         cursor.execute("""
-            UPDATE accounts 
-            SET is_group = true 
+            UPDATE accounts
+            SET is_group = true
             WHERE id IN (
-                SELECT DISTINCT parent_account_id 
-                FROM accounts 
+                SELECT DISTINCT parent_account_id
+                FROM accounts
                 WHERE parent_account_id IS NOT NULL
             )
             AND is_group = false

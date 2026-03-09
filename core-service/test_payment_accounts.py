@@ -45,7 +45,7 @@ def test_payment_accounts():
             SELECT da.account_id, a.account_code, a.account_name, a.is_posting_account
             FROM default_accounts da
             JOIN accounts a ON da.account_id = a.id
-            WHERE da.transaction_type = 'cash' 
+            WHERE da.transaction_type = 'cash'
             AND da.organization_id = :org_id
             LIMIT 1
         """),
@@ -70,7 +70,7 @@ def test_payment_accounts():
             SELECT da.account_id, a.account_code, a.account_name, a.is_posting_account
             FROM default_accounts da
             JOIN accounts a ON da.account_id = a.id
-            WHERE da.transaction_type = 'accounts_receivable' 
+            WHERE da.transaction_type = 'accounts_receivable'
             AND da.organization_id = :org_id
             LIMIT 1
         """),
@@ -100,7 +100,7 @@ def test_payment_accounts():
             SELECT da.account_id, a.account_code, a.account_name, a.is_posting_account
             FROM default_accounts da
             JOIN accounts a ON da.account_id = a.id
-            WHERE da.transaction_type = 'bank' 
+            WHERE da.transaction_type = 'bank'
             AND da.organization_id = :org_id
             LIMIT 1
         """),
@@ -125,7 +125,7 @@ def test_payment_accounts():
             SELECT da.account_id, a.account_code, a.account_name, a.is_posting_account
             FROM default_accounts da
             JOIN accounts a ON da.account_id = a.id
-            WHERE da.transaction_type = 'accounts_payable' 
+            WHERE da.transaction_type = 'accounts_payable'
             AND da.organization_id = :org_id
             LIMIT 1
         """),

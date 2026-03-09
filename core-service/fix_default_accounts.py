@@ -29,7 +29,7 @@ def main():
         result = conn.execute(
             text("""
             SELECT EXISTS (
-                SELECT FROM information_schema.tables 
+                SELECT FROM information_schema.tables
                 WHERE table_name = 'default_accounts'
             )
         """)
@@ -58,8 +58,8 @@ def main():
 
         result = conn.execute(
             text("""
-            SELECT id, account_code, account_name, account_type 
-            FROM accounts 
+            SELECT id, account_code, account_name, account_type
+            FROM accounts
             WHERE account_type IN ('asset', 'liability')
             ORDER BY account_code
         """)
@@ -86,7 +86,7 @@ def main():
 
         result = conn.execute(
             text("""
-            SELECT 
+            SELECT
                 da.id,
                 da.transaction_type,
                 da.account_id,

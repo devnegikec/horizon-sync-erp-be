@@ -394,16 +394,16 @@ class AccountRepository:
         query = text("""
             WITH RECURSIVE account_tree AS (
                 -- Base case: direct children
-                SELECT id, account_code, account_name, account_type, parent_account_id, 
+                SELECT id, account_code, account_name, account_type, parent_account_id,
                        currency, status, is_posting_account, description,
                        created_by, updated_by, created_at, updated_at, organization_id,
                        1 as depth
                 FROM accounts
-                WHERE parent_account_id = :account_id 
+                WHERE parent_account_id = :account_id
                   AND organization_id = :organization_id
-                
+
                 UNION ALL
-                
+
                 -- Recursive case: children of children
                 SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
                        a.currency, a.status, a.is_posting_account, a.description,
@@ -470,11 +470,11 @@ class AccountRepository:
                        created_by, updated_by, created_at, updated_at, organization_id,
                        0 as depth
                 FROM accounts
-                WHERE id = :account_id 
+                WHERE id = :account_id
                   AND organization_id = :organization_id
-                
+
                 UNION ALL
-                
+
                 -- Recursive case: get parent
                 SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
                        a.currency, a.status, a.is_posting_account, a.description,

@@ -48,7 +48,7 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                DELETE FROM payment_audit_log 
+                DELETE FROM payment_audit_log
                 WHERE organization_id = :org_id
             """),
                 {"org_id": org_id},
@@ -62,7 +62,7 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                DELETE FROM payment_allocations 
+                DELETE FROM payment_allocations
                 WHERE organization_id = :org_id
             """),
                 {"org_id": org_id},
@@ -75,7 +75,7 @@ def cleanup_payment_test_data():
         print("3. Deleting payment references...")
         result = db.execute(
             text("""
-            DELETE FROM payment_references 
+            DELETE FROM payment_references
             WHERE organization_id = :org_id
         """),
             {"org_id": org_id},
@@ -86,7 +86,7 @@ def cleanup_payment_test_data():
         print("4. Deleting payment entries...")
         result = db.execute(
             text("""
-            DELETE FROM payment_entries 
+            DELETE FROM payment_entries
             WHERE organization_id = :org_id
         """),
             {"org_id": org_id},
@@ -98,7 +98,7 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                DELETE FROM payments 
+                DELETE FROM payments
                 WHERE organization_id = :org_id
             """),
                 {"org_id": org_id},
@@ -111,9 +111,9 @@ def cleanup_payment_test_data():
         print("6. Deleting journal entry lines...")
         result = db.execute(
             text("""
-            DELETE FROM journal_entry_lines 
+            DELETE FROM journal_entry_lines
             WHERE journal_entry_id IN (
-                SELECT id FROM journal_entries 
+                SELECT id FROM journal_entries
                 WHERE organization_id = :org_id
             )
         """),
@@ -125,7 +125,7 @@ def cleanup_payment_test_data():
         print("7. Deleting journal entries...")
         result = db.execute(
             text("""
-            DELETE FROM journal_entries 
+            DELETE FROM journal_entries
             WHERE organization_id = :org_id
         """),
             {"org_id": org_id},
@@ -136,9 +136,9 @@ def cleanup_payment_test_data():
         print("8. Deleting invoice items...")
         result = db.execute(
             text("""
-            DELETE FROM invoice_items 
+            DELETE FROM invoice_items
             WHERE invoice_id IN (
-                SELECT id FROM invoices 
+                SELECT id FROM invoices
                 WHERE organization_id = :org_id
             )
         """),
@@ -150,7 +150,7 @@ def cleanup_payment_test_data():
         print("9. Deleting invoices...")
         result = db.execute(
             text("""
-            DELETE FROM invoices 
+            DELETE FROM invoices
             WHERE organization_id = :org_id
         """),
             {"org_id": org_id},
@@ -162,9 +162,9 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                DELETE FROM quotation_items 
+                DELETE FROM quotation_items
                 WHERE quotation_id IN (
-                    SELECT id FROM quotations 
+                    SELECT id FROM quotations
                     WHERE organization_id = :org_id
                 )
             """),
@@ -179,7 +179,7 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                DELETE FROM quotations 
+                DELETE FROM quotations
                 WHERE organization_id = :org_id
             """),
                 {"org_id": org_id},
@@ -213,9 +213,9 @@ def cleanup_payment_test_data():
         try:
             result = db.execute(
                 text("""
-                UPDATE document_sequence_counter 
-                SET current_number = 0 
-                WHERE organization_id = :org_id 
+                UPDATE document_sequence_counter
+                SET current_number = 0
+                WHERE organization_id = :org_id
                 AND document_type IN ('payment', 'invoice', 'customer', 'supplier', 'journal_entry')
             """),
                 {"org_id": org_id},

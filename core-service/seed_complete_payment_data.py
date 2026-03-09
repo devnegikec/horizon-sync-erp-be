@@ -38,8 +38,8 @@ def seed_invoice_items(db: Session, org_id: uuid.UUID):
 
     # Get available items
     items_query = text("""
-        SELECT id FROM items 
-        WHERE organization_id = :org_id 
+        SELECT id FROM items
+        WHERE organization_id = :org_id
         LIMIT 10
     """)
     available_items = db.execute(items_query, {"org_id": org_id}).fetchall()
@@ -93,9 +93,9 @@ def seed_invoice_items(db: Session, org_id: uuid.UUID):
                 }
 
                 insert_query = text("""
-                    INSERT INTO invoice_items 
+                    INSERT INTO invoice_items
                     (id, invoice_id, organization_id, item_id, description, quantity, unit_price, tax_rate, tax_amount, total_amount)
-                    VALUES 
+                    VALUES
                     (:id, :invoice_id, :organization_id, :item_id, :description, :quantity, :unit_price, :tax_rate, :tax_amount, :total_amount)
                 """)
 

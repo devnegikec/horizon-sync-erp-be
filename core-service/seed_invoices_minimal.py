@@ -159,7 +159,7 @@ def main():
         # Verify
         customer_inv_count = db.execute(
             text("""
-            SELECT COUNT(*) FROM invoices 
+            SELECT COUNT(*) FROM invoices
             WHERE organization_id = :org_id AND invoice_type = 'SALES' AND balance_due > 0
         """),
             {"org_id": ORG_ID},
@@ -167,7 +167,7 @@ def main():
 
         supplier_inv_count = db.execute(
             text("""
-            SELECT COUNT(*) FROM invoices 
+            SELECT COUNT(*) FROM invoices
             WHERE organization_id = :org_id AND invoice_type = 'PURCHASE' AND balance_due > 0
         """),
             {"org_id": ORG_ID},

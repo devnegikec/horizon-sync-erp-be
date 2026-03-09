@@ -189,7 +189,7 @@ def get_account_id(conn, account_code):
     """Get account ID by account code"""
     result = conn.execute(
         text("""
-            SELECT id FROM accounts 
+            SELECT id FROM accounts
             WHERE organization_id = :org_id AND account_code = :code
         """),
         {"org_id": str(ORG_ID), "code": account_code},
@@ -228,7 +228,7 @@ def seed_journal_entries():
                 # Check if journal entry already exists
                 result = conn.execute(
                     text("""
-                        SELECT id FROM journal_entries 
+                        SELECT id FROM journal_entries
                         WHERE organization_id = :org_id AND entry_no = :entry_no
                     """),
                     {"org_id": str(ORG_ID), "entry_no": entry_no},

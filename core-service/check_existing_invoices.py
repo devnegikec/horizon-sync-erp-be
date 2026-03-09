@@ -14,10 +14,10 @@ if count > 0:
     # Get invoices with outstanding balance
     result = conn.execute(
         text("""
-        SELECT invoice_no, party_type, posting_date, grand_total, outstanding_amount, status 
-        FROM invoices 
-        WHERE outstanding_amount > 0 
-        ORDER BY posting_date DESC 
+        SELECT invoice_no, party_type, posting_date, grand_total, outstanding_amount, status
+        FROM invoices
+        WHERE outstanding_amount > 0
+        ORDER BY posting_date DESC
         LIMIT 10
     """)
     )

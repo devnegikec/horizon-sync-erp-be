@@ -25,7 +25,7 @@ def check_journal_entries():
         result = conn.execute(
             text("""
             SELECT EXISTS (
-                SELECT FROM information_schema.tables 
+                SELECT FROM information_schema.tables
                 WHERE table_name = 'journal_entries'
             )
         """)
@@ -85,7 +85,7 @@ def check_journal_entries():
 
         result = conn.execute(
             text("""
-            SELECT 
+            SELECT
                 je.id,
                 je.entry_number,
                 je.posting_date,
@@ -138,7 +138,7 @@ def check_journal_entries():
 
             result = conn.execute(
                 text("""
-                SELECT 
+                SELECT
                     jel.id,
                     a.account_code,
                     a.account_name,
@@ -169,7 +169,7 @@ def check_journal_entries():
 
         result = conn.execute(
             text("""
-            SELECT 
+            SELECT
                 pe.receipt_number,
                 pe.payment_date,
                 pe.amount,
@@ -177,7 +177,7 @@ def check_journal_entries():
                 pe.status,
                 COUNT(je.id) as journal_entry_count
             FROM payment_entries pe
-            LEFT JOIN journal_entries je ON je.reference_type = 'PaymentEntry' 
+            LEFT JOIN journal_entries je ON je.reference_type = 'PaymentEntry'
                 AND je.reference_id = pe.id
             WHERE pe.organization_id = :org_id
             GROUP BY pe.id, pe.receipt_number, pe.payment_date, pe.amount, pe.payment_mode, pe.status

@@ -21,7 +21,7 @@ def fix_foreign_key():
         try:
             conn.execute(
                 text("""
-                ALTER TABLE journal_entry_lines 
+                ALTER TABLE journal_entry_lines
                 DROP CONSTRAINT IF EXISTS fk_jel_account
             """)
             )
@@ -36,10 +36,10 @@ def fix_foreign_key():
         try:
             conn.execute(
                 text("""
-                ALTER TABLE journal_entry_lines 
-                ADD CONSTRAINT fk_jel_account 
-                FOREIGN KEY (account_id) 
-                REFERENCES accounts(id) 
+                ALTER TABLE journal_entry_lines
+                ADD CONSTRAINT fk_jel_account
+                FOREIGN KEY (account_id)
+                REFERENCES accounts(id)
                 ON DELETE RESTRICT
             """)
             )
@@ -55,7 +55,7 @@ def fix_foreign_key():
         try:
             conn.execute(
                 text("""
-                ALTER TABLE journal_entry_lines 
+                ALTER TABLE journal_entry_lines
                 DROP CONSTRAINT IF EXISTS fk_jel_against_account
             """)
             )
@@ -64,10 +64,10 @@ def fix_foreign_key():
 
             conn.execute(
                 text("""
-                ALTER TABLE journal_entry_lines 
-                ADD CONSTRAINT fk_jel_against_account 
-                FOREIGN KEY (against_account_id) 
-                REFERENCES accounts(id) 
+                ALTER TABLE journal_entry_lines
+                ADD CONSTRAINT fk_jel_against_account
+                FOREIGN KEY (against_account_id)
+                REFERENCES accounts(id)
                 ON DELETE RESTRICT
             """)
             )
@@ -82,7 +82,7 @@ def fix_foreign_key():
         print("Step 3: Verifying the fix...")
         result = conn.execute(
             text("""
-            SELECT 
+            SELECT
                 tc.constraint_name,
                 kcu.column_name,
                 ccu.table_name AS foreign_table_name,

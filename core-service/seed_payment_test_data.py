@@ -59,9 +59,9 @@ def seed_payment_test_data():
         # Check if customers already exist
         result = db.execute(
             text("""
-            SELECT id, customer_code, customer_name 
-            FROM customers 
-            WHERE organization_id = :org_id 
+            SELECT id, customer_code, customer_name
+            FROM customers
+            WHERE organization_id = :org_id
             AND customer_code IN ('CUST-001', 'CUST-002', 'CUST-003')
             ORDER BY customer_code
         """),
@@ -119,7 +119,7 @@ def seed_payment_test_data():
                 db.execute(
                     text("""
                     INSERT INTO customers (
-                        id, organization_id, customer_code, customer_name, 
+                        id, organization_id, customer_code, customer_name,
                         email, phone, address, credit_limit,
                         status, outstanding_balance,
                         created_by, updated_by, created_at, updated_at

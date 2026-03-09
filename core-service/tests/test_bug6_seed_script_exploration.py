@@ -192,18 +192,18 @@ def test_bug6_counterexample_summary():
     """
     counterexample = """
     Bug 6 Counterexample: Seed creates accounts without parent-child hierarchy
-    
+
     Root Cause:
     - Admin seed endpoint at /api/v1/admin/seed-data calls scripts/seed_data.py
     - scripts/seed_data.py is the INVENTORY seed script (warehouses, items, item groups)
     - It does NOT create chart of accounts with proper parent-child relationships
     - The correct script is seed_chart_of_accounts.py in the project root
-    
+
     Evidence:
     - admin.py line 38: script_path = Path(...) / "scripts" / "seed_data.py"
     - Accounts created have NULL parent_account_id
     - "1100 - Current Assets" has no parent (should have parent "1000 - Assets")
-    
+
     Expected Fix:
     - Change admin.py line 38 to point to seed_chart_of_accounts.py
     - This will create accounts with proper parent-child hierarchy

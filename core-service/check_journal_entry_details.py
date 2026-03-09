@@ -19,7 +19,7 @@ def check_journal_entries():
         # Get all journal entries with their lines
         result = conn.execute(
             text("""
-            SELECT 
+            SELECT
                 je.id,
                 je.entry_no,
                 je.posting_date,

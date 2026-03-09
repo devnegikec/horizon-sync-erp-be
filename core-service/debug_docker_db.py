@@ -26,8 +26,8 @@ try:
         # Check for account 1110
         result = conn.execute(
             text("""
-            SELECT id, account_code, account_name, organization_id 
-            FROM accounts 
+            SELECT id, account_code, account_name, organization_id
+            FROM accounts
             WHERE account_code = '1110'
         """)
         )

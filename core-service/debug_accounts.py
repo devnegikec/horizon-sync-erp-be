@@ -25,8 +25,8 @@ with engine.connect() as conn:
     # Check for account 1110
     result = conn.execute(
         text("""
-        SELECT id, account_code, account_name, organization_id 
-        FROM accounts 
+        SELECT id, account_code, account_name, organization_id
+        FROM accounts
         WHERE account_code = '1110'
     """)
     )
@@ -41,8 +41,8 @@ with engine.connect() as conn:
     # Check with organization filter
     result = conn.execute(
         text("""
-        SELECT id, account_code, account_name, organization_id 
-        FROM accounts 
+        SELECT id, account_code, account_name, organization_id
+        FROM accounts
         WHERE organization_id = :org_id AND account_code = :code
     """),
         {"org_id": str(ORG_ID), "code": "1110"},

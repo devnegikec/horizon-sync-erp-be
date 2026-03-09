@@ -82,7 +82,7 @@ def main():
                 updated_by UUID NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                
+
                 CONSTRAINT check_payment_entries_amount CHECK (amount > 0),
                 CONSTRAINT check_payment_entries_reference_no CHECK (
                     (payment_mode IN ('Check', 'Bank_Transfer') AND reference_no IS NOT NULL) OR
@@ -138,7 +138,7 @@ def main():
                 allocated_amount_invoice_currency NUMERIC(15, 2),
                 created_by UUID NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                
+
                 CONSTRAINT check_payment_references_amount CHECK (allocated_amount > 0),
                 CONSTRAINT uq_payment_references_payment_invoice UNIQUE (payment_id, invoice_id)
             )

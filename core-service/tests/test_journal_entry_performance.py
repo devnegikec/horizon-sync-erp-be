@@ -164,7 +164,7 @@ def test_performance_comparison_with_and_without_index_hint(
 
         # Execute the balance query
         query = text("""
-            SELECT 
+            SELECT
                 COALESCE(SUM(jel.debit), 0) as debit_total,
                 COALESCE(SUM(jel.credit), 0) as credit_total
             FROM journal_entry_lines jel
@@ -214,8 +214,8 @@ def test_index_exists_in_database(db_session):
     """
     # Query to check if tables exist (works for SQLite)
     query = text("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' 
+        SELECT name FROM sqlite_master
+        WHERE type='table'
         AND name IN ('journal_entries', 'journal_entry_lines')
         ORDER BY name
     """)
@@ -239,8 +239,8 @@ def test_index_exists_in_database(db_session):
     # Check that we can query indexes on these tables (SQLite specific)
     for table_name in expected_tables:
         index_query = text("""
-            SELECT name FROM sqlite_master 
-            WHERE type='index' 
+            SELECT name FROM sqlite_master
+            WHERE type='index'
             AND tbl_name=:table_name
         """)
         result = db_session.execute(index_query, {"table_name": table_name})
