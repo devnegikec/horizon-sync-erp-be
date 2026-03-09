@@ -1,8 +1,8 @@
 """Ensure alembic_version has exactly one row to avoid 'overlaps' errors.
 
-When multiple rows exist, or the DB points at the removed merge revision ca930be8ee07,
-Alembic can fail. This script normalizes to the linear head i9j0k1l2m3n4 before
-running migrations (merge revision has been removed; chain is linear from 008).
+When multiple rows exist, or the DB points at a removed/stale revision,
+Alembic can fail. This script normalizes to 001_merged_complete_schema
+so that subsequent migrations (017, 018, etc.) run correctly.
 """
 
 import os
@@ -16,9 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.config import settings  # noqa: E402
 
 # Linear head (no merge) - matches current alembic chain
-HEAD_REVISION = "i9j0k1l2m3n4"
+HEAD_REVISION = "001_merged_complete_schema"
 # Legacy merge revision we no longer use; normalize away so Alembic never sees it
 OLD_MERGE_REVISION = "ca930be8ee07"
+# Also normalize away the old linear head that no longer exists
+OLD_LINEAR_HEAD = "i9j0k1l2m3n4"
 
 
 def main() -> int:
@@ -33,12 +35,12 @@ def main() -> int:
         if not rows:
             return 0
         # Multiple rows, or single row at old merge: set to linear head
-        need_fix = len(rows) > 1 or any(r[0] == OLD_MERGE_REVISION for r in rows)
+        need_fix = len(rows) > 1 or any(r[0] in (OLD_MERGE_REVISION, OLD_LINEAR_HEAD) for r in rows)
         if not need_fix:
             return 0
+        # Clear stale version so alembic runs all migrations from scratch
         conn.execute(text("DELETE FROM alembic_version"))
-        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES (:rev)"), {"rev": HEAD_REVISION})
-        print(f"[normalize_alembic_version] Set alembic_version to {HEAD_REVISION} (was {len(rows)} row(s))")
+        print(f"[normalize_alembic_version] Cleared stale alembic_version (was {[r[0] for r in rows]}). Alembic will re-run from base.")
     return 0
 
 
