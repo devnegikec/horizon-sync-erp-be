@@ -1,8 +1,7 @@
 """Payment audit log repository for database operations"""
 
-from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -60,8 +59,8 @@ class PaymentAuditLogRepository:
     def list_by_organization(
         self,
         organization_id: UUID,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> tuple[list[PaymentAuditLog], int]:

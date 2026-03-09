@@ -152,7 +152,9 @@ class BulkImportRepository:
         self.db.refresh(job)
         return job
 
-    def update_job_file_path(self, job_id: UUID, file_path: str) -> BulkImportJob | None:
+    def update_job_file_path(
+        self, job_id: UUID, file_path: str
+    ) -> BulkImportJob | None:
         """
         Update job file path.
 

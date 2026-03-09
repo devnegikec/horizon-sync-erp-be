@@ -55,9 +55,7 @@ class UOMConversion(Base):
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
         ),
-        CheckConstraint(
-            "conversion_factor > 0", name="ck_uom_conv_positive_factor"
-        ),
+        CheckConstraint("conversion_factor > 0", name="ck_uom_conv_positive_factor"),
         Index("ix_uom_conversions_item", "item_id"),
     )
 

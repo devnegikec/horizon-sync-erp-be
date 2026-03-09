@@ -124,7 +124,9 @@ class BulkExportRepository:
         self.db.refresh(job)
         return job
 
-    def update_job_file_path(self, job_id: UUID, file_path: str, total_rows: int = 0) -> BulkExportJob | None:
+    def update_job_file_path(
+        self, job_id: UUID, file_path: str, total_rows: int = 0
+    ) -> BulkExportJob | None:
         """
         Update job file path and row count.
 

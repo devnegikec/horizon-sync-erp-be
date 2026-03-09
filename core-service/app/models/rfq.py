@@ -4,12 +4,11 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Numeric, String, Text
-from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import RFQStatus
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class RFQ(Base):
@@ -61,8 +60,12 @@ class RFQ(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    line_items = relationship("RFQLine", back_populates="rfq", cascade="all, delete-orphan")
-    suppliers = relationship("RFQSupplier", back_populates="rfq", cascade="all, delete-orphan")
+    line_items = relationship(
+        "RFQLine", back_populates="rfq", cascade="all, delete-orphan"
+    )
+    suppliers = relationship(
+        "RFQSupplier", back_populates="rfq", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<RFQ(id={self.id}, status='{self.status}')>"
@@ -106,10 +109,14 @@ class RFQLine(Base):
 
     # Relationships
     rfq = relationship("RFQ", back_populates="line_items")
-    quotes = relationship("SupplierQuote", back_populates="rfq_line", cascade="all, delete-orphan")
+    quotes = relationship(
+        "SupplierQuote", back_populates="rfq_line", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
-        return f"<RFQLine(id={self.id}, item_id={self.item_id}, quantity={self.quantity})>"
+        return (
+            f"<RFQLine(id={self.id}, item_id={self.item_id}, quantity={self.quantity})>"
+        )
 
 
 class RFQSupplier(Base):

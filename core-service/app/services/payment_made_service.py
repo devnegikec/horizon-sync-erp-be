@@ -15,12 +15,12 @@ from app.repositories.payment_repository import PaymentRepository
 class PaymentMadeService:
     """
     Service wrapper for creating Payment Made using existing Payment API.
-    
+
     Integrates with:
     - Payment API (payment_type=PAY)
     - Purchase Invoice validation
     - Invoice outstanding balance updates
-    
+
     Requirements: 7.1, 7.2, 7.3
     """
 
@@ -44,9 +44,9 @@ class PaymentMadeService:
     ) -> dict:
         """
         Create Payment Made for Purchase Invoice using existing Payment API.
-        
+
         Uses SELECT FOR UPDATE to prevent race conditions in concurrent balance updates.
-        
+
         Args:
             purchase_invoice_id: Source Purchase Invoice ID
             amount: Payment amount
@@ -57,10 +57,10 @@ class PaymentMadeService:
             payment_method: Payment method (cash, bank_transfer, etc.)
             reference_no: External reference number
             remarks: Additional remarks
-            
+
         Returns:
             dict: Created payment response
-            
+
         Requirements:
         - 7.1: Set payment_type as PAY
         - 7.2: Set reference_type as PURCHASE_INVOICE and reference_id
@@ -68,7 +68,9 @@ class PaymentMadeService:
         - 11.7: Use SELECT FOR UPDATE for invoice balance updates
         """
         # Requirement 7.3 & 11.7: Validate Purchase Invoice exists and lock for update
-        invoice = self.invoice_repo.get_by_id(purchase_invoice_id, organization_id, for_update=True)
+        invoice = self.invoice_repo.get_by_id(
+            purchase_invoice_id, organization_id, for_update=True
+        )
         if not invoice:
             raise ResourceNotFoundException(
                 f"Purchase Invoice {purchase_invoice_id} not found"
@@ -128,11 +130,11 @@ class PaymentMadeService:
     def _update_invoice_balance(self, invoice, payment_amount: Decimal) -> None:
         """
         Update invoice outstanding balance and status after payment.
-        
+
         Args:
             invoice: Invoice model instance
             payment_amount: Payment amount to reduce from outstanding balance
-            
+
         Requirements:
         - 7.4: Reduce outstanding balance by payment amount
         - 7.5: Update Purchase Invoice status to PAID when balance reaches zero
@@ -157,13 +159,17 @@ class PaymentMadeService:
             "id": payment.id,
             "organization_id": payment.organization_id,
             "payment_no": payment.payment_no,
-            "payment_type": payment.payment_type.value if payment.payment_type else None,
+            "payment_type": payment.payment_type.value
+            if payment.payment_type
+            else None,
             "party_id": payment.party_id,
             "party_type": payment.party_type,
             "posting_date": payment.posting_date,
             "amount": payment.amount,
             "status": payment.status.value if payment.status else None,
-            "payment_method": payment.payment_method.value if payment.payment_method else None,
+            "payment_method": payment.payment_method.value
+            if payment.payment_method
+            else None,
             "reference_no": payment.reference_no,
             "remarks": payment.remarks,
             "created_by": payment.created_by,

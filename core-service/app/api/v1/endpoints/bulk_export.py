@@ -1,20 +1,17 @@
 """API endpoints for bulk item export operations"""
 
 import logging
-from io import BytesIO
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db, get_current_user
+from app.dependencies import get_current_user, get_db
 from app.schemas.bulk_operations import (
     BulkExportJobDetailResponse,
     BulkExportJobResponse,
     BulkExportRequest,
-    ExportDownloadResponse,
-    ExportFilter,
     PaginatedBulkExportResponse,
 )
 from app.services.bulk_export_service import BulkExportService
@@ -62,10 +59,7 @@ async def create_export_job(
             )
 
         # Generate file name if not provided
-        file_name = (
-            request.file_name
-            or f"items_export_{organization_id.hex[:8]}"
-        )
+        file_name = request.file_name or f"items_export_{organization_id.hex[:8]}"
 
         # Create export job
         service = BulkExportService(db)
@@ -170,7 +164,7 @@ async def download_export_file(
     try:
         service = BulkExportService(db)
         job = await service.get_job_status(job_id)
-        organization_id=current_user.organization_id
+        organization_id = current_user.organization_id
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -193,6 +187,7 @@ async def download_export_file(
 
         # Check if export has expired
         from datetime import UTC, datetime
+
         if job.expires_at and job.expires_at < datetime.now(UTC):
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
@@ -230,7 +225,9 @@ async def download_export_file(
         return StreamingResponse(
             iter([file_content]),
             media_type=media_type,
-            headers={"Content-Disposition": f"attachment; filename={job.file_name}.{file_ext}"},
+            headers={
+                "Content-Disposition": f"attachment; filename={job.file_name}.{file_ext}"
+            },
         )
 
     except HTTPException:
@@ -348,7 +345,7 @@ async def quick_export_items(
         job = await service.create_export_job(
             organization_id=organization_id,
             created_by_id=current_user.id,
-            file_name=f"items_export",
+            file_name="items_export",
             file_format=file_format,
             filters=filters,
         )

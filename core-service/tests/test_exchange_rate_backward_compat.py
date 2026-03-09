@@ -9,10 +9,7 @@ Requirements: 4.10
 from datetime import date
 from decimal import Decimal
 
-import pytest
-
 from app.models.exchange_rate import ExchangeRate
-
 
 # ── Legacy Create ───────────────────────────────────────────────────────
 
@@ -34,10 +31,14 @@ def test_legacy_create_exchange_rate(client, db_session):
     assert Decimal(str(data["rate"])) == Decimal("0.85")
 
     # Verify the DB record has null organization_id (legacy behavior)
-    record = db_session.query(ExchangeRate).filter(
-        ExchangeRate.from_currency == "USD",
-        ExchangeRate.to_currency == "EUR",
-    ).first()
+    record = (
+        db_session.query(ExchangeRate)
+        .filter(
+            ExchangeRate.from_currency == "USD",
+            ExchangeRate.to_currency == "EUR",
+        )
+        .first()
+    )
     assert record is not None
     assert record.organization_id is None
 
@@ -146,9 +147,9 @@ def test_legacy_delete_exchange_rate(client, db_session):
     assert resp.status_code == 204
 
     # Verify record is gone
-    deleted = db_session.query(ExchangeRate).filter(
-        ExchangeRate.id == record.id
-    ).first()
+    deleted = (
+        db_session.query(ExchangeRate).filter(ExchangeRate.id == record.id).first()
+    )
     assert deleted is None
 
 
@@ -158,13 +159,15 @@ def test_legacy_delete_exchange_rate(client, db_session):
 def test_null_org_id_records_queryable_via_legacy_list(client, db_session):
     """Records created with null org_id are returned by legacy list endpoint."""
     for i, (fc, tc) in enumerate([("CHF", "USD"), ("SEK", "NOK")]):
-        db_session.add(ExchangeRate(
-            from_currency=fc,
-            to_currency=tc,
-            rate=Decimal("1.10"),
-            effective_date=date(2025, 6, i + 1),
-            organization_id=None,
-        ))
+        db_session.add(
+            ExchangeRate(
+                from_currency=fc,
+                to_currency=tc,
+                rate=Decimal("1.10"),
+                effective_date=date(2025, 6, i + 1),
+                organization_id=None,
+            )
+        )
     db_session.commit()
 
     resp = client.get("/api/v1/currency/exchange-rates")
@@ -177,13 +180,15 @@ def test_null_org_id_records_queryable_via_legacy_list(client, db_session):
 
 def test_null_org_id_records_queryable_via_legacy_get_pair(client, db_session):
     """Records with null org_id are returned by legacy get-pair endpoint."""
-    db_session.add(ExchangeRate(
-        from_currency="INR",
-        to_currency="USD",
-        rate=Decimal("0.012"),
-        effective_date=date(2025, 7, 1),
-        organization_id=None,
-    ))
+    db_session.add(
+        ExchangeRate(
+            from_currency="INR",
+            to_currency="USD",
+            rate=Decimal("0.012"),
+            effective_date=date(2025, 7, 1),
+            organization_id=None,
+        )
+    )
     db_session.commit()
 
     resp = client.get(
@@ -228,13 +233,15 @@ def test_legacy_set_and_get_base_currency(client):
 def test_legacy_convert_currency(client, db_session):
     """POST /api/v1/currency/convert converts amount using exchange rate."""
     # Set up an exchange rate
-    db_session.add(ExchangeRate(
-        from_currency="USD",
-        to_currency="GBP",
-        rate=Decimal("0.79"),
-        effective_date=date(2025, 1, 1),
-        organization_id=None,
-    ))
+    db_session.add(
+        ExchangeRate(
+            from_currency="USD",
+            to_currency="GBP",
+            rate=Decimal("0.79"),
+            effective_date=date(2025, 1, 1),
+            organization_id=None,
+        )
+    )
     db_session.commit()
 
     resp = client.post(

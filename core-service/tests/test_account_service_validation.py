@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+
 from app.core.exceptions import (
     ChartOfAccountNotFoundException,
     CircularReferenceException,
@@ -43,10 +44,12 @@ def valid_account_data(organization_id):
 class TestRequiredFieldValidation:
     """Test required field validation (Requirements 11.1, 11.2)"""
 
-    def test_empty_account_code_rejected(self, account_service, organization_id, user_id):
+    def test_empty_account_code_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that empty account code is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="",
@@ -54,10 +57,12 @@ class TestRequiredFieldValidation:
                 account_type="asset",
             )
 
-    def test_whitespace_only_account_code_rejected(self, account_service, organization_id, user_id):
+    def test_whitespace_only_account_code_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that whitespace-only account code is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="   ",
@@ -65,10 +70,12 @@ class TestRequiredFieldValidation:
                 account_type="asset",
             )
 
-    def test_empty_account_name_rejected(self, account_service, organization_id, user_id):
+    def test_empty_account_name_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that empty account name is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="1000",
@@ -76,10 +83,12 @@ class TestRequiredFieldValidation:
                 account_type="asset",
             )
 
-    def test_whitespace_only_account_name_rejected(self, account_service, organization_id, user_id):
+    def test_whitespace_only_account_name_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that whitespace-only account name is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="1000",
@@ -87,10 +96,12 @@ class TestRequiredFieldValidation:
                 account_type="asset",
             )
 
-    def test_empty_account_type_rejected(self, account_service, organization_id, user_id):
+    def test_empty_account_type_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that empty account type is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="1000",
@@ -102,10 +113,12 @@ class TestRequiredFieldValidation:
 class TestFieldLengthValidation:
     """Test field length validation (Requirements 11.1, 11.2)"""
 
-    def test_account_code_exceeds_50_chars_rejected(self, account_service, organization_id, user_id):
+    def test_account_code_exceeds_50_chars_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that account code exceeding 50 characters is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="A" * 51,  # 51 characters
@@ -113,7 +126,9 @@ class TestFieldLengthValidation:
                 account_type="asset",
             )
 
-    def test_account_code_exactly_50_chars_accepted(self, account_service, organization_id, user_id):
+    def test_account_code_exactly_50_chars_accepted(
+        self, account_service, organization_id, user_id
+    ):
         """Test that account code with exactly 50 characters is accepted"""
         data = ChartOfAccountCreate(
             account_code="A" * 50,  # Exactly 50 characters
@@ -125,10 +140,12 @@ class TestFieldLengthValidation:
         account = account_service.create(data, organization_id, user_id)
         assert account.account_code == "A" * 50
 
-    def test_account_name_exceeds_200_chars_rejected(self, account_service, organization_id, user_id):
+    def test_account_name_exceeds_200_chars_rejected(
+        self, account_service, organization_id, user_id
+    ):
         """Test that account name exceeding 200 characters is rejected by Pydantic validation"""
         from pydantic import ValidationError as PydanticValidationError
-        
+
         with pytest.raises(PydanticValidationError):
             ChartOfAccountCreate(
                 account_code="1000",
@@ -136,7 +153,9 @@ class TestFieldLengthValidation:
                 account_type="asset",
             )
 
-    def test_account_name_exactly_200_chars_accepted(self, account_service, organization_id, user_id):
+    def test_account_name_exactly_200_chars_accepted(
+        self, account_service, organization_id, user_id
+    ):
         """Test that account name with exactly 200 characters is accepted"""
         data = ChartOfAccountCreate(
             account_code="1000",
@@ -179,7 +198,9 @@ class TestFieldLengthValidation:
 class TestAccountCodeFormatValidation:
     """Test account code format validation (Requirements 1.6, 6.1, 6.2)"""
 
-    def test_default_pattern_accepts_alphanumeric_and_dash(self, db_session, organization_id, user_id):
+    def test_default_pattern_accepts_alphanumeric_and_dash(
+        self, db_session, organization_id, user_id
+    ):
         """Test that default pattern accepts alphanumeric characters and dashes"""
         service = ChartOfAccountService(db_session)
 
@@ -194,7 +215,9 @@ class TestAccountCodeFormatValidation:
             account = service.create(data, organization_id, user_id)
             assert account.account_code == code
 
-    def test_default_pattern_rejects_special_chars(self, db_session, organization_id, user_id):
+    def test_default_pattern_rejects_special_chars(
+        self, db_session, organization_id, user_id
+    ):
         """Test that default pattern rejects special characters"""
         service = ChartOfAccountService(db_session)
 
@@ -418,9 +441,7 @@ class TestParentAccountValidation:
         assert "must be active" in str(exc_info.value).lower()
         assert parent.account_code in str(exc_info.value)
 
-    def test_active_parent_accepted(
-        self, account_service, organization_id, user_id
-    ):
+    def test_active_parent_accepted(self, account_service, organization_id, user_id):
         """Test that active parent account is accepted (Requirement 11.3)"""
         # Create parent account
         parent_data = ChartOfAccountCreate(
@@ -484,7 +505,6 @@ class TestValidAccountCreation:
 
         assert child.parent_account_id == parent.id
         assert child.account_code == "1100"
-
 
 
 class TestAccountTypeImmutability:

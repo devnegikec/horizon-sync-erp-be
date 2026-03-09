@@ -25,7 +25,9 @@ PURCHASE_ORDER_READ = "purchase_order.read"
 PURCHASE_ORDER_UPDATE = "purchase_order.update"
 
 
-@router.post("", response_model=PurchaseOrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=PurchaseOrderResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_purchase_order(
     body: PurchaseOrderCreate,
     current_user: CurrentUser = Depends(require_permission(PURCHASE_ORDER_CREATE)),
@@ -140,9 +142,7 @@ async def update_purchase_order(
 
     # Convert line items to dict if present
     if "line_items" in update_data and update_data["line_items"]:
-        update_data["line_items"] = [
-            item.model_dump() for item in body.line_items
-        ]
+        update_data["line_items"] = [item.model_dump() for item in body.line_items]
 
     data = svc.update(
         po_id,

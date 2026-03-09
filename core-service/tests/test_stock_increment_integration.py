@@ -146,11 +146,15 @@ class TestStockIncrementIntegration:
     ):
         """Test that creating Receipt Note increments stock for a new item"""
         # Verify no stock level exists initially
-        stock_levels = db_session.query(StockLevel).filter(
-            StockLevel.organization_id == test_organization_id,
-            StockLevel.product_id == test_item_id,
-            StockLevel.warehouse_id == test_warehouse_id,
-        ).all()
+        stock_levels = (
+            db_session.query(StockLevel)
+            .filter(
+                StockLevel.organization_id == test_organization_id,
+                StockLevel.product_id == test_item_id,
+                StockLevel.warehouse_id == test_warehouse_id,
+            )
+            .all()
+        )
         assert len(stock_levels) == 0
 
         # Create Receipt Note
@@ -332,10 +336,14 @@ class TestStockIncrementIntegration:
         )
 
         # Verify no stock level was created
-        stock_levels = db_session.query(StockLevel).filter(
-            StockLevel.organization_id == test_organization_id,
-            StockLevel.product_id == test_item_id,
-        ).all()
+        stock_levels = (
+            db_session.query(StockLevel)
+            .filter(
+                StockLevel.organization_id == test_organization_id,
+                StockLevel.product_id == test_item_id,
+            )
+            .all()
+        )
         assert len(stock_levels) == 0
 
     def test_receipt_note_with_multiple_items_increments_all(

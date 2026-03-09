@@ -26,7 +26,9 @@ class TransactionTaxBreakdown(Base):
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Transaction Reference
-    transaction_type = Column(String(50), nullable=False, index=True)  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
+    transaction_type = Column(
+        String(50), nullable=False, index=True
+    )  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
     transaction_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Tax Template and Rule References
@@ -42,9 +44,13 @@ class TransactionTaxBreakdown(Base):
     )
 
     # Tax Details
-    tax_type = Column(String(100), nullable=False, index=True)  # "GST", "VAT", "CGST", "SGST", etc.
+    tax_type = Column(
+        String(100), nullable=False, index=True
+    )  # "GST", "VAT", "CGST", "SGST", etc.
     tax_rate = Column(Numeric(5, 2), nullable=False)  # Percentage (e.g., 9.00 for 9%)
-    taxable_amount = Column(Numeric(15, 2), nullable=False)  # Amount on which tax is calculated
+    taxable_amount = Column(
+        Numeric(15, 2), nullable=False
+    )  # Amount on which tax is calculated
     tax_amount = Column(Numeric(15, 2), nullable=False)  # Calculated tax amount
 
     # Calculation Settings
@@ -52,7 +58,9 @@ class TransactionTaxBreakdown(Base):
     sequence = Column(Integer, nullable=False)  # Order of calculation
 
     # Account Reference
-    account_head_id = Column(UUID(as_uuid=True), nullable=False)  # Reference to chart_of_accounts
+    account_head_id = Column(
+        UUID(as_uuid=True), nullable=False
+    )  # Reference to chart_of_accounts
 
     # Audit fields
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -76,7 +84,9 @@ class TransactionChargeBreakdown(Base):
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Transaction Reference
-    transaction_type = Column(String(50), nullable=False, index=True)  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
+    transaction_type = Column(
+        String(50), nullable=False, index=True
+    )  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
     transaction_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Charge Template Reference (nullable for manual charges)
@@ -87,16 +97,22 @@ class TransactionChargeBreakdown(Base):
     )
 
     # Charge Details
-    charge_type = Column(String(50), nullable=False, index=True)  # "Shipping", "Handling", "Packaging", "Insurance", "Custom"
+    charge_type = Column(
+        String(50), nullable=False, index=True
+    )  # "Shipping", "Handling", "Packaging", "Insurance", "Custom"
     description = Column(String(255), nullable=True)
     calculation_method = Column(String(20), nullable=False)  # "FIXED" or "PERCENTAGE"
     charge_amount = Column(Numeric(15, 2), nullable=False)  # Calculated charge amount
 
     # Account Reference
-    account_head_id = Column(UUID(as_uuid=True), nullable=False)  # Reference to chart_of_accounts
+    account_head_id = Column(
+        UUID(as_uuid=True), nullable=False
+    )  # Reference to chart_of_accounts
 
     # Configuration
-    is_auto_calculated = Column(Boolean, default=True)  # True for template-based, False for manual
+    is_auto_calculated = Column(
+        Boolean, default=True
+    )  # True for template-based, False for manual
 
     # Audit fields
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

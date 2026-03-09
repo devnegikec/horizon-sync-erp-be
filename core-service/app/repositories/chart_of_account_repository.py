@@ -52,7 +52,9 @@ class AccountRepository:
         """
         return (
             self.db.query(Account)
-            .filter(Account.id == account_id, Account.organization_id == organization_id)
+            .filter(
+                Account.id == account_id, Account.organization_id == organization_id
+            )
             .first()
         )
 
@@ -71,7 +73,7 @@ class AccountRepository:
             self.db.query(Account)
             .filter(
                 Account.account_code == account_code,
-                Account.organization_id == organization_id
+                Account.organization_id == organization_id,
             )
             .first()
         )
@@ -165,7 +167,9 @@ class AccountRepository:
         Returns:
             List of accounts matching the filters
         """
-        query = self.db.query(Account).filter(Account.organization_id == organization_id)
+        query = self.db.query(Account).filter(
+            Account.organization_id == organization_id
+        )
 
         # Apply filters
         if account_type is not None:
@@ -176,8 +180,7 @@ class AccountRepository:
 
         if status is not None:
             query = query.filter(
-                func.lower(cast(Account.status, String))
-                == str(status.value).lower()
+                func.lower(cast(Account.status, String)) == str(status.value).lower()
             )
 
         if parent_account_id is not None:
@@ -202,7 +205,9 @@ class AccountRepository:
             "created_at",
             "updated_at",
         }
-        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "account_code"
+        requested_sort_field = (
+            sort_by if sort_by in allowed_sort_fields else "account_code"
+        )
 
         existing_columns: set[str] = set()
         try:
@@ -252,7 +257,9 @@ class AccountRepository:
         Returns:
             Total count of accounts matching the filters
         """
-        query = self.db.query(Account).filter(Account.organization_id == organization_id)
+        query = self.db.query(Account).filter(
+            Account.organization_id == organization_id
+        )
 
         # Apply filters (same as list_all)
         if account_type is not None:
@@ -263,8 +270,7 @@ class AccountRepository:
 
         if status is not None:
             query = query.filter(
-                func.lower(cast(Account.status, String))
-                == str(status.value).lower()
+                func.lower(cast(Account.status, String)) == str(status.value).lower()
             )
 
         if parent_account_id is not None:
@@ -281,7 +287,9 @@ class AccountRepository:
 
         return query.count()
 
-    def account_code_exists(self, account_code: str, organization_id: UUID, exclude_id: UUID | None = None) -> bool:
+    def account_code_exists(
+        self, account_code: str, organization_id: UUID, exclude_id: UUID | None = None
+    ) -> bool:
         """
         Check if account code already exists.
 
@@ -295,12 +303,12 @@ class AccountRepository:
         """
         query = self.db.query(Account).filter(
             Account.account_code == account_code,
-            Account.organization_id == organization_id
+            Account.organization_id == organization_id,
         )
-        
+
         if exclude_id is not None:
             query = query.filter(Account.id != exclude_id)
-        
+
         return query.count() > 0
 
     def has_children(self, account_id: UUID, organization_id: UUID) -> bool:
@@ -318,7 +326,7 @@ class AccountRepository:
             self.db.query(Account)
             .filter(
                 Account.parent_account_id == account_id,
-                Account.organization_id == organization_id
+                Account.organization_id == organization_id,
             )
             .count()
             > 0
@@ -339,13 +347,15 @@ class AccountRepository:
             self.db.query(Account)
             .filter(
                 Account.parent_account_id == account_id,
-                Account.organization_id == organization_id
+                Account.organization_id == organization_id,
             )
             .order_by(Account.account_code)
             .all()
         )
 
-    def get_with_parent(self, account_id: UUID, organization_id: UUID) -> Account | None:
+    def get_with_parent(
+        self, account_id: UUID, organization_id: UUID
+    ) -> Account | None:
         """
         Get account by ID with parent relationship loaded.
 
@@ -359,11 +369,15 @@ class AccountRepository:
         return (
             self.db.query(Account)
             .options(joinedload(Account.parent_account))
-            .filter(Account.id == account_id, Account.organization_id == organization_id)
+            .filter(
+                Account.id == account_id, Account.organization_id == organization_id
+            )
             .first()
         )
 
-    def get_descendants_recursive(self, account_id: UUID, organization_id: UUID) -> list[Account]:
+    def get_descendants_recursive(
+        self, account_id: UUID, organization_id: UUID
+    ) -> list[Account]:
         """
         Get all descendant accounts using recursive CTE for optimal performance.
 
@@ -375,21 +389,21 @@ class AccountRepository:
             List of all descendant accounts
         """
         from sqlalchemy import text
-        
+
         # Use recursive CTE for efficient hierarchy traversal
         query = text("""
             WITH RECURSIVE account_tree AS (
                 -- Base case: direct children
-                SELECT id, account_code, account_name, account_type, parent_account_id, 
+                SELECT id, account_code, account_name, account_type, parent_account_id,
                        currency, status, is_posting_account, description,
                        created_by, updated_by, created_at, updated_at, organization_id,
                        1 as depth
                 FROM accounts
-                WHERE parent_account_id = :account_id 
+                WHERE parent_account_id = :account_id
                   AND organization_id = :organization_id
-                
+
                 UNION ALL
-                
+
                 -- Recursive case: children of children
                 SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
                        a.currency, a.status, a.is_posting_account, a.description,
@@ -403,12 +417,12 @@ class AccountRepository:
             SELECT * FROM account_tree
             ORDER BY depth, account_code
         """)
-        
+
         result = self.db.execute(
             query,
-            {"account_id": str(account_id), "organization_id": str(organization_id)}
+            {"account_id": str(account_id), "organization_id": str(organization_id)},
         )
-        
+
         # Convert results to Account objects
         descendants = []
         for row in result.mappings():
@@ -429,10 +443,12 @@ class AccountRepository:
                 updated_at=row["updated_at"],
             )
             descendants.append(account)
-        
+
         return descendants
 
-    def get_ancestors_recursive(self, account_id: UUID, organization_id: UUID) -> list[Account]:
+    def get_ancestors_recursive(
+        self, account_id: UUID, organization_id: UUID
+    ) -> list[Account]:
         """
         Get all ancestor accounts using recursive CTE for optimal performance.
 
@@ -444,7 +460,7 @@ class AccountRepository:
             List of ancestor accounts ordered from immediate parent to root
         """
         from sqlalchemy import text
-        
+
         # Use recursive CTE for efficient hierarchy traversal
         query = text("""
             WITH RECURSIVE account_tree AS (
@@ -454,11 +470,11 @@ class AccountRepository:
                        created_by, updated_by, created_at, updated_at, organization_id,
                        0 as depth
                 FROM accounts
-                WHERE id = :account_id 
+                WHERE id = :account_id
                   AND organization_id = :organization_id
-                
+
                 UNION ALL
-                
+
                 -- Recursive case: get parent
                 SELECT a.id, a.account_code, a.account_name, a.account_type, a.parent_account_id,
                        a.currency, a.status, a.is_posting_account, a.description,
@@ -473,12 +489,12 @@ class AccountRepository:
             WHERE depth > 0  -- Exclude the account itself
             ORDER BY depth ASC
         """)
-        
+
         result = self.db.execute(
             query,
-            {"account_id": str(account_id), "organization_id": str(organization_id)}
+            {"account_id": str(account_id), "organization_id": str(organization_id)},
         )
-        
+
         # Convert results to Account objects
         ancestors = []
         for row in result.mappings():
@@ -499,5 +515,5 @@ class AccountRepository:
                 updated_at=row["updated_at"],
             )
             ancestors.append(account)
-        
+
         return ancestors

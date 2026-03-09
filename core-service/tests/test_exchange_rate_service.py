@@ -4,7 +4,7 @@ Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -205,11 +205,15 @@ def test_list_exchange_rates_filter_by_from_currency(
 ):
     """Validates: Requirements 4.3"""
     exchange_rate_service.create_exchange_rate(
-        ExchangeRateCreate(from_currency="USD", to_currency="EUR", rate=Decimal("0.85")),
+        ExchangeRateCreate(
+            from_currency="USD", to_currency="EUR", rate=Decimal("0.85")
+        ),
         sample_organization_id,
     )
     exchange_rate_service.create_exchange_rate(
-        ExchangeRateCreate(from_currency="GBP", to_currency="EUR", rate=Decimal("1.17")),
+        ExchangeRateCreate(
+            from_currency="GBP", to_currency="EUR", rate=Decimal("1.17")
+        ),
         sample_organization_id,
     )
 
@@ -227,11 +231,15 @@ def test_list_exchange_rates_filter_by_to_currency(
 ):
     """Validates: Requirements 4.3"""
     exchange_rate_service.create_exchange_rate(
-        ExchangeRateCreate(from_currency="USD", to_currency="EUR", rate=Decimal("0.85")),
+        ExchangeRateCreate(
+            from_currency="USD", to_currency="EUR", rate=Decimal("0.85")
+        ),
         sample_organization_id,
     )
     exchange_rate_service.create_exchange_rate(
-        ExchangeRateCreate(from_currency="USD", to_currency="JPY", rate=Decimal("149.50")),
+        ExchangeRateCreate(
+            from_currency="USD", to_currency="JPY", rate=Decimal("149.50")
+        ),
         sample_organization_id,
     )
 
@@ -326,12 +334,12 @@ def test_hard_delete_exchange_rate(
     assert pagination["total_items"] == 0
 
 
-def test_hard_delete_not_found_raises_404(exchange_rate_service, sample_organization_id):
+def test_hard_delete_not_found_raises_404(
+    exchange_rate_service, sample_organization_id
+):
     """Validates: Requirements 4.6"""
     with pytest.raises(ExchangeRateNotFoundException):
-        exchange_rate_service.delete_exchange_rate(
-            uuid.uuid4(), sample_organization_id
-        )
+        exchange_rate_service.delete_exchange_rate(uuid.uuid4(), sample_organization_id)
 
 
 # ── Organization isolation ──────────────────────────────────────────────

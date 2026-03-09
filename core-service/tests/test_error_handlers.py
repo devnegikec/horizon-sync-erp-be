@@ -1,11 +1,12 @@
 """Tests for error handler classes"""
 
 import pytest
+
 from app.core.exceptions import (
-    ValidationError,
+    IntegrationError,
     NotFoundError,
     StateError,
-    IntegrationError,
+    ValidationError,
 )
 
 
@@ -38,7 +39,9 @@ class TestValidationError:
     def test_validation_error_is_exception(self):
         """Test ValidationError can be raised and caught"""
         with pytest.raises(ValidationError) as exc_info:
-            raise ValidationError("Test error", details=[{"field": "test", "reason": "test"}])
+            raise ValidationError(
+                "Test error", details=[{"field": "test", "reason": "test"}]
+            )
 
         assert exc_info.value.status_code == 400
 

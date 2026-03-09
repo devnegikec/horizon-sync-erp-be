@@ -1,8 +1,6 @@
 """Tests for DefaultAccount model"""
 
 import uuid
-import pytest
-from sqlalchemy.exc import IntegrityError
 
 from app.models.default_account import DefaultAccount
 
@@ -16,10 +14,10 @@ def test_default_account_creation(db_session):
         account_id=uuid.uuid4(),
         organization_id=uuid.uuid4(),
     )
-    
+
     db_session.add(default_account)
     db_session.commit()
-    
+
     # Verify it was created
     assert default_account.id is not None
     assert default_account.transaction_type == "INVENTORY_PURCHASE"
@@ -36,10 +34,10 @@ def test_default_account_without_scenario(db_session):
         account_id=uuid.uuid4(),
         organization_id=uuid.uuid4(),
     )
-    
+
     db_session.add(default_account)
     db_session.commit()
-    
+
     assert default_account.id is not None
     assert default_account.scenario is None
 
@@ -47,7 +45,7 @@ def test_default_account_without_scenario(db_session):
 def test_default_account_multiple_scenarios_same_type(db_session):
     """Test that multiple scenarios can exist for the same transaction type"""
     org_id = uuid.uuid4()
-    
+
     # Create domestic scenario
     default_account1 = DefaultAccount(
         transaction_type="SALES_REVENUE",
@@ -57,7 +55,7 @@ def test_default_account_multiple_scenarios_same_type(db_session):
     )
     db_session.add(default_account1)
     db_session.commit()
-    
+
     # Create international scenario for same transaction type
     default_account2 = DefaultAccount(
         transaction_type="SALES_REVENUE",
@@ -67,7 +65,7 @@ def test_default_account_multiple_scenarios_same_type(db_session):
     )
     db_session.add(default_account2)
     db_session.commit()
-    
+
     # Both should exist
     assert default_account1.id is not None
     assert default_account2.id is not None
@@ -83,7 +81,7 @@ def test_default_account_repr(db_session):
         account_id=uuid.uuid4(),
         organization_id=uuid.uuid4(),
     )
-    
+
     repr_str = repr(default_account)
     assert "DefaultAccount" in repr_str
     assert "INVENTORY_PURCHASE" in repr_str
@@ -98,7 +96,7 @@ def test_default_account_repr_without_scenario(db_session):
         account_id=uuid.uuid4(),
         organization_id=uuid.uuid4(),
     )
-    
+
     repr_str = repr(default_account)
     assert "DefaultAccount" in repr_str
     assert "SALES_REVENUE" in repr_str

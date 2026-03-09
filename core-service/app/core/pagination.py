@@ -1,13 +1,12 @@
 """Pagination utility for list endpoints"""
 
-from typing import Any, TypeVar
 from math import ceil
+from typing import Any, TypeVar
 
-from sqlalchemy.orm import Query
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Query
 
 from app.schemas.common import PaginationMeta
-
 
 T = TypeVar("T")
 
@@ -19,9 +18,7 @@ class PaginationParams(BaseModel):
     page_size: int = Field(
         default=20, ge=1, le=100, description="Number of items per page"
     )
-    sort_by: str | None = Field(
-        default=None, description="Field name to sort by"
-    )
+    sort_by: str | None = Field(default=None, description="Field name to sort by")
     sort_order: str = Field(
         default="desc",
         pattern="^(asc|desc)$",

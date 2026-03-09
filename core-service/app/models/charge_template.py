@@ -31,16 +31,26 @@ class ChargeTemplate(Base):
     description = Column(Text, nullable=True)
 
     # Charge Configuration
-    charge_type = Column(String(50), nullable=False, index=True)  # "Shipping", "Handling", "Packaging", "Insurance", "Custom"
+    charge_type = Column(
+        String(50), nullable=False, index=True
+    )  # "Shipping", "Handling", "Packaging", "Insurance", "Custom"
     calculation_method = Column(String(20), nullable=False)  # "FIXED" or "PERCENTAGE"
 
     # Calculation Parameters
-    fixed_amount = Column(Numeric(15, 2), nullable=True)  # Required when calculation_method is FIXED
-    percentage_rate = Column(Numeric(5, 2), nullable=True)  # Required when calculation_method is PERCENTAGE
-    base_on = Column(String(20), nullable=True)  # "Net_Total" or "Grand_Total" (for percentage)
+    fixed_amount = Column(
+        Numeric(15, 2), nullable=True
+    )  # Required when calculation_method is FIXED
+    percentage_rate = Column(
+        Numeric(5, 2), nullable=True
+    )  # Required when calculation_method is PERCENTAGE
+    base_on = Column(
+        String(20), nullable=True
+    )  # "Net_Total" or "Grand_Total" (for percentage)
 
     # Account Reference
-    account_head_id = Column(UUID(as_uuid=True), nullable=False)  # Reference to chart_of_accounts
+    account_head_id = Column(
+        UUID(as_uuid=True), nullable=False
+    )  # Reference to chart_of_accounts
 
     # Configuration
     is_active = Column(Boolean, default=True)

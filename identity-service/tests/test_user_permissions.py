@@ -1,6 +1,5 @@
 """Tests for user permissions endpoints"""
 
-
 from app.models.role import UserOrganizationRole
 
 

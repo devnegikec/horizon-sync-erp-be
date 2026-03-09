@@ -15,18 +15,20 @@ Usage:
 
 import os
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+)
 # Same as seed_chart_of_accounts.py; override with ORGANIZATION_ID env if needed
 ORG_ID = uuid.UUID(os.getenv("ORGANIZATION_ID", "b1f71de1-0a19-424e-9580-1d3f871c5b1f"))
 
 # Account codes from seed_chart_of_accounts.py
-CASH_ACCOUNT_CODE = "1110"           # Cash and Cash Equivalents
-AR_ACCOUNT_CODE = "1120"             # Accounts Receivable
+CASH_ACCOUNT_CODE = "1110"  # Cash and Cash Equivalents
+AR_ACCOUNT_CODE = "1120"  # Accounts Receivable
 
 
 def seed_default_accounts():
@@ -119,7 +121,9 @@ def seed_default_accounts():
 
             session.commit()
             print("\n✓ Default accounts for payments configured successfully.")
-            print("  You can now confirm customer payments (POST .../payments/{id}/confirm).")
+            print(
+                "  You can now confirm customer payments (POST .../payments/{id}/confirm)."
+            )
             print("=" * 70)
 
         except Exception as e:

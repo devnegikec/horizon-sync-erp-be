@@ -7,17 +7,13 @@ prevents race conditions in status transitions and balance updates.
 Requirements: 11.7
 """
 
-import threading
-import time
 import uuid
 from datetime import datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundException, ValidationException
 from app.models.base import (
     InvoiceStatus,
     InvoiceType,
@@ -174,25 +170,21 @@ class TestPurchaseOrderLocking:
     ):
         """
         Test that get_by_id with for_update=True uses SELECT FOR UPDATE.
-        
+
         Requirements: 11.7
         """
         repo = PurchaseOrderRepository(db_session)
-        
+
         # Get without lock
         po_without_lock = repo.get_by_id(
-            submitted_purchase_order.id,
-            test_organization_id,
-            for_update=False
+            submitted_purchase_order.id, test_organization_id, for_update=False
         )
         assert po_without_lock is not None
         assert po_without_lock.id == submitted_purchase_order.id
-        
+
         # Get with lock
         po_with_lock = repo.get_by_id(
-            submitted_purchase_order.id,
-            test_organization_id,
-            for_update=True
+            submitted_purchase_order.id, test_organization_id, for_update=True
         )
         assert po_with_lock is not None
         assert po_with_lock.id == submitted_purchase_order.id
@@ -207,26 +199,24 @@ class TestPurchaseOrderLocking:
     ):
         """
         Test that update_received_quantities uses SELECT FOR UPDATE.
-        
+
         This test verifies that the method locks the Purchase Order row
         before updating received quantities and status.
-        
+
         Requirements: 11.7
         """
         service = PurchaseOrderService(db_session)
-        
+
         # Update received quantities
-        received_items = [
-            {"item_id": test_item.id, "qty": Decimal("50.00")}
-        ]
-        
+        received_items = [{"item_id": test_item.id, "qty": Decimal("50.00")}]
+
         result = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
             received_items=received_items,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify status was updated
         assert result["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
         assert result["line_items"][0]["received_quantity"] == Decimal("50.00")
@@ -241,40 +231,36 @@ class TestPurchaseOrderLocking:
     ):
         """
         Test that concurrent updates to received quantities are handled correctly.
-        
+
         This test simulates two concurrent receipt operations and verifies that
         the final received quantity is correct (no lost updates).
-        
+
         Requirements: 11.7
         """
         # Note: This is a simplified test. In a real scenario, you would need
         # separate database sessions and transactions to truly test concurrency.
         # For now, we verify that the locking mechanism is in place.
-        
+
         service = PurchaseOrderService(db_session)
-        
+
         # First update
-        received_items_1 = [
-            {"item_id": test_item.id, "qty": Decimal("30.00")}
-        ]
+        received_items_1 = [{"item_id": test_item.id, "qty": Decimal("30.00")}]
         result_1 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
             received_items=received_items_1,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Second update
-        received_items_2 = [
-            {"item_id": test_item.id, "qty": Decimal("20.00")}
-        ]
+        received_items_2 = [{"item_id": test_item.id, "qty": Decimal("20.00")}]
         result_2 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
             received_items=received_items_2,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify final received quantity is correct (30 + 20 = 50)
         assert result_2["line_items"][0]["received_quantity"] == Decimal("50.00")
         assert result_2["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
@@ -291,25 +277,21 @@ class TestInvoiceLocking:
     ):
         """
         Test that get_by_id with for_update=True uses SELECT FOR UPDATE.
-        
+
         Requirements: 11.7
         """
         repo = InvoiceRepository(db_session)
-        
+
         # Get without lock
         invoice_without_lock = repo.get_by_id(
-            test_invoice.id,
-            test_organization_id,
-            for_update=False
+            test_invoice.id, test_organization_id, for_update=False
         )
         assert invoice_without_lock is not None
         assert invoice_without_lock.id == test_invoice.id
-        
+
         # Get with lock
         invoice_with_lock = repo.get_by_id(
-            test_invoice.id,
-            test_organization_id,
-            for_update=True
+            test_invoice.id, test_organization_id, for_update=True
         )
         assert invoice_with_lock is not None
         assert invoice_with_lock.id == test_invoice.id
@@ -323,14 +305,14 @@ class TestInvoiceLocking:
     ):
         """
         Test that create_payment uses SELECT FOR UPDATE for invoice balance updates.
-        
+
         This test verifies that the method locks the Invoice row before
         updating the outstanding balance.
-        
+
         Requirements: 11.7
         """
         service = PaymentMadeService(db_session)
-        
+
         # Create payment
         result = service.create_payment(
             purchase_invoice_id=test_invoice.id,
@@ -341,11 +323,11 @@ class TestInvoiceLocking:
             posting_date=datetime(2024, 1, 15),
             payment_method="bank_transfer",
         )
-        
+
         # Verify payment was created
         assert result["amount"] == Decimal("500.00")
         assert result["reference_id"] == str(test_invoice.id)
-        
+
         # Verify invoice balance was updated
         db_session.refresh(test_invoice)
         assert test_invoice.outstanding_amount == Decimal("500.00")
@@ -359,18 +341,18 @@ class TestInvoiceLocking:
     ):
         """
         Test that concurrent payments are handled correctly.
-        
+
         This test simulates two concurrent payment operations and verifies that
         the final outstanding balance is correct (no lost updates).
-        
+
         Requirements: 11.7
         """
         # Note: This is a simplified test. In a real scenario, you would need
         # separate database sessions and transactions to truly test concurrency.
         # For now, we verify that the locking mechanism is in place.
-        
+
         service = PaymentMadeService(db_session)
-        
+
         # First payment
         result_1 = service.create_payment(
             purchase_invoice_id=test_invoice.id,
@@ -381,12 +363,12 @@ class TestInvoiceLocking:
             posting_date=datetime(2024, 1, 15),
             payment_method="bank_transfer",
         )
-        
+
         # Verify first payment
         assert result_1["amount"] == Decimal("300.00")
         db_session.refresh(test_invoice)
         assert test_invoice.outstanding_amount == Decimal("700.00")
-        
+
         # Second payment
         result_2 = service.create_payment(
             purchase_invoice_id=test_invoice.id,
@@ -397,7 +379,7 @@ class TestInvoiceLocking:
             posting_date=datetime(2024, 1, 20),
             payment_method="bank_transfer",
         )
-        
+
         # Verify second payment
         assert result_2["amount"] == Decimal("400.00")
         db_session.refresh(test_invoice)
@@ -412,11 +394,11 @@ class TestInvoiceLocking:
     ):
         """
         Test that payment updates invoice status to PAID when balance reaches zero.
-        
+
         Requirements: 7.5, 11.7
         """
         service = PaymentMadeService(db_session)
-        
+
         # Create payment for full amount
         result = service.create_payment(
             purchase_invoice_id=test_invoice.id,
@@ -427,10 +409,10 @@ class TestInvoiceLocking:
             posting_date=datetime(2024, 1, 15),
             payment_method="bank_transfer",
         )
-        
+
         # Verify payment was created
         assert result["amount"] == Decimal("1000.00")
-        
+
         # Verify invoice status was updated to PAID
         db_session.refresh(test_invoice)
         assert test_invoice.outstanding_amount == Decimal("0.00")
@@ -450,19 +432,17 @@ class TestRaceConditionPrevention:
     ):
         """
         Test that SELECT FOR UPDATE prevents race conditions in PO status transitions.
-        
+
         This test verifies that when two concurrent operations try to update
         the Purchase Order status, the locking mechanism ensures data consistency.
-        
+
         Requirements: 11.7
         """
         service = PurchaseOrderService(db_session)
-        
+
         # Simulate receiving items in multiple batches
         # First batch: 40 items
-        received_items_1 = [
-            {"item_id": test_item.id, "qty": Decimal("40.00")}
-        ]
+        received_items_1 = [{"item_id": test_item.id, "qty": Decimal("40.00")}]
         result_1 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
             received_items=received_items_1,
@@ -470,18 +450,16 @@ class TestRaceConditionPrevention:
             user_id=test_user_id,
         )
         assert result_1["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
-        
+
         # Second batch: 60 items (completing the order)
-        received_items_2 = [
-            {"item_id": test_item.id, "qty": Decimal("60.00")}
-        ]
+        received_items_2 = [{"item_id": test_item.id, "qty": Decimal("60.00")}]
         result_2 = service.update_received_quantities(
             po_id=submitted_purchase_order.id,
             received_items=received_items_2,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify final status is FULLY_RECEIVED
         assert result_2["status"] == PurchaseOrderStatus.FULLY_RECEIVED.value
         assert result_2["line_items"][0]["received_quantity"] == Decimal("100.00")
@@ -495,14 +473,14 @@ class TestRaceConditionPrevention:
     ):
         """
         Test that SELECT FOR UPDATE prevents race conditions in invoice balance updates.
-        
+
         This test verifies that when multiple payments are made concurrently,
         the locking mechanism ensures the outstanding balance is updated correctly.
-        
+
         Requirements: 11.7
         """
         service = PaymentMadeService(db_session)
-        
+
         # Make multiple payments
         payments = [
             ("PAY-001", Decimal("250.00")),
@@ -510,7 +488,7 @@ class TestRaceConditionPrevention:
             ("PAY-003", Decimal("250.00")),
             ("PAY-004", Decimal("250.00")),
         ]
-        
+
         for payment_no, amount in payments:
             service.create_payment(
                 purchase_invoice_id=test_invoice.id,
@@ -521,7 +499,7 @@ class TestRaceConditionPrevention:
                 posting_date=datetime(2024, 1, 15),
                 payment_method="bank_transfer",
             )
-        
+
         # Verify final balance is zero
         db_session.refresh(test_invoice)
         assert test_invoice.outstanding_amount == Decimal("0.00")

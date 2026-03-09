@@ -89,7 +89,9 @@ class TaxRule(Base):
 
     # Tax Configuration
     tax_rate = Column(Numeric(5, 2), nullable=False)  # Percentage (e.g., 9.00 for 9%)
-    account_head_id = Column(UUID(as_uuid=True), nullable=False)  # Reference to chart_of_accounts
+    account_head_id = Column(
+        UUID(as_uuid=True), nullable=False
+    )  # Reference to chart_of_accounts
 
     # Calculation Settings
     is_compound = Column(Boolean, default=False)  # Tax on tax

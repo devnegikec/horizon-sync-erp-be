@@ -38,9 +38,10 @@ class SalesOrderService:
         # Auto-generate sales_order_no if not provided
         if not payload.get("sales_order_no"):
             from app.services.document_numbering_service import DocumentNumberingService
-            payload["sales_order_no"] = DocumentNumberingService(self.db).get_next_number(
-                organization_id, "sales_order"
-            )
+
+            payload["sales_order_no"] = DocumentNumberingService(
+                self.db
+            ).get_next_number(organization_id, "sales_order")
 
         # Handle status enum conversion
         if payload.get("status"):
@@ -210,15 +211,27 @@ class SalesOrderService:
                 payload["discount_amount"] = discount_amount
 
         # Document discount only (no items update)
-        elif "discount_type" in data or "discount_value" in data or "discount_amount" in data:
+        elif (
+            "discount_type" in data
+            or "discount_value" in data
+            or "discount_amount" in data
+        ):
             subtotal = sum(
                 (getattr(item, "total_amount", None) or item.amount or Decimal("0"))
                 for item in sales_order.items
             )
             discount_amount = Decimal(str(data.get("discount_amount") or 0))
             payload["grand_total"] = subtotal - discount_amount
-            payload["discount_type"] = data.get("discount_type") or getattr(sales_order, "discount_type", None) or "percentage"
-            payload["discount_value"] = data.get("discount_value") if data.get("discount_value") is not None else getattr(sales_order, "discount_value", None)
+            payload["discount_type"] = (
+                data.get("discount_type")
+                or getattr(sales_order, "discount_type", None)
+                or "percentage"
+            )
+            payload["discount_value"] = (
+                data.get("discount_value")
+                if data.get("discount_value") is not None
+                else getattr(sales_order, "discount_value", None)
+            )
             payload["discount_amount"] = discount_amount
 
         self.repo.update(sales_order, payload)
@@ -410,7 +423,9 @@ class SalesOrderService:
                     if so_item.tax_amount
                     else Decimal("0")
                 )
-                so_item.total_amount = so_item.amount - so_item.discount_amount + so_item.tax_amount
+                so_item.total_amount = (
+                    so_item.amount - so_item.discount_amount + so_item.tax_amount
+                )
 
                 # Reserve stock for first allocation
                 sl = (
@@ -455,7 +470,8 @@ class SalesOrderService:
                         billed_qty=Decimal("0"),
                         delivered_qty=Decimal("0"),
                         sort_order=so_item.sort_order,
-                        discount_type=getattr(so_item, "discount_type", None) or "percentage",
+                        discount_type=getattr(so_item, "discount_type", None)
+                        or "percentage",
                         discount_value=getattr(so_item, "discount_value", None) or 0,
                         discount_amount=alloc_discount,
                         tax_template_id=so_item.tax_template_id,
@@ -555,7 +571,11 @@ class SalesOrderService:
                 if so_item:
                     qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
                     # Proportional line total (rate includes discount and tax effect)
-                    line_total = getattr(so_item, "total_amount", None) or (so_item.amount + getattr(so_item, "tax_amount", 0) - getattr(so_item, "discount_amount", 0))
+                    line_total = getattr(so_item, "total_amount", None) or (
+                        so_item.amount
+                        + getattr(so_item, "tax_amount", 0)
+                        - getattr(so_item, "discount_amount", 0)
+                    )
                     if so_item.qty and so_item.qty > 0:
                         grand_total += (line_total / so_item.qty) * qty_to_bill
                     else:
@@ -1051,7 +1071,9 @@ class SalesOrderService:
         if discount_type not in ("flat", "percentage"):
             discount_type = "percentage"
         discount_value = Decimal(str(item_data.get("discount_value") or 0))
-        discount_amount = self._compute_discount_amount(amount, discount_type, discount_value)
+        discount_amount = self._compute_discount_amount(
+            amount, discount_type, discount_value
+        )
         net_amount = amount - discount_amount
 
         item_payload = {
@@ -1111,7 +1133,9 @@ class SalesOrderService:
                 item_payload["tax_template_id"] = first_entry.tax_template_id
                 item_payload["tax_amount"] = tax_result.total_tax
                 item_payload["tax_rate"] = (
-                    (tax_result.total_tax / net_amount * 100) if net_amount else Decimal("0")
+                    (tax_result.total_tax / net_amount * 100)
+                    if net_amount
+                    else Decimal("0")
                 )
                 item_payload["total_amount"] = net_amount + tax_result.total_tax
 
@@ -1250,13 +1274,16 @@ class SalesOrderService:
                 "postal_code": customer.postal_code,
                 "country": customer.country,
                 "tax_number": customer.tax_number,
-            } if customer else None,
+            }
+            if customer
+            else None,
             "order_date": sales_order.order_date,
             "delivery_date": sales_order.delivery_date,
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,
             "currency": sales_order.currency,
-            "discount_type": getattr(sales_order, "discount_type", None) or "percentage",
+            "discount_type": getattr(sales_order, "discount_type", None)
+            or "percentage",
             "discount_value": getattr(sales_order, "discount_value", None) or 0,
             "discount_amount": getattr(sales_order, "discount_amount", None) or 0,
             "reference_type": sales_order.reference_type,
@@ -1283,7 +1310,8 @@ class SalesOrderService:
                     "pending_billing_qty": item.qty - item.billed_qty,
                     "pending_delivery_qty": item.qty - item.delivered_qty,
                     "sort_order": item.sort_order,
-                    "discount_type": getattr(item, "discount_type", None) or "percentage",
+                    "discount_type": getattr(item, "discount_type", None)
+                    or "percentage",
                     "discount_value": getattr(item, "discount_value", None) or 0,
                     "discount_amount": getattr(item, "discount_amount", None) or 0,
                     "tax_template_id": item.tax_template_id,
@@ -1312,7 +1340,9 @@ class SalesOrderService:
                 "id": customer.id,
                 "name": customer.customer_name,
                 "code": customer.customer_code,
-            } if customer else None,
+            }
+            if customer
+            else None,
             "order_date": sales_order.order_date,
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,

@@ -1,11 +1,10 @@
 """Account repository tests"""
 
 import uuid
-from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.models.base import AccountStatus, AccountType
 from app.repositories.chart_of_account_repository import AccountRepository
@@ -83,11 +82,15 @@ class TestAccountRepositoryCreate:
 class TestAccountRepositoryGetById:
     """Tests for AccountRepository.get_by_id"""
 
-    def test_get_by_id_success(self, account_repo, test_account_data, mock_current_user):
+    def test_get_by_id_success(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test getting an account by ID"""
         account = account_repo.create(test_account_data)
 
-        retrieved = account_repo.get_by_id(account.id, mock_current_user.organization_id)
+        retrieved = account_repo.get_by_id(
+            account.id, mock_current_user.organization_id
+        )
 
         assert retrieved is not None
         assert retrieved.id == account.id
@@ -104,11 +107,15 @@ class TestAccountRepositoryGetById:
 class TestAccountRepositoryGetByCode:
     """Tests for AccountRepository.get_by_code"""
 
-    def test_get_by_code_success(self, account_repo, test_account_data, mock_current_user):
+    def test_get_by_code_success(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test getting an account by code"""
         account = account_repo.create(test_account_data)
 
-        retrieved = account_repo.get_by_code(test_account_data["account_code"], mock_current_user.organization_id)
+        retrieved = account_repo.get_by_code(
+            test_account_data["account_code"], mock_current_user.organization_id
+        )
 
         assert retrieved is not None
         assert retrieved.id == account.id
@@ -116,7 +123,9 @@ class TestAccountRepositoryGetByCode:
 
     def test_get_by_code_not_found(self, account_repo, mock_current_user):
         """Test getting a non-existent account by code"""
-        retrieved = account_repo.get_by_code("NONEXISTENT", mock_current_user.organization_id)
+        retrieved = account_repo.get_by_code(
+            "NONEXISTENT", mock_current_user.organization_id
+        )
 
         assert retrieved is None
 
@@ -169,7 +178,9 @@ class TestAccountRepositoryUpdate:
 class TestAccountRepositoryDelete:
     """Tests for AccountRepository.delete"""
 
-    def test_delete_account_success(self, account_repo, test_account_data, mock_current_user):
+    def test_delete_account_success(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test deleting an account"""
         account = account_repo.create(test_account_data)
         account_id = account.id
@@ -177,7 +188,9 @@ class TestAccountRepositoryDelete:
         account_repo.delete(account)
 
         # Verify it's deleted
-        retrieved = account_repo.get_by_id(account_id, mock_current_user.organization_id)
+        retrieved = account_repo.get_by_id(
+            account_id, mock_current_user.organization_id
+        )
         assert retrieved is None
 
     def test_delete_account_with_children_fails(self, account_repo, test_account_data):
@@ -202,20 +215,28 @@ class TestAccountRepositoryListAll:
 
     def test_list_all_empty(self, account_repo, mock_current_user):
         """Test listing accounts when none exist"""
-        accounts = account_repo.list_all(organization_id=mock_current_user.organization_id)
+        accounts = account_repo.list_all(
+            organization_id=mock_current_user.organization_id
+        )
 
         assert accounts == []
 
-    def test_list_all_with_data(self, account_repo, test_account_data, mock_current_user):
+    def test_list_all_with_data(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test listing accounts with data"""
         account_repo.create(test_account_data)
 
-        accounts = account_repo.list_all(organization_id=mock_current_user.organization_id)
+        accounts = account_repo.list_all(
+            organization_id=mock_current_user.organization_id
+        )
 
         assert len(accounts) == 1
         assert accounts[0].account_code == test_account_data["account_code"]
 
-    def test_list_all_filter_by_type(self, account_repo, test_account_data, mock_current_user):
+    def test_list_all_filter_by_type(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test filtering accounts by type"""
         # Create asset account
         account_repo.create(test_account_data)
@@ -230,13 +251,15 @@ class TestAccountRepositoryListAll:
         # Filter by asset type
         asset_accounts = account_repo.list_all(
             organization_id=mock_current_user.organization_id,
-            account_type=AccountType.ASSET
+            account_type=AccountType.ASSET,
         )
 
         assert len(asset_accounts) == 1
         assert asset_accounts[0].account_type == AccountType.ASSET
 
-    def test_list_all_filter_by_status(self, account_repo, test_account_data, mock_current_user):
+    def test_list_all_filter_by_status(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test filtering accounts by status"""
         # Create active account
         account_repo.create(test_account_data)
@@ -251,13 +274,15 @@ class TestAccountRepositoryListAll:
         # Filter by active status
         active_accounts = account_repo.list_all(
             organization_id=mock_current_user.organization_id,
-            status=AccountStatus.ACTIVE
+            status=AccountStatus.ACTIVE,
         )
 
         assert len(active_accounts) == 1
         assert active_accounts[0].status == AccountStatus.ACTIVE
 
-    def test_list_all_filter_by_parent(self, account_repo, test_account_data, mock_current_user):
+    def test_list_all_filter_by_parent(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test filtering accounts by parent"""
         # Create parent account
         parent = account_repo.create(test_account_data)
@@ -265,15 +290,15 @@ class TestAccountRepositoryListAll:
         # Create child accounts
         for i in range(3):
             child_data = test_account_data.copy()
-            child_data["account_code"] = f"1000-0{i+2}"
-            child_data["account_name"] = f"Child Account {i+1}"
+            child_data["account_code"] = f"1000-0{i + 2}"
+            child_data["account_name"] = f"Child Account {i + 1}"
             child_data["parent_account_id"] = parent.id
             account_repo.create(child_data)
 
         # Filter by parent
         children = account_repo.list_all(
             organization_id=mock_current_user.organization_id,
-            parent_account_id=parent.id
+            parent_account_id=parent.id,
         )
 
         assert len(children) == 3
@@ -290,16 +315,14 @@ class TestAccountRepositoryListAll:
 
         # Search by code
         results = account_repo.list_all(
-            organization_id=mock_current_user.organization_id,
-            search="1000"
+            organization_id=mock_current_user.organization_id, search="1000"
         )
         assert len(results) == 1
         assert results[0].account_code == "1000-01"
 
         # Search by name (case-insensitive)
         results = account_repo.list_all(
-            organization_id=mock_current_user.organization_id,
-            search="bank"
+            organization_id=mock_current_user.organization_id, search="bank"
         )
         assert len(results) == 1
         assert results[0].account_name == "Bank Account"
@@ -318,7 +341,7 @@ class TestAccountRepositoryListAll:
         accounts_asc = account_repo.list_all(
             organization_id=mock_current_user.organization_id,
             sort_by="account_code",
-            sort_order="asc"
+            sort_order="asc",
         )
         assert accounts_asc[0].account_code == "1000-01"
         assert accounts_asc[1].account_code == "1000-02"
@@ -328,7 +351,7 @@ class TestAccountRepositoryListAll:
         accounts_desc = account_repo.list_all(
             organization_id=mock_current_user.organization_id,
             sort_by="account_code",
-            sort_order="desc"
+            sort_order="desc",
         )
         assert accounts_desc[0].account_code == "1000-03"
         assert accounts_desc[1].account_code == "1000-02"
@@ -338,42 +361,58 @@ class TestAccountRepositoryListAll:
 class TestAccountRepositoryHelperMethods:
     """Tests for helper methods"""
 
-    def test_account_code_exists(self, account_repo, test_account_data, mock_current_user):
+    def test_account_code_exists(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test checking if account code exists"""
         account_repo.create(test_account_data)
 
-        assert account_repo.account_code_exists(
-            test_account_data["account_code"],
-            mock_current_user.organization_id
-        ) is True
-        assert account_repo.account_code_exists(
-            "NONEXISTENT",
-            mock_current_user.organization_id
-        ) is False
+        assert (
+            account_repo.account_code_exists(
+                test_account_data["account_code"], mock_current_user.organization_id
+            )
+            is True
+        )
+        assert (
+            account_repo.account_code_exists(
+                "NONEXISTENT", mock_current_user.organization_id
+            )
+            is False
+        )
 
-    def test_account_code_exists_exclude_id(self, account_repo, test_account_data, mock_current_user):
+    def test_account_code_exists_exclude_id(
+        self, account_repo, test_account_data, mock_current_user
+    ):
         """Test checking account code exists with exclusion"""
         account = account_repo.create(test_account_data)
 
         # Should return False when excluding the account's own ID
-        assert account_repo.account_code_exists(
-            test_account_data["account_code"],
-            mock_current_user.organization_id,
-            exclude_id=account.id
-        ) is False
+        assert (
+            account_repo.account_code_exists(
+                test_account_data["account_code"],
+                mock_current_user.organization_id,
+                exclude_id=account.id,
+            )
+            is False
+        )
 
         # Should return True when not excluding
-        assert account_repo.account_code_exists(
-            test_account_data["account_code"],
-            mock_current_user.organization_id
-        ) is True
+        assert (
+            account_repo.account_code_exists(
+                test_account_data["account_code"], mock_current_user.organization_id
+            )
+            is True
+        )
 
     def test_has_children(self, account_repo, test_account_data, mock_current_user):
         """Test checking if account has children"""
         # Create parent account
         parent = account_repo.create(test_account_data)
 
-        assert account_repo.has_children(parent.id, mock_current_user.organization_id) is False
+        assert (
+            account_repo.has_children(parent.id, mock_current_user.organization_id)
+            is False
+        )
 
         # Create child account
         child_data = test_account_data.copy()
@@ -382,7 +421,10 @@ class TestAccountRepositoryHelperMethods:
         child_data["parent_account_id"] = parent.id
         account_repo.create(child_data)
 
-        assert account_repo.has_children(parent.id, mock_current_user.organization_id) is True
+        assert (
+            account_repo.has_children(parent.id, mock_current_user.organization_id)
+            is True
+        )
 
     def test_get_children(self, account_repo, test_account_data, mock_current_user):
         """Test getting child accounts"""
@@ -398,7 +440,9 @@ class TestAccountRepositoryHelperMethods:
             child_data["parent_account_id"] = parent.id
             account_repo.create(child_data)
 
-        children = account_repo.get_children(parent.id, mock_current_user.organization_id)
+        children = account_repo.get_children(
+            parent.id, mock_current_user.organization_id
+        )
 
         assert len(children) == 3
         assert all(child.parent_account_id == parent.id for child in children)
@@ -420,7 +464,9 @@ class TestAccountRepositoryHelperMethods:
         child = account_repo.create(child_data)
 
         # Get child with parent loaded
-        retrieved = account_repo.get_with_parent(child.id, mock_current_user.organization_id)
+        retrieved = account_repo.get_with_parent(
+            child.id, mock_current_user.organization_id
+        )
 
         assert retrieved is not None
         assert retrieved.id == child.id

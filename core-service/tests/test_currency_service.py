@@ -1,6 +1,6 @@
 """Unit tests for CurrencyService"""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -47,9 +47,11 @@ class TestCurrencyService:
         assert service.get_base_currency() == "GBP"
 
         # Verify only one config record exists
-        configs = db_session.query(SystemConfig).filter(
-            SystemConfig.key == "base_currency"
-        ).all()
+        configs = (
+            db_session.query(SystemConfig)
+            .filter(SystemConfig.key == "base_currency")
+            .all()
+        )
         assert len(configs) == 1
 
     def test_set_base_currency_invalid_format(self, db_session):
@@ -108,11 +110,15 @@ class TestCurrencyService:
         service.set_exchange_rate("USD", "EUR", Decimal("0.87"), effective_date)
 
         # Verify only one record exists
-        rates = db_session.query(ExchangeRate).filter(
-            ExchangeRate.from_currency == "USD",
-            ExchangeRate.to_currency == "EUR",
-            ExchangeRate.effective_date == effective_date,
-        ).all()
+        rates = (
+            db_session.query(ExchangeRate)
+            .filter(
+                ExchangeRate.from_currency == "USD",
+                ExchangeRate.to_currency == "EUR",
+                ExchangeRate.effective_date == effective_date,
+            )
+            .all()
+        )
         assert len(rates) == 1
         assert rates[0].rate == Decimal("0.87")
 
@@ -130,7 +136,9 @@ class TestCurrencyService:
             service.set_exchange_rate("USD", "EUR", Decimal("0"), effective_date)
 
         # Same currency
-        with pytest.raises(ValidationError, match="Cannot set exchange rate for same currency"):
+        with pytest.raises(
+            ValidationError, match="Cannot set exchange rate for same currency"
+        ):
             service.set_exchange_rate("USD", "USD", Decimal("1.0"), effective_date)
 
         # Invalid currency codes
@@ -174,7 +182,9 @@ class TestCurrencyService:
         """Test that missing exchange rate raises exception"""
         service = CurrencyService(db_session)
 
-        with pytest.raises(ExchangeRateNotFoundException, match="No exchange rate found"):
+        with pytest.raises(
+            ExchangeRateNotFoundException, match="No exchange rate found"
+        ):
             service.get_exchange_rate("USD", "EUR", date(2024, 1, 1))
 
     def test_convert_currency(self, db_session):
@@ -237,9 +247,7 @@ class TestCurrencyService:
 
         # Get rates for January only
         rates = service.get_historical_rates(
-            "USD", "EUR",
-            start_date=date(2024, 1, 1),
-            end_date=date(2024, 1, 31)
+            "USD", "EUR", start_date=date(2024, 1, 1), end_date=date(2024, 1, 31)
         )
         assert len(rates) == 2
         assert all(rate.effective_date.month == 1 for rate in rates)

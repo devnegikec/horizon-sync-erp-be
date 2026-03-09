@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -18,17 +17,17 @@ class ChargeContext:
     organization_id: UUID
     transaction_type: str
     net_total: Decimal
-    total_weight: Optional[Decimal] = None
-    customer_id: Optional[UUID] = None
-    shipping_address: Optional[dict] = None
-    customer_location: Optional[dict] = None
+    total_weight: Decimal | None = None
+    customer_id: UUID | None = None
+    shipping_address: dict | None = None
+    customer_location: dict | None = None
 
 
 @dataclass
 class ChargeBreakdownEntry:
     """Individual charge breakdown entry"""
 
-    charge_template_id: Optional[UUID]
+    charge_template_id: UUID | None
     charge_type: str
     description: str
     calculation_method: str  # "FIXED" or "PERCENTAGE"
@@ -93,7 +92,9 @@ class ChargeCalculationEngine:
                 else:  # Default to Net_Total
                     base_amount = net_total
             else:
-                base_amount = net_total  # Not used for FIXED, but passed for consistency
+                base_amount = (
+                    net_total  # Not used for FIXED, but passed for consistency
+                )
 
             charge_entry = self.calculate_single_charge(template, base_amount)
             charge_breakdown.append(charge_entry)

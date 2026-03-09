@@ -10,15 +10,14 @@ DOCUMENT_TYPES and DEFAULT_PREFIXES in app.models.document_numbering.
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
 from app.models.document_numbering import (
+    DEFAULT_PREFIXES,
+    DOCUMENT_TYPES,
     DocumentNumberingConfig,
     DocumentSequenceCounter,
-    DOCUMENT_TYPES,
-    DEFAULT_PREFIXES,
 )
 
 
@@ -122,13 +121,17 @@ class DocumentNumberingService:
         out = []
         for doc_type in DOCUMENT_TYPES:
             c = by_type.get(doc_type)
-            out.append({
-                "document_type": doc_type,
-                "prefix": c.prefix if c else DEFAULT_PREFIXES.get(doc_type, doc_type.upper()[:4]),
-                "padding": c.padding if c else 5,
-                "include_year": c.include_year if c else True,
-                "separator": c.separator if c else "-",
-            })
+            out.append(
+                {
+                    "document_type": doc_type,
+                    "prefix": c.prefix
+                    if c
+                    else DEFAULT_PREFIXES.get(doc_type, doc_type.upper()[:4]),
+                    "padding": c.padding if c else 5,
+                    "include_year": c.include_year if c else True,
+                    "separator": c.separator if c else "-",
+                }
+            )
         return out
 
     def update_config(

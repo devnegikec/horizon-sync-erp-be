@@ -188,7 +188,9 @@ class ItemRepository:
             "created_at",
             "updated_at",
         }
-        requested_sort_field = sort_by if sort_by in allowed_sort_fields else "created_at"
+        requested_sort_field = (
+            sort_by if sort_by in allowed_sort_fields else "created_at"
+        )
 
         existing_columns: set[str] = set()
         try:
@@ -198,7 +200,9 @@ class ItemRepository:
             existing_columns = set()
 
         if existing_columns and requested_sort_field not in existing_columns:
-            requested_sort_field = "created_at" if "created_at" in existing_columns else "id"
+            requested_sort_field = (
+                "created_at" if "created_at" in existing_columns else "id"
+            )
 
         sort_column = getattr(Item, requested_sort_field, Item.id)
         normalized_order = "desc" if str(sort_order).lower() == "desc" else "asc"

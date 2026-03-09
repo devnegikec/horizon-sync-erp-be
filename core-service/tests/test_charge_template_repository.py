@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.models.charge_template import ChargeTemplate
 from app.repositories.charge_template_repository import ChargeTemplateRepository
 
 
@@ -30,10 +29,7 @@ def test_charge_template_data_fixed(mock_current_user, sample_account_head_id):
         "base_on": None,
         "account_head_id": sample_account_head_id,
         "is_active": True,
-        "applicability_rules": {
-            "min_order_value": 0,
-            "max_order_value": 1000
-        },
+        "applicability_rules": {"min_order_value": 0, "max_order_value": 1000},
         "extra_data": {},
         "created_by": mock_current_user.id,
         "updated_by": mock_current_user.id,
@@ -190,4 +186,3 @@ class TestChargeTemplateRepositoryUpdate:
         self, charge_template_repo, test_charge_template_data_fixed, mock_current_user
     ):
         """Test updating basic template fields"""
-  

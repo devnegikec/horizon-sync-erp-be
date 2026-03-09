@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationException
-from app.models.base import InvoiceStatus, InvoiceType, PaymentType
+from app.models.base import InvoiceStatus, InvoiceType
 from app.models.invoice import Invoice
 from app.services.payment_made_service import PaymentMadeService
 
@@ -38,7 +38,9 @@ def supplier_id():
 
 
 @pytest.fixture
-def purchase_invoice(db_session: Session, organization_id: uuid.UUID, supplier_id: uuid.UUID):
+def purchase_invoice(
+    db_session: Session, organization_id: uuid.UUID, supplier_id: uuid.UUID
+):
     """Create a Purchase Invoice with outstanding balance"""
     invoice = Invoice(
         id=uuid.uuid4(),
@@ -318,7 +320,7 @@ class TestPaymentMadeService:
     ):
         """
         Test that partial payment reduces outstanding balance but doesn't change status.
-        
+
         Requirement 7.4: Reduce outstanding balance by payment amount
         """
         # Arrange
@@ -350,7 +352,7 @@ class TestPaymentMadeService:
     ):
         """
         Test that full payment reduces balance to zero and updates status to PAID.
-        
+
         Requirement 7.4: Reduce outstanding balance by payment amount
         Requirement 7.5: Update Purchase Invoice status to PAID when balance reaches zero
         """
@@ -381,7 +383,7 @@ class TestPaymentMadeService:
     ):
         """
         Test multiple partial payments that eventually pay off the invoice.
-        
+
         Requirement 7.4: Reduce outstanding balance by payment amount
         Requirement 7.5: Update Purchase Invoice status to PAID when balance reaches zero
         """
@@ -412,7 +414,10 @@ class TestPaymentMadeService:
             payment_no="PAY-012",
         )
         db_session.refresh(purchase_invoice)
-        assert purchase_invoice.outstanding_amount == initial_balance - first_payment - second_payment
+        assert (
+            purchase_invoice.outstanding_amount
+            == initial_balance - first_payment - second_payment
+        )
         assert purchase_invoice.status == InvoiceStatus.PENDING
 
         # Act - Third payment (final)

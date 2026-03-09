@@ -6,8 +6,9 @@ Creates just enough data to test the complete payment flow.
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -16,8 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Database connection
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+    "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
 )
 
 
@@ -28,28 +28,28 @@ def seed_minimal_payment_test_data():
     db = SessionLocal()
 
     try:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("SEEDING MINIMAL PAYMENT TEST DATA")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         # Get organization and user IDs
         result = db.execute(text("SELECT id FROM organizations LIMIT 1"))
         org_row = result.fetchone()
-        
+
         if not org_row:
             print("❌ No organization found. Please create an organization first.")
             return
-        
+
         org_id = org_row[0]
         print(f"✓ Using Organization ID: {org_id}")
 
         result = db.execute(text("SELECT id FROM users LIMIT 1"))
         user_row = result.fetchone()
-        
+
         if not user_row:
             print("❌ No user found. Please create a user first.")
             return
-        
+
         user_id = user_row[0]
         print(f"✓ Using User ID: {user_id}\n")
 
@@ -57,7 +57,7 @@ def seed_minimal_payment_test_data():
         # 1. CREATE CUSTOMERS
         # ============================================================
         print("1. Creating test customers...")
-        
+
         customers = [
             {
                 "id": str(uuid.uuid4()),
@@ -78,7 +78,8 @@ def seed_minimal_payment_test_data():
         ]
 
         for customer in customers:
-            db.execute(text("""
+            db.execute(
+                text("""
                 INSERT INTO customers (
                     id, organization_id, customer_name, customer_code,
                     email, phone, address, created_at, updated_at
@@ -86,28 +87,32 @@ def seed_minimal_payment_test_data():
                     :id, :org_id, :customer_name, :customer_code,
                     :email, :phone, :address, :created_at, :updated_at
                 )
-            """), {
-                "id": customer["id"],
-                "org_id": org_id,
-                "customer_name": customer["customer_name"],
-                "customer_code": customer["customer_code"],
-                "email": customer["email"],
-                "phone": customer["phone"],
-                "address": customer["address"],
-                "created_at": datetime.now(UTC),
-                "updated_at": datetime.now(UTC),
-            })
-            print(f"   ✓ Created customer: {customer['customer_name']} ({customer['customer_code']})")
-        
+            """),
+                {
+                    "id": customer["id"],
+                    "org_id": org_id,
+                    "customer_name": customer["customer_name"],
+                    "customer_code": customer["customer_code"],
+                    "email": customer["email"],
+                    "phone": customer["phone"],
+                    "address": customer["address"],
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                },
+            )
+            print(
+                f"   ✓ Created customer: {customer['customer_name']} ({customer['customer_code']})"
+            )
+
         print()
 
         # ============================================================
         # 2. CREATE INVOICES
         # ============================================================
         print("2. Creating test invoices...")
-        
+
         today = datetime.now(UTC)
-        
+
         invoices = [
             {
                 "id": str(uuid.uuid4()),
@@ -151,7 +156,8 @@ def seed_minimal_payment_test_data():
         ]
 
         for invoice in invoices:
-            db.execute(text("""
+            db.execute(
+                text("""
                 INSERT INTO invoices (
                     id, organization_id, customer_id, invoice_no,
                     invoice_date, due_date, subtotal, tax_amount,
@@ -163,31 +169,35 @@ def seed_minimal_payment_test_data():
                     :grand_total, :outstanding_amount, :status,
                     :notes, :created_at, :updated_at
                 )
-            """), {
-                "id": invoice["id"],
-                "org_id": org_id,
-                "customer_id": invoice["customer_id"],
-                "invoice_no": invoice["invoice_no"],
-                "invoice_date": invoice["invoice_date"],
-                "due_date": invoice["due_date"],
-                "subtotal": invoice["subtotal"],
-                "tax_amount": invoice["tax_amount"],
-                "grand_total": invoice["grand_total"],
-                "outstanding_amount": invoice["outstanding_amount"],
-                "status": invoice["status"],
-                "notes": invoice["description"],
-                "created_at": datetime.now(UTC),
-                "updated_at": datetime.now(UTC),
-            })
-            print(f"   ✓ Created invoice: {invoice['invoice_no']} - ${invoice['grand_total']} ({invoice['description']})")
-        
+            """),
+                {
+                    "id": invoice["id"],
+                    "org_id": org_id,
+                    "customer_id": invoice["customer_id"],
+                    "invoice_no": invoice["invoice_no"],
+                    "invoice_date": invoice["invoice_date"],
+                    "due_date": invoice["due_date"],
+                    "subtotal": invoice["subtotal"],
+                    "tax_amount": invoice["tax_amount"],
+                    "grand_total": invoice["grand_total"],
+                    "outstanding_amount": invoice["outstanding_amount"],
+                    "status": invoice["status"],
+                    "notes": invoice["description"],
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                },
+            )
+            print(
+                f"   ✓ Created invoice: {invoice['invoice_no']} - ${invoice['grand_total']} ({invoice['description']})"
+            )
+
         print()
 
         # ============================================================
         # 3. CREATE INVOICE ITEMS (Optional but recommended)
         # ============================================================
         print("3. Creating invoice items...")
-        
+
         invoice_items = [
             # Items for Invoice 1 (INV-2026-001)
             {
@@ -227,7 +237,8 @@ def seed_minimal_payment_test_data():
         ]
 
         for item in invoice_items:
-            db.execute(text("""
+            db.execute(
+                text("""
                 INSERT INTO invoice_items (
                     id, invoice_id, description, quantity,
                     unit_price, amount, created_at, updated_at
@@ -235,17 +246,19 @@ def seed_minimal_payment_test_data():
                     :id, :invoice_id, :description, :quantity,
                     :unit_price, :amount, :created_at, :updated_at
                 )
-            """), {
-                "id": item["id"],
-                "invoice_id": item["invoice_id"],
-                "description": item["description"],
-                "quantity": item["quantity"],
-                "unit_price": item["unit_price"],
-                "amount": item["amount"],
-                "created_at": datetime.now(UTC),
-                "updated_at": datetime.now(UTC),
-            })
-        
+            """),
+                {
+                    "id": item["id"],
+                    "invoice_id": item["invoice_id"],
+                    "description": item["description"],
+                    "quantity": item["quantity"],
+                    "unit_price": item["unit_price"],
+                    "amount": item["amount"],
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                },
+            )
+
         print(f"   ✓ Created {len(invoice_items)} invoice items\n")
 
         # Commit all changes
@@ -254,23 +267,31 @@ def seed_minimal_payment_test_data():
         # ============================================================
         # SUMMARY
         # ============================================================
-        print("="*60)
+        print("=" * 60)
         print("✅ SEED DATA CREATED SUCCESSFULLY")
-        print("="*60)
+        print("=" * 60)
         print("\nTest Data Summary:")
         print("\n📋 CUSTOMERS:")
         for customer in customers:
             print(f"   • {customer['customer_name']} ({customer['customer_code']})")
-        
+
         print("\n📄 INVOICES:")
         for invoice in invoices:
-            customer_name = next(c["customer_name"] for c in customers if c["id"] == invoice["customer_id"])
-            print(f"   • {invoice['invoice_no']}: ${invoice['grand_total']} - {customer_name}")
-            print(f"     Status: Unpaid | Outstanding: ${invoice['outstanding_amount']}")
-        
-        print("\n" + "="*60)
+            customer_name = next(
+                c["customer_name"]
+                for c in customers
+                if c["id"] == invoice["customer_id"]
+            )
+            print(
+                f"   • {invoice['invoice_no']}: ${invoice['grand_total']} - {customer_name}"
+            )
+            print(
+                f"     Status: Unpaid | Outstanding: ${invoice['outstanding_amount']}"
+            )
+
+        print("\n" + "=" * 60)
         print("READY FOR TESTING!")
-        print("="*60)
+        print("=" * 60)
         print("\nYou can now:")
         print("1. Start the backend server")
         print("2. Open the frontend application")
@@ -282,6 +303,7 @@ def seed_minimal_payment_test_data():
         db.rollback()
         print(f"\n❌ ERROR during seeding: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         db.close()

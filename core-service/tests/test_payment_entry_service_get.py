@@ -1,14 +1,18 @@
 """Test for PaymentEntryService.get_payment_entry() method"""
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy.orm import Session
+import pytest
 
 from app.core.exceptions import ValidationError
-from app.models.base import PaymentEntryStatus, PaymentSource, PaymentEntryType, PaymentMode
+from app.models.base import (
+    PaymentEntryStatus,
+    PaymentEntryType,
+    PaymentMode,
+    PaymentSource,
+)
 from app.models.customer import Customer
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
@@ -19,7 +23,7 @@ def test_get_payment_entry_success(db_session):
     """Test successful retrieval of payment entry"""
     org_id = uuid4()
     user_id = uuid4()
-    
+
     # Create test customer
     customer = Customer(
         id=uuid4(),
@@ -30,7 +34,7 @@ def test_get_payment_entry_success(db_session):
     )
     db_session.add(customer)
     db_session.commit()
-    
+
     # Create payment entry directly in database
     payment_entry = PaymentEntry(
         id=uuid4(),
@@ -49,11 +53,11 @@ def test_get_payment_entry_success(db_session):
     )
     db_session.add(payment_entry)
     db_session.commit()
-    
+
     # Retrieve payment entry using service
     service = PaymentEntryService(db_session)
     result = service.get_payment_entry(payment_entry.id, org_id)
-    
+
     # Verify response
     assert result.id == payment_entry.id
     assert result.organization_id == org_id
@@ -74,7 +78,7 @@ def test_get_payment_entry_with_allocations(db_session):
     """Test retrieval of payment entry with allocations"""
     org_id = uuid4()
     user_id = uuid4()
-    
+
     # Create test customer
     customer = Customer(
         id=uuid4(),
@@ -85,7 +89,7 @@ def test_get_payment_entry_with_allocations(db_session):
     )
     db_session.add(customer)
     db_session.commit()
-    
+
     # Create payment entry
     payment_entry = PaymentEntry(
         id=uuid4(),
@@ -103,11 +107,11 @@ def test_get_payment_entry_with_allocations(db_session):
     )
     db_session.add(payment_entry)
     db_session.commit()
-    
+
     # Create payment references (allocations)
     invoice_id_1 = uuid4()
     invoice_id_2 = uuid4()
-    
+
     ref1 = PaymentReference(
         id=uuid4(),
         organization_id=org_id,
@@ -130,16 +134,16 @@ def test_get_payment_entry_with_allocations(db_session):
     )
     db_session.add_all([ref1, ref2])
     db_session.commit()
-    
+
     # Retrieve payment entry using service
     service = PaymentEntryService(db_session)
     result = service.get_payment_entry(payment_entry.id, org_id)
-    
+
     # Verify response
     assert result.id == payment_entry.id
     assert result.amount == Decimal("1000.00")
     assert result.unallocated_amount == Decimal("100.00")  # 1000 - 600 - 300
-    
+
     # Verify allocations are included
     assert len(result.payment_references) == 2
     assert result.payment_references[0].allocated_amount == Decimal("600.00")
@@ -150,10 +154,12 @@ def test_get_payment_entry_not_found(db_session):
     """Test retrieval of non-existent payment entry"""
     org_id = uuid4()
     non_existent_id = uuid4()
-    
+
     service = PaymentEntryService(db_session)
-    
-    with pytest.raises(ValidationError, match="not found or does not belong to organization"):
+
+    with pytest.raises(
+        ValidationError, match="not found or does not belong to organization"
+    ):
         service.get_payment_entry(non_existent_id, org_id)
 
 
@@ -162,7 +168,7 @@ def test_get_payment_entry_wrong_organization(db_session):
     org_id_1 = uuid4()
     org_id_2 = uuid4()
     user_id = uuid4()
-    
+
     # Create test customer in org_id_1
     customer = Customer(
         id=uuid4(),
@@ -173,7 +179,7 @@ def test_get_payment_entry_wrong_organization(db_session):
     )
     db_session.add(customer)
     db_session.commit()
-    
+
     # Create payment entry in org_id_1
     payment_entry = PaymentEntry(
         id=uuid4(),
@@ -191,9 +197,11 @@ def test_get_payment_entry_wrong_organization(db_session):
     )
     db_session.add(payment_entry)
     db_session.commit()
-    
+
     # Try to retrieve from org_id_2
     service = PaymentEntryService(db_session)
-    
-    with pytest.raises(ValidationError, match="not found or does not belong to organization"):
+
+    with pytest.raises(
+        ValidationError, match="not found or does not belong to organization"
+    ):
         service.get_payment_entry(payment_entry.id, org_id_2)

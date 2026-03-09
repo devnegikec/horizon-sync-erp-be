@@ -11,7 +11,6 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.services.stock_entry_bulk_import_service import (
     BulkImportResult,
-    RowError,
     StockEntryBulkImportService,
     generate_csv_template,
     generate_xlsx_template,
@@ -49,7 +48,10 @@ def _to_response(result: BulkImportResult) -> BulkImportResponse:
         total_rows=result.total_rows,
         created=result.created,
         failed=result.failed,
-        errors=[RowErrorOut(row=e.row, field=e.field, message=e.message) for e in result.errors],
+        errors=[
+            RowErrorOut(row=e.row, field=e.field, message=e.message)
+            for e in result.errors
+        ],
     )
 
 
@@ -72,7 +74,9 @@ async def download_csv_template(
     return Response(
         content=content,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="stock_entries_template.csv"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="stock_entries_template.csv"'
+        },
     )
 
 
@@ -80,7 +84,14 @@ async def download_csv_template(
     "/template/xlsx",
     summary="Download XLSX import template for stock entries",
     response_class=Response,
-    responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}, "description": "XLSX template file"}},
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            },
+            "description": "XLSX template file",
+        }
+    },
 )
 async def download_xlsx_template(
     current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
@@ -90,7 +101,9 @@ async def download_xlsx_template(
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="stock_entries_template.xlsx"'},
+        headers={
+            "Content-Disposition": 'attachment; filename="stock_entries_template.xlsx"'
+        },
     )
 
 
@@ -123,7 +136,9 @@ async def bulk_import_stock_entries(
     Max file size: 10 MB | Max rows: 500
     """
     if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File name is required.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="File name is required."
+        )
 
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in ("csv", "xlsx", "xls"):
@@ -140,14 +155,20 @@ async def bulk_import_stock_entries(
         )
 
     if not content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty."
+        )
 
     svc = StockEntryBulkImportService(db)
     try:
         if ext == "csv":
-            result = svc.import_from_csv(content, current_user.organization_id, current_user.id)
+            result = svc.import_from_csv(
+                content, current_user.organization_id, current_user.id
+            )
         else:
-            result = svc.import_from_xlsx(content, current_user.organization_id, current_user.id)
+            result = svc.import_from_xlsx(
+                content, current_user.organization_id, current_user.id
+            )
     except Exception as exc:
         logger.exception("Unexpected error during stock entry bulk import")
         raise HTTPException(

@@ -20,12 +20,12 @@ from app.services.transaction_engine import (
 class PurchaseInvoiceService:
     """
     Service wrapper for creating Purchase Invoices using existing Invoice API.
-    
+
     Integrates with:
     - Invoice API (invoice_type=PURCHASE)
     - Purchase Order validation
     - Transaction Engine for calculations
-    
+
     Requirements: 6.1, 6.2, 6.3, 6.4
     """
 
@@ -51,7 +51,7 @@ class PurchaseInvoiceService:
     ) -> dict:
         """
         Create Purchase Invoice from Purchase Order using existing Invoice API.
-        
+
         Args:
             purchase_order_id: Source Purchase Order ID
             line_items: List of line items with item_id, quantity, unit_price
@@ -63,10 +63,10 @@ class PurchaseInvoiceService:
             posting_date: Invoice posting date
             due_date: Payment due date
             remarks: Additional remarks
-            
+
         Returns:
             dict: Created invoice response
-            
+
         Requirements:
         - 6.1: Set invoice_type as PURCHASE
         - 6.2: Set reference_type as PURCHASE_ORDER and reference_id
@@ -169,16 +169,16 @@ class PurchaseInvoiceService:
     ) -> None:
         """
         Validate three-way matching: Purchase Order, Receipt Note, and Purchase Invoice.
-        
+
         Ensures that invoiced quantities do not exceed received quantities for each line item.
-        
+
         Args:
             po: Purchase Order being invoiced
             invoice_line_items: List of invoice line items with item_id and quantity
-            
+
         Raises:
             ValidationException: If invoiced quantity exceeds received quantity
-            
+
         Requirements: 6.5
         """
         # Build a map of Purchase Order line items by item_id
@@ -213,7 +213,9 @@ class PurchaseInvoiceService:
             "id": invoice.id,
             "organization_id": invoice.organization_id,
             "invoice_no": invoice.invoice_no,
-            "invoice_type": invoice.invoice_type.value if invoice.invoice_type else None,
+            "invoice_type": invoice.invoice_type.value
+            if invoice.invoice_type
+            else None,
             "party_id": invoice.party_id,
             "party_type": invoice.party_type,
             "reference_type": invoice.reference_type,

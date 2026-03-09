@@ -9,17 +9,23 @@ This service handles receipt generation for confirmed payments including:
 
 import io
 from datetime import datetime
-from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy.orm import Session
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import qrcode
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
 
@@ -35,9 +41,10 @@ class ReceiptService:
             db: Database session
         """
         self.db = db
-        
+
         # Import repositories
         from app.repositories.payment_entry_repository import PaymentEntryRepository
+
         self.payment_repo = PaymentEntryRepository(db)
 
     def generate_receipt_number(
@@ -63,6 +70,7 @@ class ReceiptService:
             ValidationError: If receipt number generation fails
         """
         from sqlalchemy import func
+
         from app.models.payment_entry import PaymentEntry
 
         # Extract year from payment_date
@@ -180,7 +188,9 @@ class ReceiptService:
             ValidationError: If payment not found or PDF generation fails
         """
         from app.models.base import PaymentEntryStatus
-        from app.repositories.payment_reference_repository import PaymentReferenceRepository
+        from app.repositories.payment_reference_repository import (
+            PaymentReferenceRepository,
+        )
 
         # Retrieve payment entry
         payment_entry = self.payment_repo.get_by_id(payment_id, organization_id)
@@ -206,7 +216,9 @@ class ReceiptService:
         allocations = reference_repo.get_by_payment_id(payment_id, organization_id)
 
         # Get party details (customer or supplier)
-        party_name = self._get_party_name(payment_entry.party_id, payment_entry.payment_type.value)
+        party_name = self._get_party_name(
+            payment_entry.party_id, payment_entry.payment_type.value
+        )
 
         # Get organization details
         org_details = self._get_organization_details(organization_id)
@@ -234,137 +246,169 @@ class ReceiptService:
         # Define styles
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
+            "CustomTitle",
+            parent=styles["Heading1"],
             fontSize=24,
-            textColor=colors.HexColor('#1a1a1a'),
+            textColor=colors.HexColor("#1a1a1a"),
             spaceAfter=12,
             alignment=TA_CENTER,
         )
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
+            "CustomHeading",
+            parent=styles["Heading2"],
             fontSize=14,
-            textColor=colors.HexColor('#333333'),
+            textColor=colors.HexColor("#333333"),
             spaceAfter=6,
             spaceBefore=12,
         )
-        normal_style = styles['Normal']
-        
+        normal_style = styles["Normal"]
+
         # Add organization name and title
-        elements.append(Paragraph(org_details.get('name', 'Organization'), title_style))
-        elements.append(Paragraph('PAYMENT RECEIPT', heading_style))
+        elements.append(Paragraph(org_details.get("name", "Organization"), title_style))
+        elements.append(Paragraph("PAYMENT RECEIPT", heading_style))
         elements.append(Spacer(1, 0.2 * inch))
 
         # Add organization address if available
-        if org_details.get('address'):
-            org_address = Paragraph(org_details['address'], normal_style)
+        if org_details.get("address"):
+            org_address = Paragraph(org_details["address"], normal_style)
             elements.append(org_address)
             elements.append(Spacer(1, 0.1 * inch))
 
         # Add receipt number and date
         receipt_info = [
-            ['Receipt Number:', payment_entry.receipt_number],
-            ['Payment Date:', payment_entry.payment_date.strftime('%Y-%m-%d')],
-            ['Payment Mode:', payment_entry.payment_mode.value],
+            ["Receipt Number:", payment_entry.receipt_number],
+            ["Payment Date:", payment_entry.payment_date.strftime("%Y-%m-%d")],
+            ["Payment Mode:", payment_entry.payment_mode.value],
         ]
-        
+
         if payment_entry.reference_no:
-            receipt_info.append(['Reference Number:', payment_entry.reference_no])
+            receipt_info.append(["Reference Number:", payment_entry.reference_no])
 
         receipt_table = Table(receipt_info, colWidths=[2 * inch, 4 * inch])
-        receipt_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#333333')),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
+        receipt_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#333333")),
+                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                    ("ALIGN", (1, 0), (1, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
         elements.append(receipt_table)
         elements.append(Spacer(1, 0.3 * inch))
 
         # Add party details
-        party_type = "Customer" if payment_entry.payment_type.value == "Customer_Payment" else "Supplier"
-        elements.append(Paragraph(f'{party_type} Details', heading_style))
+        party_type = (
+            "Customer"
+            if payment_entry.payment_type.value == "Customer_Payment"
+            else "Supplier"
+        )
+        elements.append(Paragraph(f"{party_type} Details", heading_style))
         party_info = [
-            [f'{party_type} Name:', party_name],
+            [f"{party_type} Name:", party_name],
         ]
         party_table = Table(party_info, colWidths=[2 * inch, 4 * inch])
-        party_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#333333')),
-        ]))
+        party_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#333333")),
+                ]
+            )
+        )
         elements.append(party_table)
         elements.append(Spacer(1, 0.3 * inch))
 
         # Add payment amount
-        elements.append(Paragraph('Payment Amount', heading_style))
+        elements.append(Paragraph("Payment Amount", heading_style))
         amount_info = [
-            ['Total Amount:', f'{payment_entry.currency_code} {payment_entry.amount:,.2f}'],
+            [
+                "Total Amount:",
+                f"{payment_entry.currency_code} {payment_entry.amount:,.2f}",
+            ],
         ]
         amount_table = Table(amount_info, colWidths=[2 * inch, 4 * inch])
-        amount_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 12),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#1a1a1a')),
-        ]))
+        amount_table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (1, 0), (1, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 12),
+                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1a1a1a")),
+                ]
+            )
+        )
         elements.append(amount_table)
         elements.append(Spacer(1, 0.3 * inch))
 
         # Add allocated invoices section
         if allocations:
-            elements.append(Paragraph('Allocated to Invoices', heading_style))
-            
+            elements.append(Paragraph("Allocated to Invoices", heading_style))
+
             # Create table data
-            allocation_data = [['Invoice Number', 'Allocated Amount']]
+            allocation_data = [["Invoice Number", "Allocated Amount"]]
             for allocation in allocations:
                 invoice_number = self._get_invoice_number(allocation.invoice_id)
-                allocation_data.append([
-                    invoice_number,
-                    f'{payment_entry.currency_code} {allocation.allocated_amount:,.2f}',
-                ])
-            
+                allocation_data.append(
+                    [
+                        invoice_number,
+                        f"{payment_entry.currency_code} {allocation.allocated_amount:,.2f}",
+                    ]
+                )
+
             # Create table
             allocation_table = Table(allocation_data, colWidths=[3 * inch, 3 * inch])
-            allocation_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#333333')),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
+            allocation_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 10),
+                        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#333333")),
+                        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
             elements.append(allocation_table)
             elements.append(Spacer(1, 0.2 * inch))
 
         # Add unallocated amount if greater than zero
         if payment_entry.unallocated_amount > 0:
-            elements.append(Paragraph('Unallocated Amount', heading_style))
+            elements.append(Paragraph("Unallocated Amount", heading_style))
             unallocated_info = [
-                ['Unallocated:', f'{payment_entry.currency_code} {payment_entry.unallocated_amount:,.2f}'],
+                [
+                    "Unallocated:",
+                    f"{payment_entry.currency_code} {payment_entry.unallocated_amount:,.2f}",
+                ],
             ]
             unallocated_table = Table(unallocated_info, colWidths=[2 * inch, 4 * inch])
-            unallocated_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#ff6600')),
-            ]))
+            unallocated_table.setStyle(
+                TableStyle(
+                    [
+                        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 10),
+                        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#ff6600")),
+                    ]
+                )
+            )
             elements.append(unallocated_table)
             elements.append(Spacer(1, 0.2 * inch))
 
         # Add QR code
         elements.append(Spacer(1, 0.3 * inch))
-        elements.append(Paragraph('Scan to Verify Receipt', heading_style))
-        
+        elements.append(Paragraph("Scan to Verify Receipt", heading_style))
+
         # Create QR code image from bytes
         qr_image_buffer = io.BytesIO(qr_code_bytes)
         qr_image = Image(qr_image_buffer, width=1.5 * inch, height=1.5 * inch)
@@ -373,10 +417,10 @@ class ReceiptService:
         # Add footer
         elements.append(Spacer(1, 0.5 * inch))
         footer_style = ParagraphStyle(
-            'Footer',
-            parent=styles['Normal'],
+            "Footer",
+            parent=styles["Normal"],
             fontSize=8,
-            textColor=colors.HexColor('#666666'),
+            textColor=colors.HexColor("#666666"),
             alignment=TA_CENTER,
         )
         footer_text = f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -404,10 +448,12 @@ class ReceiptService:
         """
         if payment_type == "Customer_Payment":
             from app.models.customer import Customer
+
             party = self.db.query(Customer).filter(Customer.id == party_id).first()
             return party.name if party else "Unknown Customer"
         else:
             from app.models.supplier import Supplier
+
             party = self.db.query(Supplier).filter(Supplier.id == party_id).first()
             return party.name if party else "Unknown Supplier"
 
@@ -425,9 +471,9 @@ class ReceiptService:
         # For now, return placeholder data
         # TODO: Integrate with organization service to get real data
         return {
-            'name': 'HorizonSync ERP',
-            'address': '123 Business Street, City, Country',
-            'logo_url': None,  # Logo URL if available
+            "name": "HorizonSync ERP",
+            "address": "123 Business Street, City, Country",
+            "logo_url": None,  # Logo URL if available
         }
 
     def _get_invoice_number(self, invoice_id: UUID) -> str:
@@ -441,5 +487,6 @@ class ReceiptService:
             Invoice number string
         """
         from app.models.invoice import Invoice
+
         invoice = self.db.query(Invoice).filter(Invoice.id == invoice_id).first()
         return invoice.invoice_number if invoice else "Unknown"

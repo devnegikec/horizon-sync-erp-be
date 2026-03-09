@@ -73,7 +73,9 @@ class Account(Base):
     # Audit fields
     created_by = Column(String(100), nullable=False)
     updated_by = Column(String(100), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -83,11 +85,17 @@ class Account(Base):
 
     # Relationships
     parent_account = relationship("Account", remote_side=[id], backref="child_accounts")
-    balances = relationship("AccountBalance", back_populates="account", cascade="all, delete-orphan")
-    bank_accounts = relationship("BankAccount", back_populates="gl_account", cascade="all, delete-orphan")
+    balances = relationship(
+        "AccountBalance", back_populates="account", cascade="all, delete-orphan"
+    )
+    bank_accounts = relationship(
+        "BankAccount", back_populates="gl_account", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-        UniqueConstraint('organization_id', 'account_code', name='unique_account_code_per_org'),
+        UniqueConstraint(
+            "organization_id", "account_code", name="unique_account_code_per_org"
+        ),
     )
 
     def __repr__(self):
@@ -123,5 +131,7 @@ class Account(Base):
             "is_bank_enabled": self.has_bank_accounts,
             "bank_accounts_count": self.bank_accounts_count,
             "primary_bank_name": primary_bank.bank_name if primary_bank else None,
-            "primary_bank_masked_account": primary_bank.mask_account_number() if primary_bank else None
+            "primary_bank_masked_account": primary_bank.mask_account_number()
+            if primary_bank
+            else None,
         }

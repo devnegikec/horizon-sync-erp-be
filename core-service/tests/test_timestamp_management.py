@@ -24,9 +24,11 @@ from app.models.sales_order import SalesOrder, SalesOrderItem
 @pytest.fixture
 def sample_organization(mock_current_user):
     """Return the organization from mock_current_user"""
+
     class Organization:
         def __init__(self, org_id):
             self.id = org_id
+
     return Organization(mock_current_user.organization_id)
 
 
@@ -86,12 +88,12 @@ class TestTimestampManagement:
         db_session.add(quotation)
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Verify created_at is set
         assert quotation.created_at is not None
         # Verify it's a datetime object
         assert isinstance(quotation.created_at, datetime)
-        
+
     def test_quotation_updated_at_updated_on_modification(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -109,23 +111,23 @@ class TestTimestampManagement:
         db_session.add(quotation)
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Store initial timestamps
         initial_created_at = quotation.created_at
         initial_updated_at = quotation.updated_at
-        
+
         # Wait a small amount to ensure timestamp difference
         time.sleep(0.1)
-        
+
         # Modify quotation
         quotation.grand_total = Decimal("2000.00")
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Verify updated_at changed but created_at did not
         assert quotation.created_at == initial_created_at
         assert quotation.updated_at > initial_updated_at
-        
+
     def test_quotation_submitted_at_set_on_status_transition_to_sent(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -143,20 +145,20 @@ class TestTimestampManagement:
         db_session.add(quotation)
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Verify submitted_at is initially None
         assert quotation.submitted_at is None
-        
+
         # Change status to SENT
         quotation.status = QuotationStatus.SENT
         quotation.submitted_at = datetime.now(UTC)
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Verify submitted_at is set
         assert quotation.submitted_at is not None
         assert isinstance(quotation.submitted_at, datetime)
-        
+
     def test_sales_order_created_at_set_on_creation(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -174,11 +176,11 @@ class TestTimestampManagement:
         db_session.add(sales_order)
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Verify created_at is set
         assert sales_order.created_at is not None
         assert isinstance(sales_order.created_at, datetime)
-        
+
     def test_sales_order_updated_at_updated_on_modification(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -196,23 +198,23 @@ class TestTimestampManagement:
         db_session.add(sales_order)
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Store initial timestamps
         initial_created_at = sales_order.created_at
         initial_updated_at = sales_order.updated_at
-        
+
         # Wait a small amount to ensure timestamp difference
         time.sleep(0.1)
-        
+
         # Modify sales order
         sales_order.grand_total = Decimal("2000.00")
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Verify updated_at changed but created_at did not
         assert sales_order.created_at == initial_created_at
         assert sales_order.updated_at > initial_updated_at
-        
+
     def test_sales_order_submitted_at_set_on_status_transition_to_confirmed(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -230,20 +232,20 @@ class TestTimestampManagement:
         db_session.add(sales_order)
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Verify submitted_at is initially None
         assert sales_order.submitted_at is None
-        
+
         # Change status to CONFIRMED
         sales_order.status = SalesOrderStatus.CONFIRMED
         sales_order.submitted_at = datetime.now(UTC)
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Verify submitted_at is set
         assert sales_order.submitted_at is not None
         assert isinstance(sales_order.submitted_at, datetime)
-        
+
     def test_quotation_item_timestamps(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -261,7 +263,7 @@ class TestTimestampManagement:
         db_session.add(quotation)
         db_session.commit()
         db_session.refresh(quotation)
-        
+
         # Create quotation item
         item = QuotationItem(
             organization_id=sample_organization.id,
@@ -276,27 +278,27 @@ class TestTimestampManagement:
         db_session.add(item)
         db_session.commit()
         db_session.refresh(item)
-        
+
         # Verify timestamps are set
         assert item.created_at is not None
         assert item.updated_at is not None
         assert isinstance(item.created_at, datetime)
         assert isinstance(item.updated_at, datetime)
-        
+
         # Store initial timestamps
         initial_created_at = item.created_at
         initial_updated_at = item.updated_at
-        
+
         # Wait and modify
         time.sleep(0.1)
         item.qty = Decimal("20.000")
         db_session.commit()
         db_session.refresh(item)
-        
+
         # Verify updated_at changed but created_at did not
         assert item.created_at == initial_created_at
         assert item.updated_at > initial_updated_at
-        
+
     def test_sales_order_item_timestamps(
         self, db_session, sample_organization, sample_customer, sample_item
     ):
@@ -314,7 +316,7 @@ class TestTimestampManagement:
         db_session.add(sales_order)
         db_session.commit()
         db_session.refresh(sales_order)
-        
+
         # Create sales order item
         item = SalesOrderItem(
             organization_id=sample_organization.id,
@@ -331,23 +333,23 @@ class TestTimestampManagement:
         db_session.add(item)
         db_session.commit()
         db_session.refresh(item)
-        
+
         # Verify timestamps are set
         assert item.created_at is not None
         assert item.updated_at is not None
         assert isinstance(item.created_at, datetime)
         assert isinstance(item.updated_at, datetime)
-        
+
         # Store initial timestamps
         initial_created_at = item.created_at
         initial_updated_at = item.updated_at
-        
+
         # Wait and modify
         time.sleep(0.1)
         item.billed_qty = Decimal("5.000")
         db_session.commit()
         db_session.refresh(item)
-        
+
         # Verify updated_at changed but created_at did not
         assert item.created_at == initial_created_at
         assert item.updated_at > initial_updated_at

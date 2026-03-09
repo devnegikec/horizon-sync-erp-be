@@ -22,9 +22,10 @@ class PurchaseReceiptService:
         # Auto-generate purchase_receipt_no if not provided
         if not payload.get("purchase_receipt_no"):
             from app.services.document_numbering_service import DocumentNumberingService
-            payload["purchase_receipt_no"] = DocumentNumberingService(self.db).get_next_number(
-                organization_id, "purchase_receipt"
-            )
+
+            payload["purchase_receipt_no"] = DocumentNumberingService(
+                self.db
+            ).get_next_number(organization_id, "purchase_receipt")
         if payload.get("status"):
             payload["status"] = DocumentStatus(payload["status"])
         items = data.get("items") or []

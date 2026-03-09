@@ -1,15 +1,14 @@
 """Tests for Purchase Invoice service"""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationException
-from app.models.base import InvoiceStatus, InvoiceType, PurchaseOrderStatus
-from app.models.invoice import Invoice
+from app.models.base import PurchaseOrderStatus
 from app.models.item import Item
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
 from app.models.supplier import Supplier
@@ -144,7 +143,7 @@ class TestPurchaseInvoiceService:
             organization_id=organization_id,
             user_id=user_id,
             invoice_no="INV-001",
-            posting_date=datetime.now(timezone.utc),
+            posting_date=datetime.now(UTC),
             due_date=None,
             remarks="Test invoice",
         )
@@ -484,7 +483,6 @@ class TestPurchaseInvoiceService:
         assert result["reference_id"] == purchase_order.id
         assert result["grand_total"] == Decimal("1180.00")
 
-
     def test_three_way_matching_invoiced_exceeds_received(
         self,
         db_session: Session,
@@ -793,4 +791,3 @@ class TestPurchaseInvoiceService:
         assert "invoiced quantity 8" in error_msg
         assert "exceeds received quantity 5" in error_msg
         assert "Three-way matching validation failed" in error_msg
-

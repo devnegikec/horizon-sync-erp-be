@@ -7,7 +7,13 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import ResourceNotFoundException
-from app.models.base import QuotationStatus, CustomerStatus, ItemStatus, ItemType, ValuationMethod
+from app.models.base import (
+    CustomerStatus,
+    ItemStatus,
+    ItemType,
+    QuotationStatus,
+    ValuationMethod,
+)
 from app.models.customer import Customer
 from app.models.item import Item
 from app.services.quotation_service import QuotationService
@@ -44,8 +50,8 @@ def test_items(db_session, mock_current_user):
         item = Item(
             id=uuid.uuid4(),
             organization_id=mock_current_user.organization_id,
-            item_code=f"ITEM-{i+1:03d}",
-            item_name=f"Test Item {i+1}",
+            item_code=f"ITEM-{i + 1:03d}",
+            item_name=f"Test Item {i + 1}",
             item_type=ItemType.STOCK,
             uom="Nos" if i == 0 else "Kg",
             status=ItemStatus.ACTIVE,

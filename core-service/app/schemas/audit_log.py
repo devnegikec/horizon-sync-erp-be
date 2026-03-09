@@ -1,7 +1,7 @@
 """Audit log schemas for API requests and responses"""
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -15,8 +15,8 @@ class AuditLogEntryResponse(BaseModel):
     action: str
     user_id: str
     timestamp: datetime
-    changes: Dict[str, Any]
-    audit_metadata: Optional[Dict[str, Any]] = None
+    changes: dict[str, Any]
+    audit_metadata: dict[str, Any] | None = None
 
     class Config:
         from_attributes = True
@@ -37,8 +37,11 @@ class AuditTrailResponse(BaseModel):
 class AuditTrailQueryParams(BaseModel):
     """Query parameters for audit trail filtering"""
 
-    action: Optional[str] = Field(None, description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)")
-    start_date: Optional[datetime] = Field(None, description="Filter by start date")
-    end_date: Optional[datetime] = Field(None, description="Filter by end date")
+    action: str | None = Field(
+        None,
+        description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)",
+    )
+    start_date: datetime | None = Field(None, description="Filter by start date")
+    end_date: datetime | None = Field(None, description="Filter by end date")
     page: int = Field(1, ge=1, description="Page number")
     page_size: int = Field(50, ge=1, le=100, description="Items per page")

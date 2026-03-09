@@ -1,19 +1,18 @@
 """Unit tests for pagination utility"""
 
-import pytest
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import create_engine, Column, String, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
+import pytest
+from sqlalchemy import Column, DateTime, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.pagination import (
+    PaginationParams,
     apply_pagination,
     create_pagination_meta,
-    PaginationParams,
 )
-
 
 # Create test model
 Base = declarative_base()
@@ -109,9 +108,7 @@ class TestApplyPagination:
     def test_basic_pagination(self, db_session):
         """Test basic pagination without sorting"""
         query = db_session.query(TestModel)
-        items, total = apply_pagination(
-            query, TestModel, page=1, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=1, page_size=10)
 
         assert len(items) == 10
         assert total == 25
@@ -119,9 +116,7 @@ class TestApplyPagination:
     def test_second_page(self, db_session):
         """Test second page pagination"""
         query = db_session.query(TestModel)
-        items, total = apply_pagination(
-            query, TestModel, page=2, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=2, page_size=10)
 
         assert len(items) == 10
         assert total == 25
@@ -129,9 +124,7 @@ class TestApplyPagination:
     def test_last_page_partial(self, db_session):
         """Test last page with partial results"""
         query = db_session.query(TestModel)
-        items, total = apply_pagination(
-            query, TestModel, page=3, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=3, page_size=10)
 
         assert len(items) == 5
         assert total == 25
@@ -139,9 +132,7 @@ class TestApplyPagination:
     def test_page_beyond_total(self, db_session):
         """Test page number beyond total pages"""
         query = db_session.query(TestModel)
-        items, total = apply_pagination(
-            query, TestModel, page=10, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=10, page_size=10)
 
         assert len(items) == 0
         assert total == 25
@@ -161,7 +152,12 @@ class TestApplyPagination:
         """Test sorting by created_at descending (default)"""
         query = db_session.query(TestModel)
         items, total = apply_pagination(
-            query, TestModel, page=1, page_size=5, sort_by="created_at", sort_order="desc"
+            query,
+            TestModel,
+            page=1,
+            page_size=5,
+            sort_by="created_at",
+            sort_order="desc",
         )
 
         assert len(items) == 5
@@ -187,9 +183,7 @@ class TestApplyPagination:
     def test_empty_results(self, db_session):
         """Test pagination with no results"""
         query = db_session.query(TestModel).filter(TestModel.name == "Nonexistent")
-        items, total = apply_pagination(
-            query, TestModel, page=1, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=1, page_size=10)
 
         assert len(items) == 0
         assert total == 0
@@ -197,9 +191,7 @@ class TestApplyPagination:
     def test_single_item(self, db_session):
         """Test pagination with single item"""
         query = db_session.query(TestModel).filter(TestModel.name == "Item 0")
-        items, total = apply_pagination(
-            query, TestModel, page=1, page_size=10
-        )
+        items, total = apply_pagination(query, TestModel, page=1, page_size=10)
 
         assert len(items) == 1
         assert total == 1

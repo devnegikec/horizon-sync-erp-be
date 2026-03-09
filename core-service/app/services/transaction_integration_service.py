@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -30,17 +30,19 @@ class Transaction:
 
     id: UUID
     organization_id: UUID
-    transaction_type: str  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
-    customer_id: Optional[UUID] = None
-    supplier_id: Optional[UUID] = None
+    transaction_type: (
+        str  # "Quotation", "Sales_Order", "Purchase_Order", "Invoice", etc.
+    )
+    customer_id: UUID | None = None
+    supplier_id: UUID | None = None
     line_items: list[dict] = None
     net_total: Decimal = Decimal("0.00")
     total_tax: Decimal = Decimal("0.00")
     total_charges: Decimal = Decimal("0.00")
     grand_total: Decimal = Decimal("0.00")
-    shipping_address: Optional[dict] = None
+    shipping_address: dict | None = None
     is_customer_tax_exempt: bool = False
-    extra_data: Optional[dict] = None
+    extra_data: dict | None = None
 
     def __post_init__(self):
         if self.line_items is None:
@@ -76,7 +78,9 @@ class TransactionIntegrationService:
         # Build tax context
         tax_context = TaxContext(
             organization_id=transaction.organization_id,
-            transaction_type=self._get_transaction_category(transaction.transaction_type),
+            transaction_type=self._get_transaction_category(
+                transaction.transaction_type
+            ),
             customer_id=transaction.customer_id,
             supplier_id=transaction.supplier_id,
             shipping_address=transaction.shipping_address,
@@ -119,7 +123,8 @@ class TransactionIntegrationService:
             self._tax_entry_to_dict(entry) for entry in tax_result.tax_breakdown
         ]
         transaction.extra_data["charge_breakdown"] = [
-            self._charge_entry_to_dict(entry) for entry in charge_result.charge_breakdown
+            self._charge_entry_to_dict(entry)
+            for entry in charge_result.charge_breakdown
         ]
 
         return transaction
@@ -363,7 +368,9 @@ class TransactionIntegrationService:
     def _charge_entry_to_dict(self, entry: ChargeBreakdownEntry) -> dict[str, Any]:
         """Convert ChargeBreakdownEntry to dictionary for storage"""
         return {
-            "charge_template_id": str(entry.charge_template_id) if entry.charge_template_id else None,
+            "charge_template_id": str(entry.charge_template_id)
+            if entry.charge_template_id
+            else None,
             "charge_type": entry.charge_type,
             "description": entry.description,
             "calculation_method": entry.calculation_method,

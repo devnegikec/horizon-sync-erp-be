@@ -25,11 +25,10 @@ from app.schemas.chart_of_account import (
     ChartOfAccountUpdate,
     ChartOfAccountWithBankingResponse,
 )
+from app.schemas.common import PaginationMeta
 from app.schemas.default_account import (
-    AccountCodeFormatUpdateRequest,
     DefaultAccountBulkUpdateRequest,
 )
-from app.schemas.common import PaginationMeta
 from app.services.chart_of_account_service import ChartOfAccountService
 
 router = APIRouter()
@@ -94,8 +93,12 @@ async def list_chart_of_accounts(
     search: str | None = Query(None, description="Search in account code, name"),
     sort_by: str = Query("account_code", description="Field to sort by"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order"),
-    include_banking: bool = Query(False, description="Include banking information summary"),
-    bank_accounts_only: bool = Query(False, description="Show only accounts with bank links"),
+    include_banking: bool = Query(
+        False, description="Include banking information summary"
+    ),
+    bank_accounts_only: bool = Query(
+        False, description="Show only accounts with bank links"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -149,7 +152,9 @@ async def list_chart_of_accounts(
     description="Get chart of accounts as a hierarchical tree structure",
 )
 async def get_chart_of_accounts_tree(
-    lazy_load: bool = Query(False, description="Return only root nodes for lazy loading"),
+    lazy_load: bool = Query(
+        False, description="Return only root nodes for lazy loading"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -164,11 +169,11 @@ async def get_chart_of_accounts_tree(
     **Returns:** List of root-level accounts with nested children (or without if lazy_load=true)
     """
     service = ChartOfAccountService(db)
-    
+
     if lazy_load:
         # Return only root nodes without children for lazy loading
         return service.get_tree_roots(current_user.organization_id)
-    
+
     return service.get_tree(current_user.organization_id)
 
 
@@ -216,7 +221,7 @@ async def get_chart_of_account(
 
     **Path Parameters:**
     - **account_id**: Chart of account UUID
-    
+
     **Query Parameters:**
     - **include_banking**: Include banking information summary (default: true)
 
@@ -228,22 +233,23 @@ async def get_chart_of_account(
         organization_id=current_user.organization_id,
         include_parent=True,
     )
-    
+
     # Calculate and add balance
     from app.services.balance_calculator import BalanceCalculator
+
     balance_calculator = BalanceCalculator(db)
     try:
         balance_info = balance_calculator.calculate_balance(account.id)
         if balance_info:
-            account.current_balance = float(balance_info.get('balance', 0))
-            account.opening_balance = float(balance_info.get('balance', 0))
+            account.current_balance = float(balance_info.get("balance", 0))
+            account.opening_balance = float(balance_info.get("balance", 0))
         else:
             account.current_balance = 0.0
             account.opening_balance = 0.0
     except Exception:
         account.current_balance = 0.0
         account.opening_balance = 0.0
-    
+
     # Add banking information if requested
     if include_banking:
         banking_summary = account.get_banking_summary()
@@ -415,6 +421,7 @@ async def archive_account(
 
 # Bulk operations endpoints
 
+
 @router.post(
     "/bulk/activate",
     response_model=dict,
@@ -422,7 +429,9 @@ async def archive_account(
     description="Activate multiple accounts in a single operation",
 )
 async def bulk_activate_accounts(
-    account_ids: list[UUID] = Query(..., description="List of account UUIDs to activate"),
+    account_ids: list[UUID] = Query(
+        ..., description="List of account UUIDs to activate"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -434,7 +443,7 @@ async def bulk_activate_accounts(
     **Query Parameters:**
     - **account_ids**: List of account UUIDs to activate
 
-    **Returns:** 
+    **Returns:**
     - **success_count**: Number of accounts successfully activated
     - **failed_count**: Number of accounts that failed to activate
     - **errors**: List of errors for failed activations
@@ -456,7 +465,9 @@ async def bulk_activate_accounts(
     description="Deactivate multiple accounts in a single operation",
 )
 async def bulk_deactivate_accounts(
-    account_ids: list[UUID] = Query(..., description="List of account UUIDs to deactivate"),
+    account_ids: list[UUID] = Query(
+        ..., description="List of account UUIDs to deactivate"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -468,7 +479,7 @@ async def bulk_deactivate_accounts(
     **Query Parameters:**
     - **account_ids**: List of account UUIDs to deactivate
 
-    **Returns:** 
+    **Returns:**
     - **success_count**: Number of accounts successfully deactivated
     - **failed_count**: Number of accounts that failed to deactivate
     - **errors**: List of errors for failed deactivations
@@ -504,7 +515,7 @@ async def bulk_delete_accounts(
     - **account_ids**: List of account UUIDs to delete
     - **force**: If true, delete even if account has children
 
-    **Returns:** 
+    **Returns:**
     - **success_count**: Number of accounts successfully deleted
     - **failed_count**: Number of accounts that failed to delete
     - **errors**: List of errors for failed deletions (includes account_code and reason)
@@ -525,6 +536,7 @@ async def bulk_delete_accounts(
 
 
 # Hierarchy endpoints
+
 
 @router.get(
     "/{account_id}/hierarchy",
@@ -548,19 +560,19 @@ async def get_account_hierarchy(
     **Returns:** Account with ancestors, children, and descendants count
     """
     service = ChartOfAccountService(db)
-    
+
     # Get the account
     account = service.get_by_id(
         account_id=account_id,
         organization_id=current_user.organization_id,
         include_parent=True,
     )
-    
+
     # Get hierarchy information
     ancestors = service.get_ancestors(account_id, current_user.organization_id)
     children = service.get_children(account_id, current_user.organization_id)
     descendants = service.get_descendants(account_id, current_user.organization_id)
-    
+
     return ChartOfAccountHierarchyResponse(
         account=ChartOfAccountResponse.model_validate(account),
         ancestors=[ChartOfAccountParentInfo.model_validate(a) for a in ancestors],
@@ -684,6 +696,7 @@ async def move_account_to_parent(
 
 # Integration endpoints for other modules
 
+
 @router.post(
     "/validate-posting",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -706,7 +719,7 @@ async def validate_posting_account_by_id(
     **Query Parameters:**
     - **account_id**: Chart of account UUID to validate
 
-    **Returns:** 
+    **Returns:**
     - 204 No Content if account is valid for posting
     - 404 Not Found if account doesn't exist
     - 422 Unprocessable Entity if account is inactive or not a posting account
@@ -732,7 +745,9 @@ async def validate_posting_account_by_id(
     description="Validate multiple accounts for posting in a single request",
 )
 async def bulk_validate_posting_accounts(
-    account_ids: list[UUID] = Query(default=[], description="List of account UUIDs to validate"),
+    account_ids: list[UUID] = Query(
+        default=[], description="List of account UUIDs to validate"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -746,7 +761,7 @@ async def bulk_validate_posting_accounts(
     **Query Parameters:**
     - **account_ids**: List of account UUIDs to validate
 
-    **Returns:** 
+    **Returns:**
     - Dictionary with validation results for each account
       - valid: List of valid account IDs
       - invalid: List of invalid account IDs with error messages
@@ -758,10 +773,10 @@ async def bulk_validate_posting_accounts(
     - Parent accounts with children cannot receive postings
     """
     service = ChartOfAccountService(db)
-    
+
     valid = []
     invalid = []
-    
+
     for account_id in account_ids:
         try:
             service.validate_posting_account(
@@ -770,11 +785,13 @@ async def bulk_validate_posting_accounts(
             )
             valid.append(str(account_id))
         except Exception as e:
-            invalid.append({
-                "account_id": str(account_id),
-                "error": str(e),
-            })
-    
+            invalid.append(
+                {
+                    "account_id": str(account_id),
+                    "error": str(e),
+                }
+            )
+
     return {
         "valid": valid,
         "invalid": invalid,
@@ -810,16 +827,16 @@ async def get_account_by_code(
     - 404 Not Found if account with the given code doesn't exist
     """
     from app.repositories.chart_of_account_repository import AccountRepository
-    
+
     account_repo = AccountRepository(db)
     account = account_repo.get_by_code(code, current_user.organization_id)
-    
+
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Account with code '{code}' not found"
+            detail=f"Account with code '{code}' not found",
         )
-    
+
     return ChartOfAccountResponse.model_validate(account)
 
 
@@ -831,7 +848,9 @@ async def get_account_by_code(
 )
 async def get_default_account_for_transaction(
     transaction_type: str,
-    scenario: str | None = Query(None, description="Optional scenario for multiple defaults per type"),
+    scenario: str | None = Query(
+        None, description="Optional scenario for multiple defaults per type"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -865,13 +884,13 @@ async def get_default_account_for_transaction(
     - cost_of_goods_sold: For COGS
     - inventory_asset: For inventory assets
     """
-    from app.services.default_account_service import DefaultAccountService
-    from app.repositories.chart_of_account_repository import AccountRepository
     from app.core.exceptions import ValidationError
-    
+    from app.repositories.chart_of_account_repository import AccountRepository
+    from app.services.default_account_service import DefaultAccountService
+
     default_service = DefaultAccountService(db)
     account_repo = AccountRepository(db)
-    
+
     try:
         # Get default account configuration
         default = default_service.get_default_account(
@@ -879,23 +898,22 @@ async def get_default_account_for_transaction(
             organization_id=current_user.organization_id,
             scenario=scenario,
         )
-        
+
         # Get the actual account
-        account = account_repo.get_by_id(default.account_id, current_user.organization_id)
-        
+        account = account_repo.get_by_id(
+            default.account_id, current_user.organization_id
+        )
+
         if not account:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Configured default account not found for transaction type '{transaction_type}'"
+                detail=f"Configured default account not found for transaction type '{transaction_type}'",
             )
-        
+
         return ChartOfAccountResponse.model_validate(account)
-    
+
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.post(
@@ -923,7 +941,7 @@ async def validate_posting_account(
     **Path Parameters:**
     - **account_id**: Chart of account UUID to validate
 
-    **Returns:** 
+    **Returns:**
     - 204 No Content if account is valid for posting
     - 404 Not Found if account doesn't exist
     - 422 Unprocessable Entity if account is inactive or not a posting account
@@ -942,8 +960,8 @@ async def validate_posting_account(
     return None
 
 
-
 # Balance endpoints
+
 
 @router.get(
     "/{account_id}/balance",
@@ -953,7 +971,9 @@ async def validate_posting_account(
 )
 async def get_account_balance(
     account_id: UUID,
-    as_of_date: str | None = Query(None, description="Date to calculate balance as of (YYYY-MM-DD format)"),
+    as_of_date: str | None = Query(
+        None, description="Date to calculate balance as of (YYYY-MM-DD format)"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -971,9 +991,10 @@ async def get_account_balance(
     **Returns:** Account balance information including debit/credit totals and net balance
     """
     from datetime import date
-    from app.services.balance_calculator import BalanceCalculator
+
     from app.schemas.chart_of_account import AccountBalanceResponse
-    
+    from app.services.balance_calculator import BalanceCalculator
+
     # Parse date if provided
     balance_date = None
     if as_of_date:
@@ -981,22 +1002,24 @@ async def get_account_balance(
             balance_date = date.fromisoformat(as_of_date)
         except ValueError:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Calculate balance
     calculator = BalanceCalculator(db)
     balance_data = calculator.calculate_balance(account_id, balance_date)
-    
+
     if not balance_data:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Account not found: {account_id}"
+            detail=f"Account not found: {account_id}",
         )
-    
+
     return AccountBalanceResponse(**balance_data)
 
 
@@ -1023,9 +1046,10 @@ async def get_multiple_account_balances(
     **Returns:** List of account balance information
     """
     from datetime import date
-    from app.services.balance_calculator import BalanceCalculator
+
     from app.schemas.chart_of_account import AccountBalanceResponse
-    
+    from app.services.balance_calculator import BalanceCalculator
+
     # Parse date if provided
     balance_date = None
     if data.as_of_date:
@@ -1033,20 +1057,21 @@ async def get_multiple_account_balances(
             balance_date = date.fromisoformat(data.as_of_date)
         except ValueError:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Calculate balances
     calculator = BalanceCalculator(db)
     balances = []
-    
+
     for account_id in data.account_ids:
         balance_data = calculator.calculate_balance(account_id, balance_date)
         if balance_data:
             balances.append(AccountBalanceResponse(**balance_data))
-    
+
     return balances
 
 
@@ -1078,43 +1103,50 @@ async def get_account_balance_history(
     **Returns:** Balance history with daily snapshots
     """
     from datetime import date
+
+    from app.schemas.chart_of_account import (
+        AccountBalanceHistoryResponse,
+        AccountBalanceResponse,
+    )
     from app.services.balance_calculator import BalanceCalculator
-    from app.schemas.chart_of_account import AccountBalanceResponse, AccountBalanceHistoryResponse
-    
+
     # Parse dates
     try:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
     except ValueError:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid date format. Use YYYY-MM-DD"
+            detail="Invalid date format. Use YYYY-MM-DD",
         )
-    
+
     # Validate date range
     if start > end:
         from fastapi import HTTPException
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="start_date must be before or equal to end_date"
+            detail="start_date must be before or equal to end_date",
         )
-    
+
     # Calculate history
     calculator = BalanceCalculator(db)
     history_data = calculator.get_balance_history(account_id, start, end)
-    
+
     history_items = [AccountBalanceResponse(**item) for item in history_data]
-    
+
     return AccountBalanceHistoryResponse(
         account_id=str(account_id),
         start_date=start_date,
         end_date=end_date,
-        history=history_items
+        history=history_items,
     )
 
 
 # Audit trail endpoints
+
 
 @router.get(
     "/{account_id}/audit-trail",
@@ -1124,8 +1156,13 @@ async def get_account_balance_history(
 )
 async def get_account_audit_trail(
     account_id: UUID,
-    action: str | None = Query(None, description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)"),
-    start_date: str | None = Query(None, description="Filter by start date (ISO format)"),
+    action: str | None = Query(
+        None,
+        description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)",
+    ),
+    start_date: str | None = Query(
+        None, description="Filter by start date (ISO format)"
+    ),
     end_date: str | None = Query(None, description="Filter by end date (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
@@ -1150,48 +1187,49 @@ async def get_account_audit_trail(
     **Returns:** Paginated audit trail entries ordered by timestamp (newest first)
     """
     from datetime import datetime
+
     from fastapi import HTTPException
-    from app.services.audit_logger import AuditLogger
+
     from app.schemas.audit_log import AuditLogEntryResponse, AuditTrailResponse
-    
+    from app.services.audit_logger import AuditLogger
+
     # Verify account exists
     service = ChartOfAccountService(db)
     try:
         service.get_by_id(account_id, current_user.organization_id)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Account not found: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Account not found: {str(e)}"
         )
-    
+
     # Parse dates if provided
     start_datetime = None
     end_datetime = None
-    
+
     if start_date:
         try:
             start_datetime = datetime.fromisoformat(start_date)
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid start_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+                detail="Invalid start_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)",
             )
-    
+
     if end_date:
         try:
             end_datetime = datetime.fromisoformat(end_date)
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid end_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+                detail="Invalid end_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)",
             )
-    
+
     # Get audit trail
     audit_logger = AuditLogger(db)
-    
+
     # Calculate offset for pagination
     offset = (page - 1) * page_size
-    
+
     # Get audit entries
     entries = audit_logger.get_audit_trail(
         account_id=account_id,
@@ -1201,7 +1239,7 @@ async def get_account_audit_trail(
         limit=page_size,
         offset=offset,
     )
-    
+
     # Get total count for pagination
     total = audit_logger.get_audit_count(
         account_id=account_id,
@@ -1209,13 +1247,13 @@ async def get_account_audit_trail(
         start_date=start_datetime,
         end_date=end_datetime,
     )
-    
+
     # Convert to response models
     items = [AuditLogEntryResponse.model_validate(entry) for entry in entries]
-    
+
     # Calculate pagination metadata
     total_pages = (total + page_size - 1) // page_size
-    
+
     return AuditTrailResponse(
         items=items,
         total=total,
@@ -1229,6 +1267,7 @@ async def get_account_audit_trail(
 
 # Reporting and Export endpoints
 
+
 @router.get(
     "/report/chart",
     response_model=dict,
@@ -1237,8 +1276,12 @@ async def get_account_audit_trail(
 )
 async def generate_chart_of_accounts_report(
     account_type: str | None = Query(None, description="Filter by account type"),
-    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
-    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    status: str | None = Query(
+        None, description="Filter by status (active, inactive, archived)"
+    ),
+    as_of_date: str | None = Query(
+        None, description="Date to calculate balances as of (YYYY-MM-DD)"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1255,10 +1298,12 @@ async def generate_chart_of_accounts_report(
     **Returns:** Report data with all accounts, their details, and current balances
     """
     from datetime import date
+
     from fastapi import HTTPException
-    from app.models.base import AccountType, AccountStatus
+
+    from app.models.base import AccountStatus, AccountType
     from app.services.report_service import ReportService
-    
+
     # Parse account type
     type_enum = None
     if account_type:
@@ -1267,9 +1312,9 @@ async def generate_chart_of_accounts_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+                detail="Invalid account_type. Must be one of: asset, liability, equity, income, expense",
             )
-    
+
     # Parse status
     status_enum = None
     if status:
@@ -1278,9 +1323,9 @@ async def generate_chart_of_accounts_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status. Must be one of: active, inactive, archived"
+                detail="Invalid status. Must be one of: active, inactive, archived",
             )
-    
+
     # Parse date
     balance_date = None
     if as_of_date:
@@ -1289,9 +1334,9 @@ async def generate_chart_of_accounts_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Generate report
     report_service = ReportService(db)
     report = report_service.generate_chart_of_accounts_report(
@@ -1300,7 +1345,7 @@ async def generate_chart_of_accounts_report(
         status=status_enum,
         as_of_date=balance_date,
     )
-    
+
     return report
 
 
@@ -1312,8 +1357,12 @@ async def generate_chart_of_accounts_report(
 )
 async def generate_hierarchical_report(
     account_type: str | None = Query(None, description="Filter by account type"),
-    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
-    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    status: str | None = Query(
+        None, description="Filter by status (active, inactive, archived)"
+    ),
+    as_of_date: str | None = Query(
+        None, description="Date to calculate balances as of (YYYY-MM-DD)"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1330,10 +1379,12 @@ async def generate_hierarchical_report(
     **Returns:** Report data with accounts in tree structure showing parent-child relationships
     """
     from datetime import date
+
     from fastapi import HTTPException
-    from app.models.base import AccountType, AccountStatus
+
+    from app.models.base import AccountStatus, AccountType
     from app.services.report_service import ReportService
-    
+
     # Parse account type
     type_enum = None
     if account_type:
@@ -1342,9 +1393,9 @@ async def generate_hierarchical_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+                detail="Invalid account_type. Must be one of: asset, liability, equity, income, expense",
             )
-    
+
     # Parse status
     status_enum = None
     if status:
@@ -1353,9 +1404,9 @@ async def generate_hierarchical_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status. Must be one of: active, inactive, archived"
+                detail="Invalid status. Must be one of: active, inactive, archived",
             )
-    
+
     # Parse date
     balance_date = None
     if as_of_date:
@@ -1364,9 +1415,9 @@ async def generate_hierarchical_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Generate report
     report_service = ReportService(db)
     report = report_service.generate_hierarchical_report(
@@ -1375,7 +1426,7 @@ async def generate_hierarchical_report(
         status=status_enum,
         as_of_date=balance_date,
     )
-    
+
     return report
 
 
@@ -1387,7 +1438,9 @@ async def generate_hierarchical_report(
 )
 async def generate_trial_balance_report(
     account_type: str | None = Query(None, description="Filter by account type"),
-    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    as_of_date: str | None = Query(
+        None, description="Date to calculate balances as of (YYYY-MM-DD)"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1404,10 +1457,12 @@ async def generate_trial_balance_report(
               The report includes total debits, total credits, and balance verification.
     """
     from datetime import date
+
     from fastapi import HTTPException
+
     from app.models.base import AccountType
     from app.services.report_service import ReportService
-    
+
     # Parse account type
     type_enum = None
     if account_type:
@@ -1416,9 +1471,9 @@ async def generate_trial_balance_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+                detail="Invalid account_type. Must be one of: asset, liability, equity, income, expense",
             )
-    
+
     # Parse date
     balance_date = None
     if as_of_date:
@@ -1427,9 +1482,9 @@ async def generate_trial_balance_report(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Generate report
     report_service = ReportService(db)
     report = report_service.generate_trial_balance(
@@ -1437,7 +1492,7 @@ async def generate_trial_balance_report(
         account_type=type_enum,
         as_of_date=balance_date,
     )
-    
+
     return report
 
 
@@ -1449,8 +1504,12 @@ async def generate_trial_balance_report(
 async def export_chart_of_accounts(
     format: str = Query(..., description="Export format: csv, json, xlsx, or pdf"),
     account_type: str | None = Query(None, description="Filter by account type"),
-    status: str | None = Query(None, description="Filter by status (active, inactive, archived)"),
-    as_of_date: str | None = Query(None, description="Date to calculate balances as of (YYYY-MM-DD)"),
+    status: str | None = Query(
+        None, description="Filter by status (active, inactive, archived)"
+    ),
+    as_of_date: str | None = Query(
+        None, description="Date to calculate balances as of (YYYY-MM-DD)"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1468,20 +1527,22 @@ async def export_chart_of_accounts(
     **Returns:** File download with appropriate content-type header
     """
     from datetime import date
+
     from fastapi import HTTPException
     from fastapi.responses import Response
-    from app.models.base import AccountType, AccountStatus
-    from app.services.report_service import ReportService
+
+    from app.models.base import AccountStatus, AccountType
     from app.services.export_service import ExportService
-    
+    from app.services.report_service import ReportService
+
     # Validate format
     valid_formats = ["csv", "json", "xlsx", "pdf"]
     if format.lower() not in valid_formats:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid format. Must be one of: {', '.join(valid_formats)}"
+            detail=f"Invalid format. Must be one of: {', '.join(valid_formats)}",
         )
-    
+
     # Parse account type
     type_enum = None
     if account_type:
@@ -1490,9 +1551,9 @@ async def export_chart_of_accounts(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid account_type. Must be one of: asset, liability, equity, income, expense"
+                detail="Invalid account_type. Must be one of: asset, liability, equity, income, expense",
             )
-    
+
     # Parse status
     status_enum = None
     if status:
@@ -1501,9 +1562,9 @@ async def export_chart_of_accounts(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status. Must be one of: active, inactive, archived"
+                detail="Invalid status. Must be one of: active, inactive, archived",
             )
-    
+
     # Parse date
     balance_date = None
     if as_of_date:
@@ -1512,16 +1573,16 @@ async def export_chart_of_accounts(
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid date format. Use YYYY-MM-DD"
+                detail="Invalid date format. Use YYYY-MM-DD",
             )
-    
+
     # Initialize services
     report_service = ReportService(db)
     export_service = ExportService(report_service)
-    
+
     # Generate export based on format
     format_lower = format.lower()
-    
+
     try:
         if format_lower == "csv":
             data = export_service.export_to_csv(
@@ -1532,7 +1593,7 @@ async def export_chart_of_accounts(
             )
             media_type = "text/csv"
             filename = f"chart_of_accounts_{date.today().isoformat()}.csv"
-        
+
         elif format_lower == "json":
             data = export_service.export_to_json(
                 organization_id=current_user.organization_id,
@@ -1542,7 +1603,7 @@ async def export_chart_of_accounts(
             )
             media_type = "application/json"
             filename = f"chart_of_accounts_{date.today().isoformat()}.json"
-        
+
         elif format_lower == "xlsx":
             data = export_service.export_to_xlsx(
                 organization_id=current_user.organization_id,
@@ -1550,9 +1611,11 @@ async def export_chart_of_accounts(
                 status=status_enum,
                 as_of_date=balance_date,
             )
-            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             filename = f"chart_of_accounts_{date.today().isoformat()}.xlsx"
-        
+
         elif format_lower == "pdf":
             data = export_service.export_to_pdf(
                 organization_id=current_user.organization_id,
@@ -1562,27 +1625,26 @@ async def export_chart_of_accounts(
             )
             media_type = "application/pdf"
             filename = f"chart_of_accounts_{date.today().isoformat()}.pdf"
-        
+
         # Return file download response
         return Response(
             content=data,
             media_type=media_type,
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-    
+
     except Exception as e:
         logger.error(f"Export failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Export failed: {str(e)}"
+            detail=f"Export failed: {str(e)}",
         )
 
 
 # ============================================================================
 # Default Accounts Configuration Endpoints
 # ============================================================================
+
 
 @router.get(
     "/config/defaults",
@@ -1591,7 +1653,9 @@ async def export_chart_of_accounts(
     description="Get all default account mappings for transaction types",
 )
 async def get_default_accounts(
-    transaction_type: str | None = Query(None, description="Filter by transaction type"),
+    transaction_type: str | None = Query(
+        None, description="Filter by transaction type"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1605,33 +1669,37 @@ async def get_default_accounts(
 
     **Returns:** List of default account mappings with account details
     """
-    from app.services.default_account_service import DefaultAccountService
     from app.repositories.chart_of_account_repository import AccountRepository
-    
+    from app.services.default_account_service import DefaultAccountService
+
     service = DefaultAccountService(db)
     account_repo = AccountRepository(db)
-    
+
     # Get default accounts
     defaults = service.list_default_accounts(
         organization_id=current_user.organization_id,
         transaction_type=transaction_type,
     )
-    
+
     # Enrich with account details
     result = []
     for default in defaults:
-        account = account_repo.get_by_id(default.account_id, current_user.organization_id)
-        result.append({
-            "id": str(default.id),
-            "organization_id": str(default.organization_id),
-            "transaction_type": default.transaction_type,
-            "scenario": default.scenario,
-            "account_id": str(default.account_id),
-            "account_code": account.account_code if account else None,
-            "account_name": account.account_name if account else None,
-            "account_type": account.account_type.value if account else None,
-        })
-    
+        account = account_repo.get_by_id(
+            default.account_id, current_user.organization_id
+        )
+        result.append(
+            {
+                "id": str(default.id),
+                "organization_id": str(default.organization_id),
+                "transaction_type": default.transaction_type,
+                "scenario": default.scenario,
+                "account_id": str(default.account_id),
+                "account_code": account.account_code if account else None,
+                "account_name": account.account_name if account else None,
+                "account_type": account.account_type.value if account else None,
+            }
+        )
+
     return result
 
 
@@ -1659,14 +1727,14 @@ async def update_default_accounts(
 
     **Returns:** Summary of updated mappings
     """
+    from app.core.exceptions import ChartOfAccountNotFoundException, ValidationError
     from app.services.default_account_service import DefaultAccountService
-    from app.core.exceptions import ValidationError, ChartOfAccountNotFoundException
-    
+
     service = DefaultAccountService(db)
-    
+
     updated = []
     errors = []
-    
+
     for default_data in request.defaults:
         try:
             # Set default account
@@ -1676,30 +1744,38 @@ async def update_default_accounts(
                 organization_id=current_user.organization_id,
                 scenario=default_data.scenario,
             )
-            
-            updated.append({
-                "transaction_type": default.transaction_type,
-                "scenario": default.scenario,
-                "account_id": str(default.account_id),
-            })
-        
+
+            updated.append(
+                {
+                    "transaction_type": default.transaction_type,
+                    "scenario": default.scenario,
+                    "account_id": str(default.account_id),
+                }
+            )
+
         except ValidationError as e:
-            errors.append({
-                "error": str(e),
-                "transaction_type": default_data.transaction_type,
-            })
+            errors.append(
+                {
+                    "error": str(e),
+                    "transaction_type": default_data.transaction_type,
+                }
+            )
         except ChartOfAccountNotFoundException as e:
-            errors.append({
-                "error": str(e),
-                "transaction_type": default_data.transaction_type,
-            })
+            errors.append(
+                {
+                    "error": str(e),
+                    "transaction_type": default_data.transaction_type,
+                }
+            )
         except Exception as e:
             logger.error(f"Unexpected error updating default account: {str(e)}")
-            errors.append({
-                "error": f"Unexpected error: {str(e)}",
-                "transaction_type": default_data.transaction_type,
-            })
-    
+            errors.append(
+                {
+                    "error": f"Unexpected error: {str(e)}",
+                    "transaction_type": default_data.transaction_type,
+                }
+            )
+
     return {
         "updated": updated,
         "errors": errors,
@@ -1726,23 +1802,23 @@ async def get_account_code_format(
     **Returns:** Account code format configuration with pattern and example
     """
     from app.models.system_config import SystemConfig
-    
+
     # Get format pattern from system config
-    config = db.query(SystemConfig).filter(
-        SystemConfig.key == "account_code_format"
-    ).first()
-    
+    config = (
+        db.query(SystemConfig).filter(SystemConfig.key == "account_code_format").first()
+    )
+
     if not config:
         # Return default format if not configured
         return {
             "format_pattern": "^[0-9]{4}-[0-9]{2}$",
             "example": "1000-01",
         }
-    
+
     # Generate example based on pattern
     example = None
     pattern = config.value
-    
+
     # Simple example generation for common patterns
     if pattern == "^[0-9]{4}-[0-9]{2}$":
         example = "1000-01"
@@ -1750,7 +1826,7 @@ async def get_account_code_format(
         example = "1000"
     elif pattern == "^[A-Z]{2}-[0-9]{4}$":
         example = "AS-1000"
-    
+
     return {
         "format_pattern": pattern,
         "example": example,
@@ -1764,7 +1840,9 @@ async def get_account_code_format(
     description="Update the account code format pattern",
 )
 async def update_account_code_format(
-    format_pattern: str = Query(..., description="Regex pattern for account code format"),
+    format_pattern: str = Query(
+        ..., description="Regex pattern for account code format"
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -1778,23 +1856,24 @@ async def update_account_code_format(
 
     **Returns:** Updated format configuration
     """
-    from app.models.system_config import SystemConfig
     import re
-    
+
+    from app.models.system_config import SystemConfig
+
     # Validate the pattern is a valid regex
     try:
         re.compile(format_pattern)
     except re.error as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid regex pattern: {str(e)}"
+            detail=f"Invalid regex pattern: {str(e)}",
         )
-    
+
     # Get or create system config entry
-    config = db.query(SystemConfig).filter(
-        SystemConfig.key == "account_code_format"
-    ).first()
-    
+    config = (
+        db.query(SystemConfig).filter(SystemConfig.key == "account_code_format").first()
+    )
+
     if config:
         # Update existing
         config.value = format_pattern
@@ -1807,10 +1886,10 @@ async def update_account_code_format(
             updated_by=str(current_user.id),
         )
         db.add(config)
-    
+
     db.commit()
     db.refresh(config)
-    
+
     return {
         "format_pattern": config.value,
         "updated_at": config.updated_at.isoformat(),

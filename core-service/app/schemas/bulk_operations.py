@@ -1,11 +1,9 @@
 """Schemas for bulk import and export operations"""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # ==================== BULK IMPORT SCHEMAS ====================
 
@@ -28,11 +26,11 @@ class BulkImportJobResponse(BaseModel):
     total_rows: int
     successful_rows: int
     failed_rows: int
-    error_details: Optional[dict] = None
-    summary: Optional[str] = None
+    error_details: dict | None = None
+    summary: str | None = None
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -41,7 +39,7 @@ class BulkImportJobResponse(BaseModel):
 class BulkImportJobDetailResponse(BulkImportJobResponse):
     """Detailed schema for bulk import job response"""
 
-    file_path: Optional[str] = None
+    file_path: str | None = None
 
 
 class BulkItemImport(BaseModel):
@@ -49,12 +47,12 @@ class BulkItemImport(BaseModel):
 
     item_code: str = Field(..., max_length=100, description="Unique item code")
     item_name: str = Field(..., max_length=255, description="Item name")
-    description: Optional[str] = Field(None, max_length=500)
-    item_group_id: Optional[UUID] = None
-    item_type: Optional[str] = Field(None, description="Stock, Service, etc.")
-    status: Optional[str] = Field(None, description="Active, Inactive")
-    uom: Optional[str] = Field("Nos")
-    standard_rate: Optional[float] = Field(None, ge=0)
+    description: str | None = Field(None, max_length=500)
+    item_group_id: UUID | None = None
+    item_type: str | None = Field(None, description="Stock, Service, etc.")
+    status: str | None = Field(None, description="Active, Inactive")
+    uom: str | None = Field("Nos")
+    standard_rate: float | None = Field(None, ge=0)
 
 
 class ImportErrorDetail(BaseModel):
@@ -62,7 +60,7 @@ class ImportErrorDetail(BaseModel):
 
     row_number: int
     errors: list[str]
-    data: Optional[dict] = None
+    data: dict | None = None
 
 
 class ImportResult(BaseModel):
@@ -72,7 +70,7 @@ class ImportResult(BaseModel):
     total_rows: int
     successful_rows: int
     failed_rows: int
-    errors: Optional[list[ImportErrorDetail]] = None
+    errors: list[ImportErrorDetail] | None = None
     status: str
 
 
@@ -82,19 +80,19 @@ class ImportResult(BaseModel):
 class ExportFilter(BaseModel):
     """Schema for export filters"""
 
-    item_type: Optional[str] = None
-    status: Optional[str] = None
-    item_group_id: Optional[UUID] = None
-    search: Optional[str] = None
+    item_type: str | None = None
+    status: str | None = None
+    item_group_id: UUID | None = None
+    search: str | None = None
 
 
 class BulkExportRequest(BaseModel):
     """Schema for export request"""
 
     file_format: str = Field(..., description="csv, xlsx, json, or pdf")
-    filters: Optional[ExportFilter] = None
-    selected_columns: Optional[list[str]] = None
-    file_name: Optional[str] = Field(
+    filters: ExportFilter | None = None
+    selected_columns: list[str] | None = None
+    file_name: str | None = Field(
         None, description="Custom file name (without extension)"
     )
 
@@ -109,12 +107,12 @@ class BulkExportJobResponse(BaseModel):
     file_format: str
     status: str
     total_rows: str
-    filters: Optional[dict] = None
-    selected_columns: Optional[list] = None
+    filters: dict | None = None
+    selected_columns: list | None = None
     created_at: datetime
     updated_at: datetime
-    completed_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    completed_at: datetime | None = None
+    expires_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -123,8 +121,8 @@ class BulkExportJobResponse(BaseModel):
 class BulkExportJobDetailResponse(BulkExportJobResponse):
     """Detailed schema for bulk export job response"""
 
-    file_path: Optional[str] = None
-    error_message: Optional[str] = None
+    file_path: str | None = None
+    error_message: str | None = None
 
 
 class ExportDownloadResponse(BaseModel):

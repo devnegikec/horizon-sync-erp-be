@@ -1,7 +1,7 @@
 """Tests for PaymentAuditLogRepository"""
 
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 import pytest
 

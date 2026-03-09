@@ -5,19 +5,20 @@ Tests the complete workflow:
 Material Request → RFQ → Purchase Order → Receipt Note → Purchase Invoice → Payment Made
 """
 
-import pytest
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from app.models.base import (
     MaterialRequestStatus,
-    RFQStatus,
     PurchaseOrderStatus,
+    RFQStatus,
 )
 from app.services.material_request_service import MaterialRequestService
-from app.services.rfq_service import RFQService
 from app.services.purchase_order_service import PurchaseOrderService
+from app.services.rfq_service import RFQService
 
 
 class TestWorkflowIntegration:
@@ -76,7 +77,7 @@ class TestWorkflowIntegration:
     ):
         """
         Test workflow connection: Material Request → RFQ
-        
+
         When an RFQ is created from a Material Request:
         - Material Request status should be updated to PARTIALLY_QUOTED
         """
@@ -94,7 +95,7 @@ class TestWorkflowIntegration:
             ],
         }
         mr = mr_service.create(mr_data, organization_id, user_id)
-        
+
         # Submit Material Request
         mr = mr_service.submit(mr["id"], organization_id, user_id)
         assert mr["status"] == MaterialRequestStatus.SUBMITTED.value
@@ -124,7 +125,7 @@ class TestWorkflowIntegration:
     ):
         """
         Test workflow connection: RFQ → Purchase Order
-        
+
         When a Purchase Order is created from an RFQ:
         - RFQ status should be updated to CLOSED
         """

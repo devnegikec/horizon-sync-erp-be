@@ -114,9 +114,7 @@ def test_get_transaction_category(transaction_service):
     assert transaction_service._get_transaction_category("Quotation") == "Sales"
     assert transaction_service._get_transaction_category("Sales_Order") == "Sales"
     assert transaction_service._get_transaction_category("Invoice") == "Sales"
-    assert (
-        transaction_service._get_transaction_category("Purchase_Order") == "Purchase"
-    )
+    assert transaction_service._get_transaction_category("Purchase_Order") == "Purchase"
     assert (
         transaction_service._get_transaction_category("Purchase_Receipt") == "Purchase"
     )

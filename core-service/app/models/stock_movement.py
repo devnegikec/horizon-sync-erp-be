@@ -13,11 +13,11 @@ from sqlalchemy import (
     String,
     Text,
 )
-from app.models.types import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.base import MovementType
+from app.models.types import UUID
 
 
 class StockMovement(Base):

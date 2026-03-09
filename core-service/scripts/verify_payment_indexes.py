@@ -18,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import text
-from app.database import SessionLocal, engine
+
+from app.database import SessionLocal
 
 
 def check_index_exists(db, table_name: str, index_name: str) -> bool:
@@ -74,12 +75,12 @@ def explain_query(db, query_sql: str) -> str:
 def main():
     """Main verification function."""
     db = SessionLocal()
-    
+
     print("=" * 80)
     print("Payment Flow Index Verification")
     print("=" * 80)
     print()
-    
+
     # Define required indexes
     required_indexes = {
         "payment_entries": [
@@ -99,11 +100,11 @@ def main():
             "idx_payment_audit_org_time",
         ],
     }
-    
+
     # Check if indexes exist
     print("1. Checking Index Existence")
     print("-" * 80)
-    
+
     all_exist = True
     for table_name, indexes in required_indexes.items():
         print(f"\nTable: {table_name}")
@@ -114,37 +115,39 @@ def main():
             print(f"  {index_name}: {status} (Size: {size})")
             if not exists:
                 all_exist = False
-    
+
     print()
-    
+
     if not all_exist:
         print("❌ Some indexes are missing! Run migrations to create them.")
         print()
     else:
         print("✅ All required indexes exist!")
         print()
-    
+
     # Check index usage statistics
     print("2. Index Usage Statistics")
     print("-" * 80)
-    
+
     for table_name in required_indexes.keys():
         print(f"\nTable: {table_name}")
         stats = get_index_usage_stats(db, table_name)
         if stats:
-            print(f"  {'Index Name':<40} {'Scans':<10} {'Tuples Read':<15} {'Tuples Fetched':<15}")
-            print(f"  {'-'*40} {'-'*10} {'-'*15} {'-'*15}")
+            print(
+                f"  {'Index Name':<40} {'Scans':<10} {'Tuples Read':<15} {'Tuples Fetched':<15}"
+            )
+            print(f"  {'-' * 40} {'-' * 10} {'-' * 15} {'-' * 15}")
             for row in stats:
                 print(f"  {row[0]:<40} {row[1]:<10} {row[2]:<15} {row[3]:<15}")
         else:
             print("  No usage statistics available (table may be empty)")
-    
+
     print()
-    
+
     # Test common queries to verify index usage
     print("3. Query Plan Analysis")
     print("-" * 80)
-    
+
     test_queries = [
         (
             "Payment list by organization and date",
@@ -154,7 +157,7 @@ def main():
             AND payment_date >= '2024-01-01'
             ORDER BY payment_date DESC
             LIMIT 50
-            """
+            """,
         ),
         (
             "Payment list by organization and status",
@@ -163,62 +166,62 @@ def main():
             WHERE organization_id = '00000000-0000-0000-0000-000000000001'::uuid
             AND status = 'Draft'
             LIMIT 50
-            """
+            """,
         ),
         (
             "Payment by receipt number",
             """
             SELECT * FROM payment_entries
             WHERE receipt_number = 'RCP-2024-00001'
-            """
+            """,
         ),
         (
             "Payment references by payment_id",
             """
             SELECT * FROM payment_references
             WHERE payment_id = '00000000-0000-0000-0000-000000000001'::uuid
-            """
+            """,
         ),
         (
             "Payment references by invoice_id",
             """
             SELECT * FROM payment_references
             WHERE invoice_id = '00000000-0000-0000-0000-000000000001'::uuid
-            """
+            """,
         ),
     ]
-    
+
     for query_name, query_sql in test_queries:
         print(f"\nQuery: {query_name}")
         print("-" * 40)
         try:
             plan = explain_query(db, query_sql)
-            
+
             # Check if index is being used
             uses_index = "Index Scan" in plan or "Bitmap Index Scan" in plan
             if uses_index:
                 print("✅ Using index")
             else:
                 print("⚠️  Not using index (Sequential Scan)")
-            
+
             # Show relevant lines from plan
             lines = plan.split("\n")
             for line in lines[:5]:  # Show first 5 lines
                 print(f"  {line}")
-            
+
             if len(lines) > 5:
                 print(f"  ... ({len(lines) - 5} more lines)")
-        
+
         except Exception as e:
             print(f"❌ Error: {e}")
-    
+
     print()
-    
+
     # Summary
     print("=" * 80)
     print("Summary")
     print("=" * 80)
-    
+
     if all_exist:
         print("✅ All required indexes exist")
         print("✅ Indexes are properly sized")
@@ -233,9 +236,9 @@ def main():
         print("Action required:")
         print("1. Run database migrations: alembic upgrade head")
         print("2. Re-run this script to verify")
-    
+
     print()
-    
+
     db.close()
 
 

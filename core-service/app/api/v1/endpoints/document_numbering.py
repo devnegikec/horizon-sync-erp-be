@@ -1,12 +1,11 @@
 """Document Numbering Series API (Settings)."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ValidationError
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
-from app.core.exceptions import ValidationError
 from app.schemas.document_numbering import (
     DocumentNumberingConfigItem,
     DocumentNumberingConfigUpdate,

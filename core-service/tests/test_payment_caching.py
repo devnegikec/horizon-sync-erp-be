@@ -1,23 +1,18 @@
 """Tests for payment entry caching functionality"""
 
-import pytest
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, UTC
-from uuid import uuid4
+
+import pytest
 
 from app.core.cache import (
     cache,
-    get_payment_cache_key,
     get_payment_list_cache_key,
     get_unpaid_invoices_cache_key,
-    invalidate_payment_cache,
-    invalidate_invoice_cache,
 )
-from app.models.base import PaymentEntryStatus, PaymentMode, PaymentEntryType
-from app.models.payment_entry import PaymentEntry
-from app.services.payment_entry_service import PaymentEntryService
-from app.services.allocation_service import AllocationService
 from app.schemas.payment_entry import PaymentEntryCreate
+from app.services.allocation_service import AllocationService
+from app.services.payment_entry_service import PaymentEntryService
 
 
 class TestPaymentCaching:
@@ -41,10 +36,10 @@ class TestPaymentCaching:
             page_size=50,
         )
         cache.set(cache_key, {"payments": [], "total": 0}, ttl=300)
-        
+
         # Verify cache is populated
         assert cache.get(cache_key) is not None
-        
+
         # Create a payment
         service = PaymentEntryService(db_session)
         payment_data = PaymentEntryCreate(
@@ -56,13 +51,13 @@ class TestPaymentCaching:
             payment_mode="Cash",
             reference_no=None,
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify cache was invalidated (should be None now)
         assert cache.get(cache_key) is None
 
@@ -75,7 +70,7 @@ class TestPaymentCaching:
     ):
         """Test that updating a payment invalidates the cache"""
         from app.schemas.payment_entry import PaymentEntryUpdate
-        
+
         # Create a payment first
         service = PaymentEntryService(db_session)
         payment_data = PaymentEntryCreate(
@@ -87,13 +82,13 @@ class TestPaymentCaching:
             payment_mode="Cash",
             reference_no=None,
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Pre-populate cache
         cache_key = get_payment_list_cache_key(
             organization_id=test_organization_id,
@@ -105,7 +100,7 @@ class TestPaymentCaching:
         )
         cache.set(cache_key, {"payments": [], "total": 0}, ttl=300)
         assert cache.get(cache_key) is not None
-        
+
         # Update the payment
         update_data = PaymentEntryUpdate(amount=Decimal("1500.00"))
         service.update_payment_entry(
@@ -114,7 +109,7 @@ class TestPaymentCaching:
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify cache was invalidated
         assert cache.get(cache_key) is None
 
@@ -137,15 +132,16 @@ class TestPaymentCaching:
             payment_mode="Cash",
             reference_no=None,
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Create an invoice for allocation
         from app.models.invoice import Invoice
+
         invoice = Invoice(
             organization_id=test_organization_id,
             party_id=test_customer_id,
@@ -160,7 +156,7 @@ class TestPaymentCaching:
         db_session.add(invoice)
         db_session.commit()
         db_session.refresh(invoice)
-        
+
         # Create allocation
         allocation_service = AllocationService(db_session)
         allocation_service.create_allocation(
@@ -170,7 +166,7 @@ class TestPaymentCaching:
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Pre-populate cache
         cache_key = get_payment_list_cache_key(
             organization_id=test_organization_id,
@@ -182,7 +178,7 @@ class TestPaymentCaching:
         )
         cache.set(cache_key, {"payments": [], "total": 0}, ttl=300)
         assert cache.get(cache_key) is not None
-        
+
         # Confirm the payment (requires default accounts to be configured)
         # This test will skip confirmation if default accounts are not set up
         try:
@@ -191,7 +187,7 @@ class TestPaymentCaching:
                 organization_id=test_organization_id,
                 user_id=test_user_id,
             )
-            
+
             # Verify cache was invalidated
             assert cache.get(cache_key) is None
         except Exception as e:
@@ -220,15 +216,16 @@ class TestPaymentCaching:
             payment_mode="Cash",
             reference_no=None,
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Create an invoice
         from app.models.invoice import Invoice
+
         invoice = Invoice(
             organization_id=test_organization_id,
             party_id=test_customer_id,
@@ -243,7 +240,7 @@ class TestPaymentCaching:
         db_session.add(invoice)
         db_session.commit()
         db_session.refresh(invoice)
-        
+
         # Pre-populate caches
         payment_cache_key = get_payment_list_cache_key(
             organization_id=test_organization_id,
@@ -257,13 +254,13 @@ class TestPaymentCaching:
             party_id=test_customer_id,
             organization_id=test_organization_id,
         )
-        
+
         cache.set(payment_cache_key, {"payments": [], "total": 0}, ttl=300)
         cache.set(invoice_cache_key, {"invoices": []}, ttl=300)
-        
+
         assert cache.get(payment_cache_key) is not None
         assert cache.get(invoice_cache_key) is not None
-        
+
         # Create allocation
         allocation_service = AllocationService(db_session)
         allocation_service.create_allocation(
@@ -273,7 +270,7 @@ class TestPaymentCaching:
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify both caches were invalidated
         assert cache.get(payment_cache_key) is None
         assert cache.get(invoice_cache_key) is None
@@ -297,15 +294,16 @@ class TestPaymentCaching:
             payment_mode="Cash",
             reference_no=None,
         )
-        
+
         payment = service.create_payment_entry(
             data=payment_data,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Create an invoice
         from app.models.invoice import Invoice
+
         invoice = Invoice(
             organization_id=test_organization_id,
             party_id=test_customer_id,
@@ -320,7 +318,7 @@ class TestPaymentCaching:
         db_session.add(invoice)
         db_session.commit()
         db_session.refresh(invoice)
-        
+
         # Create allocation
         allocation_service = AllocationService(db_session)
         allocation = allocation_service.create_allocation(
@@ -330,7 +328,7 @@ class TestPaymentCaching:
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Pre-populate caches
         payment_cache_key = get_payment_list_cache_key(
             organization_id=test_organization_id,
@@ -344,20 +342,20 @@ class TestPaymentCaching:
             party_id=test_customer_id,
             organization_id=test_organization_id,
         )
-        
+
         cache.set(payment_cache_key, {"payments": [], "total": 0}, ttl=300)
         cache.set(invoice_cache_key, {"invoices": []}, ttl=300)
-        
+
         assert cache.get(payment_cache_key) is not None
         assert cache.get(invoice_cache_key) is not None
-        
+
         # Remove allocation
         allocation_service.remove_allocation(
             allocation_id=allocation.id,
             organization_id=test_organization_id,
             user_id=test_user_id,
         )
-        
+
         # Verify both caches were invalidated
         assert cache.get(payment_cache_key) is None
         assert cache.get(invoice_cache_key) is None

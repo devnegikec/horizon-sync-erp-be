@@ -56,6 +56,7 @@ class StockEntryService:
         # Auto-generate stock_entry_no if not provided
         if not data.stock_entry_no:
             from app.services.document_numbering_service import DocumentNumberingService
+
             data.stock_entry_no = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "stock_entry"
             )
@@ -292,6 +293,7 @@ class StockEntryService:
     def _get_item_base_uom(self, item_id: UUID) -> str | None:
         """Fetch the item's base UOM from the items table."""
         from sqlalchemy import text
+
         row = self.db.execute(
             text("SELECT uom FROM items WHERE id = :id"),
             {"id": str(item_id)},
@@ -375,8 +377,12 @@ class StockEntryService:
                 )
             sl = self._get_or_create_stock_level(item.item_id, wh, organization_id)
             sl.quantity_on_hand = (sl.quantity_on_hand or 0) + qty_base
-            sl.quantity_available = max(0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0))
-            self._create_movement(entry, item, wh, MovementType.IN, qty_base, organization_id, user_id)
+            sl.quantity_available = max(
+                0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0)
+            )
+            self._create_movement(
+                entry, item, wh, MovementType.IN, qty_base, organization_id, user_id
+            )
 
         elif entry_type == StockEntryType.MATERIAL_ISSUE:
             # Stock OUT ← source_warehouse_id
@@ -387,8 +393,12 @@ class StockEntryService:
                 )
             sl = self._get_or_create_stock_level(item.item_id, wh, organization_id)
             sl.quantity_on_hand = (sl.quantity_on_hand or 0) - qty_base
-            sl.quantity_available = max(0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0))
-            self._create_movement(entry, item, wh, MovementType.OUT, qty_base, organization_id, user_id)
+            sl.quantity_available = max(
+                0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0)
+            )
+            self._create_movement(
+                entry, item, wh, MovementType.OUT, qty_base, organization_id, user_id
+            )
 
         elif entry_type in (
             StockEntryType.MATERIAL_TRANSFER,
@@ -403,27 +413,59 @@ class StockEntryService:
                 )
             sl_src = self._get_or_create_stock_level(item.item_id, src, organization_id)
             sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
-            sl_src.quantity_available = max(0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0))
-            self._create_movement(entry, item, src, MovementType.OUT, qty_base, organization_id, user_id)
+            sl_src.quantity_available = max(
+                0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
+            )
+            self._create_movement(
+                entry, item, src, MovementType.OUT, qty_base, organization_id, user_id
+            )
 
             sl_tgt = self._get_or_create_stock_level(item.item_id, tgt, organization_id)
             sl_tgt.quantity_on_hand = (sl_tgt.quantity_on_hand or 0) + qty_base
-            sl_tgt.quantity_available = max(0, (sl_tgt.quantity_on_hand or 0) - (sl_tgt.quantity_reserved or 0))
-            self._create_movement(entry, item, tgt, MovementType.IN, qty_base, organization_id, user_id)
+            sl_tgt.quantity_available = max(
+                0, (sl_tgt.quantity_on_hand or 0) - (sl_tgt.quantity_reserved or 0)
+            )
+            self._create_movement(
+                entry, item, tgt, MovementType.IN, qty_base, organization_id, user_id
+            )
 
         elif entry_type in (StockEntryType.MANUFACTURE, StockEntryType.REPACK):
             # source_warehouse_id = raw material OUT, target_warehouse_id = finished goods IN
             src = item.source_warehouse_id or entry.from_warehouse_id
             tgt = item.target_warehouse_id or entry.to_warehouse_id
             if src:
-                sl_src = self._get_or_create_stock_level(item.item_id, src, organization_id)
+                sl_src = self._get_or_create_stock_level(
+                    item.item_id, src, organization_id
+                )
                 sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
-                sl_src.quantity_available = max(0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0))
-                self._create_movement(entry, item, src, MovementType.OUT, qty_base, organization_id, user_id)
+                sl_src.quantity_available = max(
+                    0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
+                )
+                self._create_movement(
+                    entry,
+                    item,
+                    src,
+                    MovementType.OUT,
+                    qty_base,
+                    organization_id,
+                    user_id,
+                )
             if tgt:
-                sl_tgt = self._get_or_create_stock_level(item.item_id, tgt, organization_id)
+                sl_tgt = self._get_or_create_stock_level(
+                    item.item_id, tgt, organization_id
+                )
                 sl_tgt.quantity_on_hand = (sl_tgt.quantity_on_hand or 0) + qty_base
-                sl_tgt.quantity_available = max(0, (sl_tgt.quantity_on_hand or 0) - (sl_tgt.quantity_reserved or 0))
-                self._create_movement(entry, item, tgt, MovementType.IN, qty_base, organization_id, user_id)
+                sl_tgt.quantity_available = max(
+                    0, (sl_tgt.quantity_on_hand or 0) - (sl_tgt.quantity_reserved or 0)
+                )
+                self._create_movement(
+                    entry,
+                    item,
+                    tgt,
+                    MovementType.IN,
+                    qty_base,
+                    organization_id,
+                    user_id,
+                )
 
         self.db.flush()

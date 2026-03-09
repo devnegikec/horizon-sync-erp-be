@@ -21,15 +21,18 @@ class JournalEntryService:
         payload["updated_by"] = user_id
         if payload.get("status"):
             payload["status"] = JournalStatus(payload["status"])
-        
+
         # Generate entry_no if not provided
         if not payload.get("entry_no"):
             from app.services.document_numbering_service import DocumentNumberingService
+
             doc_num_svc = DocumentNumberingService(self.db)
             payload["entry_no"] = doc_num_svc.get_next_number(
-                organization_id, "journal_entry", reference_date=payload.get("posting_date")
+                organization_id,
+                "journal_entry",
+                reference_date=payload.get("posting_date"),
             )
-        
+
         lines = data.get("lines") or []
         line_list = [dict(ln) for ln in lines]
         je = self.repo.create(payload, line_list)
@@ -122,7 +125,7 @@ class JournalEntryService:
     @staticmethod
     def _to_list_item(je) -> dict:
         lines = []
-        if hasattr(je, 'lines') and je.lines:
+        if hasattr(je, "lines") and je.lines:
             for line in je.lines:
                 line_dict = {
                     "id": line.id,
@@ -132,11 +135,11 @@ class JournalEntryService:
                     "remarks": line.remarks,
                 }
                 # Add account information if available
-                if hasattr(line, 'account') and line.account:
+                if hasattr(line, "account") and line.account:
                     line_dict["account_code"] = line.account.account_code
                     line_dict["account_name"] = line.account.account_name
                 lines.append(line_dict)
-        
+
         return {
             "id": je.id,
             "organization_id": je.organization_id,

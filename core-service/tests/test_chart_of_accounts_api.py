@@ -1,7 +1,6 @@
 """Unit tests for Chart of Accounts API endpoints"""
 
 import uuid
-from decimal import Decimal
 
 import pytest
 from fastapi import status
@@ -164,7 +163,9 @@ class TestGetAccount:
         assert data["parent_account_id"] == parent_id
         assert data["parent"] is not None
         assert data["parent"]["id"] == parent_id
-        assert data["parent"]["account_code"] == test_parent_account_data["account_code"]
+        assert (
+            data["parent"]["account_code"] == test_parent_account_data["account_code"]
+        )
 
 
 class TestUpdateAccount:
@@ -295,9 +296,7 @@ class TestDeleteAccount:
         client.post("/api/v1/chart-of-accounts", json=test_account_data)
 
         # Force delete parent
-        response = client.delete(
-            f"/api/v1/chart-of-accounts/{parent_id}?force=true"
-        )
+        response = client.delete(f"/api/v1/chart-of-accounts/{parent_id}?force=true")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
@@ -319,8 +318,8 @@ class TestListAccounts:
         # Create multiple accounts
         for i in range(3):
             account_data = test_account_data.copy()
-            account_data["account_code"] = f"1000-0{i+1}"
-            account_data["account_name"] = f"Account {i+1}"
+            account_data["account_code"] = f"1000-0{i + 1}"
+            account_data["account_name"] = f"Account {i + 1}"
             client.post("/api/v1/chart-of-accounts", json=account_data)
 
         # List accounts
@@ -337,8 +336,8 @@ class TestListAccounts:
         # Create 5 accounts
         for i in range(5):
             account_data = test_account_data.copy()
-            account_data["account_code"] = f"1000-0{i+1}"
-            account_data["account_name"] = f"Account {i+1}"
+            account_data["account_code"] = f"1000-0{i + 1}"
+            account_data["account_name"] = f"Account {i + 1}"
             client.post("/api/v1/chart-of-accounts", json=account_data)
 
         # Get first page with 2 items
@@ -430,7 +429,9 @@ class TestListAccounts:
             client.post("/api/v1/chart-of-accounts", json=account_data)
 
         # Get sorted list
-        response = client.get("/api/v1/chart-of-accounts?sort_by=account_code&sort_order=asc")
+        response = client.get(
+            "/api/v1/chart-of-accounts?sort_by=account_code&sort_order=asc"
+        )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -484,7 +485,9 @@ class TestAccountStatusManagement:
     def test_activate_account(self, client, test_account_data):
         """Test activating an account"""
         # Create account
-        create_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        create_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_account_data
+        )
         account_id = create_response.json()["id"]
 
         # Deactivate first
@@ -501,7 +504,9 @@ class TestAccountStatusManagement:
     def test_deactivate_account(self, client, test_account_data):
         """Test deactivating an account"""
         # Create account
-        create_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        create_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_account_data
+        )
         account_id = create_response.json()["id"]
 
         # Deactivate account
@@ -515,7 +520,9 @@ class TestAccountStatusManagement:
     def test_archive_account(self, client, test_account_data):
         """Test archiving an account"""
         # Create account
-        create_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        create_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_account_data
+        )
         account_id = create_response.json()["id"]
 
         # Archive account
@@ -550,16 +557,22 @@ class TestAccountStatusManagement:
     def test_status_transitions(self, client, test_account_data):
         """Test multiple status transitions"""
         # Create account (starts as active)
-        create_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        create_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_account_data
+        )
         account_id = create_response.json()["id"]
         assert create_response.json()["status"] == "active"
 
         # Deactivate
-        deactivate_response = client.put(f"/api/v1/chart-of-accounts/{account_id}/deactivate")
+        deactivate_response = client.put(
+            f"/api/v1/chart-of-accounts/{account_id}/deactivate"
+        )
         assert deactivate_response.json()["status"] == "inactive"
 
         # Reactivate
-        activate_response = client.put(f"/api/v1/chart-of-accounts/{account_id}/activate")
+        activate_response = client.put(
+            f"/api/v1/chart-of-accounts/{account_id}/activate"
+        )
         assert activate_response.json()["status"] == "active"
 
         # Archive
@@ -567,31 +580,38 @@ class TestAccountStatusManagement:
         assert archive_response.json()["status"] == "archived"
 
         # Can reactivate from archived
-        reactivate_response = client.put(f"/api/v1/chart-of-accounts/{account_id}/activate")
+        reactivate_response = client.put(
+            f"/api/v1/chart-of-accounts/{account_id}/activate"
+        )
         assert reactivate_response.json()["status"] == "active"
-
 
 
 class TestHierarchyEndpoints:
     """Tests for hierarchy API endpoints"""
 
-    def test_get_account_hierarchy(self, client, test_parent_account_data, test_account_data):
+    def test_get_account_hierarchy(
+        self, client, test_parent_account_data, test_account_data
+    ):
         """Test GET /api/v1/chart-of-accounts/:id/hierarchy"""
         # Create parent account
-        parent_response = client.post("/api/v1/chart-of-accounts", json=test_parent_account_data)
+        parent_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_parent_account_data
+        )
         assert parent_response.status_code == status.HTTP_201_CREATED
         parent_id = parent_response.json()["id"]
 
         # Create child account
         test_account_data["parent_account_id"] = parent_id
-        child_response = client.post("/api/v1/chart-of-accounts", json=test_account_data)
+        child_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_account_data
+        )
         assert child_response.status_code == status.HTTP_201_CREATED
         child_id = child_response.json()["id"]
 
         # Get hierarchy for child account
         response = client.get(f"/api/v1/chart-of-accounts/{child_id}/hierarchy")
         assert response.status_code == status.HTTP_200_OK
-        
+
         data = response.json()
         assert "account" in data
         assert "ancestors" in data
@@ -604,7 +624,9 @@ class TestHierarchyEndpoints:
     def test_get_children(self, client, test_parent_account_data, test_account_data):
         """Test GET /api/v1/chart-of-accounts/:id/children"""
         # Create parent account
-        parent_response = client.post("/api/v1/chart-of-accounts", json=test_parent_account_data)
+        parent_response = client.post(
+            "/api/v1/chart-of-accounts", json=test_parent_account_data
+        )
         assert parent_response.status_code == status.HTTP_201_CREATED
         parent_id = parent_response.json()["id"]
 
@@ -612,10 +634,10 @@ class TestHierarchyEndpoints:
         child_ids = []
         for i in range(3):
             child_data = test_account_data.copy()
-            child_data["account_code"] = f"1000-0{i+1}"
-            child_data["account_name"] = f"Child Account {i+1}"
+            child_data["account_code"] = f"1000-0{i + 1}"
+            child_data["account_name"] = f"Child Account {i + 1}"
             child_data["parent_account_id"] = parent_id
-            
+
             child_response = client.post("/api/v1/chart-of-accounts", json=child_data)
             assert child_response.status_code == status.HTTP_201_CREATED
             child_ids.append(child_response.json()["id"])
@@ -623,7 +645,7 @@ class TestHierarchyEndpoints:
         # Get children
         response = client.get(f"/api/v1/chart-of-accounts/{parent_id}/children")
         assert response.status_code == status.HTTP_200_OK
-        
+
         children = response.json()
         assert len(children) == 3
         returned_ids = [child["id"] for child in children]
@@ -639,7 +661,9 @@ class TestHierarchyEndpoints:
             "account_name": "Assets",
             "account_type": "asset",
         }
-        grandparent_response = client.post("/api/v1/chart-of-accounts", json=grandparent_data)
+        grandparent_response = client.post(
+            "/api/v1/chart-of-accounts", json=grandparent_data
+        )
         assert grandparent_response.status_code == status.HTTP_201_CREATED
         grandparent_id = grandparent_response.json()["id"]
 
@@ -668,7 +692,7 @@ class TestHierarchyEndpoints:
         # Get ancestors of child
         response = client.get(f"/api/v1/chart-of-accounts/{child_id}/ancestors")
         assert response.status_code == status.HTTP_200_OK
-        
+
         ancestors = response.json()
         assert len(ancestors) == 2
         # Ancestors should be ordered from immediate parent to root
@@ -706,14 +730,16 @@ class TestHierarchyEndpoints:
             "account_type": "asset",
             "parent_account_id": child_id,
         }
-        grandchild_response = client.post("/api/v1/chart-of-accounts", json=grandchild_data)
+        grandchild_response = client.post(
+            "/api/v1/chart-of-accounts", json=grandchild_data
+        )
         assert grandchild_response.status_code == status.HTTP_201_CREATED
         grandchild_id = grandchild_response.json()["id"]
 
         # Get descendants of parent
         response = client.get(f"/api/v1/chart-of-accounts/{parent_id}/descendants")
         assert response.status_code == status.HTTP_200_OK
-        
+
         descendants = response.json()
         assert len(descendants) == 2
         descendant_ids = [d["id"] for d in descendants]
@@ -757,17 +783,23 @@ class TestHierarchyEndpoints:
 
         # Move child to parent2
         move_data = {"new_parent_id": parent2_id}
-        response = client.put(f"/api/v1/chart-of-accounts/{child_id}/parent", json=move_data)
+        response = client.put(
+            f"/api/v1/chart-of-accounts/{child_id}/parent", json=move_data
+        )
         assert response.status_code == status.HTTP_200_OK
-        
+
         updated_account = response.json()
         assert updated_account["parent_account_id"] == parent2_id
 
         # Verify the move by checking children of both parents
-        parent1_children = client.get(f"/api/v1/chart-of-accounts/{parent1_id}/children")
+        parent1_children = client.get(
+            f"/api/v1/chart-of-accounts/{parent1_id}/children"
+        )
         assert len(parent1_children.json()) == 0
 
-        parent2_children = client.get(f"/api/v1/chart-of-accounts/{parent2_id}/children")
+        parent2_children = client.get(
+            f"/api/v1/chart-of-accounts/{parent2_id}/children"
+        )
         assert len(parent2_children.json()) == 1
         assert parent2_children.json()[0]["id"] == child_id
 
@@ -797,7 +829,9 @@ class TestHierarchyEndpoints:
 
         # Try to move parent under child (would create circular reference)
         move_data = {"new_parent_id": child_id}
-        response = client.put(f"/api/v1/chart-of-accounts/{parent_id}/parent", json=move_data)
+        response = client.put(
+            f"/api/v1/chart-of-accounts/{parent_id}/parent", json=move_data
+        )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         response_data = response.json()
         # The error message should contain "circular"
@@ -813,7 +847,9 @@ class TestHierarchyEndpoints:
             "account_name": "Assets",
             "account_type": "asset",
         }
-        asset_parent_response = client.post("/api/v1/chart-of-accounts", json=asset_parent_data)
+        asset_parent_response = client.post(
+            "/api/v1/chart-of-accounts", json=asset_parent_data
+        )
         assert asset_parent_response.status_code == status.HTTP_201_CREATED
         asset_parent_id = asset_parent_response.json()["id"]
 
@@ -824,13 +860,17 @@ class TestHierarchyEndpoints:
             "account_name": "Accounts Payable",
             "account_type": "liability",
         }
-        liability_response = client.post("/api/v1/chart-of-accounts", json=liability_data)
+        liability_response = client.post(
+            "/api/v1/chart-of-accounts", json=liability_data
+        )
         assert liability_response.status_code == status.HTTP_201_CREATED
         liability_id = liability_response.json()["id"]
 
         # Try to move liability under asset parent
         move_data = {"new_parent_id": asset_parent_id}
-        response = client.put(f"/api/v1/chart-of-accounts/{liability_id}/parent", json=move_data)
+        response = client.put(
+            f"/api/v1/chart-of-accounts/{liability_id}/parent", json=move_data
+        )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         response_data = response.json()
         # The error message should contain "type"
@@ -851,7 +891,9 @@ class TestHierarchyEndpoints:
         account_id = response.json()["id"]
 
         # Get children
-        children_response = client.get(f"/api/v1/chart-of-accounts/{account_id}/children")
+        children_response = client.get(
+            f"/api/v1/chart-of-accounts/{account_id}/children"
+        )
         assert children_response.status_code == status.HTTP_200_OK
         assert len(children_response.json()) == 0
 
@@ -863,6 +905,8 @@ class TestHierarchyEndpoints:
         account_id = response.json()["id"]
 
         # Get ancestors
-        ancestors_response = client.get(f"/api/v1/chart-of-accounts/{account_id}/ancestors")
+        ancestors_response = client.get(
+            f"/api/v1/chart-of-accounts/{account_id}/ancestors"
+        )
         assert ancestors_response.status_code == status.HTTP_200_OK
         assert len(ancestors_response.json()) == 0

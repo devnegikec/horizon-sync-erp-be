@@ -1,28 +1,22 @@
 """Tests for bulk import and export operations"""
 
-import csv
-import io
 import json
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.bulk_operations import (
     BulkImportValidator,
     FileGenerator,
     FileParser,
-    ImportTemplate,
 )
+from app.models.bulk_import_job import BulkImportJobStatus
 from app.models.item import Item
-from app.models.bulk_import_job import BulkImportJob, BulkImportJobStatus
-from app.models.bulk_export_job import BulkExportJob
-from app.repositories.bulk_import_repository import BulkImportRepository
 from app.repositories.bulk_export_repository import BulkExportRepository
-from app.services.bulk_import_service import BulkImportService
+from app.repositories.bulk_import_repository import BulkImportRepository
 from app.services.bulk_export_service import BulkExportService
-
+from app.services.bulk_import_service import BulkImportService
 
 # ==================== VALIDATOR TESTS ====================
 
@@ -98,7 +92,7 @@ class TestFileParser:
     def test_parse_csv_invalid(self):
         """Test invalid CSV"""
         with pytest.raises(ValueError):
-            FileParser.parse_csv(b"\xFF\xFE Invalid UTF-8")
+            FileParser.parse_csv(b"\xff\xfe Invalid UTF-8")
 
     def test_parse_json(self):
         """Test JSON parsing"""
@@ -315,8 +309,8 @@ class TestBulkExportService:
         for i in range(3):
             item = Item(
                 organization_id=org_id,
-                item_code=f"ITEM{i+1:03d}",
-                item_name=f"Test Item {i+1}",
+                item_code=f"ITEM{i + 1:03d}",
+                item_name=f"Test Item {i + 1}",
             )
             db_session.add(item)
         db_session.commit()
