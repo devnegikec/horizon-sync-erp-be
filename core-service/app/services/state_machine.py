@@ -1,6 +1,5 @@
 """State machine service for document status transitions"""
 
-from typing import Dict, Set
 
 from app.models.base import MaterialRequestStatus, PurchaseOrderStatus, RFQStatus
 
@@ -9,7 +8,9 @@ class StateMachine:
     """State machine for validating document status transitions"""
 
     # Define valid state transitions for each document type
-    MATERIAL_REQUEST_TRANSITIONS: Dict[MaterialRequestStatus, Set[MaterialRequestStatus]] = {
+    MATERIAL_REQUEST_TRANSITIONS: dict[
+        MaterialRequestStatus, set[MaterialRequestStatus]
+    ] = {
         MaterialRequestStatus.DRAFT: {
             MaterialRequestStatus.SUBMITTED,
             MaterialRequestStatus.CANCELLED,
@@ -26,7 +27,7 @@ class StateMachine:
         MaterialRequestStatus.CANCELLED: set(),  # Terminal state
     }
 
-    RFQ_TRANSITIONS: Dict[RFQStatus, Set[RFQStatus]] = {
+    RFQ_TRANSITIONS: dict[RFQStatus, set[RFQStatus]] = {
         RFQStatus.DRAFT: {
             RFQStatus.SENT,
             RFQStatus.CLOSED,
@@ -45,7 +46,7 @@ class StateMachine:
         RFQStatus.CLOSED: set(),  # Terminal state
     }
 
-    PURCHASE_ORDER_TRANSITIONS: Dict[PurchaseOrderStatus, Set[PurchaseOrderStatus]] = {
+    PURCHASE_ORDER_TRANSITIONS: dict[PurchaseOrderStatus, set[PurchaseOrderStatus]] = {
         PurchaseOrderStatus.DRAFT: {
             PurchaseOrderStatus.SUBMITTED,
             PurchaseOrderStatus.CANCELLED,
@@ -147,7 +148,9 @@ class StateMachine:
 
                 if from_enum:
                     allowed = self.transitions.get(from_enum, set())
-                    allowed_str = ", ".join([s.value for s in allowed]) if allowed else "none"
+                    allowed_str = (
+                        ", ".join([s.value for s in allowed]) if allowed else "none"
+                    )
                 else:
                     allowed_str = "unknown"
             except (ValueError, KeyError):
@@ -159,7 +162,7 @@ class StateMachine:
                 f"Allowed transitions from '{from_status}': {allowed_str}"
             )
 
-    def get_allowed_transitions(self, from_status: str) -> Set[str]:
+    def get_allowed_transitions(self, from_status: str) -> set[str]:
         """
         Get all allowed transitions from a given status
 

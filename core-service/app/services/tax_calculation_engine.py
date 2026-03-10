@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -20,7 +19,7 @@ class LineItem:
     rate: Decimal
     amount: Decimal
     is_tax_exempt: bool = False
-    item_group_id: Optional[UUID] = None
+    item_group_id: UUID | None = None
 
 
 @dataclass
@@ -29,13 +28,13 @@ class TaxContext:
 
     organization_id: UUID
     transaction_type: str  # "Sales" or "Purchase"
-    item_id: Optional[UUID] = None
-    item_group_id: Optional[UUID] = None
-    customer_id: Optional[UUID] = None
-    supplier_id: Optional[UUID] = None
-    shipping_address: Optional[dict] = None
-    customer_location: Optional[dict] = None
-    supplier_location: Optional[dict] = None
+    item_id: UUID | None = None
+    item_group_id: UUID | None = None
+    customer_id: UUID | None = None
+    supplier_id: UUID | None = None
+    shipping_address: dict | None = None
+    customer_location: dict | None = None
+    supplier_location: dict | None = None
     is_customer_tax_exempt: bool = False
 
 
@@ -142,9 +141,7 @@ class TaxCalculationEngine:
         tax_template, source = template_result
 
         # Calculate taxes using the template
-        tax_breakdown = self.calculate_line_item_taxes(
-            taxable_amount, tax_template
-        )
+        tax_breakdown = self.calculate_line_item_taxes(taxable_amount, tax_template)
 
         # Calculate total tax and group by type
         total_tax = sum(entry.tax_amount for entry in tax_breakdown)
@@ -182,9 +179,7 @@ class TaxCalculationEngine:
         non_compound_rules = [
             rule for rule in tax_template.tax_rules if not rule.is_compound
         ]
-        compound_rules = [
-            rule for rule in tax_template.tax_rules if rule.is_compound
-        ]
+        compound_rules = [rule for rule in tax_template.tax_rules if rule.is_compound]
 
         tax_breakdown: list[TaxBreakdownEntry] = []
 

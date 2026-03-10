@@ -1,7 +1,7 @@
 """Unit tests for Receipt Note service"""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -523,7 +523,9 @@ class TestReceiptNoteStatusUpdate:
         # Refresh PO and verify status
         db_session.refresh(submitted_purchase_order)
         assert submitted_purchase_order.status == PurchaseOrderStatus.PARTIALLY_RECEIVED
-        assert submitted_purchase_order.line_items[0].received_quantity == Decimal("50.00")
+        assert submitted_purchase_order.line_items[0].received_quantity == Decimal(
+            "50.00"
+        )
 
     def test_receipt_note_updates_po_to_fully_received(
         self,
@@ -555,7 +557,9 @@ class TestReceiptNoteStatusUpdate:
         # Refresh PO and verify status
         db_session.refresh(submitted_purchase_order)
         assert submitted_purchase_order.status == PurchaseOrderStatus.FULLY_RECEIVED
-        assert submitted_purchase_order.line_items[0].received_quantity == Decimal("100.00")
+        assert submitted_purchase_order.line_items[0].received_quantity == Decimal(
+            "100.00"
+        )
 
     def test_multiple_receipts_update_po_status_correctly(
         self,
@@ -586,7 +590,9 @@ class TestReceiptNoteStatusUpdate:
         )
         db_session.refresh(submitted_purchase_order)
         assert submitted_purchase_order.status == PurchaseOrderStatus.PARTIALLY_RECEIVED
-        assert submitted_purchase_order.line_items[0].received_quantity == Decimal("30.00")
+        assert submitted_purchase_order.line_items[0].received_quantity == Decimal(
+            "30.00"
+        )
 
         # Second receipt - still partial
         line_items_2 = [
@@ -606,7 +612,9 @@ class TestReceiptNoteStatusUpdate:
         )
         db_session.refresh(submitted_purchase_order)
         assert submitted_purchase_order.status == PurchaseOrderStatus.PARTIALLY_RECEIVED
-        assert submitted_purchase_order.line_items[0].received_quantity == Decimal("70.00")
+        assert submitted_purchase_order.line_items[0].received_quantity == Decimal(
+            "70.00"
+        )
 
         # Third receipt - fully received
         line_items_3 = [
@@ -626,5 +634,6 @@ class TestReceiptNoteStatusUpdate:
         )
         db_session.refresh(submitted_purchase_order)
         assert submitted_purchase_order.status == PurchaseOrderStatus.FULLY_RECEIVED
-        assert submitted_purchase_order.line_items[0].received_quantity == Decimal("100.00")
-
+        assert submitted_purchase_order.line_items[0].received_quantity == Decimal(
+            "100.00"
+        )

@@ -1,10 +1,9 @@
 """Standalone test for naming series utilities (no dependencies)"""
 
 import re
-from typing import Optional
 
 
-def extract_number_from_document_no(document_no: str) -> Optional[int]:
+def extract_number_from_document_no(document_no: str) -> int | None:
     """Extract the numeric part from a document number."""
     if not document_no:
         return None
@@ -14,7 +13,7 @@ def extract_number_from_document_no(document_no: str) -> Optional[int]:
     return int(numbers[-1])
 
 
-def get_document_type_from_prefix(prefix: str) -> Optional[str]:
+def get_document_type_from_prefix(prefix: str) -> str | None:
     """Map document prefix to document type for naming series."""
     prefix_map = {
         "QT": "quotation",

@@ -1,10 +1,10 @@
 """Simple unit tests for ChargeCalculationEngine without full app import"""
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import uuid
 from decimal import Decimal
@@ -94,7 +94,7 @@ def test_calculate_charges_no_applicable_templates():
     """Test calculating charges when no templates are applicable"""
     mock_db = Mock()
     engine = ChargeCalculationEngine(mock_db)
-    
+
     # Mock the repository to return empty list
     engine.charge_template_repo.get_applicable_charges = Mock(return_value=[])
 
@@ -118,7 +118,7 @@ def test_calculate_charges_with_fixed_charge():
     """Test calculating a single fixed charge"""
     mock_db = Mock()
     engine = ChargeCalculationEngine(mock_db)
-    
+
     # Create mock template
     template = Mock()
     template.id = uuid.uuid4()
@@ -127,7 +127,7 @@ def test_calculate_charges_with_fixed_charge():
     template.calculation_method = "FIXED"
     template.fixed_amount = Decimal("50.00")
     template.account_head_id = uuid.uuid4()
-    
+
     # Mock the repository to return the template
     engine.charge_template_repo.get_applicable_charges = Mock(return_value=[template])
 
@@ -152,7 +152,7 @@ def test_calculate_charges_with_percentage_on_net_total():
     """Test calculating percentage charge based on net total"""
     mock_db = Mock()
     engine = ChargeCalculationEngine(mock_db)
-    
+
     # Create mock template
     template = Mock()
     template.id = uuid.uuid4()
@@ -162,7 +162,7 @@ def test_calculate_charges_with_percentage_on_net_total():
     template.percentage_rate = Decimal("2.00")
     template.base_on = "Net_Total"
     template.account_head_id = uuid.uuid4()
-    
+
     # Mock the repository
     engine.charge_template_repo.get_applicable_charges = Mock(return_value=[template])
 
@@ -187,7 +187,7 @@ def test_calculate_charges_with_percentage_on_grand_total():
     """Test calculating percentage charge based on grand total (net + tax)"""
     mock_db = Mock()
     engine = ChargeCalculationEngine(mock_db)
-    
+
     # Create mock template
     template = Mock()
     template.id = uuid.uuid4()
@@ -197,7 +197,7 @@ def test_calculate_charges_with_percentage_on_grand_total():
     template.percentage_rate = Decimal("1.00")
     template.base_on = "Grand_Total"
     template.account_head_id = uuid.uuid4()
-    
+
     # Mock the repository
     engine.charge_template_repo.get_applicable_charges = Mock(return_value=[template])
 
@@ -223,7 +223,7 @@ def test_calculate_charges_with_multiple_charges():
     """Test calculating multiple charges"""
     mock_db = Mock()
     engine = ChargeCalculationEngine(mock_db)
-    
+
     # Create mock templates
     shipping_template = Mock()
     shipping_template.id = uuid.uuid4()
@@ -232,7 +232,7 @@ def test_calculate_charges_with_multiple_charges():
     shipping_template.calculation_method = "FIXED"
     shipping_template.fixed_amount = Decimal("50.00")
     shipping_template.account_head_id = uuid.uuid4()
-    
+
     handling_template = Mock()
     handling_template.id = uuid.uuid4()
     handling_template.template_name = "Handling Fee"
@@ -241,7 +241,7 @@ def test_calculate_charges_with_multiple_charges():
     handling_template.percentage_rate = Decimal("2.00")
     handling_template.base_on = "Net_Total"
     handling_template.account_head_id = uuid.uuid4()
-    
+
     # Mock the repository to return both templates
     engine.charge_template_repo.get_applicable_charges = Mock(
         return_value=[shipping_template, handling_template]
@@ -268,26 +268,26 @@ if __name__ == "__main__":
     # Run tests
     test_calculate_single_charge_fixed_amount()
     print("✓ test_calculate_single_charge_fixed_amount passed")
-    
+
     test_calculate_single_charge_percentage_net_total()
     print("✓ test_calculate_single_charge_percentage_net_total passed")
-    
+
     test_calculate_single_charge_percentage_grand_total()
     print("✓ test_calculate_single_charge_percentage_grand_total passed")
-    
+
     test_calculate_charges_no_applicable_templates()
     print("✓ test_calculate_charges_no_applicable_templates passed")
-    
+
     test_calculate_charges_with_fixed_charge()
     print("✓ test_calculate_charges_with_fixed_charge passed")
-    
+
     test_calculate_charges_with_percentage_on_net_total()
     print("✓ test_calculate_charges_with_percentage_on_net_total passed")
-    
+
     test_calculate_charges_with_percentage_on_grand_total()
     print("✓ test_calculate_charges_with_percentage_on_grand_total passed")
-    
+
     test_calculate_charges_with_multiple_charges()
     print("✓ test_calculate_charges_with_multiple_charges passed")
-    
+
     print("\nAll tests passed!")

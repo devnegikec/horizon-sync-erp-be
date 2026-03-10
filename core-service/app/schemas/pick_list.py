@@ -11,6 +11,7 @@ from app.schemas.common import PaginationMeta
 
 class NestedReference(BaseModel):
     """Nested reference details (id, name, code)"""
+
     id: str
     name: str
     code: str
@@ -18,6 +19,7 @@ class NestedReference(BaseModel):
 
 class NestedReferenceWithType(BaseModel):
     """Nested reference with type (for sales_order, etc.)"""
+
     id: str
     reference_type: str
     name: str

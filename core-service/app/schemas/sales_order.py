@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import PaginationMeta
 
-
 # ── Customer schemas ──────────────────────────────────────────────────────────
+
 
 class SalesOrderCustomerInfo(BaseModel):
     """Minimal customer info used in list responses"""
@@ -89,8 +89,12 @@ class SalesOrderItemBase(BaseModel):
     discount_type: str = Field(
         default="percentage", pattern="^(flat|percentage)$", description="Discount type"
     )
-    discount_value: Decimal | float = Field(default=0, ge=0, description="Discount % or fixed amount")
-    discount_amount: Decimal | float = Field(default=0, ge=0, description="Computed discount amount")
+    discount_value: Decimal | float = Field(
+        default=0, ge=0, description="Discount % or fixed amount"
+    )
+    discount_amount: Decimal | float = Field(
+        default=0, ge=0, description="Computed discount amount"
+    )
 
 
 class SalesOrderItemCreate(SalesOrderItemBase):
@@ -130,10 +134,16 @@ class SalesOrderBase(BaseModel):
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
     discount_type: str | None = Field(
-        default="percentage", pattern="^(flat|percentage)$", description="Document-level discount type"
+        default="percentage",
+        pattern="^(flat|percentage)$",
+        description="Document-level discount type",
     )
-    discount_value: Decimal | float | None = Field(default=0, ge=0, description="Discount % or fixed amount")
-    discount_amount: Decimal | float | None = Field(default=0, ge=0, description="Computed document discount amount")
+    discount_value: Decimal | float | None = Field(
+        default=0, ge=0, description="Discount % or fixed amount"
+    )
+    discount_amount: Decimal | float | None = Field(
+        default=0, ge=0, description="Computed document discount amount"
+    )
     reference_type: str | None = None
     reference_id: UUID | None = None
     remarks: str | None = None
@@ -154,8 +164,12 @@ class SalesOrderUpdate(BaseModel):
     discount_type: str | None = Field(
         None, pattern="^(flat|percentage)$", description="Document-level discount type"
     )
-    discount_value: Decimal | float | None = Field(default=None, ge=0, description="Discount % or fixed amount")
-    discount_amount: Decimal | float | None = Field(default=None, ge=0, description="Computed document discount amount")
+    discount_value: Decimal | float | None = Field(
+        default=None, ge=0, description="Discount % or fixed amount"
+    )
+    discount_amount: Decimal | float | None = Field(
+        default=None, ge=0, description="Computed document discount amount"
+    )
     items: list[SalesOrderItemCreate] | None = None
 
 

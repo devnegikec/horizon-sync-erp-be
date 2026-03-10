@@ -35,58 +35,60 @@ class PaymentEntryBase(BaseModel):
         ...,
         description="Cash, Check, or Bank_Transfer",
     )
-    reference_no: str | None = Field(None, max_length=100, description="Check number or bank UTR")
+    reference_no: str | None = Field(
+        None, max_length=100, description="Check number or bank UTR"
+    )
 
-    @field_validator('currency_code')
+    @field_validator("currency_code")
     @classmethod
     def validate_currency_code(cls, v: str) -> str:
         """Validate currency code is valid ISO 4217 (3-letter uppercase)"""
         if not v or not v.strip():
-            raise ValueError('Currency code cannot be empty')
-        
+            raise ValueError("Currency code cannot be empty")
+
         v = v.strip().upper()
-        
+
         if len(v) != 3:
-            raise ValueError('Currency code must be exactly 3 characters (ISO 4217)')
-        
+            raise ValueError("Currency code must be exactly 3 characters (ISO 4217)")
+
         if not v.isalpha():
-            raise ValueError('Currency code must contain only letters')
-        
+            raise ValueError("Currency code must contain only letters")
+
         return v
 
-    @field_validator('amount')
+    @field_validator("amount")
     @classmethod
     def validate_amount(cls, v: Decimal) -> Decimal:
         """Validate amount is positive and has max 2 decimal places"""
         if v <= 0:
-            raise ValueError('Amount must be greater than zero')
-        
+            raise ValueError("Amount must be greater than zero")
+
         # Check decimal places
         decimal_str = str(v)
-        if '.' in decimal_str:
-            decimal_places = len(decimal_str.split('.')[1])
+        if "." in decimal_str:
+            decimal_places = len(decimal_str.split(".")[1])
             if decimal_places > 2:
-                raise ValueError('Amount must have at most 2 decimal places')
-        
+                raise ValueError("Amount must have at most 2 decimal places")
+
         return v
 
-    @field_validator('payment_date')
+    @field_validator("payment_date")
     @classmethod
     def validate_payment_date(cls, v: datetime) -> datetime:
         """Validate payment date is not more than 30 days in the future"""
         from datetime import UTC, timedelta
-        
+
         now = datetime.now(UTC)
         max_future_date = now + timedelta(days=30)
-        
+
         # Make v timezone-aware if it isn't
         if v.tzinfo is None:
-            from datetime import timezone
-            v = v.replace(tzinfo=timezone.utc)
-        
+
+            v = v.replace(tzinfo=UTC)
+
         if v > max_future_date:
-            raise ValueError('Payment date cannot be more than 30 days in the future')
-        
+            raise ValueError("Payment date cannot be more than 30 days in the future")
+
         return v
 
 
@@ -108,44 +110,44 @@ class PaymentEntryUpdate(BaseModel):
     reference_no: str | None = Field(None, max_length=100)
     bank_account_id: UUID | None = None
 
-    @field_validator('amount')
+    @field_validator("amount")
     @classmethod
     def validate_amount(cls, v: Decimal | None) -> Decimal | None:
         """Validate amount is positive and has max 2 decimal places"""
         if v is None:
             return v
-        
+
         if v <= 0:
-            raise ValueError('Amount must be greater than zero')
-        
+            raise ValueError("Amount must be greater than zero")
+
         # Check decimal places
         decimal_str = str(v)
-        if '.' in decimal_str:
-            decimal_places = len(decimal_str.split('.')[1])
+        if "." in decimal_str:
+            decimal_places = len(decimal_str.split(".")[1])
             if decimal_places > 2:
-                raise ValueError('Amount must have at most 2 decimal places')
-        
+                raise ValueError("Amount must have at most 2 decimal places")
+
         return v
 
-    @field_validator('payment_date')
+    @field_validator("payment_date")
     @classmethod
     def validate_payment_date(cls, v: datetime | None) -> datetime | None:
         """Validate payment date is not more than 30 days in the future"""
         if v is None:
             return v
-        
-        from datetime import UTC, timedelta, timezone
-        
+
+        from datetime import UTC, timedelta
+
         now = datetime.now(UTC)
         max_future_date = now + timedelta(days=30)
-        
+
         # Make v timezone-aware if it isn't
         if v.tzinfo is None:
-            v = v.replace(tzinfo=timezone.utc)
-        
+            v = v.replace(tzinfo=UTC)
+
         if v > max_future_date:
-            raise ValueError('Payment date cannot be more than 30 days in the future')
-        
+            raise ValueError("Payment date cannot be more than 30 days in the future")
+
         return v
 
 
@@ -248,7 +250,7 @@ class CancelPaymentRequest(BaseModel):
     cancellation_reason: str = Field(
         ...,
         min_length=10,
-        description="Reason for cancelling the payment (minimum 10 characters)"
+        description="Reason for cancelling the payment (minimum 10 characters)",
     )
 
 
@@ -256,8 +258,7 @@ class BatchPaymentCreate(BaseModel):
     """Schema for batch payment creation"""
 
     payments: list[PaymentEntryCreate] = Field(
-        ...,
-        description="List of payment entries to create"
+        ..., description="List of payment entries to create"
     )
 
 
@@ -265,11 +266,12 @@ class BatchProcessResult(BaseModel):
     """Schema for batch payment processing result"""
 
     total_count: int = Field(..., description="Total number of payments in batch")
-    success_count: int = Field(..., description="Number of successfully created payments")
+    success_count: int = Field(
+        ..., description="Number of successfully created payments"
+    )
     error_count: int = Field(..., description="Number of failed payments")
     errors: list[dict] = Field(
-        default_factory=list,
-        description="List of errors with index and error message"
+        default_factory=list, description="List of errors with index and error message"
     )
 
 
@@ -277,30 +279,21 @@ class PaymentFilters(BaseModel):
     """Schema for payment entry filtering and search"""
 
     status: str | None = Field(
-        None,
-        description="Filter by status: Draft, Confirmed, or Cancelled"
+        None, description="Filter by status: Draft, Confirmed, or Cancelled"
     )
     payment_mode: str | None = Field(
-        None,
-        description="Filter by payment mode: Cash, Check, or Bank_Transfer"
+        None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"
     )
-    party_id: UUID | None = Field(
-        None,
-        description="Filter by customer or supplier ID"
-    )
+    party_id: UUID | None = Field(None, description="Filter by customer or supplier ID")
     date_from: datetime | None = Field(
-        None,
-        description="Filter payments from this date (inclusive)"
+        None, description="Filter payments from this date (inclusive)"
     )
     date_to: datetime | None = Field(
-        None,
-        description="Filter payments to this date (inclusive)"
+        None, description="Filter payments to this date (inclusive)"
     )
     search: str | None = Field(
-        None,
-        description="Search by reference_no or receipt_number"
+        None, description="Search by reference_no or receipt_number"
     )
     has_unallocated: bool | None = Field(
-        None,
-        description="Filter payments with unallocated_amount > 0"
+        None, description="Filter payments with unallocated_amount > 0"
     )

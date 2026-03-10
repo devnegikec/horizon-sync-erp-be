@@ -45,7 +45,9 @@ def main() -> int:
         # Remove 009 from alembic_version so only f6g7h8i9j0k1 remains (single path to head)
         r = conn.execute(text("DELETE FROM alembic_version WHERE version_num = '009'"))
         if r.rowcount:
-            print("Removed 009 from alembic_version (so upgrade head has a single path).")
+            print(
+                "Removed 009 from alembic_version (so upgrade head has a single path)."
+            )
         else:
             print("009 not in alembic_version.")
     print("Done. Run: alembic upgrade head")

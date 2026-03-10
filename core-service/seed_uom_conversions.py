@@ -20,23 +20,23 @@ ORG_ID = uuid.UUID("bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150")
 UOM_CONVERSION_RULES = {
     # --- Quantity ---
     "PCS": [
-        ("PCS", "DOZ", 0.083333),   # 1 PCS = 1/12 DOZ
+        ("PCS", "DOZ", 0.083333),  # 1 PCS = 1/12 DOZ
         ("PCS", "UNIT", 1.0),
     ],
     "DOZ": [
-        ("DOZ", "PCS", 12.0),       # 1 DOZ = 12 PCS
+        ("DOZ", "PCS", 12.0),  # 1 DOZ = 12 PCS
         ("DOZ", "UNIT", 12.0),
     ],
     "BOX": [
-        ("BOX", "PCS", 12.0),       # 1 BOX = 12 PCS (common default)
-        ("BOX", "CTN", 0.1),        # 10 BOX = 1 CTN
+        ("BOX", "PCS", 12.0),  # 1 BOX = 12 PCS (common default)
+        ("BOX", "CTN", 0.1),  # 10 BOX = 1 CTN
     ],
     "CTN": [
-        ("CTN", "BOX", 10.0),       # 1 CTN = 10 BOX
+        ("CTN", "BOX", 10.0),  # 1 CTN = 10 BOX
         ("CTN", "PCS", 120.0),
     ],
     "PCK": [
-        ("PCK", "PCS", 6.0),        # 1 PACK = 6 PCS (common default)
+        ("PCK", "PCS", 6.0),  # 1 PACK = 6 PCS (common default)
     ],
     # --- Weight ---
     "KG": [
@@ -172,7 +172,9 @@ def seed_uom_conversions():
             rules = UOM_CONVERSION_RULES.get(base_uom, [])
 
             if not rules:
-                print(f"  skip  {item.item_code} — no conversion rules for UOM '{base_uom}'")
+                print(
+                    f"  skip  {item.item_code} — no conversion rules for UOM '{base_uom}'"
+                )
                 continue
 
             for from_uom, to_uom, factor in rules:
@@ -208,7 +210,9 @@ def seed_uom_conversions():
             print(f"  {item.item_code} ({base_uom}) — {len(rules)} conversions queued")
 
         db.commit()
-        print(f"\n✓ UOM conversion seed complete — {created} created, {skipped} skipped")
+        print(
+            f"\n✓ UOM conversion seed complete — {created} created, {skipped} skipped"
+        )
 
     except Exception as e:
         db.rollback()

@@ -6,9 +6,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.cache import invalidate_payment_cache
 from app.core.exceptions import ValidationError
 from app.repositories.payment_entry_repository import PaymentEntryRepository
-from app.core.cache import invalidate_payment_cache
 
 
 class PaymentEntryService:
@@ -16,7 +16,7 @@ class PaymentEntryService:
 
     # Maximum days in future for payment date
     MAX_FUTURE_DAYS = 30
-    
+
     # Default cash limit (can be overridden via configuration)
     DEFAULT_CASH_LIMIT = Decimal("10000.00")
 
@@ -31,13 +31,15 @@ class PaymentEntryService:
         self.db = db
         self.repo = PaymentEntryRepository(db)
         self.cash_limit = cash_limit or self.DEFAULT_CASH_LIMIT
-        
+
         # Import AuditLogger for audit trail
         from app.services.audit_logger import AuditLogger
+
         self.audit_logger = AuditLogger(db)
-        
+
         # Import CurrencyService for currency validation
         from app.services.currency_service import CurrencyService
+
         self.currency_service = CurrencyService(db)
 
     def _validate_party_belongs_to_organization(
@@ -59,28 +61,40 @@ class PaymentEntryService:
         """
         if party_type == "customer":
             from app.models.customer import Customer
-            party = self.db.query(Customer).filter(
-                Customer.id == party_id,
-                Customer.organization_id == organization_id,
-            ).first()
-            
+
+            party = (
+                self.db.query(Customer)
+                .filter(
+                    Customer.id == party_id,
+                    Customer.organization_id == organization_id,
+                )
+                .first()
+            )
+
             if not party:
                 raise ValidationError(
                     f"Customer with ID {party_id} not found or does not belong to organization"
                 )
         elif party_type == "supplier":
             from app.models.supplier import Supplier
-            party = self.db.query(Supplier).filter(
-                Supplier.id == party_id,
-                Supplier.organization_id == organization_id,
-            ).first()
-            
+
+            party = (
+                self.db.query(Supplier)
+                .filter(
+                    Supplier.id == party_id,
+                    Supplier.organization_id == organization_id,
+                )
+                .first()
+            )
+
             if not party:
                 raise ValidationError(
                     f"Supplier with ID {party_id} not found or does not belong to organization"
                 )
         else:
-            raise ValidationError(f"Invalid party_type: {party_type}. Must be 'customer' or 'supplier'")
+            raise ValidationError(
+                f"Invalid party_type: {party_type}. Must be 'customer' or 'supplier'"
+            )
 
     def _validate_payment_date(self, payment_date: datetime) -> None:
         """
@@ -93,15 +107,15 @@ class PaymentEntryService:
             ValidationError: If payment date is more than MAX_FUTURE_DAYS in the future
         """
         from datetime import UTC
-        
+
         now = datetime.now(UTC)
         max_future_date = now + timedelta(days=self.MAX_FUTURE_DAYS)
-        
+
         # Make payment_date timezone-aware if it isn't
         if payment_date.tzinfo is None:
-            from datetime import timezone
-            payment_date = payment_date.replace(tzinfo=timezone.utc)
-        
+
+            payment_date = payment_date.replace(tzinfo=UTC)
+
         if payment_date > max_future_date:
             raise ValidationError(
                 f"Payment date cannot be more than {self.MAX_FUTURE_DAYS} days in the future. "
@@ -122,12 +136,12 @@ class PaymentEntryService:
             raise ValidationError(
                 f"Payment amount must be greater than zero, got {amount}"
             )
-        
+
         # Check decimal places (max 2)
         # Convert to string and check decimal places
         amount_str = str(amount)
-        if '.' in amount_str:
-            decimal_places = len(amount_str.split('.')[1])
+        if "." in amount_str:
+            decimal_places = len(amount_str.split(".")[1])
             if decimal_places > 2:
                 raise ValidationError(
                     f"Payment amount must have at most 2 decimal places, got {decimal_places}"
@@ -147,12 +161,12 @@ class PaymentEntryService:
             raise ValidationError(
                 f"Invalid currency code '{currency_code}'. Must be 3 characters (ISO 4217 format)"
             )
-        
+
         if not currency_code.isupper():
             raise ValidationError(
                 f"Invalid currency code '{currency_code}'. Must be uppercase letters (ISO 4217 format)"
             )
-        
+
         if not currency_code.isalpha():
             raise ValidationError(
                 f"Invalid currency code '{currency_code}'. Must contain only letters (ISO 4217 format)"
@@ -194,16 +208,19 @@ class PaymentEntryService:
         Raises:
             ValidationError: If validation fails
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy.exc import IntegrityError
+
         from app.models.base import (
-            PaymentEntryStatus,
-            PaymentSource,
             PaymentAuditAction,
+            PaymentEntryStatus,
             PaymentEntryType,
+            PaymentSource,
         )
-        from app.schemas.payment_entry import PaymentEntryResponse
-        from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
+        from app.repositories.payment_audit_log_repository import (
+            PaymentAuditLogRepository,
+        )
 
         # Validate all input fields using helper methods
         self._validate_amount(data.amount)
@@ -229,6 +246,7 @@ class PaymentEntryService:
 
         # Assign receipt number at creation (configurable Document Numbering Series)
         from app.services.document_numbering_service import DocumentNumberingService
+
         doc_num_svc = DocumentNumberingService(self.db)
         receipt_number = doc_num_svc.get_next_number(
             organization_id, "payment", reference_date=data.payment_date
@@ -258,26 +276,28 @@ class PaymentEntryService:
 
         # Create audit log entry for CREATE action
         audit_repo = PaymentAuditLogRepository(self.db)
-        audit_repo.create({
-            "organization_id": organization_id,
-            "payment_id": payment_entry.id,
-            "action": PaymentAuditAction.CREATE,
-            "user_id": user_id,
-            "old_values": None,
-            "new_values": {
-                "payment_type": payment_entry.payment_type.value,
-                "party_id": str(payment_entry.party_id),
-                "amount": str(payment_entry.amount),
-                "currency_code": payment_entry.currency_code,
-                "payment_date": payment_entry.payment_date.isoformat(),
-                "payment_mode": payment_entry.payment_mode.value,
-                "reference_no": payment_entry.reference_no,
-                "status": payment_entry.status.value,
-                "source": payment_entry.source.value,
-                "receipt_number": payment_entry.receipt_number,
-            },
-            "timestamp": datetime.now(UTC),
-        })
+        audit_repo.create(
+            {
+                "organization_id": organization_id,
+                "payment_id": payment_entry.id,
+                "action": PaymentAuditAction.CREATE,
+                "user_id": user_id,
+                "old_values": None,
+                "new_values": {
+                    "payment_type": payment_entry.payment_type.value,
+                    "party_id": str(payment_entry.party_id),
+                    "amount": str(payment_entry.amount),
+                    "currency_code": payment_entry.currency_code,
+                    "payment_date": payment_entry.payment_date.isoformat(),
+                    "payment_mode": payment_entry.payment_mode.value,
+                    "reference_no": payment_entry.reference_no,
+                    "status": payment_entry.status.value,
+                    "source": payment_entry.source.value,
+                    "receipt_number": payment_entry.receipt_number,
+                },
+                "timestamp": datetime.now(UTC),
+            }
+        )
 
         # Invalidate payment list cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
@@ -307,11 +327,14 @@ class PaymentEntryService:
         Raises:
             ValidationError: If validation fails or payment is not in Draft status
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy.exc import IntegrityError
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
-        from app.schemas.payment_entry import PaymentEntryResponse
-        from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
+
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
+        from app.repositories.payment_audit_log_repository import (
+            PaymentAuditLogRepository,
+        )
 
         # Retrieve payment entry
         payment_entry = self.repo.get_by_id(payment_id, organization_id)
@@ -342,7 +365,9 @@ class PaymentEntryService:
         if "amount" in update_dict and update_dict["amount"] is not None:
             self._validate_amount(update_dict["amount"])
             # Also validate cash limit if payment mode is Cash
-            payment_mode = update_dict.get("payment_mode", payment_entry.payment_mode.value)
+            payment_mode = update_dict.get(
+                "payment_mode", payment_entry.payment_mode.value
+            )
             self._validate_cash_limit(update_dict["amount"], payment_mode)
 
         if "payment_date" in update_dict and update_dict["payment_date"] is not None:
@@ -369,15 +394,17 @@ class PaymentEntryService:
 
         # Create audit log entry for UPDATE action with old/new values
         audit_repo = PaymentAuditLogRepository(self.db)
-        audit_repo.create({
-            "organization_id": organization_id,
-            "payment_id": payment_entry.id,
-            "action": PaymentAuditAction.UPDATE,
-            "user_id": user_id,
-            "old_values": old_values,
-            "new_values": new_values,
-            "timestamp": datetime.now(UTC),
-        })
+        audit_repo.create(
+            {
+                "organization_id": organization_id,
+                "payment_id": payment_entry.id,
+                "action": PaymentAuditAction.UPDATE,
+                "user_id": user_id,
+                "old_values": old_values,
+                "new_values": new_values,
+                "timestamp": datetime.now(UTC),
+            }
+        )
 
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
@@ -392,7 +419,7 @@ class PaymentEntryService:
     ) -> "PaymentEntryResponse":
         """
         Retrieve payment entry by ID with organization_id filtering.
-        
+
         Uses caching to improve performance for frequently accessed payments.
 
         Args:
@@ -405,8 +432,8 @@ class PaymentEntryService:
         Raises:
             ValidationError: If payment entry not found
         """
+        from app.core.cache import cache_payment_entry, get_cached_payment_entry
         from app.schemas.payment_entry import PaymentEntryResponse
-        from app.core.cache import get_cached_payment_entry, cache_payment_entry
 
         # Try to get from cache first
         cached_data = get_cached_payment_entry(payment_id)
@@ -417,7 +444,7 @@ class PaymentEntryService:
 
         # Retrieve payment entry with eager loaded payment_references
         payment_entry = self.repo.get_by_id(payment_id, organization_id)
-        
+
         if not payment_entry:
             raise ValidationError(
                 f"Payment entry with ID {payment_id} not found or does not belong to organization"
@@ -454,9 +481,12 @@ class PaymentEntryService:
         Raises:
             ValidationError: If validation fails
         """
-        from app.models.base import PaymentEntryStatus, PaymentMode, PaymentEntryType
-        from app.schemas.payment_entry import PaymentEntryListResponse, PaymentEntryListItem
+        from app.models.base import PaymentEntryStatus, PaymentMode
         from app.schemas.common import PaginationMeta
+        from app.schemas.payment_entry import (
+            PaymentEntryListItem,
+            PaymentEntryListResponse,
+        )
 
         # Validate and constrain page_size
         page_size = min(max(1, page_size), 1000)
@@ -470,14 +500,17 @@ class PaymentEntryService:
                 status_value = filters.status.strip()
                 # Try to match enum by value
                 for status in PaymentEntryStatus:
-                    if status.value == status_value or status.name.lower() == status_value.lower():
+                    if (
+                        status.value == status_value
+                        or status.name.lower() == status_value.lower()
+                    ):
                         status_enum = status
                         break
                 if status_enum is None:
                     raise ValidationError(
                         f"Invalid status '{filters.status}'. Must be one of: Draft, Confirmed, Cancelled"
                     )
-            except (ValueError, AttributeError) as e:
+            except (ValueError, AttributeError):
                 raise ValidationError(
                     f"Invalid status '{filters.status}'. Must be one of: Draft, Confirmed, Cancelled"
                 )
@@ -489,14 +522,17 @@ class PaymentEntryService:
                 mode_value = filters.payment_mode.strip()
                 # Try to match enum by value
                 for mode in PaymentMode:
-                    if mode.value == mode_value or mode.name.lower() == mode_value.lower():
+                    if (
+                        mode.value == mode_value
+                        or mode.name.lower() == mode_value.lower()
+                    ):
                         payment_mode_enum = mode
                         break
                 if payment_mode_enum is None:
                     raise ValidationError(
                         f"Invalid payment_mode '{filters.payment_mode}'. Must be one of: Cash, Check, Bank_Transfer"
                     )
-            except (ValueError, AttributeError) as e:
+            except (ValueError, AttributeError):
                 raise ValidationError(
                     f"Invalid payment_mode '{filters.payment_mode}'. Must be one of: Cash, Check, Bank_Transfer"
                 )
@@ -555,14 +591,14 @@ class PaymentEntryService:
             total_count = len(all_entries)
 
         # Calculate pagination metadata
-        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        )
         has_next = page < total_pages
         has_previous = page > 1
 
         # Enrich with party name and contact (batch load customers/suppliers)
-        party_info = self._get_party_display_maps(
-            organization_id, payment_entries
-        )
+        party_info = self._get_party_display_maps(organization_id, payment_entries)
 
         # Convert to PaymentEntryListItem with party display fields
         payment_entry_items = []
@@ -572,18 +608,22 @@ class PaymentEntryService:
                 "id": entry.id,
                 "organization_id": entry.organization_id,
                 "payment_type": entry.payment_type.value
-                    if hasattr(entry.payment_type, "value") else str(entry.payment_type),
+                if hasattr(entry.payment_type, "value")
+                else str(entry.payment_type),
                 "party_id": entry.party_id,
                 "amount": entry.amount,
                 "currency_code": entry.currency_code,
                 "payment_date": entry.payment_date,
                 "payment_mode": entry.payment_mode.value
-                    if hasattr(entry.payment_mode, "value") else str(entry.payment_mode),
+                if hasattr(entry.payment_mode, "value")
+                else str(entry.payment_mode),
                 "reference_no": getattr(entry, "reference_no", None),
                 "status": entry.status.value
-                    if hasattr(entry.status, "value") else str(entry.status),
+                if hasattr(entry.status, "value")
+                else str(entry.status),
                 "source": entry.source.value
-                    if hasattr(entry.source, "value") else str(entry.source),
+                if hasattr(entry.source, "value")
+                else str(entry.source),
                 "receipt_number": getattr(entry, "receipt_number", None),
                 "unallocated_amount": entry.unallocated_amount,
                 "created_at": entry.created_at,
@@ -656,12 +696,16 @@ class PaymentEntryService:
         from app.models.supplier import Supplier
 
         customer_ids = [
-            p.party_id for p in payment_entries
-            if getattr(p.payment_type, "value", str(p.payment_type)) == PaymentEntryType.CUSTOMER_PAYMENT.value
+            p.party_id
+            for p in payment_entries
+            if getattr(p.payment_type, "value", str(p.payment_type))
+            == PaymentEntryType.CUSTOMER_PAYMENT.value
         ]
         supplier_ids = [
-            p.party_id for p in payment_entries
-            if getattr(p.payment_type, "value", str(p.payment_type)) == PaymentEntryType.SUPPLIER_PAYMENT.value
+            p.party_id
+            for p in payment_entries
+            if getattr(p.payment_type, "value", str(p.payment_type))
+            == PaymentEntryType.SUPPLIER_PAYMENT.value
         ]
 
         result = {}
@@ -707,9 +751,12 @@ class PaymentEntryService:
 
         base = PaymentEntryResponse.model_validate(payment_entry)
         d = base.model_dump(mode="json")
-        party_info = self._get_party_display_maps(
-            organization_id, [payment_entry]
-        ).get(payment_entry.party_id) or {}
+        party_info = (
+            self._get_party_display_maps(organization_id, [payment_entry]).get(
+                payment_entry.party_id
+            )
+            or {}
+        )
         d["party_name"] = party_info.get("name")
         d["party_code"] = party_info.get("code")
         d["party_email"] = party_info.get("email")
@@ -736,12 +783,17 @@ class PaymentEntryService:
         Raises:
             ValidationError: If validation fails
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy.exc import IntegrityError
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
-        from app.schemas.payment_entry import PaymentEntryResponse
-        from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
-        from app.repositories.payment_reference_repository import PaymentReferenceRepository
+
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
+        from app.repositories.payment_audit_log_repository import (
+            PaymentAuditLogRepository,
+        )
+        from app.repositories.payment_reference_repository import (
+            PaymentReferenceRepository,
+        )
         from app.services.journal_posting_service import JournalPostingService
 
         # Retrieve payment entry
@@ -776,14 +828,13 @@ class PaymentEntryService:
                 organization_id=organization_id,
             )
         except ValidationError as e:
-            raise ValidationError(
-                f"Cannot confirm payment: {str(e)}"
-            )
+            raise ValidationError(f"Cannot confirm payment: {str(e)}")
 
         # Use receipt_number already assigned at create; generate only for legacy drafts via Document Numbering
         old_receipt = getattr(payment_entry, "receipt_number", None)
         if not old_receipt:
             from app.services.document_numbering_service import DocumentNumberingService
+
             doc_num_svc = DocumentNumberingService(self.db)
             old_receipt = doc_num_svc.get_next_number(
                 organization_id, "payment", reference_date=payment_entry.payment_date
@@ -817,21 +868,23 @@ class PaymentEntryService:
 
         # Create audit log entry for CONFIRM action
         audit_repo = PaymentAuditLogRepository(self.db)
-        audit_repo.create({
-            "organization_id": organization_id,
-            "payment_id": payment_entry.id,
-            "action": PaymentAuditAction.CONFIRM,
-            "user_id": user_id,
-            "old_values": {
-                "status": PaymentEntryStatus.DRAFT.value,
-                "receipt_number": old_receipt,
-            },
-            "new_values": {
-                "status": PaymentEntryStatus.CONFIRMED.value,
-                "receipt_number": receipt_number,
-            },
-            "timestamp": datetime.now(UTC),
-        })
+        audit_repo.create(
+            {
+                "organization_id": organization_id,
+                "payment_id": payment_entry.id,
+                "action": PaymentAuditAction.CONFIRM,
+                "user_id": user_id,
+                "old_values": {
+                    "status": PaymentEntryStatus.DRAFT.value,
+                    "receipt_number": old_receipt,
+                },
+                "new_values": {
+                    "status": PaymentEntryStatus.CONFIRMED.value,
+                    "receipt_number": receipt_number,
+                },
+                "timestamp": datetime.now(UTC),
+            }
+        )
 
         # Commit the transaction (payment status update, journal entry, audit log)
         self.db.commit()
@@ -876,14 +929,19 @@ class PaymentEntryService:
 
         Requirements: 5.1, 5.6, 7.3, 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8
         """
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from sqlalchemy.exc import IntegrityError
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
-        from app.schemas.payment_entry import PaymentEntryResponse
-        from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
-        from app.repositories.payment_reference_repository import PaymentReferenceRepository
-        from app.services.journal_posting_service import JournalPostingService
+
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
+        from app.repositories.payment_audit_log_repository import (
+            PaymentAuditLogRepository,
+        )
+        from app.repositories.payment_reference_repository import (
+            PaymentReferenceRepository,
+        )
         from app.services.invoice_status_service import InvoiceStatusService
+        from app.services.journal_posting_service import JournalPostingService
 
         # Retrieve payment entry
         payment_entry = self.repo.get_by_id(payment_id, organization_id)
@@ -906,7 +964,7 @@ class PaymentEntryService:
             )
 
         # Update payment status to Cancelled and set cancellation fields
-        # Note: We directly update the fields instead of using repo.update() 
+        # Note: We directly update the fields instead of using repo.update()
         # because repo.update() only allows updating draft payments
         try:
             payment_entry.status = PaymentEntryStatus.CANCELLED
@@ -914,7 +972,7 @@ class PaymentEntryService:
             payment_entry.cancelled_by = user_id
             payment_entry.cancelled_at = datetime.now(UTC)
             payment_entry.updated_by = user_id
-            
+
             self.db.commit()
             self.db.refresh(payment_entry)
         except IntegrityError as e:
@@ -933,7 +991,10 @@ class PaymentEntryService:
             # If the error is that no journal entry exists, continue with cancellation
             # This can happen if confirm failed or payment was never properly confirmed
             error_msg = str(ve).lower()
-            if "journal entry not found" in error_msg or "original journal entry not found" in error_msg:
+            if (
+                "journal entry not found" in error_msg
+                or "original journal entry not found" in error_msg
+            ):
                 # Log that we're cancelling without reversing journal entries
                 pass  # Continue with cancellation process
             else:
@@ -952,13 +1013,15 @@ class PaymentEntryService:
         # Remove all payment_references (triggers invoice status recalculation)
         reference_repo = PaymentReferenceRepository(self.db)
         invoice_status_service = InvoiceStatusService(self.db)
-        
+
         # Get all payment references for this payment
-        payment_references = reference_repo.get_by_payment_id(payment_id, organization_id)
-        
+        payment_references = reference_repo.get_by_payment_id(
+            payment_id, organization_id
+        )
+
         # Track invoice IDs for status recalculation
         invoice_ids = [ref.invoice_id for ref in payment_references]
-        
+
         # Delete all payment references
         for payment_reference in payment_references:
             try:
@@ -969,37 +1032,41 @@ class PaymentEntryService:
                 raise ValidationError(
                     f"Failed to remove payment reference: {str(e)}. Payment cancellation failed."
                 )
-        
+
         # Recalculate invoice status for all affected invoices
         for invoice_id in invoice_ids:
             try:
-                invoice_status_service.update_invoice_status(invoice_id, organization_id)
-            except Exception as e:
+                invoice_status_service.update_invoice_status(
+                    invoice_id, organization_id
+                )
+            except Exception:
                 # Log error but don't fail the cancellation
                 # Invoice status can be recalculated later if needed
                 pass
 
         # Create audit log entry for CANCEL action with reason
         audit_repo = PaymentAuditLogRepository(self.db)
-        audit_repo.create({
-            "organization_id": organization_id,
-            "payment_id": payment_entry.id,
-            "action": PaymentAuditAction.CANCEL,
-            "user_id": user_id,
-            "old_values": {
-                "status": PaymentEntryStatus.CONFIRMED.value,
-                "cancellation_reason": None,
-                "cancelled_by": None,
-                "cancelled_at": None,
-            },
-            "new_values": {
-                "status": PaymentEntryStatus.CANCELLED.value,
-                "cancellation_reason": cancellation_reason.strip(),
-                "cancelled_by": str(user_id),
-                "cancelled_at": payment_entry.cancelled_at.isoformat(),
-            },
-            "timestamp": datetime.now(UTC),
-        })
+        audit_repo.create(
+            {
+                "organization_id": organization_id,
+                "payment_id": payment_entry.id,
+                "action": PaymentAuditAction.CANCEL,
+                "user_id": user_id,
+                "old_values": {
+                    "status": PaymentEntryStatus.CONFIRMED.value,
+                    "cancellation_reason": None,
+                    "cancelled_by": None,
+                    "cancelled_at": None,
+                },
+                "new_values": {
+                    "status": PaymentEntryStatus.CANCELLED.value,
+                    "cancellation_reason": cancellation_reason.strip(),
+                    "cancelled_by": str(user_id),
+                    "cancelled_at": payment_entry.cancelled_at.isoformat(),
+                },
+                "timestamp": datetime.now(UTC),
+            }
+        )
 
         # Invalidate payment cache for this organization
         invalidate_payment_cache(payment_entry.id, organization_id)
@@ -1040,4 +1107,3 @@ class PaymentEntryService:
         year = payment_date.year
         sequence = self._get_next_receipt_sequence(year)
         return f"RCP-{year}-{sequence:05d}"
-

@@ -231,7 +231,11 @@ class TestParentAccountPostingRestriction:
 
         # Create new parent (initially posting)
         new_parent = create_account(
-            db_session, test_organization_id, "1500", "Other Assets", is_posting_account=True
+            db_session,
+            test_organization_id,
+            "1500",
+            "Other Assets",
+            is_posting_account=True,
         )
 
         # Move account to new parent
@@ -256,7 +260,11 @@ class TestValidatePostingAccountAPI:
         """Test that API accepts valid posting account"""
         # Create valid posting account
         account = create_account(
-            db_session, mock_current_user.organization_id, "1100", "Cash", is_posting_account=True
+            db_session,
+            mock_current_user.organization_id,
+            "1100",
+            "Cash",
+            is_posting_account=True,
         )
 
         # Call API
@@ -275,7 +283,11 @@ class TestValidatePostingAccountAPI:
 
         # Create parent and child
         parent = create_account(
-            db_session, mock_current_user.organization_id, "1000", "Assets", is_posting_account=True
+            db_session,
+            mock_current_user.organization_id,
+            "1000",
+            "Assets",
+            is_posting_account=True,
         )
         child = create_account(
             db_session, mock_current_user.organization_id, "1100", "Current Assets"
@@ -283,7 +295,9 @@ class TestValidatePostingAccountAPI:
 
         # Add child to parent
         hierarchy_manager = HierarchyManager(db_session)
-        hierarchy_manager.add_child(parent.id, child.id, mock_current_user.organization_id)
+        hierarchy_manager.add_child(
+            parent.id, child.id, mock_current_user.organization_id
+        )
 
         # Call API
         response = client.post(
@@ -305,7 +319,11 @@ class TestValidatePostingAccountAPI:
 
         # Create inactive account
         account = create_account(
-            db_session, mock_current_user.organization_id, "1100", "Cash", is_posting_account=True
+            db_session,
+            mock_current_user.organization_id,
+            "1100",
+            "Cash",
+            is_posting_account=True,
         )
         account.status = AccountStatus.INACTIVE
         db_session.commit()

@@ -8,12 +8,10 @@ stored per (org, document_type, year) for atomic next-number generation.
 
 import uuid
 
-from sqlalchemy import Column, Integer, String, Boolean, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Column, Integer, String, UniqueConstraint
 
 from app.database import Base
 from app.models.types import UUID
-
 
 # Document types aligned with frontend Document Numbering Series (Settings)
 DOCUMENT_TYPES = [
@@ -68,7 +66,9 @@ class DocumentNumberingConfig(Base):
     separator = Column(String(5), nullable=False, default="-")
 
     __table_args__ = (
-        UniqueConstraint("organization_id", "document_type", name="uq_doc_numbering_org_type"),
+        UniqueConstraint(
+            "organization_id", "document_type", name="uq_doc_numbering_org_type"
+        ),
     )
 
 

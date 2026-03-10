@@ -11,6 +11,8 @@ from app.models.bank_account import BankAccount
 from app.services.journal_entry_service import JournalEntryService
 from app.services.default_account_service import DefaultAccountService
 from app.services.currency_service import CurrencyService
+from app.services.default_account_service import DefaultAccountService
+from app.services.journal_entry_service import JournalEntryService
 
 
 class JournalPostingService:
@@ -210,7 +212,6 @@ class JournalPostingService:
                 f"Failed to convert {amount} {from_currency} to base currency {base_currency}: {str(e)}"
             )
 
-
     def post_payment_journal_entry(
         self,
         payment_entry,
@@ -263,7 +264,9 @@ class JournalPostingService:
                 transaction_type="accounts_receivable",
                 organization_id=organization_id,
             ).account_id
-            remarks = f"Payment received from customer - {payment_entry.payment_mode.value}"
+            remarks = (
+                f"Payment received from customer - {payment_entry.payment_mode.value}"
+            )
             lines = [
                 {
                     "account_id": debit_account_id,
@@ -321,7 +324,9 @@ class JournalPostingService:
                 },
             ]
         else:
-            raise ValidationError(f"Unsupported payment type: {payment_entry.payment_type.value}")
+            raise ValidationError(
+                f"Unsupported payment type: {payment_entry.payment_type.value}"
+            )
 
         journal_entry_data = {
             "posting_date": payment_entry.payment_date,
@@ -403,16 +408,18 @@ class JournalPostingService:
         # Create reversing journal entry with swapped debits and credits
         reversing_lines = []
         for idx, line in enumerate(original_je.lines, start=1):
-            reversing_lines.append({
-                "account_id": line.account_id,
-                "debit": line.credit,  # Swap: original credit becomes debit
-                "credit": line.debit,  # Swap: original debit becomes credit
-                "against_account_id": line.against_account_id,
-                "reference_type": "PaymentEntry",
-                "reference_id": payment_entry.id,
-                "remarks": f"Reversal: {line.remarks}",
-                "sort_order": idx,
-            })
+            reversing_lines.append(
+                {
+                    "account_id": line.account_id,
+                    "debit": line.credit,  # Swap: original credit becomes debit
+                    "credit": line.debit,  # Swap: original debit becomes credit
+                    "against_account_id": line.against_account_id,
+                    "reference_type": "PaymentEntry",
+                    "reference_id": payment_entry.id,
+                    "remarks": f"Reversal: {line.remarks}",
+                    "sort_order": idx,
+                }
+            )
 
         # Create reversing journal entry data
         reversing_entry_data = {

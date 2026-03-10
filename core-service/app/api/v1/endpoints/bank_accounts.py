@@ -1,7 +1,6 @@
 """Bank Accounts management API endpoints for banking integration"""
 
 import logging
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -53,18 +52,18 @@ async def create_bank_account(
 ):
     """
     Link a bank account to a GL account.
-    
+
     This endpoint creates a new bank account record linked to an existing
     General Ledger account. The bank account will contain sensitive banking
     information that is separate from the GL account data.
-    
+
     **Features:**
     - Link multiple bank accounts to a single GL account
     - Set one bank account as primary per GL account
     - Validate IBAN, SWIFT codes, and routing numbers
     - Encrypt sensitive banking information
     - Create audit trail for all banking operations
-    
+
     **Business Rules:**
     - Only one primary bank account per GL account is allowed
     - IBAN must be unique within the organization
@@ -76,23 +75,23 @@ async def create_bank_account(
             gl_account_id=account_id,
             data=data,
             organization_id=current_user.organization_id,
-            current_user=current_user.email
+            current_user=current_user.email,
         )
         return BankAccountResponse.model_validate(bank_account)
-    
+
     except ValidationError as e:
         logger.error(f"Validation error creating bank account: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
     except DuplicateIbanException as e:
         logger.error(f"Duplicate IBAN error: {e}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error creating bank account: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create bank account"
+            detail="Failed to create bank account",
         )
 
 
@@ -110,14 +109,14 @@ async def list_bank_accounts_for_gl_account(
 ):
     """
     Get all bank accounts linked to a GL account.
-    
+
     Returns all bank accounts associated with the specified GL account.
     By default, only active bank accounts are returned unless specifically
     requested to include inactive accounts.
-    
+
     **Query Parameters:**
     - `include_inactive`: Set to true to include deactivated bank accounts
-    
+
     **Response includes:**
     - Masked sensitive information (account numbers, IBANs)
     - Banking features and capabilities
@@ -129,19 +128,19 @@ async def list_bank_accounts_for_gl_account(
         bank_accounts = service.get_bank_accounts_by_gl_account(
             gl_account_id=account_id,
             organization_id=current_user.organization_id,
-            include_inactive=include_inactive
+            include_inactive=include_inactive,
         )
         return [BankAccountResponse.model_validate(ba) for ba in bank_accounts]
-    
+
     except ValidationError as e:
         logger.error(f"Validation error listing bank accounts: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error listing bank accounts: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve bank accounts"
+            detail="Failed to retrieve bank accounts",
         )
 
 
@@ -154,27 +153,31 @@ async def list_bank_accounts_for_gl_account(
 async def list_bank_accounts(
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
-    gl_account_id: Optional[UUID] = Query(None, description="Filter by GL account ID"),
-    bank_name: Optional[str] = Query(None, description="Filter by bank name (partial match)"),
-    account_purpose: Optional[str] = Query(None, description="Filter by account purpose"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    is_primary: Optional[bool] = Query(None, description="Filter by primary status"),
+    gl_account_id: UUID | None = Query(None, description="Filter by GL account ID"),
+    bank_name: str | None = Query(
+        None, description="Filter by bank name (partial match)"
+    ),
+    account_purpose: str | None = Query(
+        None, description="Filter by account purpose"
+    ),
+    is_active: bool | None = Query(None, description="Filter by active status"),
+    is_primary: bool | None = Query(None, description="Filter by primary status"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     List bank accounts with pagination and filtering.
-    
+
     Returns a paginated list of bank accounts for the organization with
     various filtering options to help locate specific accounts.
-    
+
     **Filtering Options:**
     - `gl_account_id`: Show only bank accounts for a specific GL account
     - `bank_name`: Search by bank name (case-insensitive partial match)
     - `account_purpose`: Filter by purpose (operating, payroll, tax, etc.)
     - `is_active`: Show only active or inactive accounts
     - `is_primary`: Show only primary or secondary accounts
-    
+
     **Response Features:**
     - Pagination metadata (total, pages, navigation)
     - Masked sensitive information for security
@@ -191,14 +194,14 @@ async def list_bank_accounts(
             bank_name=bank_name,
             account_purpose=account_purpose,
             is_active=is_active,
-            is_primary=is_primary
+            is_primary=is_primary,
         )
-    
+
     except Exception as e:
         logger.error(f"Unexpected error listing bank accounts: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve bank accounts list"
+            detail="Failed to retrieve bank accounts list",
         )
 
 
@@ -215,10 +218,10 @@ async def get_bank_account(
 ):
     """
     Get detailed information for a specific bank account.
-    
+
     Returns complete bank account information including masked sensitive
     data, banking features, transfer limits, and linked GL account details.
-    
+
     **Security Features:**
     - Account numbers and IBANs are masked for security
     - Only users from the same organization can access the data
@@ -228,19 +231,19 @@ async def get_bank_account(
         service = BankAccountService(db)
         bank_account = service.get_bank_account_by_id(
             bank_account_id=bank_account_id,
-            organization_id=current_user.organization_id
+            organization_id=current_user.organization_id,
         )
         return BankAccountResponse.model_validate(bank_account)
-    
+
     except BankAccountNotFoundException as e:
         logger.warning(f"Bank account not found: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error retrieving bank account: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve bank account"
+            detail="Failed to retrieve bank account",
         )
 
 
@@ -258,17 +261,17 @@ async def update_bank_account(
 ):
     """
     Update bank account information and settings.
-    
+
     Allows updating of bank account details including banking information,
     features, limits, and settings. All changes are tracked in the audit log.
-    
+
     **Updatable Fields:**
     - Banking details (name, holder, IBAN, SWIFT, etc.)
     - Account metadata (type, purpose, primary status)
     - Banking features (online, mobile, wire transfers, ACH)
     - Transfer limits and approval requirements
     - API integration settings
-    
+
     **Business Rules:**
     - Only one primary bank account per GL account
     - IBAN must remain unique within organization
@@ -280,27 +283,27 @@ async def update_bank_account(
             bank_account_id=bank_account_id,
             data=data,
             organization_id=current_user.organization_id,
-            current_user=current_user.email
+            current_user=current_user.email,
         )
         return BankAccountResponse.model_validate(bank_account)
-    
+
     except BankAccountNotFoundException as e:
         logger.warning(f"Bank account not found for update: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    
+
     except ValidationError as e:
         logger.error(f"Validation error updating bank account: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    
+
     except DuplicateIbanException as e:
         logger.error(f"Duplicate IBAN error on update: {e}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error updating bank account: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update bank account"
+            detail="Failed to update bank account",
         )
 
 
@@ -317,11 +320,11 @@ async def delete_bank_account(
 ):
     """
     Delete (remove) a bank account link.
-    
+
     Permanently removes the bank account link from the GL account.
     This action is irreversible and will remove all banking information
     while maintaining the audit trail.
-    
+
     **Important Notes:**
     - This does NOT delete the actual bank account with the bank
     - Only removes the link between GL account and banking information
@@ -333,19 +336,19 @@ async def delete_bank_account(
         service.delete_bank_account(
             bank_account_id=bank_account_id,
             organization_id=current_user.organization_id,
-            current_user=current_user.email
+            current_user=current_user.email,
         )
         return  # 204 No Content
-    
+
     except BankAccountNotFoundException as e:
         logger.warning(f"Bank account not found for deletion: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error deleting bank account: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete bank account"
+            detail="Failed to delete bank account",
         )
 
 
@@ -362,7 +365,7 @@ async def activate_bank_account(
 ):
     """
     Activate a previously deactivated bank account.
-    
+
     Reactivates a bank account that was previously deactivated, making it
     available for banking operations again.
     """
@@ -371,23 +374,23 @@ async def activate_bank_account(
         bank_account = service.activate_bank_account(
             bank_account_id=bank_account_id,
             organization_id=current_user.organization_id,
-            current_user=current_user.email
+            current_user=current_user.email,
         )
         return BankAccountResponse.model_validate(bank_account)
-    
+
     except BankAccountNotFoundException as e:
         logger.warning(f"Bank account not found for activation: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    
+
     except InvalidAccountStateException as e:
         logger.warning(f"Invalid state for activation: {e}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error activating bank account: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to activate bank account"
+            detail="Failed to activate bank account",
         )
 
 
@@ -404,11 +407,11 @@ async def deactivate_bank_account(
 ):
     """
     Deactivate a bank account (soft delete).
-    
+
     Deactivates a bank account without permanently deleting it. This is
     useful for temporary suspension of banking operations or compliance
     requirements that prevent immediate deletion.
-    
+
     **Features:**
     - Maintains all historical data and audit trail
     - Can be reactivated later if needed
@@ -420,18 +423,18 @@ async def deactivate_bank_account(
         bank_account = service.deactivate_bank_account(
             bank_account_id=bank_account_id,
             organization_id=current_user.organization_id,
-            current_user=current_user.email
+            current_user=current_user.email,
         )
         return BankAccountResponse.model_validate(bank_account)
-    
+
     except BankAccountNotFoundException as e:
         logger.warning(f"Bank account not found for deactivation: {e}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    
+
     except InvalidAccountStateException as e:
         logger.warning(f"Invalid state for deactivation: {e}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    
+
     except Exception as e:
         logger.error(f"Unexpected error deactivating bank account: {e}")
         raise HTTPException(
@@ -506,17 +509,17 @@ async def get_banking_overview(
 ):
     """
     Get banking overview with summary statistics.
-    
+
     Provides a comprehensive overview of all banking accounts in the
     organization including counts, categorization, and summary metrics.
-    
+
     **Overview Includes:**
     - Total number of bank accounts (active and inactive)
     - Count of primary bank accounts
     - Breakdown by account purpose (operating, payroll, etc.)
     - Breakdown by account type (checking, savings, etc.)
     - Banking feature adoption statistics
-    
+
     **Use Cases:**
     - Executive dashboards and reporting
     - Banking operations monitoring
@@ -525,13 +528,15 @@ async def get_banking_overview(
     """
     try:
         service = BankAccountService(db)
-        return service.get_banking_overview(organization_id=current_user.organization_id)
-    
+        return service.get_banking_overview(
+            organization_id=current_user.organization_id
+        )
+
     except Exception as e:
         logger.error(f"Unexpected error getting banking overview: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve banking overview"
+            detail="Failed to retrieve banking overview",
         )
 
 

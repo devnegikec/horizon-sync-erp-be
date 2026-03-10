@@ -2,14 +2,14 @@
 
 from datetime import datetime
 from decimal import Decimal
-from uuid import UUID
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.base import PaymentEntryStatus, PaymentMode
 from app.repositories.payment_entry_repository import PaymentEntryRepository
 from app.repositories.payment_reference_repository import PaymentReferenceRepository
-from app.models.base import PaymentEntryStatus, PaymentMode
 
 
 class ReconciliationReportService:
@@ -60,7 +60,10 @@ class ReconciliationReportService:
             try:
                 status_value = status.strip()
                 for s in PaymentEntryStatus:
-                    if s.value == status_value or s.name.lower() == status_value.lower():
+                    if (
+                        s.value == status_value
+                        or s.name.lower() == status_value.lower()
+                    ):
                         status_enum = s
                         break
             except (ValueError, AttributeError):
@@ -71,7 +74,10 @@ class ReconciliationReportService:
             try:
                 mode_value = payment_mode.strip()
                 for mode in PaymentMode:
-                    if mode.value == mode_value or mode.name.lower() == mode_value.lower():
+                    if (
+                        mode.value == mode_value
+                        or mode.name.lower() == mode_value.lower()
+                    ):
                         payment_mode_enum = mode
                         break
             except (ValueError, AttributeError):
@@ -120,12 +126,16 @@ class ReconciliationReportService:
                 payments_by_status[status_key] = {
                     "count": 0,
                     "total_amount": Decimal("0.00"),
-                    "payments": []
+                    "payments": [],
                 }
 
             payments_by_status[status_key]["count"] += 1
-            payments_by_status[status_key]["total_amount"] += Decimal(str(payment.amount))
-            payments_by_status[status_key]["payments"].append(self._format_payment(payment, organization_id))
+            payments_by_status[status_key]["total_amount"] += Decimal(
+                str(payment.amount)
+            )
+            payments_by_status[status_key]["payments"].append(
+                self._format_payment(payment, organization_id)
+            )
 
         # Group payments by payment_mode
         payments_by_mode = {}
@@ -135,15 +145,20 @@ class ReconciliationReportService:
                 payments_by_mode[mode_key] = {
                     "count": 0,
                     "total_amount": Decimal("0.00"),
-                    "payments": []
+                    "payments": [],
                 }
 
             payments_by_mode[mode_key]["count"] += 1
             payments_by_mode[mode_key]["total_amount"] += Decimal(str(payment.amount))
-            payments_by_mode[mode_key]["payments"].append(self._format_payment(payment, organization_id))
+            payments_by_mode[mode_key]["payments"].append(
+                self._format_payment(payment, organization_id)
+            )
 
         # Format all payments with details
-        payments = [self._format_payment(payment, organization_id) for payment in payment_entries]
+        payments = [
+            self._format_payment(payment, organization_id)
+            for payment in payment_entries
+        ]
 
         # Filter payments with unallocated amounts
         unallocated_payments = [
@@ -163,7 +178,7 @@ class ReconciliationReportService:
                 status: {
                     "count": data["count"],
                     "total_amount": str(data["total_amount"]),
-                    "payments": data["payments"]
+                    "payments": data["payments"],
                 }
                 for status, data in payments_by_status.items()
             },
@@ -171,7 +186,7 @@ class ReconciliationReportService:
                 mode: {
                     "count": data["count"],
                     "total_amount": str(data["total_amount"]),
-                    "payments": data["payments"]
+                    "payments": data["payments"],
                 }
                 for mode, data in payments_by_mode.items()
             },
@@ -211,16 +226,26 @@ class ReconciliationReportService:
                 "invoice_id": str(ref.invoice_id),
                 "allocated_amount": str(ref.allocated_amount),
                 "exchange_rate": str(ref.exchange_rate),
-                "allocated_amount_invoice_currency": str(ref.allocated_amount_invoice_currency),
+                "allocated_amount_invoice_currency": str(
+                    ref.allocated_amount_invoice_currency
+                ),
             }
 
             # Add invoice details if available
-            if hasattr(ref, 'invoice') and ref.invoice:
-                invoice_data.update({
-                    "invoice_number": ref.invoice.invoice_number if hasattr(ref.invoice, 'invoice_number') else None,
-                    "invoice_date": ref.invoice.invoice_date.isoformat() if hasattr(ref.invoice, 'invoice_date') else None,
-                    "invoice_amount": str(ref.invoice.grand_total) if hasattr(ref.invoice, 'grand_total') else None,
-                })
+            if hasattr(ref, "invoice") and ref.invoice:
+                invoice_data.update(
+                    {
+                        "invoice_number": ref.invoice.invoice_number
+                        if hasattr(ref.invoice, "invoice_number")
+                        else None,
+                        "invoice_date": ref.invoice.invoice_date.isoformat()
+                        if hasattr(ref.invoice, "invoice_date")
+                        else None,
+                        "invoice_amount": str(ref.invoice.grand_total)
+                        if hasattr(ref.invoice, "grand_total")
+                        else None,
+                    }
+                )
 
             allocated_invoices.append(invoice_data)
 

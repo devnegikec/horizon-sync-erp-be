@@ -64,7 +64,9 @@ async def list_rfqs(
         None,
         pattern="^(DRAFT|SENT|PARTIALLY_RESPONDED|FULLY_RESPONDED|CLOSED|draft|sent|partially_responded|fully_responded|closed)$",
     ),
-    material_request_id: UUID | None = Query(None, description="Filter by Material Request ID"),
+    material_request_id: UUID | None = Query(
+        None, description="Filter by Material Request ID"
+    ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     search: str | None = Query(None, description="Search in RFQ details"),

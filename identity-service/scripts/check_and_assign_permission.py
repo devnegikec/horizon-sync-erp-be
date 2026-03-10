@@ -234,10 +234,10 @@ def _display_status(
     user_id: UUID, org_id: UUID, has_access: bool, permissions: list[str], roles: list
 ):
     """Display current permission status for the user."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"User ID: {user_id}")
     print(f"Organization ID: {org_id}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if not roles:
         print("❌ User has NO roles in this organization")

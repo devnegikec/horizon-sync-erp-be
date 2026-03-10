@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, JSON
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -13,6 +13,7 @@ from app.database import Base
 
 class AuditAction(str, Enum):
     """Audit action types"""
+
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
@@ -29,7 +30,7 @@ class AccountAuditLog(Base):
         UUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
     action = Column(String(20), nullable=False)
     user_id = Column(String(100), nullable=False, index=True)
@@ -37,7 +38,7 @@ class AccountAuditLog(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
-        index=True
+        index=True,
     )
     changes = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     audit_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)

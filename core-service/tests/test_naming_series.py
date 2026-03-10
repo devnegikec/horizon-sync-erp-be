@@ -1,6 +1,5 @@
 """Tests for naming series utilities"""
 
-
 from app.utils.naming_series import (
     extract_number_from_document_no,
     get_document_type_from_prefix,

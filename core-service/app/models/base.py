@@ -396,7 +396,8 @@ class BankAccountHistoryAction(str, enum.Enum):
     ACTIVATED = "activated"
     DEACTIVATED = "deactivated"
 
-    
+
+# ===========================================
 # COMMUNICATION ENUMS
 # ===========================================
 

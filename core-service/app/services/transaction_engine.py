@@ -51,7 +51,7 @@ class TransactionEngineOutput:
 class TransactionEngine:
     """
     Shared service for calculating financial totals across purchase and sales documents.
-    
+
     Handles:
     - Line total calculations (quantity × unit_price)
     - Subtotal calculations (sum of line totals)
@@ -62,11 +62,11 @@ class TransactionEngine:
     def calculate(self, input_data: TransactionEngineInput) -> TransactionEngineOutput:
         """
         Calculate line totals, subtotal, tax, and grand total for a transaction.
-        
+
         Args:
             input_data: TransactionEngineInput containing transaction type, line items,
                        tax rate, and discount amount
-        
+
         Returns:
             TransactionEngineOutput with all calculated values
         """

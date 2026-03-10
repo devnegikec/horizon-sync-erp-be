@@ -29,6 +29,7 @@ class InvoiceService:
         # Auto-generate invoice_no if not provided
         if not payload.get("invoice_no"):
             from app.services.document_numbering_service import DocumentNumberingService
+
             payload["invoice_no"] = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "invoice"
             )
@@ -423,7 +424,9 @@ class InvoiceService:
         party_map: dict = {}
         if customer_ids:
             customers = (
-                self.db.query(Customer.id, Customer.customer_name, Customer.customer_code)
+                self.db.query(
+                    Customer.id, Customer.customer_name, Customer.customer_code
+                )
                 .filter(Customer.id.in_(customer_ids))
                 .all()
             )
@@ -431,7 +434,9 @@ class InvoiceService:
                 party_map[c.id] = {"name": c.customer_name, "code": c.customer_code}
         if supplier_ids:
             suppliers = (
-                self.db.query(Supplier.id, Supplier.supplier_name, Supplier.supplier_code)
+                self.db.query(
+                    Supplier.id, Supplier.supplier_name, Supplier.supplier_code
+                )
                 .filter(Supplier.id.in_(supplier_ids))
                 .all()
             )

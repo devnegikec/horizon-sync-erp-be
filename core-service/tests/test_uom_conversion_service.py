@@ -25,7 +25,9 @@ def conversion_service(db_session):
 
 
 @pytest.fixture
-def sample_conversion(conversion_service, sample_item_id, sample_organization_id, sample_user_id):
+def sample_conversion(
+    conversion_service, sample_item_id, sample_organization_id, sample_user_id
+):
     """Create and return a sample UOM conversion for reuse in tests."""
     data = UOMConversionCreate(
         item_id=sample_item_id,
@@ -33,7 +35,9 @@ def sample_conversion(conversion_service, sample_item_id, sample_organization_id
         to_uom="Pieces",
         conversion_factor=Decimal("12.000000"),
     )
-    return conversion_service.create_conversion(data, sample_organization_id, sample_user_id)
+    return conversion_service.create_conversion(
+        data, sample_organization_id, sample_user_id
+    )
 
 
 # ── Create ──────────────────────────────────────────────────────────────
@@ -49,7 +53,9 @@ def test_create_conversion_with_valid_data(
         to_uom="Gram",
         conversion_factor=Decimal("1000"),
     )
-    conv = conversion_service.create_conversion(data, sample_organization_id, sample_user_id)
+    conv = conversion_service.create_conversion(
+        data, sample_organization_id, sample_user_id
+    )
 
     assert conv.id is not None
     assert conv.item_id == sample_item_id
@@ -63,7 +69,11 @@ def test_create_conversion_with_valid_data(
 
 
 def test_create_conversion_duplicate_triple_raises_409(
-    conversion_service, sample_conversion, sample_item_id, sample_organization_id, sample_user_id
+    conversion_service,
+    sample_conversion,
+    sample_item_id,
+    sample_organization_id,
+    sample_user_id,
 ):
     """Validates: Requirements 2.6"""
     duplicate = UOMConversionCreate(
@@ -73,7 +83,9 @@ def test_create_conversion_duplicate_triple_raises_409(
         conversion_factor=Decimal("24"),
     )
     with pytest.raises(DuplicateUOMConversionException):
-        conversion_service.create_conversion(duplicate, sample_organization_id, sample_user_id)
+        conversion_service.create_conversion(
+            duplicate, sample_organization_id, sample_user_id
+        )
 
 
 def test_create_conversion_item_not_found_raises_404(
@@ -87,7 +99,9 @@ def test_create_conversion_item_not_found_raises_404(
         conversion_factor=Decimal("1000"),
     )
     with pytest.raises(ItemNotFoundException):
-        conversion_service.create_conversion(data, sample_organization_id, sample_user_id)
+        conversion_service.create_conversion(
+            data, sample_organization_id, sample_user_id
+        )
 
 
 def test_create_conversion_positive_factor_validation():
@@ -116,7 +130,9 @@ def test_get_conversion_by_id(
     conversion_service, sample_conversion, sample_organization_id
 ):
     """Validates: Requirements 2.3"""
-    fetched = conversion_service.get_conversion(sample_conversion.id, sample_organization_id)
+    fetched = conversion_service.get_conversion(
+        sample_conversion.id, sample_organization_id
+    )
 
     assert fetched.id == sample_conversion.id
     assert fetched.from_uom == "Box"
@@ -124,7 +140,9 @@ def test_get_conversion_by_id(
     assert fetched.conversion_factor == Decimal("12.000000")
 
 
-def test_get_conversion_not_found_raises_404(conversion_service, sample_organization_id):
+def test_get_conversion_not_found_raises_404(
+    conversion_service, sample_organization_id
+):
     """Validates: Requirements 2.3"""
     with pytest.raises(UOMConversionNotFoundException):
         conversion_service.get_conversion(uuid.uuid4(), sample_organization_id)
@@ -145,7 +163,9 @@ def test_list_conversions_with_pagination(
             to_uom=to_uom,
             conversion_factor=Decimal("100"),
         )
-        conversion_service.create_conversion(data, sample_organization_id, sample_user_id)
+        conversion_service.create_conversion(
+            data, sample_organization_id, sample_user_id
+        )
 
     conversions, pagination = conversion_service.list_conversions(
         sample_organization_id, page=1, page_size=2
@@ -159,7 +179,12 @@ def test_list_conversions_with_pagination(
 
 
 def test_list_conversions_filtered_by_item_id(
-    conversion_service, sample_item_id, sample_organization_id, sample_user_id, db_session, mock_current_user
+    conversion_service,
+    sample_item_id,
+    sample_organization_id,
+    sample_user_id,
+    db_session,
+    mock_current_user,
 ):
     """Validates: Requirements 2.2"""
     from app.models.item import Item
@@ -184,12 +209,24 @@ def test_list_conversions_filtered_by_item_id(
 
     # Create conversions for both items
     conversion_service.create_conversion(
-        UOMConversionCreate(item_id=sample_item_id, from_uom="Kg", to_uom="Gram", conversion_factor=Decimal("1000")),
-        sample_organization_id, sample_user_id,
+        UOMConversionCreate(
+            item_id=sample_item_id,
+            from_uom="Kg",
+            to_uom="Gram",
+            conversion_factor=Decimal("1000"),
+        ),
+        sample_organization_id,
+        sample_user_id,
     )
     conversion_service.create_conversion(
-        UOMConversionCreate(item_id=item2.id, from_uom="Box", to_uom="Pieces", conversion_factor=Decimal("12")),
-        sample_organization_id, sample_user_id,
+        UOMConversionCreate(
+            item_id=item2.id,
+            from_uom="Box",
+            to_uom="Pieces",
+            conversion_factor=Decimal("12"),
+        ),
+        sample_organization_id,
+        sample_user_id,
     )
 
     # Filter by first item
@@ -235,7 +272,9 @@ def test_soft_delete_conversion(
         conversion_service.get_conversion(sample_conversion.id, sample_organization_id)
 
     # Should not appear in list
-    conversions, pagination = conversion_service.list_conversions(sample_organization_id)
+    conversions, pagination = conversion_service.list_conversions(
+        sample_organization_id
+    )
     assert len(conversions) == 0
     assert pagination["total_items"] == 0
 

@@ -12,7 +12,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ValidationError
 from app.schemas.payment_entry import (
     BatchProcessResult,
     PaymentEntryCreate,
@@ -24,7 +23,7 @@ from app.services.payment_entry_service import PaymentEntryService
 class BatchPaymentProcessor:
     """
     Service for processing multiple payment entries in batch.
-    
+
     Validates all entries before processing any to ensure atomicity.
     Supports CSV import with parsing and validation.
     """
@@ -37,7 +36,7 @@ class BatchPaymentProcessor:
     ):
         """
         Initialize BatchPaymentProcessor with dependencies.
-        
+
         Args:
             db: Database session
             payment_service: Payment entry service (created if not provided)
@@ -54,81 +53,101 @@ class BatchPaymentProcessor:
     ) -> list[dict]:
         """
         Validate all payment entries in the batch.
-        
+
         Returns list of validation errors. Empty list means all valid.
-        
+
         Args:
             payments: List of payment entry creation schemas
             organization_id: Organization UUID
-            
+
         Returns:
             List of error dicts with 'index' and 'message' keys
         """
         errors = []
 
         if not payments:
-            errors.append({
-                "index": -1,
-                "message": "Batch cannot be empty. At least one payment is required."
-            })
+            errors.append(
+                {
+                    "index": -1,
+                    "message": "Batch cannot be empty. At least one payment is required.",
+                }
+            )
             return errors
 
         for idx, payment_data in enumerate(payments):
             try:
                 # Validate payment_type
-                if payment_data.payment_type not in ["Customer_Payment", "Supplier_Payment"]:
-                    errors.append({
-                        "index": idx,
-                        "message": f"Invalid payment_type: {payment_data.payment_type}. "
-                                   "Must be 'Customer_Payment' or 'Supplier_Payment'."
-                    })
+                if payment_data.payment_type not in [
+                    "Customer_Payment",
+                    "Supplier_Payment",
+                ]:
+                    errors.append(
+                        {
+                            "index": idx,
+                            "message": f"Invalid payment_type: {payment_data.payment_type}. "
+                            "Must be 'Customer_Payment' or 'Supplier_Payment'.",
+                        }
+                    )
 
                 # Validate payment_mode
                 if payment_data.payment_mode not in ["Cash", "Check", "Bank_Transfer"]:
-                    errors.append({
-                        "index": idx,
-                        "message": f"Invalid payment_mode: {payment_data.payment_mode}. "
-                                   "Must be 'Cash', 'Check', or 'Bank_Transfer'."
-                    })
+                    errors.append(
+                        {
+                            "index": idx,
+                            "message": f"Invalid payment_mode: {payment_data.payment_mode}. "
+                            "Must be 'Cash', 'Check', or 'Bank_Transfer'.",
+                        }
+                    )
 
                 # Validate reference_no requirement for Check and Bank_Transfer
                 if payment_data.payment_mode in ["Check", "Bank_Transfer"]:
-                    if not payment_data.reference_no or not payment_data.reference_no.strip():
-                        errors.append({
-                            "index": idx,
-                            "message": f"reference_no is required for {payment_data.payment_mode} payments."
-                        })
+                    if (
+                        not payment_data.reference_no
+                        or not payment_data.reference_no.strip()
+                    ):
+                        errors.append(
+                            {
+                                "index": idx,
+                                "message": f"reference_no is required for {payment_data.payment_mode} payments.",
+                            }
+                        )
 
                 # Validate amount
                 if payment_data.amount <= 0:
-                    errors.append({
-                        "index": idx,
-                        "message": f"Amount must be greater than zero. Got: {payment_data.amount}"
-                    })
+                    errors.append(
+                        {
+                            "index": idx,
+                            "message": f"Amount must be greater than zero. Got: {payment_data.amount}",
+                        }
+                    )
 
                 # Check decimal places (max 2)
                 amount_str = str(payment_data.amount)
-                if '.' in amount_str:
-                    decimal_places = len(amount_str.split('.')[1])
+                if "." in amount_str:
+                    decimal_places = len(amount_str.split(".")[1])
                     if decimal_places > 2:
-                        errors.append({
-                            "index": idx,
-                            "message": f"Amount must have at most 2 decimal places. Got: {payment_data.amount}"
-                        })
+                        errors.append(
+                            {
+                                "index": idx,
+                                "message": f"Amount must have at most 2 decimal places. Got: {payment_data.amount}",
+                            }
+                        )
 
                 # Validate currency code (basic check - full validation in schema)
-                if not payment_data.currency_code or len(payment_data.currency_code) != 3:
-                    errors.append({
-                        "index": idx,
-                        "message": f"Invalid currency_code: {payment_data.currency_code}. "
-                                   "Must be 3-letter ISO 4217 code."
-                    })
+                if (
+                    not payment_data.currency_code
+                    or len(payment_data.currency_code) != 3
+                ):
+                    errors.append(
+                        {
+                            "index": idx,
+                            "message": f"Invalid currency_code: {payment_data.currency_code}. "
+                            "Must be 3-letter ISO 4217 code.",
+                        }
+                    )
 
             except Exception as e:
-                errors.append({
-                    "index": idx,
-                    "message": f"Validation error: {str(e)}"
-                })
+                errors.append({"index": idx, "message": f"Validation error: {str(e)}"})
 
         return errors
 
@@ -140,22 +159,21 @@ class BatchPaymentProcessor:
     ) -> BatchProcessResult:
         """
         Process multiple payment entries in a single transaction.
-        
+
         Validates all entries before processing any. If any validation fails,
         returns all errors without creating any payments.
-        
+
         Args:
             payments: List of payment entry creation schemas
             organization_id: Organization UUID
             user_id: User performing the batch operation
-            
+
         Returns:
             BatchProcessResult with success/error counts and details
-            
+
         Raises:
             ValidationError: If any payment fails validation (with all errors)
         """
-        from app.models.payment_entry import PaymentEntry
 
         # Validate all entries first
         validation_errors = self.validate_batch(payments, organization_id)
@@ -187,10 +205,9 @@ class BatchPaymentProcessor:
 
                 except Exception as e:
                     # Record error but continue to collect all errors
-                    errors.append({
-                        "index": idx,
-                        "message": f"Failed to create payment: {str(e)}"
-                    })
+                    errors.append(
+                        {"index": idx, "message": f"Failed to create payment: {str(e)}"}
+                    )
 
             # If any errors occurred during creation, rollback
             if errors:
@@ -223,10 +240,7 @@ class BatchPaymentProcessor:
                 total_count=len(payments),
                 success_count=0,
                 error_count=len(payments),
-                errors=[{
-                    "index": -1,
-                    "message": f"Batch processing failed: {str(e)}"
-                }],
+                errors=[{"index": -1, "message": f"Batch processing failed: {str(e)}"}],
             )
 
     def import_from_csv(
@@ -237,15 +251,15 @@ class BatchPaymentProcessor:
     ) -> BatchProcessResult:
         """
         Import and process payments from CSV file.
-        
+
         Expected CSV format:
         payment_type,party_id,amount,currency_code,payment_date,payment_mode,reference_no
-        
+
         Args:
             csv_file: CSV file object (binary mode)
             organization_id: Organization UUID
             user_id: User performing the import
-            
+
         Returns:
             BatchProcessResult with success/error counts and details
         """
@@ -258,17 +272,17 @@ class BatchPaymentProcessor:
             # Read CSV file
             csv_content = csv_file.read()
             if isinstance(csv_content, bytes):
-                csv_content = csv_content.decode('utf-8')
+                csv_content = csv_content.decode("utf-8")
 
             csv_reader = csv.DictReader(io.StringIO(csv_content))
 
             # Validate CSV headers
             required_headers = {
-                'payment_type',
-                'party_id',
-                'amount',
-                'payment_date',
-                'payment_mode',
+                "payment_type",
+                "party_id",
+                "amount",
+                "payment_date",
+                "payment_mode",
             }
 
             if not csv_reader.fieldnames:
@@ -276,10 +290,9 @@ class BatchPaymentProcessor:
                     total_count=0,
                     success_count=0,
                     error_count=1,
-                    errors=[{
-                        "index": -1,
-                        "message": "CSV file is empty or has no headers"
-                    }],
+                    errors=[
+                        {"index": -1, "message": "CSV file is empty or has no headers"}
+                    ],
                 )
 
             actual_headers = set(csv_reader.fieldnames)
@@ -290,10 +303,12 @@ class BatchPaymentProcessor:
                     total_count=0,
                     success_count=0,
                     error_count=1,
-                    errors=[{
-                        "index": -1,
-                        "message": f"Missing required CSV columns: {', '.join(missing_headers)}"
-                    }],
+                    errors=[
+                        {
+                            "index": -1,
+                            "message": f"Missing required CSV columns: {', '.join(missing_headers)}",
+                        }
+                    ],
                 )
 
             # Parse CSV rows
@@ -301,53 +316,58 @@ class BatchPaymentProcessor:
                 try:
                     # Parse payment_date
                     try:
-                        payment_date = datetime.fromisoformat(row['payment_date'])
+                        payment_date = datetime.fromisoformat(row["payment_date"])
                     except ValueError:
-                        errors.append({
-                            "index": idx,
-                            "message": f"Invalid payment_date format: {row['payment_date']}. "
-                                       "Expected ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
-                        })
+                        errors.append(
+                            {
+                                "index": idx,
+                                "message": f"Invalid payment_date format: {row['payment_date']}. "
+                                "Expected ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+                            }
+                        )
                         continue
 
                     # Parse amount
                     try:
-                        amount = Decimal(row['amount'])
+                        amount = Decimal(row["amount"])
                     except (ValueError, TypeError):
-                        errors.append({
-                            "index": idx,
-                            "message": f"Invalid amount: {row['amount']}. Must be a valid decimal number."
-                        })
+                        errors.append(
+                            {
+                                "index": idx,
+                                "message": f"Invalid amount: {row['amount']}. Must be a valid decimal number.",
+                            }
+                        )
                         continue
 
                     # Parse party_id
                     try:
-                        party_id = UUID(row['party_id'])
+                        party_id = UUID(row["party_id"])
                     except (ValueError, TypeError):
-                        errors.append({
-                            "index": idx,
-                            "message": f"Invalid party_id: {row['party_id']}. Must be a valid UUID."
-                        })
+                        errors.append(
+                            {
+                                "index": idx,
+                                "message": f"Invalid party_id: {row['party_id']}. Must be a valid UUID.",
+                            }
+                        )
                         continue
 
                     # Create PaymentEntryCreate schema
                     payment_data = PaymentEntryCreate(
-                        payment_type=row['payment_type'],
+                        payment_type=row["payment_type"],
                         party_id=party_id,
                         amount=amount,
-                        currency_code=row.get('currency_code', 'USD'),
+                        currency_code=row.get("currency_code", "USD"),
                         payment_date=payment_date,
-                        payment_mode=row['payment_mode'],
-                        reference_no=row.get('reference_no'),
+                        payment_mode=row["payment_mode"],
+                        reference_no=row.get("reference_no"),
                     )
 
                     payments.append(payment_data)
 
                 except Exception as e:
-                    errors.append({
-                        "index": idx,
-                        "message": f"Failed to parse CSV row: {str(e)}"
-                    })
+                    errors.append(
+                        {"index": idx, "message": f"Failed to parse CSV row: {str(e)}"}
+                    )
 
             # If parsing errors occurred, return them
             if errors:
@@ -366,8 +386,5 @@ class BatchPaymentProcessor:
                 total_count=0,
                 success_count=0,
                 error_count=1,
-                errors=[{
-                    "index": -1,
-                    "message": f"CSV import failed: {str(e)}"
-                }],
+                errors=[{"index": -1, "message": f"CSV import failed: {str(e)}"}],
             )

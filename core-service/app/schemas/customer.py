@@ -22,7 +22,7 @@ class CustomerBase(BaseModel):
     """Base customer schema with common fields"""
 
     customer_name: str = Field(..., min_length=1, max_length=255)
-    customer_code: str = Field(..., min_length=1, max_length=50)
+    customer_code: str | None = Field(None, max_length=50)
 
     # Contact
     email: str | None = Field(None, max_length=255)

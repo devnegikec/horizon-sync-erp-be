@@ -2,8 +2,6 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -19,13 +17,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TaxContext:
     """Context for determining applicable tax template"""
+
     organization_id: UUID
     transaction_type: str  # "Sales" or "Purchase"
-    item_id: Optional[UUID] = None
-    item_group_id: Optional[UUID] = None
-    customer_id: Optional[UUID] = None
-    supplier_id: Optional[UUID] = None
-    shipping_address: Optional[dict] = None
+    item_id: UUID | None = None
+    item_group_id: UUID | None = None
+    customer_id: UUID | None = None
+    supplier_id: UUID | None = None
+    shipping_address: dict | None = None
 
 
 class TaxTemplateService:
@@ -73,21 +72,23 @@ class TaxTemplateService:
 
         # Create template
         template = self.repo.create(payload)
-        
+
         # Publish entity created event
         try:
             event_publisher = get_event_publisher()
             # Convert SQLAlchemy model to dict
-            template_data = {k: v for k, v in template.__dict__.items() if not k.startswith('_')}
+            template_data = {
+                k: v for k, v in template.__dict__.items() if not k.startswith("_")
+            }
             event_publisher.publish_entity_created(
                 entity_type="tax_templates",
                 entity_id=str(template.id),
                 organization_id=str(template_data["organization_id"]),
-                data=template_data
+                data=template_data,
             )
         except Exception as e:
             logger.error(f"Failed to publish tax template created event: {e}")
-        
+
         return self._to_response(template)
 
     def get_template(self, template_id: UUID, organization_id: UUID) -> dict:
@@ -152,21 +153,25 @@ class TaxTemplateService:
 
         # Update template
         updated_template = self.repo.update(template, payload)
-        
+
         # Publish entity updated event
         try:
             event_publisher = get_event_publisher()
             # Convert SQLAlchemy model to dict
-            template_data = {k: v for k, v in updated_template.__dict__.items() if not k.startswith('_')}
+            template_data = {
+                k: v
+                for k, v in updated_template.__dict__.items()
+                if not k.startswith("_")
+            }
             event_publisher.publish_entity_updated(
                 entity_type="tax_templates",
                 entity_id=str(template_id),
                 organization_id=str(organization_id),
-                data=template_data
+                data=template_data,
             )
         except Exception as e:
             logger.error(f"Failed to publish tax template updated event: {e}")
-        
+
         return self._to_response(updated_template)
 
     def delete_template(self, template_id: UUID, organization_id: UUID) -> None:
@@ -197,20 +202,20 @@ class TaxTemplateService:
 
         # Soft delete
         self.repo.soft_delete(template)
-        
+
         # Publish entity deleted event
         try:
             event_publisher = get_event_publisher()
             event_publisher.publish_entity_deleted(
                 entity_type="tax_templates",
                 entity_id=str(template_id),
-                organization_id=str(organization_id)
+                organization_id=str(organization_id),
             )
         except Exception as e:
             logger.error(f"Failed to publish tax template deleted event: {e}")
 
     def list_templates(
-        self, organization_id: UUID, filters: Optional[dict] = None
+        self, organization_id: UUID, filters: dict | None = None
     ) -> tuple[list[dict], dict]:
         """
         List tax templates with pagination and filters.
@@ -287,7 +292,7 @@ class TaxTemplateService:
         updated_template = self.repo.update(template, payload)
         return self._to_response(updated_template)
 
-    def get_applicable_template(self, context: TaxContext) -> Optional[tuple]:
+    def get_applicable_template(self, context: TaxContext) -> tuple | None:
         """
         Get applicable tax template based on context using inheritance hierarchy.
 
@@ -326,9 +331,7 @@ class TaxTemplateService:
         missing_fields = [f for f in required_fields if f not in template_data]
 
         if missing_fields:
-            raise ValueError(
-                f"Missing required fields: {', '.join(missing_fields)}"
-            )
+            raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
 
         # Validate tax_category if provided
         if "tax_category" in template_data:

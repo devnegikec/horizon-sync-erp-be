@@ -2,7 +2,6 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,7 +26,7 @@ class ExchangeRateResponse(BaseModel):
     to_currency: str
     rate: Decimal
     effective_date: date
-    created_at: Union[str, datetime]
+    created_at: str | datetime
 
     class Config:
         from_attributes = True
@@ -67,7 +66,7 @@ class CurrencyConversionRequest(BaseModel):
     amount: Decimal
     from_currency: str = Field(..., min_length=3, max_length=3)
     to_currency: str = Field(..., min_length=3, max_length=3)
-    effective_date: Optional[date] = None
+    effective_date: date | None = None
 
 
 class CurrencyConversionResponse(BaseModel):
@@ -87,7 +86,7 @@ class CurrencyItem(BaseModel):
     id: UUID
     code: str
     name: str
-    symbol: Optional[str] = None
+    symbol: str | None = None
     is_base_currency: bool = False
 
     class Config:
@@ -97,9 +96,14 @@ class CurrencyItem(BaseModel):
 class CurrencyCreate(BaseModel):
     """Currency creation schema"""
 
-    code: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code (3 uppercase letters)")
+    code: str = Field(
+        ...,
+        min_length=3,
+        max_length=3,
+        description="ISO 4217 currency code (3 uppercase letters)",
+    )
     name: str = Field(..., min_length=1, max_length=100, description="Currency name")
-    symbol: Optional[str] = Field(None, max_length=5, description="Currency symbol")
+    symbol: str | None = Field(None, max_length=5, description="Currency symbol")
 
 
 class CurrencyListResponse(BaseModel):
@@ -316,10 +320,10 @@ async def delete_currency(
     description="Get all exchange rates with optional filters",
 )
 async def list_exchange_rates(
-    from_currency: Optional[str] = Query(None, description="Filter by source currency"),
-    to_currency: Optional[str] = Query(None, description="Filter by target currency"),
-    start_date: Optional[date] = Query(None, description="Filter by start date"),
-    end_date: Optional[date] = Query(None, description="Filter by end date"),
+    from_currency: str | None = Query(None, description="Filter by source currency"),
+    to_currency: str | None = Query(None, description="Filter by target currency"),
+    start_date: date | None = Query(None, description="Filter by start date"),
+    end_date: date | None = Query(None, description="Filter by end date"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -370,7 +374,7 @@ async def list_exchange_rates(
 async def get_exchange_rate(
     from_currency: str,
     to_currency: str,
-    effective_date: Optional[date] = Query(None, description="Date for exchange rate"),
+    effective_date: date | None = Query(None, description="Date for exchange rate"),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):

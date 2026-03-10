@@ -1,11 +1,12 @@
 """Unit tests for ChargeTemplateService"""
 
-import pytest
-from uuid import uuid4
 from decimal import Decimal
+from uuid import uuid4
 
-from app.services.charge_template_service import ChargeTemplateService
+import pytest
+
 from app.core.exceptions import ResourceNotFoundException
+from app.services.charge_template_service import ChargeTemplateService
 
 
 def test_create_template_fixed_amount_success(

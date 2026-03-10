@@ -41,7 +41,7 @@ class SalesOrderRepository:
                 joinedload(SalesOrder.customer),
                 joinedload(SalesOrder.items)
                 .joinedload(SalesOrderItem.item)
-                .joinedload(Item.item_group)
+                .joinedload(Item.item_group),
             )
             .filter(
                 SalesOrder.id == sales_order_id,
@@ -60,10 +60,10 @@ class SalesOrderRepository:
         sort_by: str = "order_date",
         sort_order: str = "desc",
     ) -> tuple[list[SalesOrder], int]:
-        q = self.db.query(SalesOrder).options(
-            joinedload(SalesOrder.customer)
-        ).filter(
-            SalesOrder.organization_id == organization_id
+        q = (
+            self.db.query(SalesOrder)
+            .options(joinedload(SalesOrder.customer))
+            .filter(SalesOrder.organization_id == organization_id)
         )
         if customer_id is not None:
             q = q.filter(SalesOrder.customer_id == customer_id)

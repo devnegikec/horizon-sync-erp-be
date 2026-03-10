@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,7 +22,9 @@ from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.warehouse import Warehouse
-from app.repositories.stock_reconciliation_repository import StockReconciliationRepository
+from app.repositories.stock_reconciliation_repository import (
+    StockReconciliationRepository,
+)
 from app.services.document_numbering_service import DocumentNumberingService
 
 logger = logging.getLogger(__name__)
@@ -59,13 +61,15 @@ class StockReconciliationWizardService:
         writer = csv.writer(buf)
         writer.writerow(TEMPLATE_HEADERS)
         for sl, item in stock_rows:
-            writer.writerow([
-                item.item_code,
-                item.item_name,
-                item.uom or "Nos",
-                sl.quantity_on_hand or 0,
-                "",  # actual_qty — user fills this in
-            ])
+            writer.writerow(
+                [
+                    item.item_code,
+                    item.item_name,
+                    item.uom or "Nos",
+                    sl.quantity_on_hand or 0,
+                    "",  # actual_qty — user fills this in
+                ]
+            )
         return buf.getvalue().encode("utf-8")
 
     # ------------------------------------------------------------------
@@ -101,13 +105,17 @@ class StockReconciliationWizardService:
             actual_qty_str = row.get("actual_qty", "").strip()
 
             if not actual_qty_str:
-                errors.append(f"Row {idx}: actual_qty is required for item '{item_code}'.")
+                errors.append(
+                    f"Row {idx}: actual_qty is required for item '{item_code}'."
+                )
                 continue
 
             try:
                 actual_qty = int(Decimal(actual_qty_str))
             except Exception:
-                errors.append(f"Row {idx}: invalid actual_qty '{actual_qty_str}' for item '{item_code}'.")
+                errors.append(
+                    f"Row {idx}: invalid actual_qty '{actual_qty_str}' for item '{item_code}'."
+                )
                 continue
 
             if item_code not in stock_map:
@@ -118,24 +126,28 @@ class StockReconciliationWizardService:
             system_qty = (stock_level.quantity_on_hand or 0) if stock_level else 0
             difference = actual_qty - system_qty
 
-            rec_items.append({
-                "item_id": item.id,
-                "warehouse_id": warehouse_id,
-                "current_qty": system_qty,
-                "qty": actual_qty,
-                "qty_difference": difference,
-                "organization_id": organization_id,
-            })
+            rec_items.append(
+                {
+                    "item_id": item.id,
+                    "warehouse_id": warehouse_id,
+                    "current_qty": system_qty,
+                    "qty": actual_qty,
+                    "qty_difference": difference,
+                    "organization_id": organization_id,
+                }
+            )
 
-            discrepancies.append({
-                "item_id": str(item.id),
-                "item_code": item.item_code,
-                "item_name": item.item_name,
-                "system_qty": system_qty,
-                "actual_qty": actual_qty,
-                "difference": difference,
-                "uom": item.uom or "Nos",
-            })
+            discrepancies.append(
+                {
+                    "item_id": str(item.id),
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "system_qty": system_qty,
+                    "actual_qty": actual_qty,
+                    "difference": difference,
+                    "uom": item.uom or "Nos",
+                }
+            )
 
         if errors:
             raise ValidationError(
@@ -151,7 +163,7 @@ class StockReconciliationWizardService:
             organization_id=organization_id,
             reconciliation_no=rec_no,
             purpose="Stock Count",
-            posting_date=datetime.now(timezone.utc),
+            posting_date=datetime.now(UTC),
             status=StockEntryStatus.DRAFT,
             remarks=f"Wizard upload for warehouse {warehouse.code}",
             extra_data={"wizard_state": "pending_review"},
@@ -201,7 +213,7 @@ class StockReconciliationWizardService:
                 f"Reconciliation is in '{rec.status}' status. Only 'draft' reconciliations can be confirmed."
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for item in rec.items:
             if item.qty_difference is None or item.qty_difference == 0:
@@ -222,9 +234,11 @@ class StockReconciliationWizardService:
             )
 
             if stock_level:
-                stock_level.quantity_on_hand = (stock_level.quantity_on_hand or 0) + difference
-                stock_level.quantity_available = (
-                    (stock_level.quantity_on_hand or 0) - (stock_level.quantity_reserved or 0)
+                stock_level.quantity_on_hand = (
+                    stock_level.quantity_on_hand or 0
+                ) + difference
+                stock_level.quantity_available = (stock_level.quantity_on_hand or 0) - (
+                    stock_level.quantity_reserved or 0
                 )
                 stock_level.last_counted_at = now
             else:
@@ -279,7 +293,9 @@ class StockReconciliationWizardService:
             .first()
         )
         if not wh:
-            raise WarehouseNotFoundException(f"Warehouse with ID {warehouse_id} not found.")
+            raise WarehouseNotFoundException(
+                f"Warehouse with ID {warehouse_id} not found."
+            )
         return wh
 
     def _parse_csv(self, content: bytes) -> list[dict[str, str]]:
@@ -289,7 +305,9 @@ class StockReconciliationWizardService:
         rows = []
         for row in reader:
             # Normalise keys to lowercase + underscores
-            normalised = {k.strip().lower().replace(" ", "_"): v.strip() for k, v in row.items()}
+            normalised = {
+                k.strip().lower().replace(" ", "_"): v.strip() for k, v in row.items()
+            }
             if normalised.get("item_code"):
                 rows.append(normalised)
         return rows

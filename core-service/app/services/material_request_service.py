@@ -419,7 +419,9 @@ class MaterialRequestService:
             "rfqs": [
                 {
                     "id": rfq.id,
-                    "status": rfq.status.value if hasattr(rfq.status, "value") else rfq.status,
+                    "status": rfq.status.value
+                    if hasattr(rfq.status, "value")
+                    else rfq.status,
                     "closing_date": rfq.closing_date,
                     "created_at": rfq.created_at,
                 }
@@ -428,7 +430,9 @@ class MaterialRequestService:
             "purchase_orders": [
                 {
                     "id": po.id,
-                    "status": po.status.value if hasattr(po.status, "value") else po.status,
+                    "status": po.status.value
+                    if hasattr(po.status, "value")
+                    else po.status,
                     "party_id": po.party_id,
                     "grand_total": po.grand_total,
                     "created_at": po.created_at,
@@ -440,7 +444,9 @@ class MaterialRequestService:
                     "id": r.id,
                     "purchase_receipt_no": r.purchase_receipt_no,
                     "receipt_date": r.receipt_date,
-                    "status": r.status.value if hasattr(r.status, "value") else r.status,
+                    "status": r.status.value
+                    if hasattr(r.status, "value")
+                    else r.status,
                 }
                 for r in receipts
             ],
@@ -448,7 +454,9 @@ class MaterialRequestService:
                 {
                     "id": inv.id,
                     "invoice_no": inv.invoice_no,
-                    "status": inv.status.value if hasattr(inv.status, "value") else inv.status,
+                    "status": inv.status.value
+                    if hasattr(inv.status, "value")
+                    else inv.status,
                     "grand_total": inv.grand_total,
                 }
                 for inv in invoices
@@ -458,7 +466,9 @@ class MaterialRequestService:
                     "id": p.id,
                     "payment_no": p.payment_no,
                     "amount": p.amount,
-                    "status": p.status.value if hasattr(p.status, "value") else p.status,
+                    "status": p.status.value
+                    if hasattr(p.status, "value")
+                    else p.status,
                     "posting_date": p.posting_date,
                 }
                 for p in payments

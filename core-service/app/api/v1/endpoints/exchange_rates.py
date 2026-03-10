@@ -58,8 +58,12 @@ async def list_exchange_rates(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     from_currency: str | None = Query(None, description="Filter by source currency"),
     to_currency: str | None = Query(None, description="Filter by target currency"),
-    start_date: date | None = Query(None, description="Filter by start of effective date range"),
-    end_date: date | None = Query(None, description="Filter by end of effective date range"),
+    start_date: date | None = Query(
+        None, description="Filter by start of effective date range"
+    ),
+    end_date: date | None = Query(
+        None, description="Filter by end of effective date range"
+    ),
     sort_by: str = Query("effective_date", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_READ)),

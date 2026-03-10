@@ -78,7 +78,6 @@ class DuplicateUOMConversionException(CoreServiceException):
     pass
 
 
-
 class BatchNotFoundException(CoreServiceException):
     """Raised when a batch is not found"""
 
@@ -270,12 +269,12 @@ class AuthorizationError(CoreServiceException):
 
 class ValidationError(CoreServiceException):
     """Raised when validation fails (HTTP 400)
-    
+
     Attributes:
         message: Human-readable error message
         details: List of validation errors with field and reason
     """
-    
+
     def __init__(self, message: str, details: list[dict[str, str]] = None):
         super().__init__(message)
         self.message = message
@@ -315,13 +314,13 @@ class ResourceNotFoundException(CoreServiceException):
 
 class NotFoundError(CoreServiceException):
     """Raised when a referenced entity is not found (HTTP 404)
-    
+
     Attributes:
         message: Human-readable error message
         entity_type: Type of entity that was not found
         entity_id: ID of the entity that was not found
     """
-    
+
     def __init__(self, message: str, entity_type: str, entity_id: str):
         super().__init__(message)
         self.message = message
@@ -333,13 +332,13 @@ class NotFoundError(CoreServiceException):
 
 class StateError(CoreServiceException):
     """Raised when an operation conflicts with current state (HTTP 409)
-    
+
     Attributes:
         message: Human-readable error message
         current_state: Current state of the entity
         required_state: List of valid states for the operation
     """
-    
+
     def __init__(self, message: str, current_state: str, required_state: list[str]):
         super().__init__(message)
         self.message = message
@@ -351,15 +350,17 @@ class StateError(CoreServiceException):
 
 class IntegrationError(CoreServiceException):
     """Raised when external API calls fail (HTTP 502/503)
-    
+
     Attributes:
         message: Human-readable error message
         service: Name of the external service that failed
         details: Optional additional details about the failure
         status_code: HTTP status code (502 or 503)
     """
-    
-    def __init__(self, message: str, service: str, details: str = None, status_code: int = 502):
+
+    def __init__(
+        self, message: str, service: str, details: str = None, status_code: int = 502
+    ):
         super().__init__(message)
         self.message = message
         self.service = service
@@ -375,21 +376,25 @@ class IntegrationError(CoreServiceException):
 
 class BankAccountNotFoundException(CoreServiceException):
     """Raised when a bank account is not found"""
+
     pass
 
 
 class DuplicateIbanException(CoreServiceException):
     """Raised when IBAN already exists for the organization"""
+
     pass
 
 
 class InvalidAccountStateException(CoreServiceException):
     """Raised when trying to perform an invalid state transition"""
+
     pass
 
 
 class UnauthorizedException(CoreServiceException):
     """Raised when user doesn't have permission for the operation"""
+
     pass
 
 

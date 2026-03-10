@@ -10,14 +10,13 @@ os.environ.setdefault("IDENTITY_SERVICE_URL", "http://localhost:8000")
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.exc import IntegrityError
 
 from app.database import Base
 from app.models.base import AccountStatus, AccountType
 from app.repositories.chart_of_account_repository import AccountRepository
-
 
 # Create test database
 engine = create_engine(
@@ -112,8 +111,8 @@ def test_list_with_filters(account_repo):
     for i in range(3):
         data = {
             "organization_id": organization_id,
-            "account_code": f"1000-0{i+1}",
-            "account_name": f"Account {i+1}",
+            "account_code": f"1000-0{i + 1}",
+            "account_name": f"Account {i + 1}",
             "account_type": AccountType.ASSET,
             "currency": "USD",
             "status": AccountStatus.ACTIVE,

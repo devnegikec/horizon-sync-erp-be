@@ -151,9 +151,7 @@ class TestUpdateReceivedQuantities:
         test_item_id_1,
     ):
         """Test partial receipt updates status to PARTIALLY_RECEIVED"""
-        received_items = [
-            {"item_id": test_item_id_1, "qty": 50.0}
-        ]
+        received_items = [{"item_id": test_item_id_1, "qty": 50.0}]
 
         result = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_single_item.id,
@@ -164,7 +162,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to PARTIALLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
-        
+
         # Verify received quantity updated
         assert result["line_items"][0]["received_quantity"] == Decimal("50.00")
         assert result["line_items"][0]["quantity"] == Decimal("100.00")
@@ -178,9 +176,7 @@ class TestUpdateReceivedQuantities:
         test_item_id_1,
     ):
         """Test full receipt updates status to FULLY_RECEIVED"""
-        received_items = [
-            {"item_id": test_item_id_1, "qty": 100.0}
-        ]
+        received_items = [{"item_id": test_item_id_1, "qty": 100.0}]
 
         result = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_single_item.id,
@@ -191,7 +187,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to FULLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.FULLY_RECEIVED.value
-        
+
         # Verify received quantity updated
         assert result["line_items"][0]["received_quantity"] == Decimal("100.00")
         assert result["line_items"][0]["quantity"] == Decimal("100.00")
@@ -206,9 +202,7 @@ class TestUpdateReceivedQuantities:
     ):
         """Test multiple partial receipts accumulate correctly"""
         # First receipt
-        received_items_1 = [
-            {"item_id": test_item_id_1, "qty": 30.0}
-        ]
+        received_items_1 = [{"item_id": test_item_id_1, "qty": 30.0}]
         result1 = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_single_item.id,
             received_items=received_items_1,
@@ -219,9 +213,7 @@ class TestUpdateReceivedQuantities:
         assert result1["line_items"][0]["received_quantity"] == Decimal("30.00")
 
         # Second receipt
-        received_items_2 = [
-            {"item_id": test_item_id_1, "qty": 40.0}
-        ]
+        received_items_2 = [{"item_id": test_item_id_1, "qty": 40.0}]
         result2 = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_single_item.id,
             received_items=received_items_2,
@@ -232,9 +224,7 @@ class TestUpdateReceivedQuantities:
         assert result2["line_items"][0]["received_quantity"] == Decimal("70.00")
 
         # Third receipt completes the order
-        received_items_3 = [
-            {"item_id": test_item_id_1, "qty": 30.0}
-        ]
+        received_items_3 = [{"item_id": test_item_id_1, "qty": 30.0}]
         result3 = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_single_item.id,
             received_items=received_items_3,
@@ -253,9 +243,7 @@ class TestUpdateReceivedQuantities:
         test_item_id_1,
     ):
         """Test receiving only one item from multiple items"""
-        received_items = [
-            {"item_id": test_item_id_1, "qty": 50.0}
-        ]
+        received_items = [{"item_id": test_item_id_1, "qty": 50.0}]
 
         result = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_multiple_items.id,
@@ -266,7 +254,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to PARTIALLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
-        
+
         # Verify only first item received
         assert result["line_items"][0]["received_quantity"] == Decimal("50.00")
         assert result["line_items"][1]["received_quantity"] == Decimal("0.00")
@@ -295,7 +283,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to PARTIALLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
-        
+
         # Verify both items partially received
         assert result["line_items"][0]["received_quantity"] == Decimal("50.00")
         assert result["line_items"][1]["received_quantity"] == Decimal("100.00")
@@ -309,9 +297,7 @@ class TestUpdateReceivedQuantities:
         test_item_id_1,
     ):
         """Test receiving full quantity of one item when multiple items exist"""
-        received_items = [
-            {"item_id": test_item_id_1, "qty": 100.0}
-        ]
+        received_items = [{"item_id": test_item_id_1, "qty": 100.0}]
 
         result = purchase_order_service.update_received_quantities(
             po_id=submitted_purchase_order_multiple_items.id,
@@ -322,7 +308,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status is PARTIALLY_RECEIVED (not all items complete)
         assert result["status"] == PurchaseOrderStatus.PARTIALLY_RECEIVED.value
-        
+
         # Verify first item fully received, second not
         assert result["line_items"][0]["received_quantity"] == Decimal("100.00")
         assert result["line_items"][1]["received_quantity"] == Decimal("0.00")
@@ -351,7 +337,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to FULLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.FULLY_RECEIVED.value
-        
+
         # Verify all items fully received
         assert result["line_items"][0]["received_quantity"] == Decimal("100.00")
         assert result["line_items"][1]["received_quantity"] == Decimal("200.00")
@@ -378,7 +364,7 @@ class TestUpdateReceivedQuantities:
 
         # Verify status updated to FULLY_RECEIVED
         assert result["status"] == PurchaseOrderStatus.FULLY_RECEIVED.value
-        
+
         # Verify received quantity is more than ordered
         assert result["line_items"][0]["received_quantity"] == Decimal("120.00")
         assert result["line_items"][0]["quantity"] == Decimal("100.00")
@@ -396,7 +382,7 @@ class TestCalculatePOStatus:
         status = purchase_order_service._calculate_po_status(
             submitted_purchase_order_single_item
         )
-        
+
         # Should remain SUBMITTED
         assert status == PurchaseOrderStatus.SUBMITTED
 
@@ -416,7 +402,7 @@ class TestCalculatePOStatus:
         status = purchase_order_service._calculate_po_status(
             submitted_purchase_order_single_item
         )
-        
+
         assert status == PurchaseOrderStatus.PARTIALLY_RECEIVED
 
     def test_calculate_status_full_receipt(
@@ -435,7 +421,7 @@ class TestCalculatePOStatus:
         status = purchase_order_service._calculate_po_status(
             submitted_purchase_order_single_item
         )
-        
+
         assert status == PurchaseOrderStatus.FULLY_RECEIVED
 
     def test_calculate_status_over_receipt(
@@ -454,5 +440,5 @@ class TestCalculatePOStatus:
         status = purchase_order_service._calculate_po_status(
             submitted_purchase_order_single_item
         )
-        
+
         assert status == PurchaseOrderStatus.FULLY_RECEIVED

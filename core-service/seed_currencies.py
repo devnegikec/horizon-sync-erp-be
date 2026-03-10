@@ -15,21 +15,66 @@ ORG_ID = uuid.UUID("bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150")
 CURRENCIES_DATA = [
     {"code": "USD", "name": "US Dollar", "symbol": "$", "is_base_currency": True},
     {"code": "EUR", "name": "Euro", "symbol": "€", "is_base_currency": False},
-    {"code": "GBP", "name": "British Pound Sterling", "symbol": "£", "is_base_currency": False},
+    {
+        "code": "GBP",
+        "name": "British Pound Sterling",
+        "symbol": "£",
+        "is_base_currency": False,
+    },
     {"code": "INR", "name": "Indian Rupee", "symbol": "₹", "is_base_currency": False},
     {"code": "AED", "name": "UAE Dirham", "symbol": "د.إ", "is_base_currency": False},
     {"code": "SAR", "name": "Saudi Riyal", "symbol": "﷼", "is_base_currency": False},
     {"code": "JPY", "name": "Japanese Yen", "symbol": "¥", "is_base_currency": False},
     {"code": "CNY", "name": "Chinese Yuan", "symbol": "¥", "is_base_currency": False},
-    {"code": "AUD", "name": "Australian Dollar", "symbol": "A$", "is_base_currency": False},
-    {"code": "CAD", "name": "Canadian Dollar", "symbol": "C$", "is_base_currency": False},
+    {
+        "code": "AUD",
+        "name": "Australian Dollar",
+        "symbol": "A$",
+        "is_base_currency": False,
+    },
+    {
+        "code": "CAD",
+        "name": "Canadian Dollar",
+        "symbol": "C$",
+        "is_base_currency": False,
+    },
     {"code": "CHF", "name": "Swiss Franc", "symbol": "Fr", "is_base_currency": False},
-    {"code": "SGD", "name": "Singapore Dollar", "symbol": "S$", "is_base_currency": False},
-    {"code": "MYR", "name": "Malaysian Ringgit", "symbol": "RM", "is_base_currency": False},
-    {"code": "BDT", "name": "Bangladeshi Taka", "symbol": "৳", "is_base_currency": False},
-    {"code": "PKR", "name": "Pakistani Rupee", "symbol": "₨", "is_base_currency": False},
-    {"code": "LKR", "name": "Sri Lankan Rupee", "symbol": "Rs", "is_base_currency": False},
-    {"code": "NPR", "name": "Nepalese Rupee", "symbol": "Rs", "is_base_currency": False},
+    {
+        "code": "SGD",
+        "name": "Singapore Dollar",
+        "symbol": "S$",
+        "is_base_currency": False,
+    },
+    {
+        "code": "MYR",
+        "name": "Malaysian Ringgit",
+        "symbol": "RM",
+        "is_base_currency": False,
+    },
+    {
+        "code": "BDT",
+        "name": "Bangladeshi Taka",
+        "symbol": "৳",
+        "is_base_currency": False,
+    },
+    {
+        "code": "PKR",
+        "name": "Pakistani Rupee",
+        "symbol": "₨",
+        "is_base_currency": False,
+    },
+    {
+        "code": "LKR",
+        "name": "Sri Lankan Rupee",
+        "symbol": "Rs",
+        "is_base_currency": False,
+    },
+    {
+        "code": "NPR",
+        "name": "Nepalese Rupee",
+        "symbol": "Rs",
+        "is_base_currency": False,
+    },
     {"code": "KWD", "name": "Kuwaiti Dinar", "symbol": "KD", "is_base_currency": False},
     {"code": "QAR", "name": "Qatari Riyal", "symbol": "QR", "is_base_currency": False},
     {"code": "OMR", "name": "Omani Rial", "symbol": "OMR", "is_base_currency": False},
@@ -134,7 +179,9 @@ def seed_currencies():
             )
 
             if existing:
-                print(f"  skip  {from_cur} → {to_cur} on {effective_date} — already exists")
+                print(
+                    f"  skip  {from_cur} → {to_cur} on {effective_date} — already exists"
+                )
                 rate_skipped += 1
                 continue
 
@@ -153,8 +200,12 @@ def seed_currencies():
             rate_created += 1
 
         db.commit()
-        print(f"\n✓ Currency seed complete — {cur_created} currencies created, {cur_skipped} skipped")
-        print(f"✓ Exchange rate seed complete — {rate_created} rates created, {rate_skipped} skipped")
+        print(
+            f"\n✓ Currency seed complete — {cur_created} currencies created, {cur_skipped} skipped"
+        )
+        print(
+            f"✓ Exchange rate seed complete — {rate_created} rates created, {rate_skipped} skipped"
+        )
 
     except Exception as e:
         db.rollback()

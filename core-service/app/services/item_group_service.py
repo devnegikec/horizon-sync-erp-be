@@ -51,6 +51,7 @@ class ItemGroupService:
         # Auto-generate code if not provided
         if not item_group_data.code:
             from app.services.document_numbering_service import DocumentNumberingService
+
             item_group_data.code = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "item_group"
             )

@@ -6,16 +6,14 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ValidationError
-from app.repositories.payment_entry_repository import PaymentEntryRepository
-from app.repositories.payment_reference_repository import PaymentReferenceRepository
-from app.repositories.invoice_repository import InvoiceRepository
 from app.core.cache import (
-    get_cached_unpaid_invoices,
-    cache_unpaid_invoices,
     invalidate_invoice_cache,
     invalidate_payment_cache,
 )
+from app.core.exceptions import ValidationError
+from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.payment_entry_repository import PaymentEntryRepository
+from app.repositories.payment_reference_repository import PaymentReferenceRepository
 
 
 class AllocationService:
@@ -34,11 +32,15 @@ class AllocationService:
         self.invoice_repo = InvoiceRepository(db)
 
         # Import PaymentAuditLogRepository for audit trail
-        from app.repositories.payment_audit_log_repository import PaymentAuditLogRepository
+        from app.repositories.payment_audit_log_repository import (
+            PaymentAuditLogRepository,
+        )
+
         self.audit_logger = PaymentAuditLogRepository(db)
 
         # Import InvoiceStatusService for automatic status updates
         from app.services.invoice_status_service import InvoiceStatusService
+
         self.invoice_status_service = InvoiceStatusService(db)
 
     def _validate_allocation_amount(
@@ -65,8 +67,8 @@ class AllocationService:
 
         # Check decimal places (max 2)
         amount_str = str(allocated_amount)
-        if '.' in amount_str:
-            decimal_places = len(amount_str.split('.')[1])
+        if "." in amount_str:
+            decimal_places = len(amount_str.split(".")[1])
             if decimal_places > 2:
                 raise ValidationError(
                     f"Allocation amount must have at most 2 decimal places, got {decimal_places}"
@@ -78,9 +80,7 @@ class AllocationService:
             )
 
         if allocated_amount > invoice_outstanding_balance:
-            msg = (
-                f"Allocation amount {allocated_amount} exceeds invoice outstanding balance {invoice_outstanding_balance}. "
-            )
+            msg = f"Allocation amount {allocated_amount} exceeds invoice outstanding balance {invoice_outstanding_balance}. "
             if invoice_outstanding_balance == 0:
                 msg += "The invoice may already be fully allocated or have no amount set. Check the invoice total and existing allocations."
             raise ValidationError(msg)
@@ -146,7 +146,9 @@ class AllocationService:
             ValidationError: If invoice not found
         """
         # Get invoice (without items to avoid querying invoice_items columns that may not exist)
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+        invoice = self.invoice_repo.get_by_id(
+            invoice_id, organization_id, load_items=False
+        )
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -166,9 +168,7 @@ class AllocationService:
 
         total_allocated = _to_decimal(total_allocated_raw)
 
-        total_from_header = _to_decimal(
-            getattr(invoice, "grand_total", None)
-        )
+        total_from_header = _to_decimal(getattr(invoice, "grand_total", None))
         balance_due = _to_decimal(getattr(invoice, "outstanding_amount", None))
         try:
             total_from_items = self.invoice_repo.get_invoice_total_from_items(
@@ -183,7 +183,9 @@ class AllocationService:
         # Take the max of: balance_due, (total - allocated), (sum items - allocated)
         # so allocation works whether amounts live in header, balance_due, or line items.
         outstanding_from_header = max(Decimal("0"), total_from_header - total_allocated)
-        outstanding_from_balance_due = balance_due  # already "current due" in many setups
+        outstanding_from_balance_due = (
+            balance_due  # already "current due" in many setups
+        )
         outstanding_from_items = max(Decimal("0"), total_from_items - total_allocated)
 
         outstanding_balance = max(
@@ -193,7 +195,6 @@ class AllocationService:
         )
 
         return outstanding_balance
-
 
     def create_allocation(
         self,
@@ -219,10 +220,10 @@ class AllocationService:
         Raises:
             ValidationError: If validation fails
         """
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
-        from app.models.payment_reference import PaymentReference
-        from app.services.currency_service import CurrencyService
         from datetime import date
+
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
+        from app.services.currency_service import CurrencyService
 
         # Get payment entry
         payment = self.payment_repo.get_by_id(payment_id, organization_id)
@@ -233,9 +234,8 @@ class AllocationService:
 
         # Validate payment is in Draft status (support both enum and string from DB)
         status_val = getattr(payment.status, "value", payment.status)
-        is_draft = (
-            payment.status == PaymentEntryStatus.DRAFT
-            or (str(status_val or "").lower() == "draft")
+        is_draft = payment.status == PaymentEntryStatus.DRAFT or (
+            str(status_val or "").lower() == "draft"
         )
         if not is_draft:
             raise ValidationError(
@@ -244,7 +244,9 @@ class AllocationService:
             )
 
         # Get invoice (without items to avoid querying invoice_items columns that may not exist)
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+        invoice = self.invoice_repo.get_by_id(
+            invoice_id, organization_id, load_items=False
+        )
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -276,7 +278,7 @@ class AllocationService:
 
         payment_currency = payment.currency_code
         # Invoice model uses 'currency' field, not 'currency_code'
-        invoice_currency = getattr(invoice, 'currency', 'USD')
+        invoice_currency = getattr(invoice, "currency", "USD")
 
         if payment_currency != invoice_currency:
             # Get exchange rate from currency service
@@ -310,7 +312,9 @@ class AllocationService:
         try:
             payment_reference = self.reference_repo.create(payment_reference_data)
         except SQLIntegrityError as e:
-            if "unique" in (e.orig.args[0] if e.orig else "").lower() or "unique_payment_references" in str(e):
+            if "unique" in (
+                e.orig.args[0] if e.orig else ""
+            ).lower() or "unique_payment_references" in str(e):
                 raise ValidationError(
                     "An allocation for this payment and invoice already exists."
                 ) from e
@@ -327,7 +331,9 @@ class AllocationService:
                 "invoice_id": str(invoice_id),
                 "allocated_amount": str(allocated_amount),
                 "exchange_rate": str(exchange_rate),
-                "allocated_amount_invoice_currency": str(allocated_amount_invoice_currency),
+                "allocated_amount_invoice_currency": str(
+                    allocated_amount_invoice_currency
+                ),
             },
         }
         self.audit_logger.create(audit_log_data)
@@ -372,10 +378,10 @@ class AllocationService:
         Raises:
             ValidationError: If any validation fails
         """
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
-        from app.models.payment_reference import PaymentReference
-        from app.services.currency_service import CurrencyService
         from datetime import date
+
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
+        from app.services.currency_service import CurrencyService
 
         if not allocations:
             raise ValidationError("At least one allocation is required")
@@ -389,9 +395,8 @@ class AllocationService:
 
         # Validate payment is in Draft status (support both enum and string from DB)
         status_val = getattr(payment.status, "value", payment.status)
-        is_draft = (
-            payment.status == PaymentEntryStatus.DRAFT
-            or (str(status_val or "").lower() == "draft")
+        is_draft = payment.status == PaymentEntryStatus.DRAFT or (
+            str(status_val or "").lower() == "draft"
         )
         if not is_draft:
             raise ValidationError(
@@ -426,15 +431,17 @@ class AllocationService:
 
             # Check decimal places (max 2)
             amount_str = str(allocated_amount)
-            if '.' in amount_str:
-                decimal_places = len(amount_str.split('.')[1])
+            if "." in amount_str:
+                decimal_places = len(amount_str.split(".")[1])
                 if decimal_places > 2:
                     raise ValidationError(
                         f"Allocation {idx}: allocated_amount must have at most 2 decimal places"
                     )
 
             # Get invoice (without items to avoid querying invoice_items columns that may not exist)
-            invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+            invoice = self.invoice_repo.get_by_id(
+                invoice_id, organization_id, load_items=False
+            )
             if not invoice:
                 raise ValidationError(
                     f"Allocation {idx}: Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -466,12 +473,14 @@ class AllocationService:
                 )
 
             # Store invoice data for later processing
-            invoice_data.append({
-                "invoice_id": invoice_id,
-                "invoice": invoice,
-                "allocated_amount": allocated_amount,
-                "outstanding_balance": invoice_outstanding_balance,
-            })
+            invoice_data.append(
+                {
+                    "invoice_id": invoice_id,
+                    "invoice": invoice,
+                    "allocated_amount": allocated_amount,
+                    "outstanding_balance": invoice_outstanding_balance,
+                }
+            )
 
         # All validations passed - create all allocations within transaction
         created_references = []
@@ -488,7 +497,7 @@ class AllocationService:
                 allocated_amount_invoice_currency = allocated_amount
 
                 payment_currency = payment.currency_code
-                invoice_currency = getattr(invoice, 'currency', 'USD')
+                invoice_currency = getattr(invoice, "currency", "USD")
 
                 if payment_currency != invoice_currency:
                     try:
@@ -530,7 +539,9 @@ class AllocationService:
                         "invoice_id": str(invoice_id),
                         "allocated_amount": str(allocated_amount),
                         "exchange_rate": str(exchange_rate),
-                        "allocated_amount_invoice_currency": str(allocated_amount_invoice_currency),
+                        "allocated_amount_invoice_currency": str(
+                            allocated_amount_invoice_currency
+                        ),
                     },
                 }
                 self.audit_logger.create(audit_log_data)
@@ -539,7 +550,9 @@ class AllocationService:
             # Collect unique invoice IDs to avoid duplicate updates
             unique_invoice_ids = set(data["invoice_id"] for data in invoice_data)
             for invoice_id in unique_invoice_ids:
-                self.invoice_status_service.update_invoice_status(invoice_id, organization_id)
+                self.invoice_status_service.update_invoice_status(
+                    invoice_id, organization_id
+                )
 
             # Commit all allocations in single transaction
             self.db.commit()
@@ -557,7 +570,7 @@ class AllocationService:
 
             return created_references
 
-        except Exception as e:
+        except Exception:
             # Rollback transaction on any error
             self.db.rollback()
             raise
@@ -579,7 +592,7 @@ class AllocationService:
         Raises:
             ValidationError: If validation fails
         """
-        from app.models.base import PaymentEntryStatus, PaymentAuditAction
+        from app.models.base import PaymentAuditAction, PaymentEntryStatus
         from app.models.payment_reference import PaymentReference
 
         # Get the payment_reference record first to capture details for audit log
@@ -651,7 +664,9 @@ class AllocationService:
         # Invalidate payment cache (affects unallocated_amount)
         invalidate_payment_cache(payment_reference.payment_id, organization_id)
         # Invalidate invoice cache (affects unpaid invoices list)
-        invalidate_invoice_cache(payment_reference.invoice_id, payment.party_id, organization_id)
+        invalidate_invoice_cache(
+            payment_reference.invoice_id, payment.party_id, organization_id
+        )
 
     def get_payment_allocations(
         self,
@@ -706,12 +721,14 @@ class AllocationService:
             }
 
             # Add invoice details if invoice is loaded
-            if hasattr(ref, 'invoice') and ref.invoice:
+            if hasattr(ref, "invoice") and ref.invoice:
                 invoice = ref.invoice
                 response_data["invoice_no"] = invoice.invoice_no
                 response_data["invoice_date"] = invoice.posting_date
                 response_data["invoice_amount"] = invoice.grand_total
-                response_data["invoice_outstanding_balance"] = invoice.outstanding_amount
+                response_data["invoice_outstanding_balance"] = (
+                    invoice.outstanding_amount
+                )
 
             responses.append(PaymentReferenceResponse(**response_data))
 
@@ -742,7 +759,9 @@ class AllocationService:
         from app.schemas.payment_reference import PaymentReferenceResponse
 
         # Validate invoice exists (without items to avoid querying invoice_items columns that may not exist)
-        invoice = self.invoice_repo.get_by_id(invoice_id, organization_id, load_items=False)
+        invoice = self.invoice_repo.get_by_id(
+            invoice_id, organization_id, load_items=False
+        )
         if not invoice:
             raise ValidationError(
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
@@ -770,7 +789,7 @@ class AllocationService:
             }
 
             # Add payment details if payment_entry is loaded
-            if hasattr(ref, 'payment_entry') and ref.payment_entry:
+            if hasattr(ref, "payment_entry") and ref.payment_entry:
                 payment = ref.payment_entry
                 response_data["payment_no"] = payment.receipt_number
                 response_data["payment_date"] = payment.payment_date

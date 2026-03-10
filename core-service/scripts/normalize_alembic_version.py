@@ -35,12 +35,16 @@ def main() -> int:
         if not rows:
             return 0
         # Multiple rows, or single row at old merge: set to linear head
-        need_fix = len(rows) > 1 or any(r[0] in (OLD_MERGE_REVISION, OLD_LINEAR_HEAD) for r in rows)
+        need_fix = len(rows) > 1 or any(
+            r[0] in (OLD_MERGE_REVISION, OLD_LINEAR_HEAD) for r in rows
+        )
         if not need_fix:
             return 0
         # Clear stale version so alembic runs all migrations from scratch
         conn.execute(text("DELETE FROM alembic_version"))
-        print(f"[normalize_alembic_version] Cleared stale alembic_version (was {[r[0] for r in rows]}). Alembic will re-run from base.")
+        print(
+            f"[normalize_alembic_version] Cleared stale alembic_version (was {[r[0] for r in rows]}). Alembic will re-run from base."
+        )
     return 0
 
 

@@ -6,12 +6,12 @@ from datetime import UTC, datetime
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Index,
     Numeric,
     String,
     UniqueConstraint,
-    Date,
 )
 
 from app.database import Base
@@ -39,17 +39,26 @@ class ExchangeRate(Base):
     effective_date = Column(Date, nullable=False)
 
     # Capture timestamp for audit trail
-    captured_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(UTC))
+    captured_at = Column(
+        DateTime(timezone=True), nullable=True, default=lambda: datetime.now(UTC)
+    )
 
     # Audit fields
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
 
     __table_args__ = (
-        UniqueConstraint('from_currency', 'to_currency', 'effective_date', name='uq_exchange_rate_currency_date'),
-        CheckConstraint('rate > 0', name='ck_exchange_rate_positive'),
-        Index('ix_exchange_rates_currencies', 'from_currency', 'to_currency'),
-        Index('ix_exchange_rates_effective_date', 'effective_date'),
-        Index('ix_exchange_rates_org_id', 'organization_id'),
+        UniqueConstraint(
+            "from_currency",
+            "to_currency",
+            "effective_date",
+            name="uq_exchange_rate_currency_date",
+        ),
+        CheckConstraint("rate > 0", name="ck_exchange_rate_positive"),
+        Index("ix_exchange_rates_currencies", "from_currency", "to_currency"),
+        Index("ix_exchange_rates_effective_date", "effective_date"),
+        Index("ix_exchange_rates_org_id", "organization_id"),
     )
 
     def __repr__(self):

@@ -25,17 +25,27 @@ def currency_service(db_session):
 @pytest.fixture
 def sample_currency(currency_service, sample_organization_id, sample_user_id):
     """Create and return a sample currency for reuse in tests."""
-    data = CurrencyMasterCreate(code="USD", name="US Dollar", symbol="$", is_base_currency=False)
-    return currency_service.create_currency(data, sample_organization_id, sample_user_id)
+    data = CurrencyMasterCreate(
+        code="USD", name="US Dollar", symbol="$", is_base_currency=False
+    )
+    return currency_service.create_currency(
+        data, sample_organization_id, sample_user_id
+    )
 
 
 # ── Create ──────────────────────────────────────────────────────────────
 
 
-def test_create_currency_with_valid_data(currency_service, sample_organization_id, sample_user_id):
+def test_create_currency_with_valid_data(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.1"""
-    data = CurrencyMasterCreate(code="EUR", name="Euro", symbol="€", is_base_currency=False)
-    currency = currency_service.create_currency(data, sample_organization_id, sample_user_id)
+    data = CurrencyMasterCreate(
+        code="EUR", name="Euro", symbol="€", is_base_currency=False
+    )
+    currency = currency_service.create_currency(
+        data, sample_organization_id, sample_user_id
+    )
 
     assert currency.id is not None
     assert currency.code == "EUR"
@@ -48,10 +58,14 @@ def test_create_currency_with_valid_data(currency_service, sample_organization_i
     assert currency.deleted_at is None
 
 
-def test_create_currency_without_symbol(currency_service, sample_organization_id, sample_user_id):
+def test_create_currency_without_symbol(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.1 — symbol is optional"""
     data = CurrencyMasterCreate(code="GBP", name="British Pound")
-    currency = currency_service.create_currency(data, sample_organization_id, sample_user_id)
+    currency = currency_service.create_currency(
+        data, sample_organization_id, sample_user_id
+    )
 
     assert currency.code == "GBP"
     assert currency.symbol is None
@@ -63,7 +77,9 @@ def test_create_currency_duplicate_code_raises_409(
     """Validates: Requirements 3.7"""
     duplicate = CurrencyMasterCreate(code="USD", name="United States Dollar")
     with pytest.raises(DuplicateCurrencyCodeException):
-        currency_service.create_currency(duplicate, sample_organization_id, sample_user_id)
+        currency_service.create_currency(
+            duplicate, sample_organization_id, sample_user_id
+        )
 
 
 # ── Code format validation (Pydantic) ──────────────────────────────────
@@ -150,7 +166,9 @@ def test_get_currency_different_org_raises_404(currency_service, sample_currency
 # ── List ────────────────────────────────────────────────────────────────
 
 
-def test_list_currencies_with_pagination(currency_service, sample_organization_id, sample_user_id):
+def test_list_currencies_with_pagination(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.2"""
     codes = ["USD", "EUR", "GBP"]
     for code in codes:
@@ -179,7 +197,9 @@ def test_list_currencies_with_pagination(currency_service, sample_organization_i
     assert pag_p2["has_prev"] is True
 
 
-def test_list_currencies_with_search(currency_service, sample_organization_id, sample_user_id):
+def test_list_currencies_with_search(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.2"""
     currency_service.create_currency(
         CurrencyMasterCreate(code="USD", name="US Dollar"),
@@ -213,7 +233,9 @@ def test_list_currencies_org_isolation(currency_service, sample_currency):
 # ── Update ──────────────────────────────────────────────────────────────
 
 
-def test_update_currency(currency_service, sample_currency, sample_organization_id, sample_user_id):
+def test_update_currency(
+    currency_service, sample_currency, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.4"""
     update_data = CurrencyMasterUpdate(name="United States Dollar", symbol="US$")
     updated = currency_service.update_currency(
@@ -256,7 +278,9 @@ def test_update_currency_base_toggle(
     assert refreshed_usd.is_base_currency is False
 
 
-def test_update_currency_not_found_raises_404(currency_service, sample_organization_id, sample_user_id):
+def test_update_currency_not_found_raises_404(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.9"""
     with pytest.raises(CurrencyNotFoundException):
         currency_service.update_currency(
@@ -288,10 +312,14 @@ def test_soft_delete_currency(
     assert pagination["total_items"] == 0
 
 
-def test_soft_delete_not_found_raises_404(currency_service, sample_organization_id, sample_user_id):
+def test_soft_delete_not_found_raises_404(
+    currency_service, sample_organization_id, sample_user_id
+):
     """Validates: Requirements 3.9"""
     with pytest.raises(CurrencyNotFoundException):
-        currency_service.delete_currency(uuid.uuid4(), sample_organization_id, sample_user_id)
+        currency_service.delete_currency(
+            uuid.uuid4(), sample_organization_id, sample_user_id
+        )
 
 
 def test_service_duplicate_check_ignores_soft_deleted(
@@ -309,4 +337,7 @@ def test_service_duplicate_check_ignores_soft_deleted(
     )
 
     # After soft-delete, the repository should NOT find the old record
-    assert currency_service.currency_repo.get_by_code("USD", sample_organization_id) is None
+    assert (
+        currency_service.currency_repo.get_by_code("USD", sample_organization_id)
+        is None
+    )

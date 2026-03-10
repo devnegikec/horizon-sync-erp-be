@@ -22,7 +22,9 @@ class PurchaseOrderRepository:
         self.db.refresh(po)
         return po
 
-    def get_by_id(self, po_id: UUID, organization_id: UUID, for_update: bool = False) -> PurchaseOrder | None:
+    def get_by_id(
+        self, po_id: UUID, organization_id: UUID, for_update: bool = False
+    ) -> PurchaseOrder | None:
         """
         Get Purchase Order by ID with all relationships.
 
@@ -121,9 +123,11 @@ class PurchaseOrderRepository:
         self, line_id: UUID, received_quantity
     ) -> PurchaseOrderLine:
         """Update received quantity for a Purchase Order line item"""
-        line = self.db.query(PurchaseOrderLine).filter(
-            PurchaseOrderLine.id == line_id
-        ).first()
+        line = (
+            self.db.query(PurchaseOrderLine)
+            .filter(PurchaseOrderLine.id == line_id)
+            .first()
+        )
         if line:
             line.received_quantity = received_quantity
             self.db.commit()

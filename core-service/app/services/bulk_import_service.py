@@ -101,7 +101,7 @@ class BulkImportService:
             job = self.repository.get_job_by_id(job_id)
             if not job:
                 return {"success": False, "error": "Job not found"}
-            
+
             user_id = job.created_by_id
 
             # Update job status to PROCESSING
@@ -144,7 +144,9 @@ class BulkImportService:
 
             # Validate columns
             if rows:
-                is_valid_cols, col_errors = BulkImportValidator.validate_columns(list(rows[0].keys()))
+                is_valid_cols, col_errors = BulkImportValidator.validate_columns(
+                    list(rows[0].keys())
+                )
                 if not is_valid_cols:
                     error_msg = col_errors[0]
                     self.repository.update_job_status(
@@ -159,7 +161,7 @@ class BulkImportService:
             successful_rows = 0
             failed_rows = 0
             error_details = []
-            
+
             # Cache for item groups to avoid redundant DB lookups
             item_groups_cache = {}
 
@@ -181,7 +183,7 @@ class BulkImportService:
                 # Handle Item Group auto-creation
                 item_group_id = row.get("item_group_id")
                 item_group_name = row.get("item_group_name")
-                
+
                 if not item_group_id and item_group_name:
                     item_group_name = item_group_name.strip()
                     if item_group_name in item_groups_cache:
@@ -192,7 +194,7 @@ class BulkImportService:
                             self.db.query(ItemGroup)
                             .filter(
                                 ItemGroup.organization_id == organization_id,
-                                ItemGroup.name == item_group_name
+                                ItemGroup.name == item_group_name,
                             )
                             .first()
                         )
@@ -207,7 +209,7 @@ class BulkImportService:
                                     code=item_group_name.upper().replace(" ", "_")[:50],
                                     is_active=True,
                                     created_by=user_id,
-                                    updated_by=user_id
+                                    updated_by=user_id,
                                 )
                                 self.db.add(new_group)
                                 self.db.commit()
@@ -215,17 +217,23 @@ class BulkImportService:
                                 item_group_id = new_group.id
                             except Exception as e:
                                 self.db.rollback()
-                                logger.error(f"Failed to create item group '{item_group_name}': {str(e)}")
-                                # Continue with None item_group_id or fail the row? 
+                                logger.error(
+                                    f"Failed to create item group '{item_group_name}': {str(e)}"
+                                )
+                                # Continue with None item_group_id or fail the row?
                                 # Let's fail the row if group creation was explicitly requested but failed.
                                 failed_rows += 1
-                                error_details.append({
-                                    "row_number": row_number,
-                                    "errors": [f"Failed to create item group '{item_group_name}'"],
-                                    "data": row
-                                })
+                                error_details.append(
+                                    {
+                                        "row_number": row_number,
+                                        "errors": [
+                                            f"Failed to create item group '{item_group_name}'"
+                                        ],
+                                        "data": row,
+                                    }
+                                )
                                 continue
-                        
+
                         item_groups_cache[item_group_name] = item_group_id
 
                 # Check for duplicate item_code in organization
@@ -243,7 +251,9 @@ class BulkImportService:
                     error_details.append(
                         {
                             "row_number": row_number,
-                            "errors": [f"Item code '{row['item_code']}' already exists"],
+                            "errors": [
+                                f"Item code '{row['item_code']}' already exists"
+                            ],
                             "data": row,
                         }
                     )
@@ -256,28 +266,63 @@ class BulkImportService:
                         "organization_id": organization_id,
                         "item_code": row["item_code"].strip(),
                         "item_name": row["item_name"].strip(),
-                        "item_group_id": item_group_id or row.get("item_group_id") or None,
+                        "item_group_id": item_group_id
+                        or row.get("item_group_id")
+                        or None,
                         "created_by": user_id,
-                        "updated_by": user_id
+                        "updated_by": user_id,
                     }
-                    
+
                     # Map other valid columns if present in row
                     for col in BulkImportValidator.VALID_COLUMNS:
-                        if col in row and col not in ["item_code", "item_name", "item_group_id", "item_group_name"] and row[col] is not None:
+                        if (
+                            col in row
+                            and col
+                            not in [
+                                "item_code",
+                                "item_name",
+                                "item_group_id",
+                                "item_group_name",
+                            ]
+                            and row[col] is not None
+                        ):
                             # Handle numeric conversions
-                            if col in ["standard_rate", "valuation_rate", "weight_per_unit"]:
+                            if col in [
+                                "standard_rate",
+                                "valuation_rate",
+                                "weight_per_unit",
+                            ]:
                                 try:
                                     item_data[col] = float(row[col])
                                 except (ValueError, TypeError):
                                     continue
                             # Handle boolean conversions
-                            elif col in ["maintain_stock", "allow_negative_stock", "has_variants", "has_batch_no", "has_serial_no", "enable_auto_reorder", "inspection_required_before_purchase", "inspection_required_before_delivery"]:
+                            elif col in [
+                                "maintain_stock",
+                                "allow_negative_stock",
+                                "has_variants",
+                                "has_batch_no",
+                                "has_serial_no",
+                                "enable_auto_reorder",
+                                "inspection_required_before_purchase",
+                                "inspection_required_before_delivery",
+                            ]:
                                 if isinstance(row[col], str):
-                                    item_data[col] = row[col].lower() in ["true", "1", "yes", "t"]
+                                    item_data[col] = row[col].lower() in [
+                                        "true",
+                                        "1",
+                                        "yes",
+                                        "t",
+                                    ]
                                 else:
                                     item_data[col] = bool(row[col])
                             # Handle integer conversions
-                            elif col in ["reorder_level", "reorder_qty", "min_order_qty", "max_order_qty"]:
+                            elif col in [
+                                "reorder_level",
+                                "reorder_qty",
+                                "min_order_qty",
+                                "max_order_qty",
+                            ]:
                                 try:
                                     item_data[col] = int(row[col])
                                 except (ValueError, TypeError):
@@ -309,7 +354,9 @@ class BulkImportService:
 
             # Update job with statistics
             total_rows = successful_rows + failed_rows
-            summary = f"Import completed: {successful_rows}/{total_rows} rows successful"
+            summary = (
+                f"Import completed: {successful_rows}/{total_rows} rows successful"
+            )
 
             self.repository.update_job_statistics(
                 job_id,
@@ -337,7 +384,9 @@ class BulkImportService:
         except Exception as e:
             error_msg = f"Import processing error: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            self.repository.update_job_status(job_id, BulkImportJobStatus.FAILED, error_msg)
+            self.repository.update_job_status(
+                job_id, BulkImportJobStatus.FAILED, error_msg
+            )
             return {
                 "success": False,
                 "error": error_msg,

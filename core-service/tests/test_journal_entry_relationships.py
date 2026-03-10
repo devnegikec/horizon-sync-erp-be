@@ -7,11 +7,7 @@ This test verifies:
 - Foreign key constraints to accounts table
 """
 
-import uuid
 from datetime import UTC, datetime
-
-import pytest
-from sqlalchemy import text
 
 from app.models.base import AccountStatus, AccountType, JournalStatus
 from app.models.chart_of_account import Account
@@ -215,9 +211,11 @@ def test_cascade_delete_journal_entry(db_session, mock_current_user):
     journal_entry_id = journal_entry.id
 
     # Verify lines exist before deletion
-    lines_before = db_session.query(JournalEntryLine).filter(
-        JournalEntryLine.journal_entry_id == journal_entry_id
-    ).all()
+    lines_before = (
+        db_session.query(JournalEntryLine)
+        .filter(JournalEntryLine.journal_entry_id == journal_entry_id)
+        .all()
+    )
     assert len(lines_before) == 2
 
     # Delete journal entry
@@ -225,24 +223,32 @@ def test_cascade_delete_journal_entry(db_session, mock_current_user):
     db_session.commit()
 
     # Verify journal entry is deleted
-    deleted_entry = db_session.query(JournalEntry).filter(
-        JournalEntry.id == journal_entry_id
-    ).first()
+    deleted_entry = (
+        db_session.query(JournalEntry)
+        .filter(JournalEntry.id == journal_entry_id)
+        .first()
+    )
     assert deleted_entry is None
 
     # Verify lines are cascade deleted
-    lines_after = db_session.query(JournalEntryLine).filter(
-        JournalEntryLine.journal_entry_id == journal_entry_id
-    ).all()
+    lines_after = (
+        db_session.query(JournalEntryLine)
+        .filter(JournalEntryLine.journal_entry_id == journal_entry_id)
+        .all()
+    )
     assert len(lines_after) == 0
 
     # Verify specific lines are deleted
-    line1_after = db_session.query(JournalEntryLine).filter(
-        JournalEntryLine.id == line1_id
-    ).first()
-    line2_after = db_session.query(JournalEntryLine).filter(
-        JournalEntryLine.id == line2_id
-    ).first()
+    line1_after = (
+        db_session.query(JournalEntryLine)
+        .filter(JournalEntryLine.id == line1_id)
+        .first()
+    )
+    line2_after = (
+        db_session.query(JournalEntryLine)
+        .filter(JournalEntryLine.id == line2_id)
+        .first()
+    )
     assert line1_after is None
     assert line2_after is None
 
@@ -309,9 +315,7 @@ def test_foreign_key_to_accounts_table(db_session, mock_current_user):
     assert line.account_id == cash_account.id
 
     # Verify we can query the account through the foreign key
-    account = db_session.query(Account).filter(
-        Account.id == line.account_id
-    ).first()
+    account = db_session.query(Account).filter(Account.id == line.account_id).first()
     assert account is not None
     assert account.account_code == "1110"
     assert account.account_name == "Cash"
@@ -382,8 +386,8 @@ def test_against_account_foreign_key(db_session, mock_current_user):
     # Note: SQLite doesn't enforce SET NULL on foreign keys by default
     # In production PostgreSQL, deleting capital_account would set against_account_id to NULL
     # For this test, we just verify the foreign key relationship is established
-    against_account = db_session.query(Account).filter(
-        Account.id == line.against_account_id
-    ).first()
+    against_account = (
+        db_session.query(Account).filter(Account.id == line.against_account_id).first()
+    )
     assert against_account is not None
     assert against_account.account_code == "3100"

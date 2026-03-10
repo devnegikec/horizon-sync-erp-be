@@ -67,7 +67,9 @@ class RFQService:
         # Create RFQ
         rfq_data = {
             "organization_id": organization_id,
-            "rfq_no": DocumentNumberingService(self.db).get_next_number(organization_id, "rfq"),
+            "rfq_no": DocumentNumberingService(self.db).get_next_number(
+                organization_id, "rfq"
+            ),
             "material_request_id": material_request_id,
             "reference_type": "MATERIAL_REQUEST",
             "reference_id": material_request_id,
@@ -163,9 +165,7 @@ class RFQService:
         return self._to_response(rfq)
 
     @transactional
-    def send(
-        self, rfq_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> dict:
+    def send(self, rfq_id: UUID, organization_id: UUID, user_id: UUID) -> dict:
         """
         Send RFQ to suppliers.
         - Changes status from DRAFT to SENT
@@ -248,7 +248,9 @@ class RFQService:
                 break
 
         if not rfq_line:
-            raise ValidationException(f"RFQ line {rfq_line_id} not found in RFQ {rfq_id}")
+            raise ValidationException(
+                f"RFQ line {rfq_line_id} not found in RFQ {rfq_id}"
+            )
 
         # Validate supplier is associated with RFQ
         supplier_ids = {s.supplier_id for s in rfq.suppliers}
@@ -305,7 +307,9 @@ class RFQService:
         # Update Material Request status when quotes are recorded
         # (Workflow connection: Material Request → RFQ)
         if rfq.material_request_id:
-            self._update_material_request_status(rfq.material_request_id, organization_id)
+            self._update_material_request_status(
+                rfq.material_request_id, organization_id
+            )
 
         return self._to_response(rfq)
 
@@ -479,7 +483,9 @@ class RFQService:
         # Handle status - it might be an enum or a string
         status_value = None
         if rfq.status:
-            status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
+            status_value = (
+                rfq.status.value if hasattr(rfq.status, "value") else rfq.status
+            )
 
         return {
             "id": rfq.id,
@@ -542,7 +548,9 @@ class RFQService:
         # Handle status - it might be an enum or a string
         status_value = None
         if rfq.status:
-            status_value = rfq.status.value if hasattr(rfq.status, 'value') else rfq.status
+            status_value = (
+                rfq.status.value if hasattr(rfq.status, "value") else rfq.status
+            )
 
         return {
             "id": rfq.id,
@@ -574,7 +582,9 @@ class RFQService:
             return
 
         # Get all RFQs for this Material Request
-        rfqs = self.repo.get_rfqs_by_material_request(material_request_id, organization_id)
+        rfqs = self.repo.get_rfqs_by_material_request(
+            material_request_id, organization_id
+        )
 
         # Check if all line items have at least one quote
         mr_item_ids = {str(line.item_id) for line in mr.line_items}

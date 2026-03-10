@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 import redis
@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 class RedisCache:
     """Redis cache client for caching account balances and other data"""
-    
+
     def __init__(self):
         """Initialize Redis connection"""
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
         self._connected = False
-        
+
     def _get_client(self) -> redis.Redis:
         """Get or create Redis client"""
         if self._client is None:
@@ -29,7 +29,7 @@ class RedisCache:
                     settings.redis_url,
                     decode_responses=True,
                     socket_connect_timeout=5,
-                    socket_timeout=5
+                    socket_timeout=5,
                 )
                 # Test connection
                 self._client.ping()
@@ -40,14 +40,14 @@ class RedisCache:
                 self._connected = False
                 raise
         return self._client
-    
-    def get(self, key: str) -> Optional[Any]:
+
+    def get(self, key: str) -> Any | None:
         """
         Get value from cache
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             Cached value or None if not found or error
         """
@@ -60,16 +60,16 @@ class RedisCache:
         except (RedisError, json.JSONDecodeError) as e:
             logger.warning(f"Cache get error for key {key}: {e}")
             return None
-    
+
     def set(self, key: str, value: Any, ttl: int = 3600) -> bool:
         """
         Set value in cache with TTL
-        
+
         Args:
             key: Cache key
             value: Value to cache (must be JSON serializable)
             ttl: Time to live in seconds (default 1 hour)
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -81,14 +81,14 @@ class RedisCache:
         except (RedisError, TypeError) as e:
             logger.warning(f"Cache set error for key {key}: {e}")
             return False
-    
+
     def delete(self, key: str) -> bool:
         """
         Delete value from cache
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -99,14 +99,14 @@ class RedisCache:
         except RedisError as e:
             logger.warning(f"Cache delete error for key {key}: {e}")
             return False
-    
+
     def delete_pattern(self, pattern: str) -> int:
         """
         Delete all keys matching pattern
-        
+
         Args:
             pattern: Key pattern (e.g., "balance:account:*")
-            
+
         Returns:
             Number of keys deleted
         """
@@ -119,11 +119,11 @@ class RedisCache:
         except RedisError as e:
             logger.warning(f"Cache delete pattern error for {pattern}: {e}")
             return 0
-    
+
     def is_connected(self) -> bool:
         """Check if Redis is connected"""
         return self._connected
-    
+
     def close(self):
         """Close Redis connection"""
         if self._client:
@@ -137,14 +137,14 @@ class RedisCache:
 cache = RedisCache()
 
 
-def get_balance_cache_key(account_id: UUID, as_of_date: Optional[str] = None) -> str:
+def get_balance_cache_key(account_id: UUID, as_of_date: str | None = None) -> str:
     """
     Generate cache key for account balance
-    
+
     Args:
         account_id: Account UUID
         as_of_date: Optional date string (YYYY-MM-DD), defaults to "current"
-        
+
     Returns:
         Cache key string
     """
@@ -155,10 +155,10 @@ def get_balance_cache_key(account_id: UUID, as_of_date: Optional[str] = None) ->
 def invalidate_account_balance_cache(account_id: UUID) -> int:
     """
     Invalidate all cached balances for an account
-    
+
     Args:
         account_id: Account UUID
-        
+
     Returns:
         Number of cache entries deleted
     """
@@ -169,10 +169,10 @@ def invalidate_account_balance_cache(account_id: UUID) -> int:
 def get_account_cache_key(account_id: UUID) -> str:
     """
     Generate cache key for account data
-    
+
     Args:
         account_id: Account UUID
-        
+
     Returns:
         Cache key string
     """
@@ -182,10 +182,10 @@ def get_account_cache_key(account_id: UUID) -> str:
 def get_account_tree_cache_key(organization_id: UUID) -> str:
     """
     Generate cache key for account tree
-    
+
     Args:
         organization_id: Organization UUID
-        
+
     Returns:
         Cache key string
     """
@@ -195,10 +195,10 @@ def get_account_tree_cache_key(organization_id: UUID) -> str:
 def get_account_children_cache_key(account_id: UUID) -> str:
     """
     Generate cache key for account children
-    
+
     Args:
         account_id: Account UUID
-        
+
     Returns:
         Cache key string
     """
@@ -208,11 +208,11 @@ def get_account_children_cache_key(account_id: UUID) -> str:
 def invalidate_account_cache(account_id: UUID, organization_id: UUID) -> int:
     """
     Invalidate all cached data for an account
-    
+
     Args:
         account_id: Account UUID
         organization_id: Organization UUID
-        
+
     Returns:
         Number of cache entries deleted
     """
@@ -228,16 +228,16 @@ def invalidate_account_cache(account_id: UUID, organization_id: UUID) -> int:
     return count
 
 
-
 # Payment-specific cache utilities
+
 
 def get_payment_cache_key(payment_id: UUID) -> str:
     """
     Generate cache key for payment entry data.
-    
+
     Args:
         payment_id: Payment UUID
-        
+
     Returns:
         Cache key string
     """
@@ -246,15 +246,15 @@ def get_payment_cache_key(payment_id: UUID) -> str:
 
 def get_payment_list_cache_key(
     organization_id: UUID,
-    status: Optional[str] = None,
-    payment_mode: Optional[str] = None,
-    party_id: Optional[UUID] = None,
+    status: str | None = None,
+    payment_mode: str | None = None,
+    party_id: UUID | None = None,
     page: int = 1,
     page_size: int = 50,
 ) -> str:
     """
     Generate cache key for payment list queries.
-    
+
     Args:
         organization_id: Organization UUID
         status: Payment status filter
@@ -262,7 +262,7 @@ def get_payment_list_cache_key(
         party_id: Party ID filter
         page: Page number
         page_size: Page size
-        
+
     Returns:
         Cache key string
     """
@@ -273,7 +273,7 @@ def get_payment_list_cache_key(
         filters.append(f"mode:{payment_mode}")
     if party_id:
         filters.append(f"party:{party_id}")
-    
+
     filter_str = ":".join(filters) if filters else "all"
     return f"payment:list:{organization_id}:{filter_str}:page:{page}:size:{page_size}"
 
@@ -281,13 +281,13 @@ def get_payment_list_cache_key(
 def get_unpaid_invoices_cache_key(party_id: UUID, organization_id: UUID) -> str:
     """
     Generate cache key for unpaid invoices list.
-    
+
     This is used when loading invoices for payment allocation.
-    
+
     Args:
         party_id: Customer or Supplier UUID
         organization_id: Organization UUID
-        
+
     Returns:
         Cache key string
     """
@@ -297,13 +297,13 @@ def get_unpaid_invoices_cache_key(party_id: UUID, organization_id: UUID) -> str:
 def invalidate_payment_cache(payment_id: UUID, organization_id: UUID) -> int:
     """
     Invalidate all cached data for a payment.
-    
+
     This should be called when a payment is created, updated, confirmed, or cancelled.
-    
+
     Args:
         payment_id: Payment UUID
         organization_id: Organization UUID
-        
+
     Returns:
         Number of cache entries deleted
     """
@@ -316,35 +316,41 @@ def invalidate_payment_cache(payment_id: UUID, organization_id: UUID) -> int:
     return count
 
 
-def invalidate_invoice_cache(invoice_id: UUID, party_id: UUID, organization_id: UUID) -> int:
+def invalidate_invoice_cache(
+    invoice_id: UUID, party_id: UUID, organization_id: UUID
+) -> int:
     """
     Invalidate cached data for an invoice.
-    
+
     This should be called when invoice payment status changes.
-    
+
     Args:
         invoice_id: Invoice UUID
         party_id: Customer or Supplier UUID
         organization_id: Organization UUID
-        
+
     Returns:
         Number of cache entries deleted
     """
     count = 0
     # Invalidate unpaid invoices list for this party
-    count += 1 if cache.delete(get_unpaid_invoices_cache_key(party_id, organization_id)) else 0
+    count += (
+        1
+        if cache.delete(get_unpaid_invoices_cache_key(party_id, organization_id))
+        else 0
+    )
     return count
 
 
 def cache_payment_entry(payment_id: UUID, payment_data: dict, ttl: int = 300) -> bool:
     """
     Cache payment entry data.
-    
+
     Args:
         payment_id: Payment UUID
         payment_data: Payment data dictionary
         ttl: Time to live in seconds (default: 5 minutes)
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -352,13 +358,13 @@ def cache_payment_entry(payment_id: UUID, payment_data: dict, ttl: int = 300) ->
     return cache.set(key, payment_data, ttl)
 
 
-def get_cached_payment_entry(payment_id: UUID) -> Optional[dict]:
+def get_cached_payment_entry(payment_id: UUID) -> dict | None:
     """
     Get cached payment entry data.
-    
+
     Args:
         payment_id: Payment UUID
-        
+
     Returns:
         Cached payment data or None if not found
     """
@@ -376,7 +382,7 @@ def cache_payment_list(
 ) -> bool:
     """
     Cache payment list query results.
-    
+
     Args:
         organization_id: Organization UUID
         filters: Filter parameters
@@ -384,7 +390,7 @@ def cache_payment_list(
         page_size: Page size
         payment_data: Payment list data dictionary
         ttl: Time to live in seconds (default: 3 minutes)
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -404,16 +410,16 @@ def get_cached_payment_list(
     filters: dict,
     page: int,
     page_size: int,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Get cached payment list query results.
-    
+
     Args:
         organization_id: Organization UUID
         filters: Filter parameters
         page: Page number
         page_size: Page size
-        
+
     Returns:
         Cached payment list data or None if not found
     """
@@ -436,13 +442,13 @@ def cache_unpaid_invoices(
 ) -> bool:
     """
     Cache unpaid invoices list for a party.
-    
+
     Args:
         party_id: Customer or Supplier UUID
         organization_id: Organization UUID
         invoice_data: List of invoice dictionaries
         ttl: Time to live in seconds (default: 5 minutes)
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -453,14 +459,14 @@ def cache_unpaid_invoices(
 def get_cached_unpaid_invoices(
     party_id: UUID,
     organization_id: UUID,
-) -> Optional[list]:
+) -> list | None:
     """
     Get cached unpaid invoices list for a party.
-    
+
     Args:
         party_id: Customer or Supplier UUID
         organization_id: Organization UUID
-        
+
     Returns:
         Cached invoice list or None if not found
     """

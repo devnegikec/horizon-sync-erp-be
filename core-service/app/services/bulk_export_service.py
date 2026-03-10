@@ -3,10 +3,10 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.bulk_operations import FileGenerator, BulkImportValidator
+from app.core.bulk_operations import BulkImportValidator, FileGenerator
 from app.models.bulk_export_job import BulkExportJob, BulkExportJobStatus
 from app.models.item import Item
 from app.repositories.bulk_export_repository import BulkExportRepository
@@ -109,9 +109,7 @@ class BulkExportService:
             self.repository.update_job_status(job_id, BulkExportJobStatus.PROCESSING)
 
             # Build query
-            query = self.db.query(Item).filter(
-                Item.organization_id == organization_id
-            )
+            query = self.db.query(Item).filter(Item.organization_id == organization_id)
 
             # Apply filters
             if filters:
@@ -143,7 +141,7 @@ class BulkExportService:
 
             # Convert items to dictionaries
             export_data = []
-            
+
             # Use all valid columns from Item model as default
             all_schema_columns = sorted(list(BulkImportValidator.VALID_COLUMNS))
             columns_to_export = selected_columns or all_schema_columns
@@ -166,7 +164,9 @@ class BulkExportService:
 
             # Generate file
             try:
-                file_content = FileGenerator.generate_file(export_data, file_format, headers=columns_to_export)
+                file_content = FileGenerator.generate_file(
+                    export_data, file_format, headers=columns_to_export
+                )
             except Exception as e:
                 error_msg = f"File generation failed: {str(e)}"
                 logger.error(error_msg)
@@ -179,7 +179,9 @@ class BulkExportService:
                 }
 
             # Update job with file information
-            self.repository.update_job_file_path(job_id, f"/exports/{job_id}/{job_id}.{file_format}", total_rows)
+            self.repository.update_job_file_path(
+                job_id, f"/exports/{job_id}/{job_id}.{file_format}", total_rows
+            )
 
             # Update job status to COMPLETED
             self.repository.update_job_status(job_id, BulkExportJobStatus.COMPLETED)
@@ -194,7 +196,9 @@ class BulkExportService:
         except Exception as e:
             error_msg = f"Export processing error: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            self.repository.update_job_status(job_id, BulkExportJobStatus.FAILED, error_msg)
+            self.repository.update_job_status(
+                job_id, BulkExportJobStatus.FAILED, error_msg
+            )
             return {
                 "success": False,
                 "error": error_msg,

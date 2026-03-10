@@ -2,14 +2,11 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Optional
-from uuid import UUID
 
 from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
-    CurrencyNotFoundException,
     ExchangeRateNotFoundException,
     ValidationError,
 )
@@ -39,9 +36,11 @@ class CurrencyService:
         Returns:
             Base currency code (e.g., "USD")
         """
-        config = self.db.query(SystemConfig).filter(
-            SystemConfig.key == self.BASE_CURRENCY_KEY
-        ).first()
+        config = (
+            self.db.query(SystemConfig)
+            .filter(SystemConfig.key == self.BASE_CURRENCY_KEY)
+            .first()
+        )
 
         if config:
             return config.value
@@ -67,9 +66,11 @@ class CurrencyService:
             )
 
         # Check if config exists
-        config = self.db.query(SystemConfig).filter(
-            SystemConfig.key == self.BASE_CURRENCY_KEY
-        ).first()
+        config = (
+            self.db.query(SystemConfig)
+            .filter(SystemConfig.key == self.BASE_CURRENCY_KEY)
+            .first()
+        )
 
         if config:
             # Update existing
@@ -91,7 +92,7 @@ class CurrencyService:
         self,
         from_currency: str,
         to_currency: str,
-        effective_date: Optional[date] = None,
+        effective_date: date | None = None,
     ) -> Decimal:
         """
         Get exchange rate between two currencies.
@@ -216,7 +217,7 @@ class CurrencyService:
         amount: Decimal,
         from_currency: str,
         to_currency: str,
-        effective_date: Optional[date] = None,
+        effective_date: date | None = None,
     ) -> Decimal:
         """
         Convert amount from one currency to another.
@@ -247,8 +248,8 @@ class CurrencyService:
         self,
         from_currency: str,
         to_currency: str,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[ExchangeRate]:
         """
         Query historical exchange rates for a currency pair.

@@ -3,7 +3,6 @@
 import uuid
 
 import pytest
-from sqlalchemy.orm import Session
 
 from app.core.exceptions import ChartOfAccountNotFoundException, ValidationError
 from app.models.base import AccountStatus, AccountType
@@ -37,45 +36,45 @@ class TestAccountStatusManagement:
     def test_activate_account(self, db_session, test_account):
         """Test activating an account"""
         service = ChartOfAccountService(db_session)
-        
+
         # First deactivate
         test_account.status = AccountStatus.INACTIVE
         db_session.commit()
-        
+
         # Activate
         user_id = uuid.uuid4()
         organization_id = test_account.organization_id
         result = service.activate_account(test_account.id, organization_id, user_id)
-        
+
         assert result.status == AccountStatus.ACTIVE
         assert result.id == test_account.id
 
     def test_deactivate_account(self, db_session, test_account):
         """Test deactivating an account"""
         service = ChartOfAccountService(db_session)
-        
+
         user_id = uuid.uuid4()
         organization_id = test_account.organization_id
         result = service.deactivate_account(test_account.id, organization_id, user_id)
-        
+
         assert result.status == AccountStatus.INACTIVE
         assert result.id == test_account.id
 
     def test_archive_account(self, db_session, test_account):
         """Test archiving an account"""
         service = ChartOfAccountService(db_session)
-        
+
         user_id = uuid.uuid4()
         organization_id = test_account.organization_id
         result = service.archive_account(test_account.id, organization_id, user_id)
-        
+
         assert result.status == AccountStatus.ARCHIVED
         assert result.id == test_account.id
 
     def test_activate_nonexistent_account(self, db_session):
         """Test activating a non-existent account raises exception"""
         service = ChartOfAccountService(db_session)
-        
+
         fake_id = uuid.uuid4()
         organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
@@ -84,7 +83,7 @@ class TestAccountStatusManagement:
     def test_deactivate_nonexistent_account(self, db_session):
         """Test deactivating a non-existent account raises exception"""
         service = ChartOfAccountService(db_session)
-        
+
         fake_id = uuid.uuid4()
         organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
@@ -93,7 +92,7 @@ class TestAccountStatusManagement:
     def test_archive_nonexistent_account(self, db_session):
         """Test archiving a non-existent account raises exception"""
         service = ChartOfAccountService(db_session)
-        
+
         fake_id = uuid.uuid4()
         organization_id = uuid.uuid4()
         with pytest.raises(ChartOfAccountNotFoundException):
@@ -104,22 +103,22 @@ class TestAccountStatusManagement:
         service = ChartOfAccountService(db_session)
         user_id = uuid.uuid4()
         organization_id = test_account.organization_id
-        
+
         # Start as active
         assert test_account.status == AccountStatus.ACTIVE
-        
+
         # Deactivate
         result = service.deactivate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.INACTIVE
-        
+
         # Reactivate
         result = service.activate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ACTIVE
-        
+
         # Archive
         result = service.archive_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ARCHIVED
-        
+
         # Can reactivate from archived
         result = service.activate_account(test_account.id, organization_id, user_id)
         assert result.status == AccountStatus.ACTIVE
@@ -128,7 +127,7 @@ class TestAccountStatusManagement:
         """Test validating an active posting account succeeds"""
         service = ChartOfAccountService(db_session)
         organization_id = test_account.organization_id
-        
+
         # Should not raise exception
         service.validate_posting_account(test_account.id, organization_id)
 
@@ -136,28 +135,28 @@ class TestAccountStatusManagement:
         """Test validating an inactive account raises exception"""
         service = ChartOfAccountService(db_session)
         organization_id = test_account.organization_id
-        
+
         # Deactivate account
         test_account.status = AccountStatus.INACTIVE
         db_session.commit()
-        
+
         # Should raise ValidationError
         with pytest.raises(ValidationError) as exc_info:
             service.validate_posting_account(test_account.id, organization_id)
-        
+
         assert "inactive" in str(exc_info.value).lower()
 
     def test_validate_posting_account_not_posting(self, db_session, test_account):
         """Test validating a non-posting account raises exception"""
         service = ChartOfAccountService(db_session)
         organization_id = test_account.organization_id
-        
+
         # Make account non-posting
         test_account.is_posting_account = False
         db_session.commit()
-        
+
         # Should raise ValidationError
         with pytest.raises(ValidationError) as exc_info:
             service.validate_posting_account(test_account.id, organization_id)
-        
+
         assert "non-posting" in str(exc_info.value).lower()

@@ -34,17 +34,23 @@ class ChartOfAccountService:
     def __init__(self, db: Session, account_code_pattern: str | None = None):
         self.db = db
         self.repo = AccountRepository(db)
-        self.account_code_pattern = account_code_pattern or self.DEFAULT_ACCOUNT_CODE_PATTERN
-        
+        self.account_code_pattern = (
+            account_code_pattern or self.DEFAULT_ACCOUNT_CODE_PATTERN
+        )
+
         # Import CurrencyService for currency validation
         from app.services.currency_service import CurrencyService
+
         self.currency_service = CurrencyService(db)
-        
+
         # Import AuditLogger for audit trail
         from app.services.audit_logger import AuditLogger
+
         self.audit_logger = AuditLogger(db)
 
-    def _validate_required_fields(self, account_code: str, account_name: str, account_type: str | None) -> None:
+    def _validate_required_fields(
+        self, account_code: str, account_name: str, account_type: str | None
+    ) -> None:
         """
         Validate required fields for account creation.
 
@@ -84,10 +90,14 @@ class ChartOfAccountService:
         errors = []
 
         if len(account_code) > 50:
-            errors.append(f"Account code must not exceed 50 characters (got {len(account_code)})")
+            errors.append(
+                f"Account code must not exceed 50 characters (got {len(account_code)})"
+            )
 
         if len(account_name) > 200:
-            errors.append(f"Account name must not exceed 200 characters (got {len(account_name)})")
+            errors.append(
+                f"Account name must not exceed 200 characters (got {len(account_name)})"
+            )
 
         if errors:
             raise ValidationError("; ".join(errors))
@@ -117,7 +127,12 @@ class ChartOfAccountService:
         Raises:
             ValidationError: If currency code is invalid
         """
-        if not currency or len(currency) != 3 or not currency.isupper() or not currency.isalpha():
+        if (
+            not currency
+            or len(currency) != 3
+            or not currency.isupper()
+            or not currency.isalpha()
+        ):
             raise ValidationError(
                 f"Invalid currency code '{currency}'. Must be 3 uppercase letters (ISO 4217 format)"
             )
@@ -146,9 +161,7 @@ class ChartOfAccountService:
         """
         # Validate required fields
         self._validate_required_fields(
-            data.account_code,
-            data.account_name,
-            data.account_type
+            data.account_code, data.account_name, data.account_type
         )
 
         # Validate field lengths
@@ -181,34 +194,34 @@ class ChartOfAccountService:
                 )
 
         account_dict = data.model_dump()
-        
+
         # Extract opening_balance before removing it (we'll create a journal entry for it)
-        opening_balance = account_dict.get('opening_balance')
-        
+        opening_balance = account_dict.get("opening_balance")
+
         # Remove fields that don't exist in the Account model or are calculated
-        fields_to_remove = ['current_balance', 'tags', 'extra_data', 'is_active']
+        fields_to_remove = ["current_balance", "tags", "extra_data", "is_active"]
         for field in fields_to_remove:
             account_dict.pop(field, None)
-        
+
         # Remove opening_balance from account_dict (handled separately via journal entry)
-        account_dict.pop('opening_balance', None)
-        
+        account_dict.pop("opening_balance", None)
+
         # Calculate hierarchy fields
         level = 1  # Default for root accounts
         is_group = False  # Will be set to True if has children or is a parent
-        
+
         if data.parent_account_id:
             parent = self.repo.get_by_id(data.parent_account_id, organization_id)
             if parent:
                 # Set level to parent level + 1
                 # If parent level is 0, None, or missing, assume parent is level 1
-                parent_level = getattr(parent, 'level', 1) or 1
+                parent_level = getattr(parent, "level", 1) or 1
                 level = parent_level + 1
-        
+
         # Set calculated fields
-        account_dict['level'] = level
-        account_dict['is_group'] = is_group
-        
+        account_dict["level"] = level
+        account_dict["is_group"] = is_group
+
         # Add organization_id
         account_dict["organization_id"] = organization_id
         account_dict["created_by"] = str(user_id)
@@ -226,22 +239,26 @@ class ChartOfAccountService:
 
         if account_dict.get("status"):
             try:
-                account_dict["status"] = AccountStatus(str(account_dict["status"]).upper())
+                account_dict["status"] = AccountStatus(
+                    str(account_dict["status"]).upper()
+                )
             except (ValueError, KeyError):
                 raise ValidationError(
                     "status must be one of: active, inactive, archived"
                 )
 
         account = self.repo.create(account_dict)
-        
+
         # If this account has a parent, mark the parent as a group account
         if data.parent_account_id:
             parent = self.repo.get_by_id(data.parent_account_id, organization_id)
             if parent and not parent.is_group:
                 parent.is_group = True
                 self.db.flush()
-                logger.info(f"Marked parent account {parent.account_code} as group account")
-        
+                logger.info(
+                    f"Marked parent account {parent.account_code} as group account"
+                )
+
         # Create opening balance journal entry if opening_balance is provided and > 0
         if opening_balance and float(opening_balance) != 0:
             try:
@@ -251,16 +268,19 @@ class ChartOfAccountService:
                     organization_id=organization_id,
                     user_id=user_id,
                 )
-                
+
                 # Flush to ensure journal entry is committed before balance calculation
                 self.db.flush()
-                
+
             except Exception as e:
                 # Log error but don't fail account creation
-                logger.error(f"Failed to create opening balance entry for account {account.id}: {e}")
-        
-        # Log account creation 
+                logger.error(
+                    f"Failed to create opening balance entry for account {account.id}: {e}"
+                )
+
+        # Log account creation
         from app.models.account_audit_log import AuditAction
+
         self.audit_logger.log_account_change(
             account_id=account.id,
             action=AuditAction.CREATE,
@@ -268,34 +288,42 @@ class ChartOfAccountService:
             new_values={
                 "account_code": account.account_code,
                 "account_name": account.account_name,
-                "account_type": account.account_type.value if account.account_type else None,
-                "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+                "account_type": account.account_type.value
+                if account.account_type
+                else None,
+                "parent_account_id": str(account.parent_account_id)
+                if account.parent_account_id
+                else None,
                 "currency": account.currency,
                 "status": account.status.value if account.status else None,
                 "is_posting_account": account.is_posting_account,
                 "description": account.description,
-            }
+            },
         )
-        
+
         # Invalidate balance cache for this account
         from app.core.cache import invalidate_account_balance_cache
+
         invalidate_account_balance_cache(account.id)
-        
+
         # Calculate and set balance fields for the response
         from app.services.balance_calculator import BalanceCalculator
+
         balance_calculator = BalanceCalculator(self.db)
-        
+
         # Set opening_balance and current_balance on the account object
-        if not hasattr(account, 'opening_balance'):
+        if not hasattr(account, "opening_balance"):
             account.opening_balance = float(opening_balance) if opening_balance else 0.0
-        if not hasattr(account, 'current_balance'):
+        if not hasattr(account, "current_balance"):
             account.current_balance = 0.0
-            
+
         try:
-            balance_info = balance_calculator.calculate_balance(account.id, use_cache=False)
+            balance_info = balance_calculator.calculate_balance(
+                account.id, use_cache=False
+            )
             if balance_info:
                 # Set balance attributes from calculated values
-                balance_value = float(balance_info.get('balance', 0))
+                balance_value = float(balance_info.get("balance", 0))
                 account.current_balance = balance_value
                 # For new accounts, opening balance equals current balance initially
                 if opening_balance:
@@ -304,13 +332,17 @@ class ChartOfAccountService:
                     account.opening_balance = balance_value
             else:
                 account.current_balance = 0.0
-                account.opening_balance = float(opening_balance) if opening_balance else 0.0
+                account.opening_balance = (
+                    float(opening_balance) if opening_balance else 0.0
+                )
         except Exception as e:
             # Log error but don't fail the entire request
-            logger.warning(f"Failed to calculate balance for new account {account.id}: {e}")
+            logger.warning(
+                f"Failed to calculate balance for new account {account.id}: {e}"
+            )
             account.current_balance = 0.0
             account.opening_balance = float(opening_balance) if opening_balance else 0.0
-        
+
         return account
 
     def _create_opening_balance_entry(
@@ -335,26 +367,36 @@ class ChartOfAccountService:
         """
         from datetime import datetime
         from decimal import Decimal
+
+        from app.models.base import AccountType, JournalStatus
         from app.services.journal_entry_service import JournalEntryService
-        from app.models.base import JournalStatus, AccountType
 
         try:
             # Convert to Decimal for precision
             opening_amount = Decimal(str(opening_balance))
             if opening_amount == 0:
-                logger.info(f"Opening balance is zero for account {account.account_code}, skipping journal entry")
+                logger.info(
+                    f"Opening balance is zero for account {account.account_code}, skipping journal entry"
+                )
                 return
 
             # Determine if this is a debit or credit based on account type
-            is_debit_balance = account.account_type in (AccountType.ASSET, AccountType.EXPENSE)
-            
-            # Find or create Opening Balance Equity account
-            opening_balance_equity_account = self._get_or_create_opening_balance_equity_account(
-                organization_id, user_id
+            is_debit_balance = account.account_type in (
+                AccountType.ASSET,
+                AccountType.EXPENSE,
             )
-            
+
+            # Find or create Opening Balance Equity account
+            opening_balance_equity_account = (
+                self._get_or_create_opening_balance_equity_account(
+                    organization_id, user_id
+                )
+            )
+
             if not opening_balance_equity_account:
-                logger.error(f"Failed to find/create Opening Balance Equity account for organization {organization_id}")
+                logger.error(
+                    f"Failed to find/create Opening Balance Equity account for organization {organization_id}"
+                )
                 return
 
             # Create balanced journal entry with two lines
@@ -375,11 +417,15 @@ class ChartOfAccountService:
                     },
                     {
                         "account_id": str(opening_balance_equity_account.id),
-                        "debit": float(opening_amount) if not is_debit_balance else 0,  # Reverse of account line
-                        "credit": float(opening_amount) if is_debit_balance else 0,     # Reverse of account line
+                        "debit": float(opening_amount)
+                        if not is_debit_balance
+                        else 0,  # Reverse of account line
+                        "credit": float(opening_amount)
+                        if is_debit_balance
+                        else 0,  # Reverse of account line
                         "remarks": f"Opening balance contra for {account.account_code}",
                         "organization_id": str(organization_id),
-                    }
+                    },
                 ],
             }
 
@@ -401,30 +447,28 @@ class ChartOfAccountService:
                 f"Failed to create opening balance entry for account {account.id}: {str(e)}"
             )
             raise
-    
+
     def _get_or_create_opening_balance_equity_account(
-        self, 
-        organization_id: UUID, 
-        user_id: UUID
+        self, organization_id: UUID, user_id: UUID
     ) -> Account | None:
         """
         Find or create an 'Opening Balance Equity' account for balancing opening balance entries.
-        
+
         Args:
             organization_id: Organization UUID
             user_id: User UUID
-            
+
         Returns:
             Opening Balance Equity Account object or None if creation fails
         """
-        from app.models.base import AccountType, AccountStatus
-        
+        from app.models.base import AccountStatus, AccountType
+
         try:
             # First try to find existing opening balance equity account
             existing_account = self.repo.get_by_code("OBE", organization_id)
             if existing_account:
                 return existing_account
-            
+
             # Create new Opening Balance Equity account
             equity_account_data = {
                 "organization_id": organization_id,
@@ -440,12 +484,14 @@ class ChartOfAccountService:
                 "created_by": str(user_id),
                 "updated_by": str(user_id),
             }
-            
+
             opening_balance_account = self.repo.create(equity_account_data)
-            logger.info(f"Created Opening Balance Equity account {opening_balance_account.account_code} for organization {organization_id}")
-            
+            logger.info(
+                f"Created Opening Balance Equity account {opening_balance_account.account_code} for organization {organization_id}"
+            )
+
             return opening_balance_account
-            
+
         except Exception as e:
             logger.error(f"Failed to create Opening Balance Equity account: {str(e)}")
             return None
@@ -475,27 +521,29 @@ class ChartOfAccountService:
         # Try cache first if enabled and not including parent
         if use_cache and not include_parent:
             from app.core.cache import cache, get_account_cache_key
+
             cache_key = get_account_cache_key(account_id)
             cached_data = cache.get(cache_key)
             if cached_data:
                 # Reconstruct account from cached data
                 account = Account(**cached_data)
                 return account
-        
+
         # Fetch from database
         if include_parent:
             account = self.repo.get_with_parent(account_id, organization_id)
         else:
             account = self.repo.get_by_id(account_id, organization_id)
-            
+
         if not account:
             raise ChartOfAccountNotFoundException(
                 f"Chart of account with ID {account_id} not found"
             )
-        
+
         # Cache the account data if enabled and not including parent
         if use_cache and not include_parent:
             from app.core.cache import cache, get_account_cache_key
+
             cache_key = get_account_cache_key(account_id)
             # Convert account to dict for caching
             account_dict = {
@@ -503,34 +551,45 @@ class ChartOfAccountService:
                 "organization_id": str(account.organization_id),
                 "account_code": account.account_code,
                 "account_name": account.account_name,
-                "account_type": account.account_type.value if account.account_type else None,
-                "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+                "account_type": account.account_type.value
+                if account.account_type
+                else None,
+                "parent_account_id": str(account.parent_account_id)
+                if account.parent_account_id
+                else None,
                 "currency": account.currency,
                 "status": account.status.value if account.status else None,
                 "is_posting_account": account.is_posting_account,
                 "description": account.description,
                 "created_by": account.created_by,
                 "updated_by": account.updated_by,
-                "created_at": account.created_at.isoformat() if account.created_at else None,
-                "updated_at": account.updated_at.isoformat() if account.updated_at else None,
+                "created_at": account.created_at.isoformat()
+                if account.created_at
+                else None,
+                "updated_at": account.updated_at.isoformat()
+                if account.updated_at
+                else None,
             }
             cache.set(cache_key, account_dict, ttl=3600)  # Cache for 1 hour
-        
+
         # Calculate and set balance fields for the response
         from app.services.balance_calculator import BalanceCalculator
+
         balance_calculator = BalanceCalculator(self.db)
-        
+
         # Ensure balance fields are set
-        if not hasattr(account, 'current_balance'):
+        if not hasattr(account, "current_balance"):
             account.current_balance = 0.0
-        if not hasattr(account, 'opening_balance'):
+        if not hasattr(account, "opening_balance"):
             account.opening_balance = 0.0
-            
+
         try:
-            balance_info = balance_calculator.calculate_balance(account.id, use_cache=use_cache)
+            balance_info = balance_calculator.calculate_balance(
+                account.id, use_cache=use_cache
+            )
             if balance_info:
                 # Set balance attributes from calculated values
-                balance_value = float(balance_info.get('balance', 0))
+                balance_value = float(balance_info.get("balance", 0))
                 account.current_balance = balance_value
                 # For existing accounts, we'll use the same value for opening balance for now
                 # In a full implementation, this should come from the first journal entry
@@ -543,7 +602,7 @@ class ChartOfAccountService:
             logger.warning(f"Failed to calculate balance for account {account.id}: {e}")
             account.current_balance = 0.0
             account.opening_balance = 0.0
-        
+
         return account
 
     def update(
@@ -577,14 +636,21 @@ class ChartOfAccountService:
             )
 
         update_dict = data.model_dump(exclude_unset=True)
-        
+
         # Remove fields that don't exist in the Account model (except opening_balance)
-        fields_to_remove = ['level', 'is_group', 'current_balance', 'tags', 'extra_data', 'is_active']
+        fields_to_remove = [
+            "level",
+            "is_group",
+            "current_balance",
+            "tags",
+            "extra_data",
+            "is_active",
+        ]
         for field in fields_to_remove:
             update_dict.pop(field, None)
-        
+
         # Handle opening balance separately (needs journal entry creation)
-        opening_balance = update_dict.pop('opening_balance', None)
+        opening_balance = update_dict.pop("opening_balance", None)
 
         # Validate field lengths if being updated
         if "account_name" in update_dict and update_dict["account_name"]:
@@ -610,23 +676,23 @@ class ChartOfAccountService:
                 raise ChartOfAccountNotFoundException(
                     f"Parent account with ID {parent_id} not found"
                 )
-            
+
             # Validate parent account is active (Requirement 11.3)
             if parent.status != AccountStatus.ACTIVE:
                 raise ValidationError(
                     f"Parent account '{parent.account_code}' must be active. Current status: {parent.status.value}"
                 )
 
-            if self._would_create_circular_reference(account_id, parent_id, organization_id):
+            if self._would_create_circular_reference(
+                account_id, parent_id, organization_id
+            ):
                 raise CircularReferenceException(
                     "This parent assignment would create a circular reference"
                 )
 
         if "account_type" in update_dict and update_dict["account_type"]:
             try:
-                new_account_type = AccountType(
-                    str(update_dict["account_type"]).lower()
-                )
+                new_account_type = AccountType(str(update_dict["account_type"]).lower())
             except (ValueError, KeyError):
                 # Invalid account type value, remove from update
                 del update_dict["account_type"]
@@ -639,12 +705,14 @@ class ChartOfAccountService:
                             f"Cannot change account type for account '{account.account_code}' "
                             "because it has existing transactions. Account type is immutable once transactions exist."
                         )
-                
+
                 update_dict["account_type"] = new_account_type
 
         if "status" in update_dict and update_dict["status"]:
             try:
-                update_dict["status"] = AccountStatus(str(update_dict["status"]).upper())
+                update_dict["status"] = AccountStatus(
+                    str(update_dict["status"]).upper()
+                )
             except (ValueError, KeyError):
                 raise ValidationError(
                     "status must be one of: active, inactive, archived"
@@ -657,8 +725,12 @@ class ChartOfAccountService:
         old_values = {
             "account_code": account.account_code,
             "account_name": account.account_name,
-            "account_type": account.account_type.value if account.account_type else None,
-            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "account_type": account.account_type.value
+            if account.account_type
+            else None,
+            "parent_account_id": str(account.parent_account_id)
+            if account.parent_account_id
+            else None,
             "currency": account.currency,
             "status": account.status.value if account.status else None,
             "is_posting_account": account.is_posting_account,
@@ -666,57 +738,75 @@ class ChartOfAccountService:
         }
 
         updated_account = self.repo.update(account, update_dict)
-        
+
         # Handle opening balance update if provided
         if opening_balance is not None and opening_balance != 0:
             try:
                 # Create/update opening balance journal entry
-                self._create_opening_balance_entry(updated_account, float(opening_balance))
-                logger.info(f"Created opening balance entry for account {updated_account.account_code}: {opening_balance}")
+                self._create_opening_balance_entry(
+                    updated_account, float(opening_balance)
+                )
+                logger.info(
+                    f"Created opening balance entry for account {updated_account.account_code}: {opening_balance}"
+                )
             except Exception as e:
-                logger.warning(f"Failed to create opening balance entry for account {updated_account.account_code}: {e}")
-        
+                logger.warning(
+                    f"Failed to create opening balance entry for account {updated_account.account_code}: {e}"
+                )
+
         # Handle parent is_group updates if parent changed
         if "parent_account_id" in update_dict:
             old_parent_id = account.parent_account_id
             new_parent_id = updated_account.parent_account_id
-            
+
             # Mark new parent as group account
             if new_parent_id:
                 new_parent = self.repo.get_by_id(new_parent_id, organization_id)
                 if new_parent and not new_parent.is_group:
                     new_parent.is_group = True
                     self.db.flush()
-                    logger.info(f"Marked parent account {new_parent.account_code} as group account")
-            
+                    logger.info(
+                        f"Marked parent account {new_parent.account_code} as group account"
+                    )
+
             # Check if old parent still has children
             if old_parent_id:
                 old_parent = self.repo.get_by_id(old_parent_id, organization_id)
                 if old_parent and old_parent.is_group:
-                    has_children = self.repo.has_children(old_parent_id, organization_id)
+                    has_children = self.repo.has_children(
+                        old_parent_id, organization_id
+                    )
                     if not has_children:
                         old_parent.is_group = False
                         self.db.flush()
-                        logger.info(f"Unmarked parent account {old_parent.account_code} as group (no more children)")
-        
+                        logger.info(
+                            f"Unmarked parent account {old_parent.account_code} as group (no more children)"
+                        )
+
         # Invalidate cache for this account
         from app.core.cache import invalidate_account_cache
+
         invalidate_account_cache(account.id, organization_id)
-        
+
         # Capture new values after update
         new_values = {
             "account_code": updated_account.account_code,
             "account_name": updated_account.account_name,
-            "account_type": updated_account.account_type.value if updated_account.account_type else None,
-            "parent_account_id": str(updated_account.parent_account_id) if updated_account.parent_account_id else None,
+            "account_type": updated_account.account_type.value
+            if updated_account.account_type
+            else None,
+            "parent_account_id": str(updated_account.parent_account_id)
+            if updated_account.parent_account_id
+            else None,
             "currency": updated_account.currency,
             "status": updated_account.status.value if updated_account.status else None,
             "is_posting_account": updated_account.is_posting_account,
             "description": updated_account.description,
         }
-        
+
         # Log account update
         from app.models.account_audit_log import AuditAction
+
         self.audit_logger.log_account_change(
             account_id=account.id,
             action=AuditAction.UPDATE,
@@ -724,7 +814,7 @@ class ChartOfAccountService:
             old_values=old_values,
             new_values=new_values,
         )
-        
+
         return updated_account
 
     def delete(
@@ -763,38 +853,48 @@ class ChartOfAccountService:
         old_values = {
             "account_code": account.account_code,
             "account_name": account.account_name,
-            "account_type": account.account_type.value if account.account_type else None,
-            "parent_account_id": str(account.parent_account_id) if account.parent_account_id else None,
+            "account_type": account.account_type.value
+            if account.account_type
+            else None,
+            "parent_account_id": str(account.parent_account_id)
+            if account.parent_account_id
+            else None,
             "currency": account.currency,
             "status": account.status.value if account.status else None,
             "is_posting_account": account.is_posting_account,
             "description": account.description,
         }
-        
+
         # Store parent_account_id before deletion (to check is_group later)
         parent_account_id = account.parent_account_id
 
         # Delete the account first
         self.repo.delete(account, check_children=not force)
-        
+
         # If account had a parent, check if parent still has children
         if parent_account_id:
             parent = self.repo.get_by_id(parent_account_id, organization_id)
             if parent and parent.is_group:
-                has_children = self.repo.has_children(parent_account_id, organization_id)
+                has_children = self.repo.has_children(
+                    parent_account_id, organization_id
+                )
                 if not has_children:
                     parent.is_group = False
                     self.db.flush()
-                    logger.info(f"Unmarked parent account {parent.account_code} as group (no more children)")
-        
+                    logger.info(
+                        f"Unmarked parent account {parent.account_code} as group (no more children)"
+                    )
+
         # Invalidate cache for this account
         from app.core.cache import invalidate_account_cache
+
         invalidate_account_cache(account_id, organization_id)
-        
+
         # Log account deletion AFTER deleting (audit log will be cascade deleted with account)
         # Note: In production, audit logs should be retained even after account deletion
         # This would require removing the foreign key constraint or using a different approach
         from app.models.account_audit_log import AuditAction
+
         try:
             self.audit_logger.log_account_change(
                 account_id=account_id,
@@ -876,26 +976,32 @@ class ChartOfAccountService:
             limit=page_size,
             offset=offset,
         )
-        
+
         # Eagerly load parent_account relationship so parent details are available
         from sqlalchemy.orm import joinedload
+
         from app.models.chart_of_account import Account as AccountModel
+
         account_ids = [a.id for a in accounts]
         if account_ids:
             from sqlalchemy import and_
+
             # Re-fetch with eager loading of parent relationship
-            loaded_accounts = self.db.query(AccountModel).options(
-                joinedload(AccountModel.parent_account)
-            ).filter(
-                and_(
-                    AccountModel.organization_id == organization_id,
-                    AccountModel.id.in_(account_ids)
+            loaded_accounts = (
+                self.db.query(AccountModel)
+                .options(joinedload(AccountModel.parent_account))
+                .filter(
+                    and_(
+                        AccountModel.organization_id == organization_id,
+                        AccountModel.id.in_(account_ids),
+                    )
                 )
-            ).all()
+                .all()
+            )
             # Maintain original sort order
             order_map = {orig.id: i for i, orig in enumerate(accounts)}
             accounts = sorted(loaded_accounts, key=lambda a: order_map.get(a.id, 9999))
-        
+
         # Apply currency filter if provided (post-query filter)
         if currency:
             accounts = [a for a in accounts if a.currency == currency]
@@ -913,20 +1019,21 @@ class ChartOfAccountService:
 
         # Add balance calculation for each account
         from app.services.balance_calculator import BalanceCalculator
+
         balance_calculator = BalanceCalculator(self.db)
-        
+
         for account in accounts:
             # Ensure all seriazable attributes are set
-            if not hasattr(account, 'current_balance'):
+            if not hasattr(account, "current_balance"):
                 account.current_balance = 0.0
-            if not hasattr(account, 'opening_balance'):
+            if not hasattr(account, "opening_balance"):
                 account.opening_balance = 0.0
-            
+
             try:
                 balance_info = balance_calculator.calculate_balance(account.id)
                 if balance_info:
                     # Set balance attributes from calculated values
-                    balance_value = float(balance_info.get('balance', 0))
+                    balance_value = float(balance_info.get("balance", 0))
                     account.current_balance = balance_value
                     account.opening_balance = balance_value
                 else:
@@ -934,7 +1041,9 @@ class ChartOfAccountService:
                     account.opening_balance = 0.0
             except Exception as e:
                 # Log error but don't fail the entire request
-                logger.warning(f"Failed to calculate balance for account {account.id}: {e}")
+                logger.warning(
+                    f"Failed to calculate balance for account {account.id}: {e}"
+                )
                 account.current_balance = 0.0
                 account.opening_balance = 0.0
 
@@ -950,7 +1059,9 @@ class ChartOfAccountService:
 
         return accounts, pagination
 
-    def get_tree(self, organization_id: UUID, use_cache: bool = True) -> list[ChartOfAccountTreeNode]:
+    def get_tree(
+        self, organization_id: UUID, use_cache: bool = True
+    ) -> list[ChartOfAccountTreeNode]:
         """
         Get chart of accounts as a tree structure with optional caching.
 
@@ -964,12 +1075,13 @@ class ChartOfAccountService:
         # Try cache first if enabled
         if use_cache:
             from app.core.cache import cache, get_account_tree_cache_key
+
             cache_key = get_account_tree_cache_key(organization_id)
             cached_tree = cache.get(cache_key)
             if cached_tree:
                 # Reconstruct tree nodes from cached data
                 return [ChartOfAccountTreeNode(**node) for node in cached_tree]
-        
+
         all_accounts = self.repo.list_all(organization_id=organization_id)
 
         root_nodes = []
@@ -996,15 +1108,16 @@ class ChartOfAccountService:
             )
 
         tree = [build_node(a) for a in root_nodes]
-        
+
         # Cache the tree if enabled
         if use_cache:
             from app.core.cache import cache, get_account_tree_cache_key
+
             cache_key = get_account_tree_cache_key(organization_id)
             # Convert tree to dict for caching
             tree_dict = [node.model_dump() for node in tree]
             cache.set(cache_key, tree_dict, ttl=1800)  # Cache for 30 minutes
-        
+
         return tree
 
     def get_tree_roots(self, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
@@ -1030,21 +1143,27 @@ class ChartOfAccountService:
         for account in root_accounts:
             # Check if account has children
             has_children = self.repo.has_children(account.id, organization_id)
-            
+
             node = ChartOfAccountTreeNode(
                 id=account.id,
                 account_code=account.account_code,
                 account_name=account.account_name,
-                account_type=str(account.account_type.value) if account.account_type else "",
+                account_type=str(account.account_type.value)
+                if account.account_type
+                else "",
                 status=str(account.status.value) if account.status else "active",
                 is_posting_account=account.is_posting_account,
-                children=[] if has_children else [],  # Empty list indicates children can be loaded
+                children=[]
+                if has_children
+                else [],  # Empty list indicates children can be loaded
             )
             tree_nodes.append(node)
 
         return tree_nodes
 
-    def get_tree_children(self, account_id: UUID, organization_id: UUID) -> list[ChartOfAccountTreeNode]:
+    def get_tree_children(
+        self, account_id: UUID, organization_id: UUID
+    ) -> list[ChartOfAccountTreeNode]:
         """
         Get immediate children of an account as tree nodes for lazy loading.
 
@@ -1073,15 +1192,19 @@ class ChartOfAccountService:
         for child in children:
             # Check if child has children
             has_children = self.repo.has_children(child.id, organization_id)
-            
+
             node = ChartOfAccountTreeNode(
                 id=child.id,
                 account_code=child.account_code,
                 account_name=child.account_name,
-                account_type=str(child.account_type.value) if child.account_type else "",
+                account_type=str(child.account_type.value)
+                if child.account_type
+                else "",
                 status=str(child.status.value) if child.status else "active",
                 is_posting_account=child.is_posting_account,
-                children=[] if has_children else [],  # Empty list indicates children can be loaded
+                children=[]
+                if has_children
+                else [],  # Empty list indicates children can be loaded
             )
             tree_nodes.append(node)
 
@@ -1146,9 +1269,10 @@ class ChartOfAccountService:
         old_status = account.status.value if account.status else None
 
         updated_account = self.repo.update(account, update_dict)
-        
+
         # Log status change
         from app.models.account_audit_log import AuditAction
+
         self.audit_logger.log_account_change(
             account_id=account.id,
             action=AuditAction.STATUS_CHANGE,
@@ -1156,7 +1280,7 @@ class ChartOfAccountService:
             old_values={"status": old_status},
             new_values={"status": AccountStatus.ACTIVE.value},
         )
-        
+
         return updated_account
 
     def deactivate_account(
@@ -1193,9 +1317,10 @@ class ChartOfAccountService:
         old_status = account.status.value if account.status else None
 
         updated_account = self.repo.update(account, update_dict)
-        
+
         # Log status change
         from app.models.account_audit_log import AuditAction
+
         self.audit_logger.log_account_change(
             account_id=account.id,
             action=AuditAction.STATUS_CHANGE,
@@ -1203,7 +1328,7 @@ class ChartOfAccountService:
             old_values={"status": old_status},
             new_values={"status": AccountStatus.INACTIVE.value},
         )
-        
+
         return updated_account
 
     def archive_account(
@@ -1240,9 +1365,10 @@ class ChartOfAccountService:
         old_status = account.status.value if account.status else None
 
         updated_account = self.repo.update(account, update_dict)
-        
+
         # Log status change
         from app.models.account_audit_log import AuditAction
+
         self.audit_logger.log_account_change(
             account_id=account.id,
             action=AuditAction.STATUS_CHANGE,
@@ -1250,7 +1376,7 @@ class ChartOfAccountService:
             old_values={"status": old_status},
             new_values={"status": AccountStatus.ARCHIVED.value},
         )
-        
+
         return updated_account
 
     def validate_posting_account(
@@ -1284,6 +1410,7 @@ class ChartOfAccountService:
             raise ValidationError(
                 f"Cannot post to non-posting account '{account.account_code}' (parent accounts cannot receive postings)"
             )
+
     def _has_transactions(self, account_id: UUID, organization_id: UUID) -> bool:
         """
         Check if an account has any transactions posted to it.
@@ -1309,7 +1436,6 @@ class ChartOfAccountService:
         # ).first() is not None
 
         return False
-
 
     # Hierarchy methods
 
@@ -1437,7 +1563,7 @@ class ChartOfAccountService:
             "success_count": 0,
             "failed_count": 0,
             "errors": [],
-            "updated_ids": []
+            "updated_ids": [],
         }
 
         for account_id in account_ids:
@@ -1447,10 +1573,9 @@ class ChartOfAccountService:
                 results["updated_ids"].append(str(account_id))
             except Exception as e:
                 results["failed_count"] += 1
-                results["errors"].append({
-                    "account_id": str(account_id),
-                    "error": str(e)
-                })
+                results["errors"].append(
+                    {"account_id": str(account_id), "error": str(e)}
+                )
 
         return results
 
@@ -1475,7 +1600,7 @@ class ChartOfAccountService:
             "success_count": 0,
             "failed_count": 0,
             "errors": [],
-            "updated_ids": []
+            "updated_ids": [],
         }
 
         for account_id in account_ids:
@@ -1485,10 +1610,9 @@ class ChartOfAccountService:
                 results["updated_ids"].append(str(account_id))
             except Exception as e:
                 results["failed_count"] += 1
-                results["errors"].append({
-                    "account_id": str(account_id),
-                    "error": str(e)
-                })
+                results["errors"].append(
+                    {"account_id": str(account_id), "error": str(e)}
+                )
 
         return results
 
@@ -1515,7 +1639,7 @@ class ChartOfAccountService:
             "success_count": 0,
             "failed_count": 0,
             "errors": [],
-            "deleted_ids": []
+            "deleted_ids": [],
         }
 
         for account_id in account_ids:
@@ -1524,30 +1648,33 @@ class ChartOfAccountService:
                 account = self.repo.get_by_id(account_id, organization_id)
                 if not account:
                     results["failed_count"] += 1
-                    results["errors"].append({
-                        "account_id": str(account_id),
-                        "error": "Account not found"
-                    })
+                    results["errors"].append(
+                        {"account_id": str(account_id), "error": "Account not found"}
+                    )
                     continue
 
                 # Check for children if not forcing
                 if not force and self.repo.has_children(account_id, organization_id):
                     results["failed_count"] += 1
-                    results["errors"].append({
-                        "account_id": str(account_id),
-                        "account_code": account.account_code,
-                        "error": "Cannot delete account with child accounts"
-                    })
+                    results["errors"].append(
+                        {
+                            "account_id": str(account_id),
+                            "account_code": account.account_code,
+                            "error": "Cannot delete account with child accounts",
+                        }
+                    )
                     continue
 
                 # Check for transactions (placeholder for now)
                 if self._has_transactions(account_id, organization_id):
                     results["failed_count"] += 1
-                    results["errors"].append({
-                        "account_id": str(account_id),
-                        "account_code": account.account_code,
-                        "error": "Cannot delete account with existing transactions"
-                    })
+                    results["errors"].append(
+                        {
+                            "account_id": str(account_id),
+                            "account_code": account.account_code,
+                            "error": "Cannot delete account with existing transactions",
+                        }
+                    )
                     continue
 
                 self.delete(account_id, organization_id, user_id, force)
@@ -1555,10 +1682,8 @@ class ChartOfAccountService:
                 results["deleted_ids"].append(str(account_id))
             except Exception as e:
                 results["failed_count"] += 1
-                results["errors"].append({
-                    "account_id": str(account_id),
-                    "error": str(e)
-                })
+                results["errors"].append(
+                    {"account_id": str(account_id), "error": str(e)}
+                )
 
         return results
-

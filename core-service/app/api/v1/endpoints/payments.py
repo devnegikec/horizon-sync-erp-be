@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 
+from app.core.exceptions import NotFoundError, ValidationError
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
-from app.core.exceptions import NotFoundError, ValidationError
 from app.schemas.payment_entry import (
     CancelPaymentRequest,
     PaymentEntryCreate,
@@ -27,11 +27,11 @@ from app.schemas.payment_reference import (
     PaymentReferenceCreate,
     PaymentReferenceResponse,
 )
-from app.services.payment_entry_service import PaymentEntryService
 from app.services.allocation_service import AllocationService
+from app.services.payment_entry_service import PaymentEntryService
+from app.services.payment_export_service import PaymentExportService
 from app.services.receipt_service import ReceiptService
 from app.services.reconciliation_report_service import ReconciliationReportService
-from app.services.payment_export_service import PaymentExportService
 
 router = APIRouter()
 
@@ -108,15 +108,12 @@ async def create_payment_entry(
             detail=str(e)
         )
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating payment entry: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while creating payment entry"
+            detail="An unexpected error occurred while creating payment entry",
         )
 
 
@@ -129,14 +126,32 @@ async def create_payment_entry(
 async def list_payment_entries(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=1000, description="Items per page (max 1000)"),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status: Draft, Confirmed, or Cancelled"),
-    payment_mode: str | None = Query(None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"),
-    payment_type: str | None = Query(None, description="Filter by payment type: Customer_Payment or Supplier_Payment"),
-    party_id: UUID | None = Query(None, description="Filter by customer or supplier ID"),
-    date_from: datetime | None = Query(None, description="Filter payments from this date (inclusive)"),
-    date_to: datetime | None = Query(None, description="Filter payments to this date (inclusive)"),
-    search: str | None = Query(None, description="Search by reference_no or receipt_number"),
-    has_unallocated: bool | None = Query(None, description="Filter payments with unallocated_amount > 0"),
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filter by status: Draft, Confirmed, or Cancelled",
+    ),
+    payment_mode: str | None = Query(
+        None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"
+    ),
+    payment_type: str | None = Query(
+        None, description="Filter by payment type: Customer_Payment or Supplier_Payment"
+    ),
+    party_id: UUID | None = Query(
+        None, description="Filter by customer or supplier ID"
+    ),
+    date_from: datetime | None = Query(
+        None, description="Filter payments from this date (inclusive)"
+    ),
+    date_to: datetime | None = Query(
+        None, description="Filter payments to this date (inclusive)"
+    ),
+    search: str | None = Query(
+        None, description="Search by reference_no or receipt_number"
+    ),
+    has_unallocated: bool | None = Query(
+        None, description="Filter payments with unallocated_amount > 0"
+    ),
     sort_by: str = Query("payment_date", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user: CurrentUser = Depends(get_current_active_user),
@@ -190,7 +205,7 @@ async def list_payment_entries(
         logger.error(f"Error listing payment entries: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while listing payment entries"
+            detail="An unexpected error occurred while listing payment entries",
         )
 
 
@@ -223,15 +238,12 @@ async def get_payment_entry(
         )
         return PaymentEntryResponse.model_validate(payment)
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         logger.error(f"Error getting payment entry: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while getting payment entry"
+            detail="An unexpected error occurred while getting payment entry",
         )
 
 
@@ -315,20 +327,14 @@ async def update_payment_entry(
         )
         return PaymentEntryResponse.model_validate(payment)
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating payment entry: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while updating payment entry"
+            detail="An unexpected error occurred while updating payment entry",
         )
 
 
@@ -362,20 +368,14 @@ async def confirm_payment(
         )
         return PaymentEntryResponse.model_validate(payment)
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
         logger.error(f"Error confirming payment: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while confirming payment"
+            detail="An unexpected error occurred while confirming payment",
         )
 
 
@@ -414,20 +414,14 @@ async def cancel_payment(
         )
         return PaymentEntryResponse.model_validate(payment)
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
         logger.error(f"Error cancelling payment: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while cancelling payment"
+            detail="An unexpected error occurred while cancelling payment",
         )
 
 
@@ -469,26 +463,20 @@ async def create_allocation(
         )
         return PaymentReferenceResponse.model_validate(allocation)
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except SQLIntegrityError as e:
         logger.warning(f"Integrity error creating allocation: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An allocation for this payment and invoice already exists."
+            detail="An allocation for this payment and invoice already exists.",
         )
     except Exception as e:
         logger.error(f"Error creating allocation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred while creating allocation: {str(e)}"
+            detail=f"An unexpected error occurred while creating allocation: {str(e)}",
         )
 
 
@@ -521,15 +509,12 @@ async def get_payment_allocations(
         )
         return [PaymentReferenceResponse.model_validate(a) for a in allocations]
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         logger.error(f"Error getting payment allocations: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while getting payment allocations"
+            detail="An unexpected error occurred while getting payment allocations",
         )
 
 
@@ -563,20 +548,14 @@ async def remove_allocation(
         )
         return None
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except Exception as e:
         logger.error(f"Error removing allocation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while removing allocation"
+            detail="An unexpected error occurred while removing allocation",
         )
 
 
@@ -606,30 +585,24 @@ async def generate_receipt(
             payment_id=payment_id,
             organization_id=current_user.organization_id,
         )
-        
+
         # Return PDF with proper content-type header
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f"attachment; filename=receipt_{payment_id}.pdf"
-            }
+            },
         )
     except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"Error generating receipt: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while generating receipt"
+            detail="An unexpected error occurred while generating receipt",
         )
 
 
@@ -639,11 +612,23 @@ async def generate_receipt(
     description="Generate payment reconciliation report with filters",
 )
 async def get_reconciliation_report(
-    date_from: datetime | None = Query(None, description="Start date for payment date range (inclusive)"),
-    date_to: datetime | None = Query(None, description="End date for payment date range (inclusive)"),
-    party_id: UUID | None = Query(None, description="Filter by customer or supplier ID"),
-    payment_mode: str | None = Query(None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status: Draft, Confirmed, or Cancelled"),
+    date_from: datetime | None = Query(
+        None, description="Start date for payment date range (inclusive)"
+    ),
+    date_to: datetime | None = Query(
+        None, description="End date for payment date range (inclusive)"
+    ),
+    party_id: UUID | None = Query(
+        None, description="Filter by customer or supplier ID"
+    ),
+    payment_mode: str | None = Query(
+        None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"
+    ),
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filter by status: Draft, Confirmed, or Cancelled",
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -676,7 +661,7 @@ async def get_reconciliation_report(
         logger.error(f"Error generating reconciliation report: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while generating reconciliation report"
+            detail="An unexpected error occurred while generating reconciliation report",
         )
 
 
@@ -686,12 +671,26 @@ async def get_reconciliation_report(
     description="Export payment reconciliation report to Excel or PDF",
 )
 async def export_reconciliation_report(
-    format: str = Query(..., pattern="^(excel|pdf)$", description="Export format: excel or pdf"),
-    date_from: datetime | None = Query(None, description="Start date for payment date range (inclusive)"),
-    date_to: datetime | None = Query(None, description="End date for payment date range (inclusive)"),
-    party_id: UUID | None = Query(None, description="Filter by customer or supplier ID"),
-    payment_mode: str | None = Query(None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status: Draft, Confirmed, or Cancelled"),
+    format: str = Query(
+        ..., pattern="^(excel|pdf)$", description="Export format: excel or pdf"
+    ),
+    date_from: datetime | None = Query(
+        None, description="Start date for payment date range (inclusive)"
+    ),
+    date_to: datetime | None = Query(
+        None, description="End date for payment date range (inclusive)"
+    ),
+    party_id: UUID | None = Query(
+        None, description="Filter by customer or supplier ID"
+    ),
+    payment_mode: str | None = Query(
+        None, description="Filter by payment mode: Cash, Check, or Bank_Transfer"
+    ),
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filter by status: Draft, Confirmed, or Cancelled",
+    ),
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -714,10 +713,12 @@ async def export_reconciliation_report(
         # Initialize services
         reconciliation_service = ReconciliationReportService(db)
         export_service = PaymentExportService(reconciliation_service)
-        
+
         # Get organization name (you may want to fetch this from organization service)
-        organization_name = "Organization"  # TODO: Fetch from organization service if available
-        
+        organization_name = (
+            "Organization"  # TODO: Fetch from organization service if available
+        )
+
         if format == "excel":
             # Export to Excel
             file_bytes = export_service.export_to_excel(
@@ -729,7 +730,7 @@ async def export_reconciliation_report(
                 status=status_filter,
                 organization_name=organization_name,
             )
-            
+
             # Generate filename with date range
             filename = "reconciliation_report"
             if date_from:
@@ -737,13 +738,11 @@ async def export_reconciliation_report(
             if date_to:
                 filename += f"_to_{date_to.strftime('%Y%m%d')}"
             filename += ".xlsx"
-            
+
             return Response(
                 content=file_bytes,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}"
-                }
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
         else:  # format == "pdf"
             # Export to PDF
@@ -756,7 +755,7 @@ async def export_reconciliation_report(
                 status=status_filter,
                 organization_name=organization_name,
             )
-            
+
             # Generate filename with date range
             filename = "reconciliation_report"
             if date_from:
@@ -764,18 +763,15 @@ async def export_reconciliation_report(
             if date_to:
                 filename += f"_to_{date_to.strftime('%Y%m%d')}"
             filename += ".pdf"
-            
+
             return Response(
                 content=file_bytes,
                 media_type="application/pdf",
-                headers={
-                    "Content-Disposition": f"attachment; filename={filename}"
-                }
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
     except Exception as e:
         logger.error(f"Error exporting reconciliation report: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while exporting reconciliation report"
+            detail="An unexpected error occurred while exporting reconciliation report",
         )
-

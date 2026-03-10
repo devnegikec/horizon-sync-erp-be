@@ -1,12 +1,10 @@
 """Unit tests for TaxTemplateRepository"""
 
 import uuid
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
-from app.models.tax_template import TaxTemplate, TaxRule
 from app.repositories.tax_template_repository import TaxTemplateRepository
 
 
@@ -29,7 +27,7 @@ def test_tax_template_data(mock_current_user, sample_account_head_id):
         "is_active": True,
         "applicability_rules": {
             "transaction_type": "Sales",
-            "customer_location": {"country": "IN"}
+            "customer_location": {"country": "IN"},
         },
         "extra_data": {},
         "created_by": mock_current_user.id,
@@ -43,7 +41,7 @@ def test_tax_template_data(mock_current_user, sample_account_head_id):
                 "account_head_id": sample_account_head_id,
                 "is_compound": False,
                 "sequence": 1,
-                "applicability_conditions": {}
+                "applicability_conditions": {},
             },
             {
                 "rule_name": "SGST",
@@ -53,9 +51,9 @@ def test_tax_template_data(mock_current_user, sample_account_head_id):
                 "account_head_id": sample_account_head_id,
                 "is_compound": False,
                 "sequence": 2,
-                "applicability_conditions": {}
-            }
-        ]
+                "applicability_conditions": {},
+            },
+        ],
     }
 
 
@@ -78,7 +76,9 @@ class TestTaxTemplateRepositoryCreate:
         assert template.tax_rules[1].rule_name == "SGST"
         assert template.created_at is not None
 
-    def test_create_template_without_rules(self, tax_template_repo, test_tax_template_data):
+    def test_create_template_without_rules(
+        self, tax_template_repo, test_tax_template_data
+    ):
         """Test creating a tax template without tax rules"""
         test_tax_template_data.pop("tax_rules")
         template = tax_template_repo.create(test_tax_template_data)
@@ -131,7 +131,9 @@ class TestTaxTemplateRepositoryGetById:
     def test_get_by_id_not_found(self, tax_template_repo, mock_current_user):
         """Test getting a non-existent template"""
         fake_id = uuid.uuid4()
-        retrieved = tax_template_repo.get_by_id(fake_id, mock_current_user.organization_id)
+        retrieved = tax_template_repo.get_by_id(
+            fake_id, mock_current_user.organization_id
+        )
 
         assert retrieved is None
 
@@ -198,7 +200,7 @@ class TestTaxTemplateRepositoryUpdate:
         update_data = {
             "template_name": "GST 18% Updated",
             "description": "Updated description",
-            "is_active": False
+            "is_active": False,
         }
 
         updated = tax_template_repo.update(template, update_data)
@@ -209,7 +211,11 @@ class TestTaxTemplateRepositoryUpdate:
         assert updated.template_code == "GST_18"  # Unchanged
 
     def test_update_template_rules(
-        self, tax_template_repo, test_tax_template_data, mock_current_user, sample_account_head_id
+        self,
+        tax_template_repo,
+        test_tax_template_data,
+        mock_current_user,
+        sample_account_head_id,
     ):
         """Test updating tax rules"""
         template = tax_template_repo.create(test_tax_template_data)
@@ -224,7 +230,7 @@ class TestTaxTemplateRepositoryUpdate:
                 "account_head_id": sample_account_head_id,
                 "is_compound": False,
                 "sequence": 1,
-                "applicability_conditions": {}
+                "applicability_conditions": {},
             }
         ]
 
@@ -243,7 +249,7 @@ class TestTaxTemplateRepositoryUpdate:
 
         new_rules = {
             "transaction_type": "Purchase",
-            "supplier_location": {"country": "US"}
+            "supplier_location": {"country": "US"},
         }
 
         update_data = {"applicability_rules": new_rules}
@@ -301,7 +307,11 @@ class TestTaxTemplateRepositoryListTemplates:
         assert templates[0].template_code == "GST_18"
 
     def test_list_templates_filter_by_tax_category(
-        self, tax_template_repo, test_tax_template_data, mock_current_user, sample_account_head_id
+        self,
+        tax_template_repo,
+        test_tax_template_data,
+        mock_current_user,
+        sample_account_head_id,
     ):
         """Test filtering templates by tax category"""
         # Create Output template
@@ -433,9 +443,7 @@ class TestTaxTemplateRepositoryListTemplates:
 
         # Sort by template_code ascending
         templates, total = tax_template_repo.list_templates(
-            mock_current_user.organization_id,
-            sort_by="template_code",
-            sort_order="asc"
+            mock_current_user.organization_id, sort_by="template_code", sort_order="asc"
         )
 
         assert len(templates) == 3
@@ -499,9 +507,7 @@ class TestTaxTemplateRepositoryGetDefaultTemplate:
         assert default.id == template.id
         assert default.is_default is True
 
-    def test_get_default_template_not_found(
-        self, tax_template_repo, mock_current_user
-    ):
+    def test_get_default_template_not_found(self, tax_template_repo, mock_current_user):
         """Test getting default template when none exists"""
         default = tax_template_repo.get_default_template(
             mock_current_user.organization_id, "Output"
@@ -662,9 +668,7 @@ class TestTaxTemplateRepositoryTemplateCodeExists:
 
         assert exists is True
 
-    def test_template_code_exists_false(
-        self, tax_template_repo, mock_current_user
-    ):
+    def test_template_code_exists_false(self, tax_template_repo, mock_current_user):
         """Test checking non-existent template code"""
         exists = tax_template_repo.template_code_exists(
             "NONEXISTENT", mock_current_user.organization_id

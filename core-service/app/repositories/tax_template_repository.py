@@ -1,12 +1,10 @@
 """Tax Template repository for database operations"""
 
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.tax_template import TaxTemplate, TaxRule
+from app.models.tax_template import TaxRule, TaxTemplate
 
 
 class TaxTemplateRepository:
@@ -27,15 +25,15 @@ class TaxTemplateRepository:
         """
         # Extract tax_rules if present
         tax_rules_data = template_data.pop("tax_rules", [])
-        
+
         # Create template
         template = TaxTemplate(**template_data)
-        
+
         # Create tax rules
         for rule_data in tax_rules_data:
             tax_rule = TaxRule(**rule_data)
             template.tax_rules.append(tax_rule)
-        
+
         self.db.add(template)
         self.db.commit()
         self.db.refresh(template)
@@ -43,7 +41,7 @@ class TaxTemplateRepository:
 
     def get_by_id(
         self, template_id: UUID, organization_id: UUID, include_rules: bool = True
-    ) -> Optional[TaxTemplate]:
+    ) -> TaxTemplate | None:
         """
         Get tax template by ID within an organization.
 
@@ -68,7 +66,7 @@ class TaxTemplateRepository:
 
     def get_by_code(
         self, template_code: str, organization_id: UUID
-    ) -> Optional[TaxTemplate]:
+    ) -> TaxTemplate | None:
         """
         Get tax template by code within an organization.
 
@@ -102,7 +100,7 @@ class TaxTemplateRepository:
         """
         # Handle tax_rules separately if present
         tax_rules_data = update_data.pop("tax_rules", None)
-        
+
         # Update template fields
         for key, value in update_data.items():
             if hasattr(template, key) and value is not None:
@@ -113,7 +111,7 @@ class TaxTemplateRepository:
             # Remove existing rules
             for rule in template.tax_rules:
                 self.db.delete(rule)
-            
+
             # Add new rules
             for rule_data in tax_rules_data:
                 tax_rule = TaxRule(**rule_data, tax_template_id=template.id)
@@ -145,10 +143,10 @@ class TaxTemplateRepository:
         organization_id: UUID,
         page: int = 1,
         page_size: int = 20,
-        tax_category: Optional[str] = None,
-        is_active: Optional[bool] = None,
-        is_default: Optional[bool] = None,
-        search: Optional[str] = None,
+        tax_category: str | None = None,
+        is_active: bool | None = None,
+        is_default: bool | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[TaxTemplate], int]:
@@ -213,7 +211,7 @@ class TaxTemplateRepository:
 
     def get_default_template(
         self, organization_id: UUID, tax_category: str
-    ) -> Optional[TaxTemplate]:
+    ) -> TaxTemplate | None:
         """
         Get the default tax template for an organization and tax category.
 
@@ -259,14 +257,14 @@ class TaxTemplateRepository:
         self,
         organization_id: UUID,
         transaction_type: str,
-        item_id: Optional[UUID] = None,
-        item_group_id: Optional[UUID] = None,
-        customer_location: Optional[dict] = None,
-        supplier_location: Optional[dict] = None,
-    ) -> Optional[tuple[TaxTemplate, str]]:
+        item_id: UUID | None = None,
+        item_group_id: UUID | None = None,
+        customer_location: dict | None = None,
+        supplier_location: dict | None = None,
+    ) -> tuple[TaxTemplate, str] | None:
         """
         Get the applicable tax template based on context and inheritance hierarchy.
-        
+
         Hierarchy: item > item_group > organization default
 
         Args:
@@ -350,8 +348,8 @@ class TaxTemplateRepository:
     def _matches_applicability_rules(
         self,
         template: TaxTemplate,
-        customer_location: Optional[dict] = None,
-        supplier_location: Optional[dict] = None,
+        customer_location: dict | None = None,
+        supplier_location: dict | None = None,
     ) -> bool:
         """
         Check if template's applicability rules match the given context.

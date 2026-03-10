@@ -110,6 +110,7 @@ async def delete_delivery_note(
     svc.delete(delivery_note_id, current_user.organization_id)
     return None
 
+
 @router.post(
     "/{delivery_note_id}/convert-to-invoice",
     response_model=ConvertToInvoiceResponse,

@@ -29,7 +29,9 @@ class UOMConversionRepository:
         self.db.refresh(conversion)
         return conversion
 
-    def get_by_id(self, conversion_id: UUID, organization_id: UUID) -> UOMConversion | None:
+    def get_by_id(
+        self, conversion_id: UUID, organization_id: UUID
+    ) -> UOMConversion | None:
         """
         Get UOM Conversion by ID within an organization, excluding soft-deleted.
 

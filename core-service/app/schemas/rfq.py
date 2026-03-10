@@ -13,7 +13,9 @@ class SupplierQuoteBase(BaseModel):
     """Base schema for Supplier Quote"""
 
     supplier_id: UUID
-    quoted_price: Decimal | float = Field(..., ge=0, description="Quoted price must be non-negative")
+    quoted_price: Decimal | float = Field(
+        ..., ge=0, description="Quoted price must be non-negative"
+    )
     quoted_delivery_date: date
     supplier_notes: str | None = None
 
@@ -39,7 +41,9 @@ class RFQLineBase(BaseModel):
     """Base schema for RFQ Line"""
 
     item_id: UUID
-    quantity: Decimal | float = Field(..., gt=0, description="Quantity must be positive")
+    quantity: Decimal | float = Field(
+        ..., gt=0, description="Quantity must be positive"
+    )
     required_date: date
     description: str | None = None
 
@@ -171,6 +175,8 @@ class RecordQuoteRequest(BaseModel):
 
     rfq_line_id: UUID
     supplier_id: UUID
-    quoted_price: Decimal | float = Field(..., ge=0, description="Quoted price must be non-negative")
+    quoted_price: Decimal | float = Field(
+        ..., ge=0, description="Quoted price must be non-negative"
+    )
     quoted_delivery_date: date
     supplier_notes: str | None = None

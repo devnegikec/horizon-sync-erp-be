@@ -12,13 +12,15 @@ Usage:
 
 import os
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import create_engine, text
 
 # Database URL - can be overridden via environment variable
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+)
 
 # Organization ID - replace with your organization ID
 ORG_ID = uuid.UUID("b1f71de1-0a19-424e-9580-1d3f871c5b1f")
@@ -26,9 +28,11 @@ ORG_ID = uuid.UUID("b1f71de1-0a19-424e-9580-1d3f871c5b1f")
 # User ID for audit fields
 ADMIN_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
+
 # Calculate posting dates (30-90 days in the past)
 def days_ago(days):
     return datetime.now(UTC) - timedelta(days=days)
+
 
 # Sample Journal Entries data
 # Each entry has: entry_no, posting_date, remarks, and lines (account_code, debit, credit, remarks)
@@ -42,15 +46,15 @@ journal_entries_data = [
                 "account_code": "1110",  # Cash and Cash Equivalents
                 "debit": Decimal("50000.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Initial cash investment"
+                "remarks": "Initial cash investment",
             },
             {
                 "account_code": "3100",  # Owner's Capital
                 "debit": Decimal("0.00"),
                 "credit": Decimal("50000.00"),
-                "remarks": "Owner's initial capital contribution"
-            }
-        ]
+                "remarks": "Owner's initial capital contribution",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-002",
@@ -61,15 +65,15 @@ journal_entries_data = [
                 "account_code": "1130",  # Inventory
                 "debit": Decimal("8500.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Raw materials purchased"
+                "remarks": "Raw materials purchased",
             },
             {
                 "account_code": "2110",  # Accounts Payable
                 "debit": Decimal("0.00"),
                 "credit": Decimal("8500.00"),
-                "remarks": "Amount owed to supplier"
-            }
-        ]
+                "remarks": "Amount owed to supplier",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-003",
@@ -80,27 +84,27 @@ journal_entries_data = [
                 "account_code": "1120",  # Accounts Receivable
                 "debit": Decimal("15000.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Amount due from customer"
+                "remarks": "Amount due from customer",
             },
             {
                 "account_code": "4110",  # Domestic Sales
                 "debit": Decimal("0.00"),
                 "credit": Decimal("15000.00"),
-                "remarks": "Sales revenue recognized"
+                "remarks": "Sales revenue recognized",
             },
             {
                 "account_code": "5110",  # Material Costs (COGS)
                 "debit": Decimal("6000.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Cost of goods sold"
+                "remarks": "Cost of goods sold",
             },
             {
                 "account_code": "1130",  # Inventory
                 "debit": Decimal("0.00"),
                 "credit": Decimal("6000.00"),
-                "remarks": "Inventory reduction"
-            }
-        ]
+                "remarks": "Inventory reduction",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-004",
@@ -111,15 +115,15 @@ journal_entries_data = [
                 "account_code": "5210",  # Salaries and Wages
                 "debit": Decimal("12000.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Monthly salary expense"
+                "remarks": "Monthly salary expense",
             },
             {
                 "account_code": "1110",  # Cash and Cash Equivalents
                 "debit": Decimal("0.00"),
                 "credit": Decimal("12000.00"),
-                "remarks": "Cash paid for salaries"
-            }
-        ]
+                "remarks": "Cash paid for salaries",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-005",
@@ -130,15 +134,15 @@ journal_entries_data = [
                 "account_code": "2110",  # Accounts Payable
                 "debit": Decimal("8500.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Payment to supplier"
+                "remarks": "Payment to supplier",
             },
             {
                 "account_code": "1110",  # Cash and Cash Equivalents
                 "debit": Decimal("0.00"),
                 "credit": Decimal("8500.00"),
-                "remarks": "Cash paid to supplier"
-            }
-        ]
+                "remarks": "Cash paid to supplier",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-006",
@@ -149,15 +153,15 @@ journal_entries_data = [
                 "account_code": "1110",  # Cash and Cash Equivalents
                 "debit": Decimal("15000.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Cash received from customer"
+                "remarks": "Cash received from customer",
             },
             {
                 "account_code": "1120",  # Accounts Receivable
                 "debit": Decimal("0.00"),
                 "credit": Decimal("15000.00"),
-                "remarks": "Customer payment received"
-            }
-        ]
+                "remarks": "Customer payment received",
+            },
+        ],
     },
     {
         "entry_no": "JE-2024-007",
@@ -168,16 +172,16 @@ journal_entries_data = [
                 "account_code": "5420",  # Depreciation Expense
                 "debit": Decimal("500.00"),
                 "credit": Decimal("0.00"),
-                "remarks": "Monthly depreciation charge"
+                "remarks": "Monthly depreciation charge",
             },
             {
                 "account_code": "1220",  # Accumulated Depreciation
                 "debit": Decimal("0.00"),
                 "credit": Decimal("500.00"),
-                "remarks": "Accumulated depreciation increase"
-            }
-        ]
-    }
+                "remarks": "Accumulated depreciation increase",
+            },
+        ],
+    },
 ]
 
 
@@ -185,21 +189,23 @@ def get_account_id(conn, account_code):
     """Get account ID by account code"""
     result = conn.execute(
         text("""
-            SELECT id FROM accounts 
+            SELECT id FROM accounts
             WHERE organization_id = :org_id AND account_code = :code
         """),
-        {"org_id": str(ORG_ID), "code": account_code}
+        {"org_id": str(ORG_ID), "code": account_code},
     )
     row = result.fetchone()
     if not row:
-        raise ValueError(f"Account with code {account_code} not found. Please run seed_chart_of_accounts.py first.")
+        raise ValueError(
+            f"Account with code {account_code} not found. Please run seed_chart_of_accounts.py first."
+        )
     return row[0]
 
 
 def seed_journal_entries():
     """Insert Journal Entries seed data using raw SQL to avoid model relationship issues"""
     engine = create_engine(DATABASE_URL)
-    
+
     with engine.connect() as conn:
         try:
             print("=" * 70)
@@ -222,10 +228,10 @@ def seed_journal_entries():
                 # Check if journal entry already exists
                 result = conn.execute(
                     text("""
-                        SELECT id FROM journal_entries 
+                        SELECT id FROM journal_entries
                         WHERE organization_id = :org_id AND entry_no = :entry_no
                     """),
-                    {"org_id": str(ORG_ID), "entry_no": entry_no}
+                    {"org_id": str(ORG_ID), "entry_no": entry_no},
                 )
                 existing = result.fetchone()
 
@@ -248,7 +254,7 @@ def seed_journal_entries():
                 # Create journal entry
                 journal_entry_id = str(uuid.uuid4())
                 posting_date = entry_data["posting_date"]
-                
+
                 conn.execute(
                     text("""
                         INSERT INTO journal_entries (
@@ -275,7 +281,7 @@ def seed_journal_entries():
                         "updated_by": str(ADMIN_USER_ID),
                         "created_at": datetime.now(UTC),
                         "updated_at": datetime.now(UTC),
-                    }
+                    },
                 )
 
                 # Create journal entry lines
@@ -283,7 +289,7 @@ def seed_journal_entries():
                 for line_data in entry_data["lines"]:
                     account_id = get_account_id(conn, line_data["account_code"])
                     affected_accounts.add(line_data["account_code"])
-                    
+
                     line_id = str(uuid.uuid4())
                     conn.execute(
                         text("""
@@ -308,7 +314,7 @@ def seed_journal_entries():
                             "sort_order": line_count,
                             "created_at": datetime.now(UTC),
                             "updated_at": datetime.now(UTC),
-                        }
+                        },
                     )
                     line_count += 1
 
@@ -320,7 +326,9 @@ def seed_journal_entries():
                 # Print entry summary
                 print(f"  ✓ {entry_no} - {entry_data['remarks']}")
                 print(f"    Date: {posting_date.strftime('%Y-%m-%d')}")
-                print(f"    Debit: ${entry_debit_total:,.2f} | Credit: ${entry_credit_total:,.2f}")
+                print(
+                    f"    Debit: ${entry_debit_total:,.2f} | Credit: ${entry_credit_total:,.2f}"
+                )
                 print(f"    Lines: {line_count}")
                 print()
 
@@ -331,7 +339,7 @@ def seed_journal_entries():
             print("=" * 70)
             print("Seeding Complete!")
             print("=" * 70)
-            print(f"\n📊 Summary:")
+            print("\n📊 Summary:")
             print(f"  • Journal entries created: {created_entries}")
             print(f"  • Journal entries skipped (already exist): {skipped_entries}")
             print(f"  • Total debits: ${total_debits:,.2f}")
@@ -339,19 +347,25 @@ def seed_journal_entries():
             print(f"  • Affected accounts: {len(affected_accounts)}")
 
             # Display affected accounts
-            print(f"\n💡 Affected Account Codes:")
+            print("\n💡 Affected Account Codes:")
             print(f"  {', '.join(sorted(affected_accounts))}")
 
             # Display sample entries
-            print(f"\n📝 Sample Journal Entries:")
-            print(f"  • JE-2024-001: Opening balance (Cash/Owner's Capital)")
-            print(f"  • JE-2024-002: Purchase transaction (Inventory/Accounts Payable)")
-            print(f"  • JE-2024-003: Sales transaction (AR/Sales Revenue, COGS/Inventory)")
-            print(f"  • JE-2024-004: Salary payment (Salaries/Cash)")
-            print(f"  • JE-2024-007: Depreciation (Depreciation Expense/Accumulated Depreciation)")
+            print("\n📝 Sample Journal Entries:")
+            print("  • JE-2024-001: Opening balance (Cash/Owner's Capital)")
+            print("  • JE-2024-002: Purchase transaction (Inventory/Accounts Payable)")
+            print(
+                "  • JE-2024-003: Sales transaction (AR/Sales Revenue, COGS/Inventory)"
+            )
+            print("  • JE-2024-004: Salary payment (Salaries/Cash)")
+            print(
+                "  • JE-2024-007: Depreciation (Depreciation Expense/Accumulated Depreciation)"
+            )
 
-            print(f"\n✓ Journal entries seed data inserted successfully!")
-            print(f"✓ All entries are posted and will be included in balance calculations")
+            print("\n✓ Journal entries seed data inserted successfully!")
+            print(
+                "✓ All entries are posted and will be included in balance calculations"
+            )
             print("=" * 70)
 
         except Exception as e:

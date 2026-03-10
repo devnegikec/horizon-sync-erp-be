@@ -39,7 +39,7 @@ class ReceiptNoteService:
     ) -> dict:
         """
         Create Receipt Note for a Purchase Order.
-        
+
         Args:
             purchase_order_id: ID of the Purchase Order to receive against
             receipt_no: Receipt note number
@@ -49,14 +49,14 @@ class ReceiptNoteService:
             user_id: User creating the receipt
             warehouse_id: Optional warehouse ID
             remarks: Optional remarks
-            
+
         Returns:
             dict: Created receipt note response
-            
+
         Raises:
             ResourceNotFoundException: If Purchase Order not found
             ValidationException: If Purchase Order status is invalid
-        
+
         Requirements: 5.1, 5.2
         """
         # Validate Purchase Order exists
@@ -83,25 +83,27 @@ class ReceiptNoteService:
 
         # Validate received quantities don't exceed ordered quantities
         po_line_items_map = {str(line.item_id): line for line in po.line_items}
-        
+
         for idx, item in enumerate(line_items):
             item_id = str(item.get("item_id"))
             qty = item.get("qty", 0)
-            
+
             if qty <= 0:
                 raise ValidationException(
                     f"Line item {idx}: quantity must be greater than zero"
                 )
-            
+
             # Check if item exists in Purchase Order
             if item_id not in po_line_items_map:
                 raise ValidationException(
                     f"Line item {idx}: item {item_id} not found in Purchase Order"
                 )
-            
+
             po_line = po_line_items_map[item_id]
-            remaining_qty = Decimal(str(po_line.quantity)) - Decimal(str(po_line.received_quantity))
-            
+            remaining_qty = Decimal(str(po_line.quantity)) - Decimal(
+                str(po_line.received_quantity)
+            )
+
             if Decimal(str(qty)) > remaining_qty:
                 raise ValidationException(
                     f"Line item {idx}: received quantity {qty} exceeds remaining quantity {remaining_qty}"
@@ -138,7 +140,7 @@ class ReceiptNoteService:
         # Update Purchase Order received quantities and status
         # Import here to avoid circular dependency
         from app.services.purchase_order_service import PurchaseOrderService
-        
+
         po_service = PurchaseOrderService(self.db)
         po_service.update_received_quantities(
             po_id=purchase_order_id,
@@ -157,34 +159,34 @@ class ReceiptNoteService:
     ) -> None:
         """
         Increment stock levels for received items.
-        
+
         Args:
             line_items: List of received items with item_id and qty
             warehouse_id: Warehouse where items are received
             organization_id: Organization ID
-            
+
         Requirements: 5.3
         """
         for item in line_items:
             item_id = item.get("item_id")
             qty = Decimal(str(item.get("qty", 0)))
-            
+
             if qty <= 0:
                 continue
-            
+
             # Get or create stock level for this item in this warehouse
             stock_level = self.stock_level_service.get_or_create(
                 item_id=item_id,
                 warehouse_id=warehouse_id,
                 organization_id=organization_id,
             )
-            
+
             # Increment quantity on hand
             new_quantity = (stock_level.quantity_on_hand or 0) + int(qty)
-            
+
             # Update stock level
             from app.schemas.stock_level import StockLevelUpdate
-            
+
             self.stock_level_service.update_by_id(
                 level_id=stock_level.id,
                 data=StockLevelUpdate(quantity_on_hand=new_quantity),

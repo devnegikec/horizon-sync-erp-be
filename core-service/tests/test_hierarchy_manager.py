@@ -120,7 +120,11 @@ class TestAddChild:
         # Create parent and child
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Attempt to make parent a child of child should fail
@@ -152,11 +156,11 @@ class TestAddChild:
     ):
         """Test that adding child to inactive parent is rejected (Requirement 11.3)"""
         from app.models.base import AccountStatus
-        
+
         # Create parent and child accounts
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(db_session, organization_id, "1100", "Current Assets")
-        
+
         # Deactivate parent
         parent.status = AccountStatus.INACTIVE
         db_session.commit()
@@ -174,11 +178,11 @@ class TestAddChild:
     ):
         """Test that adding child to archived parent is rejected (Requirement 11.3)"""
         from app.models.base import AccountStatus
-        
+
         # Create parent and child accounts
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(db_session, organization_id, "1100", "Current Assets")
-        
+
         # Archive parent
         parent.status = AccountStatus.ARCHIVED
         db_session.commit()
@@ -202,7 +206,11 @@ class TestRemoveChild:
         # Create parent and child
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Remove child
@@ -221,7 +229,11 @@ class TestRemoveChild:
             db_session, organization_id, "1000", "Assets", is_posting_account=False
         )
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Remove child
@@ -240,10 +252,18 @@ class TestRemoveChild:
             db_session, organization_id, "1000", "Assets", is_posting_account=False
         )
         child1 = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
         child2 = create_account(
-            db_session, organization_id, "1200", "Fixed Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1200",
+            "Fixed Assets",
+            parent_account_id=parent.id,
         )
 
         # Remove one child
@@ -274,7 +294,11 @@ class TestMoveAccount:
         old_parent = create_account(db_session, organization_id, "1000", "Assets")
         new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
         account = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=old_parent.id,
         )
 
         # Move account
@@ -294,7 +318,11 @@ class TestMoveAccount:
         )
         new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
         account = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=old_parent.id,
         )
 
         # Move account
@@ -314,7 +342,11 @@ class TestMoveAccount:
             db_session, organization_id, "1500", "Other Assets", is_posting_account=True
         )
         account = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=old_parent.id,
         )
 
         # Move account
@@ -357,7 +389,11 @@ class TestMoveAccount:
         # Create hierarchy: grandparent -> parent -> child
         grandparent = create_account(db_session, organization_id, "1000", "Assets")
         parent = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=grandparent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=grandparent.id,
         )
         child = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=parent.id
@@ -372,14 +408,18 @@ class TestMoveAccount:
     ):
         """Test that moving to inactive parent is rejected (Requirement 11.3)"""
         from app.models.base import AccountStatus
-        
+
         # Create accounts
         old_parent = create_account(db_session, organization_id, "1000", "Assets")
         new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
         account = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=old_parent.id,
         )
-        
+
         # Deactivate new parent
         new_parent.status = AccountStatus.INACTIVE
         db_session.commit()
@@ -397,14 +437,18 @@ class TestMoveAccount:
     ):
         """Test that moving to archived parent is rejected (Requirement 11.3)"""
         from app.models.base import AccountStatus
-        
+
         # Create accounts
         old_parent = create_account(db_session, organization_id, "1000", "Assets")
         new_parent = create_account(db_session, organization_id, "1500", "Other Assets")
         account = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=old_parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=old_parent.id,
         )
-        
+
         # Archive new parent
         new_parent.status = AccountStatus.ARCHIVED
         db_session.commit()
@@ -428,10 +472,18 @@ class TestGetChildren:
         # Create hierarchy
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child1 = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
         child2 = create_account(
-            db_session, organization_id, "1200", "Fixed Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1200",
+            "Fixed Assets",
+            parent_account_id=parent.id,
         )
         grandchild = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=child1.id
@@ -480,7 +532,11 @@ class TestGetParent:
         # Create parent and child
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Get parent
@@ -523,7 +579,11 @@ class TestGetAncestors:
         # Create hierarchy: root -> parent -> child
         root = create_account(db_session, organization_id, "1000", "Assets")
         parent = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=root.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=root.id,
         )
         child = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=parent.id
@@ -570,10 +630,18 @@ class TestGetDescendants:
         # Create hierarchy
         root = create_account(db_session, organization_id, "1000", "Assets")
         child1 = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=root.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=root.id,
         )
         child2 = create_account(
-            db_session, organization_id, "1200", "Fixed Assets", parent_account_id=root.id
+            db_session,
+            organization_id,
+            "1200",
+            "Fixed Assets",
+            parent_account_id=root.id,
         )
         grandchild1 = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=child1.id
@@ -626,7 +694,11 @@ class TestGetAccountPath:
         # Create hierarchy: root -> parent -> child
         root = create_account(db_session, organization_id, "1000", "Assets")
         parent = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=root.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=root.id,
         )
         child = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=parent.id
@@ -690,7 +762,11 @@ class TestDetectCircularReference:
         # Create parent and child
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Check if making parent a child of child would be circular
@@ -708,7 +784,11 @@ class TestDetectCircularReference:
         # Create hierarchy: root -> parent -> child
         root = create_account(db_session, organization_id, "1000", "Assets")
         parent = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=root.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=root.id,
         )
         child = create_account(
             db_session, organization_id, "1110", "Cash", parent_account_id=parent.id
@@ -755,7 +835,9 @@ class TestValidateHierarchy:
         )
 
         # Validate hierarchy
-        is_valid = hierarchy_manager.validate_hierarchy(child.id, parent.id, organization_id)
+        is_valid = hierarchy_manager.validate_hierarchy(
+            child.id, parent.id, organization_id
+        )
 
         # Verify valid
         assert is_valid is True
@@ -773,7 +855,9 @@ class TestValidateHierarchy:
         )
 
         # Validate hierarchy
-        is_valid = hierarchy_manager.validate_hierarchy(child.id, parent.id, organization_id)
+        is_valid = hierarchy_manager.validate_hierarchy(
+            child.id, parent.id, organization_id
+        )
 
         # Verify invalid
         assert is_valid is False
@@ -785,11 +869,17 @@ class TestValidateHierarchy:
         # Create parent and child
         parent = create_account(db_session, organization_id, "1000", "Assets")
         child = create_account(
-            db_session, organization_id, "1100", "Current Assets", parent_account_id=parent.id
+            db_session,
+            organization_id,
+            "1100",
+            "Current Assets",
+            parent_account_id=parent.id,
         )
 
         # Validate hierarchy (parent as child of child)
-        is_valid = hierarchy_manager.validate_hierarchy(parent.id, child.id, organization_id)
+        is_valid = hierarchy_manager.validate_hierarchy(
+            parent.id, child.id, organization_id
+        )
 
         # Verify invalid
         assert is_valid is False
@@ -803,7 +893,9 @@ class TestValidateHierarchy:
         fake_child_id = uuid.uuid4()
 
         # Validate hierarchy
-        is_valid = hierarchy_manager.validate_hierarchy(fake_child_id, parent.id, organization_id)
+        is_valid = hierarchy_manager.validate_hierarchy(
+            fake_child_id, parent.id, organization_id
+        )
 
         # Verify invalid
         assert is_valid is False

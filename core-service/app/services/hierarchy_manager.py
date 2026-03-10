@@ -9,7 +9,6 @@ from app.core.exceptions import (
     CircularReferenceException,
     ValidationError,
 )
-from app.models.base import AccountType
 from app.models.chart_of_account import Account
 from app.repositories.chart_of_account_repository import AccountRepository
 
@@ -46,9 +45,10 @@ class HierarchyManager:
             raise ChartOfAccountNotFoundException(
                 f"Parent account with ID {parent_id} not found"
             )
-        
+
         # Validate parent account is active (Requirement 11.3)
         from app.models.base import AccountStatus
+
         if parent.status != AccountStatus.ACTIVE:
             raise ValidationError(
                 f"Parent account '{parent.account_code}' must be active. Current status: {parent.status.value}"
@@ -148,9 +148,10 @@ class HierarchyManager:
             raise ChartOfAccountNotFoundException(
                 f"New parent account with ID {new_parent_id} not found"
             )
-        
+
         # Validate parent account is active (Requirement 11.3)
         from app.models.base import AccountStatus
+
         if new_parent.status != AccountStatus.ACTIVE:
             raise ValidationError(
                 f"Parent account '{new_parent.account_code}' must be active. Current status: {new_parent.status.value}"

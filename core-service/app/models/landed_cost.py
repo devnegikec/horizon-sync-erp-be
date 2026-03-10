@@ -4,11 +4,10 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, Enum, String, Text
-from app.models.types import UUID
 
 from app.database import Base
 from app.models.base import DocumentStatus
-from app.models.types import JSONB
+from app.models.types import JSONB, UUID
 
 
 class LandedCostVoucher(Base):

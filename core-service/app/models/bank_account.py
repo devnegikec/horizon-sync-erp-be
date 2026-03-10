@@ -23,7 +23,7 @@ from app.database import Base
 from app.models.types import UUID
 
 if TYPE_CHECKING:
-    from app.models.chart_of_account import Account
+    pass
 
 
 class BankAccount(Base):
@@ -34,19 +34,19 @@ class BankAccount(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     gl_account_id = Column(
-        UUID(as_uuid=True), 
-        ForeignKey("accounts.id", ondelete="CASCADE"), 
-        nullable=False, 
-        index=True
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     # Banking details (sensitive fields will be encrypted at application level)
     bank_name = Column(String(100), nullable=False)
     account_holder_name = Column(String(200), nullable=False)
-    account_number = Column(String(50), nullable=False)      # Will be encrypted
-    iban = Column(String(34), nullable=True)                 # Will be encrypted
-    swift_code = Column(String(11), nullable=True)           # Will be encrypted
-    routing_number = Column(String(20), nullable=True)       # US banks, will be encrypted
+    account_number = Column(String(50), nullable=False)  # Will be encrypted
+    iban = Column(String(34), nullable=True)  # Will be encrypted
+    swift_code = Column(String(11), nullable=True)  # Will be encrypted
+    routing_number = Column(String(20), nullable=True)  # US banks, will be encrypted
     branch_name = Column(String(100), nullable=True)
     branch_code = Column(String(20), nullable=True)
     sort_code = Column(String(10), nullable=True)            # UK banks, will be encrypted
@@ -76,14 +76,12 @@ class BankAccount(Base):
     bank_api_enabled = Column(Boolean, default=False)
     bank_api_credentials_id = Column(UUID(as_uuid=True), nullable=True)
     last_sync_date = Column(DateTime(timezone=True), nullable=True)
-    sync_frequency = Column(String(20), default='manual')
+    sync_frequency = Column(String(20), default="manual")
 
     # Audit fields
     created_by = Column(String(100), nullable=False)
     created_at = Column(
-        DateTime(timezone=True), 
-        nullable=False, 
-        default=lambda: datetime.now(UTC)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
     updated_by = Column(String(100), nullable=False)
     updated_at = Column(
@@ -100,7 +98,7 @@ class BankAccount(Base):
 
     __table_args__ = (
         # IBAN must be unique within organization
-        UniqueConstraint('organization_id', 'iban', name='unique_iban_per_org'),
+        UniqueConstraint("organization_id", "iban", name="unique_iban_per_org"),
     )
 
     def __repr__(self):
@@ -132,20 +130,26 @@ class BankAccount(Base):
     @property
     def is_bank_enabled(self) -> bool:
         """Check if this bank account has any banking features enabled"""
-        return any([
-            self.online_banking_enabled,
-            self.mobile_banking_enabled,
-            self.wire_transfer_enabled,
-            self.ach_enabled,
-            self.bank_api_enabled
-        ])
+        return any(
+            [
+                self.online_banking_enabled,
+                self.mobile_banking_enabled,
+                self.wire_transfer_enabled,
+                self.ach_enabled,
+                self.bank_api_enabled,
+            ]
+        )
 
     def get_transfer_limits_dict(self) -> dict:
         """Get transfer limits as dictionary"""
         return {
-            "daily_limit": float(self.daily_transfer_limit) if self.daily_transfer_limit else None,
-            "monthly_limit": float(self.monthly_transfer_limit) if self.monthly_transfer_limit else None,
-            "requires_dual_approval": self.requires_dual_approval
+            "daily_limit": float(self.daily_transfer_limit)
+            if self.daily_transfer_limit
+            else None,
+            "monthly_limit": float(self.monthly_transfer_limit)
+            if self.monthly_transfer_limit
+            else None,
+            "requires_dual_approval": self.requires_dual_approval,
         }
 
 
@@ -170,6 +174,7 @@ class BankAccountHistory(Base):
         nullable=False, 
         default=lambda: datetime.now(UTC),
         index=True
+        UUID(as_uuid=True), ForeignKey("bank_accounts.id"), nullable=False
     )
     reason = Column(Text, nullable=True)
 

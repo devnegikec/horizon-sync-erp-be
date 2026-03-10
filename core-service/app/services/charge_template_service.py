@@ -1,6 +1,5 @@
 """Charge Template service for business logic"""
 
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -105,8 +104,7 @@ class ChargeTemplateService:
 
         # Validate calculation method fields if being updated
         if "calculation_method" in template_data or any(
-            k in template_data
-            for k in ["fixed_amount", "percentage_rate", "base_on"]
+            k in template_data for k in ["fixed_amount", "percentage_rate", "base_on"]
         ):
             self._validate_calculation_fields(
                 {
@@ -159,7 +157,7 @@ class ChargeTemplateService:
         self.repo.soft_delete(template)
 
     def list_templates(
-        self, organization_id: UUID, filters: Optional[dict] = None
+        self, organization_id: UUID, filters: dict | None = None
     ) -> tuple[list[dict], dict]:
         """
         List charge templates with pagination and filters.
@@ -296,9 +294,7 @@ class ChargeTemplateService:
                 )
 
         elif calculation_method:
-            raise ValueError(
-                "Invalid calculation_method. Must be FIXED or PERCENTAGE"
-            )
+            raise ValueError("Invalid calculation_method. Must be FIXED or PERCENTAGE")
 
     @staticmethod
     def _to_response(template: ChargeTemplate) -> dict:
