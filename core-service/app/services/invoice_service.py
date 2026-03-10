@@ -96,6 +96,107 @@ class InvoiceService:
         self.db.refresh(inv)
         return self._to_response(inv)
 
+    def confirm_invoice(
+        self, invoice_id: UUID, organization_id: UUID, user_id: UUID
+    ) -> dict:
+        """
+        Confirm an invoice by changing status from draft to submitted.
+        
+        This method:
+        1. Validates invoice exists and is in draft status
+        2. Updates invoice status to submitted
+        3. Sets submitted_at timestamp
+        4. Sets outstanding_amount to grand_total
+        5. Creates journal entry via InvoiceJournalPostingService
+        6. Commits transaction
+        
+        Args:
+            invoice_id: Invoice UUID
+            organization_id: Organization UUID
+            user_id: User ID confirming the invoice
+            
+        Returns:
+            Updated invoice as dict
+            
+        Raises:
+            ResourceNotFoundException: If invoice not found
+            ValidationError: If invoice not in draft status or validation fails
+        """
+        from datetime import datetime, UTC
+        from app.core.exceptions import ValidationError
+        from app.services.invoice_journal_posting_service import InvoiceJournalPostingService
+        
+        # Get invoice
+        inv = self.repo.get_by_id(invoice_id, organization_id)
+        if not inv:
+            raise ResourceNotFoundException(f"Invoice {invoice_id} not found")
+        
+        # Validate invoice status is draft
+        current_status = inv.status.value if hasattr(inv.status, 'value') else inv.status
+        if current_status != "draft":
+            raise ValidationError(
+                f"Invoice must be in draft status to confirm. Current status: {current_status}"
+            )
+        
+        # Validate invoice_type
+        invoice_type = inv.invoice_type.value if hasattr(inv.invoice_type, 'value') else inv.invoice_type
+        if invoice_type not in ["sales", "purchase"]:
+            raise ValidationError(
+                f"Invalid invoice_type: {invoice_type}. Must be 'sales' or 'purchase'"
+            )
+        
+        # Validate grand_total
+        if inv.grand_total <= 0:
+            raise ValidationError(
+                f"Invoice grand_total must be greater than 0. Current value: {inv.grand_total}"
+            )
+        
+        try:
+            # Convert grand_total to base currency for outstanding_amount
+            from app.services.currency_service import CurrencyService
+            currency_service = CurrencyService(self.db)
+            base_currency = currency_service.get_base_currency()
+            
+            # Convert to base currency if needed
+            if inv.currency == base_currency:
+                outstanding_amount_base = inv.grand_total
+            else:
+                outstanding_amount_base = currency_service.convert(
+                    inv.grand_total, inv.currency, base_currency
+                )
+            
+            # Update invoice fields
+            inv.status = "submitted"
+            inv.submitted_at = datetime.now(UTC)
+            inv.outstanding_amount = outstanding_amount_base
+            inv.updated_by = user_id
+            
+            # Flush to get the submitted_at timestamp before creating journal entry
+            self.db.flush()
+            
+            # Create journal entry
+            journal_posting_service = InvoiceJournalPostingService(self.db)
+            journal_posting_service.post_invoice_journal_entry(
+                inv, organization_id, user_id
+            )
+            
+            # Commit transaction
+            self.db.commit()
+            self.db.refresh(inv)
+            
+            return self._to_response(inv)
+            
+        except ValidationError:
+            # Rollback on validation error
+            self.db.rollback()
+            raise
+        except Exception as e:
+            # Rollback on any other error
+            self.db.rollback()
+            raise ValidationError(
+                f"Failed to confirm invoice: {str(e)}"
+            )
+
     def delete(self, invoice_id: UUID, organization_id: UUID) -> None:
         inv = self.repo.get_by_id(invoice_id, organization_id)
         if not inv:

@@ -9,6 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.common import PaginationMeta
 
 
+class BankAccountBasic(BaseModel):
+    """Minimal bank account info for nested response"""
+
+    id: UUID
+    bank_name: str
+    masked_account_number: str
+    gl_account_id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PaymentEntryBase(BaseModel):
     """Base payment entry schema with common fields"""
 
@@ -84,7 +95,10 @@ class PaymentEntryBase(BaseModel):
 class PaymentEntryCreate(PaymentEntryBase):
     """Schema for creating a new payment entry"""
 
-    pass
+    bank_account_id: UUID | None = Field(
+        None,
+        description="ID of the bank account used for Bank_Transfer payments"
+    )
 
 
 class PaymentEntryUpdate(BaseModel):
@@ -94,6 +108,7 @@ class PaymentEntryUpdate(BaseModel):
     payment_date: datetime | None = None
     payment_mode: str | None = None
     reference_no: str | None = Field(None, max_length=100)
+    bank_account_id: UUID | None = None
 
     @field_validator("amount")
     @classmethod
@@ -160,6 +175,7 @@ class PaymentEntryResponse(BaseModel):
     payment_date: datetime
     payment_mode: str
     reference_no: str | None = None
+    bank_account_id: UUID | None = None
 
     # Status and Source
     status: str
@@ -183,6 +199,7 @@ class PaymentEntryResponse(BaseModel):
 
     # Relationships
     payment_references: list[PaymentReferenceInfo] = []
+    bank_account: BankAccountBasic | None = None
 
     # Party display (customer/supplier name and contact; populated for detail/list)
     party_name: str | None = None

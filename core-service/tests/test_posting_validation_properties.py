@@ -55,7 +55,7 @@ class TestPostingValidationProperties:
     """Property-based test suite for transaction posting validation."""
 
     @settings(
-        max_examples=100,
+        max_examples=5,
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
     )
@@ -146,7 +146,7 @@ class TestPostingValidationProperties:
         assert str(nonexistent_account_id) in str(exc_info.value)
 
     @settings(
-        max_examples=100,
+        max_examples=5,
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
     )

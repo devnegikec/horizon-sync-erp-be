@@ -11,9 +11,12 @@ from app.core.exceptions import (
     BankAccountNotFoundException,
     DuplicateIbanException,
     InvalidAccountStateException,
+    UnauthorizedException,
+    ReconciledTransactionDeletionException,
     ValidationError,
 )
 from app.models.bank_account import BankAccount, BankAccountHistory
+from app.models.bank_transaction import BankTransaction
 from app.models.chart_of_account import Account
 from app.schemas.bank_account import (
     BankAccountCreate,
@@ -267,6 +270,26 @@ class BankAccountService:
 
         # Get existing bank account
         bank_account = self.get_bank_account_by_id(bank_account_id, organization_id)
+        
+        # Check for reconciled transactions
+        reconciled_count = (
+            self.db.query(func.count(BankTransaction.id))
+            .filter(
+                and_(
+                    BankTransaction.bank_account_id == bank_account_id,
+                    BankTransaction.transaction_status == 'reconciled'
+                )
+            )
+            .scalar()
+        )
+        
+        if reconciled_count > 0:
+            raise ReconciledTransactionDeletionException(
+                f"Cannot delete bank account {bank_account_id}: "
+                f"it has {reconciled_count} reconciled transaction(s). "
+                f"Reconciled transactions must not be deleted to maintain data integrity."
+            )
+        
         old_values = self._bank_account_to_dict(bank_account)
 
         # Create audit history before deletion
@@ -406,6 +429,26 @@ class BankAccountService:
             },
         )
 
+    def get_bank_account_history(
+        self, 
+        bank_account_id: UUID, 
+        organization_id: UUID
+    ) -> List[BankAccountHistory]:
+        """Get complete audit history for a bank account"""
+        
+        # Validate bank account exists and belongs to organization
+        self.get_bank_account_by_id(bank_account_id, organization_id)
+        
+        # Get history records ordered by most recent first
+        history = (
+            self.db.query(BankAccountHistory)
+            .filter(BankAccountHistory.bank_account_id == bank_account_id)
+            .order_by(BankAccountHistory.changed_at.desc())
+            .all()
+        )
+        
+        return history
+
     # Private helper methods
 
     def _get_gl_account_by_id(
@@ -435,7 +478,18 @@ class BankAccountService:
         self, data: BankAccountCreate, gl_account_id: UUID, organization_id: UUID
     ) -> None:
         """Validate business rules for creating a bank account"""
-
+        
+        # Get GL account to check its type
+        gl_account = self._get_gl_account_by_id(gl_account_id, organization_id)
+        
+        # Validate GL account type - warn if not ASSET or LIABILITY
+        if gl_account.account_type not in ['asset', 'liability']:
+            logger.warning(
+                f"Bank account being linked to GL account {gl_account.account_code} "
+                f"of type {gl_account.account_type}. Bank accounts are typically linked to "
+                f"ASSET (for regular bank accounts) or LIABILITY (for credit cards/overdrafts) accounts."
+            )
+        
         # Check for duplicate IBAN within organization
         if data.iban:
             existing_iban = (

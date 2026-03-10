@@ -14,28 +14,17 @@ class BankAccountBase(BaseModel):
 
     # Banking details
     bank_name: str = Field(..., min_length=1, max_length=100, description="Bank name")
-    account_holder_name: str = Field(
-        ..., min_length=1, max_length=200, description="Account holder name"
-    )
-    account_number: str = Field(
-        ..., min_length=1, max_length=50, description="Bank account number"
-    )
-    iban: str | None = Field(None, max_length=34, description="IBAN number")
-    swift_code: str | None = Field(None, max_length=11, description="SWIFT/BIC code")
-    routing_number: str | None = Field(
-        None, max_length=20, description="Routing number (US)"
-    )
-    branch_name: str | None = Field(
-        None, max_length=100, description="Bank branch name"
-    )
-    branch_code: str | None = Field(
-        None, max_length=20, description="Bank branch code"
-    )
-    sort_code: str | None = Field(None, max_length=10, description="Sort code (UK)")
-    bsb_number: str | None = Field(
-        None, max_length=10, description="BSB number (Australia)"
-    )
-
+    account_holder_name: str = Field(..., min_length=1, max_length=200, description="Account holder name")
+    account_number: str = Field(..., min_length=1, max_length=50, description="Bank account number")
+    iban: Optional[str] = Field(None, max_length=34, description="IBAN number")
+    swift_code: Optional[str] = Field(None, max_length=11, description="SWIFT/BIC code")
+    routing_number: Optional[str] = Field(None, max_length=20, description="Routing number (US)")
+    branch_name: Optional[str] = Field(None, max_length=100, description="Bank branch name")
+    branch_code: Optional[str] = Field(None, max_length=20, description="Bank branch code")
+    sort_code: Optional[str] = Field(None, max_length=10, description="Sort code (UK)")
+    bsb_number: Optional[str] = Field(None, max_length=10, description="BSB number (Australia)")
+    ifsc_code: Optional[str] = Field(None, max_length=11, description="IFSC code (India)")
+    
     # Account metadata
     account_type: str | None = Field(
         None, max_length=50, description="Account type (checking, savings, etc.)"
@@ -139,7 +128,17 @@ class BankAccountBase(BaseModel):
                 raise ValueError("Invalid BSB number format. Must be 6 digits")
         return v
 
-    @field_validator("account_type")
+    @field_validator('ifsc_code')
+    @classmethod
+    def validate_ifsc_code(cls, v: Optional[str]) -> Optional[str]:
+        """Validate Indian IFSC code format"""
+        if v:
+            v = v.upper().replace(' ', '')
+            if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', v):
+                raise ValueError('Invalid IFSC code format. Expected format: AAAA0BBBBBB (A=bank, 0=zero, B=branch)')
+        return v
+
+    @field_validator('account_type')
     @classmethod
     def validate_account_type(cls, v: str | None) -> str | None:
         """Validate account type"""
@@ -200,33 +199,34 @@ class BankAccountUpdate(BaseModel):
     """Schema for updating an existing bank account"""
 
     # All fields are optional for updates
-    bank_name: str | None = Field(None, min_length=1, max_length=100)
-    account_holder_name: str | None = Field(None, min_length=1, max_length=200)
-    account_number: str | None = Field(None, min_length=1, max_length=50)
-    iban: str | None = Field(None, max_length=34)
-    swift_code: str | None = Field(None, max_length=11)
-    routing_number: str | None = Field(None, max_length=20)
-    branch_name: str | None = Field(None, max_length=100)
-    branch_code: str | None = Field(None, max_length=20)
-    sort_code: str | None = Field(None, max_length=10)
-    bsb_number: str | None = Field(None, max_length=10)
-
-    account_type: str | None = Field(None, max_length=50)
-    account_purpose: str | None = Field(None, max_length=50)
-    is_primary: bool | None = None
-    is_active: bool | None = None
-
-    online_banking_enabled: bool | None = None
-    mobile_banking_enabled: bool | None = None
-    wire_transfer_enabled: bool | None = None
-    ach_enabled: bool | None = None
-
-    daily_transfer_limit: float | None = Field(None, gt=0)
-    monthly_transfer_limit: float | None = Field(None, gt=0)
-    requires_dual_approval: bool | None = None
-
-    bank_api_enabled: bool | None = None
-    sync_frequency: str | None = Field(None, max_length=20)
+    bank_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    account_holder_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    account_number: Optional[str] = Field(None, min_length=1, max_length=50)
+    iban: Optional[str] = Field(None, max_length=34)
+    swift_code: Optional[str] = Field(None, max_length=11)
+    routing_number: Optional[str] = Field(None, max_length=20)
+    branch_name: Optional[str] = Field(None, max_length=100)
+    branch_code: Optional[str] = Field(None, max_length=20)
+    sort_code: Optional[str] = Field(None, max_length=10)
+    bsb_number: Optional[str] = Field(None, max_length=10)
+    ifsc_code: Optional[str] = Field(None, max_length=11)
+    
+    account_type: Optional[str] = Field(None, max_length=50)
+    account_purpose: Optional[str] = Field(None, max_length=50)
+    is_primary: Optional[bool] = None
+    is_active: Optional[bool] = None
+    
+    online_banking_enabled: Optional[bool] = None
+    mobile_banking_enabled: Optional[bool] = None
+    wire_transfer_enabled: Optional[bool] = None
+    ach_enabled: Optional[bool] = None
+    
+    daily_transfer_limit: Optional[float] = Field(None, gt=0)
+    monthly_transfer_limit: Optional[float] = Field(None, gt=0)
+    requires_dual_approval: Optional[bool] = None
+    
+    bank_api_enabled: Optional[bool] = None
+    sync_frequency: Optional[str] = Field(None, max_length=20)
 
 
 class BankAccountResponse(BankAccountBase):

@@ -200,6 +200,7 @@ class OrganizationService:
             if org.organization_type
             else None,
             "industry": org.industry,
+            "base_currency": getattr(org, "base_currency", "USD"),
             "status": org.status.value if org.status else None,
             "is_active": org.is_active,
             "owner_id": org.owner_id,

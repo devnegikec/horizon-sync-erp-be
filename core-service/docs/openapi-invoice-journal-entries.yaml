@@ -1,0 +1,311 @@
+openapi: 3.0.3
+info:
+  title: Invoice Journal Entries API
+  description: API endpoints for invoice confirmation and payment bank account tracking
+  version: 1.0.0
+  contact:
+    name: Horizon Sync Development Team
+
+servers:
+  - url: http://localhost:8001/api/v1
+    description: Local development server
+  - url: https://api.example.com/api/v1
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /invoices/{invoice_id}/confirm:
+    post:
+      summary: Confirm/submit an invoice
+      description: |
+        Changes the invoice status from "draft" to "submitted" and creates journal entries
+        for accounts receivable/payable and revenue/expense recognition.
+        
+        **Behavior:**
+        - Updates invoice status to "submitted"
+        - Sets submitted_at timestamp to current datetime
+        - Sets outstanding_amount to grand_total
+        - Creates journal entry (Sales: Debit AR, Credit Revenue; Purchase: Debit Expense, Credit AP)
+        
+        **Transaction:** Operation is atomic - invoice update and journal entry creation succeed together or fail together.
+      operationId: confirmInvoice
+      tags:
+        - Invoices
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: UUID of the invoice to confirm
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice confirmed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '400':
+          description: Bad Request - Invalid invoice state or missing configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notDraft:
+                  value:
+                    detail: "Invoice must be in draft status to confirm. Current status: submitted"
+                missingAccounts:
+                  value:
+                    detail: "Required default accounts not configured: accounts_receivable, sales_revenue"
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payment-entries:
+    post:
+      summary: Create a payment entry
+      description: |
+        Creates a new payment entry with optional bank account linkage.
+        
+        **Bank Account Tracking:**
+        - Include bank_account_id for Bank_Transfer payments to track specific bank accounts
+        - Omit bank_account_id to use generic "bank" default account (backward compatible)
+        - bank_account_id is only valid for Bank_Transfer payment mode
+      operationId: createPaymentEntry
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentEntryCreate'
+            examples:
+              withBankAccount:
+                summary: Payment with bank account
+                value:
+                  payment_type: "Customer_Payment"
+                  party_id: "660e8400-e29b-41d4-a716-446655440000"
+                  amount: 1000.00
+                  currency_code: "USD"
+                  payment_date: "2024-01-15T10:00:00Z"
+                  payment_mode: "Bank_Transfer"
+                  reference_no: "TXN123456789"
+                  bank_account_id: "770e8400-e29b-41d4-a716-446655440000"
+              withoutBankAccount:
+                summary: Payment without bank account (backward compatible)
+                value:
+                  payment_type: "Customer_Payment"
+                  party_id: "660e8400-e29b-41d4-a716-446655440000"
+                  amount: 1000.00
+                  currency_code: "USD"
+                  payment_date: "2024-01-15T10:00:00Z"
+                  payment_mode: "Bank_Transfer"
+                  reference_no: "TXN123456789"
+      responses:
+        '201':
+          description: Payment entry created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEntryResponse'
+        '400':
+          description: Bad Request - Invalid data or bank account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidMode:
+                  value:
+                    detail: "bank_account_id can only be provided for Bank_Transfer payment mode"
+                inactiveAccount:
+                  value:
+                    detail: "Bank account 'HDFC Bank' is not active"
+        '404':
+          description: Bank account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Bank account does not belong to organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    InvoiceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_no:
+          type: string
+        invoice_type:
+          type: string
+          enum: [Sales, Purchase]
+        status:
+          type: string
+          enum: [draft, submitted, partial, paid, cancelled]
+        party_id:
+          type: string
+          format: uuid
+        party_name:
+          type: string
+        posting_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        currency:
+          type: string
+        grand_total:
+          type: number
+          format: decimal
+        outstanding_amount:
+          type: number
+          format: decimal
+          description: Remaining balance after payment allocations
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaymentEntryCreate:
+      type: object
+      required:
+        - payment_type
+        - party_id
+        - amount
+        - payment_date
+        - payment_mode
+      properties:
+        payment_type:
+          type: string
+          enum: [Customer_Payment, Supplier_Payment]
+        party_id:
+          type: string
+          format: uuid
+          description: Customer or Supplier UUID
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+        currency_code:
+          type: string
+          default: USD
+          maxLength: 3
+        payment_date:
+          type: string
+          format: date-time
+        payment_mode:
+          type: string
+          enum: [Cash, Check, Bank_Transfer]
+        reference_no:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: Check number or bank UTR
+        bank_account_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Bank account UUID (only for Bank_Transfer)
+
+    PaymentEntryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        payment_type:
+          type: string
+        party_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+        currency_code:
+          type: string
+        payment_date:
+          type: string
+          format: date-time
+        payment_mode:
+          type: string
+        reference_no:
+          type: string
+          nullable: true
+        bank_account_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [Draft, Confirmed, Cancelled]
+        unallocated_amount:
+          type: number
+          format: decimal
+        bank_account:
+          $ref: '#/components/schemas/BankAccountBasic'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BankAccountBasic:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        bank_name:
+          type: string
+        masked_account_number:
+          type: string
+        gl_account_id:
+          type: string
+          format: uuid
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Error message

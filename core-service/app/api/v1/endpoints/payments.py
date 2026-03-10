@@ -62,10 +62,39 @@ async def create_payment_entry(
     - **payment_date**: Date of payment (required)
     - **payment_mode**: Cash, Check, or Bank_Transfer (required)
     - **reference_no**: Check number or bank UTR (required for Check and Bank_Transfer)
+    - **bank_account_id**: Bank account UUID (optional, only for Bank_Transfer)
 
     **Returns:** Created payment entry details
     """
     try:
+        # Validate bank_account_id if provided
+        if data.bank_account_id:
+            # Validate payment_mode is Bank_Transfer
+            if data.payment_mode != "Bank_Transfer":
+                raise ValidationError(
+                    "bank_account_id can only be provided for Bank_Transfer payment mode"
+                )
+            
+            # Validate bank account exists and belongs to organization
+            from app.models.bank_account import BankAccount
+            bank_account = db.query(BankAccount).filter(
+                BankAccount.id == data.bank_account_id
+            ).first()
+            
+            if not bank_account:
+                raise NotFoundError(f"Bank account with ID {data.bank_account_id} not found")
+            
+            if bank_account.organization_id != current_user.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Bank account does not belong to your organization"
+                )
+            
+            if not bank_account.is_active:
+                raise ValidationError(
+                    f"Bank account '{bank_account.bank_name}' is not active"
+                )
+        
         service = PaymentEntryService(db)
         payment = service.create_payment_entry(
             data=data,
@@ -73,6 +102,11 @@ async def create_payment_entry(
             user_id=current_user.id,
         )
         return PaymentEntryResponse.model_validate(payment)
+    except NotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
     except ValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -238,10 +272,52 @@ async def update_payment_entry(
     - **payment_date**: Date of payment
     - **payment_mode**: Payment mode
     - **reference_no**: Check number or bank UTR
+    - **bank_account_id**: Bank account UUID (only for Bank_Transfer)
 
     **Returns:** Updated payment entry details
     """
     try:
+        # Validate bank_account_id if provided
+        if data.bank_account_id:
+            # If payment_mode is being updated, validate it's Bank_Transfer
+            if data.payment_mode and data.payment_mode != "Bank_Transfer":
+                raise ValidationError(
+                    "bank_account_id can only be provided for Bank_Transfer payment mode"
+                )
+            
+            # If payment_mode is not being updated, we need to check the existing payment
+            if not data.payment_mode:
+                from app.models.payment_entry import PaymentEntry
+                existing_payment = db.query(PaymentEntry).filter(
+                    PaymentEntry.id == payment_id,
+                    PaymentEntry.organization_id == current_user.organization_id
+                ).first()
+                
+                if existing_payment and existing_payment.payment_mode != "Bank_Transfer":
+                    raise ValidationError(
+                        "bank_account_id can only be provided for Bank_Transfer payment mode"
+                    )
+            
+            # Validate bank account exists and belongs to organization
+            from app.models.bank_account import BankAccount
+            bank_account = db.query(BankAccount).filter(
+                BankAccount.id == data.bank_account_id
+            ).first()
+            
+            if not bank_account:
+                raise NotFoundError(f"Bank account with ID {data.bank_account_id} not found")
+            
+            if bank_account.organization_id != current_user.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Bank account does not belong to your organization"
+                )
+            
+            if not bank_account.is_active:
+                raise ValidationError(
+                    f"Bank account '{bank_account.bank_name}' is not active"
+                )
+        
         service = PaymentEntryService(db)
         payment = service.update_payment_entry(
             payment_id=payment_id,

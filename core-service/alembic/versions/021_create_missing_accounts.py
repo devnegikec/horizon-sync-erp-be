@@ -1,7 +1,7 @@
 """Create missing accounts and payment_entries tables
 
-Revision ID: 019_create_missing_account_tables
-Revises: 018_fix_bulk_export_format
+Revision ID: 021_create_missing_accounts
+Revises: 020_add_bank_account_id_to_payment_entries
 Create Date: 2026-03-05
 
 The original migration 001 was skipped due to a stale alembic_version
@@ -16,13 +16,10 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine.reflection import Inspector
 
-from alembic import op
-
-revision = "019_missing_acct_tables"
-down_revision = "018_fix_bulk_export_format"
+revision = "021_create_missing_accounts"
+down_revision = "020_add_bank_account_id_payment"
 branch_labels = None
 depends_on = None
-
 
 def _existing(conn):
     return set(Inspector.from_engine(conn).get_table_names())

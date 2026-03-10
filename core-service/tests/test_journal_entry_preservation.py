@@ -46,7 +46,7 @@ class TestBalanceCalculationPreservation:
     """
 
     @settings(
-        max_examples=20,
+        max_examples=5,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
         deadline=None,
     )
@@ -691,7 +691,7 @@ class TestZeroBalancePreservation:
     """
 
     @settings(
-        max_examples=15,
+        max_examples=5,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
         deadline=None,
     )

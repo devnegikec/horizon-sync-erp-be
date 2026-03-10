@@ -105,3 +105,52 @@ async def delete_invoice(
     svc = InvoiceService(db)
     svc.delete(invoice_id, current_user.organization_id)
     return None
+
+
+@router.post("/{invoice_id}/confirm", response_model=InvoiceResponse)
+async def confirm_invoice(
+    invoice_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(INVOICE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Confirm/submit an invoice.
+    
+    Changes the invoice status from "draft" to "submitted" and creates journal entries
+    for accounts receivable/payable and revenue/expense recognition.
+    
+    **Requires:** invoice.update permission
+    
+    **Path Parameters:**
+    - **invoice_id**: UUID of the invoice to confirm
+    
+    **Behavior:**
+    - Updates invoice status to "submitted"
+    - Sets submitted_at timestamp to current datetime
+    - Sets outstanding_amount to grand_total
+    - Creates journal entry:
+      - Sales Invoice: Debit AR, Credit Revenue
+      - Purchase Invoice: Debit Expense, Credit AP
+    
+    **Validation:**
+    - Invoice must be in "draft" status
+    - Invoice type must be "Sales" or "Purchase"
+    - Grand total must be greater than zero
+    - Required default accounts must be configured:
+      - Sales: accounts_receivable, sales_revenue
+      - Purchase: purchase_expense, accounts_payable
+    
+    **Error Responses:**
+    - 400: Invoice not in draft status, missing default accounts, or invalid data
+    - 404: Invoice not found
+    - 403: Insufficient permissions
+    
+    **Transaction Behavior:**
+    - Operation is atomic: invoice update and journal entry creation succeed together or fail together
+    - If journal entry creation fails, invoice status change is rolled back
+    
+    **Returns:** Updated invoice with submitted_at and outstanding_amount set
+    """
+    svc = InvoiceService(db)
+    data = svc.confirm_invoice(invoice_id, current_user.organization_id, current_user.id)
+    return InvoiceResponse.model_validate(data)

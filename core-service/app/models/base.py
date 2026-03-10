@@ -350,6 +350,54 @@ class PaymentAuditAction(str, enum.Enum):
     DEALLOCATE = "DEALLOCATE"
 
 
+# ===========================================
+# BANKING ENUMS
+# ===========================================
+
+
+class TransactionStatus(str, enum.Enum):
+    """Bank transaction status enumeration"""
+
+    PENDING = "pending"
+    CLEARED = "cleared"
+    RECONCILED = "reconciled"
+    VOID = "void"
+
+
+class TransactionTypeEnum(str, enum.Enum):
+    """Bank transaction type enumeration"""
+
+    DEBIT = "debit"
+    CREDIT = "credit"
+
+
+class ReconciliationType(str, enum.Enum):
+    """Bank reconciliation type enumeration"""
+
+    MANUAL = "manual"
+    AUTO_EXACT = "auto_exact"
+    AUTO_FUZZY = "auto_fuzzy"
+    MANY_TO_ONE = "many_to_one"
+
+
+class ReconciliationStatus(str, enum.Enum):
+    """Bank reconciliation status enumeration"""
+
+    SUGGESTED = "suggested"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+
+
+class BankAccountHistoryAction(str, enum.Enum):
+    """Bank account history action enumeration"""
+
+    CREATED = "created"
+    UPDATED = "updated"
+    ACTIVATED = "activated"
+    DEACTIVATED = "deactivated"
+
+
+# ===========================================
 # COMMUNICATION ENUMS
 # ===========================================
 
