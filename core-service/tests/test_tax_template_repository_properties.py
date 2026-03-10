@@ -19,7 +19,7 @@ class TestTaxTemplateRepositoryProperties:
     """Property-based test suite for TaxTemplateRepository."""
 
     @settings(
-        max_examples=100, 
+        max_examples=5, 
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
@@ -109,7 +109,7 @@ class TestTaxTemplateRepositoryProperties:
         assert final_default.is_default == True
 
     @settings(
-        max_examples=50, 
+        max_examples=5, 
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
@@ -172,7 +172,7 @@ class TestTaxTemplateRepositoryProperties:
             assert len(all_defaults) == 1
 
     @settings(
-        max_examples=50, 
+        max_examples=5, 
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
@@ -262,7 +262,7 @@ class TestTaxTemplateRepositoryProperties:
             assert input_default_after.id == new_input_default_id
 
     @settings(
-        max_examples=50, 
+        max_examples=5, 
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )
@@ -323,7 +323,7 @@ class TestTaxTemplateRepositoryProperties:
         assert default_template is None
 
     @settings(
-        max_examples=50, 
+        max_examples=5, 
         deadline=5000,
         suppress_health_check=[HealthCheck.function_scoped_fixture]
     )

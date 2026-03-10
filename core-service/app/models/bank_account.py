@@ -116,6 +116,11 @@ class BankAccount(Base):
             return "*" * len(self.account_number)
         return self.account_number[-4:]
 
+    @property
+    def masked_account_number(self) -> str:
+        """Property for masked account number (for schema serialization)"""
+        return self.mask_account_number()
+
     def mask_iban(self) -> str:
         """Return masked IBAN for display purposes"""
         if not self.iban:

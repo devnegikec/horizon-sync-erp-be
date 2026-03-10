@@ -58,6 +58,12 @@ class PaymentEntry(Base):
         nullable=False,
     )
     reference_no = Column(String(100), nullable=True, index=True)
+    bank_account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("bank_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Status and Source
     status = Column(
@@ -103,6 +109,10 @@ class PaymentEntry(Base):
     )
 
     # Relationships
+    bank_account = relationship(
+        "BankAccount",
+        foreign_keys=[bank_account_id],
+    )
     payment_references = relationship(
         "PaymentReference",
         back_populates="payment_entry",
@@ -140,5 +150,6 @@ class PaymentEntry(Base):
             f"currency='{self.currency_code}', "
             f"mode='{self.payment_mode.value}', "
             f"status='{self.status.value}', "
-            f"date='{self.payment_date}')>"
+            f"date='{self.payment_date}', "
+            f"bank_account_id={self.bank_account_id})>"
         )

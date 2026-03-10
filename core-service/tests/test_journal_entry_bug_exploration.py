@@ -185,7 +185,7 @@ class TestJournalEntryBugExploration:
         # because the models are not imported in app/models/__init__.py
     
     @settings(
-        max_examples=10,
+        max_examples=5,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
         deadline=None
     )

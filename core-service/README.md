@@ -140,6 +140,21 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+## Documentation
+
+### API Documentation
+
+- **[Invoice Journal Entries API](docs/INVOICE_JOURNAL_ENTRIES_API.md)** - Invoice confirmation, bank account tracking, and outstanding amount updates
+- **[Chart of Accounts Integration API](docs/CHART_OF_ACCOUNTS_INTEGRATION_API.md)** - Chart of accounts and default accounts
+- **[Default Accounts Infrastructure](docs/DEFAULT_ACCOUNTS_INFRASTRUCTURE.md)** - Default account configuration
+- **[Payment Performance Optimization](docs/PAYMENT_PERFORMANCE_OPTIMIZATION.md)** - Payment system performance
+- **[Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)** - General performance guidelines
+
+### Interactive API Documentation
+
+- **Swagger UI**: http://localhost:8001/docs - Interactive API documentation with request/response examples
+- **ReDoc**: http://localhost:8001/redoc - Alternative API documentation with better readability
+
 ## Configuration
 
 ### Environment Variables

@@ -88,6 +88,7 @@ class TestJournalPostingService:
         payment.amount = Decimal("1000.00")
         payment.currency_code = "USD"
         payment.payment_date = datetime.now(UTC)
+        payment.bank_account_id = None  # Default to None for non-bank payments
         return payment
 
     def test_post_payment_journal_entry_cash(
@@ -121,7 +122,7 @@ class TestJournalPostingService:
         assert journal_data["reference_type"] == "PaymentEntry"
         assert journal_data["reference_id"] == sample_payment_entry.id
         assert journal_data["voucher_type"] == "Payment Entry"
-        assert journal_data["status"] == "Posted"
+        assert journal_data["status"] == "posted"
         assert len(journal_data["lines"]) == 2
 
         # Verify debit line (Cash account)
@@ -306,7 +307,7 @@ class TestJournalPostingService:
         assert journal_data["reference_type"] == "PaymentEntry"
         assert journal_data["reference_id"] == sample_payment_entry.id
         assert journal_data["voucher_type"] == "Payment Entry Reversal"
-        assert journal_data["status"] == "Posted"
+        assert journal_data["status"] == "posted"
         assert "Reversal" in journal_data["remarks"]
         assert "Duplicate payment" in journal_data["remarks"]
         assert len(journal_data["lines"]) == 2
@@ -406,3 +407,349 @@ class TestJournalPostingService:
         for line in journal_data["lines"]:
             assert line["reference_type"] == "PaymentEntry"
             assert line["reference_id"] == sample_payment_entry.id
+
+
+    # ========================================================================
+    # Tests for Bank Account Integration (Bug 2 Fix)
+    # ========================================================================
+
+    def test_get_payment_account_by_mode_with_bank_account_id(
+        self,
+        journal_posting_service,
+    ):
+        """Test _get_payment_account_by_mode returns specific gl_account_id when bank_account_id provided"""
+        organization_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        gl_account_id = uuid.uuid4()
+        
+        # Mock BankAccount
+        mock_bank_account = Mock()
+        mock_bank_account.id = bank_account_id
+        mock_bank_account.organization_id = organization_id
+        mock_bank_account.gl_account_id = gl_account_id
+        mock_bank_account.is_active = True
+        mock_bank_account.bank_name = "HDFC Bank"
+        
+        # Mock database query
+        mock_query = Mock()
+        mock_filter = Mock()
+        mock_filter.first = Mock(return_value=mock_bank_account)
+        mock_query.filter = Mock(return_value=mock_filter)
+        journal_posting_service.db.query = Mock(return_value=mock_query)
+        
+        # Execute
+        result = journal_posting_service._get_payment_account_by_mode(
+            payment_mode="Bank_Transfer",
+            organization_id=organization_id,
+            bank_account_id=bank_account_id,
+        )
+        
+        # Verify
+        assert result == gl_account_id
+        journal_posting_service.db.query.assert_called_once()
+
+    def test_get_payment_account_by_mode_without_bank_account_id(
+        self,
+        journal_posting_service,
+    ):
+        """Test _get_payment_account_by_mode returns generic 'bank' account when bank_account_id not provided"""
+        organization_id = uuid.uuid4()
+        generic_bank_account_id = uuid.uuid4()
+        
+        # Mock default account service to return generic bank account
+        mock_default_account = Mock()
+        mock_default_account.account_id = generic_bank_account_id
+        journal_posting_service.default_account_service.get_default_account = Mock(
+            return_value=mock_default_account
+        )
+        
+        # Execute
+        result = journal_posting_service._get_payment_account_by_mode(
+            payment_mode="Bank_Transfer",
+            organization_id=organization_id,
+            bank_account_id=None,
+        )
+        
+        # Verify
+        assert result == generic_bank_account_id
+        journal_posting_service.default_account_service.get_default_account.assert_called_once_with(
+            transaction_type="bank",
+            organization_id=organization_id,
+        )
+
+    def test_get_payment_account_by_mode_with_inactive_bank_account(
+        self,
+        journal_posting_service,
+    ):
+        """Test _get_payment_account_by_mode raises ValidationError when bank account is inactive"""
+        organization_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        
+        # Mock inactive BankAccount
+        mock_bank_account = Mock()
+        mock_bank_account.id = bank_account_id
+        mock_bank_account.organization_id = organization_id
+        mock_bank_account.gl_account_id = uuid.uuid4()
+        mock_bank_account.is_active = False
+        mock_bank_account.bank_name = "HDFC Bank"
+        
+        # Mock database query
+        mock_query = Mock()
+        mock_filter = Mock()
+        mock_filter.first = Mock(return_value=mock_bank_account)
+        mock_query.filter = Mock(return_value=mock_filter)
+        journal_posting_service.db.query = Mock(return_value=mock_query)
+        
+        # Execute and verify exception
+        with pytest.raises(ValidationError) as exc_info:
+            journal_posting_service._get_payment_account_by_mode(
+                payment_mode="Bank_Transfer",
+                organization_id=organization_id,
+                bank_account_id=bank_account_id,
+            )
+        
+        assert "not active" in str(exc_info.value).lower()
+        assert "HDFC Bank" in str(exc_info.value)
+
+    def test_get_payment_account_by_mode_with_bank_account_from_different_org(
+        self,
+        journal_posting_service,
+    ):
+        """Test _get_payment_account_by_mode raises ValidationError when bank account belongs to different organization"""
+        organization_id = uuid.uuid4()
+        different_org_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        
+        # Mock BankAccount from different organization
+        mock_bank_account = Mock()
+        mock_bank_account.id = bank_account_id
+        mock_bank_account.organization_id = different_org_id  # Different org
+        mock_bank_account.gl_account_id = uuid.uuid4()
+        mock_bank_account.is_active = True
+        mock_bank_account.bank_name = "HDFC Bank"
+        
+        # Mock database query
+        mock_query = Mock()
+        mock_filter = Mock()
+        mock_filter.first = Mock(return_value=mock_bank_account)
+        mock_query.filter = Mock(return_value=mock_filter)
+        journal_posting_service.db.query = Mock(return_value=mock_query)
+        
+        # Execute and verify exception
+        with pytest.raises(ValidationError) as exc_info:
+            journal_posting_service._get_payment_account_by_mode(
+                payment_mode="Bank_Transfer",
+                organization_id=organization_id,
+                bank_account_id=bank_account_id,
+            )
+        
+        assert "does not belong to organization" in str(exc_info.value).lower()
+
+    def test_get_payment_account_by_mode_with_nonexistent_bank_account_id(
+        self,
+        journal_posting_service,
+    ):
+        """Test _get_payment_account_by_mode raises ResourceNotFoundException when bank_account_id not found"""
+        from app.core.exceptions import ResourceNotFoundException
+        
+        organization_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        
+        # Mock database query returning None (not found)
+        mock_query = Mock()
+        mock_filter = Mock()
+        mock_filter.first = Mock(return_value=None)
+        mock_query.filter = Mock(return_value=mock_filter)
+        journal_posting_service.db.query = Mock(return_value=mock_query)
+        
+        # Execute and verify exception
+        with pytest.raises(ResourceNotFoundException) as exc_info:
+            journal_posting_service._get_payment_account_by_mode(
+                payment_mode="Bank_Transfer",
+                organization_id=organization_id,
+                bank_account_id=bank_account_id,
+            )
+        
+        assert "not found" in str(exc_info.value).lower()
+        assert str(bank_account_id) in str(exc_info.value)
+
+    def test_post_payment_journal_entry_with_bank_account_id(
+        self,
+        journal_posting_service,
+        sample_payment_entry,
+    ):
+        """Test posting journal entry for Bank_Transfer payment with specific bank_account_id"""
+        organization_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        gl_account_id = uuid.uuid4()
+        
+        # Set payment to Bank_Transfer with bank_account_id
+        sample_payment_entry.payment_mode = PaymentMode.BANK_TRANSFER
+        sample_payment_entry.bank_account_id = bank_account_id
+        
+        # Mock BankAccount
+        mock_bank_account = Mock()
+        mock_bank_account.id = bank_account_id
+        mock_bank_account.organization_id = organization_id
+        mock_bank_account.gl_account_id = gl_account_id
+        mock_bank_account.is_active = True
+        mock_bank_account.bank_name = "HDFC Bank"
+        
+        # Mock database query
+        mock_query = Mock()
+        mock_filter = Mock()
+        mock_filter.first = Mock(return_value=mock_bank_account)
+        mock_query.filter = Mock(return_value=mock_filter)
+        journal_posting_service.db.query = Mock(return_value=mock_query)
+        
+        # Execute
+        result = journal_posting_service.post_payment_journal_entry(
+            payment_entry=sample_payment_entry,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        
+        # Verify
+        assert result is not None
+        assert result["status"] == "Posted"
+        
+        # Verify journal entry was created with specific bank account's gl_account_id
+        journal_posting_service.journal_entry_service.create.assert_called_once()
+        call_args = journal_posting_service.journal_entry_service.create.call_args
+        journal_data = call_args[1]["data"]
+        
+        # Verify debit line uses specific bank account's gl_account_id
+        debit_line = journal_data["lines"][0]
+        assert debit_line["account_id"] == gl_account_id
+        assert debit_line["debit"] == Decimal("1000.00")
+        assert debit_line["credit"] == Decimal("0.00")
+
+    def test_reverse_payment_journal_entry_with_bank_account_id(
+        self,
+        journal_posting_service,
+        sample_payment_entry,
+    ):
+        """Test reversing journal entry for payment with bank_account_id uses same specific account"""
+        organization_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        bank_account_id = uuid.uuid4()
+        gl_account_id = uuid.uuid4()
+        
+        # Set payment to Bank_Transfer with bank_account_id
+        sample_payment_entry.payment_mode = PaymentMode.BANK_TRANSFER
+        sample_payment_entry.bank_account_id = bank_account_id
+        sample_payment_entry.cancellation_reason = "Duplicate payment"
+        
+        # Mock original journal entry that used specific bank account
+        original_je = Mock()
+        original_je.id = uuid.uuid4()
+        original_je.lines = [
+            Mock(
+                account_id=gl_account_id,  # Specific bank account's GL account
+                debit=Decimal("1000.00"),
+                credit=Decimal("0.00"),
+                against_account_id=uuid.uuid4(),
+                remarks="Payment via HDFC Bank",
+            ),
+            Mock(
+                account_id=uuid.uuid4(),  # AR account
+                debit=Decimal("0.00"),
+                credit=Decimal("1000.00"),
+                against_account_id=gl_account_id,
+                remarks="Accounts Receivable",
+            ),
+        ]
+        
+        # Mock get_by_reference to return original entry
+        journal_posting_service.journal_entry_service.get_by_reference = Mock(
+            return_value={
+                "id": original_je.id,
+                "total_debit": Decimal("1000.00"),
+                "total_credit": Decimal("1000.00"),
+            }
+        )
+        journal_posting_service.journal_entry_service.repo.get_by_reference = Mock(
+            return_value=original_je
+        )
+        
+        # Execute
+        result = journal_posting_service.reverse_payment_journal_entry(
+            payment_entry=sample_payment_entry,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        
+        # Verify
+        assert result is not None
+        assert result["status"] == "Posted"
+        
+        # Verify reversing entry was created
+        journal_posting_service.journal_entry_service.create.assert_called()
+        call_args = journal_posting_service.journal_entry_service.create.call_args
+        journal_data = call_args[1]["data"]
+        
+        # Verify reversing entry uses same specific bank account's gl_account_id
+        reversing_line_1 = journal_data["lines"][0]
+        assert reversing_line_1["account_id"] == gl_account_id
+        assert reversing_line_1["debit"] == Decimal("0.00")  # Reversed
+        assert reversing_line_1["credit"] == Decimal("1000.00")  # Reversed
+        
+        # Verify voucher type is reversal
+        assert journal_data["voucher_type"] == "Payment Entry Reversal"
+        assert "Reversal" in journal_data["remarks"]
+        assert "Duplicate payment" in journal_data["remarks"]
+
+    def test_post_payment_journal_entry_bank_transfer_backward_compatibility(
+        self,
+        journal_posting_service,
+        sample_payment_entry,
+    ):
+        """Test Bank_Transfer without bank_account_id falls back to generic 'bank' account"""
+        organization_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        generic_bank_account_id = uuid.uuid4()
+        
+        # Set payment to Bank_Transfer WITHOUT bank_account_id
+        sample_payment_entry.payment_mode = PaymentMode.BANK_TRANSFER
+        sample_payment_entry.bank_account_id = None
+        
+        # Mock default account service to return generic bank account
+        mock_default_account = Mock()
+        mock_default_account.account_id = generic_bank_account_id
+        
+        def get_default_account(transaction_type, organization_id):
+            if transaction_type == "bank":
+                return mock_default_account
+            elif transaction_type == "accounts_receivable":
+                ar_account = Mock()
+                ar_account.account_id = uuid.uuid4()
+                return ar_account
+            else:
+                raise ValidationError(f"Account not configured for {transaction_type}")
+        
+        journal_posting_service.default_account_service.get_default_account = Mock(
+            side_effect=get_default_account
+        )
+        
+        # Execute
+        result = journal_posting_service.post_payment_journal_entry(
+            payment_entry=sample_payment_entry,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+        
+        # Verify
+        assert result is not None
+        assert result["status"] == "Posted"
+        
+        # Verify default account service was called for generic "bank" account
+        calls = journal_posting_service.default_account_service.get_default_account.call_args_list
+        transaction_types = [call[1]["transaction_type"] for call in calls]
+        assert "bank" in transaction_types
+        
+        # Verify journal entry uses generic bank account
+        call_args = journal_posting_service.journal_entry_service.create.call_args
+        journal_data = call_args[1]["data"]
+        debit_line = journal_data["lines"][0]
+        assert debit_line["account_id"] == generic_bank_account_id

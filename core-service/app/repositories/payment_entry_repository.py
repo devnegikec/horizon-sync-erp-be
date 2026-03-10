@@ -50,7 +50,7 @@ class PaymentEntryRepository:
         Get payment entry by ID with organization_id filtering.
         
         Uses eager loading with selectinload to prevent N+1 queries when accessing
-        payment_references relationship.
+        payment_references and bank_account relationships.
 
         Args:
             payment_id: Payment entry UUID
@@ -64,7 +64,8 @@ class PaymentEntryRepository:
             .options(
                 selectinload(PaymentEntry.payment_references).joinedload(
                     PaymentEntry.payment_references.property.mapper.class_.invoice
-                )
+                ),
+                joinedload(PaymentEntry.bank_account)
             )
             .filter(
                 PaymentEntry.id == payment_id,
@@ -80,7 +81,7 @@ class PaymentEntryRepository:
         Get payment entry by receipt number.
         
         Uses eager loading with selectinload to prevent N+1 queries when accessing
-        payment_references relationship.
+        payment_references and bank_account relationships.
 
         Args:
             receipt_number: Receipt number
@@ -94,7 +95,8 @@ class PaymentEntryRepository:
             .options(
                 selectinload(PaymentEntry.payment_references).joinedload(
                     PaymentEntry.payment_references.property.mapper.class_.invoice
-                )
+                ),
+                joinedload(PaymentEntry.bank_account)
             )
             .filter(
                 PaymentEntry.receipt_number == receipt_number,
@@ -174,7 +176,7 @@ class PaymentEntryRepository:
         List payment entries with optional filtering and pagination.
         
         Uses eager loading with selectinload to prevent N+1 queries when accessing
-        payment_references relationship. This is critical for performance when
+        payment_references and bank_account relationships. This is critical for performance when
         loading lists of payments.
 
         Args:
@@ -200,7 +202,8 @@ class PaymentEntryRepository:
             .options(
                 selectinload(PaymentEntry.payment_references).joinedload(
                     PaymentEntry.payment_references.property.mapper.class_.invoice
-                )
+                ),
+                joinedload(PaymentEntry.bank_account)
             )
             .filter(PaymentEntry.organization_id == organization_id)
         )

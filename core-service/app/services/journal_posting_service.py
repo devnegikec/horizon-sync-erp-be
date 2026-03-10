@@ -6,7 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ValidationError
+from app.core.exceptions import ValidationError, ResourceNotFoundException
+from app.models.bank_account import BankAccount
 from app.services.journal_entry_service import JournalEntryService
 from app.services.default_account_service import DefaultAccountService
 from app.services.currency_service import CurrencyService
@@ -28,48 +29,81 @@ class JournalPostingService:
         self.currency_service = CurrencyService(db)
 
     def _get_payment_account_by_mode(
-        self,
-        payment_mode: str,
-        organization_id: UUID,
-    ) -> UUID:
-        """
-        Get the appropriate payment account based on payment mode.
+            self,
+            payment_mode: str,
+            organization_id: UUID,
+            bank_account_id: UUID | None = None,
+        ) -> UUID:
+            """
+            Get the appropriate payment account based on payment mode.
 
-        Args:
-            payment_mode: Payment mode (Cash, Check, Bank_Transfer)
-            organization_id: Organization UUID
+            Args:
+                payment_mode: Payment mode (Cash, Check, Bank_Transfer)
+                organization_id: Organization UUID
+                bank_account_id: Optional bank account UUID for Bank_Transfer payments
 
-        Returns:
-            Account UUID for the payment mode
+            Returns:
+                Account UUID for the payment mode
 
-        Raises:
-            ValidationError: If payment mode is invalid or account not configured
-        """
-        # Map payment modes to transaction types
-        payment_mode_mapping = {
-            "Cash": "cash",
-            "Check": "checks_received",
-            "Bank_Transfer": "bank",
-        }
+            Raises:
+                ValidationError: If payment mode is invalid or account not configured
+                ResourceNotFoundException: If bank_account_id provided but not found
+            """
+            # Handle Bank_Transfer with specific bank account
+            if payment_mode == "Bank_Transfer" and bank_account_id is not None:
+                # Query BankAccount model by bank_account_id
+                bank_account = self.db.query(BankAccount).filter(
+                    BankAccount.id == bank_account_id
+                ).first()
+                
+                # Validate bank_account exists
+                if not bank_account:
+                    raise ResourceNotFoundException(
+                        f"Bank account with ID '{bank_account_id}' not found"
+                    )
+                
+                # Validate bank_account belongs to the same organization
+                if bank_account.organization_id != organization_id:
+                    raise ValidationError(
+                        f"Bank account '{bank_account_id}' does not belong to organization '{organization_id}'"
+                    )
+                
+                # Validate bank_account is active
+                if not bank_account.is_active:
+                    raise ValidationError(
+                        f"Bank account '{bank_account.bank_name}' (ID: {bank_account_id}) is not active"
+                    )
+                
+                # Return the specific bank account's GL account ID
+                return bank_account.gl_account_id
+            
+            # Map payment modes to transaction types for default accounts
+            payment_mode_mapping = {
+                "Cash": "cash",
+                "Check": "checks_received",
+                "Bank_Transfer": "bank",
+            }
 
-        transaction_type = payment_mode_mapping.get(payment_mode)
-        if not transaction_type:
-            raise ValidationError(
-                f"Invalid payment mode '{payment_mode}'. "
-                "Must be one of: Cash, Check, Bank_Transfer"
-            )
+            transaction_type = payment_mode_mapping.get(payment_mode)
+            if not transaction_type:
+                raise ValidationError(
+                    f"Invalid payment mode '{payment_mode}'. "
+                    "Must be one of: Cash, Check, Bank_Transfer"
+                )
 
-        # Get default account for this transaction type
-        try:
-            default_account = self.default_account_service.get_default_account(
-                transaction_type=transaction_type,
-                organization_id=organization_id,
-            )
-            return default_account.account_id
-        except ValidationError as e:
-            raise ValidationError(
-                f"Default account not configured for payment mode '{payment_mode}': {str(e)}"
-            )
+            # Get default account for this transaction type
+            # (Bank_Transfer without bank_account_id falls back to generic "bank" account)
+            try:
+                default_account = self.default_account_service.get_default_account(
+                    transaction_type=transaction_type,
+                    organization_id=organization_id,
+                )
+                return default_account.account_id
+            except ValidationError as e:
+                raise ValidationError(
+                    f"Default account not configured for payment mode '{payment_mode}': {str(e)}"
+                )
+
 
     def _validate_default_accounts_configured(
         self,
@@ -223,6 +257,7 @@ class JournalPostingService:
             debit_account_id = self._get_payment_account_by_mode(
                 payment_mode=payment_entry.payment_mode.value,
                 organization_id=organization_id,
+                bank_account_id=payment_entry.bank_account_id,
             )
             credit_account_id = self.default_account_service.get_default_account(
                 transaction_type="accounts_receivable",
@@ -260,6 +295,7 @@ class JournalPostingService:
             credit_account_id = self._get_payment_account_by_mode(
                 payment_mode=payment_entry.payment_mode.value,
                 organization_id=organization_id,
+                bank_account_id=payment_entry.bank_account_id,
             )
             remarks = f"Supplier payment - {payment_entry.payment_mode.value}"
             lines = [

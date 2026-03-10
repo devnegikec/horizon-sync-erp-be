@@ -11,13 +11,13 @@ from app.schemas.common import PaginationMeta
 
 class InvoiceBase(BaseModel):
     invoice_no: str | None = Field(None, min_length=1, max_length=100)
-    invoice_type: str = Field(..., pattern="^(sales|purchase)$")
+    invoice_type: str = Field(..., pattern="^(sales|purchase|Sales|Purchase)$")
     party_id: UUID
     party_type: str = Field(..., min_length=1, max_length=20)
     posting_date: datetime
     due_date: datetime | None = None
     status: str = Field(
-        default="draft", pattern="^(draft|pending|paid|partial|overdue|cancelled)$"
+        default="draft", pattern="^(draft|submitted|pending|paid|partial|overdue|cancelled)$"
     )
     grand_total: Decimal | float = 0
     outstanding_amount: Decimal | float = 0
@@ -39,7 +39,7 @@ class InvoiceUpdate(BaseModel):
     posting_date: datetime | None = None
     due_date: datetime | None = None
     status: str | None = Field(
-        None, pattern="^(draft|pending|paid|partial|overdue|cancelled)$"
+        None, pattern="^(draft|submitted|pending|paid|partial|overdue|cancelled)$"
     )
     remarks: str | None = None
     discount_type: str | None = Field(
