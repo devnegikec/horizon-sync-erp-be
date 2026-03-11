@@ -517,3 +517,53 @@ class AccountRepository:
             ancestors.append(account)
 
         return ancestors
+
+    def check_default_accounts_exist(self, organization_id: UUID) -> bool:
+        """
+        Check if default accounts already exist for organization.
+
+        Returns True if organization has any accounts with standard
+        default account codes (1000-5999 range).
+
+        Args:
+            organization_id: Organization UUID
+
+        Returns:
+            True if default accounts exist, False otherwise
+        """
+        key_codes = ["1000", "2000", "3000", "4000", "5000"]
+
+        result = (
+            self.db.query(Account)
+            .filter(
+                Account.organization_id == organization_id,
+                Account.account_code.in_(key_codes),
+            )
+            .first()
+        )
+
+        return result is not None
+
+    def get_accounts_by_codes(
+        self, organization_id: UUID, account_codes: list[str]
+    ) -> dict[str, Account]:
+        """
+        Get accounts by their codes.
+
+        Args:
+            organization_id: Organization UUID
+            account_codes: List of account codes to retrieve
+
+        Returns:
+            Dictionary mapping account_code to Account object
+        """
+        accounts = (
+            self.db.query(Account)
+            .filter(
+                Account.organization_id == organization_id,
+                Account.account_code.in_(account_codes),
+            )
+            .all()
+        )
+
+        return {acc.account_code: acc for acc in accounts}

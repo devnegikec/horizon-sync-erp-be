@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
+from typing import List
 from uuid import UUID
 
 from sqlalchemy import and_, func
@@ -25,7 +26,6 @@ from app.schemas.bank_account import (
     BankAccountUpdate,
     BankingOverviewResponse,
 )
-
 logger = logging.getLogger(__name__)
 
 
@@ -57,9 +57,12 @@ class BankAccountService:
             bank_name=data.bank_name,
             account_holder_name=data.account_holder_name,
             account_number=data.account_number,
+            country_code=data.country_code,
+            currency=data.currency,
             iban=data.iban,
             swift_code=data.swift_code,
             routing_number=data.routing_number,
+            ifsc_code=data.ifsc_code,
             branch_name=data.branch_name,
             branch_code=data.branch_code,
             sort_code=data.sort_code,

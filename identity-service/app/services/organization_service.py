@@ -1,8 +1,11 @@
 """Organization service with business logic"""
 
+import logging
 from datetime import UTC, datetime
+from typing import Optional
 from uuid import UUID
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -18,14 +21,24 @@ from app.models.base import (
 from app.models.organization import Organization
 from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.repositories.organization_repository import OrganizationRepository
+from app.services.core_service_client import CoreServiceClient
+
+logger = logging.getLogger(__name__)
 
 
 class OrganizationService:
     """Service for organization operations."""
 
-    def __init__(self, db: Session):
+    def __init__(
+        self, 
+        db: Session, 
+        core_client: Optional[CoreServiceClient] = None,
+        retry_attempts: int = 3
+    ):
         self.db = db
         self.repo = OrganizationRepository(db)
+        self.core_client = core_client
+        self.retry_attempts = retry_attempts
 
     def create(self, data: dict, owner_id: UUID) -> dict:
         """Create organization; validate slug uniqueness. Sets owner_id and assigns Owner role with *.* to creating user."""
@@ -89,6 +102,10 @@ class OrganizationService:
             )
         )
         self.db.commit()
+
+        # Trigger default chart of accounts creation in Core Service
+        if self.core_client:
+            self._trigger_chart_creation(org.id, org.base_currency or "USD", str(owner_id))
 
         return self._to_response(org)
 
@@ -224,3 +241,116 @@ class OrganizationService:
             "owner_id": org.owner_id,
             "created_at": org.created_at,
         }
+
+    def _trigger_chart_creation(
+        self, organization_id: UUID, currency: str, owner_id: str
+    ) -> None:
+        """Trigger default chart of accounts creation in Core Service.
+        
+        This method makes an async call to the Core Service to create default
+        GL accounts and account mappings. Errors are logged but do not fail
+        organization creation.
+        
+        Args:
+            organization_id: UUID of the organization
+            currency: ISO currency code (e.g., "USD")
+            owner_id: User identifier who created the organization
+        """
+        try:
+            import asyncio
+            import threading
+            
+            initiation_timestamp = datetime.now(UTC).isoformat()
+            
+            logger.info(
+                "Creating default chart of accounts",
+                extra={
+                    "organization_id": str(organization_id),
+                    "currency": currency,
+                    "created_by": owner_id,
+                    "timestamp": initiation_timestamp,
+                    "event": "chart_creation_initiated"
+                }
+            )
+            
+            # Run async call in a new thread to avoid event loop conflicts
+            def run_async_in_thread():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        response = loop.run_until_complete(
+                            self.core_client.create_with_retry(
+                                organization_id=organization_id,
+                                currency=currency,
+                                created_by=owner_id,
+                                max_retries=self.retry_attempts
+                            )
+                        )
+                        
+                        if response:
+                            completion_timestamp = datetime.now(UTC).isoformat()
+                            
+                            logger.info(
+                                "Default chart of accounts created successfully",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "currency": currency,
+                                    "created_by": owner_id,
+                                    "accounts_created": response.get("accounts_created", 0),
+                                    "mappings_created": response.get("mappings_created", 0),
+                                    "timestamp": completion_timestamp,
+                                    "event": "chart_creation_completed"
+                                }
+                            )
+                        else:
+                            failure_timestamp = datetime.now(UTC).isoformat()
+                            
+                            logger.error(
+                                "Failed to create default chart of accounts after all retries",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "currency": currency,
+                                    "created_by": owner_id,
+                                    "retry_attempts": self.retry_attempts,
+                                    "timestamp": failure_timestamp,
+                                    "event": "chart_creation_failed"
+                                }
+                            )
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    error_timestamp = datetime.now(UTC).isoformat()
+                    
+                    logger.error(
+                        "Failed to create default chart of accounts - thread execution error",
+                        extra={
+                            "organization_id": str(organization_id),
+                            "currency": currency,
+                            "created_by": owner_id,
+                            "error_type": type(e).__name__,
+                            "error": str(e),
+                            "timestamp": error_timestamp,
+                            "event": "chart_creation_failed"
+                        }
+                    )
+            
+            # Start the async call in a background thread
+            thread = threading.Thread(target=run_async_in_thread, daemon=True)
+            thread.start()
+            
+        except Exception as e:
+            error_timestamp = datetime.now(UTC).isoformat()
+            
+            logger.error(
+                "Failed to create default chart of accounts - unexpected error",
+                extra={
+                    "organization_id": str(organization_id),
+                    "currency": currency,
+                    "created_by": owner_id,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "timestamp": error_timestamp,
+                    "event": "chart_creation_failed"
+                }
+            )

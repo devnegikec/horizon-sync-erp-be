@@ -7,11 +7,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.security import decode_token
 from app.database import get_db
 from app.models.base import UserStatus, UserType
 from app.models.role import Permission, RolePermission, UserOrganizationRole
 from app.repositories.user_repository import UserRepository
+from app.services.core_service_client import CoreServiceClient
 
 
 @dataclass
@@ -166,3 +168,21 @@ def get_client_ip(request) -> str | None:
         return request.client.host
 
     return None
+
+
+def get_core_service_client() -> CoreServiceClient | None:
+    """
+    Get CoreServiceClient instance for service-to-service communication.
+    
+    Returns None if auto chart creation is disabled in settings.
+    
+    Returns:
+        CoreServiceClient instance or None
+    """
+    if not settings.enable_auto_chart_creation:
+        return None
+    
+    return CoreServiceClient(
+        base_url=settings.core_service_url,
+        timeout=settings.core_service_timeout
+    )
