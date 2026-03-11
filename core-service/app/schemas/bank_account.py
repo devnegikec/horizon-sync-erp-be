@@ -17,6 +17,8 @@ class BankAccountBase(BaseModel):
     bank_name: str = Field(..., min_length=1, max_length=100, description="Bank name")
     account_holder_name: str = Field(..., min_length=1, max_length=200, description="Account holder name")
     account_number: str = Field(..., min_length=1, max_length=50, description="Bank account number")
+    country_code: str = Field(..., min_length=2, max_length=2, description="ISO 3166-1 alpha-2 country code")
+    currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
     iban: Optional[str] = Field(None, max_length=34, description="IBAN number")
     swift_code: Optional[str] = Field(None, max_length=11, description="SWIFT/BIC code")
     routing_number: Optional[str] = Field(None, max_length=20, description="Routing number (US)")
