@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
+from typing import List
 from uuid import UUID
 
 from sqlalchemy import and_, func

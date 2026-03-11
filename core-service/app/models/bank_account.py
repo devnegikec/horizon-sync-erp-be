@@ -174,7 +174,6 @@ class BankAccountHistory(Base):
         nullable=False, 
         default=lambda: datetime.now(UTC),
         index=True
-        UUID(as_uuid=True), ForeignKey("bank_accounts.id"), nullable=False
     )
     reason = Column(Text, nullable=True)
 
