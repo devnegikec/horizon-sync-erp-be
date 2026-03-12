@@ -452,6 +452,127 @@ class BankAccountService:
         
         return history
 
+    def create_default_bank_account(
+        self,
+        organization_id: UUID,
+        organization_currency: str,
+        created_by: str,
+        skip_on_error: bool = True,
+    ) -> BankAccount | None:
+        """
+        Create a default bank account for a new organization during onboarding.
+        
+        This method:
+        1. Creates or finds a default GL account (code "1000")
+        2. Creates a default bank account linked to it
+        3. Creates default account mapping ONLY if none exists (idempotent)
+        
+        Args:
+            organization_id: Organization UUID
+            organization_currency: Organization's base currency
+            created_by: User identifier creating the account
+            skip_on_error: If True, log error and return None on failure; if False, raise exception
+            
+        Returns:
+            Created BankAccount instance or None if skip_on_error=True and creation fails
+        """
+        try:
+            from app.services.bank_account_manager import BankAccountManager
+            from app.services.default_account_service import DefaultAccountService
+            
+            # Step 1: Create default GL account and bank account using manager
+            manager = BankAccountManager(self.db)
+            bank_account = manager.create_default_bank_account(
+                organization_id=organization_id,
+                organization_currency=organization_currency,
+                created_by=created_by,
+                skip_on_error=False  # Let exceptions bubble up so we can handle them
+            )
+            
+            if not bank_account:
+                logger.error(f"Failed to create default bank account for organization {organization_id}")
+                if skip_on_error:
+                    return None
+                else:
+                    raise ValidationError("Failed to create default bank account")
+            
+            # Step 2: Create default account mapping ONLY if none exists
+            # This prevents overwriting mappings created by system config seed
+            try:
+                default_account_service = DefaultAccountService(self.db)
+                
+                # Check if "cash" mapping already exists
+                from app.models.default_account import DefaultAccount
+                existing_cash_mapping = (
+                    self.db.query(DefaultAccount)
+                    .filter(
+                        and_(
+                            DefaultAccount.organization_id == organization_id,
+                            DefaultAccount.transaction_type == "cash",
+                            DefaultAccount.scenario == None,
+                        )
+                    )
+                    .first()
+                )
+                
+                if existing_cash_mapping:
+                    logger.info(
+                        f"Default account mapping for 'cash' already exists for organization {organization_id}. "
+                        "Skipping creation to avoid overwriting existing configuration."
+                    )
+                else:
+                    # Get the GL account that was just created (code "1000")
+                    gl_account = (
+                        self.db.query(Account)
+                        .filter(
+                            and_(
+                                Account.organization_id == organization_id,
+                                Account.account_code == "1000",
+                            )
+                        )
+                        .first()
+                    )
+                    
+                    if gl_account:
+                        # Map "cash" transaction type to the default GL account
+                        # This is used for payment confirmation
+                        default_account_service.set_default_account(
+                            transaction_type="cash",
+                            account_id=gl_account.id,
+                            organization_id=organization_id,
+                            scenario=None
+                        )
+                        
+                        logger.info(
+                            f"Default account mapping created: cash → {gl_account.account_code} "
+                            f"for organization {organization_id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Could not find GL account with code 1000 for organization {organization_id}. "
+                            "Default account mappings not created."
+                        )
+            
+            except Exception as e:
+                # Log warning but don't fail the whole operation
+                # The bank account was created successfully, just the default mappings failed
+                logger.warning(
+                    f"Failed to create default account mappings for organization {organization_id}: {e}. "
+                    "Bank account was created successfully, but payment confirmation may require manual configuration."
+                )
+            
+            return bank_account
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to create default bank account for organization {organization_id}: {str(e)}"
+            )
+            
+            if skip_on_error:
+                return None
+            else:
+                raise
+
     # Private helper methods
 
     def _get_gl_account_by_id(
@@ -485,12 +606,13 @@ class BankAccountService:
         # Get GL account to check its type
         gl_account = self._get_gl_account_by_id(gl_account_id, organization_id)
         
-        # Validate GL account type - warn if not ASSET or LIABILITY
+        # Validate GL account type - MUST be ASSET or LIABILITY
+        # Bank accounts are balance sheet items, never P&L items
         if gl_account.account_type not in ['asset', 'liability']:
-            logger.warning(
-                f"Bank account being linked to GL account {gl_account.account_code} "
-                f"of type {gl_account.account_type}. Bank accounts are typically linked to "
-                f"ASSET (for regular bank accounts) or LIABILITY (for credit cards/overdrafts) accounts."
+            raise ValidationError(
+                f"Bank accounts can only be linked to ASSET or LIABILITY accounts. "
+                f"GL account {gl_account.account_code} is type {gl_account.account_type.upper()}. "
+                f"Bank accounts represent cash holdings (ASSET) or credit facilities (LIABILITY) on the balance sheet."
             )
         
         # Check for duplicate IBAN within organization

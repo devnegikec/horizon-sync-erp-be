@@ -1,10 +1,10 @@
 """Admin endpoints for development and testing"""
 
 import os
-import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,11 +19,15 @@ async def seed_sample_data(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Seed sample chart of accounts data for testing.
+    Create default chart of accounts for organization.
 
+    This endpoint creates a comprehensive chart of accounts with:
+    - 35+ GL accounts with proper hierarchy (Assets, Liabilities, Equity, Revenue, Expenses)
+    - Default account mappings for common transaction types
+    - Proper validation against account code format
+
+    This endpoint is idempotent - calling it multiple times will not create duplicates.
     This endpoint is only available in development mode.
-    It runs the seed_chart_of_accounts.py script to populate the database
-    with sample accounts including proper parent-child hierarchy.
     """
     # Check if we're in development mode
     debug_mode = os.getenv("DEBUG", "false").lower() == "true"
@@ -34,42 +38,40 @@ async def seed_sample_data(
         )
 
     try:
-        # Get the path to the seed script
-        script_path = (
-            Path(__file__).parent.parent.parent.parent / "seed_chart_of_accounts.py"
+        from app.services.default_chart_setup_service import DefaultChartSetupService
+        
+        # Get organization currency (default to USD for now)
+        organization_currency = "USD"
+        
+        # Use the existing default chart setup service
+        service = DefaultChartSetupService(db)
+        result = service.create_default_chart_of_accounts(
+            organization_id=current_user.organization_id,
+            currency=organization_currency,
+            created_by=str(current_user.id),
         )
-
-        if not script_path.exists():
-            raise HTTPException(
-                status_code=500, detail=f"Seed script not found at {script_path}"
-            )
-
-        # Run the seed script
-        result = subprocess.run(
-            ["python", str(script_path)],
-            capture_output=True,
-            text=True,
-            timeout=60,  # 60 second timeout
-        )
-
-        if result.returncode != 0:
-            raise HTTPException(
-                status_code=500, detail=f"Seed script failed: {result.stderr}"
-            )
-
+        
+        if result.already_existed:
+            return {
+                "message": "Default chart of accounts already exists",
+                "accounts_created": 0,
+                "mappings_created": 0,
+                "accounts": result.accounts,
+                "mappings": result.mappings,
+                "note": "Chart of accounts already exists. No changes made."
+            }
+        
         return {
-            "message": "Chart of accounts seeded successfully with parent-child hierarchy",
-            "output": result.stdout,
-            "accounts_created": "1000+",
-            "note": "Refresh the page to see the new accounts with proper hierarchy",
+            "message": "Default chart of accounts created successfully",
+            "accounts_created": len(result.accounts),
+            "mappings_created": len(result.mappings),
+            "accounts": result.accounts,
+            "mappings": result.mappings,
+            "note": "Chart of accounts created with proper hierarchy and default mappings."
         }
 
-    except subprocess.TimeoutExpired:
-        raise HTTPException(
-            status_code=500, detail="Seed script timed out after 60 seconds"
-        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to seed data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create chart of accounts: {str(e)}")
 
 
 @router.delete("/clear-data")
