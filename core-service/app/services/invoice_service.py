@@ -249,6 +249,26 @@ class InvoiceService:
                     "status": supplier.status.value if supplier.status else None,
                 }
 
+        # Get reference document number based on reference_type
+        reference_no = None
+        if inv.reference_type and inv.reference_id:
+            reference_type_lower = inv.reference_type.lower()
+            if reference_type_lower == "sales order":
+                from app.models.sales_order import SalesOrder
+                ref_doc = self.db.query(SalesOrder).filter(SalesOrder.id == inv.reference_id).first()
+                if ref_doc:
+                    reference_no = ref_doc.sales_order_no
+            elif reference_type_lower == "delivery note":
+                from app.models.delivery_note import DeliveryNote
+                ref_doc = self.db.query(DeliveryNote).filter(DeliveryNote.id == inv.reference_id).first()
+                if ref_doc:
+                    reference_no = ref_doc.delivery_note_no
+            elif reference_type_lower == "pick list":
+                from app.models.pick_list import PickList
+                ref_doc = self.db.query(PickList).filter(PickList.id == inv.reference_id).first()
+                if ref_doc:
+                    reference_no = ref_doc.pick_list_no
+
         # Support both string and enum for invoice_type/status (DB uses String columns)
         inv_type = inv.invoice_type
         inv_type_val = getattr(inv_type, "value", inv_type) if inv_type else None
@@ -271,6 +291,7 @@ class InvoiceService:
             "discount_value": getattr(inv, "discount_value", None) or 0,
             "reference_type": getattr(inv, "reference_type", None),
             "reference_id": getattr(inv, "reference_id", None),
+            "reference_no": reference_no,
             "remarks": getattr(inv, "remarks", None),
             "submitted_at": getattr(inv, "submitted_at", None),
             "created_by": inv.created_by,

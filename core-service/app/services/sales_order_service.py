@@ -564,7 +564,7 @@ class SalesOrderService:
                     (
                         item
                         for item in sales_order.items
-                        if item.id == item_to_bill["item_id"]
+                        if item.item_id == item_to_bill["item_id"]
                     ),
                     None,
                 )
@@ -589,24 +589,107 @@ class SalesOrderService:
             self.db.add(invoice)
             self.db.flush()  # Flush to get invoice ID
 
+            # Create invoice line items
+            from app.models.invoice import InvoiceItem
+            
+            for idx, item_to_bill in enumerate(items_to_bill):
+                so_item = next(
+                    (
+                        item
+                        for item in sales_order.items
+                        if item.item_id == item_to_bill["item_id"]
+                    ),
+                    None,
+                )
+                if so_item:
+                    qty_to_bill = Decimal(str(item_to_bill["qty_to_bill"]))
+                    
+                    # Calculate proportional amounts based on qty_to_bill
+                    proportion = qty_to_bill / so_item.qty if so_item.qty > 0 else Decimal("1")
+                    
+                    line_amount = qty_to_bill * so_item.rate
+                    line_discount = (getattr(so_item, "discount_amount", None) or Decimal("0")) * proportion
+                    line_tax = (getattr(so_item, "tax_amount", None) or Decimal("0")) * proportion
+                    line_total = line_amount - line_discount + line_tax
+                    
+                    # Get item details from the Item relationship
+                    item_code = so_item.item.item_code if so_item.item else None
+                    item_name = so_item.item.item_name if so_item.item else None
+                    
+                    invoice_item = InvoiceItem(
+                        organization_id=organization_id,
+                        invoice_id=invoice.id,
+                        item_id=so_item.item_id,
+                        item_code=item_code,
+                        item_name=item_name,
+                        qty=qty_to_bill,
+                        uom=so_item.uom,
+                        rate=so_item.rate,
+                        amount=line_amount,
+                        tax_template_id=so_item.tax_template_id,
+                        tax_rate=so_item.tax_rate,
+                        tax_amount=line_tax,
+                        discount_type=getattr(so_item, "discount_type", None),
+                        discount_value=getattr(so_item, "discount_value", None),
+                        discount_amount=line_discount,
+                        total_amount=line_total,
+                        sort_order=idx + 1,
+                    )
+                    self.db.add(invoice_item)
+
             # Update sales_order_item.billed_qty for each billed item
             self._update_billed_quantities(sales_order, items_to_bill)
 
             # Commit transaction
             self.db.commit()
             self.db.refresh(invoice)
+            
+            # Explicitly load items relationship
+            from sqlalchemy.orm import selectinload
+            from app.models.invoice import Invoice as InvoiceModel
+            
+            invoice_with_items = self.db.query(InvoiceModel).options(
+                selectinload(InvoiceModel.items)
+            ).filter(InvoiceModel.id == invoice.id).first()
+
+            # Fetch invoice items to include in response
+            invoice_items_response = []
+            if invoice_with_items and invoice_with_items.items:
+                for item in invoice_with_items.items:
+                    invoice_items_response.append({
+                        "id": str(item.id),
+                        "organization_id": str(item.organization_id),
+                        "invoice_id": str(item.invoice_id),
+                        "item_id": str(item.item_id) if item.item_id else None,
+                        "item_code": item.item_code,
+                        "item_name": item.item_name,
+                        "qty": float(item.qty) if item.qty else 0,
+                        "uom": item.uom,
+                        "rate": float(item.rate) if item.rate else 0,
+                        "amount": float(item.amount) if item.amount else 0,
+                        "tax_template_id": str(item.tax_template_id) if item.tax_template_id else None,
+                        "tax_rate": float(item.tax_rate) if item.tax_rate else 0,
+                        "tax_amount": float(item.tax_amount) if item.tax_amount else 0,
+                        "discount_type": item.discount_type,
+                        "discount_value": float(item.discount_value) if item.discount_value else 0,
+                        "discount_amount": float(item.discount_amount) if item.discount_amount else 0,
+                        "total_amount": float(item.total_amount) if item.total_amount else 0,
+                        "sort_order": item.sort_order,
+                        "created_at": item.created_at.isoformat() if item.created_at else None,
+                        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+                    })
 
             # Return invoice response
             return {
                 "id": invoice.id,
                 "organization_id": invoice.organization_id,
                 "invoice_no": invoice.invoice_no,
-                "invoice_type": invoice.invoice_type.value,
+                "invoice_type": invoice.invoice_type,
                 "party_id": invoice.party_id,
                 "party_type": invoice.party_type,
                 "posting_date": invoice.posting_date,
                 "due_date": invoice.due_date,
-                "status": invoice.status.value,
+                "status": invoice.status,
                 "grand_total": invoice.grand_total,
                 "outstanding_amount": invoice.outstanding_amount,
                 "currency": invoice.currency,
@@ -618,6 +701,8 @@ class SalesOrderService:
                 "updated_by": invoice.updated_by,
                 "created_at": invoice.created_at,
                 "updated_at": invoice.updated_at,
+                "items": invoice_items_response,
+                "line_items": invoice_items_response,  # Include both for compatibility
             }
 
         except Exception as e:
@@ -834,7 +919,7 @@ class SalesOrderService:
 
             # Find the corresponding sales order item
             so_item = next(
-                (item for item in sales_order.items if item.id == item_id), None
+                (item for item in sales_order.items if item.item_id == item_id), None
             )
 
             if not so_item:
@@ -875,7 +960,7 @@ class SalesOrderService:
 
             # Find the corresponding sales order item
             so_item = next(
-                (item for item in sales_order.items if item.id == item_id), None
+                (item for item in sales_order.items if item.item_id == item_id), None
             )
 
             if not so_item:
@@ -911,7 +996,7 @@ class SalesOrderService:
 
             # Find the corresponding sales order item
             so_item = next(
-                (item for item in sales_order.items if item.id == item_id), None
+                (item for item in sales_order.items if item.item_id == item_id), None
             )
 
             if so_item:
@@ -935,7 +1020,7 @@ class SalesOrderService:
 
             # Find the corresponding sales order item
             so_item = next(
-                (item for item in sales_order.items if item.id == item_id), None
+                (item for item in sales_order.items if item.item_id == item_id), None
             )
 
             if so_item:

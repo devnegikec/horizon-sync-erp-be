@@ -104,6 +104,9 @@ class InvoiceItemResponse(BaseModel):
     tax_template_id: str | None = None
     tax_rate: str | None = None
     tax_amount: str | None = None
+    discount_type: str | None = None
+    discount_value: Decimal | None = None
+    discount_amount: Decimal | None = None
     total_amount: str | None = None
     min_order_qty: int | None = None
     max_order_qty: int | None = None
@@ -122,6 +125,7 @@ class InvoiceResponse(InvoiceBase):
     updated_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
+    reference_no: str | None = None  # Sales Order/Delivery Note/Pick List number
     customer: CustomerDetails | None = None
     supplier: SupplierDetails | None = None
     items: list[InvoiceItemResponse] | None = None

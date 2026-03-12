@@ -19,6 +19,8 @@ from app.models.bank_account import BankAccount
 from app.schemas.bank_account import (
     BankAccountCreate,
     BankAccountHistoryResponse,
+    BankAccountInternalListResponse,
+    BankAccountInternalResponse,
     BankAccountListResponse,
     BankAccountResponse,
     BankAccountUpdate,
@@ -200,6 +202,65 @@ async def list_bank_accounts(
 
     except Exception as e:
         logger.error(f"Unexpected error listing bank accounts: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve bank accounts list",
+        )
+
+
+@router.get(
+    "/bank-accounts/internal",
+    response_model=BankAccountInternalListResponse,
+    summary="List bank accounts with full details (internal use)",
+    description="Get bank accounts with unmasked details for organization's internal use (e.g., displaying on invoices)",
+)
+async def list_bank_accounts_internal(
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    is_active: bool | None = Query(None, description="Filter by active status"),
+    is_primary: bool | None = Query(None, description="Filter by primary status"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List bank accounts with full unmasked details for internal use.
+    
+    This endpoint returns complete bank account information without masking
+    for the organization's own use, such as displaying on invoices for
+    customers to make payments.
+    
+    **Use Cases:**
+    - Displaying bank details on invoices
+    - Showing payment instructions to customers
+    - Internal financial reporting
+    
+    **Security:**
+    - Only accessible by authenticated users from the organization
+    - Full account numbers and IBANs are returned unmasked
+    """
+    try:
+        service = BankAccountService(db)
+        result = service.list_bank_accounts(
+            organization_id=current_user.organization_id,
+            page=page,
+            page_size=page_size,
+            is_active=is_active,
+            is_primary=is_primary,
+        )
+        
+        # Convert to internal response with unmasked data
+        return BankAccountInternalListResponse(
+            items=[BankAccountInternalResponse.model_validate(ba) for ba in result.items],
+            total=result.total,
+            page=result.page,
+            page_size=result.page_size,
+            total_pages=result.total_pages,
+            has_next=result.has_next,
+            has_previous=result.has_previous,
+        )
+
+    except Exception as e:
+        logger.error(f"Unexpected error listing internal bank accounts: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve bank accounts list",
