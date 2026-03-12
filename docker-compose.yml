@@ -70,6 +70,11 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
+      # Core Service Integration
+      CORE_SERVICE_URL: http://core-service:8001
+      CORE_SERVICE_TIMEOUT: 10
+      ENABLE_AUTO_CHART_CREATION: ${ENABLE_AUTO_CHART_CREATION:-true}
+      CHART_CREATION_RETRY_ATTEMPTS: 3
     ports:
       - "8000:8000"
       - "5678:5678"

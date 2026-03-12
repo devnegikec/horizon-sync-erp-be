@@ -1,5 +1,11 @@
 """Pydantic schemas package"""
 
+from app.schemas.chart_of_accounts_setup import (
+    DefaultChartResult,
+    DefaultChartSetupRequest,
+    DefaultChartSetupResponse,
+    ManualTriggerRequest,
+)
 from app.schemas.common import PaginationMeta
 from app.schemas.item import (
     ItemCreate,
@@ -52,6 +58,11 @@ from app.schemas.warehouse import (
 __all__ = [
     # Common
     "PaginationMeta",
+    # Chart of Accounts Setup
+    "DefaultChartSetupRequest",
+    "DefaultChartSetupResponse",
+    "ManualTriggerRequest",
+    "DefaultChartResult",
     # Item
     "ItemCreate",
     "ItemUpdate",

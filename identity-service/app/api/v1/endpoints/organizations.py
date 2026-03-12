@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.authorization import (
     is_system_admin,
     require_permission,
@@ -16,7 +17,7 @@ from app.core.exceptions import (
     OrganizationNotFoundException,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, get_core_service_client, get_current_active_user
 from app.models.role import UserOrganizationRole
 from app.schemas.organization import (
     OrganizationCreate,
@@ -26,6 +27,7 @@ from app.schemas.organization import (
     OrganizationUpdate,
     PaginationMeta,
 )
+from app.services.core_service_client import CoreServiceClient
 from app.services.organization_service import OrganizationService
 
 router = APIRouter()
@@ -154,6 +156,7 @@ async def create_organization(
     body: OrganizationCreate,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    core_client: CoreServiceClient | None = Depends(get_core_service_client),
 ):
     """
     Create organization. Sets owner to current user and assigns them the Owner role with *.*.
@@ -172,7 +175,11 @@ async def create_organization(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied. Required: org.create (or create your first organization)",
         )
-    svc = OrganizationService(db)
+    svc = OrganizationService(
+        db, 
+        core_client=core_client,
+        retry_attempts=settings.chart_creation_retry_attempts
+    )
     try:
         data = svc.create(body.model_dump(), owner_id=current_user.id)
         return OrganizationResponse.model_validate(data)

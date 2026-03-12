@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Core Service Integration
+    core_service_url: str = "http://localhost:8001"
+    core_service_timeout: int = 10  # seconds
+    enable_auto_chart_creation: bool = True
+    chart_creation_retry_attempts: int = 3
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE, case_sensitive=False, extra="ignore"
     )

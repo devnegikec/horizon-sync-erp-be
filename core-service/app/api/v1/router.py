@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     chart_of_accounts,
+    chart_of_accounts_setup,
     communications,
     currencies,
     currency,
@@ -75,6 +76,12 @@ api_router.include_router(
     chart_of_accounts.router,
     prefix="/chart-of-accounts",
     tags=["Chart of Accounts"],
+)
+# Chart of Accounts Setup
+api_router.include_router(
+    chart_of_accounts_setup.router,
+    prefix="",  # No prefix since endpoints already include /setup
+    tags=["Chart of Accounts Setup"],
 )
 # Bank accounts integration
 api_router.include_router(

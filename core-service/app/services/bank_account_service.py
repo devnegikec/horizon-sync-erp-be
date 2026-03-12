@@ -26,7 +26,6 @@ from app.schemas.bank_account import (
     BankAccountUpdate,
     BankingOverviewResponse,
 )
-
 logger = logging.getLogger(__name__)
 
 
