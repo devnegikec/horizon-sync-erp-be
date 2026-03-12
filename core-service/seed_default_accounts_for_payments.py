@@ -74,14 +74,15 @@ def seed_default_accounts():
             org_str = str(ORG_ID)
 
             # Set default_accounts (scenario = NULL for payment defaults).
-            # PostgreSQL unique constraint treats NULL as distinct, so we do SELECT then UPDATE or INSERT.
+            # IMPORTANT: Only create mappings if they don't exist.
+            # Do NOT update existing mappings to avoid breaking user configurations.
             for transaction_type, account_id, label in [
                 ("cash", cash_id, "Cash"),
                 ("accounts_receivable", ar_id, "Accounts Receivable"),
             ]:
                 existing = session.execute(
                     text("""
-                        SELECT id FROM default_accounts
+                        SELECT id, account_id FROM default_accounts
                         WHERE organization_id = :org_id
                           AND transaction_type = :transaction_type
                           AND scenario IS NULL
@@ -90,15 +91,8 @@ def seed_default_accounts():
                 ).fetchone()
 
                 if existing:
-                    session.execute(
-                        text("""
-                            UPDATE default_accounts
-                            SET account_id = :account_id, updated_at = :now
-                            WHERE id = :id
-                        """),
-                        {"account_id": account_id, "now": now, "id": existing.id},
-                    )
-                    print(f"  ✓ {label} → {transaction_type} (updated)")
+                    # Mapping already exists - skip to avoid overwriting user configuration
+                    print(f"  ⊘ {label} → {transaction_type} (already exists, skipped)")
                 else:
                     session.execute(
                         text("""
@@ -117,7 +111,7 @@ def seed_default_accounts():
                             "now": now,
                         },
                     )
-                    print(f"  ✓ {label} → {transaction_type} (inserted)")
+                    print(f"  ✓ {label} → {transaction_type} (created)")
 
             session.commit()
             print("\n✓ Default accounts for payments configured successfully.")
