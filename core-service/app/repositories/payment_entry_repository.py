@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import String, cast, func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.models.base import PaymentEntryStatus, PaymentEntryType, PaymentMode
 from app.models.payment_entry import PaymentEntry

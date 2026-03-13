@@ -61,7 +61,7 @@ class InvoiceJournalPostingService:
 
             try:
                 revenue_account = self.default_account_service.get_default_account(
-                    "sales_revenue", organization_id
+                    "sales_invoice", organization_id
                 )
                 credit_account_id = revenue_account.account_id
             except ValidationError:
