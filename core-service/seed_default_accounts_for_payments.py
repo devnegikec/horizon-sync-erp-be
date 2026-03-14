@@ -14,11 +14,18 @@ Usage:
 """
 
 import os
+import sys
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+
+# Add parent directory to path to import from app
+sys.path.insert(0, str(Path(__file__).parent))
+
+from app.models.base import DefaultAccountTransactionType
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
@@ -76,10 +83,13 @@ def seed_default_accounts():
             # Set default_accounts (scenario = NULL for payment defaults).
             # IMPORTANT: Only create mappings if they don't exist.
             # Do NOT update existing mappings to avoid breaking user configurations.
-            for transaction_type, account_id, label in [
-                ("cash", cash_id, "Cash"),
-                ("accounts_receivable", ar_id, "Accounts Receivable"),
+            for transaction_type_enum, label in [
+                (DefaultAccountTransactionType.CASH, "Cash"),
+                (DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE, "Accounts Receivable"),
             ]:
+                transaction_type = transaction_type_enum.value
+                account_id = cash_id if transaction_type_enum == DefaultAccountTransactionType.CASH else ar_id
+                
                 existing = session.execute(
                     text("""
                         SELECT id, account_id FROM default_accounts

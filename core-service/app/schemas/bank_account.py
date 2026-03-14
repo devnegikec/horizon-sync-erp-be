@@ -305,3 +305,36 @@ class BankAccountListResponse(BaseModel):
     total_pages: int
     has_next: bool
     has_previous: bool
+
+
+class BankAccountInternalResponse(BankAccountBase):
+    """Schema for internal bank account response (unmasked for organization's own use)
+    
+    This schema is used when displaying the organization's own bank account details
+    on documents like invoices, where full account information needs to be shown
+    to customers/suppliers for payment purposes.
+    """
+
+    id: UUID
+    gl_account_id: UUID
+    organization_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    created_by: str
+    updated_by: str
+
+    # No masking - return full account details
+    class Config:
+        from_attributes = True
+
+
+class BankAccountInternalListResponse(BaseModel):
+    """Schema for paginated internal bank account list response (unmasked)"""
+
+    items: list[BankAccountInternalResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool

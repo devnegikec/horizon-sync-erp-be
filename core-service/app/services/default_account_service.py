@@ -8,7 +8,7 @@ from app.core.exceptions import (
     ChartOfAccountNotFoundException,
     ValidationError,
 )
-from app.models.base import AccountStatus, AccountType
+from app.models.base import AccountStatus, AccountType, DefaultAccountTransactionType
 from app.models.default_account import DefaultAccount
 
 
@@ -17,22 +17,25 @@ class DefaultAccountService:
 
     # Mapping of transaction types to appropriate account types
     TRANSACTION_TYPE_ACCOUNT_TYPES = {
-        "inventory_purchase": [AccountType.ASSET, AccountType.EXPENSE],
-        "inventory_sale": [AccountType.REVENUE],
-        "accounts_payable": [AccountType.LIABILITY],
-        "accounts_receivable": [AccountType.ASSET],
-        "sales_revenue": [AccountType.REVENUE],
-        "purchase_expense": [AccountType.EXPENSE],
-        "cost_of_goods_sold": [AccountType.EXPENSE],
-        "inventory_asset": [AccountType.ASSET],
-        "cash": [AccountType.ASSET],
-        "bank": [AccountType.ASSET],
-        "tax_payable": [AccountType.LIABILITY],
-        "tax_receivable": [AccountType.ASSET],
-        "discount_given": [AccountType.EXPENSE],
-        "discount_received": [AccountType.REVENUE],
-        "freight_expense": [AccountType.EXPENSE],
-        "shipping_charges": [AccountType.EXPENSE],
+        DefaultAccountTransactionType.INVENTORY_PURCHASE: [AccountType.ASSET, AccountType.EXPENSE],
+        DefaultAccountTransactionType.INVENTORY_SALE: [AccountType.REVENUE],
+        DefaultAccountTransactionType.ACCOUNTS_PAYABLE: [AccountType.LIABILITY],
+        DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE: [AccountType.ASSET],
+        DefaultAccountTransactionType.SALES_REVENUE: [AccountType.REVENUE],
+        DefaultAccountTransactionType.PURCHASE_EXPENSE: [AccountType.EXPENSE],
+        DefaultAccountTransactionType.COST_OF_GOODS_SOLD: [AccountType.EXPENSE],
+        DefaultAccountTransactionType.INVENTORY_ASSET: [AccountType.ASSET],
+        DefaultAccountTransactionType.CASH: [AccountType.ASSET],
+        DefaultAccountTransactionType.BANK: [AccountType.ASSET],
+        DefaultAccountTransactionType.TAX_PAYABLE: [AccountType.LIABILITY],
+        DefaultAccountTransactionType.TAX_RECEIVABLE: [AccountType.ASSET],
+        DefaultAccountTransactionType.DISCOUNT_GIVEN: [AccountType.EXPENSE],
+        DefaultAccountTransactionType.DISCOUNT_RECEIVED: [AccountType.REVENUE],
+        DefaultAccountTransactionType.FREIGHT_EXPENSE: [AccountType.EXPENSE],
+        DefaultAccountTransactionType.SHIPPING_CHARGES: [AccountType.EXPENSE],
+        DefaultAccountTransactionType.SALES_INVOICE: [AccountType.ASSET, AccountType.REVENUE],
+        DefaultAccountTransactionType.PURCHASE_INVOICE: [AccountType.LIABILITY, AccountType.EXPENSE],
+        DefaultAccountTransactionType.PAYMENT: [AccountType.ASSET],
     }
 
     def __init__(self, db: Session):
@@ -46,7 +49,7 @@ class DefaultAccountService:
 
     def set_default_account(
         self,
-        transaction_type: str,
+        transaction_type: str | DefaultAccountTransactionType,
         account_id: UUID,
         organization_id: UUID,
         scenario: str | None = None,
@@ -55,7 +58,7 @@ class DefaultAccountService:
         Set or update a default account for a transaction type.
 
         Args:
-            transaction_type: Type of transaction (e.g., "inventory_purchase")
+            transaction_type: Type of transaction (enum or string for backward compatibility)
             account_id: UUID of the account to set as default
             organization_id: Organization UUID
             scenario: Optional scenario for multiple defaults per type (e.g., "domestic", "international")
@@ -67,8 +70,15 @@ class DefaultAccountService:
             ValidationError: If validation fails
             ChartOfAccountNotFoundException: If account not found
         """
+        # Convert enum to string value if needed
+        transaction_type_value = (
+            transaction_type.value 
+            if isinstance(transaction_type, DefaultAccountTransactionType) 
+            else transaction_type
+        )
+        
         # Validate transaction type
-        if not transaction_type or not transaction_type.strip():
+        if not transaction_type_value or not transaction_type_value.strip():
             raise ValidationError("Transaction type is required and cannot be empty")
 
         # Validate account exists and is active
@@ -90,13 +100,21 @@ class DefaultAccountService:
             )
 
         # Validate account type is appropriate for transaction type
-        if transaction_type in self.TRANSACTION_TYPE_ACCOUNT_TYPES:
-            allowed_types = self.TRANSACTION_TYPE_ACCOUNT_TYPES[transaction_type]
+        # Try to match as enum first for validation
+        transaction_type_enum = None
+        try:
+            transaction_type_enum = DefaultAccountTransactionType(transaction_type_value)
+        except ValueError:
+            # Not a valid enum value, skip validation
+            pass
+            
+        if transaction_type_enum and transaction_type_enum in self.TRANSACTION_TYPE_ACCOUNT_TYPES:
+            allowed_types = self.TRANSACTION_TYPE_ACCOUNT_TYPES[transaction_type_enum]
             if account.account_type not in allowed_types:
                 allowed_types_str = ", ".join([t.value for t in allowed_types])
                 raise ValidationError(
                     f"Account type '{account.account_type.value}' is not appropriate for "
-                    f"transaction type '{transaction_type}'. "
+                    f"transaction type '{transaction_type_value}'. "
                     f"Allowed types: {allowed_types_str}"
                 )
 
@@ -105,7 +123,7 @@ class DefaultAccountService:
             self.db.query(DefaultAccount)
             .filter(
                 DefaultAccount.organization_id == organization_id,
-                DefaultAccount.transaction_type == transaction_type,
+                DefaultAccount.transaction_type == transaction_type_value,
                 DefaultAccount.scenario == scenario,
             )
             .first()
@@ -120,7 +138,7 @@ class DefaultAccountService:
 
         # Create new default
         default_account = DefaultAccount(
-            transaction_type=transaction_type,
+            transaction_type=transaction_type_value,
             scenario=scenario,
             account_id=account_id,
             organization_id=organization_id,

@@ -208,6 +208,30 @@ class JournalStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class DefaultAccountTransactionType(str, enum.Enum):
+    """Transaction type enumeration for default account mappings"""
+
+    ACCOUNTS_RECEIVABLE = "accounts_receivable"
+    SALES_REVENUE = "sales_revenue"
+    ACCOUNTS_PAYABLE = "accounts_payable"
+    PURCHASE_EXPENSE = "purchase_expense"
+    INVENTORY_ASSET = "inventory_asset"
+    COST_OF_GOODS_SOLD = "cost_of_goods_sold"
+    CASH = "cash"
+    BANK = "bank"
+    TAX_PAYABLE = "tax_payable"
+    TAX_RECEIVABLE = "tax_receivable"
+    DISCOUNT_GIVEN = "discount_given"
+    DISCOUNT_RECEIVED = "discount_received"
+    FREIGHT_EXPENSE = "freight_expense"
+    SHIPPING_CHARGES = "shipping_charges"
+    INVENTORY_PURCHASE = "inventory_purchase"
+    INVENTORY_SALE = "inventory_sale"
+    SALES_INVOICE = "sales_invoice"
+    PURCHASE_INVOICE = "purchase_invoice"
+    PAYMENT = "payment"
+
+
 # ===========================================
 # ORDER PROCESSING ENUMS
 # ===========================================

@@ -252,6 +252,15 @@ class AllocationService:
                 f"Invoice with ID {invoice_id} not found or does not belong to organization"
             )
 
+        # Validate invoice has been confirmed (not in draft status)
+        invoice_status = getattr(invoice.status, "value", invoice.status)
+        if str(invoice_status).lower() == "draft":
+            raise ValidationError(
+                f"Cannot allocate payment to draft invoice. "
+                f"Invoice must be confirmed before payments can be allocated. "
+                f"Please confirm the invoice first using the confirm endpoint."
+            )
+
         # Validate invoice belongs to same party as payment
         self._validate_invoice_belongs_to_party(invoice.party_id, payment.party_id)
 
@@ -445,6 +454,15 @@ class AllocationService:
             if not invoice:
                 raise ValidationError(
                     f"Allocation {idx}: Invoice with ID {invoice_id} not found or does not belong to organization"
+                )
+
+            # Validate invoice has been confirmed (not in draft status)
+            invoice_status = getattr(invoice.status, "value", invoice.status)
+            if str(invoice_status).lower() == "draft":
+                raise ValidationError(
+                    f"Allocation {idx}: Cannot allocate payment to draft invoice. "
+                    f"Invoice must be confirmed before payments can be allocated. "
+                    f"Please confirm the invoice first using the confirm endpoint."
                 )
 
             # Validate invoice belongs to same party as payment
