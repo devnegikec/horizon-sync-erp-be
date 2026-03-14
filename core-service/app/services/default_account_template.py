@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from app.models.base import AccountType
+from app.models.base import AccountType, DefaultAccountTransactionType
 
 
 @dataclass
@@ -324,37 +324,49 @@ def get_default_account_structure() -> list[AccountTemplate]:
 DEFAULT_MAPPINGS: dict[str, dict[str, Any]] = {
     # Payment-related mappings
     "payment_cash": {
-        "transaction_type": "payment",
+        "transaction_type": DefaultAccountTransactionType.PAYMENT.value,
         "scenario": "cash",
         "account_code": "1010",  # Cash
     },
     "payment_bank": {
-        "transaction_type": "payment",
+        "transaction_type": DefaultAccountTransactionType.PAYMENT.value,
         "scenario": "bank",
         "account_code": "1020",  # Bank Accounts
     },
     # Receivables
     "accounts_receivable": {
-        "transaction_type": "sales_invoice",
-        "scenario": "receivable",
+        "transaction_type": DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE.value,
+        "scenario": None,
         "account_code": "1200",  # Accounts Receivable
     },
     # Payables
     "accounts_payable": {
-        "transaction_type": "purchase_invoice",
-        "scenario": "payable",
+        "transaction_type": DefaultAccountTransactionType.ACCOUNTS_PAYABLE.value,
+        "scenario": None,
         "account_code": "2000",  # Accounts Payable
     },
     # Revenue
     "sales_revenue": {
-        "transaction_type": "sales_invoice",
-        "scenario": "revenue",
+        "transaction_type": DefaultAccountTransactionType.SALES_REVENUE.value,
+        "scenario": None,
         "account_code": "4000",  # Sales Revenue
     },
     # Expenses
     "purchase_expense": {
-        "transaction_type": "purchase_invoice",
-        "scenario": "expense",
+        "transaction_type": DefaultAccountTransactionType.PURCHASE_EXPENSE.value,
+        "scenario": None,
         "account_code": "5000",  # Cost of Goods Sold
+    },
+    # Cash
+    "cash": {
+        "transaction_type": DefaultAccountTransactionType.CASH.value,
+        "scenario": None,
+        "account_code": "1010",  # Cash
+    },
+    # Bank
+    "bank": {
+        "transaction_type": DefaultAccountTransactionType.BANK.value,
+        "scenario": None,
+        "account_code": "1020",  # Bank Accounts
     },
 }

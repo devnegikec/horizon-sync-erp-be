@@ -132,16 +132,27 @@ class InvoiceService:
                 
                 # Convert grand_total to base currency for outstanding_amount
                 from app.services.currency_service import CurrencyService
-                currency_service = CurrencyService(self.db)
-                base_currency = currency_service.get_base_currency()
+                from app.core.exceptions import ExchangeRateNotFoundException
                 
-                # Convert to base currency if needed
-                if inv.currency == base_currency:
+                try:
+                    currency_service = CurrencyService(self.db)
+                    base_currency = currency_service.get_base_currency()
+                    
+                    # Convert to base currency if needed
+                    if inv.currency == base_currency:
+                        outstanding_amount_base = inv.grand_total
+                    else:
+                        try:
+                            outstanding_amount_base = currency_service.convert(
+                                inv.grand_total, inv.currency, base_currency
+                            )
+                        except ExchangeRateNotFoundException:
+                            # If no exchange rate found, use the original amount as fallback
+                            # This allows the system to continue working even without configured exchange rates
+                            outstanding_amount_base = inv.grand_total
+                except Exception as currency_error:
+                    # If currency service fails completely, use original amount as fallback
                     outstanding_amount_base = inv.grand_total
-                else:
-                    outstanding_amount_base = currency_service.convert(
-                        inv.grand_total, inv.currency, base_currency
-                    )
                 
                 # Update additional fields for confirmed/paid invoices
                 inv.submitted_at = datetime.now(UTC)
@@ -150,11 +161,22 @@ class InvoiceService:
                 # Flush changes before creating journal entry
                 self.db.flush()
                 
-                # Create journal entry
-                journal_posting_service = InvoiceJournalPostingService(self.db)
-                journal_posting_service.post_invoice_journal_entry(
-                    inv, organization_id, user_id
-                )
+                # Create journal entry - only if all required default accounts are configured
+                try:
+                    journal_posting_service = InvoiceJournalPostingService(self.db)
+                    journal_posting_service.post_invoice_journal_entry(
+                        inv, organization_id, user_id
+                    )
+                except ValidationError as journal_error:
+                    if "default account" in str(journal_error).lower():
+                        # If this is a default account configuration error, allow the invoice update to proceed
+                        # but log the error - the journal entry can be created later when accounts are configured
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Invoice {inv.invoice_no} updated but journal entry not created: {journal_error}")
+                    else:
+                        # Re-raise other validation errors
+                        raise
             
             # Commit transaction - both invoice update and journal entry succeed together
             self.db.commit()

@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
+from app.models.base import DefaultAccountTransactionType
 from app.services.default_account_service import DefaultAccountService
 from app.services.journal_entry_service import JournalEntryService
 from app.services.currency_service import CurrencyService
@@ -52,7 +53,7 @@ class InvoiceJournalPostingService:
             # Sales invoice: Debit AR, Credit Revenue
             try:
                 ar_account = self.default_account_service.get_default_account(
-                    "accounts_receivable", organization_id
+                    DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE.value, organization_id
                 )
                 debit_account_id = ar_account.account_id
             except ValidationError:
@@ -61,7 +62,7 @@ class InvoiceJournalPostingService:
 
             try:
                 revenue_account = self.default_account_service.get_default_account(
-                    "sales_invoice", organization_id
+                    DefaultAccountTransactionType.SALES_REVENUE.value, organization_id
                 )
                 credit_account_id = revenue_account.account_id
             except ValidationError:
@@ -72,7 +73,7 @@ class InvoiceJournalPostingService:
             # Purchase invoice: Debit Expense, Credit AP
             try:
                 expense_account = self.default_account_service.get_default_account(
-                    "purchase_expense", organization_id
+                    DefaultAccountTransactionType.PURCHASE_EXPENSE.value, organization_id
                 )
                 debit_account_id = expense_account.account_id
             except ValidationError:
@@ -81,7 +82,7 @@ class InvoiceJournalPostingService:
 
             try:
                 ap_account = self.default_account_service.get_default_account(
-                    "accounts_payable", organization_id
+                    DefaultAccountTransactionType.ACCOUNTS_PAYABLE.value, organization_id
                 )
                 credit_account_id = ap_account.account_id
             except ValidationError:
