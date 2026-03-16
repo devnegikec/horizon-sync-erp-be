@@ -43,7 +43,7 @@ Postman → File → Import → Select JSON file → Import
 ### 2. Set Variables
 ```
 Environment dropdown → Set:
-- base_url = http://localhost:8001/api/v1
+- base_url = http://localhost:8001
 - access_token = YOUR_JWT_TOKEN
 - organization_id = YOUR_ORG_UUID
 ```

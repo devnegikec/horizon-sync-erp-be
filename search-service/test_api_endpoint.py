@@ -19,7 +19,7 @@ def test_health():
     print("="*60)
     
     try:
-        response = requests.get(f"{BASE_URL}/health", timeout=5)
+        response = requests.get(f"{BASE_URL}/api/v1/health", timeout=5)
         print(f"Status Code: {response.status_code}")
         print(f"Response: {json.dumps(response.json(), indent=2)}")
         return response.status_code == 200
@@ -35,7 +35,7 @@ def test_docs():
     print("="*60)
     
     try:
-        response = requests.get(f"{BASE_URL}/docs", timeout=5)
+        response = requests.get(f"{BASE_URL}/api/v1/docs", timeout=5)
         print(f"Status Code: {response.status_code}")
         print(f"Docs accessible: {response.status_code == 200}")
         return response.status_code == 200
@@ -51,7 +51,7 @@ def test_openapi_json():
     print("="*60)
     
     try:
-        response = requests.get(f"{BASE_URL}/openapi.json", timeout=5)
+        response = requests.get(f"{BASE_URL}/api/v1/openapi.json", timeout=5)
         print(f"Status Code: {response.status_code}")
         
         if response.status_code == 200:
@@ -156,7 +156,7 @@ def main():
     print("\n" + "="*60)
     print("SEARCH SERVICE API ENDPOINT TESTS")
     print("="*60)
-    print(f"Base URL: {BASE_URL}")
+    print(f"Base URL: {BASE_URL}/api/v1")
     
     results = {
         "Health Check": test_health(),
