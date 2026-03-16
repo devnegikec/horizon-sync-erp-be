@@ -7,12 +7,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError, ResourceNotFoundException
+from app.models.base import DefaultAccountTransactionType
 from app.models.bank_account import BankAccount
 from app.services.journal_entry_service import JournalEntryService
 from app.services.default_account_service import DefaultAccountService
 from app.services.currency_service import CurrencyService
-from app.services.default_account_service import DefaultAccountService
-from app.services.journal_entry_service import JournalEntryService
 
 
 class JournalPostingService:
@@ -81,16 +80,17 @@ class JournalPostingService:
             
             # Map payment modes to transaction types for default accounts
             payment_mode_mapping = {
-                "Cash": "cash",
-                "Check": "checks_received",
-                "Bank_Transfer": "bank",
+                "Cash": DefaultAccountTransactionType.CASH.value,
+                "Check": DefaultAccountTransactionType.CHECKS_RECEIVED.value,
+                "Bank_Transfer": DefaultAccountTransactionType.BANK.value,
+                "Demand_Draft": DefaultAccountTransactionType.DEMAND_DRAFT.value,
             }
 
             transaction_type = payment_mode_mapping.get(payment_mode)
             if not transaction_type:
                 raise ValidationError(
                     f"Invalid payment mode '{payment_mode}'. "
-                    "Must be one of: Cash, Check, Bank_Transfer"
+                    "Must be one of: Cash, Check, Bank_Transfer, Demand_Draft"
                 )
 
             # Get default account for this transaction type
@@ -129,10 +129,10 @@ class JournalPostingService:
         # Determine required accounts based on payment type
         if payment_type == "Customer_Payment":
             # Customer payments require: payment account + accounts_receivable
-            required_accounts.append(("accounts_receivable", "Accounts Receivable"))
+            required_accounts.append((DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE.value, "Accounts Receivable"))
         elif payment_type == "Supplier_Payment":
             # Supplier payments require: payment account + accounts_payable
-            required_accounts.append(("accounts_payable", "Accounts Payable"))
+            required_accounts.append((DefaultAccountTransactionType.ACCOUNTS_PAYABLE.value, "Accounts Payable"))
         else:
             raise ValidationError(
                 f"Invalid payment type '{payment_type}'. "
@@ -141,15 +141,16 @@ class JournalPostingService:
 
         # Add payment mode account to required accounts
         payment_mode_mapping = {
-            "Cash": ("cash", "Cash"),
-            "Check": ("checks_received", "Checks Received"),
-            "Bank_Transfer": ("bank", "Bank"),
+            "Cash": (DefaultAccountTransactionType.CASH.value, "Cash"),
+            "Check": (DefaultAccountTransactionType.CHECKS_RECEIVED.value, "Checks Received"),
+            "Bank_Transfer": (DefaultAccountTransactionType.BANK.value, "Bank"),
+            "Demand_Draft": (DefaultAccountTransactionType.DEMAND_DRAFT.value, "Demand Draft"),
         }
 
         if payment_mode not in payment_mode_mapping:
             raise ValidationError(
                 f"Invalid payment mode '{payment_mode}'. "
-                "Must be one of: Cash, Check, Bank_Transfer"
+                "Must be one of: Cash, Check, Bank_Transfer, Demand_Draft"
             )
 
         payment_account_type, payment_account_name = payment_mode_mapping[payment_mode]
@@ -261,7 +262,7 @@ class JournalPostingService:
                 bank_account_id=payment_entry.bank_account_id,
             )
             credit_account_id = self.default_account_service.get_default_account(
-                transaction_type="accounts_receivable",
+                transaction_type=DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE.value,
                 organization_id=organization_id,
             ).account_id
             remarks = (
@@ -292,7 +293,7 @@ class JournalPostingService:
         elif payment_entry.payment_type.value == "Supplier_Payment":
             # Supplier payment: Debit AP, Credit payment account
             debit_account_id = self.default_account_service.get_default_account(
-                transaction_type="accounts_payable",
+                transaction_type=DefaultAccountTransactionType.ACCOUNTS_PAYABLE.value,
                 organization_id=organization_id,
             ).account_id
             credit_account_id = self._get_payment_account_by_mode(
