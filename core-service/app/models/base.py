@@ -219,6 +219,8 @@ class DefaultAccountTransactionType(str, enum.Enum):
     COST_OF_GOODS_SOLD = "cost_of_goods_sold"
     CASH = "cash"
     BANK = "bank"
+    CHECKS_RECEIVED = "checks_received"
+    DEMAND_DRAFT = "demand_draft"
     TAX_PAYABLE = "tax_payable"
     TAX_RECEIVABLE = "tax_receivable"
     DISCOUNT_GIVEN = "discount_given"
@@ -229,7 +231,6 @@ class DefaultAccountTransactionType(str, enum.Enum):
     INVENTORY_SALE = "inventory_sale"
     SALES_INVOICE = "sales_invoice"
     PURCHASE_INVOICE = "purchase_invoice"
-    PAYMENT = "payment"
 
 
 # ===========================================
@@ -345,6 +346,7 @@ class PaymentMode(str, enum.Enum):
     CASH = "Cash"
     CHECK = "Check"
     BANK_TRANSFER = "Bank_Transfer"
+    DEMAND_DRAFT = "Demand_Draft"
 
 
 class PaymentEntryStatus(str, enum.Enum):

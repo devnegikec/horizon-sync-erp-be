@@ -1707,7 +1707,7 @@ async def get_default_accounts(
     "/config/defaults",
     response_model=dict,
     summary="Update default account mappings",
-    description="Create or update default account mappings for transaction types",
+    description="Create or update default account mappings for transaction types. Mappings not included in the request will be deleted.",
 )
 async def update_default_accounts(
     request: "DefaultAccountBulkUpdateRequest",
@@ -1717,6 +1717,9 @@ async def update_default_accounts(
     """
     Create or update default account mappings.
 
+    This endpoint performs a full sync: mappings in the request are created/updated,
+    and any existing mappings NOT in the request are deleted.
+
     Requires authentication.
 
     **Request Body:**
@@ -1725,16 +1728,61 @@ async def update_default_accounts(
       - **scenario**: Optional scenario for multiple defaults per type
       - **account_id**: UUID of the account to use as default (required)
 
-    **Returns:** Summary of updated mappings
+    **Returns:** Summary of updated and deleted mappings
     """
     from app.core.exceptions import ChartOfAccountNotFoundException, ValidationError
+    from app.models.default_account import DefaultAccount
     from app.services.default_account_service import DefaultAccountService
 
     service = DefaultAccountService(db)
 
     updated = []
     errors = []
+    deleted_count = 0
 
+    # Build a set of (transaction_type, scenario) tuples from the request
+    # to identify which mappings should be kept
+    incoming_keys = {
+        (d.transaction_type, d.scenario)
+        for d in request.defaults
+    }
+
+    # Get all existing mappings for this organization
+    existing_mappings = (
+        db.query(DefaultAccount)
+        .filter(DefaultAccount.organization_id == current_user.organization_id)
+        .all()
+    )
+
+    # Delete mappings that are not in the incoming request
+    for mapping in existing_mappings:
+        key = (mapping.transaction_type, mapping.scenario)
+        if key not in incoming_keys:
+            try:
+                db.delete(mapping)
+                deleted_count += 1
+                logger.info(
+                    f"Deleted default account mapping: {mapping.transaction_type} "
+                    f"(scenario={mapping.scenario}) for org {current_user.organization_id}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to delete default account mapping: {str(e)}")
+                errors.append(
+                    {
+                        "error": f"Failed to delete: {str(e)}",
+                        "transaction_type": mapping.transaction_type,
+                        "data": {
+                            "transaction_type": mapping.transaction_type,
+                            "scenario": mapping.scenario,
+                        },
+                    }
+                )
+
+    # Commit deletions before processing updates
+    if deleted_count > 0:
+        db.flush()
+
+    # Process upserts for incoming mappings
     for default_data in request.defaults:
         try:
             # Set default account
@@ -1758,6 +1806,10 @@ async def update_default_accounts(
                 {
                     "error": str(e),
                     "transaction_type": default_data.transaction_type,
+                    "data": {
+                        "transaction_type": default_data.transaction_type,
+                        "scenario": default_data.scenario,
+                    },
                 }
             )
         except ChartOfAccountNotFoundException as e:
@@ -1765,6 +1817,10 @@ async def update_default_accounts(
                 {
                     "error": str(e),
                     "transaction_type": default_data.transaction_type,
+                    "data": {
+                        "transaction_type": default_data.transaction_type,
+                        "scenario": default_data.scenario,
+                    },
                 }
             )
         except Exception as e:
@@ -1773,11 +1829,19 @@ async def update_default_accounts(
                 {
                     "error": f"Unexpected error: {str(e)}",
                     "transaction_type": default_data.transaction_type,
+                    "data": {
+                        "transaction_type": default_data.transaction_type,
+                        "scenario": default_data.scenario,
+                    },
                 }
             )
 
+    # Commit all changes
+    db.commit()
+
     return {
         "updated": updated,
+        "deleted_count": deleted_count,
         "errors": errors,
         "success_count": len(updated),
         "error_count": len(errors),
