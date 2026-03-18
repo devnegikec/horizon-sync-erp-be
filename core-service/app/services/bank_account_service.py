@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import (
@@ -162,6 +162,7 @@ class BankAccountService:
         page_size: int = 20,
         gl_account_id: UUID | None = None,
         bank_name: str | None = None,
+        bank_identifier: str | None = None,
         account_purpose: str | None = None,
         is_active: bool | None = None,
         is_primary: bool | None = None,
@@ -180,6 +181,63 @@ class BankAccountService:
 
         if bank_name:
             query = query.filter(BankAccount.bank_name.ilike(f"%{bank_name}%"))
+
+        if bank_identifier:
+            # Handle compound banking identifiers (e.g., "IFSC:account", "routing:account")
+            filter_conditions = []
+            
+            # Check if it's a compound identifier with separator
+            if ':' in bank_identifier:
+                parts = bank_identifier.split(':')
+                if len(parts) == 2:
+                    code_part, account_part = parts
+                    
+                    # IFSC:Account (India)
+                    filter_conditions.append(
+                        and_(
+                            BankAccount.ifsc_code == code_part,
+                            BankAccount.account_number == account_part
+                        )
+                    )
+                    
+                    # Routing:Account (US)
+                    filter_conditions.append(
+                        and_(
+                            BankAccount.routing_number == code_part,
+                            BankAccount.account_number == account_part
+                        )
+                    )
+                    
+                    # Sort:Account (UK)
+                    sort_code_clean = code_part.replace('-', '')
+                    filter_conditions.append(
+                        and_(
+                            func.replace(BankAccount.sort_code, '-', '') == sort_code_clean,
+                            BankAccount.account_number == account_part
+                        )
+                    )
+                    
+                    # BSB:Account (Australia)
+                    bsb_clean = code_part.replace('-', '')
+                    filter_conditions.append(
+                        and_(
+                            func.replace(BankAccount.bsb_number, '-', '') == bsb_clean,
+                            BankAccount.account_number == account_part
+                        )
+                    )
+            
+            # Add individual field searches
+            identifier_clean = bank_identifier.replace(' ', '').replace('-', '')
+            filter_conditions.extend([
+                BankAccount.account_number == bank_identifier,
+                func.upper(func.replace(BankAccount.iban, ' ', '')) == identifier_clean.upper(),
+                BankAccount.routing_number == bank_identifier,
+                func.replace(BankAccount.sort_code, '-', '') == identifier_clean,
+                func.replace(BankAccount.bsb_number, '-', '') == identifier_clean,
+                BankAccount.ifsc_code == bank_identifier,
+            ])
+            
+            query = query.filter(or_(*filter_conditions))
 
         if account_purpose:
             query = query.filter(BankAccount.account_purpose == account_purpose)
@@ -598,6 +656,138 @@ class BankAccountService:
 
         return gl_account
 
+    def _get_country_specific_identifiers(self, data: BankAccountCreate) -> dict:
+        """
+        Get country-specific banking identifiers for duplicate checking.
+        Returns a dict with the relevant fields and values for the given country.
+        """
+        country = data.country_code.upper()
+        identifiers = {}
+        
+        # EU countries use IBAN as primary identifier
+        if country in ['DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'PT', 'IE', 'FI', 'GR', 'LU']:
+            if data.iban:
+                identifiers['iban'] = data.iban.replace(' ', '').upper()
+        
+        # US uses routing number + account number
+        elif country == 'US':
+            if data.routing_number and data.account_number:
+                identifiers['routing_account'] = f"{data.routing_number}:{data.account_number}"
+            elif data.account_number:
+                identifiers['account_number'] = data.account_number
+        
+        # UK uses sort code + account number
+        elif country == 'GB':
+            if data.sort_code and data.account_number:
+                identifiers['sort_account'] = f"{data.sort_code.replace('-', '')}:{data.account_number}"
+            elif data.account_number:
+                identifiers['account_number'] = data.account_number
+        
+        # Australia uses BSB + account number
+        elif country == 'AU':
+            if data.bsb_number and data.account_number:
+                identifiers['bsb_account'] = f"{data.bsb_number.replace('-', '')}:{data.account_number}"
+            elif data.account_number:
+                identifiers['account_number'] = data.account_number
+        
+        # India uses IFSC + account number
+        elif country == 'IN':
+            if data.ifsc_code and data.account_number:
+                identifiers['ifsc_account'] = f"{data.ifsc_code}:{data.account_number}"
+            elif data.account_number:
+                identifiers['account_number'] = data.account_number
+        
+        # Generic fallback - use account number
+        else:
+            if data.account_number:
+                identifiers['account_number'] = data.account_number
+        
+        return identifiers
+    
+    def _check_country_specific_duplicates(self, data: BankAccountCreate, organization_id: UUID) -> tuple[bool, str, BankAccount | None]:
+        """
+        Check for duplicates using country-specific banking identifiers.
+        Returns (is_duplicate, duplicate_field, existing_account)
+        """
+        identifiers = self._get_country_specific_identifiers(data)
+        
+        for identifier_type, identifier_value in identifiers.items():
+            existing_account = None
+            
+            if identifier_type == 'iban':
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        func.upper(func.replace(BankAccount.iban, ' ', '')) == identifier_value,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'IBAN'
+            
+            elif identifier_type == 'routing_account':
+                routing, account = identifier_value.split(':')
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        BankAccount.routing_number == routing,
+                        BankAccount.account_number == account,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'Account Number'
+            
+            elif identifier_type == 'sort_account':
+                sort_code, account = identifier_value.split(':')
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        func.replace(BankAccount.sort_code, '-', '') == sort_code,
+                        BankAccount.account_number == account,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'Account Number'
+            
+            elif identifier_type == 'bsb_account':
+                bsb, account = identifier_value.split(':')
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        func.replace(BankAccount.bsb_number, '-', '') == bsb,
+                        BankAccount.account_number == account,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'Account Number'
+            
+            elif identifier_type == 'ifsc_account':
+                ifsc, account = identifier_value.split(':')
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        BankAccount.ifsc_code == ifsc,
+                        BankAccount.account_number == account,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'Account Number'
+            
+            elif identifier_type == 'account_number':
+                existing_account = self.db.query(BankAccount).filter(
+                    and_(
+                        BankAccount.organization_id == organization_id,
+                        BankAccount.account_number == identifier_value,
+                        BankAccount.country_code == data.country_code,
+                        BankAccount.is_active == True,
+                    )
+                ).first()
+                field_name = 'Account Number'
+            
+            if existing_account:
+                return True, field_name, existing_account
+        
+        return False, '', None
+
     def _validate_create_rules(
         self, data: BankAccountCreate, gl_account_id: UUID, organization_id: UUID
     ) -> None:
@@ -615,25 +805,13 @@ class BankAccountService:
                 f"Bank accounts represent cash holdings (ASSET) or credit facilities (LIABILITY) on the balance sheet."
             )
         
-        # Check for duplicate IBAN within organization
-        if data.iban:
-            existing_iban = (
-                self.db.query(BankAccount)
-                .filter(
-                    and_(
-                        BankAccount.organization_id == organization_id,
-                        BankAccount.iban == data.iban,
-                        BankAccount.is_active == True,
-                    )
-                )
-                .first()
+        # Check for country-specific duplicates
+        is_duplicate, duplicate_field, existing_account = self._check_country_specific_duplicates(data, organization_id)
+        if is_duplicate:
+            raise DuplicateIbanException(
+                f"{duplicate_field} already exists for {existing_account.bank_name}. Please use a different {duplicate_field.lower()}."
             )
-
-            if existing_iban:
-                raise DuplicateIbanException(
-                    f"IBAN {data.iban} already exists for this organization"
-                )
-
+        
         # Validate primary bank account rules
         if data.is_primary:
             existing_primary = (
@@ -659,26 +837,115 @@ class BankAccountService:
     ) -> None:
         """Validate business rules for updating a bank account"""
 
-        # Check for duplicate IBAN if IBAN is being updated
-        if data.iban and data.iban != existing_bank_account.iban:
-            existing_iban = (
-                self.db.query(BankAccount)
-                .filter(
-                    and_(
-                        BankAccount.organization_id
-                        == existing_bank_account.organization_id,
-                        BankAccount.iban == data.iban,
-                        BankAccount.id != existing_bank_account.id,
-                        BankAccount.is_active == True,
-                    )
-                )
-                .first()
+        # Check for duplicates using country-specific logic if relevant fields are being updated
+        fields_to_check = ['iban', 'account_number', 'routing_number', 'sort_code', 'bsb_number', 'ifsc_code']
+        updating_banking_ids = any(getattr(data, field, None) is not None for field in fields_to_check)
+        
+        if updating_banking_ids:
+            # Create a temporary data object for duplicate checking
+            # Merge existing values with updates
+            temp_data = BankAccountCreate(
+                account_name=getattr(data, 'account_name', None) or existing_bank_account.account_name,
+                bank_name=getattr(data, 'bank_name', None) or existing_bank_account.bank_name,
+                account_number=getattr(data, 'account_number', None) or existing_bank_account.account_number,
+                iban=getattr(data, 'iban', None) or existing_bank_account.iban,
+                routing_number=getattr(data, 'routing_number', None) or existing_bank_account.routing_number,
+                sort_code=getattr(data, 'sort_code', None) or existing_bank_account.sort_code,
+                bsb_number=getattr(data, 'bsb_number', None) or existing_bank_account.bsb_number,
+                ifsc_code=getattr(data, 'ifsc_code', None) or existing_bank_account.ifsc_code,
+                country_code=getattr(data, 'country_code', None) or existing_bank_account.country_code,
+                currency=getattr(data, 'currency', None) or existing_bank_account.currency,
+                account_purpose=getattr(data, 'account_purpose', None) or existing_bank_account.account_purpose,
+                is_primary=getattr(data, 'is_primary', None) or existing_bank_account.is_primary,
+                is_active=getattr(data, 'is_active', None) or existing_bank_account.is_active,
+                gl_account_id=UUID('00000000-0000-0000-0000-000000000000')  # Placeholder, not used for duplicate check
             )
-
-            if existing_iban:
-                raise DuplicateIbanException(
-                    f"IBAN {data.iban} already exists for this organization"
-                )
+            
+            # Check for duplicates, excluding current account
+            identifiers = self._get_country_specific_identifiers(temp_data)
+            
+            for identifier_type, identifier_value in identifiers.items():
+                existing_account = None
+                
+                if identifier_type == 'iban':
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            func.upper(func.replace(BankAccount.iban, ' ', '')) == identifier_value,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'IBAN'
+                
+                elif identifier_type == 'routing_account':
+                    routing, account = identifier_value.split(':')
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            BankAccount.routing_number == routing,
+                            BankAccount.account_number == account,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'Account Number'
+                
+                elif identifier_type == 'sort_account':
+                    sort_code, account = identifier_value.split(':')
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            func.replace(BankAccount.sort_code, '-', '') == sort_code,
+                            BankAccount.account_number == account,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'Account Number'
+                
+                elif identifier_type == 'bsb_account':
+                    bsb, account = identifier_value.split(':')
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            func.replace(BankAccount.bsb_number, '-', '') == bsb,
+                            BankAccount.account_number == account,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'Account Number'
+                
+                elif identifier_type == 'ifsc_account':
+                    ifsc, account = identifier_value.split(':')
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            BankAccount.ifsc_code == ifsc,
+                            BankAccount.account_number == account,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'Account Number'
+                
+                elif identifier_type == 'account_number':
+                    existing_account = self.db.query(BankAccount).filter(
+                        and_(
+                            BankAccount.organization_id == existing_bank_account.organization_id,
+                            BankAccount.account_number == identifier_value,
+                            BankAccount.country_code == temp_data.country_code,
+                            BankAccount.id != existing_bank_account.id,
+                            BankAccount.is_active == True,
+                        )
+                    ).first()
+                    field_name = 'Account Number'
+                
+                if existing_account:
+                    raise DuplicateIbanException(
+                        f"{field_name} already exists for {existing_account.bank_name}. Please use a different {field_name.lower()}."
+                    )
 
     def _ensure_single_primary_bank_account(
         self,
