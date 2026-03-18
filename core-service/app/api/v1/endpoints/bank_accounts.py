@@ -160,6 +160,9 @@ async def list_bank_accounts(
     bank_name: str | None = Query(
         None, description="Filter by bank name (partial match)"
     ),
+    bank_identifier: str | None = Query(
+        None, description="Filter by banking identifier (account number, IBAN, etc.)"
+    ),
     account_purpose: str | None = Query(
         None, description="Filter by account purpose"
     ),
@@ -177,6 +180,7 @@ async def list_bank_accounts(
     **Filtering Options:**
     - `gl_account_id`: Show only bank accounts for a specific GL account
     - `bank_name`: Search by bank name (case-insensitive partial match)
+    - `bank_identifier`: Filter by banking identifier (account number, IBAN, etc.)
     - `account_purpose`: Filter by purpose (operating, payroll, tax, etc.)
     - `is_active`: Show only active or inactive accounts
     - `is_primary`: Show only primary or secondary accounts
@@ -195,6 +199,7 @@ async def list_bank_accounts(
             page_size=page_size,
             gl_account_id=gl_account_id,
             bank_name=bank_name,
+            bank_identifier=bank_identifier,
             account_purpose=account_purpose,
             is_active=is_active,
             is_primary=is_primary,
