@@ -86,6 +86,14 @@ from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
 
+# QR Products module
+from app.models.qr_product import QRProduct
+from app.models.qr_block import QRBlock
+from app.models.product_item import ProductItem
+from app.models.qr_activation import QRActivationParameters, QRActivationTrack
+from app.models.qr_credit import QRCreditUsage
+from app.models.qr_scan_event import QRScanEvent
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -189,6 +197,14 @@ __all__ = [
     "UOM",
     "UOMConversion",
     "CurrencyMaster",
+    # QR Products module
+    "QRProduct",
+    "QRBlock",
+    "ProductItem",
+    "QRActivationParameters",
+    "QRActivationTrack",
+    "QRCreditUsage",
+    "QRScanEvent",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

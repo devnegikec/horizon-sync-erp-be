@@ -5,6 +5,7 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     admin,
+    qr_products,
     bank_accounts,
     batches,
     bulk_export,
@@ -215,4 +216,11 @@ api_router.include_router(
     document_numbering.router,
     prefix="/settings/document-numbering",
     tags=["Settings - Document Numbering"],
+)
+
+# QR Products module
+api_router.include_router(
+    qr_products.router,
+    prefix="/qr-products",
+    tags=["QR Products"],
 )
