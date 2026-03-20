@@ -109,6 +109,9 @@ from app.models.coupon import (
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
 
+# Analytics module
+from app.models.analytics import MetaCampaign
+
 # Messaging module
 from app.models.messaging import (
     MessageTemplate,
@@ -247,6 +250,8 @@ __all__ = [
     # Warranty module
     "Warranty",
     "WarrantyPeriod",
+    # Analytics module
+    "MetaCampaign",
     # Messaging module
     "MessageTemplate",
     "BulkMessageJob",

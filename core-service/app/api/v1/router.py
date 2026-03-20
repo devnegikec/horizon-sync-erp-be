@@ -5,6 +5,7 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     admin,
+    analytics,
     campaigns,
     messaging,
     qr_products,
@@ -247,4 +248,11 @@ api_router.include_router(
     messaging.router,
     prefix="/messaging",
     tags=["Messaging"],
+)
+
+# Analytics module
+api_router.include_router(
+    analytics.router,
+    prefix="/analytics",
+    tags=["Analytics"],
 )
