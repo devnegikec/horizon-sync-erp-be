@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     auth,
     invitations,
     organizations,
+    otp,
     permissions,
     roles,
     users,
@@ -28,3 +29,5 @@ api_router.include_router(permissions.router, prefix="/identity", tags=["Permiss
 api_router.include_router(roles.router, prefix="/identity", tags=["Roles"])
 
 api_router.include_router(invitations.router, prefix="/identity", tags=["Invitations"])
+
+api_router.include_router(otp.router, prefix="/identity", tags=["OTP"])

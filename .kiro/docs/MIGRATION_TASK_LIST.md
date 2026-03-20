@@ -13,28 +13,28 @@
 
 ### 1.1 Organizations & Users — identity_db
 
-| #     | Task                                                               | Status | Notes                                                             |
-| ----- | ------------------------------------------------------------------ | ------ | ----------------------------------------------------------------- |
-| 1.1.1 | Export `dashboard_client` → `organizations`                        | 🔴     | Run export SQL, map int PK → UUID, store `old_id` in `extra_data` |
-| 1.1.2 | Export `integration_brand` → merge into `organizations.extra_data` | 🔴     | `public_key`, `private_key`, `short_code`                         |
-| 1.1.3 | Export `users_user` → `users`                                      | 🔴     | Map int PK → UUID, `mobile` → `phone`, status lowercase           |
-| 1.1.4 | Create default roles (admin, member, viewer)                       | 🔴     | Seed into `roles` table if not already seeded                     |
-| 1.1.5 | Build `user_organization_roles` from old user-tenant FK            | 🔴     | Use email + org name as join keys                                 |
-| 1.1.6 | Decide password strategy (PBKDF2 → bcrypt)                         | 🔴     | Recommend: force reset on first login                             |
-| 1.1.7 | Verify row counts & no duplicate slugs                             | 🔴     | Run verification SQL from migration guide                         |
+| #     | Task                                                               | Status | Notes                                                                  |
+| ----- | ------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------- |
+| 1.1.1 | Export `dashboard_client` → `organizations`                        | 🟢     | `scripts/migration/phase1_export_from_old_db.sql`                      |
+| 1.1.2 | Export `integration_brand` → merge into `organizations.extra_data` | 🟢     | Merged in same export SQL (short_code, public_key, etc.)               |
+| 1.1.3 | Export `users_user` → `users`                                      | 🟢     | `scripts/migration/phase1_export_from_old_db.sql`                      |
+| 1.1.4 | Create default roles (system_admin, org_admin, user)               | 🟢     | `scripts/migration/phase1_import_to_identity_db.sql` — Step 3          |
+| 1.1.5 | Build `user_organization_roles` from old user-tenant FK            | 🟢     | `scripts/migration/phase1_import_to_identity_db.sql` — Step 4          |
+| 1.1.6 | Password strategy: PBKDF2 → bcrypt                                 | 🟢     | Force reset — placeholder hash set, old hash preserved in `extra_data` |
+| 1.1.7 | Verify row counts & no duplicate slugs                             | 🟢     | `scripts/migration/phase1_verify.sql`                                  |
 
 ### 1.2 Auth Endpoints — identity-service
 
-| #     | Task              | Old Endpoint              | New Endpoint                 | Status |
-| ----- | ----------------- | ------------------------- | ---------------------------- | ------ |
-| 1.2.1 | Login             | `POST auth/login/`        | `POST /api/v1/auth/login`    | 🟢     |
-| 1.2.2 | Logout            | `POST auth/logout/`       | `POST /api/v1/auth/logout`   | 🟢     |
-| 1.2.3 | Register          | `POST auth/web_register/` | `POST /api/v1/auth/register` | 🟢     |
-| 1.2.4 | Send email OTP    | `POST sent-otp/`          | ❌ Missing                   | 🔴     |
-| 1.2.5 | Verify email OTP  | `POST otp/`               | ❌ Missing                   | 🔴     |
-| 1.2.6 | Send mobile OTP   | `POST send_mobileotp/`    | ❌ Missing                   | 🔴     |
-| 1.2.7 | Verify mobile OTP | `POST verify_mobileotp/`  | ❌ Missing                   | 🔴     |
-| 1.2.8 | Create tenant     | `POST create-tenant/`     | `POST /api/v1/organizations` | 🟡     |
+| #     | Task              | Old Endpoint              | New Endpoint                              | Status |
+| ----- | ----------------- | ------------------------- | ----------------------------------------- | ------ |
+| 1.2.1 | Login             | `POST auth/login/`        | `POST /api/v1/auth/login`                 | 🟢     |
+| 1.2.2 | Logout            | `POST auth/logout/`       | `POST /api/v1/auth/logout`                | 🟢     |
+| 1.2.3 | Register          | `POST auth/web_register/` | `POST /api/v1/auth/register`              | 🟢     |
+| 1.2.4 | Send email OTP    | `POST sent-otp/`          | `POST /api/v1/identity/otp/email/send`    | �      |
+| 1.2.5 | Verify email OTP  | `POST otp/`               | `POST /api/v1/identity/otp/email/verify`  | �      |
+| 1.2.6 | Send mobile OTP   | `POST send_mobileotp/`    | `POST /api/v1/identity/otp/mobile/send`   | �      |
+| 1.2.7 | Verify mobile OTP | `POST verify_mobileotp/`  | `POST /api/v1/identity/otp/mobile/verify` | �      |
+| 1.2.8 | Create tenant     | `POST create-tenant/`     | `POST /api/v1/organizations`              | 🟡     |
 
 **Action for 1.2.4–1.2.7**: Add `otp_verifications` table (Alembic migration `004_add_otp_verifications.py`) and OTP endpoints to identity-service.
 
