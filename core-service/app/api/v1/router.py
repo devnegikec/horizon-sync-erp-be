@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     campaigns,
+    messaging,
     qr_products,
     warranties,
     bank_accounts,
@@ -239,4 +240,11 @@ api_router.include_router(
     warranties.router,
     prefix="/warranties",
     tags=["Warranties"],
+)
+
+# Messaging module
+api_router.include_router(
+    messaging.router,
+    prefix="/messaging",
+    tags=["Messaging"],
 )
