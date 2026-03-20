@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     analytics,
     campaigns,
     cascade_qr,
+    destinations,
     messaging,
     short_urls,
     qr_products,
@@ -271,4 +272,11 @@ api_router.include_router(
     short_urls.router,
     prefix="/short-urls",
     tags=["URL Management"],
+)
+
+# Destinations module
+api_router.include_router(
+    destinations.router,
+    prefix="/destinations",
+    tags=["Destinations"],
 )

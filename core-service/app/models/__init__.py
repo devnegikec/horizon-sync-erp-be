@@ -115,6 +115,9 @@ from app.models.analytics import MetaCampaign
 # URL Management module
 from app.models.short_url import ShortURL
 
+# Destinations module
+from app.models.destination_market import DestinationMarket
+
 # Messaging module
 from app.models.messaging import (
     MessageTemplate,
@@ -257,6 +260,8 @@ __all__ = [
     "MetaCampaign",
     # URL Management module
     "ShortURL",
+    # Destinations module
+    "DestinationMarket",
     # Messaging module
     "MessageTemplate",
     "BulkMessageJob",
