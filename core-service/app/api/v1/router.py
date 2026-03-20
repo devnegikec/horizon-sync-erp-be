@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     brand_trust,
+    public_marketing,
     campaigns,
     cascade_qr,
     destinations,
@@ -287,4 +288,11 @@ api_router.include_router(
     brand_trust.router,
     prefix="/brand-trust",
     tags=["Brand Trust"],
+)
+
+# Public / Marketing module (no auth)
+api_router.include_router(
+    public_marketing.router,
+    prefix="/public",
+    tags=["Public"],
 )

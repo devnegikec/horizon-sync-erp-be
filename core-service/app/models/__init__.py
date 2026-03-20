@@ -118,6 +118,9 @@ from app.models.short_url import ShortURL
 # Destinations module
 from app.models.destination_market import DestinationMarket
 
+# Public Marketing module
+from app.models.public_submission import PublicSubmission
+
 # Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
@@ -270,6 +273,8 @@ __all__ = [
     "ShortURL",
     # Destinations module
     "DestinationMarket",
+    # Public Marketing module
+    "PublicSubmission",
     # Brand Trust module
     "BrandIndustry",
     "BrandTrustQuestion",
