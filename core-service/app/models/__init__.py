@@ -112,6 +112,9 @@ from app.models.warranty import Warranty, WarrantyPeriod
 # Analytics module
 from app.models.analytics import MetaCampaign
 
+# URL Management module
+from app.models.short_url import ShortURL
+
 # Messaging module
 from app.models.messaging import (
     MessageTemplate,
@@ -252,6 +255,8 @@ __all__ = [
     "WarrantyPeriod",
     # Analytics module
     "MetaCampaign",
+    # URL Management module
+    "ShortURL",
     # Messaging module
     "MessageTemplate",
     "BulkMessageJob",

@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     campaigns,
     cascade_qr,
     messaging,
+    short_urls,
     qr_products,
     warranties,
     bank_accounts,
@@ -263,4 +264,11 @@ api_router.include_router(
     cascade_qr.router,
     prefix="/cascade-qr",
     tags=["Cascade QR"],
+)
+
+# URL Management module
+api_router.include_router(
+    short_urls.router,
+    prefix="/short-urls",
+    tags=["URL Management"],
 )
