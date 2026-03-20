@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     analytics,
+    brand_trust,
     campaigns,
     cascade_qr,
     destinations,
@@ -279,4 +280,11 @@ api_router.include_router(
     destinations.router,
     prefix="/destinations",
     tags=["Destinations"],
+)
+
+# Brand Trust Assessment module
+api_router.include_router(
+    brand_trust.router,
+    prefix="/brand-trust",
+    tags=["Brand Trust"],
 )

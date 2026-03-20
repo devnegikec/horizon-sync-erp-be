@@ -118,6 +118,14 @@ from app.models.short_url import ShortURL
 # Destinations module
 from app.models.destination_market import DestinationMarket
 
+# Brand Trust module
+from app.models.brand_trust import (
+    BrandIndustry,
+    BrandTrustQuestion,
+    BrandTrustAssessment,
+    BrandTrustAnswer,
+)
+
 # Messaging module
 from app.models.messaging import (
     MessageTemplate,
@@ -262,6 +270,11 @@ __all__ = [
     "ShortURL",
     # Destinations module
     "DestinationMarket",
+    # Brand Trust module
+    "BrandIndustry",
+    "BrandTrustQuestion",
+    "BrandTrustAssessment",
+    "BrandTrustAnswer",
     # Messaging module
     "MessageTemplate",
     "BulkMessageJob",
