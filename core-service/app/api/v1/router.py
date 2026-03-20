@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin,
     campaigns,
     qr_products,
+    warranties,
     bank_accounts,
     batches,
     bulk_export,
@@ -231,4 +232,11 @@ api_router.include_router(
     campaigns.router,
     prefix="/campaigns",
     tags=["Campaigns"],
+)
+
+# Warranty module
+api_router.include_router(
+    warranties.router,
+    prefix="/warranties",
+    tags=["Warranties"],
 )

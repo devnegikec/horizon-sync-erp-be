@@ -106,6 +106,9 @@ from app.models.coupon import (
     ShopifyConfig,
 )
 
+# Warranty module
+from app.models.warranty import Warranty, WarrantyPeriod
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -228,6 +231,9 @@ __all__ = [
     "ExternalCoupon",
     "CouponDuration",
     "ShopifyConfig",
+    # Warranty module
+    "Warranty",
+    "WarrantyPeriod",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",
