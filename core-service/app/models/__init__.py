@@ -94,6 +94,18 @@ from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_credit import QRCreditUsage
 from app.models.qr_scan_event import QRScanEvent
 
+# Campaigns & Coupons module
+from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
+from app.models.coupon import (
+    CampaignLead,
+    CampaignTag,
+    Coupon,
+    CouponDuration,
+    CouponUnlockLog,
+    ExternalCoupon,
+    ShopifyConfig,
+)
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -205,6 +217,17 @@ __all__ = [
     "QRActivationTrack",
     "QRCreditUsage",
     "QRScanEvent",
+    # Campaigns & Coupons module
+    "Campaign",
+    "Play2WinPrize",
+    "WebCampaign",
+    "CampaignLead",
+    "CampaignTag",
+    "Coupon",
+    "CouponUnlockLog",
+    "ExternalCoupon",
+    "CouponDuration",
+    "ShopifyConfig",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

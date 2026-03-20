@@ -5,6 +5,7 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     admin,
+    campaigns,
     qr_products,
     bank_accounts,
     batches,
@@ -223,4 +224,11 @@ api_router.include_router(
     qr_products.router,
     prefix="/qr-products",
     tags=["QR Products"],
+)
+
+# Campaigns & Coupons module
+api_router.include_router(
+    campaigns.router,
+    prefix="/campaigns",
+    tags=["Campaigns"],
 )
