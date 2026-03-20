@@ -12,6 +12,7 @@ default_accounts, account_audit_log, payment_references,
 payment_audit_log, bank_accounts, bank_account_history.
 """
 
+from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine.reflection import Inspector
