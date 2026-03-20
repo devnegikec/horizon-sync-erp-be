@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     campaigns,
+    cascade_qr,
     messaging,
     qr_products,
     warranties,
@@ -255,4 +256,11 @@ api_router.include_router(
     analytics.router,
     prefix="/analytics",
     tags=["Analytics"],
+)
+
+# Cascade / Hierarchical QR module
+api_router.include_router(
+    cascade_qr.router,
+    prefix="/cascade-qr",
+    tags=["Cascade QR"],
 )
