@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.dependencies import get_current_user
 from app.database import get_db
 from app.schemas.analytics import (
     MetaCampaignCreate,

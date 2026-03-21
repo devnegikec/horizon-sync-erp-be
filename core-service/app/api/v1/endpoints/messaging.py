@@ -25,7 +25,7 @@ from app.schemas.messaging import (
     WhatsAppWebhookPayload,
 )
 from app.services.messaging_service import MessagingService
-from app.api.deps import get_current_user
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
