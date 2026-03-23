@@ -29,7 +29,7 @@ class QRProduct(Base):
     phone_number = Column(String(15), nullable=True)
     client_product_auth_url = Column(Text, nullable=True)
     activation_method = Column(String(4), default="pre")  # pre | post
-    sr_number_type = Column(String(12), nullable=True)
+    sr_number_type = Column(String(50), nullable=True)
     redirect_to_client = Column(Boolean, default=False)
     warranty_period_months = Column(Integer, nullable=True)
     qr_type = Column(String(30), nullable=True)

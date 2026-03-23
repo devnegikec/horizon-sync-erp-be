@@ -58,9 +58,12 @@ class QRActivationTrack(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Self-referential relationships
-    children = relationship("QRActivationTrack",
-                            foreign_keys=[parent_id],
-                            backref="parent")
+    children = relationship(
+        "QRActivationTrack",
+        foreign_keys=[parent_id],
+        backref="parent",
+        remote_side=[id],
+    )
 
     def __repr__(self):
         return f"<QRActivationTrack(id={self.id}, name='{self.name}')>"

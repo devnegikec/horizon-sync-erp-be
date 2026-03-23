@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     messaging,
     short_urls,
     qr_products,
+    qr_product_settings,
     warranties,
     bank_accounts,
     batches,
@@ -232,6 +233,13 @@ api_router.include_router(
     qr_products.router,
     prefix="/qr-products",
     tags=["QR Products"],
+)
+
+# QR Product Settings (serial prefix, channel, destination, shelf life)
+api_router.include_router(
+    qr_product_settings.router,
+    prefix="/qr-product-settings",
+    tags=["QR Product Settings"],
 )
 
 # Campaigns & Coupons module

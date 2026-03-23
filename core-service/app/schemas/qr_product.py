@@ -69,6 +69,7 @@ class QRProductListItem(BaseModel):
     generic_name: str | None
     gtin: str | None
     industry: str | None
+    activation_method: str | None
     qr_type: str | None
     is_active: bool
     created_at: datetime

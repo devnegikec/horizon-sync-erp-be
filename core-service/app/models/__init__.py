@@ -93,6 +93,7 @@ from app.models.product_item import ProductItem
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_credit import QRCreditUsage
 from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_product_setting import QRProductSetting
 
 # Campaigns & Coupons module
 from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
