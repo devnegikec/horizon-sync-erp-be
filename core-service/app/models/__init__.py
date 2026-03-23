@@ -86,6 +86,63 @@ from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
 
+# QR Products module
+from app.models.qr_product import QRProduct
+from app.models.qr_block import QRBlock
+from app.models.product_item import ProductItem
+from app.models.qr_activation import QRActivationParameters, QRActivationTrack
+from app.models.qr_credit import QRCreditUsage
+from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_product_setting import QRProductSetting
+
+# Campaigns & Coupons module
+from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
+from app.models.coupon import (
+    CampaignLead,
+    CampaignTag,
+    Coupon,
+    CouponDuration,
+    CouponUnlockLog,
+    ExternalCoupon,
+    ShopifyConfig,
+)
+
+# Warranty module
+from app.models.warranty import Warranty, WarrantyPeriod
+
+# Analytics module
+from app.models.analytics import MetaCampaign
+
+# URL Management module
+from app.models.short_url import ShortURL
+
+# Destinations module
+from app.models.destination_market import DestinationMarket
+
+# Public Marketing module
+from app.models.public_submission import PublicSubmission
+
+# Brand Trust module
+from app.models.brand_trust import (
+    BrandIndustry,
+    BrandTrustQuestion,
+    BrandTrustAssessment,
+    BrandTrustAnswer,
+)
+
+# Messaging module
+from app.models.messaging import (
+    MessageTemplate,
+    BulkMessageJob,
+    ScheduledMessage,
+    SMSReport,
+    WhatsAppReport,
+    RCSCredential,
+    RCSTemplate,
+    RCSReport,
+    MessageCredit,
+)
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -189,6 +246,51 @@ __all__ = [
     "UOM",
     "UOMConversion",
     "CurrencyMaster",
+    # QR Products module
+    "QRProduct",
+    "QRBlock",
+    "ProductItem",
+    "QRActivationParameters",
+    "QRActivationTrack",
+    "QRCreditUsage",
+    "QRScanEvent",
+    # Campaigns & Coupons module
+    "Campaign",
+    "Play2WinPrize",
+    "WebCampaign",
+    "CampaignLead",
+    "CampaignTag",
+    "Coupon",
+    "CouponUnlockLog",
+    "ExternalCoupon",
+    "CouponDuration",
+    "ShopifyConfig",
+    # Warranty module
+    "Warranty",
+    "WarrantyPeriod",
+    # Analytics module
+    "MetaCampaign",
+    # URL Management module
+    "ShortURL",
+    # Destinations module
+    "DestinationMarket",
+    # Public Marketing module
+    "PublicSubmission",
+    # Brand Trust module
+    "BrandIndustry",
+    "BrandTrustQuestion",
+    "BrandTrustAssessment",
+    "BrandTrustAnswer",
+    # Messaging module
+    "MessageTemplate",
+    "BulkMessageJob",
+    "ScheduledMessage",
+    "SMSReport",
+    "WhatsAppReport",
+    "RCSCredential",
+    "RCSTemplate",
+    "RCSReport",
+    "MessageCredit",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

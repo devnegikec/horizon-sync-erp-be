@@ -5,6 +5,17 @@ from fastapi import APIRouter
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
     admin,
+    analytics,
+    brand_trust,
+    public_marketing,
+    campaigns,
+    cascade_qr,
+    destinations,
+    messaging,
+    short_urls,
+    qr_products,
+    qr_product_settings,
+    warranties,
     bank_accounts,
     batches,
     bulk_export,
@@ -215,4 +226,81 @@ api_router.include_router(
     document_numbering.router,
     prefix="/settings/document-numbering",
     tags=["Settings - Document Numbering"],
+)
+
+# QR Products module
+api_router.include_router(
+    qr_products.router,
+    prefix="/qr-products",
+    tags=["QR Products"],
+)
+
+# QR Product Settings (serial prefix, channel, destination, shelf life)
+api_router.include_router(
+    qr_product_settings.router,
+    prefix="/qr-product-settings",
+    tags=["QR Product Settings"],
+)
+
+# Campaigns & Coupons module
+api_router.include_router(
+    campaigns.router,
+    prefix="/campaigns",
+    tags=["Campaigns"],
+)
+
+# Warranty module
+api_router.include_router(
+    warranties.router,
+    prefix="/warranties",
+    tags=["Warranties"],
+)
+
+# Messaging module
+api_router.include_router(
+    messaging.router,
+    prefix="/messaging",
+    tags=["Messaging"],
+)
+
+# Analytics module
+api_router.include_router(
+    analytics.router,
+    prefix="/analytics",
+    tags=["Analytics"],
+)
+
+# Cascade / Hierarchical QR module
+api_router.include_router(
+    cascade_qr.router,
+    prefix="/cascade-qr",
+    tags=["Cascade QR"],
+)
+
+# URL Management module
+api_router.include_router(
+    short_urls.router,
+    prefix="/short-urls",
+    tags=["URL Management"],
+)
+
+# Destinations module
+api_router.include_router(
+    destinations.router,
+    prefix="/destinations",
+    tags=["Destinations"],
+)
+
+# Brand Trust Assessment module
+api_router.include_router(
+    brand_trust.router,
+    prefix="/brand-trust",
+    tags=["Brand Trust"],
+)
+
+# Public / Marketing module (no auth)
+api_router.include_router(
+    public_marketing.router,
+    prefix="/public",
+    tags=["Public"],
 )
