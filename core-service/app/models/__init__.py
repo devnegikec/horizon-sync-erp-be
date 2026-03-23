@@ -122,6 +122,14 @@ from app.models.destination_market import DestinationMarket
 # Public Marketing module
 from app.models.public_submission import PublicSubmission
 
+# Admin Portal module
+from app.models.admin import (
+    AdminAuditLog,
+    AdminNotification,
+    FeatureFlag,
+    UserActivityLog,
+)
+
 # Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
@@ -291,6 +299,11 @@ __all__ = [
     "RCSTemplate",
     "RCSReport",
     "MessageCredit",
+    # Admin Portal module
+    "UserActivityLog",
+    "AdminAuditLog",
+    "AdminNotification",
+    "FeatureFlag",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

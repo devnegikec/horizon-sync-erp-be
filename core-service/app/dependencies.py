@@ -166,6 +166,18 @@ async def get_current_active_user(
     # Basic validation - user_type check can be extended
     return current_user
 
+async def require_admin(
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Require system_admin user_type for admin portal endpoints."""
+    if current_user.user_type != "system_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 
 def has_permission(permissions: list[str], required_permission: str) -> bool:
     """

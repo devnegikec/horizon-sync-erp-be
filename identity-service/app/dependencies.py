@@ -143,6 +143,18 @@ async def get_current_active_user(
     return current_user
 
 
+async def require_admin(
+    current_user: CurrentUser = Depends(get_current_active_user),
+) -> CurrentUser:
+    """Require system_admin user_type for admin portal endpoints."""
+    if current_user.user_type != UserType.SYSTEM_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 def get_client_ip(request) -> str | None:
     """
     Extract client IP address from request.
