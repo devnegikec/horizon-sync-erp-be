@@ -161,29 +161,29 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - Document all org endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [ ] 5. User Management and Roles (P0)
+- [x] 5. User Management and Roles (P0)
 
-  - [~] 5.1 Create Pydantic schemas for user admin operations
+  - [x] 5.1 Create Pydantic schemas for user admin operations
 
     - `AdminUserCreate`, `AdminUserUpdate`, `AdminUserListResponse`, `AdminUserDetailResponse` (with organization_name)
     - Role validation: only allow `system_admin`, `org_admin`, `user`
     - _Requirements: 4.1, 4.5, 4.6, 4.9, 4.12_
 
-  - [~] 5.2 Create `AdminUserRepository` in `core-service/app/repositories/admin_user_repository.py`
+  - [x] 5.2 Create `AdminUserRepository` in `core-service/app/repositories/admin_user_repository.py`
 
     - Cross-org user list with joins to organizations for organization_name
     - Filters: organization_id, search (email/mobile), is_active, pagination
     - Create user in specified org, update roles/is_active
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.9_
 
-  - [~] 5.3 Create `AdminUserService` in `core-service/app/services/admin_user_service.py`
+  - [x] 5.3 Create `AdminUserService` in `core-service/app/services/admin_user_service.py`
 
     - CRUD with duplicate email check (409), not found check (404)
     - Role change and activation/deactivation trigger audit logs
     - Password hashing for new user creation
     - _Requirements: 4.6, 4.7, 4.8, 4.9, 4.10, 4.11, 8.3_
 
-  - [~] 5.4 Create user admin endpoints in `core-service/app/api/v1/endpoints/admin/users.py`
+  - [x] 5.4 Create user admin endpoints in `core-service/app/api/v1/endpoints/admin/users.py`
 
     - `POST /admin/users` — create user (201, 409 for duplicate email)
     - `GET /admin/users` — paginated list with org_id, search, is_active filters
@@ -206,7 +206,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 17: Role validation**
     - **Validates: Requirements 4.12**
 
-  - [~] 5.6 Create frontend steering document `.kiro/steering/frontend-admin-users.md`
+  - [x] 5.6 Create frontend steering document `.kiro/steering/frontend-admin-users.md`
     - Document all user endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
