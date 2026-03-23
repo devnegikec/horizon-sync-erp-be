@@ -216,45 +216,41 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
 
 - [ ] 7. Invoice & Payment Tracking (P1)
 
-  - [~] 7.1 Create Pydantic schemas for invoice and payment admin operations
+  **Reuse strategy:** The existing `InvoiceService`, `InvoiceRepository`, `PaymentEntryRepository`, and their ORM models (`Invoice`, `Payment`) already implement full invoice/payment CRUD. The admin layer only needs thin wrappers that (a) remove the org-scoping filter for cross-org queries, (b) add `organization_name` via joins, and (c) gate behind `require_admin`. Delegate to existing services for create/send logic — do NOT duplicate business logic.
 
-    - `AdminInvoiceListResponse`, `AdminInvoiceDetailResponse` (with line items + payment history)
-    - `AdminInvoiceCreate`, `AdminInvoiceSendResponse`
-    - `AdminPaymentListResponse`
+  - [x] 7.1 Create admin-specific Pydantic response schemas in `core-service/app/schemas/admin_invoice.py`
+
+    - `AdminInvoiceListItem` — extends existing `InvoiceListItem` fields + `organization_name`
+    - `AdminInvoiceListResponse`, `AdminPaymentListItem` (+ `organization_name`), `AdminPaymentListResponse`
+    - Reuse existing `InvoiceResponse` for detail (already includes line items)
+    - Reuse existing `InvoiceCreate` for creation
     - _Requirements: 5.1, 5.5, 5.6, 5.8_
 
-  - [~] 7.2 Create `AdminInvoiceRepository` in `core-service/app/repositories/admin_invoice_repository.py`
+  - [x] 7.2 Create thin `AdminInvoiceService` in `core-service/app/services/admin_invoice_service.py`
 
-    - Cross-org invoice list with filters: organization_id, status, date_from/date_to, pagination
-    - Invoice detail with line items and associated payments
-    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
+    - Reuse existing `InvoiceService` for create, get_by_id, and send logic
+    - Add cross-org list method: query `Invoice` model without org filter, join to `organizations` for `organization_name`, with filters (organization_id, status, date_from/date_to, pagination)
+    - Add cross-org detail method: call existing `InvoiceService.get_by_id` without org restriction
+    - Invoice send: delegate to existing communication/invoice services
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
-  - [~] 7.3 Create `AdminPaymentRepository` in `core-service/app/repositories/admin_payment_repository.py`
+  - [x] 7.3 Create thin `AdminPaymentService` in `core-service/app/services/admin_payment_service.py`
 
-    - Cross-org payment list with filters: organization_id, status, pagination
+    - Reuse existing `PaymentEntryRepository.list_with_filters` — pass `organization_id=None` for cross-org
+    - Add `organization_name` via join to organizations table
     - _Requirements: 5.8, 5.9, 5.10_
 
-  - [~] 7.4 Create `AdminInvoiceService` in `core-service/app/services/admin_invoice_service.py`
+  - [x] 7.4 Create admin invoice and payment endpoints in `core-service/app/api/v1/endpoints/admin/invoices.py` and `payments.py`
 
-    - List/detail/create invoices cross-org
-    - Invoice send: create communication_log entry, update invoice status to "pending"
-    - _Requirements: 5.1, 5.5, 5.6, 5.7_
-
-  - [~] 7.5 Create `AdminPaymentService` in `core-service/app/services/admin_payment_service.py`
-
-    - List payments cross-org with filters
-    - _Requirements: 5.8, 5.9, 5.10_
-
-  - [~] 7.6 Create invoice and payment admin endpoints in `core-service/app/api/v1/endpoints/admin/invoices.py` and `payments.py`
-
-    - `GET /admin/invoices` — paginated list with org_id, status, date range filters
-    - `GET /admin/invoices/{id}` — detail with line items + payment history
-    - `POST /admin/invoices` — create invoice in specified org (201)
-    - `POST /admin/invoices/{id}/send` — send invoice via communication_log
-    - `GET /admin/payments` — paginated list with org_id, status filters
+    - `GET /admin/invoices` — cross-org paginated list with org_id, status, date range filters
+    - `GET /admin/invoices/{id}` — detail with line items + payment history (delegate to existing service)
+    - `POST /admin/invoices` — create invoice in specified org (delegate to existing `InvoiceService.create`)
+    - `POST /admin/invoices/{id}/send` — send invoice (delegate to existing send logic)
+    - `GET /admin/payments` — cross-org paginated list with org_id, status filters
+    - All endpoints gated by `require_admin`
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10_
 
-  - [ ]\* 7.7 Write property tests for invoice and payment tracking
+  - [ ]\* 7.5 Write property tests for invoice and payment tracking
 
     - **Property 18: Invoice list cross-org filtering**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
@@ -265,7 +261,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 21: Payment list cross-org filtering**
     - **Validates: Requirements 5.8, 5.9, 5.10**
 
-  - [~] 7.8 Create frontend steering document `.kiro/steering/frontend-admin-invoices-payments.md`
+  - [x] 7.6 Create frontend steering document `.kiro/steering/frontend-admin-invoices-payments.md`
     - Document all invoice/payment endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 

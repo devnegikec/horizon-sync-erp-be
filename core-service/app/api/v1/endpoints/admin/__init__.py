@@ -13,7 +13,9 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints.admin.dashboard import router as dashboard_router
 from app.api.v1.endpoints.admin.dev import router as dev_router
+from app.api.v1.endpoints.admin.invoices import router as invoices_router
 from app.api.v1.endpoints.admin.organizations import router as organizations_router
+from app.api.v1.endpoints.admin.payments import router as payments_router
 from app.api.v1.endpoints.admin.users import router as users_router
 
 # Main admin router — all admin sub-routers are included here.
@@ -31,3 +33,9 @@ router.include_router(organizations_router, prefix="/organizations", tags=["Admi
 
 # Users
 router.include_router(users_router, prefix="/users", tags=["Admin - Users"])
+
+# Invoices
+router.include_router(invoices_router, prefix="/invoices", tags=["Admin - Invoices"])
+
+# Payments
+router.include_router(payments_router, prefix="/payments", tags=["Admin - Payments"])
