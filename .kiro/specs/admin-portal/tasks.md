@@ -265,29 +265,29 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - Document all invoice/payment endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [ ] 8. User Activity Monitoring and Logging (P1)
+- [x] 8. User Activity Monitoring and Logging (P1)
 
-  - [~] 8.1 Create Pydantic schemas for activity log operations
+  - [x] 8.1 Create Pydantic schemas for activity log operations
 
     - `ActivityLogCreate`, `ActivityLogListResponse`, `ActivityLogItem`
     - `LoginHistoryResponse`
     - _Requirements: 6.1, 6.4, 6.9_
 
-  - [~] 8.2 Create `UserActivityLogRepository` in `core-service/app/repositories/user_activity_log_repository.py`
+  - [x] 8.2 Create `UserActivityLogRepository` in `core-service/app/repositories/user_activity_log_repository.py`
 
     - Create activity log entries (login, logout, login_failed, page_view, data_create, data_update, data_delete)
     - List with filters: user_id, organization_id, action, date_from/date_to, pagination
     - Login history for specific user (action in login, login_failed)
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9_
 
-  - [~] 8.3 Create `UserActivityLogService` in `core-service/app/services/user_activity_log_service.py`
+  - [x] 8.3 Create `UserActivityLogService` in `core-service/app/services/user_activity_log_service.py`
 
     - Log activity entries with IP address and user agent extraction
     - Query activity logs with combined filters, sorted by created_at desc
     - Note: Login/logout events originate from identity-service; core-service logs data CRUD events. Identity-service should call core-service's activity log endpoint (or write directly to shared DB) for login events.
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9_
 
-  - [~] 8.4 Create activity log admin endpoints in `core-service/app/api/v1/endpoints/admin/activity_logs.py`
+  - [x] 8.4 Create activity log admin endpoints in `core-service/app/api/v1/endpoints/admin/activity_logs.py`
 
     - `GET /admin/activity-logs` — paginated list with user_id, org_id, action, date range filters
     - `GET /admin/activity-logs/users/{user_id}/login-history` — login/login_failed entries for user
@@ -302,7 +302,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 24: Login history returns only login events for specified user**
     - **Validates: Requirements 6.9**
 
-  - [~] 8.6 Create frontend steering document `.kiro/steering/frontend-admin-activity-logs.md`
+  - [x] 8.6 Create frontend steering document `.kiro/steering/frontend-admin-activity-logs.md`
     - Document activity log endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
