@@ -112,7 +112,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - Document dashboard overview endpoint, TypeScript types, service layer, React hooks, component examples, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [-] 4. Organization Management (P0)
+- [x] 4. Organization Management (P0)
 
   - [x] 4.1 Create Pydantic schemas for organization admin operations
 
@@ -120,21 +120,21 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - `AdminOrgBillingResponse` (on_trial, trial_expiry, paid_until, total_invoiced, total_paid, outstanding)
     - _Requirements: 3.1, 3.2, 3.5, 3.6_
 
-  - [~] 4.2 Create `AdminOrganizationRepository` in `core-service/app/repositories/admin_organization_repository.py`
+  - [x] 4.2 Create `AdminOrganizationRepository` in `core-service/app/repositories/admin_organization_repository.py`
 
     - Cross-org list with search (name/short_code), status filter, pagination
     - Get by ID with summary counts (user_count, invoice_count, payment_total)
     - Create, update, deactivate_all_users (for suspension cascade)
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
 
-  - [~] 4.3 Create `AdminOrganizationService` in `core-service/app/services/admin_organization_service.py`
+  - [x] 4.3 Create `AdminOrganizationService` in `core-service/app/services/admin_organization_service.py`
 
     - CRUD operations with duplicate short_code check (409)
     - Suspension cascade: set all org users to is_active=false
     - Integrate `AdminAuditService` for logging changes
     - _Requirements: 3.1, 3.6, 3.7, 3.8, 8.2_
 
-  - [~] 4.4 Create organization admin endpoints in `core-service/app/api/v1/endpoints/admin/organizations.py`
+  - [x] 4.4 Create organization admin endpoints in `core-service/app/api/v1/endpoints/admin/organizations.py`
 
     - `POST /admin/organizations` — create org (201, 409 for duplicate short_code)
     - `GET /admin/organizations` — paginated list with search, status filter
@@ -157,7 +157,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 11: Duplicate short_code rejection**
     - **Validates: Requirements 3.8**
 
-  - [~] 4.6 Create frontend steering document `.kiro/steering/frontend-admin-organizations.md`
+  - [x] 4.6 Create frontend steering document `.kiro/steering/frontend-admin-organizations.md`
     - Document all org endpoints, TypeScript types, service layer, React hooks, component examples, error handling, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
