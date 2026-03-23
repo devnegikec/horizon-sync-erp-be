@@ -49,7 +49,7 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - This is used by all core-service admin endpoints (dashboard, org mgmt, user mgmt, etc.)
     - _Requirements: 1.3, 1.4, 1.5_
 
-  - [~] 1.7 Create admin router mount under `/api/v1/admin/` prefix in core-service
+  - [x] 1.7 Create admin router mount under `/api/v1/admin/` prefix in core-service
 
     - Create `core-service/app/api/v1/endpoints/admin/` package with `__init__.py`
     - Register the admin router in the main app router
@@ -62,38 +62,38 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 2: Admin /me endpoint returns complete profile** — test in identity-service
     - **Validates: Requirements 1.6**
 
-  - [~] 1.9 Create frontend steering document `.kiro/steering/frontend-admin-auth.md`
+  - [x] 1.9 Create frontend steering document `.kiro/steering/frontend-admin-auth.md`
     - Document identity-service `/identity/admin/me` endpoint for admin profile
     - Document core-service `require_admin` gate behavior (403 for non-admin)
     - Include TypeScript types, service layer, React hooks, error handling, testing checklist
     - Follow format of existing `.kiro/steering/frontend-qr-product-settings-module.md`
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [~] 2. Checkpoint — Ensure admin foundation tests pass
+- [x] 2. Checkpoint — Ensure admin foundation tests pass
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 3. Admin Dashboard (P0)
+- [x] 3. Admin Dashboard (P0)
 
-  - [~] 3.1 Create Pydantic schemas for dashboard responses
+  - [x] 3.1 Create Pydantic schemas for dashboard responses
 
     - `OrgMetrics` (total, active, on_trial), `UserMetrics` (total, active), `RevenueMetrics` (total_invoiced, total_outstanding, total_received)
     - `ActivityLogItem`, `DashboardOverview` combining all metrics + recent_activity
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [~] 3.2 Create `AdminDashboardRepository` in `core-service/app/repositories/admin_dashboard_repository.py`
+  - [x] 3.2 Create `AdminDashboardRepository` in `core-service/app/repositories/admin_dashboard_repository.py`
 
     - Cross-org aggregation queries for org counts, user counts, revenue sums
     - Recent activity query (last 10 entries sorted by created_at desc)
     - Date range filtering support for revenue and activity metrics
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [~] 3.3 Create `AdminDashboardService` in `core-service/app/services/admin_dashboard_service.py`
+  - [x] 3.3 Create `AdminDashboardService` in `core-service/app/services/admin_dashboard_service.py`
 
     - Orchestrate repository calls and assemble `DashboardOverview` response
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [~] 3.4 Create dashboard endpoint `GET /admin/dashboard/overview` in `core-service/app/api/v1/endpoints/admin/dashboard.py`
+  - [x] 3.4 Create dashboard endpoint `GET /admin/dashboard/overview` in `core-service/app/api/v1/endpoints/admin/dashboard.py`
 
     - Accept optional `date_from` and `date_to` query parameters
     - Use `require_admin` dependency
@@ -108,13 +108,13 @@ The Alembic migration for all 4 new tables is consolidated in the first task gro
     - **Property 5: Dashboard recent activity ordering**
     - **Validates: Requirements 2.4**
 
-  - [~] 3.6 Create frontend steering document `.kiro/steering/frontend-admin-dashboard.md`
+  - [x] 3.6 Create frontend steering document `.kiro/steering/frontend-admin-dashboard.md`
     - Document dashboard overview endpoint, TypeScript types, service layer, React hooks, component examples, testing checklist
     - _Requirements: 11.1, 11.2, 11.3, 11.4_
 
-- [ ] 4. Organization Management (P0)
+- [-] 4. Organization Management (P0)
 
-  - [~] 4.1 Create Pydantic schemas for organization admin operations
+  - [x] 4.1 Create Pydantic schemas for organization admin operations
 
     - `AdminOrgCreate`, `AdminOrgUpdate`, `AdminOrgListResponse`, `AdminOrgDetailResponse` (with user_count, invoice_count, payment_total)
     - `AdminOrgBillingResponse` (on_trial, trial_expiry, paid_until, total_invoiced, total_paid, outstanding)

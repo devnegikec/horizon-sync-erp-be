@@ -1,10 +1,8 @@
 """Admin endpoints for development and testing"""
 
 import os
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -39,7 +37,7 @@ async def seed_sample_data(
 
     try:
         from app.services.default_chart_setup_service import DefaultChartSetupService
-        
+
         # Get organization currency (default to USD for now)
         organization_currency = "USD"
         
