@@ -185,15 +185,15 @@ def get_client_ip(request) -> str | None:
 def get_core_service_client() -> CoreServiceClient | None:
     """
     Get CoreServiceClient instance for service-to-service communication.
-    
+
     Returns None if auto chart creation is disabled in settings.
-    
+
     Returns:
         CoreServiceClient instance or None
     """
     if not settings.enable_auto_chart_creation:
         return None
-    
+
     return CoreServiceClient(
         base_url=settings.core_service_url,
         timeout=settings.core_service_timeout
