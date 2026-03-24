@@ -22,7 +22,7 @@ class CurrentUser:
 
     id: UUID
     email: str
-    organization_id: UUID
+    organization_id: UUID | None
     user_type: str
     permissions: list[str]
 
@@ -85,7 +85,21 @@ async def get_current_user(
         ) from e
 
     # Get organization_id and permissions from identity-service /me (token rarely has them)
+    user_type = payload.get("user_type", "user")
+
+    # System admins don't need org/permissions lookup — skip the identity-service call
+    if user_type == "system_admin":
+        return CurrentUser(
+            id=user_id,
+            email=payload.get("email", ""),
+            organization_id=None,
+            user_type=user_type,
+            permissions=["*.*"],
+        )
+
     org_id, permissions = await _get_user_org_and_permissions(token)
+
+    # Regular users must belong to an organization
     if not org_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -96,7 +110,7 @@ async def get_current_user(
         id=user_id,
         email=payload.get("email", ""),
         organization_id=org_id,
-        user_type=payload.get("user_type", "user"),
+        user_type=user_type,
         permissions=permissions,
     )
 

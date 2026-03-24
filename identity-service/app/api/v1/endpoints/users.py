@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
+    is_system_admin,
     require_permission,
     validate_user_in_organization,
 )
@@ -97,11 +98,12 @@ async def list_users(
     require_permission(current_user.permissions, "user.read")
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
-        validate_user_in_organization(current_user.id, organization_id, db)
+        if not is_system_admin(current_user.permissions):
+            validate_user_in_organization(current_user.id, organization_id, db)
         organization_ids = [organization_id]
-    else:
+    elif not is_system_admin(current_user.permissions):
         organization_ids = _user_organization_ids(db, current_user.id)
-    if not organization_ids:
+    if organization_ids is not None and not organization_ids:
         return UserListResponse(
             users=[],
             pagination=PaginationMeta(

@@ -1,17 +1,18 @@
 """Service layer for admin user management.
 
-Orchestrates repository calls, enforces business rules (duplicate email,
-role validation), and handles password hashing for new user creation.
+Proxies requests to identity-service which owns the users table.
 """
 
+import logging
 import math
 from uuid import UUID
 
-import bcrypt
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.repositories.admin_user_repository import AdminUserRepository
+from app.config import settings
+from app.schemas.admin_organization import PaginationMeta
 from app.schemas.admin_user import (
     AdminUserCreate,
     AdminUserDetailResponse,
@@ -19,49 +20,45 @@ from app.schemas.admin_user import (
     AdminUserListResponse,
     AdminUserUpdate,
 )
-from app.schemas.admin_organization import PaginationMeta
 
+logger = logging.getLogger(__name__)
 
-def _hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    pwd_bytes = password.encode("utf-8")
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
+IDENTITY_API = f"{settings.identity_service_url}/api/v1/identity"
 
 
 class AdminUserService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, token: str | None = None):
         self.db = db
-        self.repo = AdminUserRepository(db)
-        # TODO (task 11.3): integrate AdminAuditService
+        self.token = token
 
-    # ── Create ───────────────────────────────────────────────────────
+    def _headers(self) -> dict[str, str]:
+        h: dict[str, str] = {}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
 
-    def create_user(self, data: AdminUserCreate) -> AdminUserDetailResponse:
-        """Create a new user. Raises 409 if email is taken."""
-        if self.repo.email_exists(data.email):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="User with this email already exists",
-            )
-
-        user_dict = {
-            "email": data.email,
-            "password_hash": _hash_password(data.password),
-            "first_name": data.first_name,
-            "last_name": data.last_name,
-            "phone": data.phone,
-            "user_type": data.user_type,
-            "organization_id": data.organization_id,
-            "roles": [r.value for r in data.roles],
-        }
-        created = self.repo.create_user(user_dict)
-        self.db.commit()
-        return AdminUserDetailResponse(**created)
+    def _map_user_list_item(self, u: dict) -> AdminUserListItem:
+        """Map identity-service user response to admin list item."""
+        user_type = u.get("user_type", "user")
+        if hasattr(user_type, "value"):
+            user_type = user_type.value
+        return AdminUserListItem(
+            id=u["id"],
+            email=u["email"],
+            first_name=u.get("first_name", ""),
+            last_name=u.get("last_name", ""),
+            phone=u.get("phone"),
+            roles=u.get("roles", []),
+            user_type=user_type,
+            is_active=u.get("is_active", True),
+            organization_id=u.get("organization_id"),
+            organization_name=u.get("organization_name"),
+            created_at=u["created_at"],
+        )
 
     # ── List ─────────────────────────────────────────────────────────
 
-    def list_users(
+    async def list_users(
         self,
         organization_id: UUID | None = None,
         search: str | None = None,
@@ -69,62 +66,117 @@ class AdminUserService:
         page: int = 1,
         page_size: int = 20,
     ) -> AdminUserListResponse:
-        users, total = self.repo.list_users(
-            organization_id=organization_id,
-            search=search,
-            is_active=is_active,
-            page=page,
-            page_size=page_size,
-        )
-        total_pages = max(1, math.ceil(total / page_size))
+        params: dict = {"page": page, "page_size": page_size, "sort_by": "created_at", "sort_order": "desc"}
+        if organization_id:
+            params["organization_id"] = str(organization_id)
+        if search:
+            params["search"] = search
+        if is_active is not None:
+            params["status"] = "active" if is_active else "inactive"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{IDENTITY_API}/users",
+                params=params,
+                headers=self._headers(),
+            )
+
+        if resp.status_code != 200:
+            logger.error(f"Identity-service /users returned {resp.status_code}: {resp.text}")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch users")
+
+        data = resp.json()
+        users_raw = data.get("users", [])
+        pagination_raw = data.get("pagination", {})
+
+        users = [self._map_user_list_item(u) for u in users_raw]
+
         return AdminUserListResponse(
-            users=[AdminUserListItem(**u) for u in users],
+            users=users,
             pagination=PaginationMeta(
-                page=page,
-                page_size=page_size,
-                total_items=total,
-                total_pages=total_pages,
-                has_next=page < total_pages,
-                has_prev=page > 1,
+                page=pagination_raw.get("page", page),
+                page_size=pagination_raw.get("page_size", page_size),
+                total_items=pagination_raw.get("total_items", 0),
+                total_pages=pagination_raw.get("total_pages", 0),
+                has_next=pagination_raw.get("has_next", False),
+                has_prev=pagination_raw.get("has_prev", False),
             ),
         )
 
     # ── Detail ───────────────────────────────────────────────────────
 
-    def get_user(self, user_id: UUID) -> AdminUserDetailResponse:
-        user = self.repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
+    async def get_user(self, user_id: UUID) -> AdminUserDetailResponse:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{IDENTITY_API}/users/{user_id}",
+                headers=self._headers(),
             )
-        return AdminUserDetailResponse(**user)
+
+        if resp.status_code == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        if resp.status_code != 200:
+            logger.error(f"Identity-service /users/{user_id} returned {resp.status_code}")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch user")
+
+        u = resp.json()
+        user_type = u.get("user_type", "user")
+        if hasattr(user_type, "value"):
+            user_type = user_type.value
+
+        return AdminUserDetailResponse(
+            id=u["id"], email=u["email"],
+            first_name=u.get("first_name", ""),
+            last_name=u.get("last_name", ""),
+            display_name=u.get("display_name"),
+            phone=u.get("phone"),
+            roles=u.get("roles", []),
+            user_type=user_type,
+            is_active=u.get("is_active", True),
+            organization_id=u.get("organization_id"),
+            organization_name=u.get("organization_name"),
+            created_at=u["created_at"],
+            updated_at=u.get("updated_at"),
+        )
+
+    # ── Create ───────────────────────────────────────────────────────
+
+    async def create_user(self, data: AdminUserCreate) -> AdminUserDetailResponse:
+        payload = data.model_dump()
+        payload["roles"] = [r.value if hasattr(r, "value") else r for r in data.roles]
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{IDENTITY_API}/users",
+                json=payload,
+                headers=self._headers(),
+            )
+
+        if resp.status_code == 409:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists")
+        if resp.status_code not in (200, 201):
+            logger.error(f"Identity-service POST /users returned {resp.status_code}: {resp.text}")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to create user")
+
+        return await self.get_user(resp.json()["id"])
 
     # ── Update ───────────────────────────────────────────────────────
 
-    def update_user(
-        self,
-        user_id: UUID,
-        data: AdminUserUpdate,
-    ) -> AdminUserDetailResponse:
-        existing = self.repo.get_by_id(user_id)
-        if not existing:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
+    async def update_user(self, user_id: UUID, data: AdminUserUpdate) -> AdminUserDetailResponse:
+        payload = data.model_dump(exclude_unset=True)
+        if "roles" in payload and payload["roles"] is not None:
+            payload["roles"] = [r.value if hasattr(r, "value") else r for r in payload["roles"]]
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.patch(
+                f"{IDENTITY_API}/users/{user_id}",
+                json=payload,
+                headers=self._headers(),
             )
 
-        update_dict = data.model_dump(exclude_unset=True)
+        if resp.status_code == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        if resp.status_code != 200:
+            logger.error(f"Identity-service PATCH /users/{user_id} returned {resp.status_code}: {resp.text}")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to update user")
 
-        # Convert role enums to strings
-        if "roles" in update_dict and update_dict["roles"] is not None:
-            update_dict["roles"] = [
-                r.value if hasattr(r, "value") else r for r in update_dict["roles"]
-            ]
-
-        updated = self.repo.update_user(user_id, update_dict)
-        self.db.commit()
-
-        # TODO (task 11.3): audit log for role changes and activation/deactivation
-
-        return AdminUserDetailResponse(**updated)  # type: ignore
+        return await self.get_user(user_id)

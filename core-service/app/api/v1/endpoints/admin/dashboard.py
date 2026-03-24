@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,12 +12,14 @@ from app.schemas.admin_dashboard import DashboardOverview
 from app.services.admin_dashboard_service import AdminDashboardService
 
 router = APIRouter()
+security = HTTPBearer()
 
 
 @router.get("/overview", response_model=DashboardOverview)
 async def get_dashboard_overview(
     date_from: datetime | None = Query(None, description="Start of date range filter"),
     date_to: datetime | None = Query(None, description="End of date range filter"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
     _current_user: CurrentUser = Depends(require_admin),
 ) -> DashboardOverview:
@@ -27,5 +30,5 @@ async def get_dashboard_overview(
     and the 10 most recent activity log entries.
     Optional date_from / date_to filters apply to revenue and activity metrics.
     """
-    service = AdminDashboardService(db)
-    return service.get_overview(date_from=date_from, date_to=date_to)
+    service = AdminDashboardService(db, token=credentials.credentials)
+    return await service.get_overview(date_from=date_from, date_to=date_to)

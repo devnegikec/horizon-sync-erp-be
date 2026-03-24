@@ -7,7 +7,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    ForeignKey,
     Index,
     String,
     Text,
@@ -25,18 +24,9 @@ class UserActivityLog(Base):
     __tablename__ = "user_activity_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
-    organization_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("organizations.id"),
-        nullable=False,
-        index=True,
-    )
+    # No FK constraints — users/organizations live in identity_db
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     action = Column(String(50), nullable=False)
     resource_type = Column(String(100), nullable=True)
     resource_id = Column(UUID(as_uuid=True), nullable=True)
@@ -60,12 +50,8 @@ class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    admin_user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
+    # No FK constraint — users table lives in identity_db
+    admin_user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     action = Column(String(50), nullable=False)
     target_type = Column(String(50), nullable=False)
     target_id = Column(UUID(as_uuid=True), nullable=False)
@@ -88,12 +74,8 @@ class AdminNotification(Base):
     __tablename__ = "admin_notifications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    recipient_user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False,
-        index=True,
-    )
+    # No FK constraint — users table lives in identity_db
+    recipient_user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     notification_type = Column(String(50), nullable=False)
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=True)
@@ -123,12 +105,8 @@ class FeatureFlag(Base):
     __tablename__ = "feature_flags"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("organizations.id"),
-        nullable=False,
-        index=True,
-    )
+    # No FK constraint — organizations table lives in identity_db
+    organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     feature_key = Column(String(100), nullable=False)
     is_enabled = Column(Boolean, default=False)
     config = Column(JSONB, nullable=True)

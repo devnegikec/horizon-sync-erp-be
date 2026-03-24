@@ -119,6 +119,10 @@ async def get_current_user(
 
     permissions = _get_user_permissions(db, user.id)
 
+    # System admins get full wildcard permissions regardless of org roles
+    if user.user_type == UserType.SYSTEM_ADMIN:
+        permissions = ["*.*"]
+
     return CurrentUser(
         id=user.id,
         email=user.email,

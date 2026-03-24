@@ -42,7 +42,7 @@ class ActivityLogItem(BaseModel):
 
     id: UUID
     user_id: UUID
-    organization_id: UUID
+    organization_id: UUID | None = None
     action: str
     resource_type: str | None = None
     resource_id: UUID | None = None

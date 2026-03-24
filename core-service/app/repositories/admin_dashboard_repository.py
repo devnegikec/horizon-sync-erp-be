@@ -1,13 +1,16 @@
 """Repository for admin dashboard aggregation queries.
 
-Queries existing tables (organizations, users, invoices, payments, user_activity_logs)
+Queries core_db tables (invoices, payments, user_activity_logs)
 cross-org (no org filter) to produce dashboard metrics.
+
+Organization and user metrics are fetched from identity-service
+via the service layer, not from this repository.
 """
 
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.admin import UserActivityLog
@@ -18,39 +21,6 @@ from app.models.payment import Payment
 class AdminDashboardRepository:
     def __init__(self, db: Session):
         self.db = db
-
-    # ── Organization counts ──────────────────────────────────────────
-
-    def get_org_metrics(self) -> dict:
-        """Return total, active, and on_trial organization counts."""
-        row = self.db.execute(
-            text(
-                """
-                SELECT
-                    COUNT(*)::int                                          AS total,
-                    COUNT(*) FILTER (WHERE status = 'active')::int         AS active,
-                    COUNT(*) FILTER (WHERE on_trial = true)::int           AS on_trial
-                FROM organizations
-                """
-            )
-        ).one()
-        return {"total": row.total, "active": row.active, "on_trial": row.on_trial}
-
-    # ── User counts ──────────────────────────────────────────────────
-
-    def get_user_metrics(self) -> dict:
-        """Return total and active user counts across all orgs."""
-        row = self.db.execute(
-            text(
-                """
-                SELECT
-                    COUNT(*)::int                                      AS total,
-                    COUNT(*) FILTER (WHERE is_active = true)::int      AS active
-                FROM users
-                """
-            )
-        ).one()
-        return {"total": row.total, "active": row.active}
 
     # ── Revenue metrics ──────────────────────────────────────────────
 
