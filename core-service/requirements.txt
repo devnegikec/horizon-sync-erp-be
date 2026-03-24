@@ -15,6 +15,7 @@ email-validator==2.1.0
 
 # Security (for JWT validation)
 python-jose[cryptography]==3.3.0
+bcrypt==4.1.2
 
 # HTTP Client (for identity-service calls)
 httpx==0.25.2

@@ -29,13 +29,11 @@ def upgrade() -> None:
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id"),
             nullable=False,
         ),
         sa.Column(
             "organization_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("organizations.id"),
             nullable=False,
         ),
         sa.Column("action", sa.String(50), nullable=False),
@@ -76,7 +74,6 @@ def upgrade() -> None:
         sa.Column(
             "admin_user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id"),
             nullable=False,
         ),
         sa.Column("action", sa.String(50), nullable=False),
@@ -115,7 +112,6 @@ def upgrade() -> None:
         sa.Column(
             "recipient_user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id"),
             nullable=False,
         ),
         sa.Column("notification_type", sa.String(50), nullable=False),
@@ -159,7 +155,6 @@ def upgrade() -> None:
         sa.Column(
             "organization_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("organizations.id"),
             nullable=False,
         ),
         sa.Column("feature_key", sa.String(100), nullable=False),
