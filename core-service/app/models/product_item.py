@@ -30,8 +30,11 @@ class ProductItem(Base):
     is_auth = Column(Boolean, default=False)
     qr_deactive = Column(Boolean, default=True)
     qr_deactive_unit = Column(Boolean, default=True)
+    qr_active = Column(Boolean, default=True)
     scan_date = Column(DateTime(timezone=True), nullable=True)
     scans = Column(Integer, default=0)
+    scan_count = Column(Integer, default=0)
+    last_scanned_at = Column(DateTime(timezone=True), nullable=True)
     destination_market = Column(String(100), nullable=True)
     extra_data = Column(JSONB, nullable=True)
 

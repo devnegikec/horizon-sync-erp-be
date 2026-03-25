@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -17,6 +17,7 @@ class QRProduct(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
 
     name = Column(String(100), nullable=False)
     generic_name = Column(String(100), nullable=True)
@@ -48,6 +49,7 @@ class QRProduct(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
+    brand = relationship("Brand", back_populates="qr_products")
     qr_blocks = relationship("QRBlock", back_populates="product",
                              cascade="all, delete-orphan")
     product_items = relationship("ProductItem", back_populates="product")

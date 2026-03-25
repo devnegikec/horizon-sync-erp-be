@@ -29,7 +29,7 @@ class QRProductBase(BaseModel):
 
 
 class QRProductCreate(QRProductBase):
-    pass
+    brand_id: UUID | None = None
 
 
 class QRProductUpdate(BaseModel):
@@ -55,6 +55,7 @@ class QRProductUpdate(BaseModel):
 class QRProductResponse(QRProductBase):
     id: UUID
     organization_id: UUID
+    brand_id: UUID | None = None
     is_active: bool
     created_by: UUID | None
     created_at: datetime
@@ -202,3 +203,20 @@ class ScanAnalyticsResponse(BaseModel):
     suspicious_count: int
     scans_by_country: list[dict[str, Any]]
     scans_by_day: list[dict[str, Any]]
+
+
+# ── QR Authentication (public endpoint) ───────────────────────────────────────
+
+class AuthenticateRequest(BaseModel):
+    serial_number: str
+    nonce: str  # timestamp
+    cipher: str  # base64 signature
+
+
+class AuthenticateResponse(BaseModel):
+    message: str
+    authentic: bool
+    product_name: str | None = None
+    brand_name: str | None = None
+    gtin: str | None = None
+    serial_number: str | None = None

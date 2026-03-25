@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user, require_permission
 from app.schemas.qr_product import (
+    AuthenticateRequest,
+    AuthenticateResponse,
     QRActivationParamsCreate,
     QRActivationParamsResponse,
     QRBlockCreate,
@@ -206,6 +208,24 @@ async def validate_qr(
     svc = QRProductService(db)
     result = svc.validate_qr(organization_id, req)
     return QRValidateResponse(**result)
+
+
+# ── QR Authenticate (public — no auth required) ───────────────────────────────
+
+@router.post(
+    "/authenticate",
+    response_model=AuthenticateResponse,
+    summary="Authenticate a QR code via ECDSA signature",
+    description="Public endpoint for cryptographic QR verification. No auth required.",
+)
+async def authenticate_qr(
+    organization_id: UUID,
+    req: AuthenticateRequest,
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    result = svc.authenticate(organization_id, req)
+    return AuthenticateResponse(**result)
 
 
 # ── Scan Analytics ────────────────────────────────────────────────────────────

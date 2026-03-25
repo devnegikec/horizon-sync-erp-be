@@ -87,11 +87,12 @@ from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
 
 # QR Products module
+from app.models.brand import Brand
 from app.models.qr_product import QRProduct
 from app.models.qr_block import QRBlock
 from app.models.product_item import ProductItem
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
-from app.models.qr_credit import QRCreditUsage
+from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_product_setting import QRProductSetting
 
@@ -247,12 +248,15 @@ __all__ = [
     "UOMConversion",
     "CurrencyMaster",
     # QR Products module
+    "Brand",
     "QRProduct",
     "QRBlock",
     "ProductItem",
     "QRActivationParameters",
     "QRActivationTrack",
     "QRCreditUsage",
+    "QRCreditBalance",
+    "QRCreditLedger",
     "QRScanEvent",
     # Campaigns & Coupons module
     "Campaign",

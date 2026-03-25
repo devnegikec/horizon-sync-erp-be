@@ -31,11 +31,15 @@ class QRBlock(Base):
     price = Column(Integer, nullable=True)
     style = Column(String(20), nullable=True)
     task_status = Column(String(20), nullable=True)
+    status = Column(String(20), nullable=True)
+    task_id = Column(String(255), nullable=True)
     qr_image = Column(Boolean, default=False)
     manufacture_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
     gcs_url = Column(Text, nullable=True)
+    download_url = Column(Text, nullable=True)
     extra_data = Column(JSONB, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Audit
     created_by = Column(UUID(as_uuid=True), nullable=True)

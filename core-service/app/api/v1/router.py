@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     brand_trust,
+    brands,
     public_marketing,
     campaigns,
     cascade_qr,
@@ -296,6 +297,13 @@ api_router.include_router(
     brand_trust.router,
     prefix="/brand-trust",
     tags=["Brand Trust"],
+)
+
+# Brands module (ECDSA key pair management)
+api_router.include_router(
+    brands.router,
+    prefix="/brands",
+    tags=["Brands"],
 )
 
 # Public / Marketing module (no auth)
