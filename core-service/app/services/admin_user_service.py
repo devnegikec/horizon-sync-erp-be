@@ -141,7 +141,7 @@ class AdminUserService:
     # ── Create ───────────────────────────────────────────────────────
 
     async def create_user(self, data: AdminUserCreate) -> AdminUserDetailResponse:
-        payload = data.model_dump()
+        payload = data.model_dump(mode="json")
         payload["roles"] = [r.value if hasattr(r, "value") else r for r in data.roles]
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -157,12 +157,31 @@ class AdminUserService:
             logger.error(f"Identity-service POST /users returned {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to create user")
 
-        return await self.get_user(resp.json()["id"])
+        u = resp.json()
+        user_type = u.get("user_type", "user")
+        if hasattr(user_type, "value"):
+            user_type = user_type.value
+
+        return AdminUserDetailResponse(
+            id=u["id"],
+            email=u["email"],
+            first_name=u.get("first_name", ""),
+            last_name=u.get("last_name", ""),
+            display_name=u.get("display_name"),
+            phone=u.get("phone"),
+            roles=payload.get("roles", []),
+            user_type=user_type,
+            is_active=u.get("is_active", True),
+            organization_id=data.organization_id,
+            organization_name=None,
+            created_at=u.get("created_at", ""),
+            updated_at=u.get("updated_at"),
+        )
 
     # ── Update ───────────────────────────────────────────────────────
 
     async def update_user(self, user_id: UUID, data: AdminUserUpdate) -> AdminUserDetailResponse:
-        payload = data.model_dump(exclude_unset=True)
+        payload = data.model_dump(exclude_unset=True, mode="json")
         if "roles" in payload and payload["roles"] is not None:
             payload["roles"] = [r.value if hasattr(r, "value") else r for r in payload["roles"]]
 
@@ -178,5 +197,26 @@ class AdminUserService:
         if resp.status_code != 200:
             logger.error(f"Identity-service PATCH /users/{user_id} returned {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to update user")
+
+        u = resp.json()
+        user_type = u.get("user_type", "user")
+        if hasattr(user_type, "value"):
+            user_type = user_type.value
+
+        return AdminUserDetailResponse(
+            id=u["id"],
+            email=u["email"],
+            first_name=u.get("first_name", ""),
+            last_name=u.get("last_name", ""),
+            display_name=u.get("display_name"),
+            phone=u.get("phone"),
+            roles=u.get("roles", []),
+            user_type=user_type,
+            is_active=u.get("is_active", True),
+            organization_id=u.get("organization_id"),
+            organization_name=u.get("organization_name"),
+            created_at=u.get("created_at", ""),
+            updated_at=u.get("updated_at"),
+        )
 
         return await self.get_user(user_id)

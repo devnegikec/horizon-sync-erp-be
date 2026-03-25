@@ -312,7 +312,7 @@ async def get_user(
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.read")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -471,7 +471,7 @@ async def update_user(
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.update")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -498,7 +498,7 @@ async def delete_user(
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.delete")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
