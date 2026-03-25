@@ -15,7 +15,7 @@ Requirements: 7.1, 7.2, 7.3, 7.4
 import secrets
 import string
 import time
-from typing import Generator
+from collections.abc import Generator
 
 from cryptography.hazmat.primitives.asymmetric import ec
 

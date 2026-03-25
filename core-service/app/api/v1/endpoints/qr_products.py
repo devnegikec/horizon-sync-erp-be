@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user, require_permission
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.qr_product import (
     AuthenticateRequest,
     AuthenticateResponse,
+    ProductItemListResponse,
+    ProductItemResponse,
     QRActivationParamsCreate,
     QRActivationParamsResponse,
     QRBlockCreate,
@@ -20,8 +22,6 @@ from app.schemas.qr_product import (
     QRProductUpdate,
     QRValidateRequest,
     QRValidateResponse,
-    ProductItemListResponse,
-    ProductItemResponse,
     ScanAnalyticsResponse,
 )
 from app.services.qr_product_service import QRProductService
@@ -30,6 +30,7 @@ router = APIRouter()
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "",
@@ -120,6 +121,7 @@ async def delete_qr_product(
 
 # ── QR Blocks ─────────────────────────────────────────────────────────────────
 
+
 @router.post(
     "/{product_id}/blocks",
     response_model=QRBlockResponse,
@@ -163,6 +165,7 @@ async def list_qr_blocks(
 
 # ── Product Items ─────────────────────────────────────────────────────────────
 
+
 @router.get(
     "/blocks/{block_id}/items",
     response_model=ProductItemListResponse,
@@ -186,6 +189,7 @@ async def list_product_items(
 
 
 # ── QR Validate (public — no auth required) ───────────────────────────────────
+
 
 @router.post(
     "/validate",
@@ -212,6 +216,7 @@ async def validate_qr(
 
 # ── QR Authenticate (public — no auth required) ───────────────────────────────
 
+
 @router.post(
     "/authenticate",
     response_model=AuthenticateResponse,
@@ -230,6 +235,7 @@ async def authenticate_qr(
 
 # ── Scan Analytics ────────────────────────────────────────────────────────────
 
+
 @router.get(
     "/{product_id}/analytics",
     response_model=ScanAnalyticsResponse,
@@ -247,6 +253,7 @@ async def get_scan_analytics(
 
 # ── Activation Parameters ─────────────────────────────────────────────────────
 
+
 @router.post(
     "/activation-params",
     response_model=QRActivationParamsResponse,
@@ -259,5 +266,7 @@ async def set_activation_params(
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
-    params = svc.set_activation_params(data, current_user.organization_id, current_user.id)
+    params = svc.set_activation_params(
+        data, current_user.organization_id, current_user.id
+    )
     return QRActivationParamsResponse.model_validate(params)

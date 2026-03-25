@@ -6,7 +6,7 @@ Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 """
 
 import uuid
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -108,7 +108,9 @@ class TestDeductCredits:
         mock_db.commit.assert_called_once()
 
     def test_deduct_propagates_repo_error(self, credit_service):
-        credit_service.repo.deduct.side_effect = ValueError("No credit balance configured")
+        credit_service.repo.deduct.side_effect = ValueError(
+            "No credit balance configured"
+        )
 
         with pytest.raises(ValueError):
             credit_service.deduct_credits(uuid.uuid4(), uuid.uuid4(), 10)

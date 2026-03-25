@@ -9,8 +9,8 @@ from .serial_generators import (
     build_qr_url,
     generate_r4dan,
     generate_r6dan,
-    sequential_s10dn,
     sequential_s8dn,
+    sequential_s10dn,
     sign_qr_item,
 )
 

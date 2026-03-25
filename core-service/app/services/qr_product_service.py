@@ -67,6 +67,7 @@ class QRProductService:
         # Validate brand_id belongs to the organization when provided
         if product_dict.get("brand_id"):
             from app.repositories.brand_repository import BrandRepository
+
             brand_repo = BrandRepository(self.db)
             brand = brand_repo.get_by_id(product_dict["brand_id"], organization_id)
             if not brand:
@@ -80,8 +81,9 @@ class QRProductService:
     def get_product(self, product_id: UUID, organization_id: UUID) -> QRProduct:
         product = self.product_repo.get_by_id(product_id, organization_id)
         if not product:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="QR product not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="QR product not found"
+            )
         return product
 
     def list_products(
@@ -107,8 +109,11 @@ class QRProductService:
         return items, pagination
 
     def update_product(
-        self, product_id: UUID, data: QRProductUpdate,
-        organization_id: UUID, user_id: UUID
+        self,
+        product_id: UUID,
+        data: QRProductUpdate,
+        organization_id: UUID,
+        user_id: UUID,
     ) -> QRProduct:
         product = self.get_product(product_id, organization_id)
         update_dict = data.model_dump(exclude_unset=True)
@@ -182,9 +187,7 @@ class QRProductService:
             block.completed_at = datetime.now(UTC)
             self.db.commit()
 
-            self.credit_service.deduct_credits(
-                organization_id, block.id, data.quantity
-            )
+            self.credit_service.deduct_credits(organization_id, block.id, data.quantity)
 
         except Exception:
             # 6. Failure: mark failed, no credit deduction
@@ -193,13 +196,18 @@ class QRProductService:
             self.db.commit()
             logger.exception(
                 "Block generation failed: block_id=%s product_id=%s org=%s",
-                block.id, product_id, organization_id,
+                block.id,
+                product_id,
+                organization_id,
             )
             raise
 
         logger.info(
             "QR block generated: block_id=%s product_id=%s qty=%d org=%s",
-            block.id, product_id, data.quantity, organization_id,
+            block.id,
+            product_id,
+            data.quantity,
+            organization_id,
         )
         return block
 
@@ -257,6 +265,7 @@ class QRProductService:
 
         if product.brand_id and self.key_service:
             from app.repositories.brand_repository import BrandRepository
+
             brand_repo = BrandRepository(self.db)
             brand = brand_repo.get_by_id(product.brand_id, organization_id)
             if brand and brand.private_key_encrypted:
@@ -295,9 +304,7 @@ class QRProductService:
 
             # OneTime: set qr_active based on activation_method
             if qr_type == "O":
-                item_dict["qr_active"] = (
-                    product.activation_method == "pre"
-                )
+                item_dict["qr_active"] = product.activation_method == "pre"
 
             # Sign if brand is linked
             if private_key is not None:
@@ -309,9 +316,7 @@ class QRProductService:
 
                 # Dual QR: generate a second (covert) URL
                 if qr_type == "B":
-                    sig2, ts2 = sign_qr_item(
-                        self.key_service, private_key, serial
-                    )
+                    sig2, ts2 = sign_qr_item(self.key_service, private_key, serial)
                     covert_url = build_qr_url(
                         org_short_code, settings.qr_domain, gtin, serial, ts2, sig2
                     )
@@ -356,8 +361,9 @@ class QRProductService:
     ) -> tuple[list[ProductItem], dict]:
         block = self.block_repo.get_by_id(block_id, organization_id)
         if not block:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="QR block not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="QR block not found"
+            )
         items, total = self.item_repo.list_by_block(
             block_id, organization_id, page, page_size
         )
@@ -374,9 +380,7 @@ class QRProductService:
 
     # ── QR Validate (public) ──────────────────────────────────────────────────
 
-    def validate_qr(
-        self, organization_id: UUID, req: QRValidateRequest
-    ) -> dict:
+    def validate_qr(self, organization_id: UUID, req: QRValidateRequest) -> dict:
         """
         Authenticate a QR scan. Records the scan event and returns authenticity.
         This endpoint is typically called from the consumer-facing landing page.
@@ -398,7 +402,8 @@ class QRProductService:
 
         # Record scan event
         scan_data = {
-            k: v for k, v in req.model_dump().items()
+            k: v
+            for k, v in req.model_dump().items()
             if k != "serial_number" and v is not None
         }
         self.item_repo.record_scan(item, scan_data)
@@ -408,7 +413,10 @@ class QRProductService:
 
         logger.info(
             "QR scan: serial=%s org=%s scans=%d suspicious=%s",
-            req.serial_number, organization_id, item.scans, item.is_suspicious,
+            req.serial_number,
+            organization_id,
+            item.scans,
+            item.is_suspicious,
         )
 
         return {
@@ -425,9 +433,7 @@ class QRProductService:
 
     # ── QR Authenticate (public, ECDSA) ─────────────────────────────────────
 
-    def authenticate(
-        self, organization_id: UUID, data: AuthenticateRequest
-    ) -> dict:
+    def authenticate(self, organization_id: UUID, data: AuthenticateRequest) -> dict:
         """
         Verify a QR scan using ECDSA signature verification.
 
@@ -486,7 +492,9 @@ class QRProductService:
 
         logger.info(
             "QR authenticate: serial=%s org=%s authentic=True scan_count=%d",
-            data.serial_number, organization_id, item.scan_count,
+            data.serial_number,
+            organization_id,
+            item.scan_count,
         )
 
         return {
@@ -513,6 +521,7 @@ class QRProductService:
         user_id: UUID,
     ):
         from app.models.qr_activation import QRActivationParameters
+
         params_dict = data.model_dump()
         params_dict["organization_id"] = organization_id
         params_dict["created_by"] = user_id

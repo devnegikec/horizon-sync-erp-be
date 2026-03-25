@@ -2,10 +2,16 @@
 
 from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.account_balance import AccountBalance
+
+# Analytics module
+from app.models.analytics import MetaCampaign
 from app.models.bank_account import BankAccount, BankAccountHistory
+from app.models.bank_reconciliation import BankReconciliation
+from app.models.bank_transaction import BankTransaction
 from app.models.base import (
     AccountStatus,
     AccountType,
+    BankAccountHistoryAction,
     BatchStatus,
     CustomerStatus,
     DocumentStatus,
@@ -30,48 +36,87 @@ from app.models.base import (
     PurchaseOrderStatus,
     QuotationStatus,
     ReadingType,
+    ReconciliationStatus,
+    ReconciliationType,
     RFQStatus,
     SalesOrderStatus,
     StockEntryStatus,
     StockEntryType,
     SupplierStatus,
+    TransactionStatus,
     TransactionType,
+    TransactionTypeEnum,
     ValuationMethod,
     WarehouseType,
-    PaymentEntryType,
-    PaymentMode,
-    PaymentEntryStatus,
-    PaymentSource,
-    PaymentAuditAction,
-    TransactionStatus,
-    TransactionTypeEnum,
-    ReconciliationType,
-    ReconciliationStatus,
-    BankAccountHistoryAction,
 )
 from app.models.batch import Batch
+
+# QR Products module
+from app.models.brand import Brand
+
+# Brand Trust module
+from app.models.brand_trust import (
+    BrandIndustry,
+    BrandTrustAnswer,
+    BrandTrustAssessment,
+    BrandTrustQuestion,
+)
+
+# Campaigns & Coupons module
+from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
 from app.models.charge_template import ChargeTemplate
 from app.models.chart_of_account import Account
-from app.models.account_balance import AccountBalance
-from app.models.account_audit_log import AccountAuditLog, AuditAction
-from app.models.bank_account import BankAccount, BankAccountHistory
-from app.models.bank_transaction import BankTransaction
-from app.models.bank_reconciliation import BankReconciliation
+from app.models.coupon import (
+    CampaignLead,
+    CampaignTag,
+    Coupon,
+    CouponDuration,
+    CouponUnlockLog,
+    ExternalCoupon,
+    ShopifyConfig,
+)
 from app.models.currency_master import CurrencyMaster
 from app.models.customer import Customer
 from app.models.default_account import DefaultAccount
+
+# Destinations module
+from app.models.destination_market import DestinationMarket
 from app.models.exchange_rate import ExchangeRate
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.journal_entry import JournalEntry, JournalEntryLine
+
+# Messaging module
+from app.models.messaging import (
+    BulkMessageJob,
+    MessageCredit,
+    MessageTemplate,
+    RCSCredential,
+    RCSReport,
+    RCSTemplate,
+    ScheduledMessage,
+    SMSReport,
+    WhatsAppReport,
+)
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
+from app.models.product_item import ProductItem
+
+# Public Marketing module
+from app.models.public_submission import PublicSubmission
+from app.models.qr_activation import QRActivationParameters, QRActivationTrack
+from app.models.qr_block import QRBlock
+from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
+from app.models.qr_product import QRProduct
+from app.models.qr_scan_event import QRScanEvent
 from app.models.quotation import Quotation, QuotationItem
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.serial_no import SerialNo
-from app.models.status_transition import StatusTransition
+
+# URL Management module
+from app.models.short_url import ShortURL
 from app.models.stock_entry import StockEntry, StockEntryItem
 from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
@@ -86,63 +131,8 @@ from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
 
-# QR Products module
-from app.models.brand import Brand
-from app.models.qr_product import QRProduct
-from app.models.qr_block import QRBlock
-from app.models.product_item import ProductItem
-from app.models.qr_activation import QRActivationParameters, QRActivationTrack
-from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
-from app.models.qr_scan_event import QRScanEvent
-from app.models.qr_product_setting import QRProductSetting
-
-# Campaigns & Coupons module
-from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
-from app.models.coupon import (
-    CampaignLead,
-    CampaignTag,
-    Coupon,
-    CouponDuration,
-    CouponUnlockLog,
-    ExternalCoupon,
-    ShopifyConfig,
-)
-
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
-
-# Analytics module
-from app.models.analytics import MetaCampaign
-
-# URL Management module
-from app.models.short_url import ShortURL
-
-# Destinations module
-from app.models.destination_market import DestinationMarket
-
-# Public Marketing module
-from app.models.public_submission import PublicSubmission
-
-# Brand Trust module
-from app.models.brand_trust import (
-    BrandIndustry,
-    BrandTrustQuestion,
-    BrandTrustAssessment,
-    BrandTrustAnswer,
-)
-
-# Messaging module
-from app.models.messaging import (
-    MessageTemplate,
-    BulkMessageJob,
-    ScheduledMessage,
-    SMSReport,
-    WhatsAppReport,
-    RCSCredential,
-    RCSTemplate,
-    RCSReport,
-    MessageCredit,
-)
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch

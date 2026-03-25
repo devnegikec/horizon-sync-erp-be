@@ -5,9 +5,10 @@ Revises: 033_add_qr_product_settings
 Create Date: 2026-03-22 10:00:00.000000
 
 """
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "034_add_brands_enhance_qr_models"
@@ -47,7 +48,6 @@ def upgrade() -> None:
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("idx_brands_org", "brands", ["organization_id"])
-
 
     # ── qr_products: add brand_id FK ──────────────────────────────────────────
     op.add_column(
@@ -153,9 +153,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
     )
-    op.create_index(
-        "idx_qr_credit_ledger_org", "qr_credit_ledger", ["organization_id"]
-    )
+    op.create_index("idx_qr_credit_ledger_org", "qr_credit_ledger", ["organization_id"])
 
 
 def downgrade() -> None:

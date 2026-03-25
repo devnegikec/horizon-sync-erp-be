@@ -50,8 +50,9 @@ class QRProduct(Base):
 
     # Relationships
     brand = relationship("Brand", back_populates="qr_products")
-    qr_blocks = relationship("QRBlock", back_populates="product",
-                             cascade="all, delete-orphan")
+    qr_blocks = relationship(
+        "QRBlock", back_populates="product", cascade="all, delete-orphan"
+    )
     product_items = relationship("ProductItem", back_populates="product")
 
     def __repr__(self):

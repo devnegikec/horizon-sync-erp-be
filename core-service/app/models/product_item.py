@@ -17,8 +17,9 @@ class ProductItem(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("qr_products.id"),
-                        nullable=False, index=True)
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=False, index=True
+    )
     block_id = Column(UUID(as_uuid=True), ForeignKey("qr_blocks.id"), nullable=True)
 
     serial_number = Column(String(75), nullable=False, index=True)

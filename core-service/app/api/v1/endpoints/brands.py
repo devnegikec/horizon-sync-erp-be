@@ -50,9 +50,7 @@ async def list_brands(
     db: Session = Depends(get_db),
 ):
     svc = BrandService(db)
-    brands, pagination = svc.list(
-        current_user.organization_id, page, page_size, search
-    )
+    brands, pagination = svc.list(current_user.organization_id, page, page_size, search)
     return BrandListResponse(
         brands=[BrandResponse.model_validate(b) for b in brands],
         pagination=pagination,
@@ -87,7 +85,5 @@ async def update_brand(
     db: Session = Depends(get_db),
 ):
     svc = BrandService(db)
-    brand = svc.update(
-        brand_id, data, current_user.organization_id, current_user.id
-    )
+    brand = svc.update(brand_id, data, current_user.organization_id, current_user.id)
     return BrandResponse.model_validate(brand)

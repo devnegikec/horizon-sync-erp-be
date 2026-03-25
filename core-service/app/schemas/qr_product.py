@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── QR Product ────────────────────────────────────────────────────────────────
+
 
 class QRProductBase(BaseModel):
     name: str = Field(..., max_length=100)
@@ -85,6 +85,7 @@ class QRProductListResponse(BaseModel):
 
 # ── QR Block ──────────────────────────────────────────────────────────────────
 
+
 class QRBlockCreate(BaseModel):
     batch: str = Field(..., max_length=50)
     quantity: int = Field(..., gt=0)
@@ -121,6 +122,7 @@ class QRBlockResponse(BaseModel):
 
 # ── Product Item ──────────────────────────────────────────────────────────────
 
+
 class ProductItemResponse(BaseModel):
     id: UUID
     organization_id: UUID
@@ -146,6 +148,7 @@ class ProductItemListResponse(BaseModel):
 
 # ── QR Validate (public endpoint) ─────────────────────────────────────────────
 
+
 class QRValidateRequest(BaseModel):
     serial_number: str
     # Optional scan metadata
@@ -169,6 +172,7 @@ class QRValidateResponse(BaseModel):
 
 
 # ── QR Activation Parameters ──────────────────────────────────────────────────
+
 
 class QRActivationParamsCreate(BaseModel):
     product_id: UUID | None = None
@@ -197,6 +201,7 @@ class QRActivationParamsResponse(QRActivationParamsCreate):
 
 # ── Scan Analytics ────────────────────────────────────────────────────────────
 
+
 class ScanAnalyticsResponse(BaseModel):
     total_scans: int
     unique_serials: int
@@ -206,6 +211,7 @@ class ScanAnalyticsResponse(BaseModel):
 
 
 # ── QR Authentication (public endpoint) ───────────────────────────────────────
+
 
 class AuthenticateRequest(BaseModel):
     serial_number: str

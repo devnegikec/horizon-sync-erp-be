@@ -3,7 +3,16 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -17,8 +26,9 @@ class QRBlock(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("qr_products.id"),
-                        nullable=False, index=True)
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=False, index=True
+    )
 
     batch = Column(String(50), nullable=False)
     serial_prefix = Column(String(20), nullable=True)

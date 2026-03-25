@@ -5,10 +5,8 @@ Tests R6DAN, R4DAN, S8DN, S10DN generators, sign_qr_item, and build_qr_url.
 Validates: Requirements 7.1, 7.2, 7.3, 7.4
 """
 
-import re
 import string
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 from cryptography.fernet import Fernet
@@ -18,8 +16,8 @@ from app.utils.serial_generators import (
     build_qr_url,
     generate_r4dan,
     generate_r6dan,
-    sequential_s10dn,
     sequential_s8dn,
+    sequential_s10dn,
     sign_qr_item,
 )
 

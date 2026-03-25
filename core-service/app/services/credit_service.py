@@ -33,9 +33,7 @@ class CreditService:
         """
         balance = self.repo.get_balance(organization_id)
         if balance is None:
-            raise HTTPException(
-                status_code=422, detail="No credit balance configured"
-            )
+            raise HTTPException(status_code=422, detail="No credit balance configured")
         if balance.balance_credits < required:
             raise HTTPException(
                 status_code=422,

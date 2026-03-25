@@ -15,7 +15,6 @@ import base64
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature, encode_dss_signature
 
 
 class KeyService:
@@ -40,7 +39,11 @@ class KeyService:
                 "encryption_secret must be provided. "
                 "Set BRAND_KEY_ENCRYPTION_SECRET in environment."
             )
-        self._fernet = Fernet(encryption_secret.encode() if isinstance(encryption_secret, str) else encryption_secret)
+        self._fernet = Fernet(
+            encryption_secret.encode()
+            if isinstance(encryption_secret, str)
+            else encryption_secret
+        )
 
     def generate_key_pair(self) -> tuple[str, str]:
         """
@@ -55,7 +58,7 @@ class KeyService:
 
         # Serialize private key as raw hex of the private scalar
         private_numbers = private_key.private_numbers()
-        private_hex = format(private_numbers.private_value, '064x')
+        private_hex = format(private_numbers.private_value, "064x")
 
         # Encrypt the private key hex with Fernet
         encrypted_private = self._fernet.encrypt(private_hex.encode()).decode()
@@ -89,7 +92,9 @@ class KeyService:
         private_key = ec.derive_private_key(private_value, ec.SECP256R1())
         return private_key
 
-    def sign_message(self, private_key: ec.EllipticCurvePrivateKey, message: str) -> str:
+    def sign_message(
+        self, private_key: ec.EllipticCurvePrivateKey, message: str
+    ) -> str:
         """
         Sign a message with ECDSA P-256 + SHA-256.
 
@@ -106,7 +111,9 @@ class KeyService:
         )
         return base64.b64encode(signature_bytes).decode()
 
-    def verify_signature(self, public_key_hex: str, message: str, signature_b64: str) -> bool:
+    def verify_signature(
+        self, public_key_hex: str, message: str, signature_b64: str
+    ) -> bool:
         """
         Verify an ECDSA signature against a public key and message.
 

@@ -23,9 +23,7 @@ class BrandService:
         self.repo = BrandRepository(db)
         self.key_service = KeyService(settings.brand_key_encryption_secret)
 
-    def create(
-        self, data: BrandCreate, organization_id: UUID, user_id: UUID
-    ) -> Brand:
+    def create(self, data: BrandCreate, organization_id: UUID, user_id: UUID) -> Brand:
         """Create a new brand with an auto-generated ECDSA P-256 key pair.
 
         Generates the key pair via KeyService and creates the brand record
@@ -95,7 +93,9 @@ class BrandService:
             search=search,
         )
 
-        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+        total_pages = (
+            (total_count + page_size - 1) // page_size if total_count > 0 else 0
+        )
         pagination = {
             "page": page,
             "page_size": page_size,

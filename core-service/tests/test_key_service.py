@@ -9,8 +9,8 @@ import base64
 
 import pytest
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.services.key_service import KeyService
 
@@ -121,7 +121,9 @@ class TestSignMessage:
         # Should be valid base64
         base64.b64decode(signature)
 
-    def test_sign_different_messages_produce_different_signatures(self, key_service: KeyService):
+    def test_sign_different_messages_produce_different_signatures(
+        self, key_service: KeyService
+    ):
         encrypted_private, _ = key_service.generate_key_pair()
         private_key = key_service.decrypt_private_key(encrypted_private)
 
@@ -149,7 +151,9 @@ class TestVerifySignature:
         message = "SN12345~1718000000000"
         signature = key_service.sign_message(private_key, message)
 
-        assert key_service.verify_signature(public_hex, "TAMPERED~999", signature) is False
+        assert (
+            key_service.verify_signature(public_hex, "TAMPERED~999", signature) is False
+        )
 
     def test_wrong_public_key_returns_false(self, key_service: KeyService):
         encrypted_private, _ = key_service.generate_key_pair()
@@ -161,7 +165,9 @@ class TestVerifySignature:
         # Generate a different key pair
         _, other_public_hex = key_service.generate_key_pair()
 
-        assert key_service.verify_signature(other_public_hex, message, signature) is False
+        assert (
+            key_service.verify_signature(other_public_hex, message, signature) is False
+        )
 
     def test_invalid_signature_returns_false(self, key_service: KeyService):
         _, public_hex = key_service.generate_key_pair()
@@ -170,7 +176,9 @@ class TestVerifySignature:
         assert key_service.verify_signature(public_hex, "msg~123", bad_sig) is False
 
     def test_invalid_public_key_hex_returns_false(self, key_service: KeyService):
-        assert key_service.verify_signature("invalid_hex", "msg~123", "dGVzdA==") is False
+        assert (
+            key_service.verify_signature("invalid_hex", "msg~123", "dGVzdA==") is False
+        )
 
     def test_sign_then_verify_round_trip(self, key_service: KeyService):
         """Full round-trip: generate, decrypt, sign, verify."""
