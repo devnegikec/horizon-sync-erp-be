@@ -451,7 +451,20 @@ async def create_user(
     require_permission(current_user.permissions, "user.create")
     user_service = UserService(db)
     try:
-        user = user_service.create_user(body.model_dump())
+        data = body.model_dump()
+        org_id = data.pop("organization_id", None)
+        user = user_service.create_user(data)
+
+        # Create organization membership if org_id provided
+        if org_id:
+            from app.models.role import UserOrganizationRole
+            membership = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=org_id,
+            )
+            db.add(membership)
+            db.commit()
+
         return UserResponse.model_validate(user)
     except DuplicateEmailException:
         raise
