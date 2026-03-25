@@ -119,6 +119,10 @@ async def get_current_user(
 
     permissions = _get_user_permissions(db, user.id)
 
+    # System admins get full wildcard permissions regardless of org roles
+    if user.user_type == UserType.SYSTEM_ADMIN:
+        permissions = ["*.*"]
+
     return CurrentUser(
         id=user.id,
         email=user.email,
@@ -140,6 +144,18 @@ async def get_current_active_user(
             status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user"
         )
 
+    return current_user
+
+
+async def require_admin(
+    current_user: CurrentUser = Depends(get_current_active_user),
+) -> CurrentUser:
+    """Require system_admin user_type for admin portal endpoints."""
+    if current_user.user_type != UserType.SYSTEM_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
     return current_user
 
 
@@ -173,15 +189,15 @@ def get_client_ip(request) -> str | None:
 def get_core_service_client() -> CoreServiceClient | None:
     """
     Get CoreServiceClient instance for service-to-service communication.
-    
+
     Returns None if auto chart creation is disabled in settings.
-    
+
     Returns:
         CoreServiceClient instance or None
     """
     if not settings.enable_auto_chart_creation:
         return None
-    
+
     return CoreServiceClient(
         base_url=settings.core_service_url,
         timeout=settings.core_service_timeout

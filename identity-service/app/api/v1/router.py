@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     roles,
     users,
 )
+from app.api.v1.endpoints.admin import auth as admin_auth
 
 # Create main API router
 api_router = APIRouter()
@@ -31,3 +32,7 @@ api_router.include_router(roles.router, prefix="/identity", tags=["Roles"])
 api_router.include_router(invitations.router, prefix="/identity", tags=["Invitations"])
 
 api_router.include_router(otp.router, prefix="/identity", tags=["OTP"])
+
+api_router.include_router(
+    admin_auth.router, prefix="/identity/admin", tags=["Admin Auth"]
+)
