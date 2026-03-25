@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, require_admin
-from app.schemas.admin_invoice import AdminInvoiceListResponse
+from app.schemas.admin_invoice import AdminInvoiceListResponse, AdminInvoiceStatsResponse, SendReminderRequest
 from app.schemas.invoice import InvoiceCreate, InvoiceResponse
 from app.services.admin_invoice_service import AdminInvoiceService
 
@@ -42,6 +42,17 @@ async def list_invoices(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/stats", response_model=AdminInvoiceStatsResponse)
+async def get_invoice_stats(
+    organization_id: UUID | None = Query(None, description="Scope stats to a single organization"),
+    db: Session = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_admin),
+) -> AdminInvoiceStatsResponse:
+    """Return aggregated invoice statistics across all organizations."""
+    service = AdminInvoiceService(db)
+    return service.get_stats(organization_id=organization_id)
 
 
 @router.get("/{invoice_id}")
@@ -81,3 +92,15 @@ async def send_invoice(
     """Send an invoice to the party's email and update status to pending."""
     service = AdminInvoiceService(db)
     return await service.send_invoice(invoice_id, current_user.id)
+
+
+@router.post("/{invoice_id}/send-reminder")
+async def send_reminder(
+    invoice_id: UUID,
+    body: SendReminderRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_admin),
+) -> dict:
+    """Send an overdue payment reminder email for an invoice."""
+    service = AdminInvoiceService(db)
+    return await service.send_reminder(invoice_id, body, current_user.id)

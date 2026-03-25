@@ -2,30 +2,92 @@
 
 Reuses existing InvoiceService for create, get_by_id, and send logic.
 Adds cross-org list/detail methods that query without org-scoping and
-join to organizations for organization_name.
+resolve organization_name from the identity DB (separate database).
 """
 
+import logging
 import math
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import settings
 from app.models.invoice import Invoice
 from app.schemas.admin_invoice import (
     AdminInvoiceListItem,
     AdminInvoiceListResponse,
+    AdminInvoiceStatsResponse,
 )
 from app.schemas.common import PaginationMeta
 from app.services.invoice_service import InvoiceService
+
+logger = logging.getLogger(__name__)
+
+# ── Identity DB engine (organizations live there, not in core DB) ────
+_identity_engine = None
+
+
+def _get_identity_engine():
+    global _identity_engine
+    if _identity_engine is None and settings.identity_database_url:
+        _identity_engine = create_engine(
+            settings.identity_database_url, pool_size=2, max_overflow=0
+        )
+    return _identity_engine
 
 
 class AdminInvoiceService:
     def __init__(self, db: Session):
         self.db = db
         self.invoice_service = InvoiceService(db)
+
+    # ── Stats ────────────────────────────────────────────────────────
+
+    def get_stats(
+        self, organization_id: UUID | None = None
+    ) -> AdminInvoiceStatsResponse:
+        """Return aggregated invoice statistics, optionally scoped to one org."""
+        where_clauses: list[str] = ["1=1"]
+        params: dict = {}
+
+        if organization_id:
+            where_clauses.append("i.organization_id = :organization_id")
+            params["organization_id"] = organization_id
+
+        where_sql = " AND ".join(where_clauses)
+
+        row = self.db.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(*)::int AS total_invoices,
+                    COUNT(*) FILTER (
+                        WHERE i.due_date < NOW()
+                          AND i.status IN ('pending', 'partial')
+                    )::int AS overdue_invoices,
+                    COALESCE(SUM(i.outstanding_amount), 0) AS total_outstanding,
+                    COALESCE(
+                        SUM(i.outstanding_amount) FILTER (
+                            WHERE i.due_date < NOW()
+                              AND i.status IN ('pending', 'partial')
+                        ), 0
+                    ) AS total_overdue_amount
+                FROM invoices i
+                WHERE {where_sql}
+                """
+            ),
+            params,
+        ).one()
+
+        return AdminInvoiceStatsResponse(
+            total_invoices=row.total_invoices,
+            overdue_invoices=row.overdue_invoices,
+            total_outstanding=row.total_outstanding,
+            total_overdue_amount=row.total_overdue_amount,
+        )
 
     # ── Cross-org list ───────────────────────────────────────────────
 
@@ -67,7 +129,7 @@ class AdminInvoiceService:
         ).one()
         total = count_row.total
 
-        # Data with organization_name join
+        # Data — no JOIN to organizations (different DB)
         offset = (page - 1) * page_size
         params["limit"] = page_size
         params["offset"] = offset
@@ -75,12 +137,11 @@ class AdminInvoiceService:
         rows = self.db.execute(
             text(
                 f"""
-                SELECT i.id, i.organization_id, o.name AS organization_name,
+                SELECT i.id, i.organization_id,
                        i.invoice_no, i.invoice_type, i.party_id, i.party_type,
                        i.status, i.posting_date, i.due_date,
                        i.grand_total, i.outstanding_amount, i.created_at
                 FROM invoices i
-                LEFT JOIN organizations o ON o.id = i.organization_id
                 WHERE {where_sql}
                 ORDER BY i.posting_date DESC
                 LIMIT :limit OFFSET :offset
@@ -89,6 +150,10 @@ class AdminInvoiceService:
             params,
         ).fetchall()
 
+        # Resolve org names from identity DB
+        org_ids = list({str(row.organization_id) for row in rows if row.organization_id})
+        org_name_map = self._resolve_org_names(org_ids)
+
         # Build party map for party_name/party_code
         party_map = self._build_cross_org_party_map(rows)
 
@@ -96,7 +161,7 @@ class AdminInvoiceService:
             AdminInvoiceListItem(
                 id=row.id,
                 organization_id=row.organization_id,
-                organization_name=row.organization_name,
+                organization_name=org_name_map.get(str(row.organization_id)),
                 invoice_no=row.invoice_no,
                 invoice_type=row.invoice_type,
                 party_id=row.party_id,
@@ -147,12 +212,9 @@ class AdminInvoiceService:
             )
         response = self.invoice_service._to_response(inv)
 
-        # Add organization_name
-        org_row = self.db.execute(
-            text("SELECT name FROM organizations WHERE id = :org_id"),
-            {"org_id": inv.organization_id},
-        ).first()
-        response["organization_name"] = org_row.name if org_row else None
+        # Add organization_name from identity DB
+        org_name_map = self._resolve_org_names([str(inv.organization_id)])
+        response["organization_name"] = org_name_map.get(str(inv.organization_id))
 
         return response
 
@@ -242,7 +304,80 @@ class AdminInvoiceService:
             "communication": result,
         }
 
+    # ── Send Reminder ────────────────────────────────────────────────
+
+    async def send_reminder(
+        self, invoice_id: UUID, email_data, user_id: UUID
+    ) -> dict:
+        """Send an overdue payment reminder email for an invoice.
+
+        Validates the invoice is overdue (due_date < today AND status in
+        ('pending', 'partial')), then delegates to CommunicationService.
+        """
+        from datetime import date
+
+        from app.services.communication_service import CommunicationService
+
+        inv = (
+            self.db.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .first()
+        )
+        if not inv:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invoice not found",
+            )
+
+        # Validate overdue: due_date < today AND status in ('pending', 'partial')
+        if (
+            inv.due_date is None
+            or inv.due_date >= date.today()
+            or inv.status not in ("pending", "partial")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invoice is not overdue",
+            )
+
+        # Send via CommunicationService
+        comm_service = CommunicationService(self.db)
+        result = await comm_service.send_email(
+            to=email_data.to,
+            subject=email_data.subject,
+            message=email_data.body,
+            organization_id=inv.organization_id,
+            user_id=user_id,
+            doc_type="invoice",
+            doc_id=str(inv.id),
+            doc_no=inv.invoice_no,
+        )
+
+        return {
+            "invoice_id": str(inv.id),
+            "status": "reminder_sent",
+            "communication": result,
+        }
+
     # ── Helpers ──────────────────────────────────────────────────────
+
+    def _resolve_org_names(self, org_ids: list[str]) -> dict[str, str]:
+        """Batch-resolve organization names from the identity DB."""
+        if not org_ids:
+            return {}
+        engine = _get_identity_engine()
+        if not engine:
+            return {}
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(
+                    text("SELECT id::text, name FROM organizations WHERE id::text = ANY(:ids)"),
+                    {"ids": org_ids},
+                )
+                return {row[0]: row[1] for row in result}
+        except Exception as e:
+            logger.warning(f"Failed to resolve org names from identity DB: {e}")
+            return {}
 
     def _build_cross_org_party_map(self, rows) -> dict:
         """Batch-load party name/code for a list of invoice rows."""

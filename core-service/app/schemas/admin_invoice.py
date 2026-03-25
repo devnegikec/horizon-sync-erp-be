@@ -9,7 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.schemas.common import PaginationMeta
 
@@ -46,6 +46,23 @@ class AdminInvoiceListResponse(BaseModel):
 
     invoices: list[AdminInvoiceListItem]
     pagination: PaginationMeta
+
+
+class AdminInvoiceStatsResponse(BaseModel):
+    """Aggregated invoice statistics for admin dashboard stat cards."""
+
+    total_invoices: int
+    overdue_invoices: int
+    total_outstanding: Decimal
+    total_overdue_amount: Decimal
+
+
+class SendReminderRequest(BaseModel):
+    """Request body for sending an overdue payment reminder email."""
+
+    to: EmailStr
+    subject: str
+    body: str
 
 
 # ── Admin Payment Schemas ────────────────────────────────────────────
