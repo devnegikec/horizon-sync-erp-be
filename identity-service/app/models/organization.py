@@ -3,12 +3,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Text, Uuid, Integer
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.base import OrganizationStatus, OrganizationType
+from app.models.base import OrganizationStatus, OrganizationType, BillingStatus
 
 
 class Organization(Base):
@@ -42,7 +42,7 @@ class Organization(Base):
     )
     industry = Column(String(100))
     tax_id = Column(String(100))
-    base_currency = Column(String(3), default="USD")  # ISO 4217 currency code
+    base_currency = Column(String(3), default="USD", nullable=False)  # ISO 4217 currency code
 
     # Branding
     logo_url = Column(String(500))
@@ -61,6 +61,25 @@ class Organization(Base):
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Billing and Subscription fields (Task 1A-2) - Match actual DB schema
+    billing_status = Column(
+        SQLEnum(BillingStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,  # Database allows NULL
+    )
+    subscription_start_date = Column(DateTime(timezone=False))  # Database uses date type
+    subscription_end_date = Column(DateTime(timezone=False))    # Database uses date type
+    trial_end_date = Column(DateTime(timezone=False))           # Additional field in DB
+    max_users = Column(Integer, nullable=True)                  # Database column name
+    max_credits = Column(Integer, nullable=True)                # Database column name
+    billing_contact_email = Column(String(255))                 # Additional field in DB
+    billing_cycle = Column(String(20))                          # Additional field in DB
+    customer_since = Column(DateTime(timezone=True))           # Additional field in DB
+    last_billed_date = Column(DateTime(timezone=False))        # Additional field in DB
+    next_billing_date = Column(DateTime(timezone=False))       # Additional field in DB
+    
+    # Parent organization support (for hierarchical structures)
+    parent_organization_id = Column(Uuid, ForeignKey("organizations.id"), nullable=True)
 
     # Owner
     owner_id = Column(Uuid, ForeignKey("users.id"))

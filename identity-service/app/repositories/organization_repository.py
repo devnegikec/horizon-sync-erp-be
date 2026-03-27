@@ -117,3 +117,14 @@ class OrganizationRepository:
         self.db.commit()
         self.db.refresh(org)
         return org
+
+    def get_organization_by_type(self, organization_type: OrganizationType) -> Organization | None:
+        """Get organization by type (e.g., MASTER), excluding soft-deleted."""
+        return (
+            self.db.query(Organization)
+            .filter(
+                Organization.organization_type == organization_type,
+                Organization.deleted_at.is_(None),
+            )
+            .first()
+        )

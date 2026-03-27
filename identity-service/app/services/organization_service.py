@@ -17,6 +17,7 @@ from app.models.base import (
     OrganizationStatus,
     OrganizationType,
     ResourceType,
+    UserType,
 )
 from app.models.organization import Organization
 from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
@@ -40,13 +41,19 @@ class OrganizationService:
         self.core_client = core_client
         self.retry_attempts = retry_attempts
 
-    def create(self, data: dict, owner_id: UUID) -> dict:
+    def create(self, data: dict, owner_id: UUID, user_type: UserType = None) -> dict:
         """Create organization; validate slug uniqueness. Sets owner_id and assigns Owner role with *.* to creating user."""
         slug = data.get("slug", "").strip().lower()
         if self.repo.slug_exists(slug):
             raise DuplicateOrganizationSlugException(
                 f"Organization with slug '{slug}' already exists"
             )
+        
+        # Master organization validation (Task 1A-1)
+        org_type = data.get("organization_type")
+        if org_type == OrganizationType.MASTER or org_type == "master":
+            self._validate_master_org_creation(user_type)
+            
         payload = dict(data)
         payload["owner_id"] = owner_id
         if "organization_type" in payload and payload["organization_type"]:
@@ -164,13 +171,18 @@ class OrganizationService:
         }
         return [self._to_list_item(o) for o in items], pagination
 
-    def update(self, organization_id: UUID, data: dict) -> dict:
-        """Update organization; validate slug if changed."""
+    def update(self, organization_id: UUID, data: dict, user_type: UserType = None) -> dict:
+        """Update organization; validate slug if changed. Includes master org protections."""
         org = self.repo.get_by_id(organization_id)
         if not org:
             raise OrganizationNotFoundException(
                 f"Organization with ID {organization_id} not found"
             )
+        
+        # Master organization validation (Task 1A-1) 
+        if org.organization_type == OrganizationType.MASTER:
+            self._validate_master_org_modification(user_type)
+            
         payload = {k: v for k, v in data.items() if v is not None}
         if "slug" in payload:
             if self.repo.slug_exists(payload["slug"], exclude_id=organization_id):
@@ -180,19 +192,27 @@ class OrganizationService:
         if "status" in payload:
             payload["status"] = OrganizationStatus(payload["status"])
         if "organization_type" in payload:
+            # Prevent changing TO master type unless authorized
+            if payload["organization_type"] == "master" or payload["organization_type"] == OrganizationType.MASTER:
+                self._validate_master_org_creation(user_type)
             payload["organization_type"] = OrganizationType(
                 payload["organization_type"]
             )
         updated = self.repo.update(org, payload)
         return self._to_response(updated)
 
-    def delete(self, organization_id: UUID) -> None:
-        """Soft delete organization."""
+    def delete(self, organization_id: UUID, user_type: UserType = None) -> None:
+        """Soft delete organization. Prevents deletion of master organization."""
         org = self.repo.get_by_id(organization_id)
         if not org:
             raise OrganizationNotFoundException(
                 f"Organization with ID {organization_id} not found"
             )
+        
+        # Prevent deletion of master organization
+        if org.organization_type == OrganizationType.MASTER:
+            raise ValueError("Cannot delete master organization")
+            
         self.repo.soft_delete(org)
 
     @staticmethod
@@ -354,3 +374,28 @@ class OrganizationService:
                     "event": "chart_creation_failed"
                 }
             )
+
+    # Master Organization Validation Methods (Task 1A-1)
+    def _validate_master_org_creation(self, user_type: UserType = None) -> None:
+        """Validate that only SYSTEM_ADMIN can create master organizations and only one exists."""
+        # Check if master organization already exists
+        if self.get_master_organization():
+            raise ValueError("Master organization already exists")
+            
+        # Only SYSTEM_ADMIN can create master organizations
+        if user_type != UserType.SYSTEM_ADMIN:
+            raise ValueError("Only system administrators can create master organizations")
+    
+    def _validate_master_org_modification(self, user_type: UserType = None) -> None:
+        """Validate that only SYSTEM_ADMIN can modify master organizations."""
+        if user_type != UserType.SYSTEM_ADMIN:
+            raise ValueError("Only system administrators can modify master organizations")
+    
+    def is_master_organization(self, organization_id: UUID) -> bool:
+        """Check if organization is a master organization."""
+        org = self.repo.get_by_id(organization_id)
+        return org and org.organization_type == OrganizationType.MASTER
+    
+    def get_master_organization(self) -> Organization:
+        """Get the master organization (there should only be one)."""
+        return self.repo.get_organization_by_type(OrganizationType.MASTER)

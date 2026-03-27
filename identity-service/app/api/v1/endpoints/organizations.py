@@ -181,7 +181,7 @@ async def create_organization(
         retry_attempts=settings.chart_creation_retry_attempts
     )
     try:
-        data = svc.create(body.model_dump(), owner_id=current_user.id)
+        data = svc.create(body.model_dump(), owner_id=current_user.id, user_type=current_user.user_type)
         return OrganizationResponse.model_validate(data)
     except DuplicateOrganizationSlugException:
         raise
@@ -206,7 +206,7 @@ async def update_organization(
     svc = OrganizationService(db)
     payload = body.model_dump(exclude_unset=True)
     try:
-        data = svc.update(organization_id, payload)
+        data = svc.update(organization_id, payload, user_type=current_user.user_type)
         return OrganizationResponse.model_validate(data)
     except OrganizationNotFoundException:
         raise
@@ -231,6 +231,6 @@ async def delete_organization(
         validate_user_in_organization(current_user.id, organization_id, db)
     svc = OrganizationService(db)
     try:
-        svc.delete(organization_id)
+        svc.delete(organization_id, user_type=current_user.user_type)
     except OrganizationNotFoundException:
         raise

@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     permissions,
     roles,
     users,
+    organization_deactivation,
 )
 from app.api.v1.endpoints.admin import auth as admin_auth
 
@@ -35,4 +36,8 @@ api_router.include_router(otp.router, prefix="/identity", tags=["OTP"])
 
 api_router.include_router(
     admin_auth.router, prefix="/identity/admin", tags=["Admin Auth"]
+)
+
+api_router.include_router(
+    organization_deactivation.router, prefix="/organization-management", tags=["Organization Management"]
 )

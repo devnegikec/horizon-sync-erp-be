@@ -53,6 +53,13 @@ class Invoice(Base):
     total_charges = Column(Numeric(15, 2), default=0)
     discount_type = Column(String(20), default="percentage", nullable=True)
     discount_value = Column(Numeric(15, 2), default=0, nullable=True)
+    
+    # Subscription billing fields (Task 1B-1)
+    billing_cycle = Column(String(20), nullable=True)  # monthly, quarterly, yearly
+    subscription_period_start = Column(DateTime(timezone=True), nullable=True)
+    subscription_period_end = Column(DateTime(timezone=True), nullable=True)
+    seat_count = Column(Integer, nullable=True)  # Number of seats being billed
+    credit_usage = Column(Numeric(15, 2), nullable=True)  # Credit consumption amount
 
     @property
     def invoice_date(self):

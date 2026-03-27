@@ -159,6 +159,11 @@ class InvoiceType(str, enum.Enum):
 
     SALES = "sales"
     PURCHASE = "purchase"
+    SUBSCRIPTION = "subscription"  # Task 1B-1: Subscription invoice support
+    SETUP_FEE = "setup_fee"  # Task 1F-1: Setup fee invoices for new customers
+    OVERAGE = "overage"  # Task 1F-1: Overage charges for usage limits
+    ADDON = "addon"  # Task 1F-1: Add-on service invoices
+    CREDIT_ADJUSTMENT = "credit_adjustment"  # Task 1F-1: Credit notes and adjustments
 
 
 class InvoiceStatus(str, enum.Enum):
@@ -198,6 +203,14 @@ class PaymentMethod(str, enum.Enum):
     CHEQUE = "cheque"
     UPI = "upi"
     OTHER = "other"
+
+
+class BillingCycle(str, enum.Enum):
+    """Billing cycle enumeration for subscription invoices (Task 1B-1)"""
+
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly" 
+    YEARLY = "yearly"
 
 
 class JournalStatus(str, enum.Enum):

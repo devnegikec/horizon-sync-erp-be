@@ -65,6 +65,14 @@ class AdminOrganizationService:
                 headers=self._headers(),
             )
 
+        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )
+        
         if resp.status_code != 200:
             logger.error(f"Identity-service /organizations returned {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organizations")
@@ -108,7 +116,19 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 404:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )
         if resp.status_code != 200:
             logger.error(f"Identity-service /organizations/{org_id} returned {resp.status_code}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organization")

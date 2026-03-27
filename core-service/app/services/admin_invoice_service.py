@@ -3,16 +3,19 @@
 Reuses existing InvoiceService for create, get_by_id, and send logic.
 Adds cross-org list/detail methods that query without org-scoping and
 join to organizations for organization_name.
+Integrates SubscriptionInvoiceService for B2B billing (Task 1B-2).
 """
 
 import math
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
+from app.models.base import BillingCycle
 from app.models.invoice import Invoice
 from app.schemas.admin_invoice import (
     AdminInvoiceListItem,
@@ -20,12 +23,14 @@ from app.schemas.admin_invoice import (
 )
 from app.schemas.common import PaginationMeta
 from app.services.invoice_service import InvoiceService
+from app.services.subscription_invoice_service import SubscriptionInvoiceService
 
 
 class AdminInvoiceService:
     def __init__(self, db: Session):
         self.db = db
         self.invoice_service = InvoiceService(db)
+        self.subscription_service = SubscriptionInvoiceService(db)  # Task 1B-2
 
     # ── Cross-org list ───────────────────────────────────────────────
 
@@ -78,7 +83,9 @@ class AdminInvoiceService:
                 SELECT i.id, i.organization_id, o.name AS organization_name,
                        i.invoice_no, i.invoice_type, i.party_id, i.party_type,
                        i.status, i.posting_date, i.due_date,
-                       i.grand_total, i.outstanding_amount, i.created_at
+                       i.grand_total, i.outstanding_amount, i.created_at,
+                       i.billing_cycle, i.subscription_period_start, i.subscription_period_end,
+                       i.seat_count, i.credit_usage
                 FROM invoices i
                 LEFT JOIN organizations o ON o.id = i.organization_id
                 WHERE {where_sql}
@@ -108,6 +115,12 @@ class AdminInvoiceService:
                 grand_total=row.grand_total,
                 outstanding_amount=row.outstanding_amount,
                 created_at=row.created_at,
+                # Subscription billing fields (Task 1B-1)
+                billing_cycle=row.billing_cycle,
+                subscription_period_start=row.subscription_period_start,
+                subscription_period_end=row.subscription_period_end,
+                seat_count=row.seat_count,
+                credit_usage=row.credit_usage,
             )
             for row in rows
         ]
@@ -280,3 +293,178 @@ class AdminInvoiceService:
             for s in suppliers:
                 party_map[s.id] = {"name": s.supplier_name, "code": s.supplier_code}
         return party_map
+
+    # ── Subscription Invoice Methods (Task 1B-2) ─────────────────────
+
+    def create_subscription_invoice(
+        self,
+        organization_id: UUID,
+        billing_cycle: str,
+        seat_count: int,
+        credit_usage: Decimal = Decimal("0"),
+        base_price_per_seat: Decimal = Decimal("10.00"),
+        credit_rate: Decimal = Decimal("0.01"),
+        created_by: UUID | None = None
+    ) -> dict:
+        """Create subscription invoice for organization billing.
+        
+        Admin interface for creating subscription invoices with validation.
+        """
+        try:
+            # Convert string to enum
+            cycle_enum = BillingCycle(billing_cycle)
+            
+            # Delegate to SubscriptionInvoiceService
+            return self.subscription_service.create_subscription_invoice(
+                organization_id=organization_id,
+                billing_cycle=cycle_enum,
+                seat_count=seat_count,
+                credit_usage=credit_usage,
+                base_price_per_seat=base_price_per_seat,
+                credit_rate=credit_rate,
+                created_by=created_by
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+
+    def get_subscription_invoices_for_organization(
+        self,
+        organization_id: UUID,
+        limit: int = 50
+    ) -> list[dict]:
+        """Get subscription invoices for organization (admin view)."""
+        return self.subscription_service.get_subscription_invoices_for_organization(
+            organization_id, limit
+        )
+
+    def get_overdue_subscription_invoices(self) -> list[dict]:
+        """Get all overdue subscription invoices across organizations."""
+        return self.subscription_service.get_overdue_subscription_invoices()
+
+    def generate_bulk_subscription_invoices(
+        self,
+        billing_cycle: str,
+        exclude_master_org: bool = True,
+        created_by: UUID | None = None
+    ) -> dict:
+        """Generate subscription invoices for all eligible organizations.
+        
+        This method would typically be called on a schedule (monthly/quarterly/yearly)
+        to generate subscription invoices for all customer organizations.
+        """
+        try:
+            cycle_enum = BillingCycle(billing_cycle)
+            
+            # Get all customer organizations (would need to query identity service)
+            # For now, return a placeholder response
+            
+            # TODO: Implement bulk generation by:
+            # 1. Querying identity service for all customer organizations
+            # 2. Getting their current seat counts and credit usage
+            # 3. Creating subscription invoices for each eligible org
+            # 4. Handling errors and reporting results
+            
+            return {
+                "message": "Bulk subscription invoice generation not yet implemented",
+                "billing_cycle": billing_cycle,
+                "status": "pending_implementation"
+            }
+            
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid billing cycle: {e}"
+            )
+
+    def get_organization_billing_summary(
+        self,
+        organization_id: UUID,
+        requested_by: UUID
+    ) -> dict:
+        """Get comprehensive billing summary for customer organization"""
+        from app.models.organization import Organization
+        
+        # Get organization details
+        org = (
+            self.db.query(Organization)
+            .filter(Organization.id == organization_id)
+            .first()
+        )
+        
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Organization not found"
+            )
+        
+        # Get invoice statistics
+        invoice_stats = self.db.execute(
+            text("""
+                SELECT 
+                    COUNT(*) as total_invoices,
+                    COALESCE(SUM(grand_total), 0) as total_amount,
+                    COALESCE(SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END), 0) as total_paid,
+                    COALESCE(SUM(outstanding_amount), 0) as total_outstanding
+                FROM invoices 
+                WHERE organization_id = :org_id
+            """),
+            {"org_id": organization_id}
+        ).fetchone()
+        
+        # Get current subscription info
+        current_subscription = None
+        if org.billing_status and org.subscription_end_date:
+            current_subscription = {
+                "status": org.billing_status.value,
+                "start_date": org.subscription_start_date,
+                "end_date": org.subscription_end_date,
+                "billing_cycle": org.billing_cycle,
+                "seat_limit": org.max_users,
+                "credit_limit": org.max_credits,
+                "next_billing_date": org.next_billing_date
+            }
+        
+        # Get recent invoices (last 10)
+        recent_invoices_query = (
+            self.db.query(Invoice)
+            .filter(Invoice.organization_id == organization_id)
+            .order_by(Invoice.posting_date.desc())
+            .limit(10)
+            .all()
+        )
+        
+        recent_invoices = [
+            {
+                "invoice_id": inv.id,
+                "invoice_no": inv.invoice_no,
+                "invoice_type": inv.invoice_type,
+                "posting_date": inv.posting_date,
+                "due_date": inv.due_date,
+                "grand_total": float(inv.grand_total),
+                "outstanding_amount": float(inv.outstanding_amount),
+                "status": inv.status
+            }
+            for inv in recent_invoices_query
+        ]
+        
+        # Get payment history (simplified - would need payment tracking)
+        payment_history = [
+            # This would be populated from payment records
+            # For now, returning empty list as payment tracking is not fully implemented
+        ]
+        
+        return {
+            "organization_id": organization_id,
+            "organization_name": org.name,
+            "billing_status": org.billing_status.value if org.billing_status else "unknown",
+            "total_invoices": invoice_stats.total_invoices,
+            "total_amount": float(invoice_stats.total_amount),
+            "total_paid": float(invoice_stats.total_paid),
+            "total_outstanding": float(invoice_stats.total_outstanding),
+            "current_subscription": current_subscription,
+            "recent_invoices": recent_invoices,
+            "payment_history": payment_history
+        }
