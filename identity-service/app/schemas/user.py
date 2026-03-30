@@ -19,6 +19,7 @@ class UserCreate(UserBase):
     """Schema for creating a new user"""
 
     password: str = Field(..., min_length=8)
+    organization_id: str | None = Field(None, description="Organization to assign user to")
 
 
 class UserUpdate(BaseModel):
@@ -32,6 +33,7 @@ class UserUpdate(BaseModel):
         None, pattern="^(system_admin|organization_admin|user|guest)$"
     )
     status: str | None = Field(None, pattern="^(active|inactive|suspended|pending)$")
+    is_active: bool | None = None
 
 
 class UserSelfUpdate(BaseModel):

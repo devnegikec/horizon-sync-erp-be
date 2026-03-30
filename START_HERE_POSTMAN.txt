@@ -79,7 +79,7 @@ You have received a **complete, production-ready Postman collection** for testin
 1. Click Environment dropdown (gear icon)
 2. Create new or select existing
 3. Add variables:
-   base_url = http://localhost:8001/api/v1
+   base_url = http://localhost:8001
    access_token = <your JWT token>
    organization_id = <your org UUID>
 ```
@@ -234,7 +234,7 @@ Set in Postman Environment:
 
 | Variable | Example | Notes |
 |----------|---------|-------|
-| `base_url` | http://localhost:8001/api/v1 | API base URL |
+| `base_url` | http://localhost:8001 | API base URL |
 | `access_token` | eyJhbGc... | JWT token (64+ chars) |
 | `organization_id` | 550e8400-e29b-41d4-a716-... | Your org UUID |
 | `import_job_id` | (auto-populated) | Set after upload |

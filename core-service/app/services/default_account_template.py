@@ -322,17 +322,6 @@ def get_default_account_structure() -> list[AccountTemplate]:
 # Default account mappings for transaction types
 # Maps transaction types to appropriate account codes from the default structure
 DEFAULT_MAPPINGS: dict[str, dict[str, Any]] = {
-    # Payment-related mappings
-    "payment_cash": {
-        "transaction_type": DefaultAccountTransactionType.PAYMENT.value,
-        "scenario": "cash",
-        "account_code": "1010",  # Cash
-    },
-    "payment_bank": {
-        "transaction_type": DefaultAccountTransactionType.PAYMENT.value,
-        "scenario": "bank",
-        "account_code": "1020",  # Bank Accounts
-    },
     # Receivables
     "accounts_receivable": {
         "transaction_type": DefaultAccountTransactionType.ACCOUNTS_RECEIVABLE.value,
@@ -368,5 +357,17 @@ DEFAULT_MAPPINGS: dict[str, dict[str, Any]] = {
         "transaction_type": DefaultAccountTransactionType.BANK.value,
         "scenario": None,
         "account_code": "1020",  # Bank Accounts
+    },
+    # Checks Received
+    "checks_received": {
+        "transaction_type": DefaultAccountTransactionType.CHECKS_RECEIVED.value,
+        "scenario": None,
+        "account_code": "1010",  # Cash (checks are deposited to cash/bank)
+    },
+    # Demand Draft
+    "demand_draft": {
+        "transaction_type": DefaultAccountTransactionType.DEMAND_DRAFT.value,
+        "scenario": None,
+        "account_code": "1020",  # Bank Accounts (DDs are bank instruments)
     },
 }

@@ -134,6 +134,47 @@ from app.models.warehouse import Warehouse
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
 
+# Analytics module
+from app.models.analytics import MetaCampaign
+
+# URL Management module
+from app.models.short_url import ShortURL
+
+# Destinations module
+from app.models.destination_market import DestinationMarket
+
+# Public Marketing module
+from app.models.public_submission import PublicSubmission
+
+# Admin Portal module
+from app.models.admin import (
+    AdminAuditLog,
+    AdminNotification,
+    FeatureFlag,
+    UserActivityLog,
+)
+
+# Brand Trust module
+from app.models.brand_trust import (
+    BrandIndustry,
+    BrandTrustQuestion,
+    BrandTrustAssessment,
+    BrandTrustAnswer,
+)
+
+# Messaging module
+from app.models.messaging import (
+    MessageTemplate,
+    BulkMessageJob,
+    ScheduledMessage,
+    SMSReport,
+    WhatsAppReport,
+    RCSCredential,
+    RCSTemplate,
+    RCSReport,
+    MessageCredit,
+)
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -285,6 +326,11 @@ __all__ = [
     "RCSTemplate",
     "RCSReport",
     "MessageCredit",
+    # Admin Portal module
+    "UserActivityLog",
+    "AdminAuditLog",
+    "AdminNotification",
+    "FeatureFlag",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

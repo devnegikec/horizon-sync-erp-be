@@ -111,6 +111,12 @@ class InvoiceService:
             new_status_value in ["paid", "pending"]
         )
         
+        # Check if invoice is being cancelled from a confirmed state (needs journal reversal)
+        requires_journal_reversal = (
+            new_status_value == "cancelled" and
+            current_status in ["pending", "paid", "partial", "overdue"]
+        )
+        
         try:
             # Start transaction - update invoice first
             self.repo.update(inv, payload)
@@ -178,6 +184,26 @@ class InvoiceService:
                         # Re-raise other validation errors
                         raise
             
+            # If invoice is being cancelled, reverse the journal entry
+            if requires_journal_reversal:
+                # Reset outstanding amount to 0 for cancelled invoices
+                inv.outstanding_amount = 0
+                
+                # Flush changes before reversing journal entry
+                self.db.flush()
+                
+                try:
+                    journal_posting_service = InvoiceJournalPostingService(self.db)
+                    journal_posting_service.reverse_invoice_journal_entry(
+                        inv, organization_id, user_id
+                    )
+                except ValidationError as journal_error:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Invoice {inv.invoice_no} cancelled but journal reversal failed: {journal_error}"
+                    )
+
             # Commit transaction - both invoice update and journal entry succeed together
             self.db.commit()
             self.db.refresh(inv)

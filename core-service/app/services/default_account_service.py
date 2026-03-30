@@ -27,6 +27,8 @@ class DefaultAccountService:
         DefaultAccountTransactionType.INVENTORY_ASSET: [AccountType.ASSET],
         DefaultAccountTransactionType.CASH: [AccountType.ASSET],
         DefaultAccountTransactionType.BANK: [AccountType.ASSET],
+        DefaultAccountTransactionType.CHECKS_RECEIVED: [AccountType.ASSET],
+        DefaultAccountTransactionType.DEMAND_DRAFT: [AccountType.ASSET],
         DefaultAccountTransactionType.TAX_PAYABLE: [AccountType.LIABILITY],
         DefaultAccountTransactionType.TAX_RECEIVABLE: [AccountType.ASSET],
         DefaultAccountTransactionType.DISCOUNT_GIVEN: [AccountType.EXPENSE],
@@ -35,7 +37,6 @@ class DefaultAccountService:
         DefaultAccountTransactionType.SHIPPING_CHARGES: [AccountType.EXPENSE],
         DefaultAccountTransactionType.SALES_INVOICE: [AccountType.ASSET, AccountType.REVENUE],
         DefaultAccountTransactionType.PURCHASE_INVOICE: [AccountType.LIABILITY, AccountType.EXPENSE],
-        DefaultAccountTransactionType.PAYMENT: [AccountType.ASSET],
     }
 
     def __init__(self, db: Session):

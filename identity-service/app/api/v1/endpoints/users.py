@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
+    is_system_admin,
     require_permission,
     validate_user_in_organization,
 )
@@ -97,11 +98,12 @@ async def list_users(
     require_permission(current_user.permissions, "user.read")
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
-        validate_user_in_organization(current_user.id, organization_id, db)
+        if not is_system_admin(current_user.permissions):
+            validate_user_in_organization(current_user.id, organization_id, db)
         organization_ids = [organization_id]
-    else:
+    elif not is_system_admin(current_user.permissions):
         organization_ids = _user_organization_ids(db, current_user.id)
-    if not organization_ids:
+    if organization_ids is not None and not organization_ids:
         return UserListResponse(
             users=[],
             pagination=PaginationMeta(
@@ -310,7 +312,7 @@ async def get_user(
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.read")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -449,7 +451,20 @@ async def create_user(
     require_permission(current_user.permissions, "user.create")
     user_service = UserService(db)
     try:
-        user = user_service.create_user(body.model_dump())
+        data = body.model_dump()
+        org_id = data.pop("organization_id", None)
+        user = user_service.create_user(data)
+
+        # Create organization membership if org_id provided
+        if org_id:
+            from app.models.role import UserOrganizationRole
+            membership = UserOrganizationRole(
+                user_id=user.id,
+                organization_id=org_id,
+            )
+            db.add(membership)
+            db.commit()
+
         return UserResponse.model_validate(user)
     except DuplicateEmailException:
         raise
@@ -469,7 +484,7 @@ async def update_user(
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.update")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -496,7 +511,7 @@ async def delete_user(
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.delete")
-    if not _users_share_organization(db, current_user.id, user_id):
+    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
