@@ -10,13 +10,13 @@ from datetime import UTC, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from app.models.base import OrganizationStatus
-from app.models.organization import Organization
-from app.models.reminder_config import ReminderStage
+from app.models.reminder_config import ReminderConfig, ReminderStage
+from app.services.admin_organization_service import AdminOrganizationService
 from app.services.payment_reminder_service import PaymentReminderService
 
 logger = logging.getLogger(__name__)
@@ -53,17 +53,20 @@ class BillingAutomationTask:
         start_time = datetime.now(UTC)
         
         try:
-            # Get all enabled reminder configurations
-            enabled_configs = (
-                self.db_session.query(Organization)
-                .join(
-                    ReminderConfig, 
-                    Organization.id == ReminderConfig.organization_id,
-                    isouter=True
-                )
+            # Get active organizations using the AdminOrganizationService
+            org_service = AdminOrganizationService(self.db_session)
+            organizations_response = await org_service.list_organizations(
+                status_filter="active",
+                page_size=1000  # Get all active orgs
+            )
+            active_organizations = organizations_response.organizations
+            
+            # Get reminder configurations for active organizations
+            organization_ids = [org.id for org in active_organizations]
+            reminder_configs = (
+                self.db_session.query(ReminderConfig)
                 .filter(
-                    Organization.is_active == True,
-                    # Only process orgs with enabled configs or no config (will get default)
+                    ReminderConfig.organization_id.in_(organization_ids),
                     or_(
                         ReminderConfig.is_enabled == True,
                         ReminderConfig.id.is_(None)  # No config yet, will create default
@@ -72,12 +75,21 @@ class BillingAutomationTask:
                 .all()
             )
             
-            logger.info(f"Processing reminders for {len(enabled_configs)} organizations")
+            # Create mapping of org_id to reminder config
+            config_by_org = {config.organization_id: config for config in reminder_configs}
             
-            # Process batch reminders for all organizations
-            organization_ids = [org.id for org in enabled_configs]
+            # Include organizations without explicit configs (they'll get defaults)
+            eligible_org_ids = []
+            for org in active_organizations:
+                config = config_by_org.get(org.id)
+                if config is None or config.is_enabled:
+                    eligible_org_ids.append(org.id)
+            
+            logger.info(f"Processing reminders for {len(eligible_org_ids)} organizations")
+            
+            # Process batch reminders for eligible organizations
             batch_result = await self.reminder_service.send_batch_reminders(
-                organization_ids=organization_ids
+                organization_ids=eligible_org_ids
             )
             
             # Log results
@@ -93,7 +105,7 @@ class BillingAutomationTask:
                 "started_at": start_time.isoformat(),
                 "completed_at": datetime.now(UTC).isoformat(),
                 "duration_seconds": elapsed.total_seconds(),
-                "organizations_processed": len(organization_ids),
+                "organizations_processed": len(eligible_org_ids),
                 **batch_result
             }
             
@@ -123,15 +135,15 @@ class BillingAutomationTask:
         }
         
         try:
-            # Get all active organizations
-            active_orgs = (
-                self.db_session.query(Organization)
-                .filter(
-                    Organization.is_active == True,
-                    Organization.organization_type != "master"  # Never deactivate master org
-                )
-                .all()
+            # Get active customer organizations using the AdminOrganizationService
+            org_service = AdminOrganizationService(self.db_session)
+            organizations_response = await org_service.list_organizations(
+                status_filter="active",
+                page_size=1000  # Get all active orgs
             )
+            # Filter out master organizations (they should never be deactivated)
+            active_orgs = [org for org in organizations_response.organizations 
+                          if getattr(org, 'organization_type', None) != "master"]
             
             results["checked"] = len(active_orgs)
             
@@ -155,7 +167,7 @@ class BillingAutomationTask:
             results["errors"].append(str(e))
             return results
 
-    async def _process_organization_deactivation_check(self, org: Organization, results: dict):
+    async def _process_organization_deactivation_check(self, org, results: dict):
         """Process deactivation check for a single organization"""
         config = self.reminder_service.get_reminder_config(org.id)
         
@@ -268,7 +280,7 @@ class BillingAutomationTask:
         
         return oldest_warning.sent_at <= cutoff_date
 
-    async def _deactivate_organization(self, org: Organization, overdue_invoices: List[dict]):
+    async def _deactivate_organization(self, org, overdue_invoices: List[dict]):
         """Deactivate organization due to non-payment"""
         logger.info(f"Deactivating organization {org.id} due to overdue payments")
         

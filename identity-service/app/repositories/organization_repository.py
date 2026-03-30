@@ -66,6 +66,7 @@ class OrganizationRepository:
         sort_by: str = "created_at",
         sort_order: str = "desc",
         organization_ids: list[UUID] | None = None,
+        parent_organization_id: UUID | None = None,
     ) -> tuple[list[Organization], int]:
         """
         List organizations with pagination and filters.
@@ -76,6 +77,9 @@ class OrganizationRepository:
 
         if organization_ids is not None:
             query = query.filter(Organization.id.in_(organization_ids))
+        
+        if parent_organization_id is not None:
+            query = query.filter(Organization.parent_organization_id == parent_organization_id)
 
         if status is not None:
             query = query.filter(Organization.status == status)

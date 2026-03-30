@@ -64,6 +64,10 @@ async def list_organizations(
         None,
         description="Filter by type (enterprise, business, startup, individual)",
     ),
+    parent_organization_id: UUID | None = Query(
+        None,
+        description="Filter by parent organization (returns child organizations)",
+    ),
     search: str | None = Query(None, description="Search in name, slug, display_name"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
@@ -102,6 +106,7 @@ async def list_organizations(
         sort_by=sort_by,
         sort_order=sort_order,
         organization_ids=org_ids,
+        parent_organization_id=parent_organization_id,
     )
     return OrganizationListResponse(
         organizations=[OrganizationListItem.model_validate(x) for x in items],

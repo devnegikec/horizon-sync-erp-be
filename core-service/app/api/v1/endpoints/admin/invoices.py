@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,6 +20,7 @@ from app.schemas.invoice import InvoiceCreate, InvoiceResponse
 from app.services.admin_invoice_service import AdminInvoiceService
 
 router = APIRouter()
+security = HTTPBearer()
 
 
 @router.get("", response_model=AdminInvoiceListResponse)
@@ -30,17 +32,19 @@ async def list_invoices(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AdminInvoiceListResponse:
-    """Return a paginated list of invoices across all organizations."""
-    service = AdminInvoiceService(db)
-    return service.list_invoices(
+    """Return a paginated list of invoices from customer organizations linked to the master organization."""
+    service = AdminInvoiceService(db, token=credentials.credentials)
+    return await service.list_invoices(
         organization_id=organization_id,
         status_filter=status,
         date_from=date_from,
         date_to=date_to,
         page=page,
         page_size=page_size,
+        current_user_org=current_user.organization_id,
     )
 
 
@@ -48,10 +52,11 @@ async def list_invoices(
 async def get_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Return full invoice detail with line items and payment history."""
-    service = AdminInvoiceService(db)
+    service = AdminInvoiceService(db, token=credentials.credentials)
     return service.get_invoice(invoice_id)
 
 
@@ -61,9 +66,10 @@ async def create_invoice(
     organization_id: UUID = Query(..., description="Organization to create the invoice in"),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> InvoiceResponse:
     """Create an invoice in the specified organization."""
-    service = AdminInvoiceService(db)
+    service = AdminInvoiceService(db, token=credentials.credentials)
     data = service.create_invoice(
         data=body.model_dump(),
         organization_id=organization_id,
@@ -77,7 +83,8 @@ async def send_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_admin),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Send an invoice to the party's email and update status to pending."""
-    service = AdminInvoiceService(db)
+    service = AdminInvoiceService(db, token=credentials.credentials)
     return await service.send_invoice(invoice_id, current_user.id)

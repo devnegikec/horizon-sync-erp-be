@@ -10,11 +10,16 @@ import math
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
+import logging
 
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
+logger = logging.getLogger(__name__)
+
+from app.config import settings
 from app.models.base import BillingCycle
 from app.models.invoice import Invoice
 from app.schemas.admin_invoice import (
@@ -27,14 +32,86 @@ from app.services.subscription_invoice_service import SubscriptionInvoiceService
 
 
 class AdminInvoiceService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, token: str | None = None):
         self.db = db
+        self.token = token
         self.invoice_service = InvoiceService(db)
         self.subscription_service = SubscriptionInvoiceService(db)  # Task 1B-2
 
+    async def _get_customer_organization_ids(self, master_org_id: UUID) -> list[UUID]:
+        """Fetch customer organization IDs from identity service for the given master org."""
+        logger.info(f"Fetching customer organizations for master org: {master_org_id}")
+        
+        if not self.token:
+            logger.warning("No authentication token provided, falling back to master org only")
+            return [master_org_id]  # Fallback to just master org
+            
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                url = f"{settings.identity_service_url}/api/v1/identity/organizations"
+                params = {"parent_organization_id": str(master_org_id), "page_size": 1000}
+                headers = {"Authorization": f"Bearer {self.token}"}
+                
+                logger.info(f"Making request to: {url} with params: {params}")
+                
+                response = await client.get(url, params=params, headers=headers)
+                
+                logger.info(f"Identity service response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Identity service response data: {data}")
+                    
+                    orgs_data = data.get("organizations", [])
+                    customer_org_ids = [UUID(org["id"]) for org in orgs_data]
+                    # Do NOT include master org itself - we only want customer invoices
+                    
+                    logger.info(f"Found {len(customer_org_ids)} customer organizations (excluding master): {customer_org_ids}")
+                    return customer_org_ids
+                else:
+                    logger.error(f"Identity service returned status {response.status_code}: {response.text}")
+                    return []  # Return empty list to show no invoices if API fails
+        except Exception as e:
+            logger.error(f"Error fetching customer organizations: {e}")
+            return []  # Return empty list on error
+            
+    async def _get_organization_names(self, org_ids: list[UUID]) -> dict[UUID, str]:
+        """Fetch organization names from identity service for given org IDs."""
+        if not self.token or not org_ids:
+            return {}
+            
+        try:
+            org_names = {}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Fetch organizations in batches to get names
+                url = f"{settings.identity_service_url}/api/v1/identity/organizations"
+                headers = {"Authorization": f"Bearer {self.token}"}
+                
+                # Get all organizations (we'll filter by IDs)
+                response = await client.get(url, params={"page_size": 1000}, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    orgs_data = data.get("organizations", [])
+                    
+                    for org in orgs_data:
+                        org_id = UUID(org["id"])
+                        if org_id in org_ids:
+                            org_names[org_id] = org["name"]
+                    
+                    logger.info(f"Fetched names for {len(org_names)} organizations")
+                    return org_names
+                else:
+                    logger.error(f"Failed to fetch organization names: {response.status_code}")
+                    return {}
+        except Exception as e:
+            logger.error(f"Error fetching organization names: {e}")
+            return {}
+            return [master_org_id]  # Fallback on error
+
     # ── Cross-org list ───────────────────────────────────────────────
 
-    def list_invoices(
+    async def list_invoices(
         self,
         organization_id: UUID | None = None,
         status_filter: str | None = None,
@@ -42,10 +119,23 @@ class AdminInvoiceService:
         date_to: datetime | None = None,
         page: int = 1,
         page_size: int = 20,
+        current_user_org: UUID | None = None,
     ) -> AdminInvoiceListResponse:
-        """List invoices across all organizations with optional filters."""
+        """List invoices across all organizations with optional filters.
+        
+        For system admin users from master organizations, only shows invoices
+        from the master organization itself (not customer organizations).
+        """
         where_clauses: list[str] = ["1=1"]
         params: dict = {}
+
+        # Filter by master organization invoices only for system admins
+        if current_user_org:
+            where_clauses.append("i.organization_id = :master_org_id")
+            params["master_org_id"] = str(current_user_org)
+            logger.info(f"Filtering invoices by master organization only: {current_user_org}")
+        else:
+            logger.info("No current_user_org provided, showing all invoices")
 
         if organization_id:
             where_clauses.append("i.organization_id = :organization_id")
@@ -71,6 +161,8 @@ class AdminInvoiceService:
             params,
         ).one()
         total = count_row.total
+        
+        logger.info(f"Found {total} invoices matching filter criteria. Where clause: {where_sql}, Params: {params}")
 
         # Data with organization_name join
         offset = (page - 1) * page_size
@@ -80,14 +172,13 @@ class AdminInvoiceService:
         rows = self.db.execute(
             text(
                 f"""
-                SELECT i.id, i.organization_id, o.name AS organization_name,
+                SELECT i.id, i.organization_id, NULL AS organization_name,
                        i.invoice_no, i.invoice_type, i.party_id, i.party_type,
                        i.status, i.posting_date, i.due_date,
                        i.grand_total, i.outstanding_amount, i.created_at,
                        i.billing_cycle, i.subscription_period_start, i.subscription_period_end,
                        i.seat_count, i.credit_usage
                 FROM invoices i
-                LEFT JOIN organizations o ON o.id = i.organization_id
                 WHERE {where_sql}
                 ORDER BY i.posting_date DESC
                 LIMIT :limit OFFSET :offset
@@ -98,12 +189,16 @@ class AdminInvoiceService:
 
         # Build party map for party_name/party_code
         party_map = self._build_cross_org_party_map(rows)
+        
+        # Fetch organization names from identity service
+        org_ids = list(set(row.organization_id for row in rows))
+        org_names = await self._get_organization_names(org_ids)
 
         invoices = [
             AdminInvoiceListItem(
                 id=row.id,
                 organization_id=row.organization_id,
-                organization_name=row.organization_name,
+                organization_name=org_names.get(row.organization_id, f"Organization {row.organization_id}"),
                 invoice_no=row.invoice_no,
                 invoice_type=row.invoice_type,
                 party_id=row.party_id,
@@ -160,12 +255,8 @@ class AdminInvoiceService:
             )
         response = self.invoice_service._to_response(inv)
 
-        # Add organization_name
-        org_row = self.db.execute(
-            text("SELECT name FROM organizations WHERE id = :org_id"),
-            {"org_id": inv.organization_id},
-        ).first()
-        response["organization_name"] = org_row.name if org_row else None
+        # Add organization_name - TODO: Get from identity service
+        response["organization_name"] = None  # Will need to fetch from identity service
 
         return response
 

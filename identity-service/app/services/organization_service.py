@@ -135,6 +135,7 @@ class OrganizationService:
         sort_by: str = "created_at",
         sort_order: str = "desc",
         organization_ids: list[UUID] | None = None,
+        parent_organization_id: UUID | None = None,
     ) -> tuple[list[dict], dict]:
         """List organizations with pagination. Returns (items, pagination_meta)."""
         status_enum = None
@@ -159,6 +160,7 @@ class OrganizationService:
             sort_by=sort_by,
             sort_order=sort_order,
             organization_ids=organization_ids,
+            parent_organization_id=parent_organization_id,
         )
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {

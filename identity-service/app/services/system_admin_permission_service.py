@@ -12,9 +12,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.organization import Organization, OrganizationType
-from app.models.permission import Permission
-from app.models.role import Role
-from app.models.user_organization_role import UserOrganizationRole
+from app.models.role import Role, Permission, UserOrganizationRole
 from app.services.role_service import RoleService
 from app.services.permission_service import PermissionService
 
