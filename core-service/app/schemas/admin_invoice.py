@@ -93,5 +93,8 @@ class AdminPaymentListItem(BaseModel):
 class AdminPaymentListResponse(BaseModel):
     """Paginated list of payments for admin cross-org view."""
 
-    payment_entries: list[AdminPaymentListItem]
-    pagination: PaginationMeta
+    payments: list[AdminPaymentListItem]
+    page: int
+    total_pages: int
+    total_count: int
+    page_size: int

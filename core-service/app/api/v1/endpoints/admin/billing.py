@@ -309,6 +309,115 @@ async def create_credit_adjustment_invoice(
 
 # ── Billing Summary & Organization Management ───────────────────────────
 
+@router.get("/summary", response_model=Dict)
+async def get_overall_billing_summary(
+    db: Session = Depends(get_db),
+    current_user = Depends(require_permission("system_admin.billing"))
+):
+    """Get overall billing summary for all customer organizations
+    
+    Returns aggregate billing metrics across all customers for admin dashboard
+    """
+    try:
+        admin_service = AdminInvoiceService(db)
+        
+        # Get aggregate billing metrics
+        summary = {
+            "total_customers": 0,
+            "total_invoices": 0,
+            "total_revenue": 0,
+            "total_outstanding": 0,
+            "overdue_invoices": 0,
+            "recent_invoices": [],
+            "status_breakdown": {
+                "draft": 0,
+                "sent": 0,
+                "paid": 0,
+                "overdue": 0,
+                "cancelled": 0
+            }
+        }
+        
+        # Get invoice metrics using raw SQL for better performance
+        metrics_query = """
+        SELECT 
+            COUNT(DISTINCT organization_id) as total_customers,
+            COUNT(*) as total_invoices,
+            SUM(grand_total) as total_revenue,
+            SUM(outstanding_amount) as total_outstanding,
+            SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdue_invoices,
+            status,
+            COUNT(*) as status_count
+        FROM invoices
+        WHERE invoice_type = 'sales'
+        GROUP BY status
+        """
+        
+        from sqlalchemy import text
+        result = db.execute(text("""
+            SELECT 
+                COUNT(DISTINCT organization_id) as total_customers,
+                COUNT(*) as total_invoices,
+                COALESCE(SUM(grand_total), 0) as total_revenue,
+                COALESCE(SUM(outstanding_amount), 0) as total_outstanding,
+                SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdue_invoices
+            FROM invoices
+            WHERE invoice_type = 'sales'
+        """)).first()
+        
+        if result:
+            summary.update({
+                "total_customers": result.total_customers or 0,
+                "total_invoices": result.total_invoices or 0, 
+                "total_revenue": float(result.total_revenue or 0),
+                "total_outstanding": float(result.total_outstanding or 0),
+                "overdue_invoices": result.overdue_invoices or 0
+            })
+        
+        # Get status breakdown
+        status_result = db.execute(text("""
+            SELECT status, COUNT(*) as status_count 
+            FROM invoices 
+            WHERE invoice_type = 'sales'
+            GROUP BY status
+        """)).fetchall()
+        
+        for row in status_result:
+            if row.status in summary["status_breakdown"]:
+                summary["status_breakdown"][row.status] = row.status_count
+        
+        # Get recent invoices
+        recent_result = db.execute(text("""
+            SELECT id, invoice_no, organization_id, grand_total, status, posting_date
+            FROM invoices
+            WHERE invoice_type = 'sales'
+            ORDER BY posting_date DESC
+            LIMIT 10
+        """)).fetchall()
+        
+        summary["recent_invoices"] = [
+            {
+                "id": str(row.id),
+                "invoice_no": row.invoice_no,
+                "organization_id": str(row.organization_id),
+                "amount": float(row.grand_total),
+                "status": row.status,
+                "date": row.posting_date.isoformat() if row.posting_date else None
+            }
+            for row in recent_result
+        ]
+        
+        logger.info(f"Generated overall billing summary with {summary['total_invoices']} invoices")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Failed to get overall billing summary: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get billing summary: {str(e)}"
+        )
+
+
 @router.get("/summary/{customer_id}", response_model=BillingSummaryResponse)
 async def get_billing_summary(
     customer_id: UUID,
