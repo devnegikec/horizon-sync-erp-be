@@ -3,7 +3,16 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -17,8 +26,9 @@ class QRBlock(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("qr_products.id"),
-                        nullable=False, index=True)
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=False, index=True
+    )
 
     batch = Column(String(50), nullable=False)
     serial_prefix = Column(String(20), nullable=True)
@@ -31,11 +41,15 @@ class QRBlock(Base):
     price = Column(Integer, nullable=True)
     style = Column(String(20), nullable=True)
     task_status = Column(String(20), nullable=True)
+    status = Column(String(20), nullable=True)
+    task_id = Column(String(255), nullable=True)
     qr_image = Column(Boolean, default=False)
     manufacture_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
     gcs_url = Column(Text, nullable=True)
+    download_url = Column(Text, nullable=True)
     extra_data = Column(JSONB, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Audit
     created_by = Column(UUID(as_uuid=True), nullable=True)

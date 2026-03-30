@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
 
+    # Brand Key Encryption (ECDSA private key encryption at rest)
+    brand_key_encryption_secret: str = ""
+
+    # QR Domain & GCS
+    qr_domain: str = "verify.example.com"
+    gcs_bucket: str = ""
+    gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
+
     # Email/SMTP Configuration
     email_enabled: bool = True
     smtp_host: str = "localhost"

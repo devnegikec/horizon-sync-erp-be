@@ -6,20 +6,14 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     analytics,
-    brand_trust,
-    public_marketing,
-    campaigns,
-    cascade_qr,
-    destinations,
-    messaging,
-    short_urls,
-    qr_products,
-    qr_product_settings,
-    warranties,
     bank_accounts,
     batches,
+    brand_trust,
+    brands,
     bulk_export,
     bulk_import,
+    campaigns,
+    cascade_qr,
     chart_of_accounts,
     chart_of_accounts_setup,
     communications,
@@ -27,6 +21,7 @@ from app.api.v1.endpoints import (
     currency,
     customers,
     delivery_notes,
+    destinations,
     document_numbering,
     exchange_rates,
     invoices,
@@ -37,17 +32,22 @@ from app.api.v1.endpoints import (
     journal_entries,
     landed_cost,
     material_requests,
+    messaging,
     payments,
     pick_lists,
+    public_marketing,
     purchase_orders,
     purchase_receipts,
     put_away_rules,
+    qr_product_settings,
+    qr_products,
     quality_inspections,
     quotations,
     reconciliations,
     rfqs,
     sales_orders,
     serial_numbers,
+    short_urls,
     smart_picking,
     stock_entries,
     stock_entry_bulk_import,
@@ -60,6 +60,7 @@ from app.api.v1.endpoints import (
     uom_conversions,
     uoms,
     warehouses,
+    warranties,
 )
 
 api_router = APIRouter()
@@ -296,6 +297,13 @@ api_router.include_router(
     brand_trust.router,
     prefix="/brand-trust",
     tags=["Brand Trust"],
+)
+
+# Brands module (ECDSA key pair management)
+api_router.include_router(
+    brands.router,
+    prefix="/brands",
+    tags=["Brands"],
 )
 
 # Public / Marketing module (no auth)

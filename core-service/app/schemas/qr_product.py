@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── QR Product ────────────────────────────────────────────────────────────────
+
 
 class QRProductBase(BaseModel):
     name: str = Field(..., max_length=100)
@@ -29,7 +29,7 @@ class QRProductBase(BaseModel):
 
 
 class QRProductCreate(QRProductBase):
-    pass
+    brand_id: UUID | None = None
 
 
 class QRProductUpdate(BaseModel):
@@ -55,6 +55,7 @@ class QRProductUpdate(BaseModel):
 class QRProductResponse(QRProductBase):
     id: UUID
     organization_id: UUID
+    brand_id: UUID | None = None
     is_active: bool
     created_by: UUID | None
     created_at: datetime
@@ -84,9 +85,11 @@ class QRProductListResponse(BaseModel):
 
 # ── QR Block ──────────────────────────────────────────────────────────────────
 
+
 class QRBlockCreate(BaseModel):
     batch: str = Field(..., max_length=50)
     quantity: int = Field(..., gt=0)
+    qr_type: str | None = None
     serial_prefix: str | None = None
     sr_number_type: str | None = None
     cert_type: str | None = None
@@ -108,17 +111,27 @@ class QRBlockResponse(BaseModel):
     quantity: int
     serial_prefix: str | None
     sr_number_type: str | None
+    status: str | None
     task_status: str | None
+    task_id: str | None
     qr_image: bool
     manufacture_date: date | None
     expiry_date: date | None
     gcs_url: str | None
+    download_url: str | None
+    completed_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
+class BlockDownloadResponse(BaseModel):
+    signed_url: str
+    expires_at: datetime
+
+
 # ── Product Item ──────────────────────────────────────────────────────────────
+
 
 class ProductItemResponse(BaseModel):
     id: UUID
@@ -145,6 +158,7 @@ class ProductItemListResponse(BaseModel):
 
 # ── QR Validate (public endpoint) ─────────────────────────────────────────────
 
+
 class QRValidateRequest(BaseModel):
     serial_number: str
     # Optional scan metadata
@@ -168,6 +182,7 @@ class QRValidateResponse(BaseModel):
 
 
 # ── QR Activation Parameters ──────────────────────────────────────────────────
+
 
 class QRActivationParamsCreate(BaseModel):
     product_id: UUID | None = None
@@ -196,9 +211,59 @@ class QRActivationParamsResponse(QRActivationParamsCreate):
 
 # ── Scan Analytics ────────────────────────────────────────────────────────────
 
+
 class ScanAnalyticsResponse(BaseModel):
     total_scans: int
     unique_serials: int
     suspicious_count: int
     scans_by_country: list[dict[str, Any]]
     scans_by_day: list[dict[str, Any]]
+
+
+# ── QR Authentication (public endpoint) ───────────────────────────────────────
+
+
+class AuthenticateRequest(BaseModel):
+    serial_number: str
+    nonce: str  # timestamp
+    cipher: str  # base64 signature
+
+
+class AuthenticateResponse(BaseModel):
+    message: str
+    authentic: bool
+    product_name: str | None = None
+    brand_name: str | None = None
+    gtin: str | None = None
+    serial_number: str | None = None
+
+
+# ── Org-Level Block List ───────────────────────────────────────────────────────
+
+
+class OrgBlockListItem(BaseModel):
+    id: UUID
+    organization_id: UUID
+    product_id: UUID
+    product_name: str | None
+    batch: str
+    quantity: int
+    serial_prefix: str | None
+    sr_number_type: str | None
+    status: str | None
+    task_status: str | None
+    task_id: str | None
+    qr_image: bool
+    manufacture_date: date | None
+    expiry_date: date | None
+    gcs_url: str | None
+    download_url: str | None
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrgBlockListResponse(BaseModel):
+    blocks: list[OrgBlockListItem]
+    pagination: dict[str, Any]
