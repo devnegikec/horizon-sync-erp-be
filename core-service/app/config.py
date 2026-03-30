@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # QR Domain & GCS
     qr_domain: str = "verify.example.com"
     gcs_bucket: str = ""
+    gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
 
     # Email/SMTP Configuration
     email_enabled: bool = True

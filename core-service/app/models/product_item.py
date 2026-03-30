@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -24,7 +24,7 @@ class ProductItem(Base):
 
     serial_number = Column(String(75), nullable=False, index=True)
     secrete_code = Column(String(50), nullable=True)
-    token_id = Column(String(75), nullable=True)
+    token_id = Column(Text, nullable=True)
     is_unit = Column(Boolean, default=False)
     is_suspicious = Column(Boolean, default=False)
     is_verify = Column(Boolean, default=False)

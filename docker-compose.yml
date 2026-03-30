@@ -123,6 +123,7 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync ERP}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
     ports:
       - "8001:8001"
       - "5679:5679"

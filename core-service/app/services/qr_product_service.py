@@ -4,7 +4,7 @@ import logging
 import secrets
 import string
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -39,6 +39,48 @@ from app.utils.serial_generators import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_excel(rows: list[dict], qr_type: str) -> bytes:
+    """Build an Excel file from block item rows. Returns raw bytes."""
+    from io import BytesIO
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "QR Codes"
+
+    qr_type = qr_type.upper()
+    if qr_type == "B":
+        headers = ["URL (Overt)", "URL (Covert)", "Serial Number"]
+    elif qr_type == "SC":
+        headers = ["QR URL", "Serial Number", "Secret Code"]
+    else:
+        headers = ["QR URL", "Serial Number"]
+
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    for row_idx, item in enumerate(rows, 2):
+        if qr_type == "B":
+            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("overt_url", ""))
+            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
+        elif qr_type == "SC":
+            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+            ws.cell(row=row_idx, column=3, value=item.get("secret_code", ""))
+        else:
+            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 class QRProductService:
@@ -163,7 +205,8 @@ class QRProductService:
         self.credit_service.check_balance(organization_id, data.quantity)
 
         # 3. Create block with status="pending"
-        block_dict = data.model_dump()
+        # qr_type lives on QRProduct, not QRBlock — strip it before DB insert
+        block_dict = {k: v for k, v in data.model_dump().items() if k != "qr_type"}
         block_dict["product_id"] = product_id
         block_dict["organization_id"] = organization_id
         block_dict["created_by"] = user_id
@@ -327,6 +370,90 @@ class QRProductService:
 
         self.item_repo.bulk_create(items)
 
+    def get_block(self, block_id: UUID, organization_id: UUID) -> QRBlock:
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if not block:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="QR block not found"
+            )
+        return block
+
+    def get_block_download_url(
+        self, block_id: UUID, organization_id: UUID
+    ) -> tuple[str, datetime]:
+        """Return a signed download URL for a completed block's Excel file."""
+        from app.services import storage_service
+
+        block = self.get_block(block_id, organization_id)
+
+        if block.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Block is not ready (status: {block.status})",
+            )
+
+        expiry_minutes = 60
+        expires_at = datetime.now(UTC) + timedelta(minutes=expiry_minutes)
+
+        # If a GCS URL is stored, return it (signed or direct)
+        if block.download_url:
+            if storage_service.is_full_url(block.download_url):
+                return block.download_url, expires_at
+            signed_url = storage_service.get_signed_url(block.download_url, expiry_minutes)
+            return signed_url, expires_at
+
+        # No stored URL — raise so the endpoint falls back to streaming
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Download file not available",
+        )
+
+    def get_block_excel_stream(
+        self, block_id: UUID, organization_id: UUID
+    ) -> tuple[bytes, str]:
+        """
+        Generate the Excel file on-demand from the block's ProductItems.
+        Used when download_url is not set (GCS not configured).
+        Returns (excel_bytes, filename).
+        """
+        from app.models.product_item import ProductItem as PIModel
+
+        block = self.get_block(block_id, organization_id)
+
+        if block.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Block is not ready (status: {block.status})",
+            )
+
+        product = self.product_repo.get_by_id(block.product_id, organization_id)
+        qr_type = (product.qr_type if product else None) or "D"
+
+        items = (
+            self.db.query(PIModel)
+            .filter(
+                PIModel.block_id == block_id,
+                PIModel.organization_id == organization_id,
+                PIModel.deleted_at.is_(None),
+            )
+            .order_by(PIModel.created_at.asc())
+            .all()
+        )
+
+        rows = [
+            {
+                "serial": item.serial_number,
+                "short_url": item.token_id or "",
+                "secret_code": item.secrete_code or "",
+                "overt_url": (item.extra_data or {}).get("covert_url", ""),
+            }
+            for item in items
+        ]
+
+        excel_bytes = _build_excel(rows, qr_type)
+        filename = f"qr_block_{block.batch}_{block_id}.xlsx"
+        return excel_bytes, filename
+
     def list_blocks(
         self,
         product_id: UUID,
@@ -349,6 +476,37 @@ class QRProductService:
             "has_prev": page > 1,
         }
         return items, pagination
+
+    def list_blocks_by_org(
+        self,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        product_id: UUID | None = None,
+    ) -> tuple[list[dict], dict]:
+        rows, total = self.block_repo.list_by_org(
+            organization_id, page, page_size, status, product_id
+        )
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        pagination = {
+            "page": page,
+            "page_size": page_size,
+            "total_items": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        }
+        enriched = []
+        for block, product_name in rows:
+            block_dict = {
+                k: v
+                for k, v in block.__dict__.items()
+                if k != "_sa_instance_state"
+            }
+            block_dict["product_name"] = product_name
+            enriched.append(block_dict)
+        return enriched, pagination
 
     # ── Product Items ─────────────────────────────────────────────────────────
 

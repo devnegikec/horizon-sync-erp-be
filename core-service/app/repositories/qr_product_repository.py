@@ -109,6 +109,35 @@ class QRBlockRepository:
                  .offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 
+    def list_by_org(
+        self,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        product_id: UUID | None = None,
+    ) -> tuple[list[tuple[QRBlock, str | None]], int]:
+        q = (
+            self.db.query(QRBlock, QRProduct.name)
+            .outerjoin(QRProduct, QRBlock.product_id == QRProduct.id)
+            .filter(
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
+        )
+        if status is not None:
+            q = q.filter(QRBlock.status == status)
+        if product_id is not None:
+            q = q.filter(QRBlock.product_id == product_id)
+        total = q.count()
+        rows = (
+            q.order_by(QRBlock.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return rows, total
+
     def get_monthly_credit_used(self, organization_id: UUID) -> int:
         """Sum QR credits used in the current calendar month"""
         now = datetime.now(UTC)

@@ -89,6 +89,7 @@ class QRProductListResponse(BaseModel):
 class QRBlockCreate(BaseModel):
     batch: str = Field(..., max_length=50)
     quantity: int = Field(..., gt=0)
+    qr_type: str | None = None
     serial_prefix: str | None = None
     sr_number_type: str | None = None
     cert_type: str | None = None
@@ -110,14 +111,23 @@ class QRBlockResponse(BaseModel):
     quantity: int
     serial_prefix: str | None
     sr_number_type: str | None
+    status: str | None
     task_status: str | None
+    task_id: str | None
     qr_image: bool
     manufacture_date: date | None
     expiry_date: date | None
     gcs_url: str | None
+    download_url: str | None
+    completed_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BlockDownloadResponse(BaseModel):
+    signed_url: str
+    expires_at: datetime
 
 
 # ── Product Item ──────────────────────────────────────────────────────────────
@@ -226,3 +236,34 @@ class AuthenticateResponse(BaseModel):
     brand_name: str | None = None
     gtin: str | None = None
     serial_number: str | None = None
+
+
+# ── Org-Level Block List ───────────────────────────────────────────────────────
+
+
+class OrgBlockListItem(BaseModel):
+    id: UUID
+    organization_id: UUID
+    product_id: UUID
+    product_name: str | None
+    batch: str
+    quantity: int
+    serial_prefix: str | None
+    sr_number_type: str | None
+    status: str | None
+    task_status: str | None
+    task_id: str | None
+    qr_image: bool
+    manufacture_date: date | None
+    expiry_date: date | None
+    gcs_url: str | None
+    download_url: str | None
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrgBlockListResponse(BaseModel):
+    blocks: list[OrgBlockListItem]
+    pagination: dict[str, Any]
