@@ -11,17 +11,20 @@ from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission
+from app.dependencies import CurrentUser, require_permission
 from app.models.base import BillingCycle
 from app.services.admin_invoice_service import AdminInvoiceService
 from app.services.subscription_invoice_service import SubscriptionInvoiceService
 
 logger = logging.getLogger(__name__)
+
+# HTTP Bearer token scheme
+security = HTTPBearer()
 
 router = APIRouter()
 
@@ -452,7 +455,8 @@ async def get_customer_organizations(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(require_permission("system_admin.org_manager"))
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _current_user: CurrentUser = Depends(require_permission("system_admin.org_manager"))
 ):
     """Get list of customer organizations accessible to system admin
     
@@ -503,7 +507,8 @@ async def get_customer_organizations(
 async def assign_customer_to_master(
     request: AssignCustomerRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.org_manager"))
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: CurrentUser = Depends(require_permission("system_admin.org_manager"))
 ):
     """Assign customer organization to master organization for billing management
     

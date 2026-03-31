@@ -147,7 +147,7 @@ class PaymentReminderService:
             "invoice_no": invoice.invoice_no,
             "party_type": invoice.party_type,
             "party_id": str(invoice.party_id) if invoice.party_id else None,
-            "total_amount": str(invoice.total_amount),
+            "total_amount": str(invoice.grand_total),
             "outstanding_amount": str(invoice.outstanding_amount),
             "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
             "days_overdue": days_overdue,
@@ -188,35 +188,37 @@ class PaymentReminderService:
         )
 
     def should_send_reminder(
-        self, invoice_data: Dict, config: ReminderConfig, stage: ReminderStage
+        self, invoice_data: Dict, config: ReminderConfig, stage: ReminderStage, force_send: bool = False
     ) -> bool:
         """Check if reminder should be sent for invoice at given stage"""
-        if not config.is_enabled:
+        if not config.is_enabled and not force_send:
             return False
             
         invoice_id = UUID(invoice_data["id"])
         days_overdue = invoice_data["days_overdue"]
         
-        # Check if we've exceeded max reminders for this stage
-        reminder_count = (
-            self.db.query(func.count(ReminderLog.id))
-            .filter(
-                ReminderLog.invoice_id == invoice_id,
-                ReminderLog.reminder_stage == stage,
-                ReminderLog.status == ReminderStatus.SENT
+        # Skip rate limiting checks if force_send is True
+        if not force_send:
+            # Check if we've exceeded max reminders for this stage
+            reminder_count = (
+                self.db.query(func.count(ReminderLog.id))
+                .filter(
+                    ReminderLog.invoice_id == invoice_id,
+                    ReminderLog.reminder_stage == stage,
+                    ReminderLog.status == ReminderStatus.SENT
+                )
+                .scalar()
             )
-            .scalar()
-        )
-        
-        if reminder_count >= config.max_reminders_per_stage:
-            return False
             
-        # Check if enough time has passed since last reminder
-        last_reminder = self.get_last_reminder_for_invoice_stage(invoice_id, stage)
-        if last_reminder:
-            days_since_last = (datetime.now(UTC) - last_reminder.sent_at).days
-            if days_since_last < config.reminder_frequency_days:
+            if reminder_count >= config.max_reminders_per_stage:
                 return False
+                
+            # Check if enough time has passed since last reminder
+            last_reminder = self.get_last_reminder_for_invoice_stage(invoice_id, stage)
+            if last_reminder:
+                days_since_last = (datetime.now(UTC) - last_reminder.sent_at).days
+                if days_since_last < config.reminder_frequency_days:
+                    return False
                 
         return True
 
@@ -317,7 +319,6 @@ Billing Department
         # Get invoice details
         invoice = (
             self.db.query(Invoice)
-            .options(joinedload(Invoice.organization))  # Assumes relationship exists
             .filter(Invoice.id == invoice_id)
             .first()
         )
@@ -365,7 +366,7 @@ Billing Department
             subject=content["subject"],
             template_used=template.template_name if template else None,
             status=ReminderStatus.PENDING,
-            invoice_amount=str(invoice.total_amount),
+            invoice_amount=str(invoice.grand_total),
             outstanding_amount=str(invoice.outstanding_amount),
             days_overdue=invoice_data["days_overdue"],
             due_date=invoice.due_date,
@@ -385,7 +386,7 @@ Billing Department
                 message=content["content"],
                 organization_id=invoice.organization_id,
                 user_id=user_id,
-                doc_type="payment_reminder",
+                doc_type="invoice",
                 doc_id=str(invoice.id),
                 doc_no=invoice.invoice_no,
             )
@@ -448,7 +449,7 @@ Billing Department
     # ── Batch Reminder Processing ───────────────────────────────────────
 
     async def send_batch_reminders(
-        self, organization_ids: Optional[List[UUID]] = None, user_id: Optional[UUID] = None
+        self, organization_ids: Optional[List[UUID]] = None, user_id: Optional[UUID] = None, force_send: bool = False
     ) -> Dict:
         """Send reminders for all eligible overdue invoices
         
@@ -499,12 +500,12 @@ Billing Department
                     continue
                 
                 # Check if reminder should be sent
-                if not self.should_send_reminder(invoice_data, config, stage):
+                if not self.should_send_reminder(invoice_data, config, stage, force_send):
                     results["skipped"] += 1
                     results["details"].append({
                         "invoice_id": str(invoice_id),
                         "status": "skipped",
-                        "reason": "Frequency limits or max attempts reached"
+                        "reason": "Frequency limits or max attempts reached" if not force_send else "Not eligible for reminder"
                     })
                     continue
                 
@@ -589,7 +590,7 @@ Billing Department
             subject=content["subject"],
             template_used=template.template_name if template else None,
             status=ReminderStatus.PENDING,
-            invoice_amount=str(invoice.total_amount),
+            invoice_amount=str(invoice.grand_total),
             outstanding_amount=str(invoice.outstanding_amount),
             days_overdue=invoice_data["days_overdue"],
             due_date=invoice.due_date,
@@ -609,7 +610,7 @@ Billing Department
             message=content["content"],
             organization_id=invoice.organization_id,
             user_id=user_id,
-            doc_type="payment_reminder",
+            doc_type="invoice",
             doc_id=str(invoice_id),
             doc_no=invoice.invoice_no,
         )
@@ -679,3 +680,128 @@ Billing Department
             stats[f"{stage.value}_count"] = count
             
         return stats
+
+    async def send_manual_reminders(
+        self,
+        organization_id: UUID,
+        invoice_ids: List[UUID], 
+        reminder_stage: ReminderStage,
+        custom_message: Optional[str] = None,
+        override_frequency: bool = False,
+        user_id: Optional[UUID] = None
+    ) -> Dict:
+        """Send manual reminders for multiple invoices"""
+        results = {
+            "organization_id": str(organization_id),
+            "stage": reminder_stage.value,
+            "processed": 0,
+            "sent": 0,
+            "failed": 0,
+            "skipped": 0,
+            "details": []
+        }
+        
+        for invoice_id in invoice_ids:
+            results["processed"] += 1
+            
+            try:
+                # If override_frequency is False, check normal reminder rules
+                if not override_frequency:
+                    invoice_data = self._invoice_to_dict(
+                        self.db.query(Invoice).filter(Invoice.id == invoice_id).first()
+                    )
+                    config = self.get_reminder_config(organization_id)
+                    
+                    if not self.should_send_reminder(invoice_data, config, reminder_stage, override_frequency):
+                        results["skipped"] += 1
+                        results["details"].append({
+                            "invoice_id": str(invoice_id),
+                            "status": "skipped",
+                            "reason": "Frequency limits or max attempts reached"
+                        })
+                        continue
+                
+                # Send the reminder
+                result = await self.send_manual_reminder(
+                    invoice_id=invoice_id,
+                    user_id=user_id,
+                    stage=reminder_stage
+                )
+                
+                results["sent"] += 1
+                results["details"].append({
+                    "invoice_id": str(invoice_id),
+                    "status": "sent",
+                    "reminder_id": result["reminder_id"]
+                })
+                
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({
+                    "invoice_id": str(invoice_id),
+                    "status": "failed",
+                    "error": str(e)
+                })
+                logger.error(f"Failed to send manual reminder for invoice {invoice_id}: {e}")
+        
+        return results
+    
+    async def preview_batch_reminders(
+        self, organization_ids: List[UUID]
+    ) -> Dict:
+        """Preview batch reminders without actually sending them"""
+        preview = {
+            "organizations": len(organization_ids),
+            "would_process": 0,
+            "would_send": 0,
+            "would_skip": 0,
+            "breakdown_by_stage": {},
+            "breakdown_by_org": []
+        }
+        
+        for org_id in organization_ids:
+            org_preview = {
+                "organization_id": str(org_id),
+                "overdue_invoices": 0,
+                "would_send": 0,
+                "would_skip": 0,
+                "stages": {}
+            }
+            
+            # Get overdue invoices for this org
+            overdue_invoices = self.get_overdue_invoices(organization_id=org_id)
+            org_preview["overdue_invoices"] = len(overdue_invoices)
+            
+            config = self.get_reminder_config(org_id)
+            
+            for invoice_data in overdue_invoices:
+                preview["would_process"] += 1
+                
+                # Determine stage
+                stage = self.determine_reminder_stage(invoice_data["days_overdue"], config)
+                if not stage:
+                    preview["would_skip"] += 1
+                    org_preview["would_skip"] += 1
+                    continue
+                
+                # Check if should send
+                if self.should_send_reminder(invoice_data, config, stage, False):
+                    preview["would_send"] += 1
+                    org_preview["would_send"] += 1
+                    
+                    # Track by stage
+                    stage_name = stage.value
+                    if stage_name not in preview["breakdown_by_stage"]:
+                        preview["breakdown_by_stage"][stage_name] = 0
+                    preview["breakdown_by_stage"][stage_name] += 1
+                    
+                    if stage_name not in org_preview["stages"]:
+                        org_preview["stages"][stage_name] = 0
+                    org_preview["stages"][stage_name] += 1
+                else:
+                    preview["would_skip"] += 1
+                    org_preview["would_skip"] += 1
+            
+            preview["breakdown_by_org"].append(org_preview)
+        
+        return preview

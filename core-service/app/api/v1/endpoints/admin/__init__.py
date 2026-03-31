@@ -19,6 +19,8 @@ from app.api.v1.endpoints.admin.payments import router as payments_router
 from app.api.v1.endpoints.admin.activity_logs import router as activity_logs_router
 from app.api.v1.endpoints.admin.users import router as users_router
 from app.api.v1.endpoints.admin.billing import router as billing_router
+from app.api.v1.endpoints.admin.payment_reminders import router as payment_reminders_router
+from app.api.v1.endpoints.admin.system import router as system_router
 
 # Main admin router — all admin sub-routers are included here.
 # This is the single router mounted at /admin in the main app router.
@@ -47,3 +49,9 @@ router.include_router(activity_logs_router, prefix="/activity-logs", tags=["Admi
 
 # Billing
 router.include_router(billing_router, prefix="/billing", tags=["Admin - Billing"])
+
+# Payment Reminders
+router.include_router(payment_reminders_router, prefix="/payment-reminders", tags=["Admin - Payment Reminders"])
+
+# System Administration
+router.include_router(system_router, tags=["Admin - System"])

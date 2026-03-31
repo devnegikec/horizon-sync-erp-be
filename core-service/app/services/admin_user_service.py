@@ -7,6 +7,7 @@ Resolves organization names by querying the identity database directly
 
 import logging
 import math
+from typing import List
 from uuid import UUID
 
 import httpx
@@ -299,3 +300,123 @@ class AdminUserService:
             created_at=u.get("created_at", ""),
             updated_at=u.get("updated_at"),
         )
+
+    # ── System Administration Methods ──────────────────────────────────
+
+    async def get_system_admin_users(self) -> List[dict]:
+        """Get all users with system admin roles in the master organization"""
+        try:
+            # Call identity service to get system admin users
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{IDENTITY_API}/organization-management/system-admin-users",
+                    headers=self._headers(),
+                    timeout=30.0,
+                )
+                
+                if response.status_code == 404:
+                    return []
+                    
+                response.raise_for_status()
+                data = response.json()
+                
+                # Map to expected format
+                admin_users = []
+                for user in data.get("admin_users", []):
+                    admin_users.append({
+                        "user_id": user["user_id"],
+                        "email": user["email"],
+                        "first_name": user.get("first_name"),
+                        "last_name": user.get("last_name"),
+                        "roles": user.get("permissions", []),  # Map permissions to roles
+                        "is_active": user.get("is_active", True),
+                        "created_at": user.get("created_at", ""),
+                        "last_login": user.get("last_login")
+                    })
+                
+                return admin_users
+                
+        except httpx.RequestError as e:
+            logger.error(f"Network error getting system admin users: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error getting system admin users: {e}")
+            return []
+
+    async def create_system_admin_user(self, user_data: dict) -> dict:
+        """Create a new system admin user"""
+        try:
+            # Create user via identity service
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{IDENTITY_API}/admin/users",
+                    headers=self._headers(),
+                    json=user_data,
+                    timeout=30.0,
+                )
+                
+                response.raise_for_status()
+                user_resp = response.json()
+                
+                # Map to expected format
+                return {
+                    "user_id": user_resp["id"],
+                    "email": user_resp["email"],
+                    "first_name": user_resp.get("first_name"),
+                    "last_name": user_resp.get("last_name"),
+                    "roles": user_data.get("roles", []),
+                    "is_active": user_resp.get("is_active", True),
+                    "created_at": user_resp.get("created_at", ""),
+                    "last_login": None
+                }
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error creating system admin user: {e}")
+            raise HTTPException(status_code=e.response.status_code, detail="Failed to create system admin user")
+        except Exception as e:
+            logger.error(f"Error creating system admin user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to create system admin user")
+
+    async def update_system_admin_user(self, user_id: UUID, updates: dict) -> dict:
+        """Update system admin user"""
+        try:
+            # Update user via identity service
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{IDENTITY_API}/users/{user_id}",
+                    headers=self._headers(),
+                    json=updates,
+                    timeout=30.0,
+                )
+                
+                response.raise_for_status()
+                user_resp = response.json()
+                
+                # Map to expected format
+                return {
+                    "user_id": user_resp["id"],
+                    "email": user_resp["email"],
+                    "first_name": user_resp.get("first_name"),
+                    "last_name": user_resp.get("last_name"),
+                    "roles": user_resp.get("roles", []),
+                    "is_active": user_resp.get("is_active", True),
+                    "created_at": user_resp.get("created_at", ""),
+                    "last_login": user_resp.get("last_login")
+                }
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error updating system admin user: {e}")
+            raise HTTPException(status_code=e.response.status_code, detail="Failed to update system admin user")
+        except Exception as e:
+            logger.error(f"Error updating system admin user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update system admin user")
+
+    async def remove_system_admin_user(self, user_id: UUID) -> None:
+        """Remove (deactivate) system admin user"""
+        try:
+            # Deactivate user via identity service
+            await self.update_system_admin_user(user_id, {"is_active": False})
+            
+        except Exception as e:
+            logger.error(f"Error removing system admin user: {e}")
+            raise HTTPException(status_code=500, detail="Failed to remove system admin user")

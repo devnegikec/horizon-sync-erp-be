@@ -143,6 +143,7 @@ services:
       - ./core-service/scripts:/app/scripts
       - ./core-service/tests:/app/tests
       - ./core-service/htmlcov:/app/htmlcov
+      - ./core-service/create_master_organization.py:/app/create_master_organization.py
     command: >
       bash -c "
         echo 'Waiting for Identity Service...' &&
