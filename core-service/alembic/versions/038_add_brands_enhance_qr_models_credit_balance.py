@@ -1,53 +1,58 @@
 """add brands, enhance qr models, credit balance
 
-Revision ID: 034_add_brands_enhance_qr_models
-Revises: 033_add_qr_product_settings
+Revision ID: 038_add_brands_enhance_qr_models  
+Revises: 037_add_b2b_billing_invoice_types
 Create Date: 2026-03-22 10:00:00.000000
 
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "034_add_brands_enhance_qr_models"
-down_revision = "033_add_qr_product_settings"
+revision = "038_add_brands_enhance_qr_models"
+down_revision = "037_add_b2b_billing_invoice_types"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    # Check if tables already exist
+    inspector = inspect(op.get_bind())
+    
     # ── brands table (NEW) ────────────────────────────────────────────────────
-    op.create_table(
-        "brands",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-        ),
-        sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("name", sa.String(256), nullable=True),
-        sa.Column("short_code", sa.String(256), nullable=True),
-        sa.Column("public_key", sa.String(512), nullable=True),
-        sa.Column("private_key_encrypted", sa.Text, nullable=True),
-        # Audit
-        sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("updated_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-        ),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index("idx_brands_org", "brands", ["organization_id"])
+    if not inspector.has_table('brands'):
+        op.create_table(
+            "brands",
+            sa.Column(
+                "id",
+                postgresql.UUID(as_uuid=True),
+                primary_key=True,
+                server_default=sa.text("gen_random_uuid()"),
+            ),
+            sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column("name", sa.String(256), nullable=True),
+            sa.Column("short_code", sa.String(256), nullable=True),
+            sa.Column("public_key", sa.String(512), nullable=True),
+            sa.Column("private_key_encrypted", sa.Text, nullable=True),
+            # Audit
+            sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column("updated_by", postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+            ),
+            sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        )
+        op.create_index("idx_brands_org", "brands", ["organization_id"])
 
     # ── qr_products: add brand_id FK ──────────────────────────────────────────
     op.add_column(

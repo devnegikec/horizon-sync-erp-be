@@ -11,6 +11,7 @@ Create Date: 2026-03-26 14:30:00
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 import uuid
 
 # revision identifiers
@@ -22,9 +23,12 @@ depends_on = None
 
 def upgrade():
     """Add payment reminder system tables"""
+    # Check if tables already exist
+    inspector = inspect(op.get_bind())
 
     # Create reminder_configs table (without custom enum types)
-    op.create_table('reminder_configs',
+    if not inspector.has_table('reminder_configs'):
+        op.create_table('reminder_configs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False, index=True, unique=True),
         
@@ -68,7 +72,8 @@ def upgrade():
     )
     
     # Create reminder_logs table (using string instead of enums)
-    op.create_table('reminder_logs',
+    if not inspector.has_table('reminder_logs'):
+        op.create_table('reminder_logs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False, index=True),
         sa.Column('invoice_id', postgresql.UUID(as_uuid=True), nullable=False, index=True),
@@ -114,14 +119,17 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('NOW()'))
     )
+        
+        # Create indexes for performance
+        op.create_index('idx_reminder_logs_org_invoice', 'reminder_logs', ['organization_id', 'invoice_id'])
+        op.create_index('idx_reminder_logs_status_stage', 'reminder_logs', ['status', 'reminder_stage'])
+        op.create_index('idx_reminder_logs_sent_at', 'reminder_logs', ['sent_at'])
+        op.create_index('idx_reminder_logs_next_due', 'reminder_logs', ['next_reminder_due'])
+        op.create_index('idx_reminder_logs_batch_id', 'reminder_logs', ['batch_id'])
     
-    # Create indexes for performance
-    op.create_index('idx_reminder_configs_org_id', 'reminder_configs', ['organization_id'])
-    op.create_index('idx_reminder_logs_org_invoice', 'reminder_logs', ['organization_id', 'invoice_id'])
-    op.create_index('idx_reminder_logs_status_stage', 'reminder_logs', ['status', 'reminder_stage'])
-    op.create_index('idx_reminder_logs_sent_at', 'reminder_logs', ['sent_at'])
-    op.create_index('idx_reminder_logs_next_due', 'reminder_logs', ['next_reminder_due'])
-    op.create_index('idx_reminder_logs_batch_id', 'reminder_logs', ['batch_id'])
+    # Create indexes for reminder_configs if table was created
+    if not inspector.has_table('reminder_configs'):
+        op.create_index('idx_reminder_configs_org_id', 'reminder_configs', ['organization_id'])
     
     
     # Add foreign key constraint within reminder system tables only
