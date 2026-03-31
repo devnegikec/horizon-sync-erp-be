@@ -43,6 +43,9 @@ class QRBlock(Base):
     task_status = Column(String(20), nullable=True)
     status = Column(String(20), nullable=True)
     task_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    progress_current = Column(Integer, nullable=True)
+    progress_total = Column(Integer, nullable=True)
     qr_image = Column(Boolean, default=False)
     manufacture_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
@@ -67,5 +70,12 @@ class QRBlock(Base):
     product_items = relationship("ProductItem", back_populates="block")
     credit_usage = relationship("QRCreditUsage", back_populates="block")
 
+    @property
+    def progress_percent(self) -> int | None:
+        """Calculate progress percentage"""
+        if self.progress_total and self.progress_current:
+            return int((self.progress_current / self.progress_total) * 100)
+        return None
+
     def __repr__(self):
-        return f"<QRBlock(id={self.id}, batch='{self.batch}', qty={self.quantity})>"
+        return f"<QRBlock(id={self.id}, batch='{self.batch}', qty={self.quantity}, task_status={self.task_status})>"

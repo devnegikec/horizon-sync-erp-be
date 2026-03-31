@@ -30,6 +30,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: horizon_redis
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -154,6 +155,78 @@ services:
         echo 'Starting Core Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m uvicorn app.main:app --host 0.0.0.0 --port 8001
       "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  # ===========================================
+  # CELERY WORKERS (Async QR Block Generation)
+  # ===========================================
+  celery-worker:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_celery_worker
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      REDIS_URL: redis://redis:6379/0
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      GCS_BUCKET: ${GCS_BUCKET:-}
+      GCS_CREDENTIALS_PATH: ${GCS_CREDENTIALS_PATH:-}
+      QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./core-service/app:/app/app
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_celery_beat
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      REDIS_URL: redis://redis:6379/0
+    command: celery -A app.celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./core-service/app:/app/app
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_flower
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    command: celery -A app.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    volumes:
+      - ./core-service/app:/app/app
     networks:
       - horizon_network
     restart: unless-stopped

@@ -1,7 +1,7 @@
 """add brands, enhance qr models, credit balance
 
-Revision ID: 034_add_brands_enhance_qr_models
-Revises: 033_add_qr_product_settings
+Revision ID: 036_add_brands_enhance_qr_models
+Revises: 034_add_admin_portal_tables
 Create Date: 2026-03-22 10:00:00.000000
 
 """
@@ -11,8 +11,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "034_add_brands_enhance_qr_models"
-down_revision = "033_add_qr_product_settings"
+revision = "036_add_brands_enhance_qr_models"
+down_revision = "034_add_admin_portal_tables"
 branch_labels = None
 depends_on = None
 

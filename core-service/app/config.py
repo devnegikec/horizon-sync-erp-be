@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
 
+    # Celery Configuration
+    enable_async_block_generation: bool = True
+    celery_task_max_retries: int = 3
+    celery_task_retry_delay: int = 60
+    celery_batch_size: int = 1000
+
     # Brand Key Encryption (ECDSA private key encryption at rest)
     brand_key_encryption_secret: str = ""
 
