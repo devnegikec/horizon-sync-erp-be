@@ -11,6 +11,8 @@ from app.api.v1.endpoints import (
     roles,
     users,
     organization_deactivation,
+    system_admin_users,
+    system_admin_audit_log,
 )
 from app.api.v1.endpoints.admin import auth as admin_auth
 
@@ -40,4 +42,12 @@ api_router.include_router(
 
 api_router.include_router(
     organization_deactivation.router, prefix="/organization-management", tags=["Organization Management"]
+)
+
+api_router.include_router(
+    system_admin_users.router, prefix="/organization-management", tags=["Organization Management"]
+)
+
+api_router.include_router(
+    system_admin_audit_log.router, prefix="/organization-management", tags=["Organization Management"]
 )

@@ -5,6 +5,7 @@ controls and role assignment for master organization users.
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -111,7 +112,7 @@ class SystemAdminPermissionService:
             permissions.extend([perm.permission_code for perm in role_permissions])
         
         # If user has system_admin_master role, return wildcard permission
-        if any("system_admin_master" in ur.role.role_name for ur in user_roles if ur.role):
+        if any("system_admin_master" in ur.role.name for ur in user_roles if ur.role):
             permissions.append("*.*")
         
         return list(set(permissions))  # Remove duplicates
@@ -249,7 +250,7 @@ class SystemAdminPermissionService:
         # Check if role exists
         role = (
             self.db.query(Role)
-            .filter(Role.role_name == admin_type)
+            .filter(Role.name == admin_type)
             .first()
         )
         
@@ -258,11 +259,19 @@ class SystemAdminPermissionService:
         
         # Create new system admin role
         role_data = self._get_system_admin_role_definition(admin_type)
-        role = self.role_service.create_role(
-            role_name=role_data["name"],
+        
+        role = Role(
+            name=role_data["name"],
+            code=role_data["name"],  # Use name as code for system roles
             description=role_data["description"],
-            permissions=role_data["permissions"]
+            is_system=True,
+            is_active=True,
+            organization_id=self._get_master_organization().id
         )
+        
+        self.db.add(role)
+        self.db.commit()
+        self.db.refresh(role)
         
         logger.info(f"Created new system admin role: {admin_type}")
         return role
@@ -316,3 +325,298 @@ class SystemAdminPermissionService:
             )
         
         return role_definitions[admin_type]
+
+    # ── System Admin Users Retrieval ───────────────────────────────────
+
+    def get_system_admin_users(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        permission_type: Optional[str] = None,
+        organization_id: Optional[UUID] = None,
+        active_only: Optional[bool] = True
+    ) -> dict:
+        """Get paginated list of system admin users with their permissions and access"""
+        from app.models.user import User
+        
+        # Get master organization
+        master_org = self._get_master_organization()
+        if not master_org:
+            return {"users": [], "total": 0}
+        
+        # Base query for users with system admin roles
+        query = (
+            self.db.query(User)
+            .join(UserOrganizationRole, User.id == UserOrganizationRole.user_id)
+            .join(Role, UserOrganizationRole.role_id == Role.id)
+            .filter(
+                UserOrganizationRole.organization_id == master_org.id,
+                UserOrganizationRole.is_active == True,
+                Role.name.like("system_admin_%")
+            )
+        )
+        
+        # Apply filters
+        if active_only:
+            query = query.filter(User.is_active == True)
+            
+        if permission_type and permission_type != 'all':
+            query = query.filter(Role.name.like(f"system_admin_{permission_type}%"))
+        
+        # Get total count
+        total = query.distinct(User.id).count()
+        
+        # Apply pagination
+        offset = (page - 1) * page_size
+        users = query.distinct(User.id).offset(offset).limit(page_size).all()
+        
+        # Enhance users with permissions and organization access
+        enhanced_users = []
+        for user in users:
+            user_permissions = self.get_system_admin_permissions(user.id)
+            accessible_orgs = self.get_accessible_organizations(user.id)
+            
+            # Create enhanced user object
+            enhanced_user = user
+            enhanced_user.permissions = user_permissions
+            enhanced_user.organization_access = [str(org.id) for org in accessible_orgs]
+            enhanced_users.append(enhanced_user)
+        
+        return {
+            "users": enhanced_users,
+            "total": total
+        }
+
+    def get_system_admin_user(self, user_id: UUID):
+        """Get specific system admin user with detailed information"""
+        from app.models.user import User
+        
+        # Get master organization
+        master_org = self._get_master_organization()
+        if not master_org:
+            return None
+        
+        # Check if user has system admin role
+        user = (
+            self.db.query(User)
+            .join(UserOrganizationRole, User.id == UserOrganizationRole.user_id)
+            .join(Role, UserOrganizationRole.role_id == Role.id)
+            .filter(
+                User.id == user_id,
+                UserOrganizationRole.organization_id == master_org.id,
+                UserOrganizationRole.is_active == True,
+                Role.name.like("system_admin_%")
+            )
+            .first()
+        )
+        
+        if not user:
+            return None
+        
+        # Enhance user with permissions and organization access
+        user.permissions = self.get_system_admin_permissions(user.id)
+        accessible_orgs = self.get_accessible_organizations(user.id)
+        user.organization_access = [str(org.id) for org in accessible_orgs]
+        
+        return user
+
+    # ── Audit Log Management ────────────────────────────────────────────
+
+    def get_system_admin_audit_logs(
+        self,
+        admin_user_id: Optional[UUID] = None,
+        target_organization_id: Optional[UUID] = None,
+        action_type: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> dict:
+        """Get paginated system admin audit logs with filtering
+        
+        Args:
+            admin_user_id: Filter by admin user who performed actions
+            target_organization_id: Filter by target organization
+            action_type: Filter by action type
+            start_date: Filter by start date
+            end_date: Filter by end date
+            page: Page number for pagination
+            page_size: Number of items per page
+            
+        Returns:
+            Dict with audit logs and pagination metadata
+        """
+        from app.models.audit_log import SystemAdminAuditLog
+        from datetime import datetime
+        
+        # Build base query
+        query = self.db.query(SystemAdminAuditLog)
+        
+        # Apply filters
+        if admin_user_id:
+            query = query.filter(SystemAdminAuditLog.admin_user_id == admin_user_id)
+        
+        if target_organization_id:
+            query = query.filter(SystemAdminAuditLog.target_organization_id == target_organization_id)
+        
+        if action_type:
+            query = query.filter(SystemAdminAuditLog.action_type == action_type)
+        
+        if start_date:
+            query = query.filter(SystemAdminAuditLog.performed_date >= start_date)
+        
+        if end_date:
+            query = query.filter(SystemAdminAuditLog.performed_date <= end_date)
+        
+        # Get total count for pagination
+        total = query.count()
+        
+        # Apply pagination and ordering
+        offset = (page - 1) * page_size
+        audit_logs = (
+            query
+            .order_by(SystemAdminAuditLog.performed_date.desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+        
+        # Calculate pagination metadata
+        total_pages = (total + page_size - 1) // page_size
+        has_next = page < total_pages
+        has_prev = page > 1
+        
+        return {
+            "data": audit_logs,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total,
+                "total_pages": total_pages,
+                "has_next": has_next,
+                "has_prev": has_prev
+            }
+        }
+
+    def create_audit_log_entry(
+        self,
+        action_id: str,
+        action_type: str,
+        admin_user_id: UUID,
+        admin_username: str,
+        performed_by: str,
+        changes_made: dict,
+        target_user_id: Optional[UUID] = None,
+        target_username: Optional[str] = None,
+        target_organization_id: Optional[UUID] = None,
+        target_organization_name: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> "SystemAdminAuditLog":
+        """Create a new audit log entry for system admin actions
+        
+        Args:
+            action_id: Unique identifier for the action
+            action_type: Type of action (assign, update, revoke, etc.)
+            admin_user_id: ID of admin user performing action
+            admin_username: Username of admin user
+            performed_by: Full name of admin user
+            changes_made: Dict containing details of changes
+            target_user_id: ID of target user (optional)
+            target_username: Username of target user (optional)
+            target_organization_id: ID of target organization (optional)
+            target_organization_name: Name of target organization (optional)
+            notes: Optional notes about the action
+            
+        Returns:
+            Created audit log entry
+        """
+        from app.models.audit_log import SystemAdminAuditLog
+        from datetime import datetime
+        
+        audit_log = SystemAdminAuditLog(
+            action_id=action_id,
+            action_type=action_type,
+            admin_user_id=admin_user_id,
+            admin_username=admin_username,
+            target_user_id=target_user_id,
+            target_username=target_username,
+            target_organization_id=target_organization_id,
+            target_organization_name=target_organization_name,
+            changes_made=changes_made,
+            performed_by=performed_by,
+            notes=notes,
+            performed_date=datetime.utcnow()
+        )
+        
+        self.db.add(audit_log)
+        self.db.commit()
+        self.db.refresh(audit_log)
+        
+        logger.info(f"Created audit log entry: {action_id} by {admin_username}")
+        return audit_log
+
+    def get_audit_log_stats(self) -> dict:
+        """Get audit log statistics and metrics
+        
+        Returns:
+            Dict with audit log statistics
+        """
+        from app.models.audit_log import SystemAdminAuditLog, AuditActionType
+        from datetime import datetime, timedelta
+        from sqlalchemy import func
+        
+        # Total actions count
+        total_actions = self.db.query(SystemAdminAuditLog).count()
+        
+        # Actions by type
+        actions_by_type = {}
+        type_counts = (
+            self.db.query(
+                SystemAdminAuditLog.action_type,
+                func.count(SystemAdminAuditLog.id)
+            )
+            .group_by(SystemAdminAuditLog.action_type)
+            .all()
+        )
+        for action_type, count in type_counts:
+            actions_by_type[action_type] = count
+        
+        # Actions by admin user
+        actions_by_admin = {}
+        admin_counts = (
+            self.db.query(
+                SystemAdminAuditLog.admin_username,
+                func.count(SystemAdminAuditLog.id)
+            )
+            .group_by(SystemAdminAuditLog.admin_username)
+            .limit(10)  # Top 10 most active admins
+            .all()
+        )
+        for admin_username, count in admin_counts:
+            actions_by_admin[admin_username] = count
+        
+        # Recent actions (last 24 hours)
+        yesterday = datetime.utcnow() - timedelta(hours=24)
+        recent_actions_count = (
+            self.db.query(SystemAdminAuditLog)
+            .filter(SystemAdminAuditLog.performed_date >= yesterday)
+            .count()
+        )
+        
+        # Available action types
+        available_action_types = [
+            {
+                "value": action_type.value,
+                "label": action_type.value.replace("_", " ").title(),
+                "description": f"{action_type.value.replace('_', ' ').title()} action"
+            }
+            for action_type in AuditActionType
+        ]
+        
+        return {
+            "total_actions": total_actions,
+            "actions_by_type": actions_by_type,
+            "actions_by_admin": actions_by_admin,
+            "recent_actions_count": recent_actions_count,
+            "available_action_types": available_action_types
+        }

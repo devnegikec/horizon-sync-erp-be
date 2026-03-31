@@ -115,6 +115,65 @@ async def list_organizations(
 
 
 @router.get(
+    "/organizations/master",
+    response_model=OrganizationResponse,
+    summary="Get master organization",
+    description="Get the master organization details for system administration"
+)
+async def get_master_organization(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get master organization details. Requires system admin permissions."""
+    require_permission(current_user.permissions, "system_admin.master")
+    
+    svc = OrganizationService(db)
+    
+    # Find the master organization (should be unique)
+    from app.models.organization import Organization
+    from app.models.base import OrganizationType
+    
+    master_org = db.query(Organization).filter(
+        Organization.organization_type == OrganizationType.MASTER
+    ).first()
+    
+    if not master_org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Master organization not found"
+        )
+    
+    # Convert to response format
+    return OrganizationResponse(
+        id=master_org.id,
+        name=master_org.name,
+        slug=master_org.slug,
+        display_name=master_org.display_name,
+        description=master_org.description,
+        email=master_org.email,
+        phone=master_org.phone,
+        website=master_org.website,
+        address_line1=master_org.address_line1,
+        address_line2=master_org.address_line2,
+        city=master_org.city,
+        state=master_org.state,
+        postal_code=master_org.postal_code,
+        country=master_org.country,
+        logo_url=master_org.logo_url,
+        organization_type=master_org.organization_type.value,
+        industry=master_org.industry,
+        base_currency=master_org.base_currency,
+        status=master_org.status.value,
+        is_active=master_org.is_active,
+        owner_id=master_org.owner_id,
+        settings=master_org.settings,
+        extra_data=master_org.extra_data,
+        created_at=master_org.created_at,
+        updated_at=master_org.updated_at,
+    )
+
+
+@router.get(
     "/organizations/{organization_id}",
     response_model=OrganizationResponse,
     summary="Get organization",
@@ -217,6 +276,8 @@ async def update_organization(
         raise
     except DuplicateOrganizationSlugException:
         raise
+
+
 
 
 @router.delete(
