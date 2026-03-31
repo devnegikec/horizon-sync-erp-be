@@ -39,6 +39,26 @@ class InvoiceCreate(InvoiceBase):
     pass
 
 
+class InvoiceItemCreate(BaseModel):
+    """Schema for creating invoice items"""
+    item_id: UUID | None = None
+    item_code: str | None = None
+    item_name: str | None = None
+    description: str | None = None
+    qty: Decimal = Field(..., gt=0)
+    uom: str = Field(default="Unit")
+    rate: Decimal | None = Field(None, ge=0)
+    amount: Decimal | None = Field(None, ge=0)
+    sort_order: int | None = None
+    tax_template_id: str | None = None
+    tax_rate: str | None = None
+    tax_amount: str | None = None
+    discount_type: str | None = Field(None, pattern="^(flat|percentage)$")
+    discount_value: Decimal | None = Field(None, ge=0)
+    discount_amount: Decimal | None = Field(None, ge=0)
+    total_amount: str | None = None
+
+
 class InvoiceUpdate(BaseModel):
     posting_date: datetime | None = None
     due_date: datetime | None = None

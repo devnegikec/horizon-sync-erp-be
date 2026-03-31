@@ -21,6 +21,7 @@ class AdminInvoiceListItem(BaseModel):
     """Single invoice in the admin cross-org paginated list.
 
     Mirrors InvoiceListItem fields and adds organization_name for cross-org context.
+    Includes subscription billing fields for subscription invoices (Task 1B-1).
     """
 
     id: UUID
@@ -37,6 +38,13 @@ class AdminInvoiceListItem(BaseModel):
     grand_total: Decimal
     outstanding_amount: Decimal | float | None = None
     created_at: datetime
+    
+    # Subscription billing fields (Task 1B-1)
+    billing_cycle: str | None = None
+    subscription_period_start: datetime | None = None 
+    subscription_period_end: datetime | None = None
+    seat_count: int | None = None
+    credit_usage: Decimal | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,5 +93,8 @@ class AdminPaymentListItem(BaseModel):
 class AdminPaymentListResponse(BaseModel):
     """Paginated list of payments for admin cross-org view."""
 
-    payment_entries: list[AdminPaymentListItem]
-    pagination: PaginationMeta
+    payments: list[AdminPaymentListItem]
+    page: int
+    total_pages: int
+    total_count: int
+    page_size: int

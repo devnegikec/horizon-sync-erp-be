@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateEmailException, UserNotFoundException
 from app.core.security import hash_password
-from app.models.base import UserStatus, UserType
+from app.models.base import OrganizationType, UserStatus, UserType
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.services.organization_service import OrganizationService
 
 
 class UserService:
@@ -168,3 +169,153 @@ class UserService:
         """Soft delete user by ID. Raises UserNotFoundException if not found."""
         user = self.get_user_by_id(user_id)
         self.user_repo.soft_delete(user)
+
+    # System Admin Role Assignment Methods (Task 1C-2)
+    
+    def validate_system_admin_user(self, user: User, organization_id: UUID) -> bool:
+        """
+        Validate that system admin user belongs to master organization.
+        
+        Task 1C-2: System admin users must belong to the master organization
+        to have cross-org permissions.
+        
+        Args:
+            user: User object to validate
+            organization_id: Organization ID the user is being assigned to
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            ValueError: If system admin user is not in master organization
+        """
+        if user.user_type == UserType.SYSTEM_ADMIN:
+            org_service = OrganizationService(self.db)
+            master_org = org_service.get_master_organization()
+            
+            if not master_org:
+                raise ValueError("Master organization not found - cannot assign system admin role")
+                
+            if organization_id != master_org.id:
+                raise ValueError(
+                    "System admin users must belong to the master organization. "
+                    f"Expected organization ID: {master_org.id}, got: {organization_id}"
+                )
+        
+        return True
+    
+    def create_system_admin_user(
+        self, 
+        data: dict, 
+        organization_id: UUID, 
+        created_by_user_type: UserType = None
+    ) -> User:
+        """
+        Create system admin user with validation.
+        
+        Task 1C-2: Only system admins can create other system admin users,
+        and they must be assigned to the master organization.
+        
+        Args:
+            data: User data dictionary
+            organization_id: Organization to assign user to
+            created_by_user_type: User type of the user creating this admin
+            
+        Returns:
+            Created user object
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        user_type = data.get("user_type")
+        
+        # Check if creating system admin user
+        if user_type == UserType.SYSTEM_ADMIN or user_type == "system_admin":
+            # Only system admins can create system admin users
+            if created_by_user_type != UserType.SYSTEM_ADMIN:
+                raise ValueError("Only system administrators can create system admin users")
+            
+            # Ensure it's being assigned to master organization
+            org_service = OrganizationService(self.db)
+            master_org = org_service.get_master_organization()
+            
+            if not master_org:
+                raise ValueError("Master organization not found - cannot create system admin")
+                
+            if organization_id != master_org.id:
+                raise ValueError("System admin users must be assigned to the master organization")
+        
+        # Create the user
+        return self.create_user(data)
+        
+    def update_user_with_admin_validation(
+        self, 
+        user_id: UUID, 
+        data: dict, 
+        updated_by_user_type: UserType = None
+    ) -> User:
+        """
+        Update user with system admin validation.
+        
+        Task 1C-2: Prevent unauthorized changes to system admin users.
+        
+        Args:
+            user_id: User ID to update
+            data: Update data
+            updated_by_user_type: User type of user making the update
+            
+        Returns:
+            Updated user object
+            
+        Raises:
+            ValueError: If validation fails
+        """
+        user = self.get_user_by_id(user_id)
+        new_user_type = data.get("user_type")
+        
+        # Check if trying to make user system admin
+        if new_user_type and (new_user_type == UserType.SYSTEM_ADMIN or new_user_type == "system_admin"):
+            if updated_by_user_type != UserType.SYSTEM_ADMIN:
+                raise ValueError("Only system administrators can grant system admin privileges")
+                
+        # Check if trying to modify existing system admin
+        if user.user_type == UserType.SYSTEM_ADMIN:
+            if updated_by_user_type != UserType.SYSTEM_ADMIN:
+                raise ValueError("Only system administrators can modify system admin users")
+        
+        return self.update_user(user_id, data)
+    
+    def can_access_cross_org_operations(self, user: User) -> bool:
+        """
+        Check if user can perform cross-organization operations.
+        
+        Task 1C-2: System admin users from master org can access cross-org operations.
+        
+        Args:
+            user: User to check
+            
+        Returns:
+            True if user can access cross-org operations
+        """
+        if user.user_type != UserType.SYSTEM_ADMIN:
+            return False
+            
+        # Get user's organization and check if it's master org
+        from app.models.role import UserOrganizationRole
+        user_orgs = (
+            self.db.query(UserOrganizationRole)
+            .filter(
+                UserOrganizationRole.user_id == user.id,
+                UserOrganizationRole.is_active == True
+            )
+            .all()
+        )
+        
+        org_service = OrganizationService(self.db)
+        master_org = org_service.get_master_organization()
+        
+        if not master_org:
+            return False
+            
+        # Check if user belongs to master organization
+        return any(role.organization_id == master_org.id for role in user_orgs)

@@ -159,6 +159,49 @@ async def require_admin(
     return current_user
 
 
+def require_permission(permission: str):
+    """Create dependency that requires specific permission for access
+    
+    Args:
+        permission: Permission code required (e.g., 'system_admin.org_manager')
+        
+    Returns:
+        Dependency function that validates user has the required permission
+    """
+    async def _require_permission(
+        current_user: CurrentUser = Depends(get_current_active_user),
+    ) -> CurrentUser:
+        """Check if current user has the required permission"""
+        
+        # System admins get wildcard access
+        if current_user.user_type == UserType.SYSTEM_ADMIN:
+            return current_user
+        
+        # Check if user has wildcard permission
+        if "*.*" in current_user.permissions:
+            return current_user
+        
+        # Check for exact permission match
+        if permission in current_user.permissions:
+            return current_user
+        
+        # Check for partial wildcard matches (e.g., 'system_admin.*' matches 'system_admin.org_manager')
+        permission_parts = permission.split('.')
+        for user_perm in current_user.permissions:
+            if user_perm.endswith('.*'):
+                perm_prefix = user_perm[:-2]  # Remove '.*'
+                if permission.startswith(perm_prefix):
+                    return current_user
+        
+        # Permission not found
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission '{permission}' required",
+        )
+    
+    return _require_permission
+
+
 def get_client_ip(request) -> str | None:
     """
     Extract client IP address from request.

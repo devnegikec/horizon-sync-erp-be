@@ -71,6 +71,17 @@ from app.core.exceptions import (
 )
 from app.database import engine
 
+# Master organization setup
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from create_master_organization import ensure_single_master_organization
+except ImportError:
+    logger.warning("Master organization setup module not found - skipping automatic setup")
+    ensure_single_master_organization = None
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -90,6 +101,24 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
+    
+    # Ensure master organization exists and setup customer relationships (Steps 1 & 2)
+    if ensure_single_master_organization:
+        try:
+            logger.info("🚀 Setting up Master Organization and Customer Relationships...")
+            ensure_single_master_organization()
+            logger.info("✅ Master Organization and Customer setup completed")
+        except Exception as e:
+            logger.error(f"❌ Master Organization setup failed: {e}")
+            if settings.environment == "production":
+                # In production, fail fast if master org setup fails
+                raise RuntimeError(f"Critical startup failure: Master Organization setup failed - {e}")
+            else:
+                # In dev/test, log warning but continue
+                logger.warning("⚠️ Continuing without master organization setup (dev environment)")
+    else:
+        logger.info("⚠️ Master organization setup module not available")
+    
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
