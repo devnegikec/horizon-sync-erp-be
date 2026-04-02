@@ -7,7 +7,8 @@ Integrates SubscriptionInvoiceService for B2B billing (Task 1B-2).
 """
 
 import math
-from datetime import datetime
+import uuid
+from datetime import datetime, UTC
 from decimal import Decimal
 from uuid import UUID
 import logging
@@ -313,11 +314,26 @@ class AdminInvoiceService:
             if supplier:
                 party_email = supplier.email
                 party_name = supplier.supplier_name
+        elif party_type == "organization" and inv.party_id:
+            # For subscription invoices (self-billing), get organization info from identity service
+            try:
+                if self.token:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get(
+                            f"{settings.identity_service_url}/api/v1/identity/organizations/{inv.party_id}",
+                            headers={"Authorization": f"Bearer {self.token}"}
+                        )
+                        if response.status_code == 200:
+                            org_data = response.json()
+                            party_email = org_data.get("billing_contact_email") or org_data.get("email")
+                            party_name = org_data.get("name", f"Organization {inv.party_id}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch organization email for {inv.party_id}: {e}")
 
         if not party_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Party email not found — cannot send invoice",
+                detail=f"Party email not found for {party_type} — cannot send invoice",
             )
 
         # Send via communication service
@@ -344,6 +360,271 @@ class AdminInvoiceService:
             "invoice_id": str(inv.id),
             "status": "pending",
             "communication": result,
+        }
+
+    async def mark_invoice_paid(
+        self, invoice_id: UUID, payment_data: dict, user_id: UUID
+    ) -> dict:
+        """Mark an invoice as paid and create a corresponding payment entry."""
+        from app.models.base import InvoiceStatus, PaymentEntryType, PaymentMode, PaymentEntryStatus, PaymentSource
+        from app.models.payment_entry import PaymentEntry
+        from app.models.payment_reference import PaymentReference
+        from app.services.document_numbering_service import DocumentNumberingService
+        
+        # Get the invoice
+        inv = self.db.query(Invoice).filter(Invoice.id == invoice_id).first()
+        if not inv:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invoice not found",
+            )
+        
+        # Determine payment type based on invoice party type
+        if inv.party_type == "customer":
+            payment_type = PaymentEntryType.CUSTOMER_PAYMENT
+        elif inv.party_type == "supplier":
+            payment_type = PaymentEntryType.SUPPLIER_PAYMENT
+        else:
+            # For organization invoices (B2B), treat as customer payment
+            payment_type = PaymentEntryType.CUSTOMER_PAYMENT
+        
+        # Parse payment date
+        payment_date = datetime.now(UTC)
+        if payment_data.get("payment_date"):
+            try:
+                payment_date_str = payment_data["payment_date"]
+                # Handle both ISO format with and without 'Z'
+                if payment_date_str.endswith('Z'):
+                    payment_date_str = payment_date_str.replace('Z', '+00:00')
+                payment_date = datetime.fromisoformat(payment_date_str)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse payment_date '{payment_data.get('payment_date')}': {e}")
+        
+        # Map payment method to PaymentMode enum
+        payment_method = payment_data.get("payment_method", "bank_transfer")
+        try:
+            if payment_method.lower() in ["credit_card", "debit_card", "card"]:
+                payment_mode = PaymentMode.BANK_TRANSFER  # Cards go through bank
+            elif payment_method.lower() in ["cash"]:
+                payment_mode = PaymentMode.CASH
+            elif payment_method.lower() in ["check", "cheque"]:
+                payment_mode = PaymentMode.CHECK
+            else:
+                payment_mode = PaymentMode.BANK_TRANSFER  # Default
+        except:
+            payment_mode = PaymentMode.BANK_TRANSFER
+        
+        # Generate receipt number
+        doc_num_svc = DocumentNumberingService(self.db)
+        receipt_number = doc_num_svc.get_next_number(
+            inv.organization_id, "payment", reference_date=payment_date
+        )
+        
+        # Create PaymentEntry record
+        payment_entry = PaymentEntry(
+            organization_id=inv.organization_id,
+            payment_type=payment_type,
+            party_id=inv.party_id,
+            amount=inv.outstanding_amount,  # Pay the full outstanding amount
+            currency_code="USD",  # TODO: Get from invoice or organization settings
+            payment_date=payment_date,
+            payment_mode=payment_mode,
+            reference_no=payment_data.get("transaction_id"),
+            receipt_number=receipt_number,
+            status=PaymentEntryStatus.CONFIRMED,  # Mark as confirmed since invoice is being marked as paid
+            source=PaymentSource.MANUAL,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        
+        self.db.add(payment_entry)
+        self.db.flush()  # Get the payment_entry.id
+        
+        # Create PaymentReference to link payment to invoice
+        payment_reference = PaymentReference(
+            organization_id=inv.organization_id,
+            payment_id=payment_entry.id,
+            invoice_id=inv.id,
+            allocated_amount=inv.outstanding_amount,  # Allocate full outstanding amount
+            created_by=user_id,
+        )
+        
+        self.db.add(payment_reference)
+        
+        # Update invoice status to paid and clear outstanding amount
+        inv.status = InvoiceStatus.PAID
+        inv.outstanding_amount = 0
+        inv.paid_at = payment_date
+        inv.updated_by = user_id
+        inv.updated_at = datetime.now(UTC)
+        
+        self.db.commit()
+        self.db.refresh(payment_entry)
+        self.db.refresh(inv)
+        
+        return {
+            "invoice_id": str(inv.id),
+            "payment_id": str(payment_entry.id),
+            "receipt_number": payment_entry.receipt_number,
+            "status": "paid",
+            "message": "Invoice marked as paid and payment entry created successfully",
+            "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+            "payment_data": payment_data,
+        }
+
+    async def create_payment_from_invoice(
+        self, invoice_id: UUID, payment_data: dict, user_id: UUID
+    ) -> dict:
+        """Create a payment entry from an invoice."""
+        from app.models.base import InvoiceStatus
+        
+        logger.info(f"Creating payment for invoice {invoice_id} with data: {payment_data}")
+        
+        # Get the invoice
+        inv = self.db.query(Invoice).filter(Invoice.id == invoice_id).first()
+        if not inv:
+            logger.error(f"Invoice not found: {invoice_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invoice not found",
+            )
+        
+        # Validate payment amount
+        payment_amount = payment_data.get("payment_amount", 0)
+        logger.info(f"Payment amount received: {payment_amount} (type: {type(payment_amount)})")
+        logger.info(f"Invoice outstanding amount: {inv.outstanding_amount} (type: {type(inv.outstanding_amount)})")
+        
+        # Convert payment_amount to Decimal for consistent calculations
+        from decimal import Decimal
+        try:
+            payment_amount = Decimal(str(payment_amount))
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid payment amount format: {payment_amount}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payment amount must be a valid number",
+            )
+        
+        if payment_amount <= 0:
+            logger.error(f"Invalid payment amount: {payment_amount}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payment amount must be greater than 0",
+            )
+            
+        # Validate payment amount is not greater than outstanding amount
+        if payment_amount > inv.outstanding_amount:
+            logger.error(f"Payment amount {payment_amount} exceeds outstanding amount {inv.outstanding_amount}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Payment amount ({payment_amount}) cannot exceed outstanding amount ({inv.outstanding_amount})",
+            )
+        
+        # Update invoice outstanding amount (both are now Decimal)
+        new_outstanding = max(Decimal('0'), inv.outstanding_amount - payment_amount)
+        
+        # Parse payment date
+        payment_date = datetime.now(UTC)
+        if payment_data.get("payment_date"):
+            try:
+                payment_date_str = payment_data["payment_date"]
+                if payment_date_str.endswith('Z'):
+                    payment_date_str = payment_date_str.replace('Z', '+00:00')
+                payment_date = datetime.fromisoformat(payment_date_str)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse payment_date: {e}")
+        
+        # Create PaymentEntry record
+        from app.models.base import PaymentEntryType, PaymentMode, PaymentEntryStatus, PaymentSource
+        from app.models.payment_entry import PaymentEntry
+        from app.models.payment_reference import PaymentReference
+        from app.services.document_numbering_service import DocumentNumberingService
+        
+        # Determine payment type
+        if inv.party_type == "customer":
+            payment_type = PaymentEntryType.CUSTOMER_PAYMENT
+        elif inv.party_type == "supplier":
+            payment_type = PaymentEntryType.SUPPLIER_PAYMENT
+        else:
+            payment_type = PaymentEntryType.CUSTOMER_PAYMENT
+        
+        # Map payment method to PaymentMode enum
+        payment_method = payment_data.get("payment_method", "bank_transfer")
+        try:
+            if payment_method.lower() in ["credit_card", "debit_card", "card"]:
+                payment_mode = PaymentMode.BANK_TRANSFER
+            elif payment_method.lower() in ["cash"]:
+                payment_mode = PaymentMode.CASH
+            elif payment_method.lower() in ["check", "cheque"]:
+                payment_mode = PaymentMode.CHECK
+            else:
+                payment_mode = PaymentMode.BANK_TRANSFER
+        except:
+            payment_mode = PaymentMode.BANK_TRANSFER
+        
+        # Generate receipt number
+        doc_num_svc = DocumentNumberingService(self.db)
+        receipt_number = doc_num_svc.get_next_number(
+            inv.organization_id, "payment", reference_date=payment_date
+        )
+        
+        # Create PaymentEntry
+        payment_entry = PaymentEntry(
+            organization_id=inv.organization_id,
+            payment_type=payment_type,
+            party_id=inv.party_id,
+            amount=payment_amount,
+            currency_code="USD",
+            payment_date=payment_date,
+            payment_mode=payment_mode,
+            reference_no=payment_data.get("notes"),
+            receipt_number=receipt_number,
+            status=PaymentEntryStatus.CONFIRMED,
+            source=PaymentSource.MANUAL,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        
+        self.db.add(payment_entry)
+        self.db.flush()  # Get payment_entry.id
+        
+        # Create PaymentReference to link payment to invoice
+        payment_reference = PaymentReference(
+            organization_id=inv.organization_id,
+            payment_id=payment_entry.id,
+            invoice_id=inv.id,
+            allocated_amount=payment_amount,
+            created_by=user_id,
+        )
+        
+        self.db.add(payment_reference)
+        
+        # Update invoice details
+        inv.outstanding_amount = new_outstanding
+        
+        # Mark as paid if fully paid
+        if new_outstanding == 0:
+            inv.status = InvoiceStatus.PAID
+            inv.paid_at = payment_date
+        
+        inv.updated_by = user_id
+        inv.updated_at = datetime.now(UTC)
+        
+        self.db.commit()
+        self.db.refresh(inv)
+        self.db.refresh(payment_entry)
+        
+        logger.info(f"Payment created successfully for invoice {invoice_id}: PaymentEntry ID {payment_entry.id}")
+        
+        return {
+            "payment_id": str(payment_entry.id),
+            "invoice_id": str(inv.id),
+            "success": True,
+            "message": "Payment created successfully",
+            "payment_amount": payment_amount,
+            "remaining_balance": new_outstanding,
+            "invoice_status": inv.status.value if hasattr(inv.status, 'value') else str(inv.status),
+            "payment_data": payment_data,
         }
 
     # ── Helpers ──────────────────────────────────────────────────────

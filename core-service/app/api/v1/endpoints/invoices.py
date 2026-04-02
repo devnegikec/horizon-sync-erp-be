@@ -41,7 +41,7 @@ async def list_invoices(
     status: str | None = Query(
         None, pattern="^(draft|pending|paid|partial|overdue|cancelled)$"
     ),
-    invoice_type: str | None = Query(None, pattern="^(sales|purchase)$"),
+    invoice_type: str | None = Query(None, pattern="^(sales|purchase|subscription|setup_fee|overage)$"),
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(INVOICE_READ)),
