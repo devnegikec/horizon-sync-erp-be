@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,10 +13,12 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.reminder_config import ReminderConfig, ReminderLog, ReminderStage, ReminderStatus, ReminderType
 from app.services.payment_reminder_service import PaymentReminderService
+from app.services.admin_organization_service import AdminOrganizationService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+security = HTTPBearer()
 
 
 # ── Pydantic Models ──────────────────────────────────────────────────
@@ -24,6 +27,7 @@ class ReminderConfigResponse(BaseModel):
     """Response model for reminder configuration"""
     id: UUID
     organization_id: UUID
+    organization_name: Optional[str] = None  # Fetched from identity service
     reminder_type: ReminderType
     grace_period_days: int
     first_reminder_days: int
@@ -117,6 +121,7 @@ async def list_reminder_configs(
     organization_id: Optional[UUID] = Query(None, description="Filter by organization ID"),
     enabled: Optional[bool] = Query(None, description="Filter by enabled status"),
     current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
@@ -141,6 +146,9 @@ async def list_reminder_configs(
         offset = (page - 1) * page_size
         configs = query.offset(offset).limit(page_size).all()
         
+        # Fetch organization names for configs
+        org_service = AdminOrganizationService(db, token=credentials.credentials)
+        
         # Convert to response models
         config_responses = []
         for config in configs:
@@ -148,6 +156,22 @@ async def list_reminder_configs(
             config_dict.pop('_sa_instance_state', None)
             config_dict['created_at'] = config.created_at.isoformat()
             config_dict['updated_at'] = config.updated_at.isoformat()
+            
+            # Fetch organization name individually for more reliable results
+            org_name = 'Default'
+            try:
+                org_detail = await org_service.get_organization(config.organization_id)
+                org_name = org_detail.name or org_detail.display_name or f"Organization {str(config.organization_id)[:8]}"
+                logger.debug(f"Successfully fetched organization name: {org_name} for ID: {config.organization_id}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch organization name for {config.organization_id}: {e}")
+                # Try to use any existing name or create a meaningful fallback
+                if hasattr(config, 'organization_name') and config.organization_name:
+                    org_name = config.organization_name
+                else:
+                    org_name = f"Organization {str(config.organization_id)[:8]}"
+            
+            config_dict['organization_name'] = org_name
             config_responses.append(config_dict)
         
         return PaginatedResponse(
@@ -170,6 +194,7 @@ async def list_reminder_configs(
 async def get_reminder_config(
     config_id: UUID,
     current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
@@ -186,10 +211,21 @@ async def get_reminder_config(
                 detail=f"Reminder configuration {config_id} not found"
             )
         
+        # Fetch organization name
+        org_service = AdminOrganizationService(db, token=credentials.credentials)
+        org_name = 'Unknown Organization'
+        
+        try:
+            org_detail = await org_service.get_organization(config.organization_id)
+            org_name = org_detail.name
+        except Exception as e:
+            logger.warning(f"Failed to fetch organization name for {config.organization_id}: {e}")
+        
         config_dict = config.__dict__.copy()
         config_dict.pop('_sa_instance_state', None)
         config_dict['created_at'] = config.created_at.isoformat()
         config_dict['updated_at'] = config.updated_at.isoformat()
+        config_dict['organization_name'] = org_name
         
         return ReminderConfigResponse(**config_dict)
         
@@ -207,6 +243,7 @@ async def get_reminder_config(
 async def create_reminder_config(
     config_data: ReminderConfigCreate,
     current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
@@ -226,35 +263,69 @@ async def create_reminder_config(
                 detail=f"Reminder configuration already exists for organization {config_data.organization_id}"
             )
         
-        # Create new configuration
-        reminder_service = PaymentReminderService(db)
-        config = reminder_service.create_default_reminder_config(config_data.organization_id)
-        
-        # Update with provided values
-        for field, value in config_data.dict(exclude={'organization_id'}).items():
-            if value is not None:
-                setattr(config, field, value)
+        # Create new configuration directly without using the service method
+        # to avoid the race condition in create_default_reminder_config
+        config = ReminderConfig(
+            organization_id=config_data.organization_id,
+            reminder_type=config_data.reminder_type,
+            grace_period_days=config_data.grace_period_days,
+            first_reminder_days=config_data.first_reminder_days,
+            second_reminder_days=config_data.second_reminder_days,
+            final_notice_days=config_data.final_notice_days,
+            auto_deactivate_days=config_data.auto_deactivate_days,
+            reminder_frequency_days=config_data.reminder_frequency_days,
+            max_reminders_per_stage=config_data.max_reminders_per_stage,
+            is_enabled=config_data.is_enabled,
+            first_reminder_template=config_data.first_reminder_template,
+            second_reminder_template=config_data.second_reminder_template,
+            final_notice_template=config_data.final_notice_template,
+            deactivation_notice_template=config_data.deactivation_notice_template,
+        )
         
         # Build escalation sequence based on stages
         escalation_sequence = []
-        if hasattr(config_data, 'first_reminder_days') and config_data.first_reminder_days > 0:
+        if config_data.first_reminder_days and config_data.first_reminder_days > 0:
             escalation_sequence.append(ReminderStage.FIRST_REMINDER.value)
-        if hasattr(config_data, 'second_reminder_days') and config_data.second_reminder_days > 0:
+        if config_data.second_reminder_days and config_data.second_reminder_days > 0:
             escalation_sequence.append(ReminderStage.SECOND_REMINDER.value)
-        if hasattr(config_data, 'final_notice_days') and config_data.final_notice_days > 0:
+        if config_data.final_notice_days and config_data.final_notice_days > 0:
             escalation_sequence.append(ReminderStage.FINAL_NOTICE.value)
-        if hasattr(config_data, 'auto_deactivate_days') and config_data.auto_deactivate_days and config_data.auto_deactivate_days > 0:
+        if config_data.auto_deactivate_days and config_data.auto_deactivate_days > 0:
             escalation_sequence.append(ReminderStage.DEACTIVATION_NOTICE.value)
         
         config.escalation_sequence = escalation_sequence
         
-        db.commit()
-        db.refresh(config)
+        # Single transaction - add and commit together
+        db.add(config)
+        try:
+            db.commit()
+            db.refresh(config)
+        except Exception as e:
+            db.rollback()
+            # Check if this is a unique constraint violation
+            if "reminder_configs_organization_id_key" in str(e) or "duplicate key" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Reminder configuration already exists for organization {config_data.organization_id}"
+                )
+            else:
+                raise  # Re-raise if it's a different error
+        
+        # Fetch organization name
+        org_service = AdminOrganizationService(db, token=credentials.credentials)
+        org_name = 'Unknown Organization'
+        
+        try:
+            org_detail = await org_service.get_organization(config.organization_id)
+            org_name = org_detail.name
+        except Exception as e:
+            logger.warning(f"Failed to fetch organization name for {config.organization_id}: {e}")
         
         config_dict = config.__dict__.copy()
         config_dict.pop('_sa_instance_state', None)
         config_dict['created_at'] = config.created_at.isoformat()
         config_dict['updated_at'] = config.updated_at.isoformat()
+        config_dict['organization_name'] = org_name
         
         logger.info(f"Created reminder configuration {config.id} for organization {config_data.organization_id}")
         return ReminderConfigResponse(**config_dict)
@@ -274,6 +345,7 @@ async def update_reminder_config(
     config_id: UUID,
     updates: ReminderConfigUpdate,
     current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
@@ -296,10 +368,21 @@ async def update_reminder_config(
         
         config = reminder_service.update_reminder_config(config.organization_id, update_dict)
         
+        # Fetch organization name
+        org_service = AdminOrganizationService(db, token=credentials.credentials)
+        org_name = 'Unknown Organization'
+        
+        try:
+            org_detail = await org_service.get_organization(config.organization_id)
+            org_name = org_detail.name
+        except Exception as e:
+            logger.warning(f"Failed to fetch organization name for {config.organization_id}: {e}")
+        
         config_dict = config.__dict__.copy()
         config_dict.pop('_sa_instance_state', None)
         config_dict['created_at'] = config.created_at.isoformat()
         config_dict['updated_at'] = config.updated_at.isoformat()
+        config_dict['organization_name'] = org_name
         
         logger.info(f"Updated reminder configuration {config_id}")
         return ReminderConfigResponse(**config_dict)

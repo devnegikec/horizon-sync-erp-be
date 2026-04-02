@@ -39,9 +39,6 @@ class CreateSubscriptionInvoiceRequest(BaseModel):
     credit_usage: Optional[Decimal] = Field(Decimal("0.00"), description="Credit usage amount")
     base_price_per_seat: Optional[Decimal] = Field(Decimal("10.00"), description="Base price per seat")
     credit_rate: Optional[Decimal] = Field(Decimal("0.01"), description="Price per credit unit")
-    subscription_start_date: Optional[datetime] = Field(None, description="Subscription period start date")
-    custom_line_items: Optional[List[Dict]] = Field([], description="Additional custom line items")
-    notes: Optional[str] = Field(None, description="Invoice notes")
 
 
 class CreateSetupFeeInvoiceRequest(BaseModel):
@@ -139,13 +136,10 @@ async def create_subscription_invoice(
             credit_usage=request.credit_usage,
             base_price_per_seat=request.base_price_per_seat,
             credit_rate=request.credit_rate,
-            subscription_start_date=request.subscription_start_date,
-            custom_line_items=request.custom_line_items or [],
-            notes=request.notes,
             created_by=current_user.id
         )
         
-        logger.info(f"Created subscription invoice {invoice['invoice_id']} for org {request.organization_id}")
+        logger.info(f"Created subscription invoice {invoice['id']} for org {request.organization_id}")
         return invoice
         
     except Exception as e:
@@ -195,7 +189,7 @@ async def create_setup_fee_invoice(
             created_by=current_user.id
         )
         
-        logger.info(f"Created setup fee invoice {invoice['invoice_id']} for org {request.organization_id}")
+        logger.info(f"Created setup fee invoice {invoice['id']} for org {request.organization_id}")
         return invoice
         
     except Exception as e:
@@ -230,7 +224,7 @@ async def create_overage_invoice(
             created_by=current_user.id
         )
         
-        logger.info(f"Created overage invoice {invoice['invoice_id']} for org {request.organization_id}")
+        logger.info(f"Created overage invoice {invoice['id']} for org {request.organization_id}")
         return invoice
         
     except Exception as e:
@@ -265,7 +259,7 @@ async def create_addon_invoice(
             created_by=current_user.id
         )
         
-        logger.info(f"Created addon invoice {invoice['invoice_id']} for org {request.organization_id}")
+        logger.info(f"Created addon invoice {invoice['id']} for org {request.organization_id}")
         return invoice
         
     except Exception as e:
@@ -299,7 +293,7 @@ async def create_credit_adjustment_invoice(
             created_by=current_user.id
         )
         
-        logger.info(f"Created credit adjustment invoice {invoice['invoice_id']} for org {request.organization_id}")
+        logger.info(f"Created credit adjustment invoice {invoice['id']} for org {request.organization_id}")
         return invoice
         
     except Exception as e:

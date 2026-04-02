@@ -52,6 +52,8 @@ class PaymentReminderService:
         
         if not config:
             config = self.create_default_reminder_config(organization_id)
+            self.db.commit()  # Commit the created config
+            self.db.refresh(config)
             
         return config
 
@@ -77,8 +79,8 @@ class PaymentReminderService:
         )
         
         self.db.add(config)
-        self.db.commit()
-        self.db.refresh(config)
+        # Note: Don't commit here - let caller handle transaction
+        self.db.flush()  # Get the ID but don't commit
         
         logger.info(f"Created default reminder config for organization {organization_id}")
         return config
