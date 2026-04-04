@@ -56,7 +56,7 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
     ws.title = "QR Codes"
 
     qr_type = qr_type.upper()
-    
+
     # Define headers based on QR type and whether images are included
     if include_qr_image:
         if qr_type == "B":
@@ -93,7 +93,7 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
             overt_url = item.get("short_url", "")
             covert_url = item.get("overt_url", "")
             serial = item.get("serial", "")
-            
+
             if include_qr_image:
                 # Generate and insert QR images
                 if overt_url:
@@ -103,9 +103,9 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
                     img.height = 100
                     ws.add_image(img, f"A{row_idx}")
                     ws.column_dimensions["A"].width = 15
-                
+
                 ws.cell(row=row_idx, column=2, value=overt_url)
-                
+
                 if covert_url:
                     qr_img = _generate_qr_image(covert_url)
                     img = XLImage(qr_img)
@@ -113,20 +113,20 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
                     img.height = 100
                     ws.add_image(img, f"C{row_idx}")
                     ws.column_dimensions["C"].width = 15
-                
+
                 ws.cell(row=row_idx, column=4, value=covert_url)
                 ws.cell(row=row_idx, column=5, value=serial)
             else:
                 ws.cell(row=row_idx, column=1, value=overt_url)
                 ws.cell(row=row_idx, column=2, value=covert_url)
                 ws.cell(row=row_idx, column=3, value=serial)
-                
+
         elif qr_type == "SC":
             # Secure Code type
             url = item.get("short_url", "")
             serial = item.get("serial", "")
             secret = item.get("secret_code", "")
-            
+
             if include_qr_image:
                 if url:
                     qr_img = _generate_qr_image(url)
@@ -135,7 +135,7 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
                     img.height = 100
                     ws.add_image(img, f"A{row_idx}")
                     ws.column_dimensions["A"].width = 15
-                
+
                 ws.cell(row=row_idx, column=2, value=url)
                 ws.cell(row=row_idx, column=3, value=serial)
                 ws.cell(row=row_idx, column=4, value=secret)
@@ -147,7 +147,7 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
             # Standard types (D, S, O)
             url = item.get("short_url", "")
             serial = item.get("serial", "")
-            
+
             if include_qr_image:
                 if url:
                     qr_img = _generate_qr_image(url)
@@ -156,7 +156,7 @@ def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False)
                     img.height = 100
                     ws.add_image(img, f"A{row_idx}")
                     ws.column_dimensions["A"].width = 15
-                
+
                 ws.cell(row=row_idx, column=2, value=url)
                 ws.cell(row=row_idx, column=3, value=serial)
             else:
@@ -191,7 +191,7 @@ def _generate_qr_image(data: str):
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
-    
+
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)

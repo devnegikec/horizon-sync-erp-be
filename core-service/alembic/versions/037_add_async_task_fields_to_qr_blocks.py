@@ -21,23 +21,23 @@ def upgrade():
     op.add_column('qr_blocks', sa.Column('error_message', sa.Text, nullable=True))
     op.add_column('qr_blocks', sa.Column('progress_current', sa.Integer, nullable=True))
     op.add_column('qr_blocks', sa.Column('progress_total', sa.Integer, nullable=True))
-    
+
     # Add index on task_id column (if it doesn't already exist)
     try:
         op.create_index('idx_qr_blocks_task_id', 'qr_blocks', ['task_id'], unique=False)
     except Exception:
         pass  # Index might already exist
-    
+
     # Backfill existing blocks
     op.execute("""
-        UPDATE qr_blocks 
-        SET task_status = 'success' 
+        UPDATE qr_blocks
+        SET task_status = 'success'
         WHERE status = 'completed' AND task_status IS NULL
     """)
-    
+
     op.execute("""
-        UPDATE qr_blocks 
-        SET task_status = 'failure' 
+        UPDATE qr_blocks
+        SET task_status = 'failure'
         WHERE status = 'failed' AND task_status IS NULL
     """)
 
@@ -48,7 +48,7 @@ def downgrade():
         op.drop_index('idx_qr_blocks_task_id', table_name='qr_blocks')
     except Exception:
         pass
-    
+
     # Remove columns (only the ones we added in this migration)
     op.drop_column('qr_blocks', 'progress_total')
     op.drop_column('qr_blocks', 'progress_current')
