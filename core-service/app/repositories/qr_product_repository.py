@@ -185,6 +185,17 @@ class ProductItemRepository:
             .first()
         )
 
+    def get_by_serial_global(self, serial_number: str) -> ProductItem | None:
+        """Look up a ProductItem by serial_number across all organizations."""
+        return (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == serial_number,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
     def list_by_block(
         self,
         block_id: UUID,

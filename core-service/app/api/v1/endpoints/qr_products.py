@@ -216,12 +216,11 @@ async def validate_qr(
     description="Public endpoint for cryptographic QR verification. No auth required.",
 )
 async def authenticate_qr(
-    organization_id: UUID,
     req: AuthenticateRequest,
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
-    result = svc.authenticate(organization_id, req)
+    result = svc.authenticate(req)
     return AuthenticateResponse(**result)
 
 

@@ -126,6 +126,9 @@ class KeyService:
             True if the signature is valid, False otherwise.
         """
         try:
+            # Normalize: spaces are often produced when '+' is URL-decoded
+            signature_b64 = signature_b64.replace(" ", "+")
+
             public_key_bytes = bytes.fromhex(public_key_hex)
             public_key = ec.EllipticCurvePublicKey.from_encoded_point(
                 ec.SECP256R1(), public_key_bytes

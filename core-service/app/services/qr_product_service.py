@@ -41,46 +41,161 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
-def _build_excel(rows: list[dict], qr_type: str) -> bytes:
+def _build_excel(rows: list[dict], qr_type: str, include_qr_image: bool = False) -> bytes:
     """Build an Excel file from block item rows. Returns raw bytes."""
     from io import BytesIO
 
+    import qrcode
     from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as XLImage
     from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
 
     wb = Workbook()
     ws = wb.active
     ws.title = "QR Codes"
 
     qr_type = qr_type.upper()
-    if qr_type == "B":
-        headers = ["URL (Overt)", "URL (Covert)", "Serial Number"]
-    elif qr_type == "SC":
-        headers = ["QR URL", "Serial Number", "Secret Code"]
+    
+    # Define headers based on QR type and whether images are included
+    if include_qr_image:
+        if qr_type == "B":
+            headers = ["QR Image (Overt)", "URL (Overt)", "QR Image (Covert)", "URL (Covert)", "Serial Number"]
+        elif qr_type == "SC":
+            headers = ["QR Image", "QR URL", "Serial Number", "Secret Code"]
+        else:
+            headers = ["QR Image", "QR URL", "Serial Number"]
     else:
-        headers = ["QR URL", "Serial Number"]
+        if qr_type == "B":
+            headers = ["URL (Overt)", "URL (Covert)", "Serial Number"]
+        elif qr_type == "SC":
+            headers = ["QR URL", "Serial Number", "Secret Code"]
+        else:
+            headers = ["QR URL", "Serial Number"]
 
+    # Write headers
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=h)
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center")
 
+    # Set row height for header
+    ws.row_dimensions[1].height = 20
+
+    # Write data rows
     for row_idx, item in enumerate(rows, 2):
+        if include_qr_image:
+            # Set row height to accommodate QR image (approximately 100 pixels = 75 points)
+            ws.row_dimensions[row_idx].height = 75
+
         if qr_type == "B":
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("overt_url", ""))
-            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
+            # Dual QR type - overt and covert
+            overt_url = item.get("short_url", "")
+            covert_url = item.get("overt_url", "")
+            serial = item.get("serial", "")
+            
+            if include_qr_image:
+                # Generate and insert QR images
+                if overt_url:
+                    qr_img = _generate_qr_image(overt_url)
+                    img = XLImage(qr_img)
+                    img.width = 100
+                    img.height = 100
+                    ws.add_image(img, f"A{row_idx}")
+                    ws.column_dimensions["A"].width = 15
+                
+                ws.cell(row=row_idx, column=2, value=overt_url)
+                
+                if covert_url:
+                    qr_img = _generate_qr_image(covert_url)
+                    img = XLImage(qr_img)
+                    img.width = 100
+                    img.height = 100
+                    ws.add_image(img, f"C{row_idx}")
+                    ws.column_dimensions["C"].width = 15
+                
+                ws.cell(row=row_idx, column=4, value=covert_url)
+                ws.cell(row=row_idx, column=5, value=serial)
+            else:
+                ws.cell(row=row_idx, column=1, value=overt_url)
+                ws.cell(row=row_idx, column=2, value=covert_url)
+                ws.cell(row=row_idx, column=3, value=serial)
+                
         elif qr_type == "SC":
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
-            ws.cell(row=row_idx, column=3, value=item.get("secret_code", ""))
+            # Secure Code type
+            url = item.get("short_url", "")
+            serial = item.get("serial", "")
+            secret = item.get("secret_code", "")
+            
+            if include_qr_image:
+                if url:
+                    qr_img = _generate_qr_image(url)
+                    img = XLImage(qr_img)
+                    img.width = 100
+                    img.height = 100
+                    ws.add_image(img, f"A{row_idx}")
+                    ws.column_dimensions["A"].width = 15
+                
+                ws.cell(row=row_idx, column=2, value=url)
+                ws.cell(row=row_idx, column=3, value=serial)
+                ws.cell(row=row_idx, column=4, value=secret)
+            else:
+                ws.cell(row=row_idx, column=1, value=url)
+                ws.cell(row=row_idx, column=2, value=serial)
+                ws.cell(row=row_idx, column=3, value=secret)
         else:
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+            # Standard types (D, S, O)
+            url = item.get("short_url", "")
+            serial = item.get("serial", "")
+            
+            if include_qr_image:
+                if url:
+                    qr_img = _generate_qr_image(url)
+                    img = XLImage(qr_img)
+                    img.width = 100
+                    img.height = 100
+                    ws.add_image(img, f"A{row_idx}")
+                    ws.column_dimensions["A"].width = 15
+                
+                ws.cell(row=row_idx, column=2, value=url)
+                ws.cell(row=row_idx, column=3, value=serial)
+            else:
+                ws.cell(row=row_idx, column=1, value=url)
+                ws.cell(row=row_idx, column=2, value=serial)
+
+    # Auto-adjust column widths for text columns
+    for col in range(1, len(headers) + 1):
+        if not include_qr_image or col not in [1, 3]:  # Skip image columns
+            col_letter = get_column_letter(col)
+            if col_letter not in ["A", "C"] or not include_qr_image:
+                ws.column_dimensions[col_letter].width = 50
 
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def _generate_qr_image(data: str):
+    """Generate a QR code image and return it as a BytesIO object."""
+    from io import BytesIO
+
+    import qrcode
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
 
 
 class QRProductService:
@@ -450,9 +565,18 @@ class QRProductService:
             for item in items
         ]
 
-        excel_bytes = _build_excel(rows, qr_type)
+        excel_bytes = _build_excel(rows, qr_type, include_qr_image=block.qr_image)
         filename = f"qr_block_{block.batch}_{block_id}.xlsx"
         return excel_bytes, filename
+
+    def _build_excel_for_block(
+        self, block_id: UUID, organization_id: UUID
+    ) -> tuple[bytes, str]:
+        """
+        Generate Excel file for a block (used by async task).
+        This is an alias for get_block_excel_stream for backward compatibility.
+        """
+        return self.get_block_excel_stream(block_id, organization_id)
 
     def list_blocks(
         self,
@@ -591,14 +715,15 @@ class QRProductService:
 
     # ── QR Authenticate (public, ECDSA) ─────────────────────────────────────
 
-    def authenticate(self, organization_id: UUID, data: AuthenticateRequest) -> dict:
+    def authenticate(self, data: AuthenticateRequest) -> dict:
         """
         Verify a QR scan using ECDSA signature verification.
+        No organization_id required — serial numbers are globally unique.
 
         Requirements: 9.1-9.9, 8.4
         """
-        # 1. Look up item by serial_number
-        item = self.item_repo.get_by_serial(data.serial_number, organization_id)
+        # 1. Look up item by serial_number (global lookup)
+        item = self.item_repo.get_by_serial_global(data.serial_number)
         if not item:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -651,7 +776,7 @@ class QRProductService:
         logger.info(
             "QR authenticate: serial=%s org=%s authentic=True scan_count=%d",
             data.serial_number,
-            organization_id,
+            item.organization_id,
             item.scan_count,
         )
 
