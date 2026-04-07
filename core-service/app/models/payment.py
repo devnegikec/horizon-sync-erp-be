@@ -12,6 +12,7 @@ from app.models.types import JSONB, UUID
 
 class Payment(Base):
     __tablename__ = "payments"
+    __audited__ = True
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)

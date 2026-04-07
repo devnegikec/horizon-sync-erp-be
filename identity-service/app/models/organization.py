@@ -15,6 +15,8 @@ class Organization(Base):
     """Organization model"""
 
     __tablename__ = "organizations"
+    __audited__ = True
+    __audit_exclude__ = set()
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String(255), nullable=False)

@@ -15,7 +15,7 @@ import logging
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,14 @@ from app.schemas.admin_invoice import (
 from app.schemas.common import PaginationMeta
 from app.services.invoice_service import InvoiceService
 from app.services.subscription_invoice_service import SubscriptionInvoiceService
+
+# Reusable read-only engine for identity DB (org name lookups)
+_identity_engine = None
+def _get_identity_engine():
+    global _identity_engine
+    if _identity_engine is None and settings.identity_database_url:
+        _identity_engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+    return _identity_engine
 
 
 class AdminInvoiceService:
@@ -77,38 +85,47 @@ class AdminInvoiceService:
             return []  # Return empty list on error
             
     async def _get_organization_names(self, org_ids: list[UUID]) -> dict[UUID, str]:
-        """Fetch organization names from identity service for given org IDs."""
-        if not self.token or not org_ids:
+        """Fetch organization names from identity database directly."""
+        if not org_ids:
             return {}
-            
+
+        # Try direct DB access first (most reliable)
+        engine = _get_identity_engine()
+        if engine:
+            try:
+                with engine.connect() as conn:
+                    placeholders = ", ".join(f"'{str(oid)}'" for oid in org_ids)
+                    rows = conn.execute(
+                        text(f"SELECT id, name FROM organizations WHERE id::text IN ({placeholders})")
+                    ).fetchall()
+                    org_names = {UUID(str(row[0])): row[1] for row in rows}
+                    if org_names:
+                        logger.info(f"Fetched {len(org_names)} org names from identity DB")
+                        return org_names
+            except Exception as e:
+                logger.warning(f"Direct identity DB lookup failed: {e}")
+
+        # Fallback to HTTP call to identity service
+        if not self.token:
+            return {}
         try:
-            org_names = {}
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Fetch organizations in batches to get names
                 url = f"{settings.identity_service_url}/api/v1/identity/organizations"
                 headers = {"Authorization": f"Bearer {self.token}"}
-                
-                # Get all organizations (we'll filter by IDs)
                 response = await client.get(url, params={"page_size": 1000}, headers=headers)
-                
                 if response.status_code == 200:
                     data = response.json()
-                    orgs_data = data.get("organizations", [])
-                    
-                    for org in orgs_data:
+                    org_names = {}
+                    for org in data.get("organizations", []):
                         org_id = UUID(org["id"])
                         if org_id in org_ids:
                             org_names[org_id] = org["name"]
-                    
-                    logger.info(f"Fetched names for {len(org_names)} organizations")
+                    logger.info(f"Fetched {len(org_names)} org names via HTTP")
                     return org_names
-                else:
-                    logger.error(f"Failed to fetch organization names: {response.status_code}")
-                    return {}
         except Exception as e:
-            logger.error(f"Error fetching organization names: {e}")
-            return {}
-            return [master_org_id]  # Fallback on error
+            logger.error(f"HTTP org name lookup failed: {e}")
+
+        return {}
 
     # ── Cross-org list ───────────────────────────────────────────────
 
@@ -236,6 +253,22 @@ class AdminInvoiceService:
 
     # ── Cross-org detail ─────────────────────────────────────────────
 
+    def _get_org_name_sync(self, org_id: UUID) -> str | None:
+        """Synchronously fetch a single organization name from identity DB."""
+        engine = _get_identity_engine()
+        if engine:
+            try:
+                with engine.connect() as conn:
+                    row = conn.execute(
+                        text("SELECT name FROM organizations WHERE id = :oid"),
+                        {"oid": str(org_id)}
+                    ).fetchone()
+                    if row:
+                        return row[0]
+            except Exception as e:
+                logger.warning(f"Direct identity DB lookup failed for org {org_id}: {e}")
+        return None
+
     def get_invoice(self, invoice_id: UUID) -> dict:
         """Get invoice detail without org restriction.
 
@@ -256,8 +289,8 @@ class AdminInvoiceService:
             )
         response = self.invoice_service._to_response(inv)
 
-        # Add organization_name - TODO: Get from identity service
-        response["organization_name"] = None  # Will need to fetch from identity service
+        # Resolve organization_name from identity DB
+        response["organization_name"] = self._get_org_name_sync(inv.organization_id)
 
         return response
 
@@ -654,6 +687,21 @@ class AdminInvoiceService:
             )
             for c in customers:
                 party_map[c.id] = {"name": c.customer_name, "code": c.customer_code}
+            
+            # For customer IDs not found, try looking up by customer_name from the customers table
+            # using a broader search (some party_ids may reference organizations)
+            missing_ids = customer_ids - set(party_map.keys())
+            if missing_ids:
+                # Try to find customer name by matching organization_id
+                for mid in missing_ids:
+                    cust = (
+                        self.db.query(Customer.customer_name, Customer.customer_code)
+                        .filter(Customer.organization_id == mid)
+                        .first()
+                    )
+                    if cust:
+                        party_map[mid] = {"name": cust.customer_name, "code": cust.customer_code}
+
         if supplier_ids:
             suppliers = (
                 self.db.query(

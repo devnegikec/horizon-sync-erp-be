@@ -10,6 +10,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.organization import Organization, OrganizationType
@@ -90,6 +91,7 @@ class SystemAdminPermissionService:
         if not master_org:
             return []
         
+        # Query with proper joins to load role data
         user_roles = (
             self.db.query(UserOrganizationRole)
             .join(Role)
@@ -97,7 +99,10 @@ class SystemAdminPermissionService:
                 UserOrganizationRole.user_id == user_id,
                 UserOrganizationRole.organization_id == master_org.id,
                 UserOrganizationRole.is_active == True,
-                Role.role_name.like("system_admin_%")
+                or_(
+                    Role.name.like("system_admin_%"),
+                    Role.code == "system_admin"  # Support legacy seed script role
+                )
             )
             .all()
         )
@@ -107,12 +112,22 @@ class SystemAdminPermissionService:
         
         # Get all permissions for system admin roles
         permissions = []
+        master_admin_found = False
+        
         for user_role in user_roles:
-            role_permissions = self.role_service.get_role_permissions(user_role.role_id)
-            permissions.extend([perm.permission_code for perm in role_permissions])
+            # Get the role by ID to ensure we have the role data
+            role = self.db.query(Role).filter(Role.id == user_role.role_id).first()
+            if role:
+                # Check if this is a master admin role (new or legacy)
+                if "system_admin_master" in role.name or role.code == "system_admin":
+                    master_admin_found = True
+                
+                # Get role permissions
+                role_permissions = self.role_service.get_role_permissions(user_role.role_id)
+                permissions.extend([perm.permission_code for perm in role_permissions])
         
         # If user has system_admin_master role, return wildcard permission
-        if any("system_admin_master" in ur.role.name for ur in user_roles if ur.role):
+        if master_admin_found:
             permissions.append("*.*")
         
         return list(set(permissions))  # Remove duplicates

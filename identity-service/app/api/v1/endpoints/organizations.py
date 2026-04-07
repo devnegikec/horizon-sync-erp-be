@@ -300,3 +300,60 @@ async def delete_organization(
         svc.delete(organization_id, user_type=current_user.user_type)
     except OrganizationNotFoundException:
         raise
+
+
+@router.post(
+    "/organizations/backfill-billing-defaults",
+    summary="Backfill billing defaults for existing organizations",
+    description="Sets billing defaults on orgs that have NULL billing fields. System admin only.",
+)
+async def backfill_billing_defaults(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """One-time backfill: sets trial status, next_billing_date, seat/credit limits
+    on all non-master orgs that currently have NULL billing fields."""
+    require_permission(current_user.permissions, "*.*")
+
+    from datetime import datetime, timedelta, UTC
+    from app.models.organization import Organization
+    from app.models.base import OrganizationType, BillingStatus
+
+    orgs = (
+        db.query(Organization)
+        .filter(
+            Organization.organization_type != OrganizationType.MASTER,
+            Organization.next_billing_date.is_(None),
+        )
+        .all()
+    )
+
+    now = datetime.now(UTC)
+    cycle_days = {"monthly": 30, "quarterly": 90, "yearly": 365}
+    updated = 0
+
+    for org in orgs:
+        cycle = org.billing_cycle or settings.default_billing_cycle
+        trial_days = settings.default_trial_days
+        if not org.billing_status:
+            org.billing_status = BillingStatus.TRIAL
+        if not org.customer_since:
+            org.customer_since = org.created_at or now
+        if not org.subscription_start_date:
+            org.subscription_start_date = (org.created_at or now).date() if hasattr(org.created_at or now, 'date') else org.created_at or now
+        if not org.trial_end_date:
+            base = org.created_at or now
+            org.trial_end_date = (base + timedelta(days=trial_days)).date() if hasattr(base, 'date') else base + timedelta(days=trial_days)
+        if not org.next_billing_date:
+            base = org.created_at or now
+            org.next_billing_date = (base + timedelta(days=trial_days + cycle_days.get(cycle, 30))).date() if hasattr(base, 'date') else base + timedelta(days=trial_days + cycle_days.get(cycle, 30))
+        if not org.max_users:
+            org.max_users = settings.default_max_users
+        if not org.max_credits:
+            org.max_credits = settings.default_max_credits
+        if not org.billing_cycle:
+            org.billing_cycle = cycle
+        updated += 1
+
+    db.commit()
+    return {"updated": updated, "message": f"Backfilled billing defaults for {updated} organizations"}

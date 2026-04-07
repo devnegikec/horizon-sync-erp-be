@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth,
+    entity_audit_logs,
     invitations,
     organizations,
     otp,
@@ -50,4 +51,8 @@ api_router.include_router(
 
 api_router.include_router(
     system_admin_audit_log.router, prefix="/organization-management", tags=["Organization Management"]
+)
+
+api_router.include_router(
+    entity_audit_logs.router, prefix="/entity-audit-logs", tags=["Entity Audit Logs"]
 )

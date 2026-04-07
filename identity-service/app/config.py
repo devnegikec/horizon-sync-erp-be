@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # Set to True in production (requires HTTPS)
     cookie_samesite: str = "lax"  # "lax", "strict", or "none"
     cookie_httponly: bool = True  # Prevent JavaScript access
+
+    # Billing Defaults (configurable via env vars)
+    default_trial_days: int = 30
+    default_billing_cycle: str = "monthly"  # monthly, quarterly, yearly
+    default_max_users: int = 10
+    default_max_credits: int = 1000
     cookie_domain: str | None = None  # Set to your domain in production
 
     # Email (for password reset notifications)

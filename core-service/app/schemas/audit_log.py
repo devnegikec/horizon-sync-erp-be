@@ -1,47 +1,71 @@
-"""Audit log schemas for API requests and responses"""
+"""Pydantic schemas for audit log API responses."""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from app.schemas.common import PaginationMeta
 
 
-class AuditLogEntryResponse(BaseModel):
-    """Response schema for audit log entry"""
+class AuditLogListItem(BaseModel):
+    """Single audit log entry in a paginated list."""
 
     id: UUID
-    account_id: UUID
+    user_id: UUID | None
+    organization_id: UUID | None
     action: str
-    user_id: str
-    timestamp: datetime
-    changes: dict[str, Any]
-    audit_metadata: dict[str, Any] | None = None
+    table_name: str
+    record_id: UUID
+    old_values: dict | None
+    new_values: dict | None
+    changed_fields: list[str] | None
+    ip_address: str | None
+    created_at: datetime
+    user_email: str | None = None
 
-    class Config:
-        from_attributes = True
-
-
-class AuditTrailResponse(BaseModel):
-    """Response schema for audit trail with pagination"""
-
-    items: list[AuditLogEntryResponse]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-    has_next: bool
-    has_prev: bool
+    model_config = ConfigDict(from_attributes=True)
 
 
-class AuditTrailQueryParams(BaseModel):
-    """Query parameters for audit trail filtering"""
+class ChangeDiffEntry(BaseModel):
+    """A single field-level diff entry."""
 
-    action: str | None = Field(
-        None,
-        description="Filter by action type (CREATE, UPDATE, DELETE, STATUS_CHANGE)",
-    )
-    start_date: datetime | None = Field(None, description="Filter by start date")
-    end_date: datetime | None = Field(None, description="Filter by end date")
-    page: int = Field(1, ge=1, description="Page number")
-    page_size: int = Field(50, ge=1, le=100, description="Items per page")
+    field: str
+    old_value: Any
+    new_value: Any
+
+
+class AuditLogDetail(AuditLogListItem):
+    """Audit log entry with computed change diff."""
+
+    change_diff: list[ChangeDiffEntry] | None = None
+
+    @model_validator(mode="after")
+    def compute_diff(self):
+        if self.old_values and self.new_values and self.changed_fields:
+            self.change_diff = [
+                ChangeDiffEntry(
+                    field=f,
+                    old_value=self.old_values.get(f),
+                    new_value=self.new_values.get(f),
+                )
+                for f in self.changed_fields
+            ]
+        return self
+
+
+class AuditLogListResponse(BaseModel):
+    """Paginated list of audit log entries."""
+
+    audit_logs: list[AuditLogListItem]
+    pagination: PaginationMeta
+
+
+class AuditLogHistoryResponse(BaseModel):
+    """Record change history response."""
+
+    record_id: UUID
+    table_name: str
+    history: list[AuditLogDetail]
+    pagination: PaginationMeta

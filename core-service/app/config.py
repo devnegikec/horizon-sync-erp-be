@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
 
+    # Audit Trail
+    audit_async_enabled: bool = False
+    audit_flush_interval: float = 1.0
+    audit_batch_size: int = 50
+
     # Brand Key Encryption (ECDSA private key encryption at rest)
     brand_key_encryption_secret: str = ""
 

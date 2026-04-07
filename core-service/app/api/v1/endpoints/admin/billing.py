@@ -564,3 +564,72 @@ async def setup_system_admin(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to setup system admin: {str(e)}"
         )
+
+
+# ── Tier Update ──────────────────────────────────────────────────────────
+
+class UpdateTierRequest(BaseModel):
+    new_tier: str = Field(..., pattern="^(basic|pro|enterprise)$")
+    effective_date: str | None = None
+    prorated: bool = False
+    reason: str | None = None
+
+
+@router.post("/organizations/{organization_id}/update-tier")
+async def update_organization_tier(
+    organization_id: UUID,
+    request: UpdateTierRequest,
+    db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+):
+    """Update an organization's subscription tier (basic/pro/enterprise).
+
+    Updates billing fields on the identity-service organization record.
+    """
+    try:
+        from app.config import settings
+        from sqlalchemy import create_engine, text
+
+        # Tier → defaults mapping
+        tier_config = {
+            "basic": {"max_users": 10, "max_credits": 1000},
+            "pro": {"max_users": 50, "max_credits": 5000},
+            "enterprise": {"max_users": 500, "max_credits": 50000},
+        }
+        cfg = tier_config[request.new_tier]
+
+        # Update directly in identity DB
+        if not settings.identity_database_url:
+            raise HTTPException(status_code=500, detail="Identity database not configured")
+
+        engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(
+                    "UPDATE organizations SET max_users = :max_users, max_credits = :max_credits, "
+                    "billing_status = 'active', updated_at = NOW() "
+                    "WHERE id = :org_id RETURNING name"
+                ),
+                {"max_users": cfg["max_users"], "max_credits": cfg["max_credits"], "org_id": str(organization_id)},
+            )
+            row = result.fetchone()
+            conn.commit()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        return {
+            "success": True,
+            "message": f"Tier updated to {request.new_tier} for {row[0]}",
+            "organization_id": str(organization_id),
+            "new_tier": request.new_tier,
+            "max_users": cfg["max_users"],
+            "max_credits": cfg["max_credits"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update tier for {organization_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update tier: {str(e)}")

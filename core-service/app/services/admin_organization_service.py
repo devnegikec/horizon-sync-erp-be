@@ -93,6 +93,17 @@ class AdminOrganizationService:
                 organization_type=o["organization_type"],
                 is_active=o.get("is_active", True),
                 created_at=o["created_at"],
+                billing_status=o.get("billing_status"),
+                subscription_start_date=o.get("subscription_start_date"),
+                subscription_end_date=o.get("subscription_end_date"),
+                trial_end_date=o.get("trial_end_date"),
+                max_users=o.get("max_users"),
+                max_credits=o.get("max_credits"),
+                billing_contact_email=o.get("billing_contact_email"),
+                billing_cycle=o.get("billing_cycle"),
+                customer_since=o.get("customer_since"),
+                last_billed_date=o.get("last_billed_date"),
+                next_billing_date=o.get("next_billing_date"),
             ))
 
         return AdminOrgListResponse(

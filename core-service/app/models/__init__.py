@@ -154,6 +154,10 @@ from app.models.admin import (
     UserActivityLog,
 )
 
+# Audit Trail module
+from app.models.audit_log import AuditAction as AuditLogAction
+from app.models.audit_log import AuditLog
+
 # Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
@@ -346,6 +350,9 @@ __all__ = [
     "AdminAuditLog",
     "AdminNotification",
     "FeatureFlag",
+    # Audit Trail module
+    "AuditLog",
+    "AuditLogAction",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

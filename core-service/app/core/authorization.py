@@ -108,6 +108,9 @@ EXCHANGE_RATE_CREATE = "exchange_rate.create"
 EXCHANGE_RATE_UPDATE = "exchange_rate.update"
 EXCHANGE_RATE_DELETE = "exchange_rate.delete"
 
+# Audit
+AUDIT_READ = "audit.read"
+
 # System Admin Permissions (Task 1C-1: B2B Billing System)
 SYSTEM_ADMIN_MASTER = "system_admin.master"  # Full system access
 SYSTEM_ADMIN_USERS = "system_admin.users"  # Cross-org user management

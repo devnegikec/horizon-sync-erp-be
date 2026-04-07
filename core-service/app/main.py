@@ -119,6 +119,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("⚠️ Master organization setup module not available")
     
+    # Register audit trail listeners
+    from app.core.audit_listener import register_audit_listeners
+    register_audit_listeners()
+    
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
@@ -143,6 +147,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Audit context middleware (must be after CORS)
+from app.middleware.audit_middleware import AuditContextMiddleware
+app.add_middleware(AuditContextMiddleware)
 
 
 # Health check endpoint

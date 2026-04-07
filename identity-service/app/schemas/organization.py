@@ -91,6 +91,18 @@ class OrganizationListItem(BaseModel):
     organization_type: str
     owner_id: UUID | None = None
     created_at: datetime
+    # Billing fields
+    billing_status: str | None = None
+    subscription_start_date: datetime | None = None
+    subscription_end_date: datetime | None = None
+    trial_end_date: datetime | None = None
+    max_users: int | None = None
+    max_credits: int | None = None
+    billing_contact_email: str | None = None
+    billing_cycle: str | None = None
+    customer_since: datetime | None = None
+    last_billed_date: datetime | None = None
+    next_billing_date: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
