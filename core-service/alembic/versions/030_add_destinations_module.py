@@ -8,6 +8,7 @@ Create Date: 2026-03-20 14:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 revision = '030_add_destinations_module'
 down_revision = '029_add_url_management'
@@ -16,7 +17,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
+    # Check if table already exists
+    inspector = inspect(op.get_bind())
+    if not inspector.has_table('destination_markets'):
+        op.create_table(
         'destination_markets',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),

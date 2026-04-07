@@ -1,5 +1,6 @@
 """Database models package"""
 
+from app.models.audit_log import AuditActionType, SystemAdminAuditLog
 from app.models.base import (
     ActionType,
     OrganizationStatus,
@@ -22,6 +23,7 @@ __all__ = [
     "OrganizationStatus",
     "ResourceType",
     "ActionType",
+    "AuditActionType",
     "User",
     "EmailVerification",
     "RefreshToken",
@@ -32,4 +34,5 @@ __all__ = [
     "UserOrganizationRole",
     "Invitation",
     "OTPVerification",
+    "SystemAdminAuditLog",
 ]

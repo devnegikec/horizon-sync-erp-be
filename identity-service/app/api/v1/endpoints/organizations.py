@@ -64,6 +64,10 @@ async def list_organizations(
         None,
         description="Filter by type (enterprise, business, startup, individual)",
     ),
+    parent_organization_id: UUID | None = Query(
+        None,
+        description="Filter by parent organization (returns child organizations)",
+    ),
     search: str | None = Query(None, description="Search in name, slug, display_name"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
@@ -102,10 +106,70 @@ async def list_organizations(
         sort_by=sort_by,
         sort_order=sort_order,
         organization_ids=org_ids,
+        parent_organization_id=parent_organization_id,
     )
     return OrganizationListResponse(
         organizations=[OrganizationListItem.model_validate(x) for x in items],
         pagination=PaginationMeta(**pagination),
+    )
+
+
+@router.get(
+    "/organizations/master",
+    response_model=OrganizationResponse,
+    summary="Get master organization",
+    description="Get the master organization details for system administration"
+)
+async def get_master_organization(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get master organization details. Requires system admin permissions."""
+    require_permission(current_user.permissions, "system_admin.master")
+    
+    svc = OrganizationService(db)
+    
+    # Find the master organization (should be unique)
+    from app.models.organization import Organization
+    from app.models.base import OrganizationType
+    
+    master_org = db.query(Organization).filter(
+        Organization.organization_type == OrganizationType.MASTER
+    ).first()
+    
+    if not master_org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Master organization not found"
+        )
+    
+    # Convert to response format
+    return OrganizationResponse(
+        id=master_org.id,
+        name=master_org.name,
+        slug=master_org.slug,
+        display_name=master_org.display_name,
+        description=master_org.description,
+        email=master_org.email,
+        phone=master_org.phone,
+        website=master_org.website,
+        address_line1=master_org.address_line1,
+        address_line2=master_org.address_line2,
+        city=master_org.city,
+        state=master_org.state,
+        postal_code=master_org.postal_code,
+        country=master_org.country,
+        logo_url=master_org.logo_url,
+        organization_type=master_org.organization_type.value,
+        industry=master_org.industry,
+        base_currency=master_org.base_currency,
+        status=master_org.status.value,
+        is_active=master_org.is_active,
+        owner_id=master_org.owner_id,
+        settings=master_org.settings,
+        extra_data=master_org.extra_data,
+        created_at=master_org.created_at,
+        updated_at=master_org.updated_at,
     )
 
 
@@ -181,7 +245,7 @@ async def create_organization(
         retry_attempts=settings.chart_creation_retry_attempts
     )
     try:
-        data = svc.create(body.model_dump(), owner_id=current_user.id)
+        data = svc.create(body.model_dump(), owner_id=current_user.id, user_type=current_user.user_type)
         return OrganizationResponse.model_validate(data)
     except DuplicateOrganizationSlugException:
         raise
@@ -206,12 +270,14 @@ async def update_organization(
     svc = OrganizationService(db)
     payload = body.model_dump(exclude_unset=True)
     try:
-        data = svc.update(organization_id, payload)
+        data = svc.update(organization_id, payload, user_type=current_user.user_type)
         return OrganizationResponse.model_validate(data)
     except OrganizationNotFoundException:
         raise
     except DuplicateOrganizationSlugException:
         raise
+
+
 
 
 @router.delete(
@@ -231,6 +297,6 @@ async def delete_organization(
         validate_user_in_organization(current_user.id, organization_id, db)
     svc = OrganizationService(db)
     try:
-        svc.delete(organization_id)
+        svc.delete(organization_id, user_type=current_user.user_type)
     except OrganizationNotFoundException:
         raise

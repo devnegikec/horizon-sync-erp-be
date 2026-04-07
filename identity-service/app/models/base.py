@@ -24,6 +24,8 @@ class UserStatus(str, enum.Enum):
 class OrganizationType(str, enum.Enum):
     """Organization type enumeration"""
 
+    MASTER = "master"
+    CUSTOMER = "customer"
     ENTERPRISE = "enterprise"
     BUSINESS = "business"
     STARTUP = "startup"
@@ -37,6 +39,20 @@ class OrganizationStatus(str, enum.Enum):
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
     TRIAL = "trial"
+    # New billing statuses for Task 1A-2
+    OVERDUE = "overdue"
+    DEACTIVATED = "deactivated"
+
+
+class BillingStatus(str, enum.Enum):
+    """Billing status enumeration for organization billing management"""
+
+    ACTIVE = "active"
+    TRIAL = "trial"
+    OVERDUE = "overdue"
+    SUSPENDED = "suspended"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
 
 
 class ResourceType(str, enum.Enum):
@@ -70,9 +86,13 @@ class ResourceType(str, enum.Enum):
     # Accounting
     CHART_OF_ACCOUNT = "chart_of_account"
     PAYMENT = "payment"
+    BILLING = "billing"  # Task 1C-1: System admin billing permissions
+    
+    # Analytics & Reports
+    REPORT = "report"
+    REPORTING = "reporting"  # Task 1C-1: System admin reporting permissions
 
     # General
-    REPORT = "report"
     SETTING = "setting"
     ALL = "all"
 

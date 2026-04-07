@@ -7,6 +7,7 @@ Enriches responses with core-service data (invoices, payments) where needed.
 import logging
 import math
 from decimal import Decimal
+from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -65,6 +66,14 @@ class AdminOrganizationService:
                 headers=self._headers(),
             )
 
+        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )
+        
         if resp.status_code != 200:
             logger.error(f"Identity-service /organizations returned {resp.status_code}: {resp.text}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organizations")
@@ -108,7 +117,19 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 404:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )        # Handle authentication/authorization errors by passing them through
+        if resp.status_code in [401, 403]:
+            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=resp.json().get("detail", "Authentication required")
+            )
         if resp.status_code != 200:
             logger.error(f"Identity-service /organizations/{org_id} returned {resp.status_code}")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organization")
@@ -252,3 +273,88 @@ class AdminOrganizationService:
         ) or Decimal("0")
 
         return {"user_count": 0, "invoice_count": invoice_count, "payment_total": payment_total}
+
+    # ── System Administration Methods ──────────────────────────────────
+
+    async def get_master_organization(self) -> Optional[AdminOrgDetailResponse]:
+        """Get the master organization details for system administration"""
+        try:
+            # Call identity service to get master organization
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{IDENTITY_API}/organizations/master",
+                    headers=self._headers(),
+                    timeout=30.0,
+                )
+                
+                if response.status_code == 404:
+                    return None
+                    
+                response.raise_for_status() 
+                org_data = response.json()
+                
+                # Map to AdminOrgDetailResponse format
+                return AdminOrgDetailResponse(
+                    id=UUID(org_data["id"]),
+                    name=org_data["name"],
+                    slug=org_data.get("slug"),
+                    display_name=org_data.get("display_name"),
+                    description=org_data.get("description"),
+                    email=org_data.get("email"),
+                    phone=org_data.get("phone"),
+                    website=org_data.get("website"),
+                    address_line1=org_data.get("address_line1"),
+                    address_line2=org_data.get("address_line2"),
+                    city=org_data.get("city"),
+                    state=org_data.get("state"),
+                    postal_code=org_data.get("postal_code"),
+                    country=org_data.get("country"),
+                    organization_type=org_data.get("organization_type", "master"),
+                    industry=org_data.get("industry"),
+                    base_currency=org_data.get("base_currency"),
+                    logo_url=org_data.get("logo_url"),
+                    status=org_data.get("status", "active"),
+                    is_active=org_data.get("is_active", True),
+                    owner_id=UUID(org_data["owner_id"]) if org_data.get("owner_id") else None,
+                    settings=org_data.get("settings"),
+                    extra_data=org_data.get("extra_data"),
+                    created_at=org_data["created_at"],
+                    updated_at=org_data.get("updated_at"),
+                    **self._get_core_counts(UUID(org_data["id"]))
+                )
+                
+        except httpx.RequestError as e:
+            logger.error(f"Network error getting master organization: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting master organization: {e}")
+            return None
+
+    async def update_master_organization(self, updates: dict) -> Optional[AdminOrgDetailResponse]:
+        """Update master organization details"""
+        try:
+            # First get master organization to get its ID
+            master_org = await self.get_master_organization()
+            if not master_org:
+                raise HTTPException(status_code=404, detail="Master organization not found")
+            
+            # Update via identity service
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    f"{IDENTITY_API}/organizations/{master_org.id}",
+                    headers=self._headers(),
+                    json=updates,
+                    timeout=30.0,
+                )
+                
+                response.raise_for_status()
+                
+                # Return updated organization
+                return await self.get_master_organization()
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error updating master organization: {e}")
+            raise HTTPException(status_code=e.response.status_code, detail="Failed to update master organization")
+        except Exception as e:
+            logger.error(f"Error updating master organization: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update master organization")

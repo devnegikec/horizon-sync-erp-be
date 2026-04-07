@@ -175,6 +175,15 @@ from app.models.messaging import (
     MessageCredit,
 )
 
+# Reminder Configuration module (Task 1D-1)
+from app.models.reminder_config import (
+    ReminderConfig,
+    ReminderLog,
+    ReminderType,
+    ReminderStage,
+    ReminderStatus,
+)
+
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
 # from app.models.item_price import ItemPrice
@@ -326,6 +335,12 @@ __all__ = [
     "RCSTemplate",
     "RCSReport",
     "MessageCredit",
+    # Reminder Configuration module (Task 1D-1)
+    "ReminderConfig",
+    "ReminderLog",
+    "ReminderType",
+    "ReminderStage",
+    "ReminderStatus",
     # Admin Portal module
     "UserActivityLog",
     "AdminAuditLog",

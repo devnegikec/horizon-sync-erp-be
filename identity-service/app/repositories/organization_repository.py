@@ -66,6 +66,7 @@ class OrganizationRepository:
         sort_by: str = "created_at",
         sort_order: str = "desc",
         organization_ids: list[UUID] | None = None,
+        parent_organization_id: UUID | None = None,
     ) -> tuple[list[Organization], int]:
         """
         List organizations with pagination and filters.
@@ -76,6 +77,9 @@ class OrganizationRepository:
 
         if organization_ids is not None:
             query = query.filter(Organization.id.in_(organization_ids))
+        
+        if parent_organization_id is not None:
+            query = query.filter(Organization.parent_organization_id == parent_organization_id)
 
         if status is not None:
             query = query.filter(Organization.status == status)
@@ -117,3 +121,14 @@ class OrganizationRepository:
         self.db.commit()
         self.db.refresh(org)
         return org
+
+    def get_organization_by_type(self, organization_type: OrganizationType) -> Organization | None:
+        """Get organization by type (e.g., MASTER), excluding soft-deleted."""
+        return (
+            self.db.query(Organization)
+            .filter(
+                Organization.organization_type == organization_type,
+                Organization.deleted_at.is_(None),
+            )
+            .first()
+        )

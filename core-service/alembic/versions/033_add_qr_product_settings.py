@@ -8,6 +8,7 @@ Create Date: 2026-03-21 10:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 revision = "033_add_qr_product_settings"
 down_revision = "032_add_public_marketing_module"
@@ -16,8 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "qr_product_settings",
+    # Check if table already exists
+    inspector = inspect(op.get_bind())
+    if not inspector.has_table('qr_product_settings'):
+        op.create_table(
+            "qr_product_settings",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
