@@ -24,6 +24,8 @@ class User(Base):
     """User model"""
 
     __tablename__ = "users"
+    __audited__ = True
+    __audit_exclude__ = {"password_hash"}
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)

@@ -101,6 +101,22 @@ class OrganizationStatusResponse(BaseModel):
     deactivation_history: List[Dict]
 
 
+class OrganizationActionItem(BaseModel):
+    """Single organization requiring action"""
+    organization_id: UUID
+    organization_name: str
+    days_expired: Optional[int] = None
+    days_overdue: Optional[int] = None  
+    amount_due: Optional[float] = None
+
+
+class OrganizationsRequiringActionResponse(BaseModel):
+    """Response model for organizations requiring action"""
+    trial_expired: List[OrganizationActionItem]
+    subscription_expired: List[OrganizationActionItem]  
+    payment_overdue: List[OrganizationActionItem]
+
+
 class ReactivationResponse(BaseModel):
     """Response model for organization reactivation"""
     organization_id: UUID
@@ -168,6 +184,33 @@ async def get_deactivation_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get deactivation summary: {str(e)}"
+        )
+
+
+@router.get("/organizations-requiring-action", response_model=OrganizationsRequiringActionResponse)
+async def get_organizations_requiring_action(
+    db: Session = Depends(get_db),
+    current_user = Depends(require_permission("system_admin.org_manager"))
+):
+    """Get organizations that require deactivation actions
+    
+    Returns categorized lists of organizations needing attention:
+    - Trial expired organizations
+    - Subscription expired organizations  
+    - Organizations with overdue payments
+    """
+    try:
+        service = OrganizationDeactivationService(db)
+        
+        organizations_data = service.get_organizations_requiring_action()
+        
+        return organizations_data
+        
+    except Exception as e:
+        logger.error(f"Failed to get organizations requiring action: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get organizations requiring action: {str(e)}"
         )
 
 

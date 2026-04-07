@@ -389,46 +389,100 @@ class OrganizationDeactivationService:
             )
             status_counts[status.value] = count
         
-        # Get organizations needing attention
-        current_date = datetime.now(UTC).date()
-        
-        # Trial expiring soon (next 7 days)
-        trial_expiring_soon = (
+        # Get total organizations count
+        total_organizations = (
             self.db.query(Organization)
-            .filter(
-                Organization.billing_status == BillingStatus.TRIAL,
-                Organization.trial_end_date.between(
-                    current_date, current_date + timedelta(days=7)
-                )
-            )
-            .count() 
-        )
-        
-        # Subscriptions expiring soon (next 30 days)
-        subscription_expiring_soon = (
-            self.db.query(Organization)
-            .filter(
-                Organization.billing_status == BillingStatus.ACTIVE,
-                Organization.subscription_end_date.between(
-                    current_date, current_date + timedelta(days=30)
-                )
-            )
+            .filter(Organization.organization_type == OrganizationType.CUSTOMER)
             .count()
         )
         
+        # Return data matching DeactivationSummaryResponse model
         return {
-            "status_counts": status_counts,
-            "alerts": {
-                "trial_expiring_soon_7days": trial_expiring_soon,
-                "subscription_expiring_soon_30days": subscription_expiring_soon,
-                "total_deactivated": (
-                    status_counts.get(BillingStatus.EXPIRED.value, 0) + 
-                    status_counts.get(BillingStatus.SUSPENDED.value, 0) +
-                    status_counts.get(BillingStatus.CANCELLED.value, 0)
-                ),
-                "overdue_requiring_action": status_counts.get(BillingStatus.OVERDUE.value, 0)
-            },
-            "last_updated": datetime.now(UTC)
+            "total_organizations": total_organizations,
+            "trial_expired_count": status_counts.get(BillingStatus.EXPIRED.value, 0),
+            "subscription_expired_count": status_counts.get(BillingStatus.EXPIRED.value, 0),
+            "overdue_payment_count": status_counts.get(BillingStatus.OVERDUE.value, 0),
+            "suspended_count": status_counts.get(BillingStatus.SUSPENDED.value, 0),
+            "cancelled_count": status_counts.get(BillingStatus.CANCELLED.value, 0),
+            "last_check_date": datetime.now(UTC),
+            "actions_pending": []  # TODO: Implement pending actions logic
+        }
+
+    def get_organizations_requiring_action(self) -> Dict:
+        """Get organizations that require deactivation actions
+        
+        Returns categorized lists organized by action type needed
+        """
+        current_date = datetime.now(UTC).date()
+        
+        # Organizations with expired trials
+        trial_expired = (
+            self.db.query(Organization)
+            .filter(
+                Organization.billing_status == BillingStatus.TRIAL,
+                Organization.trial_end_date < current_date,
+                Organization.organization_type == OrganizationType.CUSTOMER
+            )
+            .all()
+        )
+        
+        # Organizations with expired subscriptions
+        subscription_expired = (
+            self.db.query(Organization) 
+            .filter(
+                Organization.billing_status == BillingStatus.ACTIVE,
+                Organization.subscription_end_date < current_date,
+                Organization.organization_type == OrganizationType.CUSTOMER
+            )
+            .all()
+        )
+        
+        # Organizations with overdue payments
+        payment_overdue = (
+            self.db.query(Organization)
+            .filter(
+                Organization.billing_status == BillingStatus.OVERDUE,
+                Organization.organization_type == OrganizationType.CUSTOMER
+            )
+            .all()
+        )
+        
+        # Format the response
+        trial_expired_list = []
+        for org in trial_expired:
+            days_expired = (current_date - org.trial_end_date).days if org.trial_end_date else 0
+            trial_expired_list.append({
+                "organization_id": org.id,
+                "organization_name": org.name,
+                "days_expired": days_expired
+            })
+        
+        subscription_expired_list = []
+        for org in subscription_expired:
+            days_expired = (current_date - org.subscription_end_date).days if org.subscription_end_date else 0
+            subscription_expired_list.append({
+                "organization_id": org.id,
+                "organization_name": org.name,
+                "days_expired": days_expired
+            })
+        
+        payment_overdue_list = []
+        for org in payment_overdue:
+            # Calculate days overdue based on last billed date
+            days_overdue = 0
+            if org.last_billed_date:
+                days_overdue = (current_date - org.last_billed_date).days
+            payment_overdue_list.append({
+                "organization_id": org.id,
+                "organization_name": org.name,
+                "days_overdue": days_overdue,
+                "amount_due": 0.0  # TODO: Calculate from billing service
+            })
+        
+        return {
+            "trial_expired": trial_expired_list,
+            "subscription_expired": subscription_expired_list,
+            "payment_overdue": payment_overdue_list
         }
 
     # ── Internal Helper Methods ─────────────────────────────────────────

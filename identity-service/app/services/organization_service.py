@@ -62,6 +62,29 @@ class OrganizationService:
             )
         if "status" in payload and payload["status"]:
             payload["status"] = OrganizationStatus(payload["status"])
+
+        # Set billing defaults for non-master organizations (Task 1A-2)
+        from app.models.base import BillingStatus
+        from app.config import settings as app_settings
+        org_type_val = payload.get("organization_type")
+        is_master = org_type_val == OrganizationType.MASTER or org_type_val == "master"
+        if not is_master:
+            from datetime import timedelta, UTC as _UTC
+            now = datetime.now(_UTC)
+            cycle = payload.get("billing_cycle", app_settings.default_billing_cycle)
+            trial_days = app_settings.default_trial_days
+            cycle_days = {"monthly": 30, "quarterly": 90, "yearly": 365}
+            # Next billing = after trial ends, based on billing cycle
+            next_bill = now + timedelta(days=trial_days + cycle_days.get(cycle, 30))
+            payload.setdefault("billing_status", BillingStatus.TRIAL)
+            payload.setdefault("customer_since", now)
+            payload.setdefault("subscription_start_date", now.date())
+            payload.setdefault("trial_end_date", (now + timedelta(days=trial_days)).date())
+            payload.setdefault("next_billing_date", next_bill.date())
+            payload.setdefault("max_users", app_settings.default_max_users)
+            payload.setdefault("max_credits", app_settings.default_max_credits)
+            payload.setdefault("billing_cycle", cycle)
+
         org = self.repo.create(payload)
 
         # Ensure creating user is always assigned as Owner with full access (*.*) in this org
@@ -262,6 +285,17 @@ class OrganizationService:
             else None,
             "owner_id": org.owner_id,
             "created_at": org.created_at,
+            "billing_status": org.billing_status.value if org.billing_status else None,
+            "subscription_start_date": org.subscription_start_date,
+            "subscription_end_date": org.subscription_end_date,
+            "trial_end_date": org.trial_end_date,
+            "max_users": org.max_users,
+            "max_credits": org.max_credits,
+            "billing_contact_email": org.billing_contact_email,
+            "billing_cycle": org.billing_cycle,
+            "customer_since": org.customer_since,
+            "last_billed_date": org.last_billed_date,
+            "next_billing_date": org.next_billing_date,
         }
 
     def _trigger_chart_creation(

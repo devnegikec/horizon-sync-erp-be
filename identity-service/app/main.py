@@ -48,6 +48,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
+
+    # Register audit trail listeners
+    from app.core.audit_listener import register_audit_listeners
+    register_audit_listeners()
+
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
@@ -110,6 +115,10 @@ async def health_check():
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")
+
+# Audit context middleware (must be after CORS)
+from app.middleware.audit_middleware import AuditContextMiddleware
+app.add_middleware(AuditContextMiddleware)
 
 
 # Exception handlers

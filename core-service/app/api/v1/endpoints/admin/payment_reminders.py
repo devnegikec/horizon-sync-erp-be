@@ -418,7 +418,7 @@ async def delete_reminder_config(
             )
         
         # Delete associated logs first (if needed)
-        db.query(ReminderLog).filter(ReminderLog.reminder_config_id == config_id).delete()
+        db.query(ReminderLog).filter(ReminderLog.config_id == config_id).delete()
         
         # Delete the config
         db.delete(config)

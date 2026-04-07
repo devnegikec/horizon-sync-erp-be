@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_permission
 from app.models.user import User
 from app.schemas.audit_log import (
     AuditLogFilters,
@@ -31,22 +31,6 @@ def get_system_admin_permission_service(db: Session = Depends(get_db)):
     return SystemAdminPermissionService(db)
 
 
-def verify_system_admin_access(
-    current_user: User = Depends(get_current_user),
-    service: SystemAdminPermissionService = Depends(get_system_admin_permission_service)
-):
-    """Verify current user has system admin access"""
-    permissions = service.get_system_admin_permissions(current_user.id)
-    
-    if not permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="System admin access required"
-        )
-    
-    return current_user
-
-
 @router.get(
     "/system-admin-audit-log",
     response_model=SystemAdminAuditLogListResponse,
@@ -61,7 +45,7 @@ async def get_system_admin_audit_logs(
     end_date: Optional[datetime] = Query(None, description="Filter by end date (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=500, description="Items per page"),
-    current_user: User = Depends(verify_system_admin_access),
+    current_user = Depends(require_permission("system_admin.reporting")),
     service: SystemAdminPermissionService = Depends(get_system_admin_permission_service)
 ):
     """
@@ -144,7 +128,7 @@ async def get_system_admin_audit_logs(
     description="Retrieve statistics and metrics about system admin audit logs"
 )
 async def get_audit_log_stats(
-    current_user: User = Depends(verify_system_admin_access),
+    current_user = Depends(require_permission("system_admin.reporting")),
     service: SystemAdminPermissionService = Depends(get_system_admin_permission_service)
 ):
     """
