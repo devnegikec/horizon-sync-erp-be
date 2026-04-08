@@ -24,6 +24,9 @@ class AuditLogListItem(BaseModel):
     ip_address: str | None
     created_at: datetime
     user_email: str | None = None
+    user_name: str | None = None
+    user_email_address: str | None = None
+    organization_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
