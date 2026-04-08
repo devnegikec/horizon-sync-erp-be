@@ -31,7 +31,7 @@ class AuditLogRepository:
     ) -> tuple[list[dict], int]:
         """Return paginated audit logs with optional filters.
 
-        Joins to users table for user_email.
+        Resolves user_email from identity DB.
         Returns (rows_as_dicts, total_count).
         """
         where_clauses: list[str] = ["1=1"]
@@ -98,7 +98,23 @@ class AuditLogRepository:
             params,
         ).fetchall()
 
-        return [self._row_to_dict(row) for row in rows], total
+        dicts = [self._row_to_dict(row) for row in rows]
+
+        # Batch-resolve user names and org names from identity DB
+        user_ids = list({str(d["user_id"]) for d in dicts if d["user_id"]})
+        org_ids = list({str(d["organization_id"]) for d in dicts if d["organization_id"]})
+        user_map = self._resolve_user_names(user_ids)
+        org_map = self._resolve_org_names(org_ids)
+        for d in dicts:
+            uid = str(d["user_id"]) if d["user_id"] else None
+            oid = str(d["organization_id"]) if d["organization_id"] else None
+            user_info = user_map.get(uid, {}) if uid else {}
+            d["user_email"] = user_info.get("name") or user_info.get("email") if user_info else None
+            d["user_name"] = user_info.get("name") if user_info else None
+            d["user_email_address"] = user_info.get("email") if user_info else None
+            d["organization_name"] = org_map.get(oid) if oid else None
+
+        return dicts, total
 
     def get_record_history(
         self,
@@ -162,5 +178,56 @@ class AuditLogRepository:
             "changed_fields": row.changed_fields,
             "ip_address": row.ip_address,
             "created_at": row.created_at,
-            "user_email": None,  # users table lives in identity_db; resolve via API if needed
+            "user_email": None,
+            "organization_name": None,
         }
+
+    @staticmethod
+    def _resolve_user_names(user_ids: list[str]) -> dict[str, dict]:
+        """Batch-resolve user_id → {name, email} from identity DB."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not user_ids:
+            return {}
+        try:
+            from app.config import settings
+            if not settings.identity_database_url:
+                logger.warning("IDENTITY_DATABASE_URL not configured")
+                return {}
+            from sqlalchemy import create_engine
+            engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+            placeholders = ", ".join(f"'{uid}'" for uid in user_ids)
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(f"SELECT id::text, first_name, last_name, email FROM users WHERE id::text IN ({placeholders})")
+                ).fetchall()
+                result = {}
+                for r in rows:
+                    name = f"{r[1] or ''} {r[2] or ''}".strip()
+                    result[r[0]] = {"name": name, "email": r[3]}
+                logger.info(f"Resolved {len(result)} user names from {len(user_ids)} user_ids")
+                return result
+        except Exception as e:
+            logger.error(f"Failed to resolve user names: {e}")
+            return {}
+
+    @staticmethod
+    def _resolve_org_names(org_ids: list[str]) -> dict[str, str]:
+        """Batch-resolve organization_id → name from identity DB."""
+        if not org_ids:
+            return {}
+        try:
+            from app.config import settings
+            if not settings.identity_database_url:
+                return {}
+            from sqlalchemy import create_engine
+            engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+            placeholders = ", ".join(f"'{oid}'" for oid in org_ids)
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(f"SELECT id::text, name FROM organizations WHERE id::text IN ({placeholders})")
+                ).fetchall()
+                return {r[0]: r[1] for r in rows}
+        except Exception:
+            return {}
