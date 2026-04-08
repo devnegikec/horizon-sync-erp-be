@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
 
-import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -31,10 +30,10 @@ class OrganizationService:
     """Service for organization operations."""
 
     def __init__(
-        self, 
-        db: Session, 
+        self,
+        db: Session,
         core_client: Optional[CoreServiceClient] = None,
-        retry_attempts: int = 3
+        retry_attempts: int = 3,
     ):
         self.db = db
         self.repo = OrganizationRepository(db)
@@ -48,12 +47,12 @@ class OrganizationService:
             raise DuplicateOrganizationSlugException(
                 f"Organization with slug '{slug}' already exists"
             )
-        
+
         # Master organization validation (Task 1A-1)
         org_type = data.get("organization_type")
         if org_type == OrganizationType.MASTER or org_type == "master":
             self._validate_master_org_creation(user_type)
-            
+
         payload = dict(data)
         payload["owner_id"] = owner_id
         if "organization_type" in payload and payload["organization_type"]:
@@ -64,12 +63,15 @@ class OrganizationService:
             payload["status"] = OrganizationStatus(payload["status"])
 
         # Set billing defaults for non-master organizations (Task 1A-2)
-        from app.models.base import BillingStatus
         from app.config import settings as app_settings
+        from app.models.base import BillingStatus
+
         org_type_val = payload.get("organization_type")
         is_master = org_type_val == OrganizationType.MASTER or org_type_val == "master"
         if not is_master:
-            from datetime import timedelta, UTC as _UTC
+            from datetime import UTC as _UTC
+            from datetime import timedelta
+
             now = datetime.now(_UTC)
             cycle = payload.get("billing_cycle", app_settings.default_billing_cycle)
             trial_days = app_settings.default_trial_days
@@ -79,7 +81,9 @@ class OrganizationService:
             payload.setdefault("billing_status", BillingStatus.TRIAL)
             payload.setdefault("customer_since", now)
             payload.setdefault("subscription_start_date", now.date())
-            payload.setdefault("trial_end_date", (now + timedelta(days=trial_days)).date())
+            payload.setdefault(
+                "trial_end_date", (now + timedelta(days=trial_days)).date()
+            )
             payload.setdefault("next_billing_date", next_bill.date())
             payload.setdefault("max_users", app_settings.default_max_users)
             payload.setdefault("max_credits", app_settings.default_max_credits)
@@ -135,7 +139,9 @@ class OrganizationService:
 
         # Trigger default chart of accounts creation in Core Service
         if self.core_client:
-            self._trigger_chart_creation(org.id, org.base_currency or "USD", str(owner_id))
+            self._trigger_chart_creation(
+                org.id, org.base_currency or "USD", str(owner_id)
+            )
 
         return self._to_response(org)
 
@@ -196,18 +202,20 @@ class OrganizationService:
         }
         return [self._to_list_item(o) for o in items], pagination
 
-    def update(self, organization_id: UUID, data: dict, user_type: UserType = None) -> dict:
+    def update(
+        self, organization_id: UUID, data: dict, user_type: UserType = None
+    ) -> dict:
         """Update organization; validate slug if changed. Includes master org protections."""
         org = self.repo.get_by_id(organization_id)
         if not org:
             raise OrganizationNotFoundException(
                 f"Organization with ID {organization_id} not found"
             )
-        
-        # Master organization validation (Task 1A-1) 
+
+        # Master organization validation (Task 1A-1)
         if org.organization_type == OrganizationType.MASTER:
             self._validate_master_org_modification(user_type)
-            
+
         payload = {k: v for k, v in data.items() if v is not None}
         if "slug" in payload:
             if self.repo.slug_exists(payload["slug"], exclude_id=organization_id):
@@ -218,7 +226,10 @@ class OrganizationService:
             payload["status"] = OrganizationStatus(payload["status"])
         if "organization_type" in payload:
             # Prevent changing TO master type unless authorized
-            if payload["organization_type"] == "master" or payload["organization_type"] == OrganizationType.MASTER:
+            if (
+                payload["organization_type"] == "master"
+                or payload["organization_type"] == OrganizationType.MASTER
+            ):
                 self._validate_master_org_creation(user_type)
             payload["organization_type"] = OrganizationType(
                 payload["organization_type"]
@@ -233,11 +244,11 @@ class OrganizationService:
             raise OrganizationNotFoundException(
                 f"Organization with ID {organization_id} not found"
             )
-        
+
         # Prevent deletion of master organization
         if org.organization_type == OrganizationType.MASTER:
             raise ValueError("Cannot delete master organization")
-            
+
         self.repo.soft_delete(org)
 
     @staticmethod
@@ -302,11 +313,11 @@ class OrganizationService:
         self, organization_id: UUID, currency: str, owner_id: str
     ) -> None:
         """Trigger default chart of accounts creation in Core Service.
-        
+
         This method makes an async call to the Core Service to create default
         GL accounts and account mappings. Errors are logged but do not fail
         organization creation.
-        
+
         Args:
             organization_id: UUID of the organization
             currency: ISO currency code (e.g., "USD")
@@ -315,9 +326,9 @@ class OrganizationService:
         try:
             import asyncio
             import threading
-            
+
             initiation_timestamp = datetime.now(UTC).isoformat()
-            
+
             logger.info(
                 "Creating default chart of accounts",
                 extra={
@@ -325,10 +336,10 @@ class OrganizationService:
                     "currency": currency,
                     "created_by": owner_id,
                     "timestamp": initiation_timestamp,
-                    "event": "chart_creation_initiated"
-                }
+                    "event": "chart_creation_initiated",
+                },
             )
-            
+
             # Run async call in a new thread to avoid event loop conflicts
             def run_async_in_thread():
                 try:
@@ -340,28 +351,32 @@ class OrganizationService:
                                 organization_id=organization_id,
                                 currency=currency,
                                 created_by=owner_id,
-                                max_retries=self.retry_attempts
+                                max_retries=self.retry_attempts,
                             )
                         )
-                        
+
                         if response:
                             completion_timestamp = datetime.now(UTC).isoformat()
-                            
+
                             logger.info(
                                 "Default chart of accounts created successfully",
                                 extra={
                                     "organization_id": str(organization_id),
                                     "currency": currency,
                                     "created_by": owner_id,
-                                    "accounts_created": response.get("accounts_created", 0),
-                                    "mappings_created": response.get("mappings_created", 0),
+                                    "accounts_created": response.get(
+                                        "accounts_created", 0
+                                    ),
+                                    "mappings_created": response.get(
+                                        "mappings_created", 0
+                                    ),
                                     "timestamp": completion_timestamp,
-                                    "event": "chart_creation_completed"
-                                }
+                                    "event": "chart_creation_completed",
+                                },
                             )
                         else:
                             failure_timestamp = datetime.now(UTC).isoformat()
-                            
+
                             logger.error(
                                 "Failed to create default chart of accounts after all retries",
                                 extra={
@@ -370,14 +385,14 @@ class OrganizationService:
                                     "created_by": owner_id,
                                     "retry_attempts": self.retry_attempts,
                                     "timestamp": failure_timestamp,
-                                    "event": "chart_creation_failed"
-                                }
+                                    "event": "chart_creation_failed",
+                                },
                             )
                     finally:
                         loop.close()
                 except Exception as e:
                     error_timestamp = datetime.now(UTC).isoformat()
-                    
+
                     logger.error(
                         "Failed to create default chart of accounts - thread execution error",
                         extra={
@@ -387,17 +402,17 @@ class OrganizationService:
                             "error_type": type(e).__name__,
                             "error": str(e),
                             "timestamp": error_timestamp,
-                            "event": "chart_creation_failed"
-                        }
+                            "event": "chart_creation_failed",
+                        },
                     )
-            
+
             # Start the async call in a background thread
             thread = threading.Thread(target=run_async_in_thread, daemon=True)
             thread.start()
-            
+
         except Exception as e:
             error_timestamp = datetime.now(UTC).isoformat()
-            
+
             logger.error(
                 "Failed to create default chart of accounts - unexpected error",
                 extra={
@@ -407,8 +422,8 @@ class OrganizationService:
                     "error_type": type(e).__name__,
                     "error": str(e),
                     "timestamp": error_timestamp,
-                    "event": "chart_creation_failed"
-                }
+                    "event": "chart_creation_failed",
+                },
             )
 
     # Master Organization Validation Methods (Task 1A-1)
@@ -417,21 +432,25 @@ class OrganizationService:
         # Check if master organization already exists
         if self.get_master_organization():
             raise ValueError("Master organization already exists")
-            
+
         # Only SYSTEM_ADMIN can create master organizations
         if user_type != UserType.SYSTEM_ADMIN:
-            raise ValueError("Only system administrators can create master organizations")
-    
+            raise ValueError(
+                "Only system administrators can create master organizations"
+            )
+
     def _validate_master_org_modification(self, user_type: UserType = None) -> None:
         """Validate that only SYSTEM_ADMIN can modify master organizations."""
         if user_type != UserType.SYSTEM_ADMIN:
-            raise ValueError("Only system administrators can modify master organizations")
-    
+            raise ValueError(
+                "Only system administrators can modify master organizations"
+            )
+
     def is_master_organization(self, organization_id: UUID) -> bool:
         """Check if organization is a master organization."""
         org = self.repo.get_by_id(organization_id)
         return org and org.organization_type == OrganizationType.MASTER
-    
+
     def get_master_organization(self) -> Organization:
         """Get the master organization (there should only be one)."""
         return self.repo.get_organization_by_type(OrganizationType.MASTER)

@@ -26,7 +26,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
 --
 
 COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
@@ -40,7 +40,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner:
 --
 
 COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
@@ -5581,8 +5581,8 @@ e0000001-0001-4000-a000-000000000012	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	e00000
 --
 
 COPY public.material_requests (id, organization_id, status, notes, extra_data, created_by, updated_by, created_at, updated_at, deleted_at, request_no, type, priority, target_warehouse_id, requested_by, department) FROM stdin;
-2b468765-d2df-40ae-bae7-3889eef3e481	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	submitted	teste it 	null	8d509f22-5fe5-4765-9496-3a236cae2af1	8d509f22-5fe5-4765-9496-3a236cae2af1	2026-02-20 06:19:03.955682+00	2026-02-20 06:19:50.317244+00	\N	MR-2026-0001	purchase	medium	\N	\N	Manufacturing Depo 
-5ca24ad0-cd67-4622-ad1d-47bbe8290991	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	draft	assebly line 	null	8d509f22-5fe5-4765-9496-3a236cae2af1	8d509f22-5fe5-4765-9496-3a236cae2af1	2026-02-20 06:23:14.214159+00	2026-02-20 06:23:14.214163+00	\N	MR-2026-0002	purchase	urgent	\N	\N	Assembly 
+2b468765-d2df-40ae-bae7-3889eef3e481	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	submitted	teste it 	null	8d509f22-5fe5-4765-9496-3a236cae2af1	8d509f22-5fe5-4765-9496-3a236cae2af1	2026-02-20 06:19:03.955682+00	2026-02-20 06:19:50.317244+00	\N	MR-2026-0001	purchase	medium	\N	\N	Manufacturing Depo
+5ca24ad0-cd67-4622-ad1d-47bbe8290991	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	draft	assebly line 	null	8d509f22-5fe5-4765-9496-3a236cae2af1	8d509f22-5fe5-4765-9496-3a236cae2af1	2026-02-20 06:23:14.214159+00	2026-02-20 06:23:14.214163+00	\N	MR-2026-0002	purchase	urgent	\N	\N	Assembly
 e0000001-0001-4000-a000-000000000001	bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150	fully_quoted	Restock monitors and headphones for Q1 2026 demand. Current stock running low.	\N	8d509f22-5fe5-4765-9496-3a236cae2af1	\N	2026-01-25 09:00:00+00	2026-02-01 11:00:00+00	\N	MR-SEED-001	purchase	high	cbf290a6-91cb-4c93-b9a6-db408bb3c274	8d509f22-5fe5-4765-9496-3a236cae2af1	IT Department
 \.
 
@@ -11151,4 +11151,3 @@ ALTER TABLE ONLY public.whatsapp_reports
 --
 
 \unrestrict LEHJhTWlXL9CqU84QezhRNzHHpoKnN2dggSMP7FCEzosgmnUP39QRsqg8v2cnKR
-

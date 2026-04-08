@@ -26,7 +26,9 @@ async def list_audit_logs(
     table_name: str | None = Query(None, description="Filter by table name"),
     record_id: UUID | None = Query(None, description="Filter by record ID"),
     user_id: UUID | None = Query(None, description="Filter by user ID"),
-    action: str | None = Query(None, description="Filter by action (CREATE, UPDATE, DELETE)"),
+    action: str | None = Query(
+        None, description="Filter by action (CREATE, UPDATE, DELETE)"
+    ),
     date_from: datetime | None = Query(None, description="Filter from date"),
     date_to: datetime | None = Query(None, description="Filter to date"),
     changed_field: str | None = Query(None, description="Filter by changed field name"),

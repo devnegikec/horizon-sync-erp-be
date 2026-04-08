@@ -27,7 +27,9 @@ class OrganizationBase(BaseModel):
         None, pattern="^(enterprise|business|startup|individual)$"
     )
     industry: str | None = Field(None, max_length=100)
-    base_currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    base_currency: str | None = Field(
+        None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
     status: str | None = Field(None, pattern="^(active|inactive|suspended|trial)$")
 
 
@@ -57,7 +59,9 @@ class OrganizationUpdate(BaseModel):
         None, pattern="^(enterprise|business|startup|individual)$"
     )
     industry: str | None = Field(None, max_length=100)
-    base_currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    base_currency: str | None = Field(
+        None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
     status: str | None = Field(None, pattern="^(active|inactive|suspended|trial)$")
     is_active: bool | None = None
     settings: dict | None = None

@@ -3,8 +3,21 @@
 from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.account_balance import AccountBalance
 
+# Admin Portal module
+from app.models.admin import (
+    AdminAuditLog,
+    AdminNotification,
+    FeatureFlag,
+    UserActivityLog,
+)
+
+# Analytics module
 # Analytics module
 from app.models.analytics import MetaCampaign
+
+# Audit Trail module
+from app.models.audit_log import AuditAction as AuditLogAction
+from app.models.audit_log import AuditLog
 from app.models.bank_account import BankAccount, BankAccountHistory
 from app.models.bank_reconciliation import BankReconciliation
 from app.models.bank_transaction import BankTransaction
@@ -55,6 +68,7 @@ from app.models.batch import Batch
 from app.models.brand import Brand
 
 # Brand Trust module
+# Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
     BrandTrustAnswer,
@@ -80,6 +94,7 @@ from app.models.customer import Customer
 from app.models.default_account import DefaultAccount
 
 # Destinations module
+# Destinations module
 from app.models.destination_market import DestinationMarket
 from app.models.exchange_rate import ExchangeRate
 from app.models.invoice import Invoice
@@ -87,6 +102,7 @@ from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 
+# Messaging module
 # Messaging module
 from app.models.messaging import (
     BulkMessageJob,
@@ -105,6 +121,7 @@ from app.models.payment_reference import PaymentReference
 from app.models.product_item import ProductItem
 
 # Public Marketing module
+# Public Marketing module
 from app.models.public_submission import PublicSubmission
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
@@ -112,9 +129,19 @@ from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.quotation import Quotation, QuotationItem
+
+# Reminder Configuration module (Task 1D-1)
+from app.models.reminder_config import (
+    ReminderConfig,
+    ReminderLog,
+    ReminderStage,
+    ReminderStatus,
+    ReminderType,
+)
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.serial_no import SerialNo
 
+# URL Management module
 # URL Management module
 from app.models.short_url import ShortURL
 from app.models.stock_entry import StockEntry, StockEntryItem
@@ -133,60 +160,6 @@ from app.models.warehouse import Warehouse
 
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
-
-# Analytics module
-from app.models.analytics import MetaCampaign
-
-# URL Management module
-from app.models.short_url import ShortURL
-
-# Destinations module
-from app.models.destination_market import DestinationMarket
-
-# Public Marketing module
-from app.models.public_submission import PublicSubmission
-
-# Admin Portal module
-from app.models.admin import (
-    AdminAuditLog,
-    AdminNotification,
-    FeatureFlag,
-    UserActivityLog,
-)
-
-# Audit Trail module
-from app.models.audit_log import AuditAction as AuditLogAction
-from app.models.audit_log import AuditLog
-
-# Brand Trust module
-from app.models.brand_trust import (
-    BrandIndustry,
-    BrandTrustQuestion,
-    BrandTrustAssessment,
-    BrandTrustAnswer,
-)
-
-# Messaging module
-from app.models.messaging import (
-    MessageTemplate,
-    BulkMessageJob,
-    ScheduledMessage,
-    SMSReport,
-    WhatsAppReport,
-    RCSCredential,
-    RCSTemplate,
-    RCSReport,
-    MessageCredit,
-)
-
-# Reminder Configuration module (Task 1D-1)
-from app.models.reminder_config import (
-    ReminderConfig,
-    ReminderLog,
-    ReminderType,
-    ReminderStage,
-    ReminderStatus,
-)
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
