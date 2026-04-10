@@ -10,7 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.core.authorization import SYSTEM_ADMIN_BILLING_READ
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_invoice import AdminPaymentListResponse
 from app.services.admin_payment_service import AdminPaymentService
 
@@ -25,7 +26,7 @@ async def list_payments(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_READ)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AdminPaymentListResponse:
     """Return a paginated list of payments from the master organization."""

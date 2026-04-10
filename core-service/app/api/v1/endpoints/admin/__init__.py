@@ -21,6 +21,7 @@ from app.api.v1.endpoints.admin.audit_logs import router as audit_logs_router
 from app.api.v1.endpoints.admin.users import router as users_router
 from app.api.v1.endpoints.admin.billing import router as billing_router
 from app.api.v1.endpoints.admin.payment_reminders import router as payment_reminders_router
+from app.api.v1.endpoints.admin.roles import router as roles_router
 from app.api.v1.endpoints.admin.system import router as system_router
 
 # Main admin router — all admin sub-routers are included here.
@@ -59,3 +60,18 @@ router.include_router(payment_reminders_router, prefix="/payment-reminders", tag
 
 # System Administration
 router.include_router(system_router, tags=["Admin - System"])
+
+# Roles & Permissions
+router.include_router(roles_router, prefix="/roles", tags=["Admin - Roles"])
+
+# Also mount the permissions endpoint at /admin/permissions (not under /roles)
+from app.api.v1.endpoints.admin.roles import list_permissions as _list_permissions_fn
+_permissions_router = APIRouter()
+_permissions_router.add_api_route(
+    "",
+    _list_permissions_fn,
+    methods=["GET"],
+    tags=["Admin - Roles"],
+    summary="List system admin permissions",
+)
+router.include_router(_permissions_router, prefix="/permissions")

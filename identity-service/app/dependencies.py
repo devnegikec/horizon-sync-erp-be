@@ -119,10 +119,6 @@ async def get_current_user(
 
     permissions = _get_user_permissions(db, user.id)
 
-    # System admins get full wildcard permissions regardless of org roles
-    if user.user_type == UserType.SYSTEM_ADMIN:
-        permissions = ["*.*"]
-
     return CurrentUser(
         id=user.id,
         email=user.email,
@@ -173,25 +169,28 @@ def require_permission(permission: str):
     ) -> CurrentUser:
         """Check if current user has the required permission"""
         
-        # System admins get wildcard access
-        if current_user.user_type == UserType.SYSTEM_ADMIN:
-            return current_user
-        
-        # Check if user has wildcard permission
-        if "*.*" in current_user.permissions:
-            return current_user
-        
         # Check for exact permission match
         if permission in current_user.permissions:
             return current_user
         
-        # Check for partial wildcard matches (e.g., 'system_admin.*' matches 'system_admin.org_manager')
-        permission_parts = permission.split('.')
-        for user_perm in current_user.permissions:
-            if user_perm.endswith('.*'):
-                perm_prefix = user_perm[:-2]  # Remove '.*'
-                if permission.startswith(perm_prefix):
+        # system_admin.master grants all system_admin.* permissions
+        if permission.startswith("system_admin.") and "system_admin.master" in current_user.permissions:
+            return current_user
+        
+        # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
+        if "." in permission:
+            resource, _, action = permission.partition(".")
+            if "_" in action:
+                domain = action.rsplit("_", 1)[0]  # e.g. "users" from "users_read"
+                manage_perm = f"{resource}.{domain}_manage"
+                if manage_perm in current_user.permissions:
                     return current_user
+        
+        # Check for partial wildcard matches (e.g., 'resource.*' matches 'resource.anything')
+        if "." in permission:
+            resource, _, _ = permission.partition(".")
+            if f"{resource}.*" in current_user.permissions:
+                return current_user
         
         # Permission not found
         raise HTTPException(

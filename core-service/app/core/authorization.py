@@ -111,9 +111,33 @@ EXCHANGE_RATE_DELETE = "exchange_rate.delete"
 # Audit
 AUDIT_READ = "audit.read"
 
-# System Admin Permissions (Task 1C-1: B2B Billing System)
-SYSTEM_ADMIN_MASTER = "system_admin.master"  # Full system access
-SYSTEM_ADMIN_USERS = "system_admin.users"  # Cross-org user management
-SYSTEM_ADMIN_ORGANIZATIONS = "system_admin.organizations"  # Organization management
-SYSTEM_ADMIN_BILLING = "system_admin.billing"  # Cross-org billing management
-SYSTEM_ADMIN_REPORTING = "system_admin.reporting"  # System-wide analytics
+# System Admin — Users domain
+SYSTEM_ADMIN_USERS_READ = "system_admin.users_read"
+SYSTEM_ADMIN_USERS_CREATE = "system_admin.users_create"
+SYSTEM_ADMIN_USERS_UPDATE = "system_admin.users_update"
+SYSTEM_ADMIN_USERS_DELETE = "system_admin.users_delete"
+SYSTEM_ADMIN_USERS_MANAGE = "system_admin.users_manage"
+
+# System Admin — Organizations domain
+SYSTEM_ADMIN_ORGANIZATIONS_READ = "system_admin.organizations_read"
+SYSTEM_ADMIN_ORGANIZATIONS_CREATE = "system_admin.organizations_create"
+SYSTEM_ADMIN_ORGANIZATIONS_UPDATE = "system_admin.organizations_update"
+SYSTEM_ADMIN_ORGANIZATIONS_DELETE = "system_admin.organizations_delete"
+SYSTEM_ADMIN_ORGANIZATIONS_MANAGE = "system_admin.organizations_manage"
+
+# System Admin — Billing domain
+SYSTEM_ADMIN_BILLING_READ = "system_admin.billing_read"
+SYSTEM_ADMIN_BILLING_CREATE = "system_admin.billing_create"
+SYSTEM_ADMIN_BILLING_UPDATE = "system_admin.billing_update"
+SYSTEM_ADMIN_BILLING_DELETE = "system_admin.billing_delete"
+SYSTEM_ADMIN_BILLING_MANAGE = "system_admin.billing_manage"
+
+# System Admin — Reporting domain
+SYSTEM_ADMIN_REPORTING_READ = "system_admin.reporting_read"
+SYSTEM_ADMIN_REPORTING_CREATE = "system_admin.reporting_create"
+SYSTEM_ADMIN_REPORTING_UPDATE = "system_admin.reporting_update"
+SYSTEM_ADMIN_REPORTING_DELETE = "system_admin.reporting_delete"
+SYSTEM_ADMIN_REPORTING_MANAGE = "system_admin.reporting_manage"
+
+# System Admin — Master (super permission)
+SYSTEM_ADMIN_MASTER = "system_admin.master"

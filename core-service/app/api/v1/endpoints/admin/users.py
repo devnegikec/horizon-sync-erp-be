@@ -14,8 +14,13 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.authorization import (
+    SYSTEM_ADMIN_USERS_CREATE,
+    SYSTEM_ADMIN_USERS_READ,
+    SYSTEM_ADMIN_USERS_UPDATE,
+)
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_user import (
     AdminUserCreate,
     AdminUserDetailResponse,
@@ -33,7 +38,7 @@ async def create_user(
     body: AdminUserCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_USERS_CREATE)),
 ) -> AdminUserDetailResponse:
     service = AdminUserService(db, token=credentials.credentials)
     return await service.create_user(body)
@@ -48,7 +53,7 @@ async def list_users(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_USERS_READ)),
 ) -> AdminUserListResponse:
     service = AdminUserService(db, token=credentials.credentials)
     return await service.list_users(
@@ -65,7 +70,7 @@ async def get_user(
     user_id: UUID,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_USERS_READ)),
 ) -> AdminUserDetailResponse:
     service = AdminUserService(db, token=credentials.credentials)
     return await service.get_user(user_id)
@@ -77,7 +82,7 @@ async def update_user(
     body: AdminUserUpdate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_USERS_UPDATE)),
 ) -> AdminUserDetailResponse:
     service = AdminUserService(db, token=credentials.credentials)
     return await service.update_user(user_id, body)

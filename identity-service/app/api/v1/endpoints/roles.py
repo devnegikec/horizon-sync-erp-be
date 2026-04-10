@@ -111,6 +111,25 @@ async def list_roles(
                 limit=limit,
             )
 
+    # Non-system-admin users should never see roles from the master organization
+    # (those are system admin roles like Super Admin, System User Manager, etc.)
+    if not is_system_admin(current_user.permissions) and organization_ids:
+        from app.models.organization import Organization
+        from app.models.base import OrganizationType
+        master_org_ids = {
+            row[0] for row in
+            db.query(Organization.id)
+            .filter(
+                Organization.organization_type == OrganizationType.MASTER,
+                Organization.id.in_(organization_ids),
+            )
+            .all()
+        }
+        if master_org_ids:
+            organization_ids = [oid for oid in organization_ids if oid not in master_org_ids]
+            if not organization_ids:
+                return RoleListResponse(data=[], total=0, skip=skip, limit=limit)
+
     role_service = RoleService(db)
 
     try:
@@ -123,6 +142,28 @@ async def list_roles(
             search=search,
             include_permissions=include_permissions,
         )
+
+        # Non-system-admin users: filter out roles that only have system_admin.* permissions
+        # These are system admin roles that leaked into the user's org
+        if not is_system_admin(current_user.permissions) and result.get("data"):
+            from app.models.role import Permission, RolePermission, Role as RoleModel
+            filtered_data = []
+            for role_item in result["data"]:
+                role_id = role_item.id if hasattr(role_item, "id") else role_item.get("id")
+                if role_id:
+                    # Check if ALL permissions for this role are system_admin.*
+                    perm_codes = (
+                        db.query(Permission.code)
+                        .join(RolePermission, RolePermission.permission_id == Permission.id)
+                        .filter(RolePermission.role_id == role_id)
+                        .all()
+                    )
+                    codes = [c[0] for c in perm_codes if c[0]]
+                    # If role has permissions and ALL are system_admin.*, skip it
+                    if codes and all(c.startswith("system_admin.") for c in codes):
+                        continue
+                filtered_data.append(role_item)
+            result["data"] = filtered_data
 
         logger.info(f"User {current_user.id} retrieved {len(result['data'])} roles")
 

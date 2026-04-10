@@ -14,8 +14,13 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.authorization import (
+    SYSTEM_ADMIN_ORGANIZATIONS_CREATE,
+    SYSTEM_ADMIN_ORGANIZATIONS_READ,
+    SYSTEM_ADMIN_ORGANIZATIONS_UPDATE,
+)
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_organization import (
     AdminOrgCreate,
     AdminOrgDetailResponse,
@@ -33,7 +38,7 @@ async def create_organization(
     body: AdminOrgCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_CREATE)),
 ) -> AdminOrgDetailResponse:
     service = AdminOrganizationService(db, token=credentials.credentials)
     return await service.create_organization(body)
@@ -47,7 +52,7 @@ async def list_organizations(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_READ)),
 ) -> AdminOrgListResponse:
     service = AdminOrganizationService(db, token=credentials.credentials)
     return await service.list_organizations(
@@ -60,7 +65,7 @@ async def get_organization(
     org_id: UUID,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_READ)),
 ) -> AdminOrgDetailResponse:
     service = AdminOrganizationService(db, token=credentials.credentials)
     return await service.get_organization(org_id)
@@ -72,7 +77,7 @@ async def update_organization(
     body: AdminOrgUpdate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_UPDATE)),
 ) -> AdminOrgDetailResponse:
     service = AdminOrganizationService(db, token=credentials.credentials)
     return await service.update_organization(org_id, body)

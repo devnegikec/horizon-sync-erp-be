@@ -16,6 +16,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.authorization import (
+    SYSTEM_ADMIN_BILLING_CREATE,
+    SYSTEM_ADMIN_BILLING_READ,
+    SYSTEM_ADMIN_BILLING_UPDATE,
+    SYSTEM_ADMIN_MASTER,
+    SYSTEM_ADMIN_ORGANIZATIONS_READ,
+    SYSTEM_ADMIN_ORGANIZATIONS_UPDATE,
+)
 from app.dependencies import CurrentUser, require_permission
 from app.models.base import BillingCycle
 from app.services.admin_invoice_service import AdminInvoiceService
@@ -116,7 +124,7 @@ class SetupSystemAdminRequest(BaseModel):
 async def create_subscription_invoice(
     request: CreateSubscriptionInvoiceRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE))
 ):
     """Create subscription invoice for customer organization
     
@@ -154,7 +162,7 @@ async def create_subscription_invoice(
 async def create_setup_fee_invoice(
     request: CreateSetupFeeInvoiceRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE))
 ):
     """Create setup fee invoice for new customer organization
     
@@ -204,7 +212,7 @@ async def create_setup_fee_invoice(
 async def create_overage_invoice(
     request: CreateOverageInvoiceRequest,
     db: Session = Depends(get_db), 
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE))
 ):
     """Create overage charges invoice for usage exceeding limits
     
@@ -239,7 +247,7 @@ async def create_overage_invoice(
 async def create_addon_invoice(
     request: CreateAddonInvoiceRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE))
 ):
     """Create addon service invoice for additional features/services
     
@@ -274,7 +282,7 @@ async def create_addon_invoice(
 async def create_credit_adjustment_invoice(
     request: CreateCreditAdjustmentRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE))
 ):
     """Create credit adjustment or refund invoice
     
@@ -309,7 +317,7 @@ async def create_credit_adjustment_invoice(
 @router.get("/summary", response_model=Dict)
 async def get_overall_billing_summary(
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_READ))
 ):
     """Get overall billing summary for all customer organizations
     
@@ -419,7 +427,7 @@ async def get_overall_billing_summary(
 async def get_billing_summary(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.billing"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_BILLING_READ))
 ):
     """Get comprehensive billing summary for customer organization
     
@@ -450,7 +458,7 @@ async def get_customer_organizations(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _current_user: CurrentUser = Depends(require_permission("system_admin.org_manager"))
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_READ))
 ):
     """Get list of customer organizations accessible to system admin
     
@@ -502,7 +510,7 @@ async def assign_customer_to_master(
     request: AssignCustomerRequest,
     db: Session = Depends(get_db),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    current_user: CurrentUser = Depends(require_permission("system_admin.org_manager"))
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_ORGANIZATIONS_UPDATE))
 ):
     """Assign customer organization to master organization for billing management
     
@@ -535,7 +543,7 @@ async def assign_customer_to_master(
 async def setup_system_admin(
     request: SetupSystemAdminRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(require_permission("system_admin.master"))
+    current_user = Depends(require_permission(SYSTEM_ADMIN_MASTER))
 ):
     """Assign system admin role to user in master organization
     
@@ -581,7 +589,7 @@ async def update_organization_tier(
     request: UpdateTierRequest,
     db: Session = Depends(get_db),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    _current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
 ):
     """Update an organization's subscription tier (basic/pro/enterprise).
 

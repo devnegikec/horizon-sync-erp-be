@@ -13,13 +13,31 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permission
+from app.dependencies import CurrentUser, require_admin, require_permission
 from app.services.admin_organization_service import AdminOrganizationService
 from app.services.admin_user_service import AdminUserService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ── Current-user permissions endpoint ───────────────────────────────
+
+@router.get(
+    "/me/permissions",
+    summary="Get my admin permissions",
+    description="Return the authenticated system admin user's ID, type, and permission codes.",
+)
+async def get_my_admin_permissions(
+    current_user: CurrentUser = Depends(require_admin),
+) -> dict:
+    """Return the current system admin user's permissions."""
+    return {
+        "user_id": str(current_user.id),
+        "user_type": current_user.user_type,
+        "permissions": current_user.permissions,
+    }
 
 
 # ── Request/Response Models ─────────────────────────────────────────

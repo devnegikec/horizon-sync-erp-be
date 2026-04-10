@@ -87,20 +87,10 @@ async def get_current_user(
     # Get organization_id and permissions from identity-service /me (token rarely has them)
     user_type = payload.get("user_type", "user")
 
-    # System admins don't need org/permissions lookup — skip the identity-service call
-    if user_type == "system_admin":
-        return CurrentUser(
-            id=user_id,
-            email=payload.get("email", ""),
-            organization_id=None,
-            user_type=user_type,
-            permissions=["*.*"],
-        )
-
     org_id, permissions = await _get_user_org_and_permissions(token)
 
-    # Regular users must belong to an organization
-    if not org_id:
+    # Regular (non-system-admin) users must belong to an organization
+    if not org_id and user_type != "system_admin":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unable to determine user organization",
@@ -195,16 +185,31 @@ async def require_admin(
 
 def has_permission(permissions: list[str], required_permission: str) -> bool:
     """
-    Check if user has the required permission, including wildcard matching.
+    Check if user has the required permission.
 
-    Matches: exact permission, resource.* (e.g. warehouse.*), or *.*.
+    Matches (in order):
+    1. Exact match
+    2. system_admin.master grants all system_admin.* permissions
+    3. _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
+    4. Resource wildcard: resource.* grants resource.anything
     """
     if not permissions or not required_permission:
         return False
+    # Exact match
     if required_permission in permissions:
         return True
-    if "*.*" in permissions:
+    # system_admin.master grants all system_admin.* permissions
+    if required_permission.startswith("system_admin.") and "system_admin.master" in permissions:
         return True
+    # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
+    if "." in required_permission:
+        resource, _, action = required_permission.partition(".")
+        if "_" in action:
+            domain = action.rsplit("_", 1)[0]  # e.g. "users" from "users_read"
+            manage_perm = f"{resource}.{domain}_manage"
+            if manage_perm in permissions:
+                return True
+    # Resource wildcard: resource.* grants resource.anything
     if "." in required_permission:
         resource, _, _ = required_permission.partition(".")
         if f"{resource}.*" in permissions:
@@ -227,9 +232,6 @@ def require_permission(permission: str):
     async def check_permission(
         current_user: CurrentUser = Depends(get_current_active_user),
     ) -> CurrentUser:
-        # System admins bypass permission check (backward compatibility)
-        if current_user.user_type == "system_admin":
-            return current_user
         if not has_permission(current_user.permissions, permission):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

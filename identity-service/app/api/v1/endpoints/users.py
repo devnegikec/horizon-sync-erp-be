@@ -14,6 +14,7 @@ from app.core.authorization import (
 from app.core.exceptions import DuplicateEmailException, UserNotFoundException
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.base import UserType
 from app.models.role import UserOrganizationRole
 from app.schemas.user import (
     PaginationMeta,
@@ -96,6 +97,10 @@ async def list_users(
     No user can see users from organizations they do not belong to.
     """
     require_permission(current_user.permissions, "user.read")
+
+    # Determine if caller can see system admin users
+    caller_is_super_admin = "system_admin.master" in current_user.permissions
+
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
         if not is_system_admin(current_user.permissions):
@@ -130,6 +135,11 @@ async def list_users(
             sort_order=sort_order,
             organization_ids=organization_ids,
         )
+
+        # Isolation: hide system_admin users from callers without system_admin.master
+        if not caller_is_super_admin:
+            users = [u for u in users if u.user_type != UserType.SYSTEM_ADMIN]
+
         status_counts = user_service.get_user_status_counts(
             organization_ids=organization_ids,
             user_type=user_type,
@@ -320,6 +330,14 @@ async def get_user(
     user_service = UserService(db)
     try:
         user = user_service.get_user_by_id(user_id)
+
+        # Isolation: hide system_admin users from callers without system_admin.master
+        if user.user_type == UserType.SYSTEM_ADMIN and "system_admin.master" not in current_user.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
         return UserResponse.model_validate(user)
     except UserNotFoundException:
         raise
@@ -449,21 +467,64 @@ async def create_user(
 ):
     """Create user. Requires user.create permission."""
     require_permission(current_user.permissions, "user.create")
+
+    # Escalation guard: only callers with system_admin.master may create system_admin users
+    if body.user_type and body.user_type == UserType.SYSTEM_ADMIN.value:
+        if "system_admin.master" not in current_user.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only users with system_admin.master permission can create system admin users",
+            )
+
     user_service = UserService(db)
     try:
         data = body.model_dump()
         org_id = data.pop("organization_id", None)
+        system_admin_role_ids = data.pop("system_admin_role_ids", None) or []
         user = user_service.create_user(data)
 
         # Create organization membership if org_id provided
         if org_id:
-            from app.models.role import UserOrganizationRole
-            membership = UserOrganizationRole(
-                user_id=user.id,
-                organization_id=org_id,
-            )
-            db.add(membership)
-            db.commit()
+            from uuid import UUID as _UUID
+
+            from app.models.role import Role, UserOrganizationRole
+
+            if system_admin_role_ids:
+                # Explicit role IDs provided — create one membership per role
+                for idx, rid in enumerate(system_admin_role_ids):
+                    membership = UserOrganizationRole(
+                        user_id=user.id,
+                        organization_id=org_id,
+                        role_id=_UUID(rid),
+                        is_primary=(idx == 0),
+                    )
+                    db.add(membership)
+                db.commit()
+            else:
+                # Fallback: find a default role for this organization
+                default_role = (
+                    db.query(Role)
+                    .filter(
+                        Role.organization_id == org_id,
+                        Role.is_active == True,  # noqa: E712
+                    )
+                    .order_by(Role.is_default.desc(), Role.created_at.asc())
+                    .first()
+                )
+
+                if default_role:
+                    membership = UserOrganizationRole(
+                        user_id=user.id,
+                        organization_id=org_id,
+                        role_id=default_role.id,
+                    )
+                    db.add(membership)
+                    db.commit()
+                else:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"No role found for org {org_id} — skipping UserOrganizationRole creation"
+                    )
 
         return UserResponse.model_validate(user)
     except DuplicateEmailException:
@@ -489,8 +550,34 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    user_service = UserService(db)
+
+    # Escalation guard: prevent user_type changes involving system_admin without system_admin.master
     payload = body.model_dump(exclude_unset=True)
+    if "user_type" in payload:
+        new_type = payload["user_type"]
+        user_service = UserService(db)
+        try:
+            existing_user = user_service.get_user_by_id(user_id)
+        except UserNotFoundException:
+            raise
+
+        # Case 1: promoting to system_admin
+        if new_type == UserType.SYSTEM_ADMIN.value:
+            if "system_admin.master" not in current_user.permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only users with system_admin.master permission can promote users to system admin",
+                )
+
+        # Case 2: demoting from system_admin to another type
+        if existing_user.user_type == UserType.SYSTEM_ADMIN and new_type != UserType.SYSTEM_ADMIN.value:
+            if "system_admin.master" not in current_user.permissions:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only users with system_admin.master permission can demote system admin users",
+                )
+
+    user_service = UserService(db)
     try:
         user = user_service.update_user(user_id, payload)
         return UserResponse.model_validate(user)

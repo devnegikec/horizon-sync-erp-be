@@ -20,6 +20,13 @@ class UserCreate(UserBase):
 
     password: str = Field(..., min_length=8)
     organization_id: str | None = Field(None, description="Organization to assign user to")
+    user_type: str | None = Field(
+        None, pattern="^(system_admin|organization_admin|user|guest)$",
+        description="User type; defaults to 'user' if omitted",
+    )
+    system_admin_role_ids: list[str] | None = Field(
+        None, description="Explicit role IDs to assign instead of the default role lookup",
+    )
 
 
 class UserUpdate(BaseModel):

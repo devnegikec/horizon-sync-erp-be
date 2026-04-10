@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.core.authorization import SYSTEM_ADMIN_REPORTING_READ
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.audit_log import AuditLogHistoryResponse, AuditLogListResponse
 from app.services.audit_log_service import AuditLogService
 
@@ -33,7 +34,7 @@ async def list_audit_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> AuditLogListResponse:
     """Return a cross-org paginated list of audit log entries."""
     service = AuditLogService(db)
@@ -58,7 +59,7 @@ async def get_record_history(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> AuditLogHistoryResponse:
     """Return the change history for a specific record (cross-org)."""
     service = AuditLogService(db)

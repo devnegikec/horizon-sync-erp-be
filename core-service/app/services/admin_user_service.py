@@ -212,6 +212,12 @@ class AdminUserService:
         payload = data.model_dump(mode="json")
         payload["roles"] = [r.value if hasattr(r, "value") else r for r in data.roles]
 
+        # Pass system_admin_role_ids through to identity-service if provided
+        if data.system_admin_role_ids:
+            payload["system_admin_role_ids"] = data.system_admin_role_ids
+        else:
+            payload.pop("system_admin_role_ids", None)
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{IDENTITY_API}/users",
