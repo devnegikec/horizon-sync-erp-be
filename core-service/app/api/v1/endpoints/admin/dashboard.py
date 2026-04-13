@@ -7,7 +7,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.core.authorization import SYSTEM_ADMIN_REPORTING_READ
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_dashboard import DashboardOverview
 from app.services.admin_dashboard_service import AdminDashboardService
 
@@ -21,7 +22,7 @@ async def get_dashboard_overview(
     date_to: datetime | None = Query(None, description="End of date range filter"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> DashboardOverview:
     """
     Return aggregated dashboard metrics for the admin portal.

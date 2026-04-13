@@ -189,6 +189,9 @@ def require_permission(permissions: list[str], required_permission: str) -> None
     """
     Require a specific permission (with wildcard support) or raise exception.
 
+    System admins (identified by is_system_admin) bypass the check — they have
+    cross-org access to identity-service resources.
+
     Args:
         permissions: List of user permission codes
         required_permission: Required permission code
@@ -196,6 +199,8 @@ def require_permission(permissions: list[str], required_permission: str) -> None
     Raises:
         HTTPException: 403 Forbidden if permission missing
     """
+    if is_system_admin(permissions):
+        return
     if not has_permission(permissions, required_permission):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

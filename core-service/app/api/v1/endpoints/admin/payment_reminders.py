@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.authorization import SYSTEM_ADMIN_BILLING_UPDATE
 from app.dependencies import CurrentUser, require_permission
 from app.models.reminder_config import ReminderConfig, ReminderLog, ReminderStage, ReminderStatus, ReminderType
 from app.services.payment_reminder_service import PaymentReminderService
@@ -120,7 +121,7 @@ async def list_reminder_configs(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     organization_id: Optional[UUID] = Query(None, description="Filter by organization ID"),
     enabled: Optional[bool] = Query(None, description="Filter by enabled status"),
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
@@ -193,7 +194,7 @@ async def list_reminder_configs(
 @router.get("/configs/{config_id}", response_model=ReminderConfigResponse)
 async def get_reminder_config(
     config_id: UUID,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
@@ -242,7 +243,7 @@ async def get_reminder_config(
 @router.post("/configs", response_model=ReminderConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_reminder_config(
     config_data: ReminderConfigCreate,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
@@ -344,7 +345,7 @@ async def create_reminder_config(
 async def update_reminder_config(
     config_id: UUID,
     updates: ReminderConfigUpdate,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
@@ -400,7 +401,7 @@ async def update_reminder_config(
 @router.delete("/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_reminder_config(
     config_id: UUID,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -439,7 +440,7 @@ async def delete_reminder_config(
 @router.post("/configs/{config_id}/toggle", response_model=ReminderConfigResponse)
 async def toggle_reminder_config(
     config_id: UUID,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -487,7 +488,7 @@ async def list_reminder_logs(
     invoice_id: Optional[UUID] = Query(None, description="Filter by invoice ID"),
     status: Optional[ReminderStatus] = Query(None, description="Filter by status"),
     stage: Optional[ReminderStage] = Query(None, description="Filter by reminder stage"),
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -559,7 +560,7 @@ async def list_reminder_logs(
 @router.get("/stats")
 async def get_reminder_stats(
     organization_id: Optional[UUID] = Query(None, description="Filter by organization ID"),
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -601,7 +602,7 @@ class SendBatchRequest(BaseModel):
 @router.post("/send")
 async def send_manual_reminder(
     request: SendReminderRequest,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -638,7 +639,7 @@ async def send_manual_reminder(
 @router.post("/send-batch")
 async def send_batch_reminders(
     request: SendBatchRequest,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """
@@ -679,7 +680,7 @@ async def send_batch_reminders(
 @router.post("/process-batch")
 async def process_batch_reminders(
     organization_ids: Optional[List[UUID]] = None,
-    current_user: CurrentUser = Depends(require_permission("system_admin.billing")),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_UPDATE)),
     db: Session = Depends(get_db)
 ):
     """

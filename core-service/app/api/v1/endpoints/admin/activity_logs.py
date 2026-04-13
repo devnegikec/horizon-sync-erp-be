@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.core.authorization import SYSTEM_ADMIN_REPORTING_READ
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_activity_log import (
     ActivityLogListResponse,
     LoginHistoryResponse,
@@ -31,7 +32,7 @@ async def list_activity_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> ActivityLogListResponse:
     """Return a paginated list of user activity logs with optional filters."""
     service = UserActivityLogService(db)
@@ -52,7 +53,7 @@ async def get_login_history(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    _current_user: CurrentUser = Depends(require_admin),
+    _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> LoginHistoryResponse:
     """Return login and login_failed entries for a specific user."""
     service = UserActivityLogService(db)

@@ -16,15 +16,14 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.core.security import (  # noqa: E402
-    create_token,  # noqa: E402
+    create_access_token,  # noqa: E402
     hash_password,
 )
 from app.database import Base, get_db  # noqa: E402
 from app.dependencies import get_current_active_user  # noqa: E402  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.organization import Organization  # noqa: E402
-from app.models.role import Role  # noqa: E402
-from app.models.token import Permission  # noqa: E402
+from app.models.role import Permission, Role  # noqa: E402
 from app.models.user import User, UserStatus, UserType  # noqa: E402
 
 # Create in-memory SQLite database for testing
@@ -269,9 +268,8 @@ def test_limited_role(db_session, test_organization, test_permissions):
 @pytest.fixture
 def access_token(test_user):
     """Create a valid access token for test user"""
-    token = create_token(
-        subject=str(test_user.id),
-        token_type="access",
+    token = create_access_token(
+        data={"sub": str(test_user.id)},
         expires_delta=timedelta(hours=1),
     )
     return token
@@ -280,9 +278,8 @@ def access_token(test_user):
 @pytest.fixture
 def access_token_other_user(test_user_other_org):
     """Create a valid access token for other user"""
-    token = create_token(
-        subject=str(test_user_other_org.id),
-        token_type="access",
+    token = create_access_token(
+        data={"sub": str(test_user_other_org.id)},
         expires_delta=timedelta(hours=1),
     )
     return token
@@ -291,9 +288,8 @@ def access_token_other_user(test_user_other_org):
 @pytest.fixture
 def expired_token(test_user):
     """Create an expired access token"""
-    token = create_token(
-        subject=str(test_user.id),
-        token_type="access",
+    token = create_access_token(
+        data={"sub": str(test_user.id)},
         expires_delta=timedelta(seconds=-1),  # Already expired
     )
     return token

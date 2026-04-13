@@ -17,7 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_admin
+from app.core.authorization import SYSTEM_ADMIN_BILLING_CREATE, SYSTEM_ADMIN_BILLING_READ
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.admin_invoice import AdminInvoiceListResponse
 from app.schemas.invoice import InvoiceCreate, InvoiceResponse
 from app.schemas.invoice_payment import InvoicePaymentRequest, MarkInvoicePaidRequest
@@ -37,7 +38,7 @@ async def list_invoices(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_READ)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AdminInvoiceListResponse:
     """Return a paginated list of invoices from customer organizations linked to the master organization."""
@@ -57,7 +58,7 @@ async def list_invoices(
 async def get_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_READ)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Return full invoice detail with line items and payment history."""
@@ -70,7 +71,7 @@ async def create_invoice(
     body: InvoiceCreate,
     organization_id: UUID = Query(..., description="Organization to create the invoice in"),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> InvoiceResponse:
     """Create an invoice in the specified organization."""
@@ -87,7 +88,7 @@ async def create_invoice(
 async def send_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Send an invoice to the party's email and update status to pending."""
@@ -100,7 +101,7 @@ async def mark_invoice_paid(
     invoice_id: UUID,
     payment_data: MarkInvoicePaidRequest,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Mark an invoice as paid by updating its status and outstanding amount."""
@@ -113,7 +114,7 @@ async def create_payment_from_invoice(
     invoice_id: UUID,
     payment_data: InvoicePaymentRequest,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Create a payment entry from an invoice."""
@@ -149,7 +150,7 @@ async def capture_payment_intent(
     invoice_id: UUID,
     capture_data: dict,  # TODO: Create proper schema for payment intent capture
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_BILLING_CREATE)),
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """

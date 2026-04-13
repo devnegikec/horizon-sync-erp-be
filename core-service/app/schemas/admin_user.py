@@ -30,6 +30,7 @@ class AdminUserCreate(BaseModel):
     roles: list[AllowedRole] = Field(default=[AllowedRole.user])
     phone: str | None = Field(None, max_length=20)
     user_type: str = Field(default="user", pattern=r"^(system_admin|organization_admin|user|guest)$")
+    system_admin_role_ids: list[str] | None = None
 
 
 class AdminUserUpdate(BaseModel):

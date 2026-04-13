@@ -39,6 +39,7 @@ async def list_permissions(
     action: str | None = Query(None, description="Filter by action type"),
     module: str | None = Query(None, description="Filter by module"),
     search: str | None = Query(None, description="Search in code or name"),
+    include_system_admin: bool = Query(False, description="Include system_admin permissions (default: hidden)"),
     db: Session = Depends(get_db),
 ):
     """
@@ -70,6 +71,16 @@ async def list_permissions(
             search=search,
         )
 
+        # Filter out system_admin permissions unless explicitly requested
+        if not include_system_admin:
+            result["data"] = [
+                p for p in result["data"]
+                if not (hasattr(p, "module") and p.module == "system_admin")
+                and not (isinstance(p, dict) and p.get("module") == "system_admin")
+                and not (hasattr(p, "code") and str(getattr(p, "code", "")).startswith("system_admin."))
+                and not (isinstance(p, dict) and str(p.get("code", "")).startswith("system_admin."))
+            ]
+
         logger.info(f"Retrieved {len(result['data'])} permissions")
 
         return PermissionListResponse(**result)
@@ -93,6 +104,7 @@ async def get_permissions_grouped(
         None, description="Filter by organization (optional)"
     ),
     module: str | None = Query(None, description="Filter by module"),
+    include_system_admin: bool = Query(False, description="Include system_admin permissions (default: hidden)"),
     db: Session = Depends(get_db),
 ):
     """
@@ -119,6 +131,21 @@ async def get_permissions_grouped(
             organization_id=organization_id,
             module=module,
         )
+
+        # Filter out system_admin category unless explicitly requested
+        if not include_system_admin:
+            result["categories"] = [
+                cat for cat in result["categories"]
+                if cat.get("name", "").lower() != "system admin"
+                and cat.get("name", "").lower() != "system_admin"
+            ]
+            # Also filter system_admin permissions from remaining categories
+            for cat in result["categories"]:
+                cat["permissions"] = [
+                    p for p in cat.get("permissions", [])
+                    if not (hasattr(p, "code") and str(getattr(p, "code", "")).startswith("system_admin."))
+                    and not (isinstance(p, dict) and str(p.get("code", "")).startswith("system_admin."))
+                ]
 
         logger.info(
             f"Retrieved {len(result['categories'])} categories "

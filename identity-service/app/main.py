@@ -53,6 +53,14 @@ async def lifespan(app: FastAPI):
     from app.core.audit_listener import register_audit_listeners
     register_audit_listeners()
 
+    # Auto-seed system admin roles & permissions (idempotent)
+    try:
+        from scripts.seed_system_admin_roles import seed_system_admin_roles
+        seed_system_admin_roles()
+        logger.info("System admin roles & permissions seed completed")
+    except Exception as e:
+        logger.warning(f"System admin seed skipped or failed: {e}")
+
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")
