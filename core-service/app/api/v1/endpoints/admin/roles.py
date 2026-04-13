@@ -93,17 +93,21 @@ def _get_master_org_id(conn) -> str:
 async def list_roles(
     _current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_MASTER)),
 ):
-    """List all roles (system + custom) with permissions."""
+    """List roles scoped to the master organization with permissions."""
     try:
         engine = _get_identity_engine()
         with engine.connect() as conn:
-            # Fetch all roles (system and custom)
+            master_org_id = _get_master_org_id(conn)
+
+            # Fetch only roles belonging to the master organization
             roles_rows = conn.execute(
                 text(
                     "SELECT r.id, r.name, r.code, r.description, r.is_system "
                     "FROM roles r "
-                    "ORDER BY r.created_at"
-                )
+                    "WHERE r.organization_id = :org_id "
+                    "ORDER BY r.hierarchy_level DESC, r.created_at"
+                ),
+                {"org_id": master_org_id},
             ).fetchall()
 
             results: list[dict] = []
