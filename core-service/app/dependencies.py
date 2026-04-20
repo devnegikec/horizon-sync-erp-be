@@ -192,11 +192,15 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     2. system_admin.master grants all system_admin.* permissions
     3. _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
     4. Resource wildcard: resource.* grants resource.anything
+    5. system_admin domain mapping: system_admin.users_read grants user.read
     """
     if not permissions or not required_permission:
         return False
     # Exact match
     if required_permission in permissions:
+        return True
+    # Full wildcard
+    if "*.*" in permissions:
         return True
     # system_admin.master grants all system_admin.* permissions
     if required_permission.startswith("system_admin.") and "system_admin.master" in permissions:
@@ -214,6 +218,22 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
         resource, _, _ = required_permission.partition(".")
         if f"{resource}.*" in permissions:
             return True
+    # system_admin domain → org-level resource mapping
+    # e.g. required "user.read" is granted by "system_admin.users_read"
+    if "." in required_permission:
+        resource, _, action = required_permission.partition(".")
+        _SA_RESOURCE_TO_DOMAIN = {
+            "user": "users", "organization": "organizations",
+            "role": "users", "permission": "users", "invitation": "users",
+            "billing": "billing", "invoice": "billing", "subscription": "billing",
+            "reporting": "reporting", "report": "reporting",
+        }
+        domain = _SA_RESOURCE_TO_DOMAIN.get(resource)
+        if domain:
+            if f"system_admin.{domain}_{action}" in permissions:
+                return True
+            if f"system_admin.{domain}_manage" in permissions:
+                return True
     return False
 
 

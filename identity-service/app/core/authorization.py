@@ -185,12 +185,58 @@ def has_billing_admin_permission(permissions: list[str]) -> bool:
     return has_permission(permissions, "system_admin.billing") or is_system_admin(permissions)
 
 
+def _system_admin_grants(permissions: list[str], required_permission: str) -> bool:
+    """Check if any system_admin.* permission grants access to the required org-level permission.
+
+    Mapping: system_admin.{domain}_{action} grants {resource}.{action}
+    e.g. system_admin.users_read  → user.read
+         system_admin.users_manage → user.* (all actions)
+    """
+    if "." not in required_permission:
+        return False
+
+    resource, _, action = required_permission.partition(".")
+
+    # Map org-level resource names to system_admin domain names
+    RESOURCE_TO_DOMAIN: dict[str, str] = {
+        "user": "users",
+        "organization": "organizations",
+        "role": "users",          # role management falls under users domain
+        "permission": "users",    # permission management falls under users domain
+        "invitation": "users",    # invitation management falls under users domain
+        "billing": "billing",
+        "invoice": "billing",
+        "subscription": "billing",
+        "reporting": "reporting",
+        "report": "reporting",
+    }
+
+    domain = RESOURCE_TO_DOMAIN.get(resource)
+    if not domain:
+        return False
+
+    # Check exact action match: system_admin.{domain}_{action}
+    sa_perm = f"system_admin.{domain}_{action}"
+    if sa_perm in permissions:
+        return True
+
+    # Check _manage grants all actions for that domain
+    sa_manage = f"system_admin.{domain}_manage"
+    if sa_manage in permissions:
+        return True
+
+    return False
+
+
 def require_permission(permissions: list[str], required_permission: str) -> None:
     """
     Require a specific permission (with wildcard support) or raise exception.
 
     System admins (identified by is_system_admin) bypass the check — they have
     cross-org access to identity-service resources.
+
+    Also checks system_admin.{domain}_{action} mappings so that e.g.
+    system_admin.users_read grants access to user.read endpoints.
 
     Args:
         permissions: List of user permission codes
@@ -201,11 +247,14 @@ def require_permission(permissions: list[str], required_permission: str) -> None
     """
     if is_system_admin(permissions):
         return
-    if not has_permission(permissions, required_permission):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission denied. Required: {required_permission}",
-        )
+    if has_permission(permissions, required_permission):
+        return
+    if _system_admin_grants(permissions, required_permission):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Permission denied. Required: {required_permission}",
+    )
 
 
 def has_system_admin_permission(permissions: list[str], required_permission: str) -> bool:

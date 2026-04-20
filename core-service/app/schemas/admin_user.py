@@ -83,5 +83,6 @@ class AdminUserDetailResponse(BaseModel):
     is_active: bool
     organization_id: UUID | None = None
     organization_name: str | None = None
+    system_admin_role_ids: list[str] = []
     created_at: datetime
     updated_at: datetime | None = None

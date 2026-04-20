@@ -99,14 +99,22 @@ async def list_users(
     require_permission(current_user.permissions, "user.read")
 
     # Determine if caller can see system admin users
+    # Only system_admin.master holders can see/manage other system_admin users
+    # system_admin.users_* holders manage org-level users only
     caller_is_super_admin = "system_admin.master" in current_user.permissions
+
+    # Determine if caller has cross-org user management access
+    has_cross_org_user_access = (
+        is_system_admin(current_user.permissions)
+        or any(p.startswith("system_admin.users_") for p in current_user.permissions)
+    )
 
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
-        if not is_system_admin(current_user.permissions):
+        if not has_cross_org_user_access:
             validate_user_in_organization(current_user.id, organization_id, db)
         organization_ids = [organization_id]
-    elif not is_system_admin(current_user.permissions):
+    elif not has_cross_org_user_access:
         organization_ids = _user_organization_ids(db, current_user.id)
     if organization_ids is not None and not organization_ids:
         return UserListResponse(
@@ -136,7 +144,8 @@ async def list_users(
             organization_ids=organization_ids,
         )
 
-        # Isolation: hide system_admin users from callers without system_admin.master
+        # Isolation: hide system_admin users from non-master callers
+        # system_admin.users_* holders only manage org-level users
         if not caller_is_super_admin:
             users = [u for u in users if u.user_type != UserType.SYSTEM_ADMIN]
 
@@ -322,7 +331,11 @@ async def get_user(
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.read")
-    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
+    has_cross_org_user_access = (
+        is_system_admin(current_user.permissions)
+        or any(p.startswith("system_admin.users_") for p in current_user.permissions)
+    )
+    if not has_cross_org_user_access and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -499,9 +512,23 @@ async def create_user(
                         is_primary=(idx == 0),
                     )
                     db.add(membership)
-                db.commit()
+                try:
+                    db.commit()
+                except Exception as role_err:
+                    db.rollback()
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"Role assignment failed for user {user.id}: {role_err}"
+                    )
+            elif data.get("user_type") == "system_admin" or (hasattr(body, "user_type") and body.user_type == UserType.SYSTEM_ADMIN.value):
+                # System admin with no explicit roles — skip default role assignment.
+                # Admin must assign roles explicitly via the UI.
+                import logging
+                logging.getLogger(__name__).info(
+                    f"System admin user {user.id} created without role assignment — roles must be assigned explicitly"
+                )
             else:
-                # Fallback: find a default role for this organization
+                # Regular user fallback: find a default role for this organization
                 default_role = (
                     db.query(Role)
                     .filter(
