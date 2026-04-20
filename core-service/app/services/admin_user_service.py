@@ -84,6 +84,29 @@ class AdminUserService:
             return (None, None)
         return self._org_cache.get(user_id, (None, None))
 
+    async def _fetch_user_role_assignments(self, user_id: str) -> tuple[list[str], list[str]]:
+        """Fetch actual role names and role IDs for a user from identity DB.
+
+        Returns (role_names, role_ids).
+        """
+        engine = _get_identity_engine()
+        if not engine:
+            return [], []
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT r.id, r.name "
+                    "FROM roles r "
+                    "JOIN user_organization_roles uor ON uor.role_id = r.id "
+                    "WHERE uor.user_id = :uid AND uor.is_active = true AND r.is_active = true "
+                    "ORDER BY r.name"
+                ),
+                {"uid": user_id},
+            ).fetchall()
+        role_names = [row[1] for row in rows]
+        role_ids = [str(row[0]) for row in rows]
+        return role_names, role_ids
+
     def _map_user_list_item(self, u: dict) -> AdminUserListItem:
         """Map identity-service user response to admin list item."""
         user_type = u.get("user_type", "user")
@@ -191,20 +214,31 @@ class AdminUserService:
             self._resolve_user_orgs([uid])
             org_id, org_name = self._get_user_org(uid)
 
-        return AdminUserDetailResponse(
+        # Fetch actual role assignments with permissions for system_admin users
+        assigned_roles = u.get("roles", [])
+        system_admin_role_ids: list[str] = []
+        if user_type == "system_admin":
+            try:
+                assigned_roles, system_admin_role_ids = await self._fetch_user_role_assignments(uid)
+            except Exception as e:
+                logger.warning(f"Failed to fetch role assignments for user {uid}: {e}")
+
+        resp_data = AdminUserDetailResponse(
             id=u["id"], email=u["email"],
             first_name=u.get("first_name", ""),
             last_name=u.get("last_name", ""),
             display_name=u.get("display_name"),
             phone=u.get("phone"),
-            roles=u.get("roles", []),
+            roles=assigned_roles,
             user_type=user_type,
             is_active=u.get("is_active", True),
             organization_id=org_id,
             organization_name=org_name,
+            system_admin_role_ids=system_admin_role_ids,
             created_at=u["created_at"],
             updated_at=u.get("updated_at"),
         )
+        return resp_data
 
     # ── Create ───────────────────────────────────────────────────────
 
