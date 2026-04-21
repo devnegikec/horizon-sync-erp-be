@@ -74,17 +74,23 @@ class FeatureFlagService:
         try:
             flag = self.repo.get_by_name(feature_name, scope="GLOBAL")
             enabled = flag.enabled if flag else False
+            visible = flag.visible if flag else True
             logger.info(
-                "Feature flag '%s' evaluated: %s",
+                "Feature flag '%s' evaluated: enabled=%s, visible=%s",
                 feature_name,
-                "enabled" if enabled else "disabled",
+                enabled,
+                visible,
             )
-            return FeatureFlagEvaluation(feature_name=feature_name, enabled=enabled)
+            return FeatureFlagEvaluation(
+                feature_name=feature_name, enabled=enabled, visible=visible
+            )
         except Exception:
             logger.error(
                 "Error evaluating feature flag '%s'", feature_name, exc_info=True
             )
-            return FeatureFlagEvaluation(feature_name=feature_name, enabled=False)
+            return FeatureFlagEvaluation(
+                feature_name=feature_name, enabled=False, visible=True
+            )
 
 
 def is_feature_enabled(feature_name: str, db: Session) -> bool:
@@ -104,3 +110,24 @@ def is_feature_enabled(feature_name: str, db: Session) -> bool:
             "Error evaluating feature flag '%s'", feature_name, exc_info=True
         )
         return False
+
+
+def is_feature_visible(feature_name: str, db: Session) -> bool:
+    """Check if a GLOBAL feature flag is visible. Returns True on any error (safe default — show the feature if unsure)."""
+    try:
+        repo = FeatureFlagRepository(db)
+        flag = repo.get_by_name(feature_name, scope="GLOBAL")
+        visible = flag.visible if flag else True
+        logger.info(
+            "Feature flag '%s' visibility: %s",
+            feature_name,
+            "visible" if visible else "hidden",
+        )
+        return visible
+    except Exception:
+        logger.error(
+            "Error checking visibility for feature flag '%s'",
+            feature_name,
+            exc_info=True,
+        )
+        return True

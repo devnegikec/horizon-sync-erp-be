@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     destinations,
     document_numbering,
     exchange_rates,
+    feature_flag_evaluate,
     invoices,
     item_groups,
     item_prices,
@@ -67,6 +68,13 @@ api_router = APIRouter()
 
 # Admin endpoints (development only)
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
+
+# Feature flag evaluation (any authenticated user)
+api_router.include_router(
+    feature_flag_evaluate.router,
+    prefix="/feature-flags",
+    tags=["Feature Flags"],
+)
 
 # Include endpoint routers
 # Item picker MUST be before items router so /items/picker matches before /items/{item_id}

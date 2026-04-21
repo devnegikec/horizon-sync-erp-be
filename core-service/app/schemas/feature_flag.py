@@ -12,6 +12,7 @@ class FeatureFlagCreate(BaseModel):
     )
     description: str | None = Field(None, max_length=1000)
     enabled: bool = Field(default=False)
+    visible: bool = Field(default=True)
 
 
 class FeatureFlagUpdate(BaseModel):
@@ -20,6 +21,7 @@ class FeatureFlagUpdate(BaseModel):
     )
     description: str | None = None
     enabled: bool | None = None
+    visible: bool | None = None
 
 
 class FeatureFlagResponse(BaseModel):
@@ -27,6 +29,7 @@ class FeatureFlagResponse(BaseModel):
     name: str
     description: str | None
     enabled: bool
+    visible: bool
     scope: str
     tenant_id: UUID | None
     user_id: UUID | None
@@ -44,3 +47,10 @@ class FeatureFlagListResponse(BaseModel):
 class FeatureFlagEvaluation(BaseModel):
     feature_name: str
     enabled: bool
+    visible: bool
+
+
+class FeatureFlagVisibility(BaseModel):
+    feature_name: str
+    enabled: bool
+    visible: bool

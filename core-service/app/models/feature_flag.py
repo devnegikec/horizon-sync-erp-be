@@ -27,6 +27,7 @@ class FeatureFlag(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     enabled = Column(Boolean, nullable=False, default=False)
+    visible = Column(Boolean, nullable=False, default=True)
     scope = Column(String(20), nullable=False, default="GLOBAL")
     tenant_id = Column(UUID(as_uuid=True), nullable=True)
     user_id = Column(UUID(as_uuid=True), nullable=True)
@@ -47,4 +48,4 @@ class FeatureFlag(Base):
     )
 
     def __repr__(self):
-        return f"<FeatureFlag(id={self.id}, name='{self.name}', enabled={self.enabled})>"
+        return f"<FeatureFlag(id={self.id}, name='{self.name}', enabled={self.enabled}, visible={self.visible})>"

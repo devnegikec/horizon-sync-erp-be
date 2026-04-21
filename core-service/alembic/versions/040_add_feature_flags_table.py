@@ -33,6 +33,9 @@ def upgrade() -> None:
             "enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")
         ),
         sa.Column(
+            "visible", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
+        sa.Column(
             "scope",
             sa.String(20),
             nullable=False,
@@ -69,6 +72,25 @@ def upgrade() -> None:
     # Indexes for fast lookups
     op.create_index("ix_feature_flags_name", "feature_flags", ["name"])
     op.create_index("ix_feature_flags_scope", "feature_flags", ["scope"])
+
+    # Idempotent check: if table existed before without 'visible', add it
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'feature_flags' AND column_name = 'visible'"
+        )
+    )
+    if result.fetchone() is None:
+        op.add_column(
+            "feature_flags",
+            sa.Column(
+                "visible",
+                sa.Boolean(),
+                nullable=False,
+                server_default=sa.text("true"),
+            ),
+        )
 
 
 def downgrade() -> None:
