@@ -1,10 +1,12 @@
 """Invoice service"""
 
+import logging
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException
+from app.core.constants import INVOICE_AUTO_JOURNAL_POSTING
 from app.models.base import InvoiceStatus, InvoiceType
 from app.models.customer import Customer
 from app.models.item import Item
@@ -12,6 +14,9 @@ from app.models.supplier import Supplier
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.stock_level_repository import StockLevelRepository
 from app.repositories.tax_template_repository import TaxTemplateRepository
+from app.services.feature_flag_service import is_feature_enabled
+
+logger = logging.getLogger(__name__)
 
 
 class InvoiceService:
@@ -167,22 +172,24 @@ class InvoiceService:
                 # Flush changes before creating journal entry
                 self.db.flush()
                 
-                # Create journal entry - only if all required default accounts are configured
-                try:
-                    journal_posting_service = InvoiceJournalPostingService(self.db)
-                    journal_posting_service.post_invoice_journal_entry(
-                        inv, organization_id, user_id
-                    )
-                except ValidationError as journal_error:
-                    if "default account" in str(journal_error).lower():
-                        # If this is a default account configuration error, allow the invoice update to proceed
-                        # but log the error - the journal entry can be created later when accounts are configured
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Invoice {inv.invoice_no} updated but journal entry not created: {journal_error}")
-                    else:
-                        # Re-raise other validation errors
-                        raise
+                # Gate journal posting behind feature flag
+                if is_feature_enabled(INVOICE_AUTO_JOURNAL_POSTING, self.db):
+                    # Create journal entry - only if all required default accounts are configured
+                    try:
+                        journal_posting_service = InvoiceJournalPostingService(self.db)
+                        journal_posting_service.post_invoice_journal_entry(
+                            inv, organization_id, user_id
+                        )
+                    except ValidationError as journal_error:
+                        if "default account" in str(journal_error).lower():
+                            # If this is a default account configuration error, allow the invoice update to proceed
+                            # but log the error - the journal entry can be created later when accounts are configured
+                            logger.warning(f"Invoice {inv.invoice_no} updated but journal entry not created: {journal_error}")
+                        else:
+                            # Re-raise other validation errors
+                            raise
+                else:
+                    logger.info("Skipping auto journal posting — feature flag disabled")
             
             # If invoice is being cancelled, reverse the journal entry
             if requires_journal_reversal:
@@ -198,8 +205,6 @@ class InvoiceService:
                         inv, organization_id, user_id
                     )
                 except ValidationError as journal_error:
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.warning(
                         f"Invoice {inv.invoice_no} cancelled but journal reversal failed: {journal_error}"
                     )

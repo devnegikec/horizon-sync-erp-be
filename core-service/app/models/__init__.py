@@ -150,9 +150,11 @@ from app.models.public_submission import PublicSubmission
 from app.models.admin import (
     AdminAuditLog,
     AdminNotification,
-    FeatureFlag,
     UserActivityLog,
 )
+
+# Feature Flag module
+from app.models.feature_flag import FeatureFlag
 
 # Audit Trail module
 from app.models.audit_log import AuditAction as AuditLogAction

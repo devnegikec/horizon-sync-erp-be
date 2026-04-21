@@ -260,3 +260,31 @@ def require_permission(permission: str):
         return current_user
 
     return check_permission
+
+
+def require_feature_flag(flag_name: str):
+    """
+    Dependency factory that gates an entire router/endpoint behind a feature flag.
+
+    Returns HTTP 423 (Locked) with a structured JSON body when the flag is
+    disabled or missing.  The response includes a machine-readable ``code``
+    field (``FEATURE_DISABLED``) so frontends can distinguish this from
+    auth errors (401/403).
+
+    Usage:
+        router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
+    """
+    from app.services.feature_flag_service import is_feature_enabled
+
+    async def _check_flag(db: Session = Depends(get_db)) -> None:
+        if not is_feature_enabled(flag_name, db):
+            raise HTTPException(
+                status_code=423,  # Locked – resource exists but is administratively disabled
+                detail={
+                    "code": "FEATURE_DISABLED",
+                    "feature": flag_name,
+                    "message": f"Feature '{flag_name}' is currently disabled by your administrator.",
+                },
+            )
+
+    return _check_flag

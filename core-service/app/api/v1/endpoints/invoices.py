@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.core.authorization import INVOICE_CREATE, INVOICE_READ, INVOICE_UPDATE
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, require_feature_flag, require_permission
+from app.core.constants import INVOICES_ENABLED
 from app.schemas.common import PaginationMeta
 from app.schemas.invoice import (
     InvoiceCreate,
@@ -18,7 +19,7 @@ from app.schemas.invoice import (
 )
 from app.services.invoice_service import InvoiceService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_feature_flag(INVOICES_ENABLED))])
 
 
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
