@@ -1,4 +1,4 @@
-"""Admin portal models — activity logs, audit logs, notifications, feature flags"""
+"""Admin portal models — activity logs, audit logs, notifications"""
 
 import uuid
 from datetime import UTC, datetime
@@ -10,7 +10,6 @@ from sqlalchemy import (
     Index,
     String,
     Text,
-    UniqueConstraint,
     text,
 )
 
@@ -99,29 +98,4 @@ class AdminNotification(Base):
         return f"<AdminNotification(id={self.id}, recipient={self.recipient_user_id}, type='{self.notification_type}')>"
 
 
-class FeatureFlag(Base):
-    """Per-organization feature flags."""
 
-    __tablename__ = "feature_flags"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # No FK constraint — organizations table lives in identity_db
-    organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    feature_key = Column(String(100), nullable=False)
-    is_enabled = Column(Boolean, default=False)
-    config = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    updated_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "organization_id", "feature_key", name="unique_org_feature"
-        ),
-    )
-
-    def __repr__(self):
-        return f"<FeatureFlag(id={self.id}, org={self.organization_id}, key='{self.feature_key}')>"
