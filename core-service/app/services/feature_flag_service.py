@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.repositories.feature_flag_repository import FeatureFlagRepository
+from app.core.constants import DEFAULT_SCOPE
 from app.schemas.feature_flag import (
     FeatureFlagCreate,
     FeatureFlagEvaluation,
@@ -30,7 +31,7 @@ class FeatureFlagService:
                 detail=f"Feature flag with name '{data.name}' already exists",
             )
         flag_data = data.model_dump()
-        flag_data["scope"] = "GLOBAL"
+        flag_data["scope"] = DEFAULT_SCOPE
         flag_data["tenant_id"] = None
         flag_data["user_id"] = None
         flag = self.repo.create(flag_data)
@@ -72,7 +73,7 @@ class FeatureFlagService:
 
     def evaluate(self, feature_name: str) -> FeatureFlagEvaluation:
         try:
-            flag = self.repo.get_by_name(feature_name, scope="GLOBAL")
+            flag = self.repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
             enabled = flag.enabled if flag else False
             visible = flag.visible if flag else True
             logger.info(
@@ -97,7 +98,7 @@ def is_feature_enabled(feature_name: str, db: Session) -> bool:
     """Check if a GLOBAL feature flag is enabled. Returns False on any error."""
     try:
         repo = FeatureFlagRepository(db)
-        flag = repo.get_by_name(feature_name, scope="GLOBAL")
+        flag = repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
         enabled = flag.enabled if flag else False
         logger.info(
             "Feature flag '%s' evaluated: %s",
@@ -116,7 +117,7 @@ def is_feature_visible(feature_name: str, db: Session) -> bool:
     """Check if a GLOBAL feature flag is visible. Returns True on any error (safe default — show the feature if unsure)."""
     try:
         repo = FeatureFlagRepository(db)
-        flag = repo.get_by_name(feature_name, scope="GLOBAL")
+        flag = repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
         visible = flag.visible if flag else True
         logger.info(
             "Feature flag '%s' visibility: %s",

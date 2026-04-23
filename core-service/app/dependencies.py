@@ -275,13 +275,14 @@ def require_feature_flag(flag_name: str):
         router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
     """
     from app.services.feature_flag_service import is_feature_enabled
+    from app.core.constants import FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
 
     async def _check_flag(db: Session = Depends(get_db)) -> None:
         if not is_feature_enabled(flag_name, db):
             raise HTTPException(
-                status_code=423,  # Locked – resource exists but is administratively disabled
+                status_code=HTTP_FEATURE_DISABLED,
                 detail={
-                    "code": "FEATURE_DISABLED",
+                    "code": FEATURE_DISABLED_CODE,
                     "feature": flag_name,
                     "message": f"Feature '{flag_name}' is currently disabled by your administrator.",
                 },

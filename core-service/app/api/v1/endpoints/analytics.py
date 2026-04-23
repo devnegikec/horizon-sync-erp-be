@@ -4,9 +4,10 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from app.core.constants import ANALYTICS_ENABLED
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_feature_flag
 from app.database import get_db
 from app.schemas.analytics import (
     MetaCampaignCreate,
@@ -18,7 +19,7 @@ from app.schemas.analytics import (
 )
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_feature_flag(ANALYTICS_ENABLED))])
 
 
 def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
