@@ -211,6 +211,24 @@ services:
       - horizon_network
     restart: unless-stopped
 
+  # ===========================================
+  # API GATEWAY (Nginx — single port for ngrok)
+  # ===========================================
+  api-gateway:
+    build:
+      context: ./nginx-gateway
+      dockerfile: Dockerfile
+    container_name: horizon_gateway
+    ports:
+      - "9000:9000"
+    depends_on:
+      - identity-service
+      - core-service
+      - search-service
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
 # ===========================================
 # VOLUMES & NETWORKS
 # ===========================================
