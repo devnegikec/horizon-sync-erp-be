@@ -280,8 +280,8 @@ class AdminUserService:
             roles=payload.get("roles", []),
             user_type=user_type,
             is_active=u.get("is_active", True),
-            organization_id=str(data.organization_id),
-            organization_name=None,  # Will be resolved on next fetch after org membership is created
+            organization_id=data.organization_id,
+            organization_name=None,
             created_at=u.get("created_at", ""),
             updated_at=u.get("updated_at"),
         )
@@ -335,8 +335,8 @@ class AdminUserService:
             roles=u.get("roles", []),
             user_type=user_type,
             is_active=u.get("is_active", True),
-            organization_id=org_id,
-            organization_name=org_name,
+            organization_id=u.get("organization_id"),
+            organization_name=u.get("organization_name"),
             created_at=u.get("created_at", ""),
             updated_at=u.get("updated_at"),
         )
