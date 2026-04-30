@@ -15,8 +15,8 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     campaigns,
-    cascade_qr,
     charge_templates,
+    cascade,
     chart_of_accounts,
     chart_of_accounts_setup,
     communications,
@@ -56,6 +56,7 @@ from app.api.v1.endpoints import (
     put_away,
     put_away_rules,
     qr_credits,
+    qr_activation,
     qr_product_settings,
     qr_products,
     quality_inspections,
@@ -431,13 +432,6 @@ api_router.include_router(
     tags=["Analytics"],
 )
 
-# Cascade / Hierarchical QR module
-api_router.include_router(
-    cascade_qr.router,
-    prefix="/cascade-qr",
-    tags=["Cascade QR"],
-)
-
 # URL Management module
 api_router.include_router(
     short_urls.router,
@@ -472,3 +466,13 @@ api_router.include_router(
     prefix="/public",
     tags=["Public"],
 )
+
+
+# QR Activation module 
+api_router.include_router(
+    qr_activation.router,
+    prefix="/qr-activation",
+    tags=["QR Activation"],
+)
+
+api_router.include_router(cascade.router, prefix="/cascade", tags=["Cascade"])
