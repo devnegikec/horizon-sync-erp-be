@@ -438,47 +438,57 @@ def _assign_super_admin_to_first_user(
 
 
 def _seed_org_level_permissions(db: Session) -> None:
-    """Seed granular org-level permissions for the platform app.
+    """Seed granular org-level permissions.
 
-    Creates permissions following the `resource.action` pattern (e.g. item.read)
-    with module='platform'. Uses check-before-insert for idempotency.
+    Creates permissions following the `resource.action` pattern (e.g. item.read).
+    Module assignment:
+      - identity: user, organization, role, permission, invitation
+      - core: all business resources (item, invoice, payment, etc.)
+    Uses check-before-insert for idempotency.
     """
-    # Define which actions each resource supports
-    ORG_PERMISSION_DEFS: list[tuple[ResourceType, list[ActionType]]] = [
-        (ResourceType.USER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.ORGANIZATION, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.ROLE, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.PERMISSION, [ActionType.READ, ActionType.MANAGE]),
-        (ResourceType.INVITATION, [ActionType.READ, ActionType.CREATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.CUSTOMER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.SUPPLIER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.ITEM, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.ITEM_GROUP, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.WAREHOUSE, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.STOCK_ENTRY, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.BATCH, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.SERIAL, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.INVOICE, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.PAYMENT, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.SALES_ORDER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.PURCHASE_ORDER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.CHART_OF_ACCOUNT, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE]),
-        (ResourceType.REPORT, [ActionType.READ, ActionType.EXECUTE]),
-        (ResourceType.SETTING, [ActionType.READ, ActionType.UPDATE, ActionType.MANAGE]),
+    # (ResourceType, [ActionType], module)
+    ORG_PERMISSION_DEFS: list[tuple[ResourceType, list[ActionType], str]] = [
+        # ── Identity service resources ──────────────────────────────
+        (ResourceType.USER,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
+        (ResourceType.ORGANIZATION, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
+        (ResourceType.ROLE,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
+        (ResourceType.PERMISSION,   [ActionType.READ, ActionType.MANAGE], "identity"),
+        (ResourceType.INVITATION,   [ActionType.READ, ActionType.CREATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
+        # ── Core service resources ──────────────────────────────────
+        (ResourceType.CUSTOMER,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.SUPPLIER,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.ITEM,           [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.ITEM_GROUP,     [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.WAREHOUSE,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.STOCK_ENTRY,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.BATCH,          [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.SERIAL,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.INVOICE,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.PAYMENT,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.SALES_ORDER,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.PURCHASE_ORDER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.CHART_OF_ACCOUNT, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.REPORT,         [ActionType.READ, ActionType.EXECUTE], "core"),
+        (ResourceType.SETTING,        [ActionType.READ, ActionType.UPDATE, ActionType.MANAGE], "core"),
     ]
 
     created = 0
     skipped = 0
+    updated = 0
 
-    for resource, actions in ORG_PERMISSION_DEFS:
+    for resource, actions, module in ORG_PERMISSION_DEFS:
         for action in actions:
             code = f"{resource.value}.{action.value}"
-            # Human-readable name: "Item Read", "Stock Entry Manage", etc.
             name = f"{resource.value.replace('_', ' ').title()} {action.value.title()}"
 
             existing = db.query(Permission).filter(Permission.code == code).first()
             if existing:
-                skipped += 1
+                # Update module if it's still set to the old "platform" value
+                if existing.module == "platform":
+                    existing.module = module
+                    updated += 1
+                else:
+                    skipped += 1
                 continue
 
             perm = Permission(
@@ -486,13 +496,13 @@ def _seed_org_level_permissions(db: Session) -> None:
                 name=name,
                 resource=resource,
                 action=action,
-                module="platform",
+                module=module,
                 is_active=True,
             )
             db.add(perm)
             created += 1
 
-    # Also ensure *. * wildcard with module=platform exists
+    # Ensure *. * wildcard exists with module="identity" (it's an auth concern)
     wildcard_code = "*.*"
     existing_wildcard = db.query(Permission).filter(Permission.code == wildcard_code).first()
     if not existing_wildcard:
@@ -502,13 +512,16 @@ def _seed_org_level_permissions(db: Session) -> None:
             description="Grants access to all resources and actions",
             resource=ResourceType.ALL,
             action=ActionType.MANAGE,
-            module="platform",
+            module="identity",
             is_active=True,
         ))
         created += 1
+    elif existing_wildcard.module == "platform":
+        existing_wildcard.module = "identity"
+        updated += 1
 
     db.flush()
-    print(f"  Org-level permissions: {created} created, {skipped} already existed")
+    print(f"  Org-level permissions: {created} created, {updated} updated (module fixed), {skipped} already correct")
 
 
 def _seed_org_admin_wildcard(db: Session) -> None:
@@ -525,12 +538,14 @@ def _seed_org_admin_wildcard(db: Session) -> None:
             description="Grants access to all resources and actions",
             resource=ResourceType.ALL,
             action=ActionType.MANAGE,
-            module="platform",
+            module="identity",
         )
         db.add(wildcard)
         db.flush()
         print("  Created *. * wildcard permission")
     else:
+        if wildcard.module == "platform":
+            wildcard.module = "identity"
         print("  *. * wildcard permission already exists")
 
     # 2. For every non-master organization, ensure an organization_admin role exists
