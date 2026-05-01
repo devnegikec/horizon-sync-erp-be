@@ -20,7 +20,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,7 +36,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -207,6 +208,24 @@ services:
         echo 'Starting Search Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5680 -m uvicorn app.main:app --host 0.0.0.0 --port 8002
       "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  # ===========================================
+  # API GATEWAY (Nginx — single port for ngrok)
+  # ===========================================
+  api-gateway:
+    build:
+      context: ./nginx-gateway
+      dockerfile: Dockerfile
+    container_name: horizon_gateway
+    ports:
+      - "9000:9000"
+    depends_on:
+      - identity-service
+      - core-service
+      - search-service
     networks:
       - horizon_network
     restart: unless-stopped

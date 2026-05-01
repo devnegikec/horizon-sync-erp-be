@@ -325,7 +325,9 @@ def upgrade() -> None:
             sa.Column(
                 "invoice_id",
                 UUID(as_uuid=True),
-                sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+                # FK to invoices omitted here — invoices table is created by the
+                # application model layer (create_all) which runs after migrations.
+                # The relationship is enforced at the application level.
                 nullable=False,
                 index=True,
             ),

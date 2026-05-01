@@ -20,14 +20,28 @@ depends_on = None
 
 def upgrade() -> None:
     """Add master organization support and billing fields"""
-    
-    # Update OrganizationType enum to include 'master' and 'customer'
-    op.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'master'")
-    op.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'customer'")
-    
-    # Update OrganizationStatus enum to include new billing statuses
-    op.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'overdue'")
-    op.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'deactivated'")
+
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to be committed before the new
+    # enum value can be used in DML within the same session.
+    # We open a SEPARATE raw psycopg2 connection in autocommit mode so that
+    # Alembic's own connection/transaction is completely undisturbed.
+    bind = op.get_bind()
+    # render_as_string(hide_password=False) gives the full URL including the password.
+    # str(engine.url) masks the password with *** which causes auth failures.
+    raw_url = bind.engine.url.render_as_string(hide_password=False)
+
+    import psycopg2
+    ac_conn = psycopg2.connect(raw_url)
+    ac_conn.autocommit = True
+    try:
+        cur = ac_conn.cursor()
+        cur.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'master'")
+        cur.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'customer'")
+        cur.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'overdue'")
+        cur.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'deactivated'")
+        cur.close()
+    finally:
+        ac_conn.close()
 
     # Add billing and subscription fields to organizations table
     op.add_column('organizations', sa.Column('billing_status', postgresql.ENUM('active', 'inactive', 'suspended', 'trial', 'overdue', 'deactivated', name='organizationstatus'), nullable=False, server_default='active'))

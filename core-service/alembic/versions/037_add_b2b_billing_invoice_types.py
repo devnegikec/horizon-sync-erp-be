@@ -20,13 +20,11 @@ depends_on = None
 
 def upgrade():
     """Add new B2B billing invoice types"""
-    
-    # Add new invoice type values to existing enum
-    # PostgreSQL requires this approach for adding enum values
-    op.execute("ALTER TYPE invoicetype ADD VALUE IF NOT EXISTS 'setup_fee'")
-    op.execute("ALTER TYPE invoicetype ADD VALUE IF NOT EXISTS 'overage'") 
-    op.execute("ALTER TYPE invoicetype ADD VALUE IF NOT EXISTS 'addon'")
-    op.execute("ALTER TYPE invoicetype ADD VALUE IF NOT EXISTS 'credit_adjustment'")
+    # invoicetype is NOT a PostgreSQL enum in this codebase — the Invoice model
+    # uses String(50) for invoice_type. These values are enforced at the
+    # application layer via the InvoiceType Python enum in base.py.
+    # Nothing to do at the DB level.
+    pass
 
 
 def downgrade():
