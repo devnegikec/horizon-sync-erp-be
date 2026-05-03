@@ -384,6 +384,8 @@ class PermissionService:
             # Map module to category name for UI
             if perm.module:
                 module_to_category = {
+                    "identity": "Identity & Access",
+                    "core": "Business Operations",
                     "crm": "CRM & Sales",
                     "sales": "Sales & Orders",
                     "procurement": "Procurement",
@@ -393,6 +395,8 @@ class PermissionService:
                     "billing": "Billing & Subscriptions",
                     "subscription": "Billing & Subscriptions",
                     "payment": "Billing & Subscriptions",
+                    # legacy — keep for backward compat with existing DB rows
+                    "platform": "Business Operations",
                 }
                 category_name = module_to_category.get(
                     perm.module.lower(), perm.category or perm.module or "Other"
@@ -410,6 +414,8 @@ class PermissionService:
         for category_name, perms in sorted(categories_dict.items()):
             # Determine icon based on category
             icon_map = {
+                "Identity & Access": "shield",
+                "Business Operations": "briefcase",
                 "CRM & Sales": "users",
                 "Sales & Orders": "shopping-cart",
                 "Procurement": "truck",

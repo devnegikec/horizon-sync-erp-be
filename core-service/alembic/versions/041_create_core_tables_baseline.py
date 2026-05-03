@@ -350,23 +350,9 @@ def upgrade() -> None:
         )
     """))
 
-    # ── payment_references (with FK to invoices now that it exists) ─
-    # Drop and recreate only if the FK is missing
-    conn.execute(sa.text("""
-        DO $$ BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM information_schema.table_constraints
-                WHERE constraint_name = 'payment_references_invoice_id_fkey'
-                AND table_name = 'payment_references'
-            ) THEN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'payment_references') THEN
-                    ALTER TABLE payment_references
-                        ADD CONSTRAINT payment_references_invoice_id_fkey
-                        FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
-                END IF;
-            END IF;
-        END $$;
-    """))
+    # Note: payment_references.invoice_id FK to invoices is intentionally NOT added here.
+    # The table may contain orphaned rows from before FK enforcement was in place.
+    # The FK is enforced at the application/model layer going forward.
 
     # ── Indexes ────────────────────────────────────────────────────
     for idx_sql in [
