@@ -103,7 +103,10 @@ async def list_users(
     # system_admin.users_* holders manage org-level users only
     caller_is_super_admin = "system_admin.master" in current_user.permissions
 
-    # Determine if caller has cross-org user management access
+    # Determine if caller has cross-org user management access.
+    # Only explicit system_admin.* permissions grant cross-org access.
+    # The *. * wildcard is org-scoped (organization_admin role) and must NOT
+    # bypass org isolation — it only grants full access within the user's own org.
     has_cross_org_user_access = (
         is_system_admin(current_user.permissions)
         or any(p.startswith("system_admin.users_") for p in current_user.permissions)

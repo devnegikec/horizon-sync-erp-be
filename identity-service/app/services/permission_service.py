@@ -336,7 +336,8 @@ class PermissionService:
         }
 
     def get_permissions_grouped_by_category(
-        self, organization_id: UUID | None = None, module: str | None = None
+        self, organization_id: UUID | None = None, module: str | None = None,
+        include_system_admin: bool = False,
     ) -> dict:
         """
         Get permissions grouped by category for UI display.
@@ -357,6 +358,53 @@ class PermissionService:
             is_active=True,
             module=module,
         )
+
+        # Exclude system_admin.* permissions — they are admin-portal-only and must
+        # never appear in the platform org-level permission picker.
+        # Only include them when explicitly requested (e.g. admin portal role management).
+        if not include_system_admin:
+            permissions = [
+                p for p in permissions
+                if not (p.module == "system_admin" or p.code.startswith("system_admin."))
+            ]
+
+        # Deduplicate only within the same code namespace (prefix before first dot).
+        # e.g. "org.read" and "organization.read" are duplicates (both prefix "org"/"organization"
+        # map to the same resource) — keep the canonical "organization.*" form.
+        # But "system_admin.organizations_read" and "organization.read" are DIFFERENT permissions
+        # and must NOT be deduplicated against each other.
+        #
+        # Strategy: group by (namespace, resource, action) where namespace is derived from
+        # the code prefix. "org" and "organization" are treated as the same namespace.
+        # "system_admin" is its own namespace and never merged with org-level permissions.
+        canonical_map: dict[str, object] = {}
+        for perm in permissions:
+            resource_val = _convert_enum_to_string(perm.resource)
+            action_val = _convert_enum_to_string(perm.action)
+            # Determine the code namespace (prefix before first dot)
+            code_prefix = perm.code.split(".")[0] if "." in perm.code else perm.code
+            # Normalize "org" → "organization" for dedup key purposes
+            if code_prefix == "org":
+                code_prefix = "organization"
+            # system_admin.* permissions get their own namespace key so they never
+            # collide with org-level permissions that share the same resource+action
+            if code_prefix == "system_admin":
+                key = f"system_admin.{resource_val}.{action_val}"
+            else:
+                key = f"{resource_val}.{action_val}"
+            existing = canonical_map.get(key)
+            if existing is None:
+                canonical_map[key] = perm
+            else:
+                # Among non-system_admin duplicates, prefer "organization.*" over "org.*"
+                existing_prefix = existing.code.split(".")[0] if "." in existing.code else existing.code  # type: ignore[union-attr]
+                if existing_prefix == "org" and code_prefix == "organization":
+                    canonical_map[key] = perm
+        permissions = list(canonical_map.values())
+
+        # Identity resources that must always appear under "Identity & Access"
+        # regardless of the module stored in the DB (handles legacy "platform" module).
+        IDENTITY_RESOURCES = {"user", "organization", "role", "permission", "invitation"}
 
         # Group by category
         categories_dict: dict[str, list] = {}
@@ -381,8 +429,12 @@ class PermissionService:
             # Determine category name
             category_name = perm.category or perm.module or "Other"
 
-            # Map module to category name for UI
-            if perm.module:
+            # Force identity resources into "Identity & Access" regardless of stored module.
+            # This handles legacy permissions with module="platform" that belong to identity.
+            resource_val = _convert_enum_to_string(perm.resource)
+            if resource_val in IDENTITY_RESOURCES:
+                category_name = "Identity & Access"
+            elif perm.module:
                 module_to_category = {
                     "identity": "Identity & Access",
                     "core": "Business Operations",
@@ -426,11 +478,25 @@ class PermissionService:
             }
             icon = icon_map.get(category_name)
 
+            # Derive a canonical module for the category from its name,
+            # not from perms[0].module which is arbitrary and could be "system_admin".
+            category_to_module = {
+                "Identity & Access": "identity",
+                "Business Operations": "core",
+                "CRM & Sales": "crm",
+                "Sales & Orders": "sales",
+                "Procurement": "procurement",
+                "Inventory": "inventory",
+                "Accounting": "accounting",
+                "Billing & Subscriptions": "billing",
+            }
+            category_module = category_to_module.get(category_name)
+
             categories.append(
                 {
                     "name": category_name,
                     "icon": icon,
-                    "module": perms[0].get("module") if perms else None,
+                    "module": category_module,
                     "permissions": perms,
                 }
             )

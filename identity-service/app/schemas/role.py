@@ -131,7 +131,7 @@ class RolePermissionDetailResponse(BaseModel):
 class BulkAssignRolePermissionsRequest(BaseModel):
     """Schema for bulk role permission assignment"""
 
-    permission_ids: list[UUID] = Field(..., min_length=1)
+    permission_ids: list[UUID] = Field(..., min_length=0)
     mode: str = Field("replace", pattern="^(replace|add)$")
 
 

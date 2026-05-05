@@ -116,14 +116,13 @@ def check_permission(permissions: list[str], required_permission: str) -> bool:
 
 def is_system_admin(permissions: list[str]) -> bool:
     """
-    Check if user is a system administrator.
+    Check if user is a system administrator with cross-org access.
 
-    System admin permissions (Task 1C-1):
-    - *.* (full access wildcard)
-    - system.admin (legacy system admin)
-    - role.manage (backward compatibility)
-    - system_admin.master (new B2B billing system admin)
-    
+    Only explicit system_admin.* permissions grant cross-org access.
+    The *. * wildcard is an org-level permission (organization_admin role) and
+    does NOT grant cross-org system admin access — it only grants full access
+    within the user's own organization.
+
     Args:
         permissions: List of user permission codes
 
@@ -131,9 +130,7 @@ def is_system_admin(permissions: list[str]) -> bool:
         True if user is system admin
     """
     return (
-        "*.*" in permissions
-        or "system.admin" in permissions
-        or "role.manage" in permissions
+        "system.admin" in permissions
         or "system_admin.master" in permissions
     )
 
@@ -141,13 +138,9 @@ def is_system_admin(permissions: list[str]) -> bool:
 def is_cross_org_admin(permissions: list[str]) -> bool:
     """
     Check if user has cross-organization administrative permissions.
-    
-    Cross-org admin permissions (Task 1C-1):
-    - system_admin.master (full system access)
-    - system_admin.users (user management across orgs)
-    - system_admin.organizations (organization management)
-    - system_admin.billing (billing management across orgs)
-    - system_admin.reporting (reporting across orgs)
+
+    Only explicit system_admin.* permissions grant cross-org access.
+    The *. * wildcard is org-scoped and does NOT grant cross-org access.
 
     Args:
         permissions: List of user permission codes
@@ -158,12 +151,10 @@ def is_cross_org_admin(permissions: list[str]) -> bool:
     cross_org_permissions = [
         "system_admin.master",
         "system_admin.users",
-        "system_admin.organizations", 
+        "system_admin.organizations",
         "system_admin.billing",
         "system_admin.reporting",
-        "*.*"  # Full wildcard also grants cross-org access
     ]
-    
     return any(perm in permissions for perm in cross_org_permissions)
 
 

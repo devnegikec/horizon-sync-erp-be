@@ -588,14 +588,18 @@ class InvitationService:
         }
 
     def _has_invite_permission(self, permissions: list[str]) -> bool:
-        """Check if user has invite permission."""
+        """Check if user has invite permission, with wildcard support."""
+        from app.core.authorization import has_permission
+
+        # Explicit invite/invitation permissions
         invite_permissions = [
             "user.invite",
             "invitation.create",
+            "invitation.manage",
             "user.manage",
-            "all.manage",
         ]
-        return any(p in permissions for p in invite_permissions)
+        # Check each via wildcard-aware has_permission
+        return any(has_permission(permissions, p) for p in invite_permissions)
 
     def _invitation_to_dict(self, invitation) -> dict:
         """Convert invitation object to dictionary."""

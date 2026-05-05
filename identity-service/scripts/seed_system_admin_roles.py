@@ -523,6 +523,20 @@ def _seed_org_level_permissions(db: Session) -> None:
     db.flush()
     print(f"  Org-level permissions: {created} created, {updated} updated (module fixed), {skipped} already correct")
 
+    # ── Cleanup: deactivate legacy "org.*" shorthand permissions ──────────────
+    # The canonical form is "organization.*". Any "org.*" rows are duplicates.
+    legacy_org_perms = db.query(Permission).filter(
+        Permission.code.like("org.%"),
+        Permission.is_active == True,
+    ).all()
+    cleaned = 0
+    for legacy in legacy_org_perms:
+        legacy.is_active = False
+        cleaned += 1
+    if cleaned:
+        db.flush()
+        print(f"  Cleaned up {cleaned} legacy 'org.*' permissions (deactivated)")
+
 
 def _seed_org_admin_wildcard(db: Session) -> None:
     """Ensure a *. * wildcard permission exists and every non-master org has an
