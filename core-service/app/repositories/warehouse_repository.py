@@ -173,8 +173,13 @@ class WarehouseRepository:
         total_count = query.count()
 
         # Apply sorting
-        sort_column = getattr(Warehouse, sort_by, Warehouse.created_at)
-        if sort_order == "desc":
+        # Normalize sort_by: replace hyphens with underscores and restrict to allowed fields
+        allowed_sort_fields = {"id", "name", "code", "is_active", "warehouse_type", "created_at", "updated_at"}
+        normalized_sort_by = sort_by.replace("-", "_")
+        if normalized_sort_by not in allowed_sort_fields:
+            normalized_sort_by = "created_at"
+        sort_column = getattr(Warehouse, normalized_sort_by, Warehouse.created_at)
+        if sort_order.lower() == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
