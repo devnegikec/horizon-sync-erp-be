@@ -133,9 +133,11 @@ class OrganizationService:
         )
         self.db.commit()
 
-        # Trigger default chart of accounts creation in Core Service
+        # Trigger default chart of accounts creation, then seed onboarding defaults.
+        # Both run in a single background thread to ensure chart accounts exist
+        # before tax template rules reference them.
         if self.core_client:
-            self._trigger_chart_creation(org.id, org.base_currency or "USD", str(owner_id))
+            self._trigger_chart_then_defaults(org.id, org.base_currency or "USD", str(owner_id))
 
         return self._to_response(org)
 
@@ -298,6 +300,110 @@ class OrganizationService:
             "next_billing_date": org.next_billing_date,
         }
 
+    def _trigger_chart_then_defaults(
+        self, organization_id: UUID, currency: str, owner_id: str
+    ) -> None:
+        """Run chart-of-accounts creation then onboarding defaults sequentially in one thread.
+
+        This ensures GL accounts (e.g. 2300, 1400) exist before tax template rules
+        reference them as account_head_id.
+        """
+        try:
+            import asyncio
+            import threading
+
+            logger.info(
+                "Starting sequential chart + onboarding defaults setup",
+                extra={
+                    "organization_id": str(organization_id),
+                    "event": "org_setup_initiated",
+                },
+            )
+
+            def run_sequential():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        # Step 1: Chart of accounts
+                        chart_response = loop.run_until_complete(
+                            self.core_client.create_with_retry(
+                                organization_id=organization_id,
+                                currency=currency,
+                                created_by=owner_id,
+                                max_retries=self.retry_attempts,
+                            )
+                        )
+                        if chart_response:
+                            logger.info(
+                                "Chart of accounts created, proceeding to onboarding defaults",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "accounts_created": chart_response.get("accounts_created", 0),
+                                    "event": "chart_creation_completed",
+                                },
+                            )
+                        else:
+                            logger.warning(
+                                "Chart creation skipped or failed (feature may be disabled); "
+                                "onboarding defaults will use fallback account IDs for tax rules",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "event": "chart_creation_skipped_or_failed",
+                                },
+                            )
+
+                        # Step 2: Onboarding defaults (currency, UOMs, tax templates, item groups)
+                        defaults_response = loop.run_until_complete(
+                            self.core_client.seed_organization_defaults_with_retry(
+                                organization_id=organization_id,
+                                base_currency=currency,
+                                created_by=owner_id,
+                                max_retries=self.retry_attempts,
+                            )
+                        )
+                        if defaults_response:
+                            logger.info(
+                                "Organization onboarding defaults seeded successfully",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "summary": defaults_response.get("summary"),
+                                    "event": "org_defaults_seed_completed",
+                                },
+                            )
+                        else:
+                            logger.error(
+                                "Failed to seed organization defaults after all retries",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "event": "org_defaults_seed_failed",
+                                },
+                            )
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(
+                        "Sequential org setup failed",
+                        extra={
+                            "organization_id": str(organization_id),
+                            "error": str(e),
+                            "event": "org_setup_failed",
+                        },
+                    )
+
+            thread = threading.Thread(target=run_sequential, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            logger.error(
+                "Failed to start org setup thread",
+                extra={
+                    "organization_id": str(organization_id),
+                    "error": str(e),
+                    "event": "org_setup_failed",
+                },
+            )
+
     def _trigger_chart_creation(
         self, organization_id: UUID, currency: str, owner_id: str
     ) -> None:
@@ -411,13 +517,95 @@ class OrganizationService:
                 }
             )
 
+    def _trigger_org_defaults_seed(
+        self, organization_id: UUID, base_currency: str, owner_id: str
+    ) -> None:
+        """Trigger default master data seeding in Core Service.
+
+        Seeds currency, UOMs, tax templates, and item groups for the new org.
+        Errors are logged but do not fail organization creation.
+
+        Args:
+            organization_id: UUID of the organization
+            base_currency: ISO currency code (e.g., "USD")
+            owner_id: User identifier who created the organization
+        """
+        try:
+            import asyncio
+            import threading
+
+            logger.info(
+                "Seeding organization defaults",
+                extra={
+                    "organization_id": str(organization_id),
+                    "base_currency": base_currency,
+                    "created_by": owner_id,
+                    "event": "org_defaults_seed_initiated",
+                },
+            )
+
+            def run_async_in_thread():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        response = loop.run_until_complete(
+                            self.core_client.seed_organization_defaults_with_retry(
+                                organization_id=organization_id,
+                                base_currency=base_currency,
+                                created_by=owner_id,
+                                max_retries=self.retry_attempts,
+                            )
+                        )
+                        if response:
+                            logger.info(
+                                "Organization defaults seeded successfully",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "summary": response.get("summary"),
+                                    "event": "org_defaults_seed_completed",
+                                },
+                            )
+                        else:
+                            logger.error(
+                                "Failed to seed organization defaults after all retries",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "event": "org_defaults_seed_failed",
+                                },
+                            )
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(
+                        "Failed to seed organization defaults — thread error",
+                        extra={
+                            "organization_id": str(organization_id),
+                            "error": str(e),
+                            "event": "org_defaults_seed_failed",
+                        },
+                    )
+
+            thread = threading.Thread(target=run_async_in_thread, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            logger.error(
+                "Failed to seed organization defaults — unexpected error",
+                extra={
+                    "organization_id": str(organization_id),
+                    "error": str(e),
+                    "event": "org_defaults_seed_failed",
+                },
+            )
+
     # Master Organization Validation Methods (Task 1A-1)
     def _validate_master_org_creation(self, user_type: UserType = None) -> None:
         """Validate that only SYSTEM_ADMIN can create master organizations and only one exists."""
         # Check if master organization already exists
         if self.get_master_organization():
             raise ValueError("Master organization already exists")
-            
+
         # Only SYSTEM_ADMIN can create master organizations
         if user_type != UserType.SYSTEM_ADMIN:
             raise ValueError("Only system administrators can create master organizations")

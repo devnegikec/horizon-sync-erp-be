@@ -66,9 +66,15 @@ class TaxTemplateService:
 
         # Handle default template logic
         if payload.get("is_default", False):
-            self.repo.unmark_default_templates(
-                payload["organization_id"], payload["tax_category"]
-            )
+            category = payload["tax_category"]
+            if category == "Both":
+                self.repo.unmark_default_templates(payload["organization_id"], "Input")
+                self.repo.unmark_default_templates(payload["organization_id"], "Output")
+                self.repo.unmark_default_templates(payload["organization_id"], "Both")
+            else:
+                self.repo.unmark_default_templates(
+                    payload["organization_id"], category
+                )
 
         # Create template
         template = self.repo.create(payload)
@@ -149,7 +155,13 @@ class TaxTemplateService:
 
         # Handle default template logic
         if payload.get("is_default", False) and not template.is_default:
-            self.repo.unmark_default_templates(organization_id, template.tax_category)
+            category = payload.get("tax_category", template.tax_category)
+            if category == "Both":
+                self.repo.unmark_default_templates(organization_id, "Input")
+                self.repo.unmark_default_templates(organization_id, "Output")
+                self.repo.unmark_default_templates(organization_id, "Both")
+            else:
+                self.repo.unmark_default_templates(organization_id, category)
 
         # Update template
         updated_template = self.repo.update(template, payload)
@@ -335,7 +347,7 @@ class TaxTemplateService:
 
         # Validate tax_category if provided
         if "tax_category" in template_data:
-            valid_categories = ["Input", "Output"]
+            valid_categories = ["Input", "Output", "Both"]
             if template_data["tax_category"] not in valid_categories:
                 raise ValueError(
                     f"Invalid tax_category. Must be one of: {', '.join(valid_categories)}"

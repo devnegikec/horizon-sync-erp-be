@@ -7,6 +7,8 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     bank_accounts,
+    charge_templates,
+    organization_onboarding,
     batches,
     brand_trust,
     brands,
@@ -102,6 +104,12 @@ api_router.include_router(
     chart_of_accounts_setup.router,
     prefix="",  # No prefix since endpoints already include /setup
     tags=["Chart of Accounts Setup"],
+)
+# Organization Onboarding (seed defaults for new orgs)
+api_router.include_router(
+    organization_onboarding.router,
+    prefix="",  # No prefix since endpoint already includes /setup
+    tags=["Organization Setup"],
 )
 # Bank accounts integration
 api_router.include_router(
@@ -212,6 +220,11 @@ api_router.include_router(
     tax_templates.router,
     prefix="/tax-templates",
     tags=["Tax Templates"],
+)
+api_router.include_router(
+    charge_templates.router,
+    prefix="/charge-templates",
+    tags=["Charge Templates"],
 )
 api_router.include_router(
     purchase_orders.router,
