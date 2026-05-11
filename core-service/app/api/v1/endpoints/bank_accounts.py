@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
-from app.core.constants import BOOK_CHART_OF_ACCOUNT_ENABLED
+from app.core.constants import BOOK_CHART_OF_ACCOUNT_ENABLED, BOOK_MODULE_ENABLED
 from app.core.exceptions import (
     BankAccountNotFoundException,
     DuplicateIbanException,
@@ -37,7 +37,12 @@ from app.services.bank_account_service import BankAccountService
 from app.services.transaction_importer import TransactionImporter
 
 logger = logging.getLogger(__name__)
-router = APIRouter(dependencies=[Depends(require_feature_flag(BOOK_CHART_OF_ACCOUNT_ENABLED))])
+router = APIRouter(
+    dependencies=[
+        Depends(require_feature_flag(BOOK_MODULE_ENABLED)),
+        Depends(require_feature_flag(BOOK_CHART_OF_ACCOUNT_ENABLED)),
+    ]
+)
 
 
 @router.post(

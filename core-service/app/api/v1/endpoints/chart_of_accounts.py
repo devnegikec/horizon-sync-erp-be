@@ -30,8 +30,10 @@ from app.schemas.default_account import (
     DefaultAccountBulkUpdateRequest,
 )
 from app.services.chart_of_account_service import ChartOfAccountService
+from app.dependencies import require_feature_flag
+from app.core.constants import BOOK_CHART_OF_ACCOUNT_ENABLED
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_feature_flag(BOOK_CHART_OF_ACCOUNT_ENABLED))])
 
 
 @router.post(
