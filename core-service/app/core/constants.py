@@ -14,7 +14,7 @@ INVOICE_AUTO_JOURNAL_POSTING = "invoice_auto_journal_posting"
 INVENTORY_MODULE_ENABLED = "inventory_module_enabled"
 
 # Revenue module
-REVENUE_MODULE_ENABLED = "revenue_module_enabled "
+REVENUE_MODULE_ENABLED = "revenue_module_enabled"
 
 # Sourcing module
 SOURCING_MODULE_ENABLED = "sourcing_module_enabled"
