@@ -12,7 +12,7 @@ class ChargeTemplateCreate(BaseModel):
 
     template_code: str = Field(..., min_length=1, max_length=100, description="Unique template code")
     template_name: str = Field(..., min_length=1, max_length=255, description="Template name")
-    description: Optional[str] = Field(None, description="Optional description")
+    description: Optional[str] = Field(None, max_length=1000, description="Optional description")
 
     charge_type: str = Field(
         ...,
@@ -60,7 +60,7 @@ class ChargeTemplateUpdate(BaseModel):
 
     template_code: Optional[str] = Field(None, min_length=1, max_length=100)
     template_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=1000)
     charge_type: Optional[str] = None
     calculation_method: Optional[str] = None
     fixed_amount: Optional[Decimal] = Field(None, ge=0)

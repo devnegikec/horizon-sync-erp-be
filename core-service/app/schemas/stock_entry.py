@@ -35,7 +35,7 @@ class StockEntryItemBase(BaseModel):
     valuation_rate: Decimal | float | None = None
     batch_no: str | None = Field(None, max_length=100)
     serial_nos: list[str] | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
     extra_data: dict | None = None
 
 
@@ -52,7 +52,7 @@ class StockEntryItemUpdate(BaseModel):
     valuation_rate: Decimal | float | None = None
     batch_no: str | None = Field(None, max_length=100)
     serial_nos: list[str] | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
     extra_data: dict | None = None
 
 
@@ -91,7 +91,7 @@ class StockEntryBase(BaseModel):
     status: str = Field(default="draft")  # draft, submitted, cancelled
     reference_type: str | None = Field(None, max_length=50)
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     total_value: Decimal | float | None = None
     expense_account_id: UUID | None = None
     cost_center_id: UUID | None = None
@@ -112,7 +112,7 @@ class StockEntryUpdate(BaseModel):
     status: str | None = None
     reference_type: str | None = Field(None, max_length=50)
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     total_value: Decimal | float | None = None
     expense_account_id: UUID | None = None
     cost_center_id: UUID | None = None

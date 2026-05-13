@@ -146,7 +146,7 @@ class SalesOrderBase(BaseModel):
     )
     reference_type: str | None = None
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class SalesOrderCreate(SalesOrderBase):
@@ -160,7 +160,7 @@ class SalesOrderUpdate(BaseModel):
         None,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     )
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     discount_type: str | None = Field(
         None, pattern="^(flat|percentage)$", description="Document-level discount type"
     )
