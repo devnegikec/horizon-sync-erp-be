@@ -33,7 +33,7 @@ class InvoiceBase(BaseModel):
     )
     reference_type: str | None = None
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class InvoiceCreate(InvoiceBase):
@@ -45,7 +45,7 @@ class InvoiceItemCreate(BaseModel):
     item_id: UUID | None = None
     item_code: str | None = None
     item_name: str | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
     qty: Decimal = Field(..., gt=0)
     uom: str = Field(default="Unit")
     rate: Decimal | None = Field(None, ge=0)
@@ -66,7 +66,7 @@ class InvoiceUpdate(BaseModel):
     status: str | None = Field(
         None, pattern="^(draft|submitted|pending|paid|partial|overdue|cancelled)$"
     )
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     discount_type: str | None = Field(
         None, pattern="^(flat|percentage)$", description="Document-level discount type"
     )

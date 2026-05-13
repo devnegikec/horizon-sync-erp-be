@@ -63,7 +63,7 @@ class PickListBase(BaseModel):
     pick_date: datetime | None = None
     reference_type: str | None = Field(None, max_length=50)
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class PickListCreate(PickListBase):
@@ -76,7 +76,7 @@ class PickListUpdate(BaseModel):
         None, pattern="^(draft|in_progress|completed|cancelled)$"
     )
     pick_date: datetime | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class PickListResponse(PickListBase):

@@ -135,7 +135,7 @@ class QuotationBase(BaseModel):
     )
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     converted_to_sales_order: bool = False
     discount_type: str = Field(
         default="percentage",
@@ -164,7 +164,7 @@ class QuotationCreate(BaseModel):
     )
     grand_total: Decimal | float = 0
     currency: str = Field(default="INR", max_length=10)
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     discount_type: str | None = Field(
         default="percentage", pattern="^(flat|percentage)$"
     )
@@ -177,7 +177,7 @@ class QuotationUpdate(BaseModel):
     quotation_date: datetime | None = None
     valid_until: datetime | None = None
     status: str | None = Field(None, pattern="^(draft|sent|accepted|rejected|expired)$")
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     discount_type: str | None = Field(None, pattern="^(flat|percentage)$")
     discount_value: Decimal | float | None = None
     discount_amount: Decimal | float | None = None
