@@ -1,16 +1,17 @@
 """Quick verification script for WarehouseLocation model"""
 import sys
-sys.path.insert(0, '.')
+
+sys.path.insert(0, ".")
 
 from app.models.warehouse_location import (
-    WarehouseLocation,
-    LocationType,
-    PutAwayListStatus,
-    PutAwayListItemStatus,
-    WorkerTaskType,
-    WorkerTaskStatus,
-    ScanType,
     AllocationType,
+    LocationType,
+    PutAwayListItemStatus,
+    PutAwayListStatus,
+    ScanType,
+    WarehouseLocation,
+    WorkerTaskStatus,
+    WorkerTaskType,
 )
 
 print("Enums:")

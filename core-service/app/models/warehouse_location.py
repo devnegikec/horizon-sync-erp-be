@@ -19,7 +19,6 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.types import UUID
 
-
 # ===========================================
 # WAREHOUSE BIN MANAGEMENT ENUMS
 # ===========================================
@@ -139,7 +138,9 @@ class WarehouseLocation(Base):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("warehouse_id", "full_code", name="uq_location_code_warehouse"),
+        UniqueConstraint(
+            "warehouse_id", "full_code", name="uq_location_code_warehouse"
+        ),
     )
 
     # Relationships

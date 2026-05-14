@@ -9,7 +9,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
 ## Tasks
 
 - [ ] 1. Database models and migration
+
   - [ ] 1.1 Create enums and SQLAlchemy model for `warehouse_locations` in `core-service/app/models/warehouse_location.py`
+
     - Define `LocationType` enum (zone, aisle, bay, level, bin)
     - Define `PutAwayListStatus` enum (pending, in_progress, completed, cancelled)
     - Define `PutAwayListItemStatus` enum (pending, completed, skipped)
@@ -24,6 +26,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 1.1, 1.5_
 
   - [ ] 1.2 Create SQLAlchemy models for `bin_stock_levels`, `put_away_lists`, `put_away_list_items`, `worker_tasks`, `qr_scan_records`, and `location_allocations`
+
     - Create `BinStockLevel` model in `core-service/app/models/bin_stock_level.py` with version column for optimistic locking, UniqueConstraint on (bin_location_id, item_id), CHECK constraint on quantity_on_hand >= 0
     - Create `PutAwayList` and `PutAwayListItem` models in `core-service/app/models/put_away_list.py`
     - Create `WorkerTask` model in `core-service/app/models/worker_task.py`
@@ -33,6 +36,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 3.1, 4.6, 7.2, 8.5, 12.1, 12.2_
 
   - [ ] 1.3 Add `bin_location_id` column to existing `PickListItem` model
+
     - Add nullable `bin_location_id` column with ForeignKey to `warehouse_locations.id`
     - _Requirements: 5.6_
 
@@ -43,7 +47,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 1.5, 3.1, 4.6, 7.2, 8.5, 12.1_
 
 - [ ] 2. Pydantic schemas
+
   - [ ] 2.1 Create Pydantic schemas for location management in `core-service/app/schemas/warehouse_location.py`
+
     - `LocationCreate` (location_type, code, name, parent_location_id, capacity, capacity_uom, position_x, position_y)
     - `LocationUpdate` (name, capacity, capacity_uom, position_x, position_y, is_active)
     - `LocationResponse`, `LocationTreeNode` (recursive children), `LocationSummary`
@@ -60,7 +66,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 3.1, 3.6, 4.1, 4.6, 7.1, 7.2, 7.6, 8.1, 8.5, 8.6, 12.1, 12.2, 12.7_
 
 - [ ] 3. Repository layer
+
   - [ ] 3.1 Create `LocationRepository` in `core-service/app/repositories/location_repository.py`
+
     - CRUD operations for warehouse_locations
     - `get_tree(warehouse_id, org_id)` — recursive query to build hierarchy
     - `get_children(location_id)` — direct children
@@ -70,6 +78,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 1.7, 2.1, 2.5, 11.1, 11.3_
 
   - [ ] 3.2 Create `BinStockRepository` in `core-service/app/repositories/bin_stock_repository.py`
+
     - `get_or_create(bin_location_id, item_id, org_id)` — upsert pattern
     - `update_with_version(bin_stock_id, quantity_delta, current_version)` — optimistic locking
     - `get_bins_for_item(item_id, warehouse_id, org_id)` — all bins containing an item
@@ -78,6 +87,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 3.1, 3.2, 3.3, 3.6, 9.5_
 
   - [ ] 3.3 Create `PutAwayRepository` in `core-service/app/repositories/put_away_repository.py`
+
     - CRUD for put_away_lists and put_away_list_items
     - `get_list_with_items(put_away_list_id, org_id)`
     - `update_item_status(item_id, status)`
@@ -85,11 +95,13 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 4.6, 10.1, 10.2, 10.3, 10.4_
 
   - [ ] 3.4 Create `TaskRepository` in `core-service/app/repositories/task_repository.py`
+
     - CRUD for worker_tasks
     - `list_by_worker(worker_id, filters, org_id)` — filtered by status and date range
     - _Requirements: 7.1, 7.6_
 
   - [ ] 3.5 Create `ScanRepository` in `core-service/app/repositories/scan_repository.py`
+
     - `create_scan(scan_data, org_id)`
     - `get_start_scan(task_item_id, worker_task_id)` — find preceding start scan
     - `get_time_summary(filters, org_id)` — aggregated time data
@@ -103,10 +115,13 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 12.1, 12.7, 12.8_
 
 - [ ] 4. Checkpoint - Ensure models, schemas, and repositories compile
+
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Core services — LayoutService and CapacityService
+
   - [ ] 5.1 Implement `LayoutService` in `core-service/app/services/layout_service.py`
+
     - `create_location()` — validate hierarchy (warehouse→zone→aisle→bay→level→bin), generate full_code by concatenating ancestor codes, persist
     - `get_location_tree()` — return full hierarchy for a warehouse
     - `list_locations()` — filtered/paginated list with computed fields (full_path, item_count, available_capacity)
@@ -116,11 +131,13 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6_
 
   - [ ]\* 5.2 Write property tests for hierarchy validation (Property 1) and full code concatenation (Property 2)
+
     - **Property 1: Hierarchy Validation** — For any location type and parent type pair, creation succeeds only when parent is the immediate predecessor in the chain
     - **Property 2: Full Code Concatenation** — For any valid hierarchy, full_code equals hyphen-joined ancestor codes
     - **Validates: Requirements 1.2, 1.3, 1.4**
 
   - [ ] 5.3 Implement `CapacityService` in `core-service/app/services/capacity_service.py`
+
     - `rollup_capacity(location_id)` — walk up tree, sum children's total_capacity at each level
     - `compute_available_capacity(location_id)` — total_capacity minus sum of stock in subtree
     - `recalculate_ancestors(bin_location_id)` — triggered on stock changes, update available_capacity for bin and all ancestors within same transaction
@@ -132,7 +149,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6**
 
 - [ ] 6. Core services — BinStockService
+
   - [ ] 6.1 Implement `BinStockService` in `core-service/app/services/bin_stock_service.py`
+
     - `add_stock(bin_id, item_id, quantity, org_id)` — validate bin is active, check capacity, increment quantity_on_hand with optimistic locking (retry up to 3 times), update warehouse-level stock_levels, create stock_movement record, trigger capacity recalculation
     - `remove_stock(bin_id, item_id, quantity, org_id)` — validate sufficient stock, decrement with optimistic locking, update warehouse-level stock_levels, create stock_movement, trigger capacity recalculation
     - `get_bins_for_item(item_id, warehouse_id, org_id)` — return all bins with quantities and available capacity
@@ -147,7 +166,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 1.6, 3.2, 3.3, 3.4, 3.5**
 
 - [ ] 7. Core services — PutAwayService and AllocationService
+
   - [ ] 7.1 Implement `AllocationService` in `core-service/app/services/allocation_service.py`
+
     - `create_allocation(data, org_id)` — validate no overlapping exclusive allocations, persist
     - `list_allocations(warehouse_id, filters, org_id)` — filtered list
     - `deactivate_allocation(allocation_id, org_id)` — set is_active=False
@@ -156,6 +177,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8_
 
   - [ ] 7.2 Implement `PutAwayService` in `core-service/app/services/put_away_service.py`
+
     - `generate_put_away_list(receipt_items, warehouse_id, org_id)` — check location_allocations first (exclusive then preferred), then put_away_rules, filter bins by active + sufficient capacity, split quantity across bins if needed, pass to RoutingOptimizer for sort_order, create put_away_list and items
     - `complete_item(put_away_list_id, item_id, org_id)` — mark item completed, call BinStockService.add_stock, update list status (PENDING→IN_PROGRESS on first, →COMPLETED when all done)
     - `skip_item(put_away_list_id, item_id, org_id)` — mark item SKIPPED, do NOT update bin stock, flag for review
@@ -168,16 +190,20 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 4.1, 4.3, 4.4, 12.3, 12.5, 12.6, 12.8**
 
 - [ ] 8. Core services — PickService and RoutingOptimizer
+
   - [ ] 8.1 Implement `RoutingOptimizer` in `core-service/app/services/routing_optimizer.py`
+
     - `optimize_route(locations, origin=(0,0))` — group by aisle, sort within aisle by position, order aisles by nearest-neighbor from origin, assign sequential sort_order
     - Helper methods: `_aisle_distance()`, `_aisle_exit_position()`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
   - [ ]\* 8.2 Write property test for routing optimizer (Property 10)
+
     - **Property 10: Routing Optimizer Correctness** — Output is permutation of input, sort_order is sequential 1..N, same-aisle bins are contiguous
     - **Validates: Requirements 4.5, 5.4, 6.1, 6.3, 6.4**
 
   - [ ] 8.3 Implement enhanced `PickService` in `core-service/app/services/pick_service.py`
+
     - `resolve_bin_locations(pick_list_id, org_id)` — for each pick item, query bin_stock_levels sorted by quantity descending, allocate from largest bins first, split across bins if needed, pass to RoutingOptimizer, update pick_list_items with bin_location_id and sort_order
     - `complete_pick_item(pick_list_id, item_id, bin_id, qty, org_id)` — call BinStockService.remove_stock, update picked_qty, update pick list status
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 10.6_
@@ -187,7 +213,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 5.1, 5.2, 5.3**
 
 - [ ] 9. Core services — TaskService and QRScanService
+
   - [ ] 9.1 Implement `TaskService` in `core-service/app/services/task_service.py`
+
     - `create_task(task_type, worker_id, reference_id, org_id)` — create worker_task with status ASSIGNED
     - `start_task(task_id, org_id)` — set status IN_PROGRESS, record started_at
     - `complete_task(task_id, org_id)` — set status COMPLETED, record completed_at
@@ -196,6 +224,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
   - [ ] 9.2 Implement `QRScanService` in `core-service/app/services/qr_scan_service.py`
+
     - `record_scan(scan_data, org_id)` — validate finish scan has preceding start scan, compute elapsed_seconds on finish, persist record
     - `get_time_summary(filters, org_id)` — aggregate time data per worker, per task, per location
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
@@ -208,10 +237,13 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 8.3, 8.4, 10.2, 10.3, 10.5, 10.6**
 
 - [ ] 10. Checkpoint - Ensure all services compile and unit tests pass
+
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. API endpoints — Location management
+
   - [ ] 11.1 Create location management endpoints in `core-service/app/api/v1/endpoints/warehouse_locations.py`
+
     - `POST /api/v1/warehouses/{warehouse_id}/locations` — create location node
     - `GET /api/v1/warehouses/{warehouse_id}/locations/tree` — full hierarchy tree
     - `GET /api/v1/warehouses/{warehouse_id}/locations` — list with filters (location_type, parent_location_id, is_active, has_stock, search, page, page_size)
@@ -228,7 +260,9 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - **Validates: Requirements 11.1, 11.3, 11.4, 11.5**
 
 - [ ] 12. API endpoints — Bin stock and put-away
+
   - [ ] 12.1 Create bin stock endpoints in `core-service/app/api/v1/endpoints/bin_stock.py`
+
     - `POST /api/v1/bin-stock/add` — add stock to bin
     - `POST /api/v1/bin-stock/remove` — remove stock from bin
     - `GET /api/v1/bin-stock/by-item/{item_id}` — all bins for an item (query param: warehouse_id)
@@ -246,12 +280,15 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 4.1, 4.6, 10.1, 10.2, 10.3, 10.4, 10.5_
 
 - [ ] 13. API endpoints — Pick list enhancement, worker tasks, QR scans, allocations
+
   - [ ] 13.1 Create pick list bin resolution endpoints in `core-service/app/api/v1/endpoints/pick_lists.py` (enhance existing)
+
     - `POST /api/v1/pick-lists/{id}/resolve-bins` — resolve pick items to bin locations
     - `POST /api/v1/pick-lists/{id}/items/{item_id}/complete` — complete pick item from bin
     - _Requirements: 5.1, 5.4, 5.5, 5.6_
 
   - [ ] 13.2 Create worker task endpoints in `core-service/app/api/v1/endpoints/worker_tasks.py`
+
     - `POST /api/v1/worker-tasks` — create/assign task
     - `GET /api/v1/worker-tasks` — list tasks (filter by worker_id, status, date range)
     - `GET /api/v1/worker-tasks/{id}` — get task detail
@@ -262,6 +299,7 @@ Tech stack: Python FastAPI, SQLAlchemy ORM, PostgreSQL, Pydantic schemas, Alembi
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
   - [ ] 13.3 Create QR scan endpoints in `core-service/app/api/v1/endpoints/qr_scans.py`
+
     - `POST /api/v1/qr-scans` — record scan event
     - `GET /api/v1/qr-scans/summary` — time tracking summary (filter by worker, task, location, date range)
     - Register router in `core-service/app/api/v1/router.py`
