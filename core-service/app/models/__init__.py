@@ -160,6 +160,18 @@ from app.models.feature_flag import FeatureFlag
 from app.models.audit_log import AuditAction as AuditLogAction
 from app.models.audit_log import AuditLog
 
+# Warehouse Bin Management module
+from app.models.warehouse_location import (
+    AllocationType,
+    LocationType,
+    PutAwayListItemStatus,
+    PutAwayListStatus,
+    ScanType,
+    WarehouseLocation,
+    WorkerTaskStatus,
+    WorkerTaskType,
+)
+
 # Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
@@ -355,6 +367,15 @@ __all__ = [
     # Audit Trail module
     "AuditLog",
     "AuditLogAction",
+    # Warehouse Bin Management module
+    "LocationType",
+    "PutAwayListStatus",
+    "PutAwayListItemStatus",
+    "WorkerTaskType",
+    "WorkerTaskStatus",
+    "ScanType",
+    "AllocationType",
+    "WarehouseLocation",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",
