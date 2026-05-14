@@ -12,6 +12,7 @@ from app.models.base import CustomerStatus
 from app.models.customer import Customer
 from app.repositories.customer_repository import CustomerRepository
 from app.schemas.customer import CustomerCreate, CustomerUpdate
+from app.services.document_numbering_service import DocumentNumberingService
 
 
 class CustomerService:
@@ -41,14 +42,20 @@ class CustomerService:
         Raises:
             DuplicateCustomerCodeException: If customer code already exists
         """
-        if self.customer_repo.customer_code_exists(
-            customer_data.customer_code, organization_id
-        ):
+        # Auto-generate customer_code if not provided
+        code = customer_data.customer_code
+        if not code:
+            code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "customer"
+            )
+
+        if self.customer_repo.customer_code_exists(code, organization_id):
             raise DuplicateCustomerCodeException(
-                f"Customer with code '{customer_data.customer_code}' already exists"
+                f"Customer with code '{code}' already exists"
             )
 
         customer_dict = customer_data.model_dump()
+        customer_dict["customer_code"] = code
         customer_dict["organization_id"] = organization_id
         customer_dict["created_by"] = user_id
         customer_dict["updated_by"] = user_id

@@ -61,6 +61,8 @@ class StockEntryItemResponse(BaseModel):
     organization_id: UUID
     stock_entry_id: UUID
     item_id: UUID
+    item_name: str | None = None
+    item_code: str | None = None
     source_warehouse_id: UUID | None = None
     target_warehouse_id: UUID | None = None
     qty: Decimal
@@ -218,7 +220,13 @@ def stock_entry_to_response(e: StockEntry) -> StockEntryResponse:
 
     items = []
     if hasattr(e, "items") and e.items:
-        items = [StockEntryItemResponse.model_validate(item) for item in e.items]
+        for item in e.items:
+            item_resp = StockEntryItemResponse.model_validate(item)
+            # Populate item_name and item_code from the related Item model
+            if hasattr(item, "item") and item.item:
+                item_resp.item_name = item.item.item_name
+                item_resp.item_code = item.item.item_code
+            items.append(item_resp)
 
     return StockEntryResponse(
         id=e.id,

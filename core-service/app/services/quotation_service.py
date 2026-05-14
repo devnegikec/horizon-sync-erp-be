@@ -493,11 +493,16 @@ class QuotationService:
                 sales_order_no = f"SO-{timestamp}"
 
             # Prepare sales order data (carry forward document-level discount from quotation)
+            # Use quotation's valid_until as delivery_date, or default to 7 days from now
+            from datetime import timedelta
+
+            delivery_date = quotation.valid_until if quotation.valid_until else (datetime.now(UTC) + timedelta(days=7))
+
             sales_order_data = {
                 "sales_order_no": sales_order_no,
                 "customer_id": quotation.customer_id,
                 "order_date": datetime.now(UTC),
-                "delivery_date": None,
+                "delivery_date": delivery_date,
                 "currency": quotation.currency,
                 "reference_type": "Quotation",
                 "reference_id": quotation.id,
