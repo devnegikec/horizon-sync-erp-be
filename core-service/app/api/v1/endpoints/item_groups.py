@@ -1,12 +1,17 @@
 """Item Group management API endpoints"""
 
+import csv
+import io
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.item_group import ItemGroup
 from app.schemas.common import PaginationMeta
 from app.schemas.item_group import (
     ItemGroupCreate,
@@ -20,7 +25,17 @@ from app.schemas.item_group import (
 )
 from app.services.item_group_service import ItemGroupService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+class ItemGroupImportResponse(BaseModel):
+    total_rows: int
+    created: int
+    updated: int
+    failed: int
+    errors: list[dict]
 
 
 def _build_tax_info(tax_template) -> TaxInfo | None:
@@ -285,3 +300,141 @@ async def delete_item_group(
         force=force,
     )
     return None
+
+
+@router.post(
+    "/import",
+    response_model=ItemGroupImportResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Import item groups from CSV",
+    description="Upload a CSV file to bulk import/update item groups",
+)
+async def import_item_groups(
+    file: UploadFile = File(..., description="CSV file with item group data"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> ItemGroupImportResponse:
+    """
+    Import item groups from a CSV file.
+
+    - Upserts by `name`: if an item group with the same name exists, it is updated; otherwise a new one is created.
+    - Auto-generates code if not provided.
+
+    Supported columns: name, code, description, default_valuation_method, default_uom, is_active
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required.")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("csv",):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds 5 MB limit.")
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No data rows found in file.")
+
+    if len(rows) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 rows allowed per import.")
+
+    created = 0
+    updated = 0
+    failed = 0
+    errors: list[dict] = []
+
+    VALID_VALUATION_METHODS = {"fifo", "lifo", "moving_average", "standard"}
+
+    for row_num, row in enumerate(rows, start=1):
+        # Normalize keys
+        row = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items()}
+
+        name = row.get("name", "")
+        if not name:
+            failed += 1
+            errors.append({"row": row_num, "field": "name", "message": "Name is required"})
+            continue
+
+        code = row.get("code", "")
+        if not code:
+            code = name.upper().replace(" ", "_")[:50]
+
+        try:
+            # Check if item group with same name exists (upsert by name)
+            existing = db.query(ItemGroup).filter(
+                ItemGroup.organization_id == current_user.organization_id,
+                ItemGroup.name == name,
+                ItemGroup.deleted_at.is_(None),
+            ).first()
+
+            data: dict = {"name": name}
+
+            # description
+            if row.get("description"):
+                data["description"] = row["description"]
+
+            # default_valuation_method
+            val_method = row.get("default_valuation_method", "").lower()
+            if val_method and val_method in VALID_VALUATION_METHODS:
+                data["default_valuation_method"] = val_method
+
+            # default_uom
+            if row.get("default_uom"):
+                data["default_uom"] = row["default_uom"]
+
+            # is_active
+            is_active_str = row.get("is_active", "").lower()
+            if is_active_str in ("true", "1", "yes", "t"):
+                data["is_active"] = True
+            elif is_active_str in ("false", "0", "no", "f"):
+                data["is_active"] = False
+
+            if existing:
+                # Update existing item group
+                data["updated_by"] = current_user.id
+                for key, value in data.items():
+                    setattr(existing, key, value)
+                # Update code if provided
+                if row.get("code"):
+                    existing.code = code
+                db.commit()
+                updated += 1
+            else:
+                # Create new item group
+                new_group = ItemGroup(
+                    organization_id=current_user.organization_id,
+                    code=code,
+                    is_active=data.get("is_active", True),
+                    created_by=current_user.id,
+                    updated_by=current_user.id,
+                    **{k: v for k, v in data.items() if k != "is_active"},
+                )
+                db.add(new_group)
+                db.commit()
+                created += 1
+
+        except Exception as e:
+            db.rollback()
+            failed += 1
+            errors.append({"row": row_num, "field": "general", "message": str(e)})
+            logger.error(f"Item group import row {row_num} failed: {e}")
+
+    return ItemGroupImportResponse(
+        total_rows=len(rows),
+        created=created,
+        updated=updated,
+        failed=failed,
+        errors=errors,
+    )

@@ -68,7 +68,7 @@ class WarehouseBase(BaseModel):
 class WarehouseCreate(WarehouseBase):
     """Schema for creating a new warehouse"""
 
-    pass
+    code: str | None = Field(None, max_length=50)  # Auto-generated if not provided
 
 
 class WarehouseUpdate(BaseModel):
