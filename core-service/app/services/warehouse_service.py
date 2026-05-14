@@ -13,6 +13,7 @@ from app.models.base import WarehouseType
 from app.models.warehouse import Warehouse
 from app.repositories.warehouse_repository import WarehouseRepository
 from app.schemas.warehouse import WarehouseCreate, WarehouseTreeNode, WarehouseUpdate
+from app.services.document_numbering_service import DocumentNumberingService
 
 
 class WarehouseService:
@@ -43,12 +44,17 @@ class WarehouseService:
             DuplicateWarehouseCodeException: If warehouse code already exists
             WarehouseNotFoundException: If parent warehouse not found
         """
+        # Auto-generate code if not provided
+        code = warehouse_data.code
+        if not code:
+            code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "warehouse"
+            )
+
         # Check if warehouse code already exists
-        if self.warehouse_repo.warehouse_code_exists(
-            warehouse_data.code, organization_id
-        ):
+        if self.warehouse_repo.warehouse_code_exists(code, organization_id):
             raise DuplicateWarehouseCodeException(
-                f"Warehouse with code '{warehouse_data.code}' already exists"
+                f"Warehouse with code '{code}' already exists"
             )
 
         # Validate parent warehouse if provided
@@ -63,6 +69,7 @@ class WarehouseService:
 
         # Convert to dict and add organization/user info
         warehouse_dict = warehouse_data.model_dump()
+        warehouse_dict["code"] = code
         warehouse_dict["organization_id"] = organization_id
         warehouse_dict["created_by"] = user_id
         warehouse_dict["updated_by"] = user_id
