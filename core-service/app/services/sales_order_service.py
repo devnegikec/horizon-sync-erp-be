@@ -1429,8 +1429,11 @@ class SalesOrderService:
             if customer
             else None,
             "order_date": sales_order.order_date,
+            "delivery_date": sales_order.delivery_date,
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,
             "currency": sales_order.currency,
+            "reference_type": sales_order.reference_type,
+            "reference_id": sales_order.reference_id,
             "created_at": sales_order.created_at,
         }

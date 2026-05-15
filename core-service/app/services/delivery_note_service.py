@@ -149,6 +149,23 @@ class DeliveryNoteService:
                 required_state=["submitted"],
             )
 
+        # Check if an invoice already exists for this delivery note
+        existing_invoice = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.reference_type == "delivery_note",
+                Invoice.reference_id == delivery_note_id,
+                Invoice.organization_id == organization_id,
+            )
+            .first()
+        )
+        if existing_invoice:
+            raise StateError(
+                f"An invoice ({existing_invoice.invoice_no}) already exists for this delivery note",
+                current_state="invoiced",
+                required_state=["not_invoiced"],
+            )
+
         # Build a lookup of DN items by id
         dn_item_map = {item.id: item for item in dn.items}
 

@@ -227,5 +227,8 @@ class PickListService:
             "warehouse_id": pl.warehouse_id,
             "status": pl.status.value if pl.status else None,
             "pick_date": pl.pick_date,
+            "reference_type": pl.reference_type,
+            "reference_id": pl.reference_id,
+            "items_count": len(pl.items) if pl.items else 0,
             "created_at": pl.created_at,
         }

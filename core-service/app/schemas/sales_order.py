@@ -194,7 +194,10 @@ class SalesOrderListItem(BaseModel):
     customer: SalesOrderCustomerInfo | None = None
     status: str
     order_date: datetime
+    delivery_date: datetime | None = None
     grand_total: Decimal
+    reference_type: str | None = None
+    reference_id: UUID | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
