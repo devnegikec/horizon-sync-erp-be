@@ -316,6 +316,7 @@ class DeliveryNoteService:
 
         # Get reference data (sales_order or pick_list)
         reference_data = None
+        resolved_currency = None
         if dn.reference_type and dn.reference_id:
             if dn.reference_type == "sales_order":
                 ref_obj = (
@@ -330,6 +331,7 @@ class DeliveryNoteService:
                         "name": ref_obj.sales_order_no,
                         "code": ref_obj.sales_order_no,
                     }
+                    resolved_currency = ref_obj.currency
             elif dn.reference_type == "pick_list":
                 ref_obj = (
                     self.db.query(PickList)
@@ -343,6 +345,11 @@ class DeliveryNoteService:
                         "name": ref_obj.pick_list_no,
                         "code": ref_obj.pick_list_no,
                     }
+                    # Try to resolve currency from pick list's sales order
+                    if hasattr(ref_obj, 'sales_order_id') and ref_obj.sales_order_id:
+                        so = self.db.query(SalesOrder).filter(SalesOrder.id == ref_obj.sales_order_id).first()
+                        if so:
+                            resolved_currency = so.currency
 
         # Get items data with enriched item details
         items_data = []
@@ -382,6 +389,7 @@ class DeliveryNoteService:
             "customer": customer_data,
             "delivery_date": dn.delivery_date,
             "status": dn.status.value if dn.status else None,
+            "currency": resolved_currency or "INR",
             "warehouse_id": dn.warehouse_id,
             "warehouse": warehouse_data,
             "pick_list_id": dn.pick_list_id,

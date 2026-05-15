@@ -177,6 +177,7 @@ class SalesOrderResponse(SalesOrderBase):
     id: UUID
     organization_id: UUID
     customer: SalesOrderCustomerDetail | None = None
+    reference_no: str | None = None
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None

@@ -218,6 +218,9 @@ class OrganizationOnboardingService:
             "item_groups": self._seed_item_groups(organization_id, user_id, now),
         }
 
+        # Also set the system_config base_currency so the UI picks it up immediately
+        self._seed_system_config_base_currency(base_currency, str(user_id))
+
         self.db.commit()
 
         logger.info(
@@ -302,6 +305,21 @@ class OrganizationOnboardingService:
 
         logger.debug(f"Seeded {created} currencies for org {organization_id} (base: {code})")
         return {"created": created, "skipped": skipped}
+
+    # ------------------------------------------------------------------
+    # System Config — base currency
+    # ------------------------------------------------------------------
+
+    def _seed_system_config_base_currency(self, base_currency: str, updated_by: str) -> None:
+        """Write the base currency into system_config so the /currency/base-currency
+        endpoint returns the correct value immediately after onboarding."""
+        try:
+            from app.services.currency_service import CurrencyService
+            svc = CurrencyService(self.db)
+            svc.set_base_currency(base_currency.upper()[:3], updated_by)
+            logger.debug(f"system_config base_currency set to {base_currency}")
+        except Exception as exc:
+            logger.warning(f"Could not set system_config base_currency: {exc}")
 
     # ------------------------------------------------------------------
     # UOMs
