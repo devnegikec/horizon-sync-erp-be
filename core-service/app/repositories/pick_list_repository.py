@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 
 from app.models.pick_list import PickList, PickListItem
 
@@ -55,7 +55,9 @@ class PickListRepository:
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[PickList], int]:
-        q = self.db.query(PickList).filter(PickList.organization_id == organization_id)
+        q = self.db.query(PickList).options(
+            subqueryload(PickList.items)
+        ).filter(PickList.organization_id == organization_id)
         if warehouse_id is not None:
             q = q.filter(PickList.warehouse_id == warehouse_id)
         if status is not None:

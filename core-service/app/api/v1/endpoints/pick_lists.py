@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.authorization import PICK_LIST_CREATE, PICK_LIST_READ, PICK_LIST_UPDATE
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.sales_order import SalesOrder
 from app.schemas.common import PaginationMeta
 from app.schemas.pick_list import (
     PickListCreate,
@@ -57,8 +58,32 @@ async def list_pick_lists(
         sort_by=sort_by,
         sort_order=sort_order,
     )
+    # Look up sales order numbers for pick lists that reference sales orders
+    so_ids = [x['reference_id'] for x in items if x.get('reference_type') and x.get('reference_id')]
+    so_map: dict = {}
+    if so_ids:
+        sos = db.query(SalesOrder.id, SalesOrder.sales_order_no).filter(
+            SalesOrder.id.in_(so_ids)
+        ).all()
+        so_map = {str(so.id): so.sales_order_no for so in sos}
+
     return PickListListResponse(
-        pick_lists=[PickListListItem.model_validate(x) for x in items],
+        pick_lists=[
+            PickListListItem(
+                id=x['id'],
+                organization_id=x['organization_id'],
+                pick_list_no=x['pick_list_no'],
+                warehouse_id=x['warehouse_id'],
+                status=x['status'],
+                pick_date=x.get('pick_date'),
+                reference_type=x.get('reference_type'),
+                reference_id=x.get('reference_id'),
+                sales_order_no=so_map.get(str(x['reference_id'])) if x.get('reference_id') else None,
+                items_count=x.get('items_count', 0),
+                created_at=x['created_at'],
+            )
+            for x in items
+        ],
         pagination=PaginationMeta(**pagination),
     )
 

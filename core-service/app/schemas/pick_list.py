@@ -111,6 +111,10 @@ class PickListListItem(BaseModel):
     warehouse_id: UUID
     status: str
     pick_date: datetime | None
+    reference_type: str | None = None
+    reference_id: UUID | None = None
+    sales_order_no: str | None = None
+    items_count: int = 0
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
