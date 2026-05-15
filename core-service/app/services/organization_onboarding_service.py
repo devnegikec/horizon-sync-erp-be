@@ -242,32 +242,66 @@ class OrganizationOnboardingService:
         user_id: UUID,
         now: datetime,
     ) -> dict:
-        """Seed the base currency for the organization."""
+        """Seed the base currency and common additional currencies for the organization."""
         code = (base_currency or "USD").upper()[:3]
+        created = 0
+        skipped = 0
 
-        existing = self.currency_repo.get_by_code(code, organization_id)
-        if existing:
-            logger.debug(f"Currency {code} already exists for org {organization_id}, skipping")
-            return {"created": 0, "skipped": 1}
+        # Define currencies to seed: base currency + common international currencies
+        currencies_to_seed = [
+            {"code": code, "is_base": True},
+            {"code": "USD", "is_base": False},
+            {"code": "EUR", "is_base": False},
+            {"code": "GBP", "is_base": False},
+            {"code": "INR", "is_base": False},
+            {"code": "AED", "is_base": False},
+            {"code": "SAR", "is_base": False},
+            {"code": "CAD", "is_base": False},
+            {"code": "AUD", "is_base": False},
+            {"code": "JPY", "is_base": False},
+            {"code": "CNY", "is_base": False},
+            {"code": "SGD", "is_base": False},
+            {"code": "CHF", "is_base": False},
+        ]
+
+        # Remove duplicates (if base currency is already in the list)
+        seen_codes: set[str] = set()
+        unique_currencies = []
+        for c in currencies_to_seed:
+            if c["code"] not in seen_codes:
+                seen_codes.add(c["code"])
+                unique_currencies.append(c)
 
         # Clear any existing base currency flag (shouldn't exist for new org, but be safe)
         self.currency_repo.clear_base_currency(organization_id)
 
-        currency = CurrencyMaster(
-            id=uuid.uuid4(),
-            organization_id=organization_id,
-            code=code,
-            name=self._currency_name(code),
-            symbol=self._currency_symbol(code),
-            is_base_currency=True,
-            created_by=user_id,
-            updated_by=user_id,
-            created_at=now,
-            updated_at=now,
-        )
-        self.db.add(currency)
-        logger.debug(f"Seeded base currency {code} for org {organization_id}")
-        return {"created": 1, "skipped": 0}
+        for curr in unique_currencies:
+            curr_code = curr["code"]
+            existing = self.currency_repo.get_by_code(curr_code, organization_id)
+            if existing:
+                skipped += 1
+                # Ensure base currency flag is set correctly
+                if curr_code == code and not existing.is_base_currency:
+                    existing.is_base_currency = True
+                continue
+
+            currency = CurrencyMaster(
+                id=uuid.uuid4(),
+                organization_id=organization_id,
+                code=curr_code,
+                name=self._currency_name(curr_code),
+                symbol=self._currency_symbol(curr_code),
+                is_base_currency=(curr_code == code),
+                created_by=user_id,
+                updated_by=user_id,
+                created_at=now,
+                updated_at=now,
+            )
+            self.db.add(currency)
+            created += 1
+
+        logger.debug(f"Seeded {created} currencies for org {organization_id} (base: {code})")
+        return {"created": created, "skipped": skipped}
 
     # ------------------------------------------------------------------
     # UOMs
