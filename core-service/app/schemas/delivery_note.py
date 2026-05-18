@@ -103,6 +103,7 @@ class DeliveryNoteResponse(DeliveryNoteBase):
     organization_id: UUID
     customer: CustomerInfo | None = None
     warehouse: WarehouseInfo | None = None
+    pick_list_no: str | None = None
     reference: NestedReferenceWithType | None = None
     items: list[DeliveryNoteItemResponse] = Field(default_factory=list)
     extra_data: dict | None = None

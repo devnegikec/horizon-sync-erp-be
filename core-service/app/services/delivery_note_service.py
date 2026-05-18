@@ -291,6 +291,17 @@ class DeliveryNoteService:
             self.db.rollback()
             raise e
 
+    def _resolve_pick_list_no(self, dn) -> str | None:
+        """Resolve the human-readable pick list number from pick_list_id."""
+        if not dn.pick_list_id:
+            return None
+        try:
+            from app.models.pick_list import PickList
+            pl = self.db.query(PickList).filter(PickList.id == dn.pick_list_id).first()
+            return pl.pick_list_no if pl else None
+        except Exception:
+            return None
+
     def _to_response(self, dn) -> dict:
         from app.models.item import Item
         from app.models.pick_list import PickList
@@ -393,6 +404,7 @@ class DeliveryNoteService:
             "warehouse_id": dn.warehouse_id,
             "warehouse": warehouse_data,
             "pick_list_id": dn.pick_list_id,
+            "pick_list_no": self._resolve_pick_list_no(dn),
             "reference_type": dn.reference_type,
             "reference_id": dn.reference_id,
             "reference": reference_data,
