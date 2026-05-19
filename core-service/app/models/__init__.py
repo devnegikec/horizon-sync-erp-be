@@ -3,8 +3,20 @@
 from app.models.account_audit_log import AccountAuditLog, AuditAction
 from app.models.account_balance import AccountBalance
 
+# Admin Portal module
+from app.models.admin import (
+    AdminAuditLog,
+    AdminNotification,
+    UserActivityLog,
+)
+
+# Analytics module
 # Analytics module
 from app.models.analytics import MetaCampaign
+
+# Audit Trail module
+from app.models.audit_log import AuditAction as AuditLogAction
+from app.models.audit_log import AuditLog
 from app.models.bank_account import BankAccount, BankAccountHistory
 from app.models.bank_reconciliation import BankReconciliation
 from app.models.bank_transaction import BankTransaction
@@ -50,10 +62,12 @@ from app.models.base import (
     WarehouseType,
 )
 from app.models.batch import Batch
+from app.models.bin_stock_level import BinStockLevel
 
 # QR Products module
 from app.models.brand import Brand
 
+# Brand Trust module
 # Brand Trust module
 from app.models.brand_trust import (
     BrandIndustry,
@@ -80,13 +94,22 @@ from app.models.customer import Customer
 from app.models.default_account import DefaultAccount
 
 # Destinations module
+# Destinations module
 from app.models.destination_market import DestinationMarket
+from app.models.dispatch_record import DispatchRecord
 from app.models.exchange_rate import ExchangeRate
+
+# Feature Flag module
+from app.models.feature_flag import FeatureFlag
+from app.models.gate_verification import GateVerificationItem, GateVerificationSession
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.journal_entry import JournalEntry, JournalEntryLine
+from app.models.location_allocation import LocationAllocation
+from app.models.location_scan import LocationScan
 
+# Messaging module
 # Messaging module
 from app.models.messaging import (
     BulkMessageJob,
@@ -105,16 +128,30 @@ from app.models.payment_reference import PaymentReference
 from app.models.product_item import ProductItem
 
 # Public Marketing module
+# Public Marketing module
 from app.models.public_submission import PublicSubmission
+from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
 from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.quotation import Quotation, QuotationItem
+from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+
+# Reminder Configuration module (Task 1D-1)
+from app.models.reminder_config import (
+    ReminderConfig,
+    ReminderLog,
+    ReminderStage,
+    ReminderStatus,
+    ReminderType,
+)
 from app.models.sales_order import SalesOrder, SalesOrderItem
+from app.models.scan_session import ScanSession, ScanSessionItem
 from app.models.serial_no import SerialNo
 
+# URL Management module
 # URL Management module
 from app.models.short_url import ShortURL
 from app.models.stock_entry import StockEntry, StockEntryItem
@@ -131,64 +168,27 @@ from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
 
+# Warehouse Bin Management module
+from app.models.warehouse_location import (
+    AllocationType,
+    GateVerificationItemStatus,
+    GateVerificationStatus,
+    LocationType,
+    PutAwayListItemStatus,
+    PutAwayListStatus,
+    ReceivingSlipItemFlag,
+    ReceivingSlipStatus,
+    ScanSessionStatus,
+    ScanSessionType,
+    ScanType,
+    WarehouseLocation,
+    WorkerTaskStatus,
+    WorkerTaskType,
+)
+
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
-
-# Analytics module
-from app.models.analytics import MetaCampaign
-
-# URL Management module
-from app.models.short_url import ShortURL
-
-# Destinations module
-from app.models.destination_market import DestinationMarket
-
-# Public Marketing module
-from app.models.public_submission import PublicSubmission
-
-# Admin Portal module
-from app.models.admin import (
-    AdminAuditLog,
-    AdminNotification,
-    UserActivityLog,
-)
-
-# Feature Flag module
-from app.models.feature_flag import FeatureFlag
-
-# Audit Trail module
-from app.models.audit_log import AuditAction as AuditLogAction
-from app.models.audit_log import AuditLog
-
-# Brand Trust module
-from app.models.brand_trust import (
-    BrandIndustry,
-    BrandTrustQuestion,
-    BrandTrustAssessment,
-    BrandTrustAnswer,
-)
-
-# Messaging module
-from app.models.messaging import (
-    MessageTemplate,
-    BulkMessageJob,
-    ScheduledMessage,
-    SMSReport,
-    WhatsAppReport,
-    RCSCredential,
-    RCSTemplate,
-    RCSReport,
-    MessageCredit,
-)
-
-# Reminder Configuration module (Task 1D-1)
-from app.models.reminder_config import (
-    ReminderConfig,
-    ReminderLog,
-    ReminderType,
-    ReminderStage,
-    ReminderStatus,
-)
+from app.models.worker_task import WorkerTask
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch
@@ -355,6 +355,34 @@ __all__ = [
     # Audit Trail module
     "AuditLog",
     "AuditLogAction",
+    # Warehouse Bin Management module
+    "LocationType",
+    "PutAwayListStatus",
+    "PutAwayListItemStatus",
+    "WorkerTaskType",
+    "WorkerTaskStatus",
+    "ScanType",
+    "AllocationType",
+    "ScanSessionType",
+    "ScanSessionStatus",
+    "ReceivingSlipStatus",
+    "ReceivingSlipItemFlag",
+    "GateVerificationStatus",
+    "GateVerificationItemStatus",
+    "WarehouseLocation",
+    "BinStockLevel",
+    "LocationAllocation",
+    "ScanSession",
+    "ScanSessionItem",
+    "ReceivingSlip",
+    "ReceivingSlipItem",
+    "GateVerificationSession",
+    "GateVerificationItem",
+    "DispatchRecord",
+    "WorkerTask",
+    "LocationScan",
+    "PutAwayList",
+    "PutAwayListItem",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

@@ -1,7 +1,6 @@
 """Charge Template Pydantic schemas"""
 
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -22,32 +21,42 @@ class ChargeTemplateCreate(BaseModel):
         ..., description="Calculation method: FIXED or PERCENTAGE"
     )
 
-    fixed_amount: Optional[Decimal] = Field(
+    fixed_amount: Decimal | None = Field(
         None, ge=0, description="Fixed amount (required when calculation_method=FIXED)"
     )
-    percentage_rate: Optional[Decimal] = Field(
-        None, ge=0, description="Percentage rate (required when calculation_method=PERCENTAGE)"
+    percentage_rate: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Percentage rate (required when calculation_method=PERCENTAGE)",
     )
-    base_on: Optional[str] = Field(
+    base_on: str | None = Field(
         None, description="Base for percentage: Net_Total or Grand_Total"
     )
 
     account_head_id: UUID = Field(..., description="GL account UUID for this charge")
 
     is_active: bool = Field(default=True, description="Whether the template is active")
-    applicability_rules: Optional[dict] = Field(None, description="Optional applicability rules")
-    extra_data: Optional[dict] = Field(None, description="Optional extra data")
+    applicability_rules: dict | None = Field(
+        None, description="Optional applicability rules"
+    )
+    extra_data: dict | None = Field(None, description="Optional extra data")
 
     @model_validator(mode="after")
     def validate_calculation_fields(self) -> "ChargeTemplateCreate":
         if self.calculation_method == "FIXED":
             if self.fixed_amount is None:
-                raise ValueError("fixed_amount is required when calculation_method is FIXED")
+                raise ValueError(
+                    "fixed_amount is required when calculation_method is FIXED"
+                )
         elif self.calculation_method == "PERCENTAGE":
             if self.percentage_rate is None:
-                raise ValueError("percentage_rate is required when calculation_method is PERCENTAGE")
+                raise ValueError(
+                    "percentage_rate is required when calculation_method is PERCENTAGE"
+                )
             if self.base_on is None:
-                raise ValueError("base_on is required when calculation_method is PERCENTAGE")
+                raise ValueError(
+                    "base_on is required when calculation_method is PERCENTAGE"
+                )
             if self.base_on not in ("Net_Total", "Grand_Total"):
                 raise ValueError("base_on must be Net_Total or Grand_Total")
         else:
@@ -81,20 +90,20 @@ class ChargeTemplateResponse(BaseModel):
     organization_id: UUID
     template_code: str
     template_name: str
-    description: Optional[str] = None
+    description: str | None = None
     charge_type: str
     calculation_method: str
-    fixed_amount: Optional[Decimal] = None
-    percentage_rate: Optional[Decimal] = None
-    base_on: Optional[str] = None
+    fixed_amount: Decimal | None = None
+    percentage_rate: Decimal | None = None
+    base_on: str | None = None
     account_head_id: UUID
     is_active: bool
-    applicability_rules: Optional[dict] = None
-    extra_data: Optional[dict] = None
-    created_by: Optional[UUID] = None
-    updated_by: Optional[UUID] = None
-    created_at: Optional[object] = None
-    updated_at: Optional[object] = None
+    applicability_rules: dict | None = None
+    extra_data: dict | None = None
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
+    created_at: object | None = None
+    updated_at: object | None = None
 
 
 class ChargeTemplateListItem(BaseModel):
@@ -109,8 +118,8 @@ class ChargeTemplateListItem(BaseModel):
     charge_type: str
     calculation_method: str
     is_active: bool
-    created_at: Optional[object] = None
-    updated_at: Optional[object] = None
+    created_at: object | None = None
+    updated_at: object | None = None
 
 
 class ChargeTemplateListResponse(BaseModel):

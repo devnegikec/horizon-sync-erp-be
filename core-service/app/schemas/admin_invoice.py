@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict
 
 from app.schemas.common import PaginationMeta
 
-
 # ── Admin Invoice Schemas ────────────────────────────────────────────
 
 
@@ -38,10 +37,10 @@ class AdminInvoiceListItem(BaseModel):
     grand_total: Decimal
     outstanding_amount: Decimal | float | None = None
     created_at: datetime
-    
+
     # Subscription billing fields (Task 1B-1)
     billing_cycle: str | None = None
-    subscription_period_start: datetime | None = None 
+    subscription_period_start: datetime | None = None
     subscription_period_end: datetime | None = None
     seat_count: int | None = None
     credit_usage: Decimal | None = None

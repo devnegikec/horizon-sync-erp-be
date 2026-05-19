@@ -32,6 +32,9 @@ DOCUMENT_TYPES = [
     "stock_entry",
     "stock_reconciliation",
     "journal_entry",
+    "receiving_slip",
+    "put_away_list",
+    "dispatch",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -53,6 +56,9 @@ DEFAULT_PREFIXES = {
     "stock_entry": "SE",
     "stock_reconciliation": "SREC",
     "journal_entry": "JE",
+    "receiving_slip": "RS",
+    "put_away_list": "PA",
+    "dispatch": "DSP",
 }
 
 

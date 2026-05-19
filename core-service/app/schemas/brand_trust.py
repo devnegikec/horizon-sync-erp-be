@@ -7,8 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Industries ────────────────────────────────────────────────────────────────
+
 
 class BrandIndustryResponse(BaseModel):
     id: UUID
@@ -20,6 +20,7 @@ class BrandIndustryResponse(BaseModel):
 
 
 # ── Questions ─────────────────────────────────────────────────────────────────
+
 
 class BrandTrustQuestionResponse(BaseModel):
     id: UUID
@@ -35,6 +36,7 @@ class BrandTrustQuestionResponse(BaseModel):
 
 
 # ── Assessment ────────────────────────────────────────────────────────────────
+
 
 class StartAssessmentRequest(BaseModel):
     industry_id: UUID | None = None
@@ -64,9 +66,12 @@ class AssessmentListResponse(BaseModel):
 
 # ── Submit ────────────────────────────────────────────────────────────────────
 
+
 class AnswerItem(BaseModel):
     question_id: UUID
-    answer_value: str = Field(..., description="Rating 1-5, 'yes'/'no', free text, or option")
+    answer_value: str = Field(
+        ..., description="Rating 1-5, 'yes'/'no', free text, or option"
+    )
 
 
 class SubmitAssessmentRequest(BaseModel):
@@ -74,6 +79,7 @@ class SubmitAssessmentRequest(BaseModel):
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
+
 
 class SectionScore(BaseModel):
     section: str
@@ -87,13 +93,14 @@ class AssessmentReportResponse(BaseModel):
     organization_id: UUID
     industry_name: str | None
     overall_score: Decimal
-    grade: str                          # A / B / C / D / F
+    grade: str  # A / B / C / D / F
     section_scores: list[SectionScore]
     submitted_at: datetime | None
     answers: list[dict[str, Any]]
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
+
 
 class SendReportEmailRequest(BaseModel):
     to: str = Field(..., description="Recipient email address")

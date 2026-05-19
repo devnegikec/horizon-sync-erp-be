@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Create / Update ─────────────────────────────────────────────────
+
 
 class AdminOrgCreate(BaseModel):
     """Schema for creating a new organization via admin portal."""
@@ -30,7 +30,9 @@ class AdminOrgCreate(BaseModel):
         pattern=r"^(enterprise|business|startup|individual)$",
     )
     industry: str | None = Field(None, max_length=100)
-    base_currency: str = Field(default="USD", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    base_currency: str = Field(
+        default="USD", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
     status: str = Field(
         default="active",
         pattern=r"^(active|inactive|suspended|trial)$",
@@ -56,7 +58,9 @@ class AdminOrgUpdate(BaseModel):
         None, pattern=r"^(enterprise|business|startup|individual)$"
     )
     industry: str | None = Field(None, max_length=100)
-    base_currency: str | None = Field(None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    base_currency: str | None = Field(
+        None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
     status: str | None = Field(None, pattern=r"^(active|inactive|suspended|trial)$")
     is_active: bool | None = None
     settings: dict | None = None
@@ -64,6 +68,7 @@ class AdminOrgUpdate(BaseModel):
 
 
 # ── List / Detail responses ──────────────────────────────────────────
+
 
 class AdminOrgListItem(BaseModel):
     """Single organization in a paginated list."""
@@ -143,6 +148,7 @@ class AdminOrgDetailResponse(BaseModel):
 
 
 # ── Billing response ─────────────────────────────────────────────────
+
 
 class AdminOrgBillingResponse(BaseModel):
     """Billing / subscription summary for a single organization."""
