@@ -29,7 +29,7 @@ class CustomerBase(BaseModel):
     phone: str | None = Field(None, max_length=50)
 
     # Address
-    address: str | None = None
+    address: str | None = Field(None, max_length=1000)
     address_line1: str | None = Field(None, max_length=255)
     address_line2: str | None = Field(None, max_length=255)
     city: str | None = Field(None, max_length=100)
@@ -69,7 +69,7 @@ class CustomerUpdate(BaseModel):
     phone: str | None = Field(None, max_length=50)
 
     # Address
-    address: str | None = None
+    address: str | None = Field(None, max_length=1000)
     address_line1: str | None = Field(None, max_length=255)
     address_line2: str | None = Field(None, max_length=255)
     city: str | None = Field(None, max_length=100)

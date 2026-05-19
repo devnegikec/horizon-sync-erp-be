@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     communications,
     currencies,
     currency,
+    customer_bulk,
     customers,
     delivery_notes,
     destinations,
@@ -153,6 +154,7 @@ api_router.include_router(
     tags=["Scan Events"],
 )
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
+api_router.include_router(customer_bulk.router)
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["Suppliers"])
 api_router.include_router(
     chart_of_accounts.router,

@@ -9,13 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class ChargeTemplateCreate(BaseModel):
     """Schema for creating a charge template"""
 
-    template_code: str = Field(
-        ..., min_length=1, max_length=100, description="Unique template code"
-    )
-    template_name: str = Field(
-        ..., min_length=1, max_length=255, description="Template name"
-    )
-    description: str | None = Field(None, description="Optional description")
+    template_code: str = Field(..., min_length=1, max_length=100, description="Unique template code")
+    template_name: str = Field(..., min_length=1, max_length=255, description="Template name")
+    description: Optional[str] = Field(None, max_length=1000, description="Optional description")
 
     charge_type: str = Field(
         ...,
@@ -71,18 +67,18 @@ class ChargeTemplateCreate(BaseModel):
 class ChargeTemplateUpdate(BaseModel):
     """Schema for updating a charge template (all fields optional)"""
 
-    template_code: str | None = Field(None, min_length=1, max_length=100)
-    template_name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
-    charge_type: str | None = None
-    calculation_method: str | None = None
-    fixed_amount: Decimal | None = Field(None, ge=0)
-    percentage_rate: Decimal | None = Field(None, ge=0)
-    base_on: str | None = None
-    account_head_id: UUID | None = None
-    is_active: bool | None = None
-    applicability_rules: dict | None = None
-    extra_data: dict | None = None
+    template_code: Optional[str] = Field(None, min_length=1, max_length=100)
+    template_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    charge_type: Optional[str] = None
+    calculation_method: Optional[str] = None
+    fixed_amount: Optional[Decimal] = Field(None, ge=0)
+    percentage_rate: Optional[Decimal] = Field(None, ge=0)
+    base_on: Optional[str] = None
+    account_head_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    applicability_rules: Optional[dict] = None
+    extra_data: Optional[dict] = None
 
 
 class ChargeTemplateResponse(BaseModel):

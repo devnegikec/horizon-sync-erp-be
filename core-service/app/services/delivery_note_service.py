@@ -149,6 +149,23 @@ class DeliveryNoteService:
                 required_state=["submitted"],
             )
 
+        # Check if an invoice already exists for this delivery note
+        existing_invoice = (
+            self.db.query(Invoice)
+            .filter(
+                Invoice.reference_type == "delivery_note",
+                Invoice.reference_id == delivery_note_id,
+                Invoice.organization_id == organization_id,
+            )
+            .first()
+        )
+        if existing_invoice:
+            raise StateError(
+                f"An invoice ({existing_invoice.invoice_no}) already exists for this delivery note",
+                current_state="invoiced",
+                required_state=["not_invoiced"],
+            )
+
         # Build a lookup of DN items by id
         dn_item_map = {item.id: item for item in dn.items}
 
@@ -274,6 +291,17 @@ class DeliveryNoteService:
             self.db.rollback()
             raise e
 
+    def _resolve_pick_list_no(self, dn) -> str | None:
+        """Resolve the human-readable pick list number from pick_list_id."""
+        if not dn.pick_list_id:
+            return None
+        try:
+            from app.models.pick_list import PickList
+            pl = self.db.query(PickList).filter(PickList.id == dn.pick_list_id).first()
+            return pl.pick_list_no if pl else None
+        except Exception:
+            return None
+
     def _to_response(self, dn) -> dict:
         from app.models.item import Item
         from app.models.pick_list import PickList
@@ -299,6 +327,7 @@ class DeliveryNoteService:
 
         # Get reference data (sales_order or pick_list)
         reference_data = None
+        resolved_currency = None
         if dn.reference_type and dn.reference_id:
             if dn.reference_type == "sales_order":
                 ref_obj = (
@@ -313,6 +342,7 @@ class DeliveryNoteService:
                         "name": ref_obj.sales_order_no,
                         "code": ref_obj.sales_order_no,
                     }
+                    resolved_currency = ref_obj.currency
             elif dn.reference_type == "pick_list":
                 ref_obj = (
                     self.db.query(PickList)
@@ -326,6 +356,11 @@ class DeliveryNoteService:
                         "name": ref_obj.pick_list_no,
                         "code": ref_obj.pick_list_no,
                     }
+                    # Try to resolve currency from pick list's sales order
+                    if hasattr(ref_obj, 'sales_order_id') and ref_obj.sales_order_id:
+                        so = self.db.query(SalesOrder).filter(SalesOrder.id == ref_obj.sales_order_id).first()
+                        if so:
+                            resolved_currency = so.currency
 
         # Get items data with enriched item details
         items_data = []
@@ -365,9 +400,11 @@ class DeliveryNoteService:
             "customer": customer_data,
             "delivery_date": dn.delivery_date,
             "status": dn.status.value if dn.status else None,
+            "currency": resolved_currency or "INR",
             "warehouse_id": dn.warehouse_id,
             "warehouse": warehouse_data,
             "pick_list_id": dn.pick_list_id,
+            "pick_list_no": self._resolve_pick_list_no(dn),
             "reference_type": dn.reference_type,
             "reference_id": dn.reference_id,
             "reference": reference_data,

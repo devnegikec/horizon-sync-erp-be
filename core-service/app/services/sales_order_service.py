@@ -29,6 +29,21 @@ class SalesOrderService:
         self.tax_template_repo = TaxTemplateRepository(db)
         self.tax_engine = TaxCalculationEngine(db)
 
+    def _resolve_reference_no(self, sales_order) -> str | None:
+        """Resolve the human-readable reference number (e.g. quotation_no) from reference_id."""
+        if not sales_order.reference_type or not sales_order.reference_id:
+            return None
+        try:
+            if sales_order.reference_type == "Quotation":
+                from app.models.quotation import Quotation
+                quotation = self.db.query(Quotation).filter(
+                    Quotation.id == sales_order.reference_id
+                ).first()
+                return quotation.quotation_no if quotation else None
+        except Exception:
+            pass
+        return None
+
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         payload = dict(data)
         payload["organization_id"] = organization_id
@@ -1373,6 +1388,7 @@ class SalesOrderService:
             "discount_amount": getattr(sales_order, "discount_amount", None) or 0,
             "reference_type": sales_order.reference_type,
             "reference_id": sales_order.reference_id,
+            "reference_no": self._resolve_reference_no(sales_order),
             "remarks": sales_order.remarks,
             "submitted_at": sales_order.submitted_at,
             "extra_data": sales_order.extra_data,
@@ -1429,8 +1445,11 @@ class SalesOrderService:
             if customer
             else None,
             "order_date": sales_order.order_date,
+            "delivery_date": sales_order.delivery_date,
             "status": sales_order.status.value if sales_order.status else None,
             "grand_total": sales_order.grand_total,
             "currency": sales_order.currency,
+            "reference_type": sales_order.reference_type,
+            "reference_id": sales_order.reference_id,
             "created_at": sales_order.created_at,
         }

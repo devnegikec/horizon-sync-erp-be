@@ -232,12 +232,13 @@ def get_core_service_client() -> CoreServiceClient | None:
     """
     Get CoreServiceClient instance for service-to-service communication.
 
-    Returns None if auto chart creation is disabled in settings.
+    Used for organization onboarding (currency seeding, UOMs, tax templates, item groups)
+    and optionally for chart of accounts creation.
 
     Returns:
-        CoreServiceClient instance or None
+        CoreServiceClient instance or None if core_service_url is not configured
     """
-    if not settings.enable_auto_chart_creation:
+    if not settings.core_service_url:
         return None
 
     return CoreServiceClient(

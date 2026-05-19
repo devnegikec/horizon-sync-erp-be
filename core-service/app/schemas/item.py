@@ -14,7 +14,7 @@ class ItemBase(BaseModel):
 
     item_code: str | None = Field(None, max_length=100)
     item_name: str = Field(..., min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
 
     # Classification
     item_group_id: UUID | None = None
@@ -36,8 +36,8 @@ class ItemBase(BaseModel):
     # Batch and Serial
     has_batch_no: bool = False
     has_serial_no: bool = False
-    batch_number_series: str | None = None
-    serial_number_series: str | None = None
+    batch_number_series: str | None = Field(None, max_length=100)
+    serial_number_series: str | None = Field(None, max_length=100)
 
     # Pricing
     standard_rate: Decimal = Field(default=Decimal("0.00"), ge=0)
@@ -83,7 +83,7 @@ class ItemUpdate(BaseModel):
     """Schema for updating an item (all fields optional)"""
 
     item_name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
 
     # Classification
     item_group_id: UUID | None = None
@@ -105,8 +105,8 @@ class ItemUpdate(BaseModel):
     # Batch and Serial
     has_batch_no: bool | None = None
     has_serial_no: bool | None = None
-    batch_number_series: str | None = None
-    serial_number_series: str | None = None
+    batch_number_series: str | None = Field(None, max_length=100)
+    serial_number_series: str | None = Field(None, max_length=100)
 
     # Pricing
     standard_rate: Decimal | None = Field(None, ge=0)

@@ -14,6 +14,7 @@ from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.repositories.bulk_import_repository import BulkImportRepository
 from app.schemas.bulk_operations import ImportErrorDetail
+from app.services.document_numbering_service import DocumentNumberingService
 
 logger = logging.getLogger(__name__)
 
@@ -236,40 +237,29 @@ class BulkImportService:
 
                         item_groups_cache[item_group_name] = item_group_id
 
-                # Check for duplicate item_code in organization
+                # Auto-generate item_code (ignore any item_code from CSV)
+                auto_item_code = DocumentNumberingService(self.db).get_next_number(
+                    organization_id, "item"
+                )
+
+                # Check if item with same name already exists — update instead of create
                 existing_item = (
                     self.db.query(Item)
                     .filter(
                         Item.organization_id == organization_id,
-                        Item.item_code == row["item_code"].strip(),
+                        Item.item_name == row["item_name"].strip(),
                     )
                     .first()
                 )
 
-                if existing_item:
-                    failed_rows += 1
-                    error_details.append(
-                        {
-                            "row_number": row_number,
-                            "errors": [
-                                f"Item code '{row['item_code']}' already exists"
-                            ],
-                            "data": row,
-                        }
-                    )
-                    continue
-
-                # Create item
+                # Create or update item
                 try:
                     # Map standard fields
                     item_data = {
-                        "organization_id": organization_id,
-                        "item_code": row["item_code"].strip(),
                         "item_name": row["item_name"].strip(),
                         "item_group_id": item_group_id
                         or row.get("item_group_id")
                         or None,
-                        "created_by": user_id,
                         "updated_by": user_id,
                     }
 
@@ -334,10 +324,21 @@ class BulkImportService:
                                     val = val.strip()
                                 item_data[col] = val or None
 
-                    item = Item(**item_data)
+                    if existing_item:
+                        # UPDATE existing item with CSV data
+                        for key, value in item_data.items():
+                            if value is not None:
+                                setattr(existing_item, key, value)
+                        self.db.commit()
+                    else:
+                        # CREATE new item
+                        item_data["organization_id"] = organization_id
+                        item_data["item_code"] = auto_item_code
+                        item_data["created_by"] = user_id
+                        item = Item(**item_data)
+                        self.db.add(item)
+                        self.db.commit()
 
-                    self.db.add(item)
-                    self.db.commit()
                     successful_rows += 1
 
                 except Exception as e:

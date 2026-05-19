@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, subqueryload
 
 from app.models.base import StockEntryStatus, StockEntryType
 from app.models.stock_entry import StockEntry, StockEntryItem
@@ -22,10 +22,8 @@ class StockEntryRepository:
             it["organization_id"] = entry.organization_id
             self.db.add(StockEntryItem(**it))
         self.db.commit()
-        self.db.refresh(entry)
-        # Eagerly load relationships
-        self.db.refresh(entry, ["from_warehouse", "to_warehouse", "items"])
-        return entry
+        # Re-fetch with all relationships eagerly loaded
+        return self.get_by_id(entry.id, entry.organization_id, load_items=True)
 
     def get_by_id(
         self, entry_id: UUID, organization_id: UUID, load_items: bool = True
@@ -42,7 +40,7 @@ class StockEntryRepository:
             )
         )
         if load_items:
-            q = q.options(joinedload(StockEntry.items))
+            q = q.options(joinedload(StockEntry.items).joinedload(StockEntryItem.item))
         return q.first()
 
     def get_by_no(

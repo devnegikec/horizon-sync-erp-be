@@ -299,8 +299,8 @@ class InvoiceService:
         # Get reference document number based on reference_type
         reference_no = None
         if inv.reference_type and inv.reference_id:
-            reference_type_lower = inv.reference_type.lower()
-            if reference_type_lower == "sales order":
+            reference_type_lower = inv.reference_type.lower().replace(" ", "_")
+            if reference_type_lower in ("sales_order", "salesorder"):
                 from app.models.sales_order import SalesOrder
 
                 ref_doc = (
@@ -310,7 +310,7 @@ class InvoiceService:
                 )
                 if ref_doc:
                     reference_no = ref_doc.sales_order_no
-            elif reference_type_lower == "delivery note":
+            elif reference_type_lower in ("delivery_note", "deliverynote"):
                 from app.models.delivery_note import DeliveryNote
 
                 ref_doc = (
@@ -320,7 +320,7 @@ class InvoiceService:
                 )
                 if ref_doc:
                     reference_no = ref_doc.delivery_note_no
-            elif reference_type_lower == "pick list":
+            elif reference_type_lower in ("pick_list", "picklist"):
                 from app.models.pick_list import PickList
 
                 ref_doc = (

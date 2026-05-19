@@ -84,7 +84,7 @@ class DeliveryNoteBase(BaseModel):
     pick_list_id: UUID | None = None
     reference_type: str | None = None
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class DeliveryNoteCreate(DeliveryNoteBase):
@@ -95,7 +95,7 @@ class DeliveryNoteUpdate(BaseModel):
     delivery_date: datetime | None = None
     status: str | None = Field(None, pattern="^(draft|submitted|cancelled)$")
     warehouse_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class DeliveryNoteResponse(DeliveryNoteBase):
@@ -103,6 +103,7 @@ class DeliveryNoteResponse(DeliveryNoteBase):
     organization_id: UUID
     customer: CustomerInfo | None = None
     warehouse: WarehouseInfo | None = None
+    pick_list_no: str | None = None
     reference: NestedReferenceWithType | None = None
     items: list[DeliveryNoteItemResponse] = Field(default_factory=list)
     extra_data: dict | None = None

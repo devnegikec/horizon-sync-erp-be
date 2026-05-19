@@ -35,7 +35,7 @@ class StockEntryItemBase(BaseModel):
     valuation_rate: Decimal | float | None = None
     batch_no: str | None = Field(None, max_length=100)
     serial_nos: list[str] | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
     extra_data: dict | None = None
 
 
@@ -52,7 +52,7 @@ class StockEntryItemUpdate(BaseModel):
     valuation_rate: Decimal | float | None = None
     batch_no: str | None = Field(None, max_length=100)
     serial_nos: list[str] | None = None
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
     extra_data: dict | None = None
 
 
@@ -61,6 +61,8 @@ class StockEntryItemResponse(BaseModel):
     organization_id: UUID
     stock_entry_id: UUID
     item_id: UUID
+    item_name: str | None = None
+    item_code: str | None = None
     source_warehouse_id: UUID | None = None
     target_warehouse_id: UUID | None = None
     qty: Decimal
@@ -91,7 +93,7 @@ class StockEntryBase(BaseModel):
     status: str = Field(default="draft")  # draft, submitted, cancelled
     reference_type: str | None = Field(None, max_length=50)
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     total_value: Decimal | float | None = None
     expense_account_id: UUID | None = None
     cost_center_id: UUID | None = None
@@ -112,7 +114,7 @@ class StockEntryUpdate(BaseModel):
     status: str | None = None
     reference_type: str | None = Field(None, max_length=50)
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     total_value: Decimal | float | None = None
     expense_account_id: UUID | None = None
     cost_center_id: UUID | None = None
@@ -218,7 +220,13 @@ def stock_entry_to_response(e: StockEntry) -> StockEntryResponse:
 
     items = []
     if hasattr(e, "items") and e.items:
-        items = [StockEntryItemResponse.model_validate(item) for item in e.items]
+        for item in e.items:
+            item_resp = StockEntryItemResponse.model_validate(item)
+            # Populate item_name and item_code from the related Item model
+            if hasattr(item, "item") and item.item:
+                item_resp.item_name = item.item.item_name
+                item_resp.item_code = item.item.item_code
+            items.append(item_resp)
 
     return StockEntryResponse(
         id=e.id,
