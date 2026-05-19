@@ -37,6 +37,30 @@ def test_create_invitation_with_team_ids_as_uuids(
     assert isinstance(result["id"], UUID)
 
 
+def test_create_invitation_with_owner_full_access(db_session, test_organization, test_user):
+    service = InvitationService(db_session)
+    invitation_data = {
+        "organization_id": test_organization.id,
+        "email": "ownerinvite@example.com",
+        "first_name": "Owner",
+        "last_name": "User",
+        "role_id": None,
+        "team_ids": [],
+        "message": "Welcome!",
+        "extra_data": {},
+    }
+    inviter_permissions = ["*.*"]
+    result = service.create_invitation(
+        invitation_data,
+        inviter_id=test_user.id,
+        inviter_permissions=inviter_permissions,
+    )
+
+    assert result["email"] == "ownerinvite@example.com"
+    assert result["status"] == "pending"
+    assert isinstance(result["id"], UUID)
+
+
 def test_duplicate_invitation_cancels_old(db_session, test_organization, test_user):
     service = InvitationService(db_session)
     email = "dupe@example.com"

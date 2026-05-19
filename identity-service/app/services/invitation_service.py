@@ -3,11 +3,12 @@
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.base import UserStatus
 from app.core.exceptions import (
     InvitationAlreadyAcceptedException,
     InvitationExpiredException,
@@ -15,6 +16,7 @@ from app.core.exceptions import (
     PermissionDeniedException,
     UserAlreadyExistsException,
 )
+from app.core.authorization import has_permission, is_system_admin
 from app.repositories.invitation_repository import InvitationRepository
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
@@ -147,7 +149,7 @@ class InvitationService:
         from uuid import uuid4
 
         # Set expiration
-        expires_at = datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=INVITATION_EXPIRY_DAYS)
 
         # Extract custom_permission_ids and store in extra_data (not a model column)
         custom_permission_ids = invitation_data.pop("custom_permission_ids", None) or []
@@ -322,7 +324,7 @@ class InvitationService:
 
         # Generate new token
         token, token_hash = _generate_invitation_token()
-        expires_at = datetime.utcnow() + timedelta(days=INVITATION_EXPIRY_DAYS)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=INVITATION_EXPIRY_DAYS)
 
         self.invitation_repo.update_invitation(
             invitation,
@@ -378,7 +380,7 @@ class InvitationService:
             invitation,
             {
                 "status": "accepted",
-                "accepted_at": datetime.utcnow(),
+                "accepted_at": datetime.now(timezone.utc),
                 "accepted_user_id": user.id,
             },
         )
@@ -408,7 +410,7 @@ class InvitationService:
         if invitation.status == "cancelled":
             raise InvitationNotFoundException("Invitation has been cancelled")
 
-        if invitation.status == "expired" or invitation.expires_at < datetime.utcnow():
+        if invitation.status == "expired" or invitation.expires_at < datetime.now(timezone.utc):
             self.invitation_repo.update_invitation(invitation, {"status": "expired"})
             raise InvitationExpiredException("Invitation has expired")
 
@@ -431,9 +433,10 @@ class InvitationService:
             "password_hash": hash_password(password),
             "first_name": first_name or invitation.first_name or "",
             "last_name": last_name or invitation.last_name or "",
+            "status": UserStatus.ACTIVE,
             "is_active": True,
             "email_verified": True,
-            "email_verified_at": datetime.utcnow(),
+            "email_verified_at": datetime.now(timezone.utc),
         }
         return self.user_repo.create_user(user_data)
 
@@ -451,7 +454,7 @@ class InvitationService:
                 is_active=True,
                 is_primary=True,
                 status="active",
-                joined_at=datetime.utcnow(),
+                joined_at=datetime.now(timezone.utc),
             )
             self.db.add(user_org_role)
 
@@ -508,7 +511,7 @@ class InvitationService:
             is_active=True,
             is_primary=not has_primary_role,  # Primary only if no other role
             status="active",
-            joined_at=datetime.utcnow(),
+            joined_at=datetime.now(timezone.utc),
         )
         self.db.add(custom_user_org_role)
 
@@ -533,7 +536,7 @@ class InvitationService:
                 is_active=True,
                 is_primary=True,
                 status="active",
-                joined_at=datetime.utcnow(),
+                joined_at=datetime.now(timezone.utc),
             )
             self.db.add(user_org_role)
 
@@ -565,7 +568,7 @@ class InvitationService:
             elif invitation.status == "expired":
                 raise InvitationExpiredException("Invitation has expired")
 
-        if invitation.expires_at < datetime.utcnow():
+        if invitation.expires_at < datetime.now(timezone.utc):
             self.invitation_repo.update_invitation(invitation, {"status": "expired"})
             raise InvitationExpiredException("Invitation has expired")
 
@@ -589,13 +592,27 @@ class InvitationService:
 
     def _has_invite_permission(self, permissions: list[str]) -> bool:
         """Check if user has invite permission."""
-        invite_permissions = [
-            "user.invite",
-            "invitation.create",
-            "user.manage",
-            "all.manage",
-        ]
-        return any(p in permissions for p in invite_permissions)
+        if is_system_admin(permissions):
+            return True
+
+        # Org owners with *.* should always be able to invite
+        if "*.*" in permissions:
+            return True
+
+        # user.* wildcard covers all user actions including invite
+        if "user.*" in permissions:
+            return True
+
+        return any(
+            has_permission(permissions, perm)
+            for perm in [
+                "user.invite",
+                "invitation.create",
+                "user.manage",
+                "invitation.*",
+                "user.create",
+            ]
+        )
 
     def _invitation_to_dict(self, invitation) -> dict:
         """Convert invitation object to dictionary."""
