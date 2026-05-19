@@ -140,13 +140,13 @@ class TestGenerateFromSlip:
         """Should generate a put-away list from a pending_putaway slip."""
         session = _create_scan_session(db_session, org_id, warehouse_id)
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
-        item = _create_item(db_session, org_id, "SKU-001")
+        _create_item(db_session, org_id, "SKU-001")
         _create_receiving_slip_item(
             db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
         )
 
         # Create a bin with capacity
-        bin_loc = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -192,7 +192,7 @@ class TestGenerateFromSlip:
         """Should skip items flagged as damaged."""
         session = _create_scan_session(db_session, org_id, warehouse_id)
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
-        item = _create_item(db_session, org_id, "SKU-001")
+        _create_item(db_session, org_id, "SKU-001")
 
         # Create a damaged item
         damaged_item = ReceivingSlipItem(
@@ -207,7 +207,7 @@ class TestGenerateFromSlip:
         )
         db_session.add(damaged_item)
 
-        bin_loc = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -232,7 +232,7 @@ class TestGenerateFromSlip:
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
 
         item_group_id = uuid.uuid4()
-        item = _create_item(db_session, org_id, "SKU-001", item_group_id=item_group_id)
+        _create_item(db_session, org_id, "SKU-001", item_group_id=item_group_id)
         _create_receiving_slip_item(
             db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
         )
@@ -250,7 +250,7 @@ class TestGenerateFromSlip:
         )
 
         # Create another unallocated bin
-        other_bin = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -286,13 +286,13 @@ class TestGenerateFromSlip:
         """Should split items across multiple bins when one bin is insufficient."""
         session = _create_scan_session(db_session, org_id, warehouse_id)
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
-        item = _create_item(db_session, org_id, "SKU-001")
+        _create_item(db_session, org_id, "SKU-001")
         _create_receiving_slip_item(
             db_session, org_id, slip.id, "SKU-001", "BATCH-A", 80
         )
 
         # Create two bins with limited capacity
-        bin1 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -302,7 +302,7 @@ class TestGenerateFromSlip:
             total_capacity=50,
             available_capacity=50,
         )
-        bin2 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,

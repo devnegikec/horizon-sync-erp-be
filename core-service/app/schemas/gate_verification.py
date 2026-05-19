@@ -11,7 +11,6 @@ Requirements: 12.1, 12.7
 
 from __future__ import annotations
 
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -30,11 +29,11 @@ class GateSessionRequest(BaseModel):
     pick_list_id: UUID = Field(
         ..., description="UUID of the completed pick list to verify against"
     )
-    vehicle_number: Optional[str] = Field(
+    vehicle_number: str | None = Field(
         None, max_length=100, description="Vehicle registration number"
     )
-    driver_name: Optional[str] = Field(None, max_length=255, description="Driver name")
-    driver_contact: Optional[str] = Field(
+    driver_name: str | None = Field(None, max_length=255, description="Driver name")
+    driver_contact: str | None = Field(
         None, max_length=50, description="Driver contact number"
     )
 
@@ -48,10 +47,10 @@ class GateScanRequest(BaseModel):
     qr_data: str = Field(
         ..., min_length=1, description="Raw QR code payload string (JSON)"
     )
-    device_type: Optional[str] = Field(
+    device_type: str | None = Field(
         None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
     )
-    os: Optional[str] = Field(None, max_length=50, description="Operating system info")
+    os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
 # ===========================================
@@ -67,7 +66,7 @@ class GateVerificationItemResponse(BaseModel):
     sku: str
     quantity: int
     status: str  # "verified" or "unauthorized"
-    scanned_at: Optional[str] = None
+    scanned_at: str | None = None
 
 
 class DispatchInfo(BaseModel):
@@ -81,12 +80,12 @@ class DispatchInfo(BaseModel):
     dispatch_number: str
     pick_list_id: str
     gate_session_id: str
-    invoice_reference: Optional[str] = None
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
-    dispatched_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    invoice_reference: str | None = None
+    vehicle_number: str | None = None
+    driver_name: str | None = None
+    dispatched_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class GateSessionResponse(BaseModel):
@@ -100,15 +99,15 @@ class GateSessionResponse(BaseModel):
     pick_list_id: str
     warehouse_id: str
     worker_id: str
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
-    driver_contact: Optional[str] = None
+    vehicle_number: str | None = None
+    driver_name: str | None = None
+    driver_contact: str | None = None
     status: str
-    verified_at: Optional[str] = None
+    verified_at: str | None = None
     items: list[GateVerificationItemResponse] = []
-    dispatch: Optional[DispatchInfo] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    dispatch: DispatchInfo | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class GateScanResult(BaseModel):
@@ -122,9 +121,9 @@ class GateScanResult(BaseModel):
     qr_identifier: str
     sku: str
     quantity: int
-    batch: Optional[str] = None
+    batch: str | None = None
     status: str  # "verified" or "unauthorized"
-    scanned_at: Optional[str] = None
+    scanned_at: str | None = None
 
 
 class GateSessionProgress(BaseModel):
@@ -136,8 +135,8 @@ class GateSessionProgress(BaseModel):
     session_id: str
     status: str
     pick_list_id: str
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
+    vehicle_number: str | None = None
+    driver_name: str | None = None
     total_scanned: int = Field(
         ..., description="Total number of items scanned at the gate"
     )

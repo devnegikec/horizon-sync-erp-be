@@ -11,7 +11,6 @@ Requirements: 13.3
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -40,16 +39,16 @@ class DispatchFilters(BaseModel):
     Requirements: 13.3
     """
 
-    date_from: Optional[datetime] = Field(
+    date_from: datetime | None = Field(
         None, description="Filter dispatches from this date (inclusive)"
     )
-    date_to: Optional[datetime] = Field(
+    date_to: datetime | None = Field(
         None, description="Filter dispatches up to this date (inclusive)"
     )
-    vehicle_number: Optional[str] = Field(
+    vehicle_number: str | None = Field(
         None, description="Filter by vehicle number (partial match)"
     )
-    invoice_reference: Optional[str] = Field(
+    invoice_reference: str | None = Field(
         None, description="Filter by invoice reference (partial match)"
     )
     page: int = Field(default=1, ge=1, description="Page number")
@@ -72,12 +71,12 @@ class DispatchResponse(BaseModel):
     dispatch_number: str
     pick_list_id: str
     gate_session_id: str
-    invoice_reference: Optional[str] = None
-    vehicle_number: Optional[str] = None
-    driver_name: Optional[str] = None
-    dispatched_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    invoice_reference: str | None = None
+    vehicle_number: str | None = None
+    driver_name: str | None = None
+    dispatched_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class DispatchListResponse(BaseModel):

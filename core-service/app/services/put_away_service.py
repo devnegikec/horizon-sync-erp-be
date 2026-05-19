@@ -596,7 +596,7 @@ class PutAwayService:
         bin_locations: list[BinLocation] = []
         item_map: dict = {}  # Map BinLocation index to PutAwayListItem
 
-        for i, item in enumerate(items_with_bins):
+        for _i, item in enumerate(items_with_bins):
             bin_loc = (
                 self.db.query(WarehouseLocation)
                 .filter(WarehouseLocation.id == item.bin_location_id)

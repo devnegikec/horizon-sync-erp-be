@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,14 +19,14 @@ class CreateLocationRequest(BaseModel):
     """Schema for creating a new warehouse location node"""
 
     warehouse_id: UUID
-    parent_location_id: Optional[UUID] = None
+    parent_location_id: UUID | None = None
     location_type: str = Field(
         ..., description="Location type: zone, aisle, bay, level, or bin"
     )
     code: str = Field(..., min_length=1, max_length=50)
-    name: Optional[str] = Field(None, max_length=255)
+    name: str | None = Field(None, max_length=255)
     capacity: Decimal = Field(default=Decimal("0"), ge=0)
-    capacity_uom: Optional[str] = Field(None, max_length=50)
+    capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal = Field(default=Decimal("0"))
     position_y: Decimal = Field(default=Decimal("0"))
 
@@ -35,11 +34,11 @@ class CreateLocationRequest(BaseModel):
 class UpdateLocationRequest(BaseModel):
     """Schema for updating an existing warehouse location node (all fields optional)"""
 
-    name: Optional[str] = Field(None, max_length=255)
-    capacity: Optional[Decimal] = Field(None, ge=0)
-    capacity_uom: Optional[str] = Field(None, max_length=50)
-    position_x: Optional[Decimal] = None
-    position_y: Optional[Decimal] = None
+    name: str | None = Field(None, max_length=255)
+    capacity: Decimal | None = Field(None, ge=0)
+    capacity_uom: str | None = Field(None, max_length=50)
+    position_x: Decimal | None = None
+    position_y: Decimal | None = None
 
 
 # ===========================================
@@ -53,15 +52,15 @@ class LocationResponse(BaseModel):
     id: UUID
     organization_id: UUID
     warehouse_id: UUID
-    parent_location_id: Optional[UUID] = None
+    parent_location_id: UUID | None = None
     location_type: str
     code: str
-    full_path: Optional[str] = None
-    name: Optional[str] = None
+    full_path: str | None = None
+    name: str | None = None
     capacity: Decimal = Decimal("0")
     total_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
-    capacity_uom: Optional[str] = None
+    capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
     is_active: bool = True
@@ -77,15 +76,15 @@ class LocationTree(BaseModel):
 
     id: UUID
     warehouse_id: UUID
-    parent_location_id: Optional[UUID] = None
+    parent_location_id: UUID | None = None
     location_type: str
     code: str
-    full_path: Optional[str] = None
-    name: Optional[str] = None
+    full_path: str | None = None
+    name: str | None = None
     capacity: Decimal = Decimal("0")
     total_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
-    capacity_uom: Optional[str] = None
+    capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
     is_active: bool = True
@@ -127,11 +126,11 @@ class CapacitySummary(BaseModel):
 class LocationFilters(BaseModel):
     """Query filters for listing warehouse locations"""
 
-    location_type: Optional[str] = None
-    parent_location_id: Optional[UUID] = None
-    is_active: Optional[bool] = None
-    has_stock: Optional[bool] = None
-    search: Optional[str] = None
+    location_type: str | None = None
+    parent_location_id: UUID | None = None
+    is_active: bool | None = None
+    has_stock: bool | None = None
+    search: str | None = None
 
 
 class PaginatedLocations(BaseModel):

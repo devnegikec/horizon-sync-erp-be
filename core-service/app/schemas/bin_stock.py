@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,7 +21,7 @@ class AddStockRequest(BaseModel):
     quantity: Decimal = Field(
         ..., gt=0, description="Quantity to add (must be positive)"
     )
-    batch_number: Optional[str] = Field(
+    batch_number: str | None = Field(
         None, max_length=100, description="Optional batch number"
     )
 
@@ -35,7 +34,7 @@ class RemoveStockRequest(BaseModel):
     quantity: Decimal = Field(
         ..., gt=0, description="Quantity to remove (must be positive)"
     )
-    batch_number: Optional[str] = Field(
+    batch_number: str | None = Field(
         None, max_length=100, description="Optional batch number"
     )
 
@@ -53,7 +52,7 @@ class BinStockLevelResponse(BaseModel):
     bin_location_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
-    batch_number: Optional[str] = None
+    batch_number: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -64,12 +63,12 @@ class BinStockInfoResponse(BaseModel):
     """Response schema for bin stock info (includes bin details)"""
 
     bin_location_id: UUID
-    bin_code: Optional[str] = None
-    bin_name: Optional[str] = None
+    bin_code: str | None = None
+    bin_name: str | None = None
     warehouse_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
-    batch_number: Optional[str] = None
+    batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
     is_active: bool = True

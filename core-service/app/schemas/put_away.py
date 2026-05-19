@@ -11,8 +11,6 @@ Requirements: 8.5, 8.6
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from app.schemas.common import PaginationMeta
@@ -46,16 +44,16 @@ class PutAwayListItemResponse(BaseModel):
 
     id: str
     item_id: str
-    sku: Optional[str] = None
-    batch_number: Optional[str] = None
+    sku: str | None = None
+    batch_number: str | None = None
     quantity: float
-    bin_location_id: Optional[str] = None
-    bin_location_code: Optional[str] = None
+    bin_location_id: str | None = None
+    bin_location_code: str | None = None
     sort_order: int = 0
     status: str
-    notes: Optional[str] = None
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
+    notes: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
 
 
 class PutAwayListResponse(BaseModel):
@@ -66,14 +64,14 @@ class PutAwayListResponse(BaseModel):
     warehouse_id: str
     put_away_list_no: str
     status: str
-    reference_type: Optional[str] = None
-    reference_id: Optional[str] = None
-    receiving_slip_id: Optional[str] = None
-    remarks: Optional[str] = None
-    assigned_to: Optional[str] = None
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    reference_type: str | None = None
+    reference_id: str | None = None
+    receiving_slip_id: str | None = None
+    remarks: str | None = None
+    assigned_to: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
     items: list[PutAwayListItemResponse] = []
 
 
@@ -85,17 +83,17 @@ class PutAwayListSummaryResponse(BaseModel):
     warehouse_id: str
     put_away_list_no: str
     status: str
-    reference_type: Optional[str] = None
-    reference_id: Optional[str] = None
-    receiving_slip_id: Optional[str] = None
-    remarks: Optional[str] = None
-    assigned_to: Optional[str] = None
+    reference_type: str | None = None
+    reference_id: str | None = None
+    receiving_slip_id: str | None = None
+    remarks: str | None = None
+    assigned_to: str | None = None
     total_items: int = 0
     completed_items: int = 0
     pending_items: int = 0
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class PutAwayListListResponse(BaseModel):

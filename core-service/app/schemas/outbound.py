@@ -13,7 +13,6 @@ Requirements: 9.1, 10.1, 11.3, 11.4
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -69,12 +68,12 @@ class PickListFilters(BaseModel):
     Requirements: 11.3
     """
 
-    status: Optional[str] = Field(
+    status: str | None = Field(
         None,
         description="Filter by status: draft, in_progress, completed, cancelled",
     )
-    warehouse_id: Optional[UUID] = Field(None, description="Filter by warehouse ID")
-    invoice_reference: Optional[str] = Field(
+    warehouse_id: UUID | None = Field(None, description="Filter by warehouse ID")
+    invoice_reference: str | None = Field(
         None, description="Filter by SAP invoice reference"
     )
     sort_by: str = Field(
@@ -119,8 +118,8 @@ class PickListItemResponse(BaseModel):
     qty: float
     picked_qty: float
     uom: str
-    batch_no: Optional[str] = None
-    bin_location_id: Optional[str] = None
+    batch_no: str | None = None
+    bin_location_id: str | None = None
     sort_order: int = 0
 
 
@@ -135,14 +134,14 @@ class OutboundPickListResponse(BaseModel):
     pick_list_no: str
     warehouse_id: str
     status: str
-    pick_date: Optional[str] = None
-    reference_type: Optional[str] = None
-    invoice_reference: Optional[str] = None
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    pick_date: str | None = None
+    reference_type: str | None = None
+    invoice_reference: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
     items: list[PickListItemResponse] = []
-    progress: Optional[PickListProgress] = None
+    progress: PickListProgress | None = None
 
 
 class PickScanResult(BaseModel):
@@ -160,7 +159,7 @@ class PickScanResult(BaseModel):
     picked_qty: float
     required_qty: float
     remaining_qty: float
-    batch: Optional[str] = None
+    batch: str | None = None
 
 
 class OutboundPickListListItem(BaseModel):
@@ -171,11 +170,11 @@ class OutboundPickListListItem(BaseModel):
     pick_list_no: str
     warehouse_id: str
     status: str
-    invoice_reference: Optional[str] = None
-    pick_date: Optional[str] = None
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
-    progress: Optional[PickListProgress] = None
+    invoice_reference: str | None = None
+    pick_date: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    progress: PickListProgress | None = None
 
 
 class OutboundPickListListResponse(BaseModel):

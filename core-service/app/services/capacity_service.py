@@ -83,7 +83,7 @@ class CapacityService:
 
         Requirements: 18.5
         """
-        for attempt in range(self.MAX_RETRIES):
+        for _attempt in range(self.MAX_RETRIES):
             location = (
                 self.db.query(WarehouseLocation)
                 .filter(WarehouseLocation.id == location_id)

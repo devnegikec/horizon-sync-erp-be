@@ -644,7 +644,7 @@ class TestGetLocationSummary:
             parent_location_id=level.id,
             capacity=Decimal("100"),
         )
-        bin2 = layout_service.create_location(
+        layout_service.create_location(
             warehouse_id=warehouse_id,
             organization_id=org_id,
             location_type="bin",

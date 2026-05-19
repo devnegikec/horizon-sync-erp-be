@@ -12,7 +12,6 @@ Requirements: 16.6
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -48,14 +47,14 @@ class TaskFilters(BaseModel):
     """
 
     worker_id: UUID = Field(..., description="Worker UUID to list tasks for")
-    status: Optional[str] = Field(
+    status: str | None = Field(
         None,
         description="Filter by status: assigned, in_progress, completed, cancelled",
     )
-    date_from: Optional[datetime] = Field(
+    date_from: datetime | None = Field(
         None, description="Filter tasks assigned from this date (inclusive)"
     )
-    date_to: Optional[datetime] = Field(
+    date_to: datetime | None = Field(
         None, description="Filter tasks assigned up to this date (inclusive)"
     )
     page: int = Field(default=1, ge=1, description="Page number")
@@ -79,11 +78,11 @@ class WorkerTaskResponse(BaseModel):
     worker_id: str
     reference_id: str
     status: str
-    assigned_at: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    assigned_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class WorkerTaskListResponse(BaseModel):

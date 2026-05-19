@@ -4,14 +4,16 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 
 class ShortURLCreate(BaseModel):
     original_url: str = Field(..., description="The full destination URL")
     title: str | None = Field(None, max_length=255)
     slug: str | None = Field(
-        None, max_length=20, pattern=r"^[a-zA-Z0-9_-]+$",
+        None,
+        max_length=20,
+        pattern=r"^[a-zA-Z0-9_-]+$",
         description="Custom slug. Auto-generated if omitted.",
     )
     product_id: UUID | None = None

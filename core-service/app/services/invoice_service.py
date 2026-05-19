@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundException
 from app.core.constants import INVOICE_AUTO_JOURNAL_POSTING
+from app.core.exceptions import ResourceNotFoundException
 from app.models.base import InvoiceStatus, InvoiceType
 from app.models.customer import Customer
 from app.models.item import Item
@@ -90,65 +90,80 @@ class InvoiceService:
     def update(
         self, invoice_id: UUID, data: dict, organization_id: UUID, user_id: UUID
     ) -> dict:
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
+
         from app.core.exceptions import ValidationError
-        from app.services.invoice_journal_posting_service import InvoiceJournalPostingService
-        
+        from app.services.invoice_journal_posting_service import (
+            InvoiceJournalPostingService,
+        )
+
         inv = self.repo.get_by_id(invoice_id, organization_id)
         if not inv:
             raise ResourceNotFoundException(f"Invoice {invoice_id} not found")
-        
+
         # Get current status before update
-        current_status = inv.status.value if hasattr(inv.status, 'value') else inv.status
-        
+        current_status = (
+            inv.status.value if hasattr(inv.status, "value") else inv.status
+        )
+
         payload = {k: v for k, v in data.items() if v is not None}
         if payload.get("status"):
             payload["status"] = InvoiceStatus(payload["status"])
         payload["updated_by"] = user_id
-        
+
         # Get new status after update
         new_status = payload.get("status")
-        new_status_value = new_status.value if hasattr(new_status, 'value') else new_status if new_status else current_status
-        
-        # Check if status is changing to a state that requires journal entry
-        requires_journal_entry = (
-            current_status == "draft" and 
-            new_status_value in ["paid", "pending"]
+        new_status_value = (
+            new_status.value
+            if hasattr(new_status, "value")
+            else new_status
+            if new_status
+            else current_status
         )
-        
+
+        # Check if status is changing to a state that requires journal entry
+        requires_journal_entry = current_status == "draft" and new_status_value in [
+            "paid",
+            "pending",
+        ]
+
         # Check if invoice is being cancelled from a confirmed state (needs journal reversal)
         requires_journal_reversal = (
-            new_status_value == "cancelled" and
-            current_status in ["pending", "paid", "partial", "overdue"]
+            new_status_value == "cancelled"
+            and current_status in ["pending", "paid", "partial", "overdue"]
         )
-        
+
         try:
             # Start transaction - update invoice first
             self.repo.update(inv, payload)
-            
+
             # If status changed to paid/pending, create journal entry and update additional fields
             if requires_journal_entry:
                 # Validate invoice_type
-                invoice_type = inv.invoice_type.value if hasattr(inv.invoice_type, 'value') else inv.invoice_type
+                invoice_type = (
+                    inv.invoice_type.value
+                    if hasattr(inv.invoice_type, "value")
+                    else inv.invoice_type
+                )
                 if invoice_type not in ["sales", "purchase"]:
                     raise ValidationError(
                         f"Invalid invoice_type: {invoice_type}. Must be 'sales' or 'purchase'"
                     )
-                
+
                 # Validate grand_total
                 if inv.grand_total <= 0:
                     raise ValidationError(
                         f"Invoice grand_total must be greater than 0. Current value: {inv.grand_total}"
                     )
-                
+
                 # Convert grand_total to base currency for outstanding_amount
-                from app.services.currency_service import CurrencyService
                 from app.core.exceptions import ExchangeRateNotFoundException
-                
+                from app.services.currency_service import CurrencyService
+
                 try:
                     currency_service = CurrencyService(self.db)
                     base_currency = currency_service.get_base_currency()
-                    
+
                     # Convert to base currency if needed
                     if inv.currency == base_currency:
                         outstanding_amount_base = inv.grand_total
@@ -161,17 +176,19 @@ class InvoiceService:
                             # If no exchange rate found, use the original amount as fallback
                             # This allows the system to continue working even without configured exchange rates
                             outstanding_amount_base = inv.grand_total
-                except Exception as currency_error:
+                except Exception:
                     # If currency service fails completely, use original amount as fallback
                     outstanding_amount_base = inv.grand_total
-                
+
                 # Update additional fields for confirmed/paid invoices
                 inv.submitted_at = datetime.now(UTC)
-                inv.outstanding_amount = outstanding_amount_base if new_status_value == "pending" else 0
-                
+                inv.outstanding_amount = (
+                    outstanding_amount_base if new_status_value == "pending" else 0
+                )
+
                 # Flush changes before creating journal entry
                 self.db.flush()
-                
+
                 # Gate journal posting behind feature flag
                 if is_feature_enabled(INVOICE_AUTO_JOURNAL_POSTING, self.db):
                     # Create journal entry - only if all required default accounts are configured
@@ -184,21 +201,23 @@ class InvoiceService:
                         if "default account" in str(journal_error).lower():
                             # If this is a default account configuration error, allow the invoice update to proceed
                             # but log the error - the journal entry can be created later when accounts are configured
-                            logger.warning(f"Invoice {inv.invoice_no} updated but journal entry not created: {journal_error}")
+                            logger.warning(
+                                f"Invoice {inv.invoice_no} updated but journal entry not created: {journal_error}"
+                            )
                         else:
                             # Re-raise other validation errors
                             raise
                 else:
                     logger.info("Skipping auto journal posting — feature flag disabled")
-            
+
             # If invoice is being cancelled, reverse the journal entry
             if requires_journal_reversal:
                 # Reset outstanding amount to 0 for cancelled invoices
                 inv.outstanding_amount = 0
-                
+
                 # Flush changes before reversing journal entry
                 self.db.flush()
-                
+
                 try:
                     journal_posting_service = InvoiceJournalPostingService(self.db)
                     journal_posting_service.reverse_invoice_journal_entry(
@@ -213,7 +232,7 @@ class InvoiceService:
             self.db.commit()
             self.db.refresh(inv)
             return self._to_response(inv)
-            
+
         except ValidationError:
             # Rollback on validation error
             self.db.rollback()
@@ -283,17 +302,32 @@ class InvoiceService:
             reference_type_lower = inv.reference_type.lower()
             if reference_type_lower == "sales order":
                 from app.models.sales_order import SalesOrder
-                ref_doc = self.db.query(SalesOrder).filter(SalesOrder.id == inv.reference_id).first()
+
+                ref_doc = (
+                    self.db.query(SalesOrder)
+                    .filter(SalesOrder.id == inv.reference_id)
+                    .first()
+                )
                 if ref_doc:
                     reference_no = ref_doc.sales_order_no
             elif reference_type_lower == "delivery note":
                 from app.models.delivery_note import DeliveryNote
-                ref_doc = self.db.query(DeliveryNote).filter(DeliveryNote.id == inv.reference_id).first()
+
+                ref_doc = (
+                    self.db.query(DeliveryNote)
+                    .filter(DeliveryNote.id == inv.reference_id)
+                    .first()
+                )
                 if ref_doc:
                     reference_no = ref_doc.delivery_note_no
             elif reference_type_lower == "pick list":
                 from app.models.pick_list import PickList
-                ref_doc = self.db.query(PickList).filter(PickList.id == inv.reference_id).first()
+
+                ref_doc = (
+                    self.db.query(PickList)
+                    .filter(PickList.id == inv.reference_id)
+                    .first()
+                )
                 if ref_doc:
                     reference_no = ref_doc.pick_list_no
 

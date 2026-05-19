@@ -10,7 +10,6 @@ Requirements: 17.6
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -41,7 +40,7 @@ class LocationScanRequest(BaseModel):
         description="Scan type: 'start' or 'finish'",
         pattern="^(start|finish)$",
     )
-    scanned_at: Optional[datetime] = Field(
+    scanned_at: datetime | None = Field(
         None,
         description="Explicit scan timestamp (defaults to server time if omitted)",
     )
@@ -53,15 +52,13 @@ class TimeSummaryFilters(BaseModel):
     Requirements: 17.6
     """
 
-    worker_id: Optional[UUID] = Field(None, description="Filter by worker UUID")
-    task_id: Optional[UUID] = Field(None, description="Filter by worker_task UUID")
-    location_code: Optional[str] = Field(None, description="Filter by location code")
-    date_from: Optional[date] = Field(
+    worker_id: UUID | None = Field(None, description="Filter by worker UUID")
+    task_id: UUID | None = Field(None, description="Filter by worker_task UUID")
+    location_code: str | None = Field(None, description="Filter by location code")
+    date_from: date | None = Field(
         None, description="Start date for the date range filter"
     )
-    date_to: Optional[date] = Field(
-        None, description="End date for the date range filter"
-    )
+    date_to: date | None = Field(None, description="End date for the date range filter")
 
 
 # ===========================================
@@ -80,9 +77,9 @@ class LocationScanResponse(BaseModel):
     worker_task_id: str
     location_code: str
     scan_type: str
-    scanned_at: Optional[str] = None
-    elapsed_seconds: Optional[int] = None
-    created_at: Optional[str] = None
+    scanned_at: str | None = None
+    elapsed_seconds: int | None = None
+    created_at: str | None = None
 
 
 class LocationTimeSummaryItem(BaseModel):

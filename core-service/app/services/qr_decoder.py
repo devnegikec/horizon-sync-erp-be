@@ -37,7 +37,7 @@ class QRPayload:
     batch: str
 
 
-def decode_qr_payload(qr_data: str) -> QRPayload:
+def decode_qr_payload(qr_data: str) -> QRPayload:  # noqa: C901
     """Decode and validate a QR payload JSON string.
 
     Parses the JSON string, validates all required fields are present and valid,

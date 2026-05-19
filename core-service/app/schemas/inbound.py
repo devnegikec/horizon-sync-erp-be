@@ -5,7 +5,6 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from __future__ import annotations
 
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -19,7 +18,7 @@ class StartSessionRequest(BaseModel):
     """Schema for starting a new inbound scan session."""
 
     warehouse_id: UUID = Field(..., description="Warehouse UUID where receiving occurs")
-    dock_location: Optional[str] = Field(
+    dock_location: str | None = Field(
         None, max_length=255, description="Optional dock location identifier"
     )
 
@@ -30,10 +29,10 @@ class RecordScanRequest(BaseModel):
     qr_data: str = Field(
         ..., min_length=1, description="Raw QR code payload string (JSON)"
     )
-    device_type: Optional[str] = Field(
+    device_type: str | None = Field(
         None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
     )
-    os: Optional[str] = Field(None, max_length=50, description="Operating system info")
+    os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
 class RejectSlipRequest(BaseModel):
@@ -48,7 +47,7 @@ class FlagLineItemRequest(BaseModel):
     """Schema for flagging a receiving slip line item."""
 
     flag: str = Field(..., description="Flag value: 'short' or 'damaged'")
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         None, max_length=1000, description="Optional notes about the discrepancy"
     )
 
@@ -56,7 +55,7 @@ class FlagLineItemRequest(BaseModel):
 class ApproveSlipRequest(BaseModel):
     """Schema for approving a receiving slip with optional worker assignment."""
 
-    worker_id: Optional[UUID] = Field(
+    worker_id: UUID | None = Field(
         None, description="Optional worker UUID to assign the put-away task to"
     )
 
@@ -74,12 +73,12 @@ class SessionResponse(BaseModel):
     session_type: str
     worker_id: str
     warehouse_id: str
-    dock_location: Optional[str] = None
+    dock_location: str | None = None
     status: str
     total_boxes_scanned: int = 0
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
-    created_at: Optional[str] = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    created_at: str | None = None
 
 
 class ScanResult(BaseModel):
@@ -91,7 +90,7 @@ class ScanResult(BaseModel):
     sku: str
     quantity: int
     batch_number: str
-    scanned_at: Optional[str] = None
+    scanned_at: str | None = None
     total_boxes_scanned: int = 0
 
 
@@ -120,9 +119,9 @@ class SessionSummary(BaseModel):
     session_type: str
     warehouse_id: str
     worker_id: str
-    dock_location: Optional[str] = None
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
+    dock_location: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
     total_boxes: int
     total_quantity: int
     items: list[SKUBreakdown]
@@ -133,11 +132,11 @@ class ReceivingSlipItemResponse(BaseModel):
 
     id: str
     sku: str
-    batch_number: Optional[str] = None
+    batch_number: str | None = None
     quantity: int
     box_count: int
     flag: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class ReceivingSlipResponse(BaseModel):
@@ -151,11 +150,11 @@ class ReceivingSlipResponse(BaseModel):
     status: str
     total_boxes: int
     total_items: int
-    rejection_reason: Optional[str] = None
-    notes: Optional[str] = None
+    rejection_reason: str | None = None
+    notes: str | None = None
     items: list[ReceivingSlipItemResponse]
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class FlaggedItemResponse(BaseModel):
@@ -164,8 +163,8 @@ class FlaggedItemResponse(BaseModel):
     id: str
     slip_id: str
     sku: str
-    batch_number: Optional[str] = None
+    batch_number: str | None = None
     quantity: int
     box_count: int
     flag: str
-    notes: Optional[str] = None
+    notes: str | None = None

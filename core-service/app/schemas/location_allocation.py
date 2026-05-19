@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,12 +32,10 @@ class CreateAllocationRequest(BaseModel):
 class UpdateAllocationRequest(BaseModel):
     """Schema for updating a location allocation (all fields optional)"""
 
-    allocation_type: Optional[str] = Field(
+    allocation_type: str | None = Field(
         None, description="New allocation type: 'exclusive' or 'preferred'"
     )
-    priority: Optional[int] = Field(
-        None, description="New priority for put-away ordering"
-    )
+    priority: int | None = Field(None, description="New priority for put-away ordering")
 
 
 # ===========================================

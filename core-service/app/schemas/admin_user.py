@@ -8,8 +8,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.admin_organization import PaginationMeta
 
-
 # ── Role enum ────────────────────────────────────────────────────────
+
 
 class AllowedRole(str, Enum):
     system_admin = "system_admin"
@@ -18,6 +18,7 @@ class AllowedRole(str, Enum):
 
 
 # ── Create / Update ─────────────────────────────────────────────────
+
 
 class AdminUserCreate(BaseModel):
     """Schema for creating a new user via admin portal."""
@@ -29,7 +30,9 @@ class AdminUserCreate(BaseModel):
     organization_id: UUID
     roles: list[AllowedRole] = Field(default=[AllowedRole.user])
     phone: str | None = Field(None, max_length=20)
-    user_type: str = Field(default="user", pattern=r"^(system_admin|organization_admin|user|guest)$")
+    user_type: str = Field(
+        default="user", pattern=r"^(system_admin|organization_admin|user|guest)$"
+    )
     system_admin_role_ids: list[str] | None = None
 
 
@@ -41,10 +44,13 @@ class AdminUserUpdate(BaseModel):
     first_name: str | None = Field(None, min_length=1, max_length=100)
     last_name: str | None = Field(None, min_length=1, max_length=100)
     phone: str | None = Field(None, max_length=20)
-    user_type: str | None = Field(None, pattern=r"^(system_admin|organization_admin|user|guest)$")
+    user_type: str | None = Field(
+        None, pattern=r"^(system_admin|organization_admin|user|guest)$"
+    )
 
 
 # ── List / Detail responses ──────────────────────────────────────────
+
 
 class AdminUserListItem(BaseModel):
     """Single user in a paginated list."""

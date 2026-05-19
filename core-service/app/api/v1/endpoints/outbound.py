@@ -624,7 +624,7 @@ async def get_pick_list_detail(
 
     Requirements: 11.4
     """
-    service = PickListService(db)
+    PickListService(db)
 
     # Use the repository to get the full model object
     from app.models.pick_list import PickList

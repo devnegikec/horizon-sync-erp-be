@@ -5,13 +5,14 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel
 
 # ── QR Scan Event ─────────────────────────────────────────────────────────────
 
+
 class QRScanEventIngest(BaseModel):
     """Payload sent by the QR landing page on each scan"""
+
     serial_number: str
     product_item_id: UUID | None = None
     device_type: str | None = None
@@ -44,6 +45,7 @@ class QRScanEventResponse(BaseModel):
 
 # ── QR Scan Analytics ─────────────────────────────────────────────────────────
 
+
 class ScanCountByDate(BaseModel):
     date: str
     count: int
@@ -70,6 +72,7 @@ class QRScanAnalyticsResponse(BaseModel):
 
 
 # ── Meta Campaigns ────────────────────────────────────────────────────────────
+
 
 class MetaCampaignCreate(BaseModel):
     campaign_id: str | None = None

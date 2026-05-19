@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Warranty Period ───────────────────────────────────────────────────────────
+
 
 class WarrantyPeriodCreate(BaseModel):
     months: int = Field(..., gt=0)
@@ -24,6 +24,7 @@ class WarrantyPeriodResponse(WarrantyPeriodCreate):
 
 
 # ── Warranty Registration ─────────────────────────────────────────────────────
+
 
 class WarrantyRegisterRequest(BaseModel):
     serial_number: str = Field(..., max_length=120)
@@ -57,6 +58,7 @@ class WarrantyListResponse(BaseModel):
 
 
 # ── Warranty Check ────────────────────────────────────────────────────────────
+
 
 class WarrantyCheckResponse(BaseModel):
     found: bool

@@ -161,7 +161,7 @@ class TestApproveSlipTriggersPutAway:
         slip = _create_receiving_slip(
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
-        item = _create_item(db_session, org_id, "SKU-001")
+        _create_item(db_session, org_id, "SKU-001")
         _create_receiving_slip_item(
             db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
         )
@@ -209,7 +209,7 @@ class TestApproveSlipTriggersPutAway:
         slip = _create_receiving_slip(
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
-        item = _create_item(db_session, org_id, "SKU-002")
+        _create_item(db_session, org_id, "SKU-002")
         _create_receiving_slip_item(
             db_session, org_id, slip.id, "SKU-002", "BATCH-B", 5
         )
@@ -360,7 +360,7 @@ class TestPutAwayRespectsAllocations:
         )
 
         # Create an unallocated bin
-        unallocated_bin = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -406,10 +406,10 @@ class TestPutAwayRespectsAllocations:
         self, db_session, put_away_service, org_id, warehouse_id
     ):
         """Put-away items should have sort_order set by the routing optimizer."""
-        item = _create_item(db_session, org_id, "SKU-ROUTE")
+        _create_item(db_session, org_id, "SKU-ROUTE")
 
         # Create multiple bins at different positions
-        bin1 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -421,7 +421,7 @@ class TestPutAwayRespectsAllocations:
             position_x=10,
             position_y=10,
         )
-        bin2 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,

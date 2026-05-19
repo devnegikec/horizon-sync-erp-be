@@ -6,13 +6,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Parent QR ─────────────────────────────────────────────────────────────────
 
+
 class ParentQRCreate(BaseModel):
-    name: str = Field(..., max_length=20, description="Label for this parent node, e.g. 'Pallet'")
+    name: str = Field(
+        ..., max_length=20, description="Label for this parent node, e.g. 'Pallet'"
+    )
     qr_type: str = Field(..., max_length=25, description="e.g. pallet, carton, box")
-    capacity: int = Field(..., gt=0, description="Max number of child QRs this node can hold")
+    capacity: int = Field(
+        ..., gt=0, description="Max number of child QRs this node can hold"
+    )
     app_cascade_map: bool = False
     extra_data: dict[str, Any] | None = None
 
@@ -41,6 +45,7 @@ class ParentQRListResponse(BaseModel):
 
 # ── Child QR ──────────────────────────────────────────────────────────────────
 
+
 class ChildQRCreate(BaseModel):
     name: str = Field(..., max_length=20)
     qr_type: str = Field(..., max_length=25)
@@ -56,8 +61,11 @@ class ChildQRListResponse(BaseModel):
 
 # ── Map QRs ───────────────────────────────────────────────────────────────────
 
+
 class MapQRRequest(BaseModel):
-    child_ids: list[UUID] = Field(..., min_length=1, description="IDs of child nodes to attach")
+    child_ids: list[UUID] = Field(
+        ..., min_length=1, description="IDs of child nodes to attach"
+    )
 
 
 class MapQRResponse(BaseModel):
@@ -67,6 +75,7 @@ class MapQRResponse(BaseModel):
 
 
 # ── Cascade Scan ──────────────────────────────────────────────────────────────
+
 
 class CascadeScanRequest(BaseModel):
     serial_number: str = Field(..., description="Serial number of the scanned QR node")
@@ -94,6 +103,7 @@ class CascadeScanResponse(BaseModel):
 
 # ── Cascade History ───────────────────────────────────────────────────────────
 
+
 class CascadeHistoryItem(BaseModel):
     id: UUID
     organization_id: UUID
@@ -114,6 +124,7 @@ class CascadeHistoryResponse(BaseModel):
 
 
 # ── Label Download ────────────────────────────────────────────────────────────
+
 
 class LabelDownloadResponse(BaseModel):
     parent_id: UUID

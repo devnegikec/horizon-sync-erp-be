@@ -99,7 +99,7 @@ class TestRecalculateAncestors:
             capacity=100,
             total_capacity=100,
         )
-        bin2 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -180,7 +180,7 @@ class TestRecalculateAncestors:
             capacity=100,
             total_capacity=100,
         )
-        bin2 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,
@@ -321,7 +321,7 @@ class TestGetCapacitySummary:
             capacity=100,
             total_capacity=100,
         )
-        bin2 = _create_location(
+        _create_location(
             db_session,
             org_id,
             warehouse_id,

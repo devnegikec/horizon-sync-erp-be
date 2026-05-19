@@ -9,7 +9,7 @@ Requirements: 14.3
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -33,51 +33,51 @@ class ScanEventCreate(BaseModel):
         description="Context of the scan: 'inbound', 'pick', or 'gate'",
         pattern="^(inbound|pick|gate)$",
     )
-    serial_number: Optional[str] = Field(
+    serial_number: str | None = Field(
         None,
         max_length=75,
         description="Serial number or QR identifier of the scanned item",
     )
-    session_id: Optional[UUID] = Field(
+    session_id: UUID | None = Field(
         None, description="Optional session ID (inbound or gate session)"
     )
-    pick_list_id: Optional[UUID] = Field(
+    pick_list_id: UUID | None = Field(
         None, description="Optional pick list ID (for pick or gate context)"
     )
-    decoded_payload: Optional[dict[str, Any]] = Field(
+    decoded_payload: dict[str, Any] | None = Field(
         None, description="Optional decoded QR payload data"
     )
-    device_type: Optional[str] = Field(
+    device_type: str | None = Field(
         None,
         max_length=50,
         description="Device type (e.g., 'mobile', 'tablet')",
     )
-    os: Optional[str] = Field(
+    os: str | None = Field(
         None,
         max_length=50,
         description="Operating system info",
     )
-    product_item_id: Optional[UUID] = Field(
+    product_item_id: UUID | None = Field(
         None, description="Optional product item ID reference"
     )
-    ip_address: Optional[str] = Field(
+    ip_address: str | None = Field(
         None,
         max_length=45,
         description="IP address of the scanning device",
     )
-    latitude: Optional[float] = Field(None, description="GPS latitude")
-    longitude: Optional[float] = Field(None, description="GPS longitude")
-    city: Optional[str] = Field(
+    latitude: float | None = Field(None, description="GPS latitude")
+    longitude: float | None = Field(None, description="GPS longitude")
+    city: str | None = Field(
         None,
         max_length=100,
         description="City from geo-resolution",
     )
-    state: Optional[str] = Field(
+    state: str | None = Field(
         None,
         max_length=100,
         description="State from geo-resolution",
     )
-    country: Optional[str] = Field(
+    country: str | None = Field(
         None,
         max_length=100,
         description="Country from geo-resolution",
@@ -90,21 +90,21 @@ class ScanEventFilters(BaseModel):
     Requirements: 14.3
     """
 
-    session_id: Optional[UUID] = Field(
+    session_id: UUID | None = Field(
         None, description="Filter by session ID (stored in extra_data)"
     )
-    worker_id: Optional[UUID] = Field(
+    worker_id: UUID | None = Field(
         None, description="Filter by worker ID (stored in extra_data)"
     )
-    scan_context: Optional[str] = Field(
+    scan_context: str | None = Field(
         None,
         description="Filter by scan context: 'inbound', 'pick', or 'gate'",
     )
-    date_from: Optional[datetime] = Field(
+    date_from: datetime | None = Field(
         None, description="Start date filter (inclusive)"
     )
-    date_to: Optional[datetime] = Field(None, description="End date filter (inclusive)")
-    serial_number: Optional[str] = Field(None, description="Filter by serial number")
+    date_to: datetime | None = Field(None, description="End date filter (inclusive)")
+    serial_number: str | None = Field(None, description="Filter by serial number")
     page: int = Field(default=1, ge=1, description="Page number")
     page_size: int = Field(default=20, ge=1, le=100, description="Items per page")
 
@@ -122,19 +122,19 @@ class ScanEventResponse(BaseModel):
 
     id: str
     organization_id: str
-    product_item_id: Optional[str] = None
-    serial_number: Optional[str] = None
-    scan_timestamp: Optional[str] = None
-    device_type: Optional[str] = None
-    os: Optional[str] = None
-    browser: Optional[str] = None
-    ip_address: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    extra_data: Optional[dict[str, Any]] = None
+    product_item_id: str | None = None
+    serial_number: str | None = None
+    scan_timestamp: str | None = None
+    device_type: str | None = None
+    os: str | None = None
+    browser: str | None = None
+    ip_address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    extra_data: dict[str, Any] | None = None
 
 
 class PaginatedScanEvents(BaseModel):

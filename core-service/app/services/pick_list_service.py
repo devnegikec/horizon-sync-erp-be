@@ -346,7 +346,7 @@ class PickListService:
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
     # ------------------------------------------------------------------
 
-    def record_pick_scan(
+    def record_pick_scan(  # noqa: C901
         self,
         pick_list_id: UUID,
         qr_data: str,
