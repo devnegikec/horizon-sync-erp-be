@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 SettingType = Literal["serial_prefix", "channel", "destination", "shelf_life"]
 
 

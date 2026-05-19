@@ -1,0 +1,673 @@
+"""Put-away service for generating optimized put-away lists from receiving slips.
+
+Handles:
+- Generating put-away lists from approved receiving slips
+- Assigning bins respecting allocations (exclusive first, then preferred, then unallocated)
+- Filtering bins by capacity
+- Splitting across bins if single bin insufficient
+- Completing put-away items (updating bin stock)
+- Skipping put-away items with reason
+- Triggering capacity rollup on item completion
+- Updating receiving slip to PUTAWAY_COMPLETE when all items done
+
+Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6
+"""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.models.bin_stock_level import BinStockLevel
+from app.models.item import Item
+from app.models.location_allocation import LocationAllocation
+from app.models.put_away_list import PutAwayList, PutAwayListItem
+from app.models.receiving_slip import ReceivingSlip
+from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_stock_service import BinStockService
+from app.services.capacity_service import CapacityService
+from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+
+
+class PutAwayService:
+    """Service for generating and managing put-away lists from receiving slips."""
+
+    def __init__(self, db: Session):
+        self.db = db
+        self.bin_stock_service = BinStockService(db)
+        self.capacity_service = CapacityService(db)
+        self.routing_optimizer = RoutingOptimizer()
+
+    def generate_from_slip(
+        self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
+    ) -> PutAwayList:
+        """Generate a put-away list from an approved receiving slip.
+
+        Assigns bins respecting allocations (exclusive first, then preferred,
+        then unallocated) and capacity. Groups items by zone/aisle and sorts
+        by optimal traversal order. Creates a worker task via TaskService
+        if a worker_id is provided.
+
+        Args:
+            slip_id: The receiving slip ID to generate put-away from.
+            org_id: Organization ID for scoping.
+            worker_id: Optional worker ID to assign the put-away task to.
+
+        Returns:
+            The created PutAwayList with items assigned to bins.
+
+        Raises:
+            NotFoundError: If receiving slip is not found.
+            StateError: If slip is not in pending_putaway status.
+
+        Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
+        """
+        # Validate the receiving slip
+        slip = (
+            self.db.query(ReceivingSlip)
+            .filter(
+                ReceivingSlip.id == slip_id,
+                ReceivingSlip.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if slip is None:
+            raise NotFoundError(
+                message="Receiving slip not found",
+                entity_type="ReceivingSlip",
+                entity_id=str(slip_id),
+            )
+
+        if slip.status != "pending_putaway":
+            raise StateError(
+                message="Receiving slip must be in pending_putaway status to generate put-away list",
+                current_state=slip.status,
+                required_state=["pending_putaway"],
+            )
+
+        # Generate unique put-away list number
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        put_away_number = DocumentNumberingService(self.db).get_next_number(
+            org_id, "put_away_list"
+        )
+
+        # Create the put-away list
+        put_away_list = PutAwayList(
+            organization_id=org_id,
+            warehouse_id=slip.warehouse_id,
+            put_away_list_no=put_away_number,
+            status="pending",
+            reference_type="receiving_slip",
+            reference_id=slip_id,
+            receiving_slip_id=slip_id,
+        )
+        self.db.add(put_away_list)
+        self.db.flush()
+
+        # Process each receiving slip item and assign bins
+        put_away_items = []
+        for slip_item in slip.items:
+            # Skip items flagged as damaged
+            if slip_item.flag == "damaged":
+                continue
+
+            # Resolve item from SKU
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.item_code == slip_item.sku,
+                    Item.organization_id == org_id,
+                )
+                .first()
+            )
+
+            if item is None:
+                # If item not found by code, skip this item
+                continue
+
+            quantity = Decimal(str(slip_item.quantity))
+            item_group_id = item.item_group_id
+
+            # Assign bins for this item
+            bin_assignments = self._assign_bins(
+                item_id=item.id,
+                item_group_id=item_group_id,
+                quantity=quantity,
+                warehouse_id=slip.warehouse_id,
+                org_id=org_id,
+            )
+
+            # Create put-away list items from bin assignments
+            for assignment in bin_assignments:
+                put_away_item = PutAwayListItem(
+                    organization_id=org_id,
+                    put_away_list_id=put_away_list.id,
+                    item_id=item.id,
+                    sku=slip_item.sku,
+                    batch_number=slip_item.batch_number,
+                    quantity=assignment["quantity"],
+                    bin_location_id=assignment["bin_location_id"],
+                    sort_order=0,  # Will be set by routing optimizer
+                    status="pending",
+                )
+                self.db.add(put_away_item)
+                put_away_items.append(put_away_item)
+
+        self.db.flush()
+
+        # Optimize routing order for all put-away items
+        self._optimize_item_routing(put_away_items)
+
+        # Assign worker if provided
+        if worker_id is not None:
+            put_away_list.assigned_to = worker_id
+
+        self.db.commit()
+
+        # Create a worker task via TaskService if worker_id is provided
+        if worker_id is not None:
+            from app.services.task_service import TaskService
+
+            task_service = TaskService(self.db)
+            task_service.create_task(
+                task_type="put_away",
+                worker_id=worker_id,
+                reference_id=put_away_list.id,
+                org_id=org_id,
+            )
+
+        self.db.refresh(put_away_list)
+        return put_away_list
+
+    def complete_item(
+        self, put_away_item_id: UUID, worker_id: UUID, org_id: UUID
+    ) -> PutAwayListItem:
+        """Complete a put-away item, updating bin stock and marking as COMPLETED.
+
+        Triggers capacity rollup on completion. Updates receiving slip to
+        PUTAWAY_COMPLETE when all items are done.
+
+        Args:
+            put_away_item_id: The put-away list item ID to complete.
+            worker_id: The worker completing the item.
+            org_id: Organization ID for scoping.
+
+        Returns:
+            The updated PutAwayListItem.
+
+        Raises:
+            NotFoundError: If put-away item is not found.
+            StateError: If item is not in pending status.
+            ValidationError: If bin_location_id is not assigned.
+
+        Requirements: 8.5, 8.6, 18.1, 18.3
+        """
+        put_away_item = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.id == put_away_item_id,
+                PutAwayListItem.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if put_away_item is None:
+            raise NotFoundError(
+                message="Put-away list item not found",
+                entity_type="PutAwayListItem",
+                entity_id=str(put_away_item_id),
+            )
+
+        if put_away_item.status != "pending":
+            raise StateError(
+                message="Put-away item must be in pending status to complete",
+                current_state=put_away_item.status,
+                required_state=["pending"],
+            )
+
+        if put_away_item.bin_location_id is None:
+            raise ValidationError(
+                "Cannot complete put-away item without an assigned bin location"
+            )
+
+        # Add stock to the assigned bin using BinStockService
+        self.bin_stock_service.add_stock(
+            bin_id=put_away_item.bin_location_id,
+            item_id=put_away_item.item_id,
+            quantity=Decimal(str(put_away_item.quantity)),
+            org_id=org_id,
+            batch_number=put_away_item.batch_number,
+        )
+
+        # Mark item as completed
+        put_away_item.status = "completed"
+        put_away_item.completed_at = datetime.now(UTC)
+        self.db.flush()
+
+        # Check if all items in the put-away list are done
+        self._check_and_update_list_completion(put_away_item.put_away_list_id)
+
+        self.db.commit()
+        self.db.refresh(put_away_item)
+        return put_away_item
+
+    def skip_item(
+        self, put_away_item_id: UUID, reason: str, org_id: UUID
+    ) -> PutAwayListItem:
+        """Skip a put-away item with a reason.
+
+        Args:
+            put_away_item_id: The put-away list item ID to skip.
+            reason: The reason for skipping.
+            org_id: Organization ID for scoping.
+
+        Returns:
+            The updated PutAwayListItem.
+
+        Raises:
+            NotFoundError: If put-away item is not found.
+            StateError: If item is not in pending status.
+            ValidationError: If reason is empty.
+        """
+        if not reason or not reason.strip():
+            raise ValidationError(
+                "A reason must be provided when skipping a put-away item"
+            )
+
+        put_away_item = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.id == put_away_item_id,
+                PutAwayListItem.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if put_away_item is None:
+            raise NotFoundError(
+                message="Put-away list item not found",
+                entity_type="PutAwayListItem",
+                entity_id=str(put_away_item_id),
+            )
+
+        if put_away_item.status != "pending":
+            raise StateError(
+                message="Put-away item must be in pending status to skip",
+                current_state=put_away_item.status,
+                required_state=["pending"],
+            )
+
+        # Mark item as skipped with reason
+        put_away_item.status = "skipped"
+        put_away_item.notes = reason
+        self.db.flush()
+
+        # Check if all items in the put-away list are done (completed or skipped)
+        self._check_and_update_list_completion(put_away_item.put_away_list_id)
+
+        self.db.commit()
+        self.db.refresh(put_away_item)
+        return put_away_item
+
+    # ------------------------------------------------------------------
+    # PRIVATE HELPERS
+    # ------------------------------------------------------------------
+
+    def _assign_bins(
+        self,
+        item_id: UUID,
+        item_group_id: UUID | None,
+        quantity: Decimal,
+        warehouse_id: UUID,
+        org_id: UUID,
+    ) -> list[dict]:
+        """Assign bins for an item respecting allocations and capacity.
+
+        Allocation priority:
+        1. Exclusive allocations for the item's group — only use those bins
+        2. Preferred allocations for the item's group — try those first
+        3. Unallocated bins — fall back if preferred bins insufficient
+
+        Filters bins by: is_active=True, available_capacity >= needed quantity.
+        Splits across bins if single bin insufficient.
+
+        Args:
+            item_id: The item to assign bins for.
+            item_group_id: The item's group ID for allocation lookup.
+            quantity: Total quantity to assign.
+            warehouse_id: The warehouse to search bins in.
+            org_id: Organization ID for scoping.
+
+        Returns:
+            List of dicts with bin_location_id and quantity.
+
+        Requirements: 20.3, 20.4, 20.5, 20.6
+        """
+        assignments: list[dict] = []
+        remaining_qty = quantity
+
+        if item_group_id is not None:
+            # Step 1: Check for exclusive allocations
+            exclusive_allocations = (
+                self.db.query(LocationAllocation)
+                .filter(
+                    LocationAllocation.organization_id == org_id,
+                    LocationAllocation.item_group_id == item_group_id,
+                    LocationAllocation.allocation_type == "exclusive",
+                    LocationAllocation.is_active == True,  # noqa: E712
+                )
+                .join(
+                    WarehouseLocation,
+                    LocationAllocation.location_id == WarehouseLocation.id,
+                )
+                .filter(
+                    WarehouseLocation.warehouse_id == warehouse_id,
+                )
+                .order_by(LocationAllocation.priority.desc())
+                .all()
+            )
+
+            if exclusive_allocations:
+                # Only use exclusively allocated bins
+                exclusive_bins = self._get_bins_from_allocations(
+                    exclusive_allocations, org_id
+                )
+                assignments, remaining_qty = self._fill_bins(
+                    exclusive_bins, remaining_qty, org_id
+                )
+                # For exclusive allocations, we don't fall back to other bins
+                if remaining_qty > 0:
+                    # If we can't fit everything in exclusive bins, still return
+                    # what we have — the remaining will be unassigned
+                    pass
+                return assignments
+
+            # Step 2: Check for preferred allocations
+            preferred_allocations = (
+                self.db.query(LocationAllocation)
+                .filter(
+                    LocationAllocation.organization_id == org_id,
+                    LocationAllocation.item_group_id == item_group_id,
+                    LocationAllocation.allocation_type == "preferred",
+                    LocationAllocation.is_active == True,  # noqa: E712
+                )
+                .join(
+                    WarehouseLocation,
+                    LocationAllocation.location_id == WarehouseLocation.id,
+                )
+                .filter(
+                    WarehouseLocation.warehouse_id == warehouse_id,
+                )
+                .order_by(LocationAllocation.priority.desc())
+                .all()
+            )
+
+            if preferred_allocations:
+                preferred_bins = self._get_bins_from_allocations(
+                    preferred_allocations, org_id
+                )
+                assignments, remaining_qty = self._fill_bins(
+                    preferred_bins, remaining_qty, org_id
+                )
+
+        # Step 3: Fall back to unallocated bins if still remaining
+        if remaining_qty > 0:
+            unallocated_bins = self._get_unallocated_bins(warehouse_id, org_id)
+            additional_assignments, remaining_qty = self._fill_bins(
+                unallocated_bins, remaining_qty, org_id
+            )
+            assignments.extend(additional_assignments)
+
+        return assignments
+
+    def _get_bins_from_allocations(
+        self, allocations: list[LocationAllocation], org_id: UUID
+    ) -> list[WarehouseLocation]:
+        """Get active bin locations from allocation records.
+
+        Allocations can point to bins, levels, bays, etc. We need to resolve
+        down to actual bin locations.
+        """
+        bins: list[WarehouseLocation] = []
+
+        for allocation in allocations:
+            location = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.id == allocation.location_id,
+                    WarehouseLocation.is_active == True,  # noqa: E712
+                )
+                .first()
+            )
+
+            if location is None:
+                continue
+
+            if location.location_type == "bin":
+                bins.append(location)
+            else:
+                # Get all descendant bins
+                descendant_bins = self._get_descendant_bins(location.id)
+                bins.extend(descendant_bins)
+
+        return bins
+
+    def _get_descendant_bins(self, location_id: UUID) -> list[WarehouseLocation]:
+        """Get all active descendant bin locations using BFS."""
+        bins: list[WarehouseLocation] = []
+        queue = [location_id]
+
+        while queue:
+            current_id = queue.pop(0)
+            children = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.parent_location_id == current_id,
+                    WarehouseLocation.is_active == True,  # noqa: E712
+                )
+                .all()
+            )
+
+            for child in children:
+                if child.location_type == "bin":
+                    bins.append(child)
+                else:
+                    queue.append(child.id)
+
+        return bins
+
+    def _get_unallocated_bins(
+        self, warehouse_id: UUID, org_id: UUID
+    ) -> list[WarehouseLocation]:
+        """Get active bins that have no exclusive allocation.
+
+        Returns bins in the warehouse that are not exclusively allocated
+        to any item group.
+        """
+        # Get all bin IDs that have an active exclusive allocation
+        exclusively_allocated_location_ids = (
+            self.db.query(LocationAllocation.location_id)
+            .filter(
+                LocationAllocation.organization_id == org_id,
+                LocationAllocation.allocation_type == "exclusive",
+                LocationAllocation.is_active == True,  # noqa: E712
+            )
+            .subquery()
+        )
+
+        # Get all active bins in the warehouse that are NOT exclusively allocated
+        # We need to check both direct bin allocations and ancestor allocations
+        bins = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.warehouse_id == warehouse_id,
+                WarehouseLocation.organization_id == org_id,
+                WarehouseLocation.location_type == "bin",
+                WarehouseLocation.is_active == True,  # noqa: E712
+                ~WarehouseLocation.id.in_(exclusively_allocated_location_ids),
+            )
+            .all()
+        )
+
+        return bins
+
+    def _fill_bins(
+        self,
+        bins: list[WarehouseLocation],
+        quantity: Decimal,
+        org_id: UUID,
+    ) -> tuple[list[dict], Decimal]:
+        """Fill bins with the given quantity, respecting capacity.
+
+        Splits across bins if a single bin is insufficient.
+
+        Args:
+            bins: List of candidate bin locations.
+            quantity: Remaining quantity to assign.
+            org_id: Organization ID.
+
+        Returns:
+            Tuple of (assignments list, remaining quantity).
+        """
+        assignments: list[dict] = []
+        remaining = quantity
+
+        for bin_loc in bins:
+            if remaining <= 0:
+                break
+
+            # Calculate available capacity for this bin
+            available = self._get_bin_available_capacity(bin_loc)
+
+            if available <= 0:
+                continue
+
+            # Assign as much as possible to this bin
+            assign_qty = min(remaining, available)
+            assignments.append(
+                {
+                    "bin_location_id": bin_loc.id,
+                    "quantity": assign_qty,
+                }
+            )
+            remaining -= assign_qty
+
+        return assignments, remaining
+
+    def _get_bin_available_capacity(self, bin_loc: WarehouseLocation) -> Decimal:
+        """Get the available capacity of a bin location."""
+        bin_capacity = Decimal(str(bin_loc.capacity or 0))
+
+        # Get current stock in the bin
+        current_stock = (
+            self.db.query(
+                func.coalesce(func.sum(BinStockLevel.quantity_on_hand), Decimal("0"))
+            )
+            .filter(BinStockLevel.bin_location_id == bin_loc.id)
+            .scalar()
+        ) or Decimal("0")
+
+        return bin_capacity - Decimal(str(current_stock))
+
+    def _optimize_item_routing(self, put_away_items: list[PutAwayListItem]) -> None:
+        """Optimize the routing order for put-away items using the RoutingOptimizer.
+
+        Groups items by aisle and sorts by optimal traversal order.
+
+        Requirements: 8.3, 8.4
+        """
+        if not put_away_items:
+            return
+
+        # Build BinLocation objects for items that have assigned bins
+        items_with_bins = [
+            item for item in put_away_items if item.bin_location_id is not None
+        ]
+
+        if not items_with_bins:
+            return
+
+        # Load bin location data for routing
+        bin_locations: list[BinLocation] = []
+        item_map: dict = {}  # Map BinLocation index to PutAwayListItem
+
+        for _i, item in enumerate(items_with_bins):
+            bin_loc = (
+                self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.id == item.bin_location_id)
+                .first()
+            )
+            if bin_loc is None:
+                continue
+
+            bl = BinLocation(
+                id=item.id,
+                full_path=bin_loc.full_path or "",
+                position_x=float(bin_loc.position_x or 0),
+                position_y=float(bin_loc.position_y or 0),
+            )
+            bin_locations.append(bl)
+            item_map[item.id] = item
+
+        if not bin_locations:
+            return
+
+        # Optimize the route
+        optimized = self.routing_optimizer.optimize(bin_locations)
+
+        # Apply sort_order back to put-away items
+        for opt_loc in optimized:
+            if opt_loc.id in item_map:
+                item_map[opt_loc.id].sort_order = opt_loc.sort_order
+
+        self.db.flush()
+
+    def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:
+        """Check if all items in a put-away list are done and update statuses.
+
+        When all items are completed or skipped:
+        - Mark the put-away list as completed
+        - Update the receiving slip to PUTAWAY_COMPLETE
+
+        Requirements: 8.6
+        """
+        put_away_list = (
+            self.db.query(PutAwayList)
+            .filter(PutAwayList.id == put_away_list_id)
+            .first()
+        )
+
+        if put_away_list is None:
+            return
+
+        # Count pending items
+        pending_count = (
+            self.db.query(func.count(PutAwayListItem.id))
+            .filter(
+                PutAwayListItem.put_away_list_id == put_away_list_id,
+                PutAwayListItem.status == "pending",
+            )
+            .scalar()
+        ) or 0
+
+        if pending_count == 0:
+            # All items are done (completed or skipped)
+            put_away_list.status = "completed"
+            put_away_list.completed_at = datetime.now(UTC)
+            self.db.flush()
+
+            # Update receiving slip to PUTAWAY_COMPLETE
+            if put_away_list.receiving_slip_id:
+                slip = (
+                    self.db.query(ReceivingSlip)
+                    .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
+                    .first()
+                )
+                if slip and slip.status == "pending_putaway":
+                    slip.status = "putaway_complete"
+                    self.db.flush()

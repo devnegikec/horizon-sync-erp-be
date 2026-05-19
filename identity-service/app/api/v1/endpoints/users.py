@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
-    is_system_admin,
     require_permission,
     validate_user_in_organization,
 )
@@ -99,17 +98,18 @@ async def list_users(
     require_permission(current_user.permissions, "user.read")
 
     # Determine if caller can see system admin users
-    # Only system_admin.master holders can see/manage other system_admin users
-    # system_admin.users_* holders manage org-level users only
-    caller_is_super_admin = "system_admin.master" in current_user.permissions
+    # Only actual system_admin user_type with system_admin.master permission can see other system_admin users
+    caller_is_super_admin = (
+        current_user.user_type == "system_admin"
+        and "system_admin.master" in current_user.permissions
+    )
 
-    # Determine if caller has cross-org user management access.
-    # Only explicit system_admin.* permissions grant cross-org access.
-    # The *. * wildcard is org-scoped (organization_admin role) and must NOT
-    # bypass org isolation — it only grants full access within the user's own org.
+    # Determine if caller has cross-org user management access
+    # Only actual system_admin user_type OR explicit system_admin.* permissions grant cross-org access.
+    # An org owner with *.* permission within their org does NOT get cross-org access.
     has_cross_org_user_access = (
-        is_system_admin(current_user.permissions)
-        or any(p.startswith("system_admin.users_") for p in current_user.permissions)
+        current_user.user_type == "system_admin"
+        or any(p.startswith("system_admin.") for p in current_user.permissions)
     )
 
     organization_ids: list[UUID] | None = None
@@ -335,8 +335,8 @@ async def get_user(
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.read")
     has_cross_org_user_access = (
-        is_system_admin(current_user.permissions)
-        or any(p.startswith("system_admin.users_") for p in current_user.permissions)
+        current_user.user_type == "system_admin"
+        or any(p.startswith("system_admin.") for p in current_user.permissions)
     )
     if not has_cross_org_user_access and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
@@ -575,7 +575,7 @@ async def update_user(
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.update")
-    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
+    if not (current_user.user_type == "system_admin" or any(p.startswith("system_admin.") for p in current_user.permissions)) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -628,7 +628,7 @@ async def delete_user(
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.delete")
-    if not is_system_admin(current_user.permissions) and not _users_share_organization(db, current_user.id, user_id):
+    if not (current_user.user_type == "system_admin" or any(p.startswith("system_admin.") for p in current_user.permissions)) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",

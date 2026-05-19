@@ -133,6 +133,20 @@ async def get_base_currency(
 
     **Returns:** Base currency code
     """
+    # First check CurrencyMaster.is_base_currency for this org (org-specific)
+    base_record = (
+        db.query(CurrencyMaster)
+        .filter(
+            CurrencyMaster.organization_id == current_user.organization_id,
+            CurrencyMaster.is_base_currency == True,
+            CurrencyMaster.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if base_record:
+        return BaseCurrencyResponse(base_currency=base_record.code)
+
+    # Fallback to system_config (legacy/global)
     service = CurrencyService(db)
     base_currency = service.get_base_currency()
     return BaseCurrencyResponse(base_currency=base_currency)
@@ -159,8 +173,26 @@ async def set_base_currency(
 
     **Returns:** Updated base currency
     """
+
+    # Update system_config (global/legacy)
     service = CurrencyService(db)
     service.set_base_currency(data.base_currency, str(current_user.id))
+
+    # Also update CurrencyMaster.is_base_currency for this org (org-specific)
+    # Clear existing base flag
+    db.query(CurrencyMaster).filter(
+        CurrencyMaster.organization_id == current_user.organization_id,
+        CurrencyMaster.is_base_currency == True,
+    ).update({"is_base_currency": False})
+
+    # Set new base flag
+    db.query(CurrencyMaster).filter(
+        CurrencyMaster.organization_id == current_user.organization_id,
+        CurrencyMaster.code == data.base_currency,
+    ).update({"is_base_currency": True})
+
+    db.commit()
+
     return BaseCurrencyResponse(base_currency=data.base_currency)
 
 
@@ -184,9 +216,6 @@ async def list_currencies(
 
     **Returns:** List of currencies and the organization's base currency
     """
-    service = CurrencyService(db)
-    base_currency = service.get_base_currency()
-
     currencies = (
         db.query(CurrencyMaster)
         .filter(
@@ -196,6 +225,19 @@ async def list_currencies(
         .order_by(CurrencyMaster.code)
         .all()
     )
+
+    # Determine base currency: first check CurrencyMaster.is_base_currency for this org,
+    # then fall back to system_config, then default to USD
+    base_currency = None
+    for c in currencies:
+        if c.is_base_currency:
+            base_currency = c.code
+            break
+
+    if not base_currency:
+        # Fallback to system_config (legacy/global setting)
+        service = CurrencyService(db)
+        base_currency = service.get_base_currency()
 
     return CurrencyListResponse(
         currencies=[CurrencyItem.model_validate(c) for c in currencies],

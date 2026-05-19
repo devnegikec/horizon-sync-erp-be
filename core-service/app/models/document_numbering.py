@@ -27,9 +27,14 @@ DOCUMENT_TYPES = [
     "payment",
     "item",
     "item_group",
+    "warehouse",
+    "customer",
     "stock_entry",
     "stock_reconciliation",
     "journal_entry",
+    "receiving_slip",
+    "put_away_list",
+    "dispatch",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -46,9 +51,14 @@ DEFAULT_PREFIXES = {
     "payment": "RCP",
     "item": "ITM",
     "item_group": "IG",
+    "warehouse": "WH",
+    "customer": "CUST",
     "stock_entry": "SE",
     "stock_reconciliation": "SREC",
     "journal_entry": "JE",
+    "receiving_slip": "RS",
+    "put_away_list": "PA",
+    "dispatch": "DSP",
 }
 
 

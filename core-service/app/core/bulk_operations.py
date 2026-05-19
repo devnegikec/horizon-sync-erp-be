@@ -21,7 +21,7 @@ class FileFormat(str, Enum):
 class BulkImportValidator:
     """Validator for bulk import data"""
 
-    REQUIRED_FIELDS = {"item_code", "item_name"}
+    REQUIRED_FIELDS = {"item_name"}
     VALID_COLUMNS = {
         "item_code",
         "item_name",

@@ -291,10 +291,11 @@ class ItemService:
             Tuple of (list of items, pagination metadata)
         """
         # Validate and convert enum values (case-insensitive)
+        # ItemStatus and ItemType use lowercase values: "active", "inactive", "stock", etc.
         status_enum = None
         if status:
             try:
-                status_str = str(status).upper()
+                status_str = str(status).lower()
                 status_enum = ItemStatus(status_str)
             except (ValueError, KeyError):
                 pass
@@ -302,7 +303,7 @@ class ItemService:
         item_type_enum = None
         if item_type:
             try:
-                item_type_str = str(item_type).upper()
+                item_type_str = str(item_type).lower()
                 item_type_enum = ItemType(item_type_str)
             except (ValueError, KeyError):
                 pass

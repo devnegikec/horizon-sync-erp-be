@@ -14,6 +14,8 @@ from app.schemas.chart_of_accounts_setup import (
     ManualTriggerRequest,
 )
 from app.services.default_chart_setup_service import DefaultChartSetupService
+from app.core.constants import BOOK_CHART_OF_ACCOUNT_ENABLED, FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
+from app.services.feature_flag_service import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +54,20 @@ async def create_default_chart_of_accounts(
 
     **Status Codes:**
     - 200 OK: Chart created successfully or already exists
+    - 423 Locked: chart_of_accounts feature is disabled globally
     - 422 Unprocessable Entity: Invalid request data
     - 500 Internal Server Error: Chart creation failed
     """
+    if not is_feature_enabled(BOOK_CHART_OF_ACCOUNT_ENABLED, db):
+        raise HTTPException(
+            status_code=HTTP_FEATURE_DISABLED,
+            detail={
+                "message": "Chart of Accounts feature is currently disabled",
+                "code": FEATURE_DISABLED_CODE,
+                "feature": BOOK_CHART_OF_ACCOUNT_ENABLED,
+            },
+        )
+
     service = DefaultChartSetupService(db)
 
     try:
@@ -117,27 +130,23 @@ async def trigger_default_chart_creation(
 
     Requires: Authentication (admin permissions recommended but not enforced in this version)
 
-    **Path Parameters:**
-    - **organization_id**: UUID of the organization
-
-    **Request Body:**
-    - **currency**: ISO currency code (default: "USD")
-    - **force_recreate**: If True, recreate even if accounts exist (default: False)
-
-    **Returns:**
-    - **success**: boolean indicating operation success
-    - **organization_id**: UUID of the organization
-    - **accounts_created**: number of accounts created
-    - **mappings_created**: number of default account mappings created
-    - **message**: status message
-    - **errors**: list of errors if operation failed (optional)
-
     **Status Codes:**
     - 200 OK: Chart created successfully or already exists
     - 401 Unauthorized: User not authenticated
+    - 423 Locked: chart_of_accounts feature is disabled globally
     - 422 Unprocessable Entity: Invalid request data
     - 500 Internal Server Error: Chart creation failed
     """
+    if not is_feature_enabled(BOOK_CHART_OF_ACCOUNT_ENABLED, db):
+        raise HTTPException(
+            status_code=HTTP_FEATURE_DISABLED,
+            detail={
+                "message": "Chart of Accounts feature is currently disabled",
+                "code": FEATURE_DISABLED_CODE,
+                "feature": BOOK_CHART_OF_ACCOUNT_ENABLED,
+            },
+        )
+
     service = DefaultChartSetupService(db)
 
     try:

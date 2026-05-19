@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Campaign ──────────────────────────────────────────────────────────────────
+
 
 class CampaignCreate(BaseModel):
     name: str = Field(..., max_length=256)
@@ -94,6 +94,7 @@ class CampaignListResponse(BaseModel):
 
 # ── Play2Win Prize ─────────────────────────────────────────────────────────────
 
+
 class PrizeCreate(BaseModel):
     name: str = Field(..., max_length=128)
     prize_type: str = "none"
@@ -113,6 +114,7 @@ class PrizeResponse(PrizeCreate):
 
 
 # ── Lead ──────────────────────────────────────────────────────────────────────
+
 
 class LeadCreate(BaseModel):
     campaign_id: UUID | None = None
@@ -150,6 +152,7 @@ class LeadListResponse(BaseModel):
 
 
 # ── Coupon ────────────────────────────────────────────────────────────────────
+
 
 class CouponVerifyRequest(BaseModel):
     coupon_code: str
@@ -223,6 +226,7 @@ class CouponListResponse(BaseModel):
 
 
 # ── Feedback / Survey ─────────────────────────────────────────────────────────
+
 
 class FeedbackSubmit(BaseModel):
     campaign_id: UUID

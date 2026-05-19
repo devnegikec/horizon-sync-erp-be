@@ -13,7 +13,7 @@ from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, get_current_active_user, require_feature_flag
 from app.models.bank_account import BankAccount
 from app.models.bank_transaction import BankTransaction
 from app.models.bank_reconciliation import BankReconciliation
@@ -37,9 +37,16 @@ from app.schemas.bank_reconciliation import (
 )
 from app.services.auto_reconciliation_service import AutoReconciliationService
 from app.services.reconciliation_engine import ReconciliationEngine
+from app.core.constants import BOOK_MODULE_ENABLED, BOOK_CHART_OF_ACCOUNT_ENABLED
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+# Reconciliations require both the banking module and chart of accounts to be enabled
+router = APIRouter(
+    dependencies=[
+        Depends(require_feature_flag(BOOK_MODULE_ENABLED)),
+        Depends(require_feature_flag(BOOK_CHART_OF_ACCOUNT_ENABLED)),
+    ]
+)
 
 
 @router.get(

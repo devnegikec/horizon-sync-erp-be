@@ -31,7 +31,7 @@ class WarehouseBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255)
     code: str = Field(..., min_length=1, max_length=50)
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
 
     # Hierarchy
     parent_warehouse_id: UUID | None = None
@@ -68,14 +68,14 @@ class WarehouseBase(BaseModel):
 class WarehouseCreate(WarehouseBase):
     """Schema for creating a new warehouse"""
 
-    pass
+    code: str | None = Field(None, max_length=50)  # Auto-generated if not provided
 
 
 class WarehouseUpdate(BaseModel):
     """Schema for updating a warehouse (all fields optional)"""
 
     name: str | None = Field(None, min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=1000)
 
     # Hierarchy
     parent_warehouse_id: UUID | None = None

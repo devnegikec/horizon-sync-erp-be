@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Message Template ──────────────────────────────────────────────────────────
+
 
 class MessageTemplateCreate(BaseModel):
     template_name: str = Field(..., max_length=4000)
@@ -62,6 +62,7 @@ class MessageTemplateListResponse(BaseModel):
 
 # ── Bulk Message Job ──────────────────────────────────────────────────────────
 
+
 class BulkMessageJobCreate(BaseModel):
     message_type: str = Field(..., pattern="^(sms|whatsapp|rcs)$")
     template_name: str | None = None
@@ -90,6 +91,7 @@ class BulkMessageJobResponse(BaseModel):
 
 # ── Scheduled Message ─────────────────────────────────────────────────────────
 
+
 class ScheduledMessageCreate(BaseModel):
     message_type: str = Field(..., pattern="^(sms|whatsapp|rcs)$")
     schedule: datetime
@@ -116,6 +118,7 @@ class ScheduledMessageResponse(BaseModel):
 
 # ── WhatsApp Send ─────────────────────────────────────────────────────────────
 
+
 class WhatsAppSendRequest(BaseModel):
     recipient_number: str = Field(..., description="E.164 format, e.g. +919876543210")
     template_name: str
@@ -136,6 +139,7 @@ class WhatsAppSendResponse(BaseModel):
 
 # ── WhatsApp Webhook ──────────────────────────────────────────────────────────
 
+
 class WhatsAppWebhookPayload(BaseModel):
     guid: str | None = None
     whatsapp_msg_id: str | None = None
@@ -148,6 +152,7 @@ class WhatsAppWebhookPayload(BaseModel):
 
 # ── SMS Webhook ───────────────────────────────────────────────────────────────
 
+
 class SMSWebhookPayload(BaseModel):
     msg_id: str | None = None
     recipient_number: str | None = None
@@ -157,6 +162,7 @@ class SMSWebhookPayload(BaseModel):
 
 
 # ── RCS Send ──────────────────────────────────────────────────────────────────
+
 
 class RCSSendRequest(BaseModel):
     recipient_number: str
@@ -172,6 +178,7 @@ class RCSSendResponse(BaseModel):
 
 
 # ── Message Credits ───────────────────────────────────────────────────────────
+
 
 class MessageCreditResponse(BaseModel):
     id: UUID

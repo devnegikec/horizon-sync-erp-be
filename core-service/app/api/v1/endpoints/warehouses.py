@@ -1,8 +1,12 @@
 """Warehouse management API endpoints"""
 
+import csv
+import io
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -13,6 +17,8 @@ from app.core.authorization import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.base import WarehouseType
+from app.models.warehouse import Warehouse
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse import (
     WarehouseCreate,
@@ -26,7 +32,17 @@ from app.schemas.warehouse import (
 )
 from app.services.warehouse_service import WarehouseService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+class WarehouseImportResponse(BaseModel):
+    total_rows: int
+    created: int
+    updated: int
+    failed: int
+    errors: list[dict]
 
 
 @router.post(
@@ -251,3 +267,154 @@ async def delete_warehouse(
         user_id=current_user.id,
     )
     return None
+
+
+@router.post(
+    "/import",
+    response_model=WarehouseImportResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Import warehouses from CSV",
+    description="Upload a CSV file to bulk import/update warehouses",
+)
+async def import_warehouses(
+    file: UploadFile = File(..., description="CSV file with warehouse data"),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+) -> WarehouseImportResponse:
+    """
+    Import warehouses from a CSV file.
+
+    - Upserts by `code`: if a warehouse with the same code exists, it is updated; otherwise a new one is created.
+    - Auto-generates code if not provided (WH-XXXX format).
+
+    Supported columns: name, code, description, warehouse_type, is_active,
+    address_line1, address_line2, city, state, country, postal_code,
+    contact_name, contact_phone, contact_email, total_capacity, capacity_uom
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File name is required.")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("csv",):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds 5 MB limit.")
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No data rows found in file.")
+
+    if len(rows) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 rows allowed per import.")
+
+    created = 0
+    updated = 0
+    failed = 0
+    errors: list[dict] = []
+
+    # Auto-generate code counter
+    code_counter = db.query(Warehouse).filter(
+        Warehouse.organization_id == current_user.organization_id
+    ).count()
+
+    VALID_TYPES = {"warehouse", "store", "transit", "virtual"}
+    STRING_FIELDS = [
+        "name", "description", "address_line1", "address_line2",
+        "city", "state", "country", "postal_code",
+        "contact_name", "contact_phone", "contact_email", "capacity_uom",
+    ]
+
+    for row_num, row in enumerate(rows, start=1):
+        # Normalize keys
+        row = {k.strip().lower(): (v.strip() if v else "") for k, v in row.items()}
+
+        name = row.get("name", "")
+        if not name:
+            failed += 1
+            errors.append({"row": row_num, "field": "name", "message": "Name is required"})
+            continue
+
+        code = row.get("code", "")
+        if not code:
+            code_counter += 1
+            code = f"WH-{code_counter:04d}"
+
+        try:
+            # Check if warehouse with same code exists (upsert)
+            existing = db.query(Warehouse).filter(
+                Warehouse.organization_id == current_user.organization_id,
+                Warehouse.code == code,
+                Warehouse.deleted_at.is_(None),
+            ).first()
+
+            # Build data dict
+            data: dict = {"name": name}
+            for field in STRING_FIELDS:
+                if field in row and row[field]:
+                    data[field] = row[field]
+
+            # warehouse_type
+            wh_type_str = row.get("warehouse_type", "").lower()
+            if wh_type_str and wh_type_str in VALID_TYPES:
+                data["warehouse_type"] = WarehouseType(wh_type_str)
+
+            # is_active
+            is_active_str = row.get("is_active", "").lower()
+            if is_active_str in ("true", "1", "yes", "t"):
+                data["is_active"] = True
+            elif is_active_str in ("false", "0", "no", "f"):
+                data["is_active"] = False
+
+            # total_capacity
+            capacity_str = row.get("total_capacity", "")
+            if capacity_str:
+                try:
+                    data["total_capacity"] = int(float(capacity_str))
+                except (ValueError, TypeError):
+                    pass
+
+            if existing:
+                # Update existing warehouse
+                data["updated_by"] = current_user.id
+                for key, value in data.items():
+                    setattr(existing, key, value)
+                db.commit()
+                updated += 1
+            else:
+                # Create new warehouse
+                new_warehouse = Warehouse(
+                    organization_id=current_user.organization_id,
+                    code=code,
+                    created_by=current_user.id,
+                    updated_by=current_user.id,
+                    **data,
+                )
+                db.add(new_warehouse)
+                db.commit()
+                created += 1
+
+        except Exception as e:
+            db.rollback()
+            failed += 1
+            errors.append({"row": row_num, "field": "general", "message": str(e)})
+            logger.error(f"Warehouse import row {row_num} failed: {e}")
+
+    return WarehouseImportResponse(
+        total_rows=len(rows),
+        created=created,
+        updated=updated,
+        failed=failed,
+        errors=errors,
+    )

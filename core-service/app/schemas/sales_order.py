@@ -146,7 +146,7 @@ class SalesOrderBase(BaseModel):
     )
     reference_type: str | None = None
     reference_id: UUID | None = None
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
 
 
 class SalesOrderCreate(SalesOrderBase):
@@ -160,7 +160,7 @@ class SalesOrderUpdate(BaseModel):
         None,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     )
-    remarks: str | None = None
+    remarks: str | None = Field(None, max_length=1000)
     discount_type: str | None = Field(
         None, pattern="^(flat|percentage)$", description="Document-level discount type"
     )
@@ -177,6 +177,7 @@ class SalesOrderResponse(SalesOrderBase):
     id: UUID
     organization_id: UUID
     customer: SalesOrderCustomerDetail | None = None
+    reference_no: str | None = None
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -194,7 +195,10 @@ class SalesOrderListItem(BaseModel):
     customer: SalesOrderCustomerInfo | None = None
     status: str
     order_date: datetime
+    delivery_date: datetime | None = None
     grand_total: Decimal
+    reference_type: str | None = None
+    reference_id: UUID | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

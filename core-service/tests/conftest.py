@@ -17,6 +17,17 @@ from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+# Monkey-patch JSONB to JSON for SQLite compatibility
+try:
+    from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+
+    if not hasattr(SQLiteTypeCompiler, "visit_JSONB"):
+        SQLiteTypeCompiler.visit_JSONB = lambda self, type_, **kw: "JSON"
+    if not hasattr(SQLiteTypeCompiler, "visit_ARRAY"):
+        SQLiteTypeCompiler.visit_ARRAY = lambda self, type_, **kw: "TEXT"
+except Exception:
+    pass
+
 from app.database import Base, get_db  # noqa: E402
 from app.dependencies import CurrentUser, get_current_active_user  # noqa: E402
 from app.main import app  # noqa: E402

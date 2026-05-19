@@ -131,6 +131,20 @@ def seed_database():
                 "action": ActionType.MANAGE,
                 "module": "identity",
             },
+            {
+                "code": "user.invite",
+                "name": "Invite User",
+                "resource": ResourceType.USER,
+                "action": ActionType.INVITE,
+                "module": "identity",
+            },
+            {
+                "code": "invitation.create",
+                "name": "Create Invitation",
+                "resource": ResourceType.INVITATION,
+                "action": ActionType.CREATE,
+                "module": "identity",
+            },
             # Organization permissions
             {
                 "code": "org.create",
@@ -264,7 +278,7 @@ def seed_database():
         org_admin_perms = [
             p
             for code, p in permissions.items()
-            if code.startswith(("org.", "user.read", "user.update"))
+            if code.startswith(("org.", "user.read", "user.update", "user.invite", "invitation.create"))
         ]
         for perm in org_admin_perms:
             role_perm = RolePermission(

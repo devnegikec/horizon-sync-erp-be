@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import UUID
 
-import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -133,9 +132,11 @@ class OrganizationService:
         )
         self.db.commit()
 
-        # Trigger default chart of accounts creation in Core Service
+        # Trigger default chart of accounts creation, then seed onboarding defaults.
+        # Both run in a single background thread to ensure chart accounts exist
+        # before tax template rules reference them.
         if self.core_client:
-            self._trigger_chart_creation(org.id, org.base_currency or "USD", str(owner_id))
+            self._trigger_org_onboarding(org.id, org.base_currency or "USD", str(owner_id))
 
         return self._to_response(org)
 
@@ -298,117 +299,121 @@ class OrganizationService:
             "next_billing_date": org.next_billing_date,
         }
 
-    def _trigger_chart_creation(
+    def _trigger_org_onboarding(
         self, organization_id: UUID, currency: str, owner_id: str
     ) -> None:
-        """Trigger default chart of accounts creation in Core Service.
-        
-        This method makes an async call to the Core Service to create default
-        GL accounts and account mappings. Errors are logged but do not fail
-        organization creation.
-        
-        Args:
-            organization_id: UUID of the organization
-            currency: ISO currency code (e.g., "USD")
-            owner_id: User identifier who created the organization
+        """Run organization onboarding in a background thread.
+
+        Separated into two phases:
+        1. CORE ONBOARDING (always runs, no feature flag dependency):
+           - Currencies, UOMs, tax templates, item groups, system_config
+        2. OPTIONAL FEATURE STEPS (only if respective feature is enabled):
+           - Chart of accounts (depends on book_chart_of_account_enabled flag)
+
+        Core onboarding runs first so that critical data (base currency, UOMs)
+        is available immediately. Feature-specific steps run after and are
+        allowed to fail without affecting the core setup.
         """
         try:
             import asyncio
             import threading
-            
-            initiation_timestamp = datetime.now(UTC).isoformat()
-            
+
             logger.info(
-                "Creating default chart of accounts",
+                "Starting organization onboarding",
                 extra={
                     "organization_id": str(organization_id),
                     "currency": currency,
-                    "created_by": owner_id,
-                    "timestamp": initiation_timestamp,
-                    "event": "chart_creation_initiated"
-                }
+                    "event": "org_onboarding_initiated",
+                },
             )
-            
-            # Run async call in a new thread to avoid event loop conflicts
-            def run_async_in_thread():
+
+            def run_onboarding():
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
-                        response = loop.run_until_complete(
-                            self.core_client.create_with_retry(
+                        # ─── Phase 1: Core onboarding (always runs) ───
+                        # Seeds: currencies, UOMs, tax templates, item groups, system_config
+                        defaults_response = loop.run_until_complete(
+                            self.core_client.seed_organization_defaults_with_retry(
                                 organization_id=organization_id,
-                                currency=currency,
+                                base_currency=currency,
                                 created_by=owner_id,
-                                max_retries=self.retry_attempts
+                                max_retries=self.retry_attempts,
                             )
                         )
-                        
-                        if response:
-                            completion_timestamp = datetime.now(UTC).isoformat()
-                            
+                        if defaults_response:
                             logger.info(
-                                "Default chart of accounts created successfully",
+                                "Core onboarding completed successfully",
                                 extra={
                                     "organization_id": str(organization_id),
-                                    "currency": currency,
-                                    "created_by": owner_id,
-                                    "accounts_created": response.get("accounts_created", 0),
-                                    "mappings_created": response.get("mappings_created", 0),
-                                    "timestamp": completion_timestamp,
-                                    "event": "chart_creation_completed"
-                                }
+                                    "summary": defaults_response.get("summary"),
+                                    "event": "org_core_onboarding_completed",
+                                },
                             )
                         else:
-                            failure_timestamp = datetime.now(UTC).isoformat()
-                            
                             logger.error(
-                                "Failed to create default chart of accounts after all retries",
+                                "Core onboarding failed after all retries",
                                 extra={
                                     "organization_id": str(organization_id),
-                                    "currency": currency,
-                                    "created_by": owner_id,
-                                    "retry_attempts": self.retry_attempts,
-                                    "timestamp": failure_timestamp,
-                                    "event": "chart_creation_failed"
-                                }
+                                    "event": "org_core_onboarding_failed",
+                                },
                             )
+
+                        # ─── Phase 2: Optional feature steps ───
+                        # Chart of accounts — only attempted, failure doesn't affect core setup
+                        try:
+                            chart_response = loop.run_until_complete(
+                                self.core_client.create_with_retry(
+                                    organization_id=organization_id,
+                                    currency=currency,
+                                    created_by=owner_id,
+                                    max_retries=1,  # Single attempt — don't retry feature-flagged steps
+                                )
+                            )
+                            if chart_response:
+                                logger.info(
+                                    "Chart of accounts created",
+                                    extra={
+                                        "organization_id": str(organization_id),
+                                        "accounts_created": chart_response.get("accounts_created", 0),
+                                        "event": "chart_creation_completed",
+                                    },
+                                )
+                        except Exception as chart_err:
+                            # Chart creation is optional — log and continue
+                            logger.info(
+                                "Chart of accounts skipped (feature may be disabled)",
+                                extra={
+                                    "organization_id": str(organization_id),
+                                    "reason": str(chart_err),
+                                    "event": "chart_creation_skipped",
+                                },
+                            )
+
                     finally:
                         loop.close()
                 except Exception as e:
-                    error_timestamp = datetime.now(UTC).isoformat()
-                    
                     logger.error(
-                        "Failed to create default chart of accounts - thread execution error",
+                        "Organization onboarding thread failed",
                         extra={
                             "organization_id": str(organization_id),
-                            "currency": currency,
-                            "created_by": owner_id,
-                            "error_type": type(e).__name__,
                             "error": str(e),
-                            "timestamp": error_timestamp,
-                            "event": "chart_creation_failed"
-                        }
+                            "event": "org_onboarding_failed",
+                        },
                     )
-            
-            # Start the async call in a background thread
-            thread = threading.Thread(target=run_async_in_thread, daemon=True)
+
+            thread = threading.Thread(target=run_onboarding, daemon=True)
             thread.start()
-            
+
         except Exception as e:
-            error_timestamp = datetime.now(UTC).isoformat()
-            
             logger.error(
-                "Failed to create default chart of accounts - unexpected error",
+                "Failed to start org onboarding thread",
                 extra={
                     "organization_id": str(organization_id),
-                    "currency": currency,
-                    "created_by": owner_id,
-                    "error_type": type(e).__name__,
                     "error": str(e),
-                    "timestamp": error_timestamp,
-                    "event": "chart_creation_failed"
-                }
+                    "event": "org_onboarding_failed",
+                },
             )
 
     # Master Organization Validation Methods (Task 1A-1)
@@ -417,7 +422,7 @@ class OrganizationService:
         # Check if master organization already exists
         if self.get_master_organization():
             raise ValueError("Master organization already exists")
-            
+
         # Only SYSTEM_ADMIN can create master organizations
         if user_type != UserType.SYSTEM_ADMIN:
             raise ValueError("Only system administrators can create master organizations")

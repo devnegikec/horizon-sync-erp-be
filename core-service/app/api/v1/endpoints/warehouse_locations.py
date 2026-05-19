@@ -1,0 +1,320 @@
+"""Warehouse location layout and capacity API endpoints"""
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
+
+from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
+from app.database import get_db
+from app.dependencies import CurrentUser, require_permission
+from app.schemas.common import PaginationMeta
+from app.schemas.warehouse_location import (
+    CreateLocationRequest,
+    LocationResponse,
+    LocationSummary,
+    LocationTree,
+    PaginatedLocations,
+    UpdateLocationRequest,
+)
+from app.services.layout_service import LayoutService
+
+router = APIRouter()
+
+
+@router.post(
+    "",
+    response_model=LocationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create warehouse location",
+    description="Create a new location node in the warehouse hierarchy",
+)
+async def create_location(
+    data: CreateLocationRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new warehouse location (zone, aisle, bay, level, or bin).
+
+    Validates the parent-child hierarchy and generates the full_path code.
+
+    **Request Body:**
+    - **warehouse_id**: The warehouse this location belongs to
+    - **parent_location_id**: Parent location UUID (None for zones)
+    - **location_type**: One of zone, aisle, bay, level, bin
+    - **code**: Short code for this location (e.g., Z01, A03)
+    - **name**: Optional human-readable name
+    - **capacity**: Storage capacity (default: 0)
+    - **capacity_uom**: Unit of measure for capacity
+    - **position_x**: X coordinate for routing
+    - **position_y**: Y coordinate for routing
+
+    **Returns:** Created location details
+    """
+    layout_service = LayoutService(db)
+    location = layout_service.create_location(
+        warehouse_id=data.warehouse_id,
+        organization_id=current_user.organization_id,
+        location_type=data.location_type,
+        code=data.code,
+        name=data.name,
+        parent_location_id=data.parent_location_id,
+        capacity=data.capacity,
+        capacity_uom=data.capacity_uom,
+        position_x=data.position_x,
+        position_y=data.position_y,
+    )
+    return LocationResponse.model_validate(location)
+
+
+@router.get(
+    "/tree/{warehouse_id}",
+    response_model=list[LocationTree],
+    summary="Get location hierarchy tree",
+    description="Get the full location hierarchy for a warehouse as a nested tree",
+)
+async def get_location_tree(
+    warehouse_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the full location hierarchy for a warehouse as a nested tree.
+
+    **Path Parameters:**
+    - **warehouse_id**: Warehouse UUID
+
+    **Returns:** List of root-level locations with nested children
+    """
+    layout_service = LayoutService(db)
+    tree = layout_service.get_tree(
+        warehouse_id=warehouse_id,
+        organization_id=current_user.organization_id,
+    )
+    return tree
+
+
+@router.get(
+    "/search",
+    response_model=list[LocationResponse],
+    summary="Search locations",
+    description="Search locations by code or name (case-insensitive partial match)",
+)
+async def search_locations(
+    warehouse_id: UUID = Query(..., description="Warehouse UUID to search within"),
+    q: str = Query(..., min_length=1, description="Search query string"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Search locations by code, full_path, or name.
+
+    **Query Parameters:**
+    - **warehouse_id**: Warehouse to search within
+    - **q**: Search string (matches code, full_path, or name)
+    - **limit**: Maximum results (default: 20, max: 100)
+
+    **Returns:** List of matching locations
+    """
+    layout_service = LayoutService(db)
+    locations = layout_service.search_locations(
+        warehouse_id=warehouse_id,
+        organization_id=current_user.organization_id,
+        query=q,
+        limit=limit,
+    )
+    return [LocationResponse.model_validate(loc) for loc in locations]
+
+
+@router.get(
+    "",
+    response_model=PaginatedLocations,
+    summary="List warehouse locations",
+    description="Get paginated list of warehouse locations with optional filters",
+)
+async def list_locations(
+    warehouse_id: UUID = Query(..., description="Warehouse UUID"),
+    location_type: str | None = Query(
+        None, description="Filter by type (zone, aisle, bay, level, bin)"
+    ),
+    parent_location_id: UUID | None = Query(
+        None, description="Filter by parent location ID"
+    ),
+    is_active: bool | None = Query(None, description="Filter by active status"),
+    has_stock: bool | None = Query(
+        None, description="Filter to locations with stock > 0"
+    ),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page (max 100)"),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    List warehouse locations with optional filters and pagination.
+
+    **Query Parameters:**
+    - **warehouse_id**: Warehouse UUID (required)
+    - **location_type**: Filter by type
+    - **parent_location_id**: Filter by parent
+    - **is_active**: Filter by active status
+    - **has_stock**: Filter to locations with stock
+    - **page**: Page number (default: 1)
+    - **page_size**: Items per page (default: 50, max: 100)
+
+    **Returns:** Paginated list of locations
+    """
+    layout_service = LayoutService(db)
+    result = layout_service.list_locations(
+        warehouse_id=warehouse_id,
+        organization_id=current_user.organization_id,
+        location_type=location_type,
+        parent_location_id=parent_location_id,
+        is_active=is_active,
+        has_stock=has_stock,
+        page=page,
+        page_size=page_size,
+    )
+
+    locations = [LocationResponse.model_validate(loc) for loc in result["locations"]]
+
+    return PaginatedLocations(
+        locations=locations,
+        pagination=PaginationMeta(**result["pagination"]),
+    )
+
+
+@router.get(
+    "/{location_id}",
+    response_model=LocationResponse,
+    summary="Get warehouse location",
+    description="Get a single warehouse location by ID",
+)
+async def get_location(
+    location_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a single warehouse location by ID.
+
+    **Path Parameters:**
+    - **location_id**: Location UUID
+
+    **Returns:** Location details
+    """
+    layout_service = LayoutService(db)
+    location = layout_service._get_location(
+        location_id=location_id,
+        organization_id=current_user.organization_id,
+    )
+    return LocationResponse.model_validate(location)
+
+
+@router.patch(
+    "/{location_id}",
+    response_model=LocationResponse,
+    summary="Update warehouse location",
+    description="Update a location's mutable fields (name, capacity, position)",
+)
+async def update_location(
+    location_id: UUID,
+    data: UpdateLocationRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Update a warehouse location's mutable fields.
+
+    Does NOT allow changing location_type, parent, or code after creation.
+
+    **Path Parameters:**
+    - **location_id**: Location UUID
+
+    **Request Body:** Fields to update (all optional)
+    - **name**: New name
+    - **capacity**: New capacity
+    - **capacity_uom**: New capacity UOM
+    - **position_x**: New X position
+    - **position_y**: New Y position
+
+    **Returns:** Updated location details
+    """
+    layout_service = LayoutService(db)
+    location = layout_service.update_location(
+        location_id=location_id,
+        organization_id=current_user.organization_id,
+        name=data.name,
+        capacity=data.capacity,
+        capacity_uom=data.capacity_uom,
+        position_x=data.position_x,
+        position_y=data.position_y,
+    )
+    return LocationResponse.model_validate(location)
+
+
+@router.post(
+    "/{location_id}/deactivate",
+    response_model=LocationResponse,
+    summary="Deactivate warehouse location",
+    description="Deactivate a location and all its descendants",
+)
+async def deactivate_location(
+    location_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Deactivate a location and cascade to all descendants.
+
+    Deactivated locations cannot receive new stock.
+
+    **Path Parameters:**
+    - **location_id**: Location UUID
+
+    **Returns:** The deactivated location
+    """
+    layout_service = LayoutService(db)
+    location = layout_service.deactivate_location(
+        location_id=location_id,
+        organization_id=current_user.organization_id,
+    )
+    return LocationResponse.model_validate(location)
+
+
+@router.get(
+    "/{location_id}/summary",
+    response_model=LocationSummary,
+    summary="Get location subtree summary",
+    description="Get summary statistics for a location's subtree",
+)
+async def get_location_summary(
+    location_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get summary statistics for a location's subtree.
+
+    Returns total bins, occupied bins, total/used/available capacity,
+    and distinct item count within the subtree.
+
+    **Path Parameters:**
+    - **location_id**: Location UUID
+
+    **Returns:** Summary statistics
+    """
+    layout_service = LayoutService(db)
+    summary = layout_service.get_location_summary(
+        location_id=location_id,
+        organization_id=current_user.organization_id,
+    )
+    return LocationSummary(
+        total_bins=summary["total_bins"],
+        occupied_bins=summary["occupied_bins"],
+        total_capacity=summary["total_capacity"],
+        used_capacity=summary["used_capacity"],
+        available_capacity=summary["available_capacity"],
+        item_count=summary.get("distinct_items", 0),
+    )
