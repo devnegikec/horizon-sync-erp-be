@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import PaginationMeta
 
-
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
@@ -28,9 +27,7 @@ class ScanEventCreate(BaseModel):
     Requirements: 14.1, 14.2, 14.4
     """
 
-    worker_id: UUID = Field(
-        ..., description="UUID of the worker performing the scan"
-    )
+    worker_id: UUID = Field(..., description="UUID of the worker performing the scan")
     scan_context: str = Field(
         ...,
         description="Context of the scan: 'inbound', 'pick', or 'gate'",
@@ -68,12 +65,8 @@ class ScanEventCreate(BaseModel):
         max_length=45,
         description="IP address of the scanning device",
     )
-    latitude: Optional[float] = Field(
-        None, description="GPS latitude"
-    )
-    longitude: Optional[float] = Field(
-        None, description="GPS longitude"
-    )
+    latitude: Optional[float] = Field(None, description="GPS latitude")
+    longitude: Optional[float] = Field(None, description="GPS longitude")
     city: Optional[str] = Field(
         None,
         max_length=100,
@@ -110,12 +103,8 @@ class ScanEventFilters(BaseModel):
     date_from: Optional[datetime] = Field(
         None, description="Start date filter (inclusive)"
     )
-    date_to: Optional[datetime] = Field(
-        None, description="End date filter (inclusive)"
-    )
-    serial_number: Optional[str] = Field(
-        None, description="Filter by serial number"
-    )
+    date_to: Optional[datetime] = Field(None, description="End date filter (inclusive)")
+    serial_number: Optional[str] = Field(None, description="Filter by serial number")
     page: int = Field(default=1, ge=1, description="Page number")
     page_size: int = Field(default=20, ge=1, le=100, description="Items per page")
 

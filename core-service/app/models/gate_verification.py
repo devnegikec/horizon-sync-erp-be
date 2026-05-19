@@ -81,9 +81,7 @@ class GateVerificationItem(Base):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            "gate_session_id", "qr_identifier", name="uq_gate_session_qr"
-        ),
+        UniqueConstraint("gate_session_id", "qr_identifier", name="uq_gate_session_qr"),
     )
 
     # Relationships

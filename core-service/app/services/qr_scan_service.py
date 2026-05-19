@@ -137,9 +137,7 @@ class QRScanService:
             elif start_time.tzinfo is not None and scan_timestamp.tzinfo is None:
                 scan_timestamp = scan_timestamp.replace(tzinfo=UTC)
 
-            elapsed_seconds = int(
-                (scan_timestamp - start_time).total_seconds()
-            )
+            elapsed_seconds = int((scan_timestamp - start_time).total_seconds())
 
         # Create the location scan record
         location_scan = LocationScan(
@@ -211,12 +209,14 @@ class QRScanService:
 
         if date_from is not None:
             query = query.filter(
-                LocationScan.scanned_at >= datetime.combine(date_from, datetime.min.time()).replace(tzinfo=UTC)
+                LocationScan.scanned_at
+                >= datetime.combine(date_from, datetime.min.time()).replace(tzinfo=UTC)
             )
 
         if date_to is not None:
             query = query.filter(
-                LocationScan.scanned_at <= datetime.combine(date_to, datetime.max.time()).replace(tzinfo=UTC)
+                LocationScan.scanned_at
+                <= datetime.combine(date_to, datetime.max.time()).replace(tzinfo=UTC)
             )
 
         # Get all matching finish scans

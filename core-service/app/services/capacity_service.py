@@ -50,9 +50,11 @@ class CapacityService:
 
         Requirements: 2.1, 2.2, 2.3, 2.4, 2.6
         """
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(WarehouseLocation.id == location_id)
+            .first()
+        )
 
         if not location:
             raise NotFoundError(
@@ -67,9 +69,11 @@ class CapacityService:
         while current_id is not None:
             self._update_ancestor_capacity_with_retry(current_id)
             # Move to the next ancestor
-            current = self.db.query(WarehouseLocation).filter(
-                WarehouseLocation.id == current_id
-            ).first()
+            current = (
+                self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.id == current_id)
+                .first()
+            )
             if current is None:
                 break
             current_id = current.parent_location_id
@@ -80,9 +84,11 @@ class CapacityService:
         Requirements: 18.5
         """
         for attempt in range(self.MAX_RETRIES):
-            location = self.db.query(WarehouseLocation).filter(
-                WarehouseLocation.id == location_id
-            ).first()
+            location = (
+                self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.id == location_id)
+                .first()
+            )
 
             if location is None:
                 return
@@ -108,16 +114,20 @@ class CapacityService:
             new_available = new_total - used
 
             # Optimistic lock: update only if version hasn't changed
-            rows_updated = self.db.query(WarehouseLocation).filter(
-                WarehouseLocation.id == location_id,
-                WarehouseLocation.version == current_version,
-            ).update(
-                {
-                    WarehouseLocation.total_capacity: new_total,
-                    WarehouseLocation.available_capacity: new_available,
-                    WarehouseLocation.version: current_version + 1,
-                },
-                synchronize_session="fetch",
+            rows_updated = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.id == location_id,
+                    WarehouseLocation.version == current_version,
+                )
+                .update(
+                    {
+                        WarehouseLocation.total_capacity: new_total,
+                        WarehouseLocation.available_capacity: new_available,
+                        WarehouseLocation.version: current_version + 1,
+                    },
+                    synchronize_session="fetch",
+                )
             )
 
             if rows_updated == 1:
@@ -139,10 +149,14 @@ class CapacityService:
 
         Requirements: 2.5
         """
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id,
-            WarehouseLocation.organization_id == organization_id,
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == location_id,
+                WarehouseLocation.organization_id == organization_id,
+            )
+            .first()
+        )
 
         if not location:
             raise NotFoundError(
@@ -156,19 +170,21 @@ class CapacityService:
 
         return total - used
 
-    def get_capacity_summary(
-        self, location_id: UUID, organization_id: UUID
-    ) -> dict:
+    def get_capacity_summary(self, location_id: UUID, organization_id: UUID) -> dict:
         """Get a capacity summary for any location node.
 
         Returns:
             dict with total_capacity, available_capacity, used_capacity,
             utilization_percentage, and child location counts.
         """
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id,
-            WarehouseLocation.organization_id == organization_id,
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == location_id,
+                WarehouseLocation.organization_id == organization_id,
+            )
+            .first()
+        )
 
         if not location:
             raise NotFoundError(
@@ -189,10 +205,15 @@ class CapacityService:
         # Count children stats
         total_bins = self._count_bins_in_subtree(location_id)
         occupied_bins = self._count_occupied_bins_in_subtree(location_id)
-        active_children = self.db.query(func.count(WarehouseLocation.id)).filter(
-            WarehouseLocation.parent_location_id == location_id,
-            WarehouseLocation.is_active == True,  # noqa: E712
-        ).scalar() or 0
+        active_children = (
+            self.db.query(func.count(WarehouseLocation.id))
+            .filter(
+                WarehouseLocation.parent_location_id == location_id,
+                WarehouseLocation.is_active == True,  # noqa: E712
+            )
+            .scalar()
+            or 0
+        )
 
         return {
             "location_id": location_id,
@@ -219,9 +240,11 @@ class CapacityService:
 
         Requirements: 2.1
         """
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(WarehouseLocation.id == location_id)
+            .first()
+        )
 
         if not location:
             raise NotFoundError(
@@ -255,9 +278,11 @@ class CapacityService:
 
         if not bin_ids:
             # Check if the location itself is a bin
-            location = self.db.query(WarehouseLocation).filter(
-                WarehouseLocation.id == location_id
-            ).first()
+            location = (
+                self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.id == location_id)
+                .first()
+            )
             if location and location.location_type == "bin":
                 bin_ids = [location_id]
             else:
@@ -265,9 +290,7 @@ class CapacityService:
 
         total_stock = self.db.query(
             func.coalesce(func.sum(BinStockLevel.quantity_on_hand), Decimal("0"))
-        ).filter(
-            BinStockLevel.bin_location_id.in_(bin_ids)
-        ).scalar() or Decimal("0")
+        ).filter(BinStockLevel.bin_location_id.in_(bin_ids)).scalar() or Decimal("0")
 
         return Decimal(str(total_stock))
 
@@ -280,10 +303,14 @@ class CapacityService:
             current_id = queue.pop(0)
 
             # Check if current is a bin
-            current = self.db.query(WarehouseLocation).filter(
-                WarehouseLocation.id == current_id,
-                WarehouseLocation.is_active == True,  # noqa: E712
-            ).first()
+            current = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.id == current_id,
+                    WarehouseLocation.is_active == True,  # noqa: E712
+                )
+                .first()
+            )
 
             if current is None:
                 continue
@@ -292,10 +319,14 @@ class CapacityService:
                 bin_ids.append(current.id)
             else:
                 # Get children
-                children_ids = self.db.query(WarehouseLocation.id).filter(
-                    WarehouseLocation.parent_location_id == current_id,
-                    WarehouseLocation.is_active == True,  # noqa: E712
-                ).all()
+                children_ids = (
+                    self.db.query(WarehouseLocation.id)
+                    .filter(
+                        WarehouseLocation.parent_location_id == current_id,
+                        WarehouseLocation.is_active == True,  # noqa: E712
+                    )
+                    .all()
+                )
                 queue.extend([c[0] for c in children_ids])
 
         return bin_ids
@@ -305,9 +336,11 @@ class CapacityService:
         bin_ids = self._get_descendant_bin_ids(location_id)
 
         # Also check if the location itself is a bin
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(WarehouseLocation.id == location_id)
+            .first()
+        )
         if location and location.location_type == "bin":
             if location_id not in bin_ids:
                 bin_ids.append(location_id)
@@ -319,9 +352,11 @@ class CapacityService:
         bin_ids = self._get_descendant_bin_ids(location_id)
 
         # Also check if the location itself is a bin
-        location = self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.id == location_id
-        ).first()
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(WarehouseLocation.id == location_id)
+            .first()
+        )
         if location and location.location_type == "bin":
             if location_id not in bin_ids:
                 bin_ids.append(location_id)
@@ -329,11 +364,14 @@ class CapacityService:
         if not bin_ids:
             return 0
 
-        occupied = self.db.query(
-            func.count(func.distinct(BinStockLevel.bin_location_id))
-        ).filter(
-            BinStockLevel.bin_location_id.in_(bin_ids),
-            BinStockLevel.quantity_on_hand > 0,
-        ).scalar() or 0
+        occupied = (
+            self.db.query(func.count(func.distinct(BinStockLevel.bin_location_id)))
+            .filter(
+                BinStockLevel.bin_location_id.in_(bin_ids),
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .scalar()
+            or 0
+        )
 
         return occupied

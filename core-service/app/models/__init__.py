@@ -62,6 +62,7 @@ from app.models.base import (
     WarehouseType,
 )
 from app.models.batch import Batch
+from app.models.bin_stock_level import BinStockLevel
 
 # QR Products module
 from app.models.brand import Brand
@@ -95,14 +96,18 @@ from app.models.default_account import DefaultAccount
 # Destinations module
 # Destinations module
 from app.models.destination_market import DestinationMarket
+from app.models.dispatch_record import DispatchRecord
 from app.models.exchange_rate import ExchangeRate
 
 # Feature Flag module
 from app.models.feature_flag import FeatureFlag
+from app.models.gate_verification import GateVerificationItem, GateVerificationSession
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
 from app.models.journal_entry import JournalEntry, JournalEntryLine
+from app.models.location_allocation import LocationAllocation
+from app.models.location_scan import LocationScan
 
 # Messaging module
 # Messaging module
@@ -125,12 +130,14 @@ from app.models.product_item import ProductItem
 # Public Marketing module
 # Public Marketing module
 from app.models.public_submission import PublicSubmission
+from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
 from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.quotation import Quotation, QuotationItem
+from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
 
 # Reminder Configuration module (Task 1D-1)
 from app.models.reminder_config import (
@@ -141,6 +148,7 @@ from app.models.reminder_config import (
     ReminderType,
 )
 from app.models.sales_order import SalesOrder, SalesOrderItem
+from app.models.scan_session import ScanSession, ScanSessionItem
 from app.models.serial_no import SerialNo
 
 # URL Management module
@@ -177,18 +185,10 @@ from app.models.warehouse_location import (
     WorkerTaskStatus,
     WorkerTaskType,
 )
-from app.models.bin_stock_level import BinStockLevel
-from app.models.location_allocation import LocationAllocation
-from app.models.scan_session import ScanSession, ScanSessionItem
-from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
-from app.models.gate_verification import GateVerificationSession, GateVerificationItem
-from app.models.dispatch_record import DispatchRecord
-from app.models.worker_task import WorkerTask
-from app.models.location_scan import LocationScan
-from app.models.put_away_list import PutAwayList, PutAwayListItem
 
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
+from app.models.worker_task import WorkerTask
 
 # Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
 # from app.models.batch import Batch

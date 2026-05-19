@@ -102,7 +102,9 @@ def _create_bin_location(
     return loc
 
 
-def _create_bin_stock(db_session, org_id, bin_location_id, item_id, quantity, batch_number=None):
+def _create_bin_stock(
+    db_session, org_id, bin_location_id, item_id, quantity, batch_number=None
+):
     """Helper to create a bin stock level record."""
     bsl = BinStockLevel(
         id=uuid.uuid4(),
@@ -135,7 +137,13 @@ def _create_stock_level(db_session, org_id, warehouse_id, item_id, on_hand=100):
 
 
 def _create_pick_list_with_item(
-    db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=None, status=PickListStatus.DRAFT
+    db_session,
+    org_id,
+    warehouse_id,
+    item_id,
+    qty=50,
+    bin_location_id=None,
+    status=PickListStatus.DRAFT,
 ):
     """Helper to create a pick list with one item."""
     pl = PickList(
@@ -173,12 +181,14 @@ def _make_qr_payload(sku="ITEM-001", qty=10, batch="BATCH-001", qr_id=None):
     """Helper to create a QR payload JSON string."""
     if qr_id is None:
         qr_id = f"QR-{uuid.uuid4().hex[:8]}"
-    return json.dumps({
-        "id": qr_id,
-        "sku": sku,
-        "qty": qty,
-        "batch": batch,
-    })
+    return json.dumps(
+        {
+            "id": qr_id,
+            "sku": sku,
+            "qty": qty,
+            "batch": batch,
+        }
+    )
 
 
 class TestRecordPickScan:
@@ -197,7 +207,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
         )
 
         qr_data = _make_qr_payload(sku="ITEM-001", qty=10, batch="BATCH-001")
@@ -220,7 +235,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
         )
         assert pl.status == PickListStatus.DRAFT
 
@@ -244,7 +264,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
         )
 
         # Scan a different item not on the pick list
@@ -265,7 +290,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=10, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=10,
+            bin_location_id=bin_loc.id,
         )
 
         # Try to scan more than required
@@ -281,12 +311,19 @@ class TestRecordPickScan:
         item_id = uuid.uuid4()
         _create_item(db_session, item_id, org_id, "ITEM-001")
         bin_loc = _create_bin_location(db_session, org_id, warehouse_id)
-        bsl = _create_bin_stock(db_session, org_id, bin_loc.id, item_id, 100, "BATCH-001")
+        bsl = _create_bin_stock(
+            db_session, org_id, bin_loc.id, item_id, 100, "BATCH-001"
+        )
         _create_stock_level(db_session, org_id, warehouse_id, item_id, 100)
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
         )
 
         qr_data = _make_qr_payload(sku="ITEM-001", qty=10, batch="BATCH-001")
@@ -308,16 +345,23 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, bin_location_id=bin_loc.id
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
         )
 
         qr_data = _make_qr_payload(sku="ITEM-001", qty=10, batch="BATCH-001")
         pick_list_service.record_pick_scan(pl.id, qr_data, worker_id, org_id)
 
         # Check scan event was recorded
-        events = db_session.query(QRScanEvent).filter(
-            QRScanEvent.organization_id == org_id
-        ).all()
+        events = (
+            db_session.query(QRScanEvent)
+            .filter(QRScanEvent.organization_id == org_id)
+            .all()
+        )
         assert len(events) == 1
         assert events[0].extra_data["scan_context"] == "pick"
         assert events[0].extra_data["pick_list_id"] == str(pl.id)
@@ -333,7 +377,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, status=PickListStatus.COMPLETED
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            status=PickListStatus.COMPLETED,
         )
 
         qr_data = _make_qr_payload(sku="ITEM-001", qty=5, batch="BATCH-001")
@@ -350,7 +399,12 @@ class TestRecordPickScan:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, status=PickListStatus.CANCELLED
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            status=PickListStatus.CANCELLED,
         )
 
         qr_data = _make_qr_payload(sku="ITEM-001", qty=5, batch="BATCH-001")
@@ -371,7 +425,12 @@ class TestCompletePickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=10, status=PickListStatus.IN_PROGRESS
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=10,
+            status=PickListStatus.IN_PROGRESS,
         )
         # Manually set picked_qty to match required
         pl.items[0].picked_qty = Decimal("10")
@@ -392,7 +451,12 @@ class TestCompletePickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50, status=PickListStatus.IN_PROGRESS
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            status=PickListStatus.IN_PROGRESS,
         )
         # picked_qty is 0, required is 50
 
@@ -409,7 +473,12 @@ class TestCompletePickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=10, status=PickListStatus.COMPLETED
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=10,
+            status=PickListStatus.COMPLETED,
         )
 
         with pytest.raises(ValidationError, match="Cannot complete pick list"):
@@ -456,8 +525,13 @@ class TestCancelPickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=50,
-            bin_location_id=bin_loc.id, status=PickListStatus.IN_PROGRESS
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=50,
+            bin_location_id=bin_loc.id,
+            status=PickListStatus.IN_PROGRESS,
         )
         # Simulate that 20 units were already picked
         pl.items[0].picked_qty = Decimal("20")
@@ -482,7 +556,12 @@ class TestCancelPickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=10, status=PickListStatus.COMPLETED
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=10,
+            status=PickListStatus.COMPLETED,
         )
 
         with pytest.raises(ValidationError, match="Cannot cancel a completed"):
@@ -498,7 +577,12 @@ class TestCancelPickList:
         db_session.commit()
 
         pl = _create_pick_list_with_item(
-            db_session, org_id, warehouse_id, item_id, qty=10, status=PickListStatus.CANCELLED
+            db_session,
+            org_id,
+            warehouse_id,
+            item_id,
+            qty=10,
+            status=PickListStatus.CANCELLED,
         )
 
         with pytest.raises(ValidationError, match="already cancelled"):

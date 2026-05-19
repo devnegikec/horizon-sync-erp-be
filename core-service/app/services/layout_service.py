@@ -430,27 +430,17 @@ class LayoutService:
         )
 
         # Total capacity of bins in subtree
-        total_capacity = (
-            self.db.query(func.sum(WarehouseLocation.capacity))
-            .filter(
-                WarehouseLocation.id.in_(descendant_ids),
-                WarehouseLocation.location_type == LocationType.BIN.value,
-                WarehouseLocation.is_active == True,  # noqa: E712
-            )
-            .scalar()
-            or Decimal("0")
-        )
+        total_capacity = self.db.query(func.sum(WarehouseLocation.capacity)).filter(
+            WarehouseLocation.id.in_(descendant_ids),
+            WarehouseLocation.location_type == LocationType.BIN.value,
+            WarehouseLocation.is_active == True,  # noqa: E712
+        ).scalar() or Decimal("0")
 
         # Used capacity (sum of stock in bins)
-        used_capacity = (
-            self.db.query(func.sum(BinStockLevel.quantity_on_hand))
-            .filter(
-                BinStockLevel.bin_location_id.in_(descendant_ids),
-                BinStockLevel.quantity_on_hand > 0,
-            )
-            .scalar()
-            or Decimal("0")
-        )
+        used_capacity = self.db.query(func.sum(BinStockLevel.quantity_on_hand)).filter(
+            BinStockLevel.bin_location_id.in_(descendant_ids),
+            BinStockLevel.quantity_on_hand > 0,
+        ).scalar() or Decimal("0")
 
         available_capacity = total_capacity - used_capacity
 
@@ -563,8 +553,8 @@ class LayoutService:
             # Zones must NOT have a parent_location_id (they sit directly under the warehouse)
             if parent_location_id is not None:
                 raise ValidationError(
-                    f"A zone must not have a parent_location_id. "
-                    f"Zones are top-level locations within a warehouse."
+                    "A zone must not have a parent_location_id. "
+                    "Zones are top-level locations within a warehouse."
                 )
         else:
             # All other types MUST have a parent_location_id
@@ -643,9 +633,7 @@ class LayoutService:
         )
 
         if location is None:
-            raise ValidationError(
-                f"Location with ID '{location_id}' not found."
-            )
+            raise ValidationError(f"Location with ID '{location_id}' not found.")
 
         return location
 

@@ -77,15 +77,9 @@ async def record_location_scan(
     description="Get aggregated time tracking data with optional filters",
 )
 async def get_time_summary(
-    worker_id: UUID | None = Query(
-        None, description="Filter by worker UUID"
-    ),
-    task_id: UUID | None = Query(
-        None, description="Filter by worker_task UUID"
-    ),
-    location_code: str | None = Query(
-        None, description="Filter by location code"
-    ),
+    worker_id: UUID | None = Query(None, description="Filter by worker UUID"),
+    task_id: UUID | None = Query(None, description="Filter by worker_task UUID"),
+    location_code: str | None = Query(None, description="Filter by location code"),
     date_from: date | None = Query(
         None, description="Start date for the date range filter"
     ),

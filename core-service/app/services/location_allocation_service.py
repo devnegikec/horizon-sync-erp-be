@@ -71,9 +71,7 @@ class LocationAllocationService:
             .first()
         )
         if location is None:
-            raise ValidationError(
-                f"Location with ID '{location_id}' not found."
-            )
+            raise ValidationError(f"Location with ID '{location_id}' not found.")
 
         # Check exclusive overlap if creating an exclusive allocation
         if allocation_type == "exclusive":
@@ -242,13 +240,9 @@ class LocationAllocationService:
                 LocationAllocation.location_id == WarehouseLocation.id,
             )
             if warehouse_id is not None:
-                query = query.filter(
-                    WarehouseLocation.warehouse_id == warehouse_id
-                )
+                query = query.filter(WarehouseLocation.warehouse_id == warehouse_id)
             if location_type is not None:
-                query = query.filter(
-                    WarehouseLocation.location_type == location_type
-                )
+                query = query.filter(WarehouseLocation.location_type == location_type)
 
         # Count total before pagination
         total = query.count()
@@ -256,7 +250,9 @@ class LocationAllocationService:
         # Apply pagination
         offset = (page - 1) * page_size
         allocations = (
-            query.order_by(LocationAllocation.priority.desc(), LocationAllocation.created_at.desc())
+            query.order_by(
+                LocationAllocation.priority.desc(), LocationAllocation.created_at.desc()
+            )
             .offset(offset)
             .limit(page_size)
             .all()

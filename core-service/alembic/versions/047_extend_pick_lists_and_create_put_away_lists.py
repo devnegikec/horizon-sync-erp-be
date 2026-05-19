@@ -142,9 +142,7 @@ def upgrade() -> None:
     op.create_index("idx_pal_org", "put_away_lists", ["organization_id"])
     op.create_index("idx_pal_warehouse", "put_away_lists", ["warehouse_id"])
     op.create_index("idx_pal_status", "put_away_lists", ["status"])
-    op.create_index(
-        "idx_pal_receiving_slip", "put_away_lists", ["receiving_slip_id"]
-    )
+    op.create_index("idx_pal_receiving_slip", "put_away_lists", ["receiving_slip_id"])
 
     # ══════════════════════════════════════════════════════════════════
     # CREATE put_away_list_items table (with bin_location_id, sort_order,
@@ -215,18 +213,10 @@ def upgrade() -> None:
     )
 
     # Indexes for put_away_list_items
-    op.create_index(
-        "idx_pali_list", "put_away_list_items", ["put_away_list_id"]
-    )
-    op.create_index(
-        "idx_pali_bin", "put_away_list_items", ["bin_location_id"]
-    )
-    op.create_index(
-        "idx_pali_item", "put_away_list_items", ["item_id"]
-    )
-    op.create_index(
-        "idx_pali_status", "put_away_list_items", ["status"]
-    )
+    op.create_index("idx_pali_list", "put_away_list_items", ["put_away_list_id"])
+    op.create_index("idx_pali_bin", "put_away_list_items", ["bin_location_id"])
+    op.create_index("idx_pali_item", "put_away_list_items", ["item_id"])
+    op.create_index("idx_pali_status", "put_away_list_items", ["status"])
 
 
 def downgrade() -> None:

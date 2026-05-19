@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import NotFoundError, StateError
-from app.models.dispatch_record import DispatchRecord
 from app.models.gate_verification import GateVerificationSession
 from app.models.pick_list import PickList, PickListItem
 from app.models.stock_level import StockLevel
@@ -283,9 +282,7 @@ class TestListDispatches:
         )
 
         # Should find with partial match
-        result = outbound_service.list_dispatches(
-            org_id=org_id, vehicle_number="KA-01"
-        )
+        result = outbound_service.list_dispatches(org_id=org_id, vehicle_number="KA-01")
         assert len(result["dispatches"]) == 1
 
         # Should not find with non-matching
@@ -340,9 +337,7 @@ class TestListDispatches:
 
     def test_pagination(self, outbound_service, org_id):
         """Should return correct pagination metadata."""
-        result = outbound_service.list_dispatches(
-            org_id=org_id, page=1, page_size=10
-        )
+        result = outbound_service.list_dispatches(org_id=org_id, page=1, page_size=10)
 
         assert result["pagination"]["page"] == 1
         assert result["pagination"]["page_size"] == 10
@@ -366,9 +361,7 @@ class TestListDispatches:
 class TestGetDispatch:
     """Tests for get_dispatch method."""
 
-    def test_gets_dispatch_by_id(
-        self, outbound_service, org_id, verified_gate_session
-    ):
+    def test_gets_dispatch_by_id(self, outbound_service, org_id, verified_gate_session):
         """Should retrieve a dispatch record by ID."""
         created = outbound_service.create_dispatch(
             gate_session_id=verified_gate_session.id,

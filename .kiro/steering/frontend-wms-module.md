@@ -208,10 +208,11 @@ export interface WarehouseLocation {
   updated_at: string;
 }
 
-export interface LocationTree extends Omit<
-  WarehouseLocation,
-  "organization_id" | "version" | "created_at" | "updated_at"
-> {
+export interface LocationTree
+  extends Omit<
+    WarehouseLocation,
+    "organization_id" | "version" | "created_at" | "updated_at"
+  > {
   children: LocationTree[];
 }
 

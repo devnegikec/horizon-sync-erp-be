@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
-from app.models.worker_task import WorkerTask
 from app.services.task_service import TaskService
 
 
@@ -63,7 +62,9 @@ class TestCreateTask:
         assert result["task_type"] == "pick"
         assert result["status"] == "assigned"
 
-    def test_rejects_invalid_task_type(self, task_service, org_id, worker_id, reference_id):
+    def test_rejects_invalid_task_type(
+        self, task_service, org_id, worker_id, reference_id
+    ):
         """Should raise ValidationError for invalid task_type."""
         with pytest.raises(ValidationError) as exc_info:
             task_service.create_task(
@@ -124,7 +125,9 @@ class TestStartTask:
 class TestCompleteTask:
     """Tests for TaskService.complete_task"""
 
-    def test_completes_in_progress_task(self, task_service, org_id, worker_id, reference_id):
+    def test_completes_in_progress_task(
+        self, task_service, org_id, worker_id, reference_id
+    ):
         """Should transition from in_progress to completed with completed_at."""
         created = task_service.create_task(
             task_type="put_away",
@@ -199,7 +202,9 @@ class TestCancelTask:
 
         assert result["status"] == "cancelled"
 
-    def test_cancels_in_progress_task(self, task_service, org_id, worker_id, reference_id):
+    def test_cancels_in_progress_task(
+        self, task_service, org_id, worker_id, reference_id
+    ):
         """Should cancel a task in in_progress status."""
         created = task_service.create_task(
             task_type="pick",
@@ -262,7 +267,9 @@ class TestCancelTask:
 class TestListWorkerTasks:
     """Tests for TaskService.list_worker_tasks"""
 
-    def test_lists_tasks_for_worker(self, task_service, org_id, worker_id, reference_id):
+    def test_lists_tasks_for_worker(
+        self, task_service, org_id, worker_id, reference_id
+    ):
         """Should return tasks for the specified worker."""
         # Create multiple tasks
         task_service.create_task("put_away", worker_id, reference_id, org_id)
@@ -344,7 +351,9 @@ class TestListWorkerTasks:
 
         assert "invalid" in str(exc_info.value)
 
-    def test_does_not_return_other_org_tasks(self, task_service, org_id, worker_id, reference_id):
+    def test_does_not_return_other_org_tasks(
+        self, task_service, org_id, worker_id, reference_id
+    ):
         """Should not return tasks from other organizations."""
         other_org_id = uuid.uuid4()
 

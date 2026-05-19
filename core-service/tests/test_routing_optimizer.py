@@ -1,6 +1,5 @@
 """Unit tests for RoutingOptimizer service."""
 
-import math
 
 import pytest
 
@@ -85,9 +84,15 @@ class TestNearestNeighborSort:
 
     def test_picks_nearest_first(self):
         """Starting from origin, the nearest location should be first."""
-        far = BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=10.0, position_y=10.0)
-        near = BinLocation(full_path="Z01-A01-B02-L01-B01", position_x=1.0, position_y=1.0)
-        mid = BinLocation(full_path="Z01-A01-B03-L01-B01", position_x=5.0, position_y=5.0)
+        far = BinLocation(
+            full_path="Z01-A01-B01-L01-B01", position_x=10.0, position_y=10.0
+        )
+        near = BinLocation(
+            full_path="Z01-A01-B02-L01-B01", position_x=1.0, position_y=1.0
+        )
+        mid = BinLocation(
+            full_path="Z01-A01-B03-L01-B01", position_x=5.0, position_y=5.0
+        )
 
         result = RoutingOptimizer._nearest_neighbor_sort([far, near, mid], (0, 0))
         assert result[0] is near
@@ -115,9 +120,15 @@ class TestOptimize:
     def test_sequential_sort_order(self, optimizer):
         """All locations get sequential sort_order starting from 1."""
         locations = [
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0),
-            BinLocation(full_path="Z01-A03-B01-L01-B01", position_x=10.0, position_y=10.0),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0
+            ),
+            BinLocation(
+                full_path="Z01-A03-B01-L01-B01", position_x=10.0, position_y=10.0
+            ),
         ]
         result = optimizer.optimize(locations)
         sort_orders = [loc.sort_order for loc in result]
@@ -126,15 +137,25 @@ class TestOptimize:
     def test_aisle_grouping(self, optimizer):
         """Locations in the same aisle should be contiguous in the output."""
         locations = [
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0),
-            BinLocation(full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=2.0),
-            BinLocation(full_path="Z01-A02-B02-L01-B01", position_x=6.0, position_y=6.0),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0
+            ),
+            BinLocation(
+                full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=2.0
+            ),
+            BinLocation(
+                full_path="Z01-A02-B02-L01-B01", position_x=6.0, position_y=6.0
+            ),
         ]
         result = optimizer.optimize(locations)
 
         # Extract aisles in order
-        aisles_in_order = [RoutingOptimizer._extract_aisle(loc.full_path) for loc in result]
+        aisles_in_order = [
+            RoutingOptimizer._extract_aisle(loc.full_path) for loc in result
+        ]
 
         # Verify aisle grouping: same-aisle locations are contiguous
         seen_aisles = []
@@ -150,8 +171,12 @@ class TestOptimize:
         """The aisle closest to origin should be visited first."""
         # A01 is at (1,1), A02 is at (10,10) — A01 should come first from origin (0,0)
         locations = [
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0),
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0
+            ),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
         ]
         result = optimizer.optimize(locations, origin=(0.0, 0.0))
         assert RoutingOptimizer._extract_aisle(result[0].full_path) == "A01"
@@ -160,8 +185,12 @@ class TestOptimize:
     def test_default_origin(self, optimizer):
         """Default origin is (0, 0)."""
         locations = [
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0
+            ),
         ]
         # Without specifying origin, should default to (0, 0)
         result = optimizer.optimize(locations)
@@ -171,8 +200,12 @@ class TestOptimize:
         """Custom origin changes which aisle is visited first."""
         # With origin at (10, 10), A02 is closer
         locations = [
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=9.0, position_y=9.0),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=9.0, position_y=9.0
+            ),
         ]
         result = optimizer.optimize(locations, origin=(10.0, 10.0))
         assert RoutingOptimizer._extract_aisle(result[0].full_path) == "A02"
@@ -181,10 +214,18 @@ class TestOptimize:
     def test_preserves_all_locations(self, optimizer):
         """Output contains exactly the same locations as input (no loss or duplication)."""
         locations = [
-            BinLocation(id=1, full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0),
-            BinLocation(id=2, full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0),
-            BinLocation(id=3, full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=2.0),
-            BinLocation(id=4, full_path="Z01-A03-B01-L01-B01", position_x=8.0, position_y=8.0),
+            BinLocation(
+                id=1, full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=1.0
+            ),
+            BinLocation(
+                id=2, full_path="Z01-A02-B01-L01-B01", position_x=5.0, position_y=5.0
+            ),
+            BinLocation(
+                id=3, full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=2.0
+            ),
+            BinLocation(
+                id=4, full_path="Z01-A03-B01-L01-B01", position_x=8.0, position_y=8.0
+            ),
         ]
         result = optimizer.optimize(locations)
         result_ids = {loc.id for loc in result}
@@ -194,9 +235,15 @@ class TestOptimize:
     def test_multiple_bins_same_aisle_nearest_neighbor(self, optimizer):
         """Within an aisle, bins are sorted by nearest-neighbor from entry point."""
         locations = [
-            BinLocation(full_path="Z01-A01-B03-L01-B01", position_x=3.0, position_y=0.0),
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=0.0),
-            BinLocation(full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=0.0),
+            BinLocation(
+                full_path="Z01-A01-B03-L01-B01", position_x=3.0, position_y=0.0
+            ),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=1.0, position_y=0.0
+            ),
+            BinLocation(
+                full_path="Z01-A01-B02-L01-B01", position_x=2.0, position_y=0.0
+            ),
         ]
         result = optimizer.optimize(locations, origin=(0.0, 0.0))
         # From origin (0,0), nearest is B01 at (1,0), then B02 at (2,0), then B03 at (3,0)
@@ -207,11 +254,17 @@ class TestOptimize:
         """Three aisles are visited in nearest-neighbor order from origin."""
         locations = [
             # Aisle A03 - far from origin
-            BinLocation(full_path="Z01-A03-B01-L01-B01", position_x=20.0, position_y=20.0),
+            BinLocation(
+                full_path="Z01-A03-B01-L01-B01", position_x=20.0, position_y=20.0
+            ),
             # Aisle A01 - close to origin
-            BinLocation(full_path="Z01-A01-B01-L01-B01", position_x=2.0, position_y=2.0),
+            BinLocation(
+                full_path="Z01-A01-B01-L01-B01", position_x=2.0, position_y=2.0
+            ),
             # Aisle A02 - medium distance
-            BinLocation(full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0),
+            BinLocation(
+                full_path="Z01-A02-B01-L01-B01", position_x=10.0, position_y=10.0
+            ),
         ]
         result = optimizer.optimize(locations, origin=(0.0, 0.0))
         aisles = [RoutingOptimizer._extract_aisle(loc.full_path) for loc in result]
@@ -227,8 +280,18 @@ class TestOptimizeDicts:
     def test_basic_dict_optimization(self, optimizer):
         """Dict-based method works with standard dict input."""
         locations = [
-            {"id": "loc1", "full_path": "Z01-A02-B01-L01-B01", "position_x": 10, "position_y": 10},
-            {"id": "loc2", "full_path": "Z01-A01-B01-L01-B01", "position_x": 1, "position_y": 1},
+            {
+                "id": "loc1",
+                "full_path": "Z01-A02-B01-L01-B01",
+                "position_x": 10,
+                "position_y": 10,
+            },
+            {
+                "id": "loc2",
+                "full_path": "Z01-A01-B01-L01-B01",
+                "position_x": 1,
+                "position_y": 1,
+            },
         ]
         result = optimizer.optimize_dicts(locations, origin=(0.0, 0.0))
         assert len(result) == 2

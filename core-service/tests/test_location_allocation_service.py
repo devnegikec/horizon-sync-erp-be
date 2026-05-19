@@ -6,7 +6,6 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import ValidationError
-from app.models.location_allocation import LocationAllocation
 from app.models.warehouse_location import WarehouseLocation
 from app.services.location_allocation_service import LocationAllocationService
 
@@ -115,7 +114,9 @@ class TestCreateAllocation:
         )
 
         # Attempt second exclusive allocation on same location
-        with pytest.raises(ValidationError, match="exclusive allocation already exists"):
+        with pytest.raises(
+            ValidationError, match="exclusive allocation already exists"
+        ):
             allocation_service.create_allocation(
                 location_id=location.id,
                 item_group_id=item_group_2,
@@ -163,9 +164,7 @@ class TestCreateAllocation:
                 allocation_type="invalid",
             )
 
-    def test_reject_nonexistent_location(
-        self, db_session, allocation_service, org_id
-    ):
+    def test_reject_nonexistent_location(self, db_session, allocation_service, org_id):
         """Should reject allocation for a non-existent location."""
         with pytest.raises(ValidationError, match="not found"):
             allocation_service.create_allocation(
@@ -441,12 +440,20 @@ class TestListAllocations:
     ):
         """Should filter by location_type via location join."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id,
-            location_type="bin", code="B01", full_path="B01"
+            db_session,
+            org_id,
+            warehouse_id,
+            location_type="bin",
+            code="B01",
+            full_path="B01",
         )
         bay_loc = _create_location(
-            db_session, org_id, warehouse_id,
-            location_type="bay", code="BAY01", full_path="BAY01"
+            db_session,
+            org_id,
+            warehouse_id,
+            location_type="bay",
+            code="BAY01",
+            full_path="BAY01",
         )
 
         allocation_service.create_allocation(
@@ -466,14 +473,15 @@ class TestListAllocations:
 
         assert result["pagination"]["total"] == 1
 
-    def test_pagination(
-        self, db_session, allocation_service, org_id, warehouse_id
-    ):
+    def test_pagination(self, db_session, allocation_service, org_id, warehouse_id):
         """Should support pagination."""
         for i in range(5):
             loc = _create_location(
-                db_session, org_id, warehouse_id,
-                code=f"B{i:02d}", full_path=f"B{i:02d}"
+                db_session,
+                org_id,
+                warehouse_id,
+                code=f"B{i:02d}",
+                full_path=f"B{i:02d}",
             )
             allocation_service.create_allocation(
                 location_id=loc.id,

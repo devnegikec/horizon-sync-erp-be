@@ -14,8 +14,8 @@ Requirements: 5.1, 5.2
 """
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 from sqlalchemy import inspect
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 

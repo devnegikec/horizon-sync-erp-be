@@ -10,15 +10,13 @@ Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
 """
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.core.exceptions import NotFoundError, StateError
 from app.models.dispatch_record import DispatchRecord
-from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.gate_verification import GateVerificationSession
 from app.models.pick_list import PickList, PickListItem
 from app.models.stock_level import StockLevel
 
@@ -290,7 +288,9 @@ class OutboundService:
                 )
                 # Also update available quantity
                 stock_level.quantity_available = max(
-                    0, (stock_level.quantity_on_hand or 0) - (stock_level.quantity_reserved or 0)
+                    0,
+                    (stock_level.quantity_on_hand or 0)
+                    - (stock_level.quantity_reserved or 0),
                 )
 
     def _to_response(self, dispatch_record: DispatchRecord) -> dict:

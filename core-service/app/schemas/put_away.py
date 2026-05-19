@@ -11,14 +11,11 @@ Requirements: 8.5, 8.6
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.schemas.common import PaginationMeta
-
 
 # ===========================================
 # REQUEST SCHEMAS

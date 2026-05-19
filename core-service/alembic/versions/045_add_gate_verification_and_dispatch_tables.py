@@ -86,15 +86,9 @@ def upgrade() -> None:
     )
 
     # Indexes for gate_verification_sessions
-    op.create_index(
-        "idx_gvs_org", "gate_verification_sessions", ["organization_id"]
-    )
-    op.create_index(
-        "idx_gvs_pick_list", "gate_verification_sessions", ["pick_list_id"]
-    )
-    op.create_index(
-        "idx_gvs_status", "gate_verification_sessions", ["status"]
-    )
+    op.create_index("idx_gvs_org", "gate_verification_sessions", ["organization_id"])
+    op.create_index("idx_gvs_pick_list", "gate_verification_sessions", ["pick_list_id"])
+    op.create_index("idx_gvs_status", "gate_verification_sessions", ["status"])
 
     # ── gate_verification_items ────────────────────────────────────
     op.create_table(
@@ -143,12 +137,8 @@ def upgrade() -> None:
     )
 
     # Indexes for gate_verification_items
-    op.create_index(
-        "idx_gvi_session", "gate_verification_items", ["gate_session_id"]
-    )
-    op.create_index(
-        "idx_gvi_status", "gate_verification_items", ["status"]
-    )
+    op.create_index("idx_gvi_session", "gate_verification_items", ["gate_session_id"])
+    op.create_index("idx_gvi_status", "gate_verification_items", ["status"])
 
     # ── dispatch_records ───────────────────────────────────────────
     op.create_table(
@@ -201,12 +191,8 @@ def upgrade() -> None:
     # Indexes for dispatch_records
     op.create_index("idx_dr_org", "dispatch_records", ["organization_id"])
     op.create_index("idx_dr_pick_list", "dispatch_records", ["pick_list_id"])
-    op.create_index(
-        "idx_dr_gate_session", "dispatch_records", ["gate_session_id"]
-    )
-    op.create_index(
-        "idx_dr_dispatch_number", "dispatch_records", ["dispatch_number"]
-    )
+    op.create_index("idx_dr_gate_session", "dispatch_records", ["gate_session_id"])
+    op.create_index("idx_dr_dispatch_number", "dispatch_records", ["dispatch_number"])
 
 
 def downgrade() -> None:

@@ -139,7 +139,11 @@ class TestGenerateReceivingSlip:
 
         # Find SKU-A/BATCH-1 group (2 boxes, qty 10+15=25)
         sku_a_batch_1 = next(
-            (i for i in items if i["sku"] == "SKU-A" and i["batch_number"] == "BATCH-1"),
+            (
+                i
+                for i in items
+                if i["sku"] == "SKU-A" and i["batch_number"] == "BATCH-1"
+            ),
             None,
         )
         assert sku_a_batch_1 is not None
@@ -148,7 +152,11 @@ class TestGenerateReceivingSlip:
 
         # Find SKU-A/BATCH-2 group (1 box, qty 20)
         sku_a_batch_2 = next(
-            (i for i in items if i["sku"] == "SKU-A" and i["batch_number"] == "BATCH-2"),
+            (
+                i
+                for i in items
+                if i["sku"] == "SKU-A" and i["batch_number"] == "BATCH-2"
+            ),
             None,
         )
         assert sku_a_batch_2 is not None
@@ -157,16 +165,18 @@ class TestGenerateReceivingSlip:
 
         # Find SKU-B/BATCH-1 group (1 box, qty 5)
         sku_b_batch_1 = next(
-            (i for i in items if i["sku"] == "SKU-B" and i["batch_number"] == "BATCH-1"),
+            (
+                i
+                for i in items
+                if i["sku"] == "SKU-B" and i["batch_number"] == "BATCH-1"
+            ),
             None,
         )
         assert sku_b_batch_1 is not None
         assert sku_b_batch_1["quantity"] == 5
         assert sku_b_batch_1["box_count"] == 1
 
-    def test_computes_totals_correctly(
-        self, inbound_service, closed_session, org_id
-    ):
+    def test_computes_totals_correctly(self, inbound_service, closed_session, org_id):
         """Total boxes and total items should be computed correctly."""
         result = inbound_service.generate_receiving_slip(closed_session.id, org_id)
 
@@ -226,9 +236,7 @@ class TestGenerateReceivingSlip:
 
         assert "empty session" in exc_info.value.message
 
-    def test_all_items_have_ok_flag(
-        self, inbound_service, closed_session, org_id
-    ):
+    def test_all_items_have_ok_flag(self, inbound_service, closed_session, org_id):
         """All generated line items should have flag='ok' by default."""
         result = inbound_service.generate_receiving_slip(closed_session.id, org_id)
 
@@ -341,9 +349,7 @@ class TestRejectSlip:
 class TestFlagLineItem:
     """Tests for flag_line_item method."""
 
-    def test_flags_item_as_short(
-        self, inbound_service, pending_review_slip, org_id
-    ):
+    def test_flags_item_as_short(self, inbound_service, pending_review_slip, org_id):
         """Should update item flag to 'short'."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
@@ -355,9 +361,7 @@ class TestFlagLineItem:
         assert result["flag"] == "short"
         assert result["notes"] == "Missing 5 units"
 
-    def test_flags_item_as_damaged(
-        self, inbound_service, pending_review_slip, org_id
-    ):
+    def test_flags_item_as_damaged(self, inbound_service, pending_review_slip, org_id):
         """Should update item flag to 'damaged'."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
@@ -376,9 +380,7 @@ class TestFlagLineItem:
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
 
-        result = inbound_service.flag_line_item(
-            slip_id, item_id, "short", None, org_id
-        )
+        result = inbound_service.flag_line_item(slip_id, item_id, "short", None, org_id)
 
         assert result["flag"] == "short"
 
@@ -416,9 +418,7 @@ class TestFlagLineItem:
         fake_item_id = uuid.uuid4()
 
         with pytest.raises(NotFoundError) as exc_info:
-            inbound_service.flag_line_item(
-                slip_id, fake_item_id, "short", None, org_id
-            )
+            inbound_service.flag_line_item(slip_id, fake_item_id, "short", None, org_id)
 
         assert "Receiving slip item not found" in exc_info.value.message
 
@@ -434,15 +434,18 @@ class TestFlagLineItem:
 
         # Try to flag an item (slip is now pending_putaway)
         with pytest.raises(StateError) as exc_info:
-            inbound_service.flag_line_item(
-                slip_id, item_id, "short", None, org_id
-            )
+            inbound_service.flag_line_item(slip_id, item_id, "short", None, org_id)
 
         assert exc_info.value.current_state == "pending_putaway"
 
     def test_raises_validation_error_for_item_not_belonging_to_slip(
-        self, db_session, inbound_service, pending_review_slip, org_id,
-        worker_id, warehouse_id
+        self,
+        db_session,
+        inbound_service,
+        pending_review_slip,
+        org_id,
+        worker_id,
+        warehouse_id,
     ):
         """Should raise ValidationError if item doesn't belong to the slip."""
         slip_id = uuid.UUID(pending_review_slip["id"])

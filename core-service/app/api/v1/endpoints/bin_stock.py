@@ -47,9 +47,7 @@ async def get_bins_for_item(
         item_id=item_id,
         org_id=current_user.organization_id,
     )
-    return BinStockForItemResponse(
-        bins=[BinStockInfoResponse(**b) for b in bins]
-    )
+    return BinStockForItemResponse(bins=[BinStockInfoResponse(**b) for b in bins])
 
 
 @router.post(

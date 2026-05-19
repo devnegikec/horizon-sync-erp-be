@@ -89,9 +89,7 @@ class TestStartSession:
 class TestRecordScan:
     """Tests for record_scan method."""
 
-    def test_records_valid_scan(
-        self, inbound_service, org_id, worker_id, warehouse_id
-    ):
+    def test_records_valid_scan(self, inbound_service, org_id, worker_id, warehouse_id):
         """Should successfully record a valid QR scan."""
         session = inbound_service.start_session(
             worker_id=worker_id,

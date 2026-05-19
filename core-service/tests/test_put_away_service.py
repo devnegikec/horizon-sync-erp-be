@@ -141,12 +141,20 @@ class TestGenerateFromSlip:
         session = _create_scan_session(db_session, org_id, warehouse_id)
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
         item = _create_item(db_session, org_id, "SKU-001")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
+        )
 
         # Create a bin with capacity
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -200,8 +208,14 @@ class TestGenerateFromSlip:
         db_session.add(damaged_item)
 
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -219,18 +233,32 @@ class TestGenerateFromSlip:
 
         item_group_id = uuid.uuid4()
         item = _create_item(db_session, org_id, "SKU-001", item_group_id=item_group_id)
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
+        )
 
         # Create an exclusively allocated bin
         exclusive_bin = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
 
         # Create another unallocated bin
         other_bin = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A02-B01-L01-BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A02-B01-L01-BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
 
         # Create exclusive allocation
@@ -259,16 +287,30 @@ class TestGenerateFromSlip:
         session = _create_scan_session(db_session, org_id, warehouse_id)
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
         item = _create_item(db_session, org_id, "SKU-001")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-001", "BATCH-A", 80)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-001", "BATCH-A", 80
+        )
 
         # Create two bins with limited capacity
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN01",
-            capacity=50, total_capacity=50, available_capacity=50,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=50,
+            total_capacity=50,
+            available_capacity=50,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN02",
-            capacity=50, total_capacity=50, available_capacity=50,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN02",
+            capacity=50,
+            total_capacity=50,
+            available_capacity=50,
         )
         db_session.commit()
 
@@ -289,8 +331,14 @@ class TestCompleteItem:
         """Should mark item as completed and add stock to the bin."""
         item = _create_item(db_session, org_id, "SKU-001")
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
 
         # Create put-away list and item
@@ -337,8 +385,14 @@ class TestCompleteItem:
         """Should raise StateError if item is already completed."""
         item = _create_item(db_session, org_id, "SKU-001")
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
 
         put_away_list = PutAwayList(
@@ -376,8 +430,14 @@ class TestCompleteItem:
         slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
         item = _create_item(db_session, org_id, "SKU-001")
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
 
         put_away_list = PutAwayList(

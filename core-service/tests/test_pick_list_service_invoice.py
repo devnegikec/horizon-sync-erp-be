@@ -12,7 +12,6 @@ import pytest
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import PickListStatus
 from app.models.bin_stock_level import BinStockLevel
-from app.models.pick_list import PickList, PickListItem
 from app.models.warehouse_location import WarehouseLocation
 from app.services.pick_list_service import (
     PickListService,
@@ -307,12 +306,22 @@ class TestResolveBinLocations:
         _create_item(db_session, item_id, org_id)
 
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
-            position_x=1, position_y=1,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
+            position_x=1,
+            position_y=1,
         )
         bin2 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN02", "Z01-A01-B01-L01-BIN02",
-            position_x=2, position_y=2,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN02",
+            "Z01-A01-B01-L01-BIN02",
+            position_x=2,
+            position_y=2,
         )
 
         # Bin1 has 20, Bin2 has 30 — need 40 total
@@ -342,7 +351,6 @@ class TestResolveBinLocations:
         self, db_session, pick_list_service, org_id, warehouse_id, item_id
     ):
         """Should allocate from oldest bin stock first (FIFO)."""
-        import time
 
         _create_warehouse(db_session, warehouse_id, org_id)
         _create_item(db_session, item_id, org_id)
@@ -397,12 +405,22 @@ class TestResolveBinLocations:
 
         # Create bins at different positions
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
-            position_x=10, position_y=10,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
+            position_x=10,
+            position_y=10,
         )
         bin2 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN02", "Z01-A01-B01-L01-BIN02",
-            position_x=1, position_y=1,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN02",
+            "Z01-A01-B01-L01-BIN02",
+            position_x=1,
+            position_y=1,
         )
 
         _create_bin_stock(db_session, org_id, bin1.id, item1_id, 100)

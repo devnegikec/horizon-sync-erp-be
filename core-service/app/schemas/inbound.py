@@ -5,12 +5,10 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from pydantic import BaseModel, Field
 
 # ===========================================
 # REQUEST SCHEMAS
@@ -29,13 +27,13 @@ class StartSessionRequest(BaseModel):
 class RecordScanRequest(BaseModel):
     """Schema for recording a QR scan within a session."""
 
-    qr_data: str = Field(..., min_length=1, description="Raw QR code payload string (JSON)")
+    qr_data: str = Field(
+        ..., min_length=1, description="Raw QR code payload string (JSON)"
+    )
     device_type: Optional[str] = Field(
         None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
     )
-    os: Optional[str] = Field(
-        None, max_length=50, description="Operating system info"
-    )
+    os: Optional[str] = Field(None, max_length=50, description="Operating system info")
 
 
 class RejectSlipRequest(BaseModel):
@@ -49,9 +47,7 @@ class RejectSlipRequest(BaseModel):
 class FlagLineItemRequest(BaseModel):
     """Schema for flagging a receiving slip line item."""
 
-    flag: str = Field(
-        ..., description="Flag value: 'short' or 'damaged'"
-    )
+    flag: str = Field(..., description="Flag value: 'short' or 'damaged'")
     notes: Optional[str] = Field(
         None, max_length=1000, description="Optional notes about the discrepancy"
     )

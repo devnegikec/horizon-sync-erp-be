@@ -19,12 +19,14 @@ class TestDecodeQRPayloadValid:
 
     def test_valid_payload_returns_qr_payload(self):
         """A well-formed JSON payload should return a QRPayload dataclass."""
-        qr_data = json.dumps({
-            "id": "unique-qr-001",
-            "sku": "ITEM-001",
-            "qty": 50,
-            "batch": "BATCH-2025-01",
-        })
+        qr_data = json.dumps(
+            {
+                "id": "unique-qr-001",
+                "sku": "ITEM-001",
+                "qty": 50,
+                "batch": "BATCH-2025-01",
+            }
+        )
 
         result = decode_qr_payload(qr_data)
 
@@ -36,14 +38,16 @@ class TestDecodeQRPayloadValid:
 
     def test_valid_payload_with_extra_fields(self):
         """Extra fields in the payload should be ignored."""
-        qr_data = json.dumps({
-            "id": "qr-002",
-            "sku": "WIDGET-X",
-            "qty": 1,
-            "batch": "B001",
-            "extra_field": "should be ignored",
-            "another": 123,
-        })
+        qr_data = json.dumps(
+            {
+                "id": "qr-002",
+                "sku": "WIDGET-X",
+                "qty": 1,
+                "batch": "B001",
+                "extra_field": "should be ignored",
+                "another": 123,
+            }
+        )
 
         result = decode_qr_payload(qr_data)
 
@@ -54,12 +58,14 @@ class TestDecodeQRPayloadValid:
 
     def test_valid_payload_strips_whitespace(self):
         """String fields should be stripped of leading/trailing whitespace."""
-        qr_data = json.dumps({
-            "id": "  qr-003  ",
-            "sku": "  SKU-PADDED  ",
-            "qty": 10,
-            "batch": "  BATCH-PADDED  ",
-        })
+        qr_data = json.dumps(
+            {
+                "id": "  qr-003  ",
+                "sku": "  SKU-PADDED  ",
+                "qty": 10,
+                "batch": "  BATCH-PADDED  ",
+            }
+        )
 
         result = decode_qr_payload(qr_data)
 
@@ -69,12 +75,14 @@ class TestDecodeQRPayloadValid:
 
     def test_qty_of_one_is_valid(self):
         """Quantity of 1 (minimum positive integer) should be accepted."""
-        qr_data = json.dumps({
-            "id": "qr-min",
-            "sku": "ITEM-MIN",
-            "qty": 1,
-            "batch": "B-MIN",
-        })
+        qr_data = json.dumps(
+            {
+                "id": "qr-min",
+                "sku": "ITEM-MIN",
+                "qty": 1,
+                "batch": "B-MIN",
+            }
+        )
 
         result = decode_qr_payload(qr_data)
 
@@ -82,12 +90,14 @@ class TestDecodeQRPayloadValid:
 
     def test_large_qty_is_valid(self):
         """Large quantities should be accepted."""
-        qr_data = json.dumps({
-            "id": "qr-large",
-            "sku": "ITEM-LARGE",
-            "qty": 999999,
-            "batch": "B-LARGE",
-        })
+        qr_data = json.dumps(
+            {
+                "id": "qr-large",
+                "sku": "ITEM-LARGE",
+                "qty": 999999,
+                "batch": "B-LARGE",
+            }
+        )
 
         result = decode_qr_payload(qr_data)
 
@@ -209,7 +219,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_empty_batch_raises_validation_error(self):
         """An empty string batch should raise ValidationError."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": 10, "batch": ""})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": 10, "batch": ""}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -218,7 +230,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_whitespace_only_batch_raises_validation_error(self):
         """A whitespace-only batch should raise ValidationError."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": 10, "batch": "   "})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": 10, "batch": "   "}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -227,7 +241,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_zero_qty_raises_validation_error(self):
         """A quantity of zero should raise ValidationError."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": 0, "batch": "B001"})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": 0, "batch": "B001"}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -237,7 +253,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_negative_qty_raises_validation_error(self):
         """A negative quantity should raise ValidationError."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": -5, "batch": "B001"})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": -5, "batch": "B001"}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -247,7 +265,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_float_qty_raises_validation_error(self):
         """A float quantity should raise ValidationError (must be integer)."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": 10.5, "batch": "B001"})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": 10.5, "batch": "B001"}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -257,7 +277,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_string_qty_raises_validation_error(self):
         """A string quantity should raise ValidationError."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": "ten", "batch": "B001"})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": "ten", "batch": "B001"}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)
@@ -266,7 +288,9 @@ class TestDecodeQRPayloadInvalidValues:
 
     def test_boolean_qty_raises_validation_error(self):
         """A boolean quantity should raise ValidationError (bool is not int for this purpose)."""
-        qr_data = json.dumps({"id": "qr-001", "sku": "ITEM-001", "qty": True, "batch": "B001"})
+        qr_data = json.dumps(
+            {"id": "qr-001", "sku": "ITEM-001", "qty": True, "batch": "B001"}
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             decode_qr_payload(qr_data)

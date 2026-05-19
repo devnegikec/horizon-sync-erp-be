@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.worker_task import WorkerTask
 
-
 # Valid task types
 VALID_TASK_TYPES = ("put_away", "pick")
 
@@ -331,7 +330,9 @@ class TaskService:
             "status": task.status,
             "assigned_at": task.assigned_at.isoformat() if task.assigned_at else None,
             "started_at": task.started_at.isoformat() if task.started_at else None,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "completed_at": task.completed_at.isoformat()
+            if task.completed_at
+            else None,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         }

@@ -11,11 +11,12 @@ item groups (exclusive/preferred allocation for put-away prioritization).
 Requirements: 3.1, 20.1, 20.2
 """
 
-from alembic import op
 import sqlalchemy as sa
 
-revision = '043_add_bin_stock_levels_and_location_allocations'
-down_revision = '042_add_warehouse_locations_table'
+from alembic import op
+
+revision = "043_add_bin_stock_levels_and_location_allocations"
+down_revision = "042_add_warehouse_locations_table"
 branch_labels = None
 depends_on = None
 
@@ -24,7 +25,9 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # ── bin_stock_levels ───────────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text(
+            """
         CREATE TABLE IF NOT EXISTS bin_stock_levels (
             id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             organization_id     UUID NOT NULL,
@@ -36,7 +39,9 @@ def upgrade() -> None:
             updated_at          TIMESTAMPTZ DEFAULT now(),
             CONSTRAINT uq_bin_item_batch UNIQUE (bin_location_id, item_id, batch_number)
         )
-    """))
+    """
+        )
+    )
 
     # Indexes for bin_stock_levels
     for idx_sql in [
@@ -48,7 +53,9 @@ def upgrade() -> None:
         conn.execute(sa.text(idx_sql))
 
     # ── location_allocations ───────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text(
+            """
         CREATE TABLE IF NOT EXISTS location_allocations (
             id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             organization_id     UUID NOT NULL,
@@ -61,7 +68,9 @@ def upgrade() -> None:
             updated_at          TIMESTAMPTZ DEFAULT now(),
             CONSTRAINT chk_alloc_type CHECK (allocation_type IN ('exclusive', 'preferred'))
         )
-    """))
+    """
+        )
+    )
 
     # Indexes for location_allocations
     for idx_sql in [
@@ -73,13 +82,17 @@ def upgrade() -> None:
         conn.execute(sa.text(idx_sql))
 
     # Partial unique index: only one active exclusive allocation per location
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text(
+            """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_la_exclusive
         ON location_allocations(location_id)
         WHERE allocation_type = 'exclusive' AND is_active = TRUE
-    """))
+    """
+        )
+    )
 
 
 def downgrade() -> None:
-    op.drop_table('location_allocations')
-    op.drop_table('bin_stock_levels')
+    op.drop_table("location_allocations")
+    op.drop_table("bin_stock_levels")

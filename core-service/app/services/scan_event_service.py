@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ValidationError
 from app.models.qr_scan_event import QRScanEvent
 
-
 # Valid scan contexts
 VALID_SCAN_CONTEXTS = ("inbound", "pick", "gate")
 
@@ -204,19 +203,22 @@ class ScanEventService:
         # json_extract works with both SQLite and PostgreSQL (via sqlalchemy)
         if scan_context:
             filters.append(
-                func.json_extract(QRScanEvent.extra_data, "$.scan_context") == scan_context
+                func.json_extract(QRScanEvent.extra_data, "$.scan_context")
+                == scan_context
             )
 
         # Filter by session_id using JSON extraction
         if session_id:
             filters.append(
-                func.json_extract(QRScanEvent.extra_data, "$.session_id") == str(session_id)
+                func.json_extract(QRScanEvent.extra_data, "$.session_id")
+                == str(session_id)
             )
 
         # Filter by worker_id using JSON extraction
         if worker_id:
             filters.append(
-                func.json_extract(QRScanEvent.extra_data, "$.worker_id") == str(worker_id)
+                func.json_extract(QRScanEvent.extra_data, "$.worker_id")
+                == str(worker_id)
             )
 
         # Filter by date range
@@ -275,15 +277,21 @@ class ScanEventService:
         return {
             "id": str(event.id),
             "organization_id": str(event.organization_id),
-            "product_item_id": str(event.product_item_id) if event.product_item_id else None,
+            "product_item_id": str(event.product_item_id)
+            if event.product_item_id
+            else None,
             "serial_number": event.serial_number,
-            "scan_timestamp": event.scan_timestamp.isoformat() if event.scan_timestamp else None,
+            "scan_timestamp": event.scan_timestamp.isoformat()
+            if event.scan_timestamp
+            else None,
             "device_type": event.device_type,
             "os": event.os,
             "browser": event.browser,
             "ip_address": event.ip_address,
             "latitude": float(event.latitude) if event.latitude is not None else None,
-            "longitude": float(event.longitude) if event.longitude is not None else None,
+            "longitude": float(event.longitude)
+            if event.longitude is not None
+            else None,
             "city": event.city,
             "state": event.state,
             "country": event.country,

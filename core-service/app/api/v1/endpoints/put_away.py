@@ -11,7 +11,7 @@ Requirements: 8.5, 8.6
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from app.core.exceptions import NotFoundError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.put_away_list import PutAwayList, PutAwayListItem
+from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
     PutAwayListItemResponse,
     PutAwayListListResponse,
@@ -27,7 +28,6 @@ from app.schemas.put_away import (
     PutAwayListSummaryResponse,
     SkipPutAwayItemRequest,
 )
-from app.schemas.common import PaginationMeta
 from app.services.put_away_service import PutAwayService
 
 router = APIRouter()

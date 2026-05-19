@@ -6,7 +6,6 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
-from app.models.bin_stock_level import BinStockLevel
 from app.models.stock_level import StockLevel
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_stock_service import BinStockService
@@ -72,8 +71,14 @@ class TestAddStock:
     ):
         """Adding stock to an empty bin should create a new BinStockLevel record."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -94,18 +99,28 @@ class TestAddStock:
     ):
         """Adding stock to a bin with existing stock should increment quantity."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("20"),
+            org_id=org_id,
         )
         result = bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("15"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("15"),
+            org_id=org_id,
         )
 
         assert result.quantity_on_hand == Decimal("35")
@@ -115,15 +130,23 @@ class TestAddStock:
     ):
         """Should reject stock addition that would exceed bin capacity."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=50, total_capacity=50, available_capacity=50,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=50,
+            total_capacity=50,
+            available_capacity=50,
         )
         db_session.commit()
 
         with pytest.raises(ValidationError, match="Cannot add"):
             bin_stock_service.add_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("60"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("60"),
+                org_id=org_id,
             )
 
     def test_add_stock_rejects_deactivated_bin(
@@ -131,15 +154,23 @@ class TestAddStock:
     ):
         """Should reject stock operations on deactivated locations."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, is_active=False,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            is_active=False,
         )
         db_session.commit()
 
         with pytest.raises(StateError, match="deactivated"):
             bin_stock_service.add_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("10"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("10"),
+                org_id=org_id,
             )
 
     def test_add_stock_rejects_non_bin_location(
@@ -147,15 +178,22 @@ class TestAddStock:
     ):
         """Should reject stock operations on non-bin locations."""
         level_loc = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01",
-            capacity=100, total_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "level",
+            "L01",
+            capacity=100,
+            total_capacity=100,
         )
         db_session.commit()
 
         with pytest.raises(ValidationError, match="not 'bin'"):
             bin_stock_service.add_stock(
-                bin_id=level_loc.id, item_id=item_id,
-                quantity=Decimal("10"), org_id=org_id,
+                bin_id=level_loc.id,
+                item_id=item_id,
+                quantity=Decimal("10"),
+                org_id=org_id,
             )
 
     def test_add_stock_rejects_zero_quantity(
@@ -163,15 +201,22 @@ class TestAddStock:
     ):
         """Should reject zero or negative quantity."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
         )
         db_session.commit()
 
         with pytest.raises(ValidationError, match="positive"):
             bin_stock_service.add_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("0"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("0"),
+                org_id=org_id,
             )
 
     def test_add_stock_syncs_warehouse_stock_levels(
@@ -179,14 +224,22 @@ class TestAddStock:
     ):
         """Adding bin stock should sync to warehouse-level stock_levels."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("30"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("30"),
+            org_id=org_id,
         )
 
         stock_level = (
@@ -207,19 +260,29 @@ class TestAddStock:
     ):
         """Should support batch-specific stock tracking."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=200, total_capacity=200, available_capacity=200,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=200,
+            total_capacity=200,
+            available_capacity=200,
         )
         db_session.commit()
 
         result1 = bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("20"),
+            org_id=org_id,
             batch_number="BATCH-A",
         )
         result2 = bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("30"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("30"),
+            org_id=org_id,
             batch_number="BATCH-B",
         )
 
@@ -234,8 +297,10 @@ class TestAddStock:
         """Should raise NotFoundError for non-existent bin."""
         with pytest.raises(NotFoundError):
             bin_stock_service.add_stock(
-                bin_id=uuid.uuid4(), item_id=item_id,
-                quantity=Decimal("10"), org_id=org_id,
+                bin_id=uuid.uuid4(),
+                item_id=item_id,
+                quantity=Decimal("10"),
+                org_id=org_id,
             )
 
 
@@ -247,18 +312,28 @@ class TestRemoveStock:
     ):
         """Removing stock should decrement the quantity_on_hand."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("50"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("50"),
+            org_id=org_id,
         )
         result = bin_stock_service.remove_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("20"),
+            org_id=org_id,
         )
 
         assert result.quantity_on_hand == Decimal("30")
@@ -268,20 +343,30 @@ class TestRemoveStock:
     ):
         """Should reject removal when insufficient stock on hand."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("10"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("10"),
+            org_id=org_id,
         )
 
         with pytest.raises(ValidationError, match="Cannot remove"):
             bin_stock_service.remove_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("20"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("20"),
+                org_id=org_id,
             )
 
     def test_remove_stock_rejects_deactivated_bin(
@@ -289,15 +374,23 @@ class TestRemoveStock:
     ):
         """Should reject stock removal on deactivated locations."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, is_active=False,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            is_active=False,
         )
         db_session.commit()
 
         with pytest.raises(StateError, match="deactivated"):
             bin_stock_service.remove_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("10"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("10"),
+                org_id=org_id,
             )
 
     def test_remove_stock_syncs_warehouse_stock_levels(
@@ -305,18 +398,28 @@ class TestRemoveStock:
     ):
         """Removing bin stock should sync to warehouse-level stock_levels."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("50"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("50"),
+            org_id=org_id,
         )
         bin_stock_service.remove_stock(
-            bin_id=bin_loc.id, item_id=item_id,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item_id,
+            quantity=Decimal("20"),
+            org_id=org_id,
         )
 
         stock_level = (
@@ -337,15 +440,23 @@ class TestRemoveStock:
     ):
         """Should raise NotFoundError when no stock record exists for the item."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         with pytest.raises(NotFoundError, match="No stock record"):
             bin_stock_service.remove_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("10"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("10"),
+                org_id=org_id,
             )
 
     def test_remove_stock_rejects_zero_quantity(
@@ -353,15 +464,22 @@ class TestRemoveStock:
     ):
         """Should reject zero or negative quantity."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
         )
         db_session.commit()
 
         with pytest.raises(ValidationError, match="positive"):
             bin_stock_service.remove_stock(
-                bin_id=bin_loc.id, item_id=item_id,
-                quantity=Decimal("-5"), org_id=org_id,
+                bin_id=bin_loc.id,
+                item_id=item_id,
+                quantity=Decimal("-5"),
+                org_id=org_id,
             )
 
 
@@ -373,22 +491,38 @@ class TestGetBinsForItem:
     ):
         """Should return all bins containing the specified item."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN02",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN02",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin1.id, item_id=item_id,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin1.id,
+            item_id=item_id,
+            quantity=Decimal("20"),
+            org_id=org_id,
         )
         bin_stock_service.add_stock(
-            bin_id=bin2.id, item_id=item_id,
-            quantity=Decimal("30"), org_id=org_id,
+            bin_id=bin2.id,
+            item_id=item_id,
+            quantity=Decimal("30"),
+            org_id=org_id,
         )
 
         results = bin_stock_service.get_bins_for_item(item_id, org_id)
@@ -410,14 +544,22 @@ class TestGetBinsForItem:
     ):
         """Should include available capacity info for each bin."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin1.id, item_id=item_id,
-            quantity=Decimal("40"), org_id=org_id,
+            bin_id=bin1.id,
+            item_id=item_id,
+            quantity=Decimal("40"),
+            org_id=org_id,
         )
 
         results = bin_stock_service.get_bins_for_item(item_id, org_id)
@@ -435,20 +577,30 @@ class TestGetBinStock:
     ):
         """Should return all stock records for a specific bin."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=200, total_capacity=200, available_capacity=200,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=200,
+            total_capacity=200,
+            available_capacity=200,
         )
         item1 = uuid.uuid4()
         item2 = uuid.uuid4()
         db_session.commit()
 
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item1,
-            quantity=Decimal("20"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item1,
+            quantity=Decimal("20"),
+            org_id=org_id,
         )
         bin_stock_service.add_stock(
-            bin_id=bin_loc.id, item_id=item2,
-            quantity=Decimal("30"), org_id=org_id,
+            bin_id=bin_loc.id,
+            item_id=item2,
+            quantity=Decimal("30"),
+            org_id=org_id,
         )
 
         results = bin_stock_service.get_bin_stock(bin_loc.id, org_id)
@@ -463,8 +615,13 @@ class TestGetBinStock:
     ):
         """Should return empty list for a bin with no stock."""
         bin_loc = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
         )
         db_session.commit()
 

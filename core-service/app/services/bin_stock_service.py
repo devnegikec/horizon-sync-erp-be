@@ -12,7 +12,6 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 18.1, 18.2
 """
 
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from sqlalchemy import func
@@ -93,7 +92,9 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
         )
-        bin_stock.quantity_on_hand = Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
+        bin_stock.quantity_on_hand = (
+            Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
+        )
         self.db.flush()
 
         # Sync warehouse-level stock_levels
@@ -197,7 +198,7 @@ class BinStockService:
         self,
         item_id: UUID,
         org_id: UUID,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Return all bins containing a specific item with quantities and available capacity.
 
         Args:
@@ -231,19 +232,21 @@ class BinStockService:
             bin_capacity = Decimal(str(bin_location.capacity or 0))
             available_capacity = bin_capacity - total_stock_in_bin
 
-            results.append({
-                "bin_location_id": bs.bin_location_id,
-                "bin_code": bin_location.full_path,
-                "bin_name": bin_location.name,
-                "warehouse_id": bin_location.warehouse_id,
-                "item_id": bs.item_id,
-                "quantity_on_hand": bs.quantity_on_hand,
-                "batch_number": bs.batch_number,
-                "bin_capacity": bin_capacity,
-                "available_capacity": available_capacity,
-                "is_active": bin_location.is_active,
-                "created_at": bs.created_at,
-            })
+            results.append(
+                {
+                    "bin_location_id": bs.bin_location_id,
+                    "bin_code": bin_location.full_path,
+                    "bin_name": bin_location.name,
+                    "warehouse_id": bin_location.warehouse_id,
+                    "item_id": bs.item_id,
+                    "quantity_on_hand": bs.quantity_on_hand,
+                    "batch_number": bs.batch_number,
+                    "bin_capacity": bin_capacity,
+                    "available_capacity": available_capacity,
+                    "is_active": bin_location.is_active,
+                    "created_at": bs.created_at,
+                }
+            )
 
         return results
 
@@ -251,7 +254,7 @@ class BinStockService:
         self,
         bin_id: UUID,
         org_id: UUID,
-    ) -> List[BinStockLevel]:
+    ) -> list[BinStockLevel]:
         """Return all stock records for a specific bin.
 
         Args:

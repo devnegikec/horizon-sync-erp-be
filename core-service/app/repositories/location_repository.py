@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.warehouse_location import WarehouseLocation
@@ -39,9 +39,7 @@ class LocationRepository:
     # GET BY ID
     # ------------------------------------------------------------------
 
-    def get_by_id(
-        self, location_id: UUID, org_id: UUID
-    ) -> WarehouseLocation | None:
+    def get_by_id(self, location_id: UUID, org_id: UUID) -> WarehouseLocation | None:
         """
         Get a single location by ID scoped to an organization.
 
@@ -65,9 +63,7 @@ class LocationRepository:
     # UPDATE
     # ------------------------------------------------------------------
 
-    def update(
-        self, location_id: UUID, data: dict
-    ) -> WarehouseLocation | None:
+    def update(self, location_id: UUID, data: dict) -> WarehouseLocation | None:
         """
         Update location fields by ID.
 
@@ -98,9 +94,7 @@ class LocationRepository:
     # GET TREE (recursive CTE)
     # ------------------------------------------------------------------
 
-    def get_tree(
-        self, warehouse_id: UUID, org_id: UUID
-    ) -> list[WarehouseLocation]:
+    def get_tree(self, warehouse_id: UUID, org_id: UUID) -> list[WarehouseLocation]:
         """
         Get the full location hierarchy for a warehouse using a recursive CTE.
 
@@ -128,13 +122,10 @@ class LocationRepository:
 
         # Recursive part: join children to the CTE
         cte_alias = cte.alias("lt")
-        recursive_part = (
-            self.db.query(WarehouseLocation)
-            .filter(
-                WarehouseLocation.parent_location_id == cte_alias.c.id,
-                WarehouseLocation.warehouse_id == warehouse_id,
-                WarehouseLocation.organization_id == org_id,
-            )
+        recursive_part = self.db.query(WarehouseLocation).filter(
+            WarehouseLocation.parent_location_id == cte_alias.c.id,
+            WarehouseLocation.warehouse_id == warehouse_id,
+            WarehouseLocation.organization_id == org_id,
         )
 
         cte = cte.union_all(recursive_part)
@@ -142,11 +133,7 @@ class LocationRepository:
         # Query the CTE and order by full_path for tree construction
         locations = (
             self.db.query(WarehouseLocation)
-            .filter(
-                WarehouseLocation.id.in_(
-                    self.db.query(cte.c.id)
-                )
-            )
+            .filter(WarehouseLocation.id.in_(self.db.query(cte.c.id)))
             .order_by(WarehouseLocation.full_path)
             .all()
         )
@@ -221,9 +208,7 @@ class LocationRepository:
     # GET CHILDREN (direct children of a location)
     # ------------------------------------------------------------------
 
-    def get_children(
-        self, parent_id: UUID, org_id: UUID
-    ) -> list[WarehouseLocation]:
+    def get_children(self, parent_id: UUID, org_id: UUID) -> list[WarehouseLocation]:
         """
         Get direct children of a location.
 
@@ -273,12 +258,9 @@ class LocationRepository:
 
         # Recursive part: children of the current level
         cte_alias = cte.alias("d")
-        recursive_part = (
-            self.db.query(WarehouseLocation)
-            .filter(
-                WarehouseLocation.parent_location_id == cte_alias.c.id,
-                WarehouseLocation.organization_id == org_id,
-            )
+        recursive_part = self.db.query(WarehouseLocation).filter(
+            WarehouseLocation.parent_location_id == cte_alias.c.id,
+            WarehouseLocation.organization_id == org_id,
         )
 
         cte = cte.union_all(recursive_part)
@@ -286,11 +268,7 @@ class LocationRepository:
         # Query the CTE
         descendants = (
             self.db.query(WarehouseLocation)
-            .filter(
-                WarehouseLocation.id.in_(
-                    self.db.query(cte.c.id)
-                )
-            )
+            .filter(WarehouseLocation.id.in_(self.db.query(cte.c.id)))
             .order_by(WarehouseLocation.full_path)
             .all()
         )
@@ -365,9 +343,8 @@ class LocationRepository:
 
         # Recursive part: children
         cte_alias = cte.alias("st")
-        recursive_part = (
-            self.db.query(WarehouseLocation.id)
-            .filter(WarehouseLocation.parent_location_id == cte_alias.c.id)
+        recursive_part = self.db.query(WarehouseLocation.id).filter(
+            WarehouseLocation.parent_location_id == cte_alias.c.id
         )
 
         cte = cte.union_all(recursive_part)

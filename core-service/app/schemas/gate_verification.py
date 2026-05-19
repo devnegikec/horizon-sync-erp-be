@@ -16,7 +16,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
@@ -34,9 +33,7 @@ class GateSessionRequest(BaseModel):
     vehicle_number: Optional[str] = Field(
         None, max_length=100, description="Vehicle registration number"
     )
-    driver_name: Optional[str] = Field(
-        None, max_length=255, description="Driver name"
-    )
+    driver_name: Optional[str] = Field(None, max_length=255, description="Driver name")
     driver_contact: Optional[str] = Field(
         None, max_length=50, description="Driver contact number"
     )
@@ -54,9 +51,7 @@ class GateScanRequest(BaseModel):
     device_type: Optional[str] = Field(
         None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
     )
-    os: Optional[str] = Field(
-        None, max_length=50, description="Operating system info"
-    )
+    os: Optional[str] = Field(None, max_length=50, description="Operating system info")
 
 
 # ===========================================
@@ -152,9 +147,7 @@ class GateSessionProgress(BaseModel):
     unauthorized_count: int = Field(
         ..., description="Number of unauthorized items detected"
     )
-    verified_qty: int = Field(
-        ..., description="Total verified quantity"
-    )
+    verified_qty: int = Field(..., description="Total verified quantity")
     expected_total_qty: int = Field(
         ..., description="Total expected quantity from the pick list"
     )

@@ -7,7 +7,7 @@ import pytest
 
 from app.models.bin_stock_level import BinStockLevel
 from app.models.warehouse_location import WarehouseLocation
-from app.services.capacity_service import CapacityService, OptimisticLockError
+from app.services.capacity_service import CapacityService
 
 
 @pytest.fixture
@@ -79,28 +79,35 @@ class TestRecalculateAncestors:
         self, db_session, capacity_service, org_id, warehouse_id
     ):
         """Parent total_capacity should equal sum of children's total_capacity."""
-        zone = _create_location(
-            db_session, org_id, warehouse_id, "zone", "Z01"
-        )
+        zone = _create_location(db_session, org_id, warehouse_id, "zone", "Z01")
         aisle = _create_location(
-            db_session, org_id, warehouse_id, "aisle", "A01",
-            parent_id=zone.id
+            db_session, org_id, warehouse_id, "aisle", "A01", parent_id=zone.id
         )
         bay = _create_location(
-            db_session, org_id, warehouse_id, "bay", "B01",
-            parent_id=aisle.id
+            db_session, org_id, warehouse_id, "bay", "B01", parent_id=aisle.id
         )
         level = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01",
-            parent_id=bay.id
+            db_session, org_id, warehouse_id, "level", "L01", parent_id=bay.id
         )
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN02",
-            parent_id=level.id, capacity=50, total_capacity=50
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN02",
+            parent_id=level.id,
+            capacity=50,
+            total_capacity=50,
         )
         db_session.commit()
 
@@ -124,16 +131,19 @@ class TestRecalculateAncestors:
         self, db_session, capacity_service, org_id, warehouse_id
     ):
         """Available capacity should be total_capacity minus stock in subtree."""
-        zone = _create_location(
-            db_session, org_id, warehouse_id, "zone", "Z01"
-        )
+        zone = _create_location(db_session, org_id, warehouse_id, "zone", "Z01")
         level = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01",
-            parent_id=zone.id
+            db_session, org_id, warehouse_id, "level", "L01", parent_id=zone.id
         )
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         db_session.flush()
 
@@ -159,17 +169,27 @@ class TestRecalculateAncestors:
         self, db_session, capacity_service, org_id, warehouse_id
     ):
         """Deactivated locations should not contribute to parent capacity."""
-        level = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01"
-        )
+        level = _create_location(db_session, org_id, warehouse_id, "level", "L01")
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN02",
-            parent_id=level.id, capacity=50, total_capacity=50,
-            is_active=False
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN02",
+            parent_id=level.id,
+            capacity=50,
+            total_capacity=50,
+            is_active=False,
         )
         db_session.commit()
 
@@ -180,9 +200,7 @@ class TestRecalculateAncestors:
         # Only active bin1 should count
         assert level.total_capacity == Decimal("100")
 
-    def test_raises_not_found_for_invalid_location(
-        self, db_session, capacity_service
-    ):
+    def test_raises_not_found_for_invalid_location(self, db_session, capacity_service):
         """Should raise NotFoundError for non-existent location."""
         from app.core.exceptions import NotFoundError
 
@@ -193,12 +211,16 @@ class TestRecalculateAncestors:
         self, db_session, capacity_service, org_id, warehouse_id
     ):
         """Version should increment after capacity update."""
-        level = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01"
-        )
+        level = _create_location(db_session, org_id, warehouse_id, "level", "L01")
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         db_session.commit()
 
@@ -218,8 +240,13 @@ class TestComputeAvailableCapacity:
     ):
         """Available = total_capacity - stock in subtree."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=200, total_capacity=200
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=200,
+            total_capacity=200,
         )
         item_id = uuid.uuid4()
         _add_stock(db_session, org_id, bin1.id, item_id, 75)
@@ -233,8 +260,13 @@ class TestComputeAvailableCapacity:
     ):
         """Available should equal total when no stock exists."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=200, total_capacity=200
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=200,
+            total_capacity=200,
         )
         db_session.commit()
 
@@ -248,8 +280,13 @@ class TestComputeAvailableCapacity:
         from app.core.exceptions import NotFoundError
 
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=200, total_capacity=200
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=200,
+            total_capacity=200,
         )
         db_session.commit()
 
@@ -266,16 +303,33 @@ class TestGetCapacitySummary:
     ):
         """Should return a complete capacity summary."""
         level = _create_location(
-            db_session, org_id, warehouse_id, "level", "L01",
-            total_capacity=200, available_capacity=200
+            db_session,
+            org_id,
+            warehouse_id,
+            "level",
+            "L01",
+            total_capacity=200,
+            available_capacity=200,
         )
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN02",
-            parent_id=level.id, capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN02",
+            parent_id=level.id,
+            capacity=100,
+            total_capacity=100,
         )
         item_id = uuid.uuid4()
         _add_stock(db_session, org_id, bin1.id, item_id, 40)
@@ -297,8 +351,13 @@ class TestGetCapacitySummary:
     ):
         """Should calculate correct utilization percentage."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
         )
         item_id = uuid.uuid4()
         _add_stock(db_session, org_id, bin1.id, item_id, 50)
@@ -312,8 +371,13 @@ class TestGetCapacitySummary:
     ):
         """Should handle zero capacity without division error."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=0, total_capacity=0
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=0,
+            total_capacity=0,
         )
         db_session.commit()
 
@@ -328,12 +392,16 @@ class TestUpdateLocationCapacity:
         self, db_session, capacity_service, org_id, warehouse_id
     ):
         """Updating a bin's capacity should propagate to ancestors."""
-        zone = _create_location(
-            db_session, org_id, warehouse_id, "zone", "Z01"
-        )
+        zone = _create_location(db_session, org_id, warehouse_id, "zone", "Z01")
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            parent_id=zone.id, capacity=50, total_capacity=50
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            parent_id=zone.id,
+            capacity=50,
+            total_capacity=50,
         )
         db_session.commit()
 
@@ -352,8 +420,13 @@ class TestUpdateLocationCapacity:
     ):
         """Available capacity should account for existing stock."""
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "BIN01",
-            capacity=100, total_capacity=100
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "BIN01",
+            capacity=100,
+            total_capacity=100,
         )
         item_id = uuid.uuid4()
         _add_stock(db_session, org_id, bin1.id, item_id, 30)

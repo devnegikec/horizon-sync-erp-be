@@ -40,9 +40,7 @@ class ScanSessionRepository:
     # GET BY ID
     # ------------------------------------------------------------------
 
-    def get_by_id(
-        self, session_id: UUID, org_id: UUID
-    ) -> ScanSession | None:
+    def get_by_id(self, session_id: UUID, org_id: UUID) -> ScanSession | None:
         """
         Get a scan session by ID scoped to an organization.
 
@@ -66,9 +64,7 @@ class ScanSessionRepository:
     # ADD ITEM
     # ------------------------------------------------------------------
 
-    def add_item(
-        self, session_id: UUID, item_data: dict
-    ) -> ScanSessionItem:
+    def add_item(self, session_id: UUID, item_data: dict) -> ScanSessionItem:
         """
         Add a scan item to a session.
 
@@ -86,14 +82,10 @@ class ScanSessionRepository:
 
         # Increment total_boxes_scanned on the session
         session = (
-            self.db.query(ScanSession)
-            .filter(ScanSession.id == session_id)
-            .first()
+            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
         )
         if session:
-            session.total_boxes_scanned = (
-                session.total_boxes_scanned or 0
-            ) + 1
+            session.total_boxes_scanned = (session.total_boxes_scanned or 0) + 1
 
         self.db.commit()
         self.db.refresh(item)
@@ -136,9 +128,7 @@ class ScanSessionRepository:
             Updated ScanSession or None if not found.
         """
         session = (
-            self.db.query(ScanSession)
-            .filter(ScanSession.id == session_id)
-            .first()
+            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
         )
         if session is None:
             return None
@@ -186,17 +176,13 @@ class ScanSessionRepository:
                     ScanSession.warehouse_id == filters["warehouse_id"]
                 )
             if filters.get("worker_id"):
-                query = query.filter(
-                    ScanSession.worker_id == filters["worker_id"]
-                )
+                query = query.filter(ScanSession.worker_id == filters["worker_id"])
             if filters.get("session_type"):
                 query = query.filter(
                     ScanSession.session_type == filters["session_type"]
                 )
             if filters.get("status"):
-                query = query.filter(
-                    ScanSession.status == filters["status"]
-                )
+                query = query.filter(ScanSession.status == filters["status"])
 
         total = query.count()
 

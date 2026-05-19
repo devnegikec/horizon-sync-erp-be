@@ -9,9 +9,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.common import PaginationMeta
-
-
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
@@ -22,8 +19,12 @@ class AddStockRequest(BaseModel):
 
     bin_id: UUID = Field(..., description="Bin location UUID")
     item_id: UUID = Field(..., description="Item UUID")
-    quantity: Decimal = Field(..., gt=0, description="Quantity to add (must be positive)")
-    batch_number: Optional[str] = Field(None, max_length=100, description="Optional batch number")
+    quantity: Decimal = Field(
+        ..., gt=0, description="Quantity to add (must be positive)"
+    )
+    batch_number: Optional[str] = Field(
+        None, max_length=100, description="Optional batch number"
+    )
 
 
 class RemoveStockRequest(BaseModel):
@@ -31,8 +32,12 @@ class RemoveStockRequest(BaseModel):
 
     bin_id: UUID = Field(..., description="Bin location UUID")
     item_id: UUID = Field(..., description="Item UUID")
-    quantity: Decimal = Field(..., gt=0, description="Quantity to remove (must be positive)")
-    batch_number: Optional[str] = Field(None, max_length=100, description="Optional batch number")
+    quantity: Decimal = Field(
+        ..., gt=0, description="Quantity to remove (must be positive)"
+    )
+    batch_number: Optional[str] = Field(
+        None, max_length=100, description="Optional batch number"
+    )
 
 
 # ===========================================

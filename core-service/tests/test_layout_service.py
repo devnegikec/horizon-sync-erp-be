@@ -7,7 +7,7 @@ import pytest
 
 from app.models.bin_stock_level import BinStockLevel
 from app.models.warehouse_location import WarehouseLocation
-from app.services.layout_service import VALID_PARENT_TYPES, LayoutService
+from app.services.layout_service import LayoutService
 
 
 @pytest.fixture
@@ -536,9 +536,7 @@ class TestListLocations:
         )
         layout_service.deactivate_location(zone.id, org_id)
 
-        result = layout_service.list_locations(
-            warehouse_id, org_id, is_active=True
-        )
+        result = layout_service.list_locations(warehouse_id, org_id, is_active=True)
         assert result["pagination"]["total"] == 1
         assert result["locations"][0].code == "Z02"
 
@@ -677,9 +675,7 @@ class TestGetLocationSummary:
         assert summary["available_capacity"] == Decimal("120")
         assert summary["distinct_items"] == 1
 
-    def test_summary_nonexistent_raises_error(
-        self, db_session, layout_service, org_id
-    ):
+    def test_summary_nonexistent_raises_error(self, db_session, layout_service, org_id):
         """Should raise ValidationError for non-existent location."""
         from app.core.exceptions import ValidationError
 

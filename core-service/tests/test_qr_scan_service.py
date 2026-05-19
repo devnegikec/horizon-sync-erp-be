@@ -1,12 +1,11 @@
 """Unit tests for QRScanService (location time tracking)."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.models.location_scan import LocationScan
 from app.models.worker_task import WorkerTask
 from app.services.qr_scan_service import QRScanService
 
@@ -110,9 +109,7 @@ class TestRecordLocationScan:
             )
         assert "no preceding start scan" in str(exc_info.value).lower()
 
-    def test_rejects_invalid_scan_type(
-        self, qr_scan_service, org_id, worker_task
-    ):
+    def test_rejects_invalid_scan_type(self, qr_scan_service, org_id, worker_task):
         """Should raise ValidationError for invalid scan_type."""
         with pytest.raises(ValidationError) as exc_info:
             qr_scan_service.record_location_scan(
@@ -204,9 +201,7 @@ class TestRecordLocationScan:
 class TestGetTimeSummary:
     """Tests for get_time_summary method."""
 
-    def test_returns_empty_summary_with_no_data(
-        self, qr_scan_service, org_id
-    ):
+    def test_returns_empty_summary_with_no_data(self, qr_scan_service, org_id):
         """Should return zero totals when no finish scans exist."""
         result = qr_scan_service.get_time_summary(org_id=org_id)
 
@@ -333,9 +328,7 @@ class TestGetTimeSummary:
         assert result["total_scans"] == 1
         assert result["total_elapsed_seconds"] == 300
 
-    def test_filters_by_task_id(
-        self, qr_scan_service, org_id, worker_task
-    ):
+    def test_filters_by_task_id(self, qr_scan_service, org_id, worker_task):
         """Should filter results by task_id."""
         start_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         finish_time = datetime(2025, 1, 15, 10, 5, 0, tzinfo=UTC)
@@ -374,9 +367,7 @@ class TestGetTimeSummary:
 
         assert result["total_scans"] == 0
 
-    def test_filters_by_location_code(
-        self, qr_scan_service, org_id, worker_task
-    ):
+    def test_filters_by_location_code(self, qr_scan_service, org_id, worker_task):
         """Should filter results by location_code."""
         start_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         finish_time = datetime(2025, 1, 15, 10, 5, 0, tzinfo=UTC)
@@ -412,9 +403,7 @@ class TestGetTimeSummary:
         )
         assert result["total_scans"] == 0
 
-    def test_filters_by_date_range(
-        self, qr_scan_service, org_id, worker_task
-    ):
+    def test_filters_by_date_range(self, qr_scan_service, org_id, worker_task):
         """Should filter results by date range."""
         from datetime import date
 

@@ -33,9 +33,7 @@ class DispatchRecord(Base):
     invoice_reference = Column(String(255), nullable=True)
     vehicle_number = Column(String(100), nullable=True)
     driver_name = Column(String(255), nullable=True)
-    dispatched_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
-    )
+    dispatched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -47,7 +45,9 @@ class DispatchRecord(Base):
 
     # Relationships
     pick_list = relationship("PickList", foreign_keys=[pick_list_id])
-    gate_session = relationship("GateVerificationSession", back_populates="dispatch_records")
+    gate_session = relationship(
+        "GateVerificationSession", back_populates="dispatch_records"
+    )
 
     def __repr__(self):
         return (

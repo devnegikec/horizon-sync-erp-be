@@ -40,9 +40,7 @@ class ReceivingSlipRepository:
     # GET BY ID
     # ------------------------------------------------------------------
 
-    def get_by_id(
-        self, slip_id: UUID, org_id: UUID
-    ) -> ReceivingSlip | None:
+    def get_by_id(self, slip_id: UUID, org_id: UUID) -> ReceivingSlip | None:
         """
         Get a receiving slip by ID scoped to an organization.
 
@@ -66,9 +64,7 @@ class ReceivingSlipRepository:
     # UPDATE STATUS
     # ------------------------------------------------------------------
 
-    def update_status(
-        self, slip_id: UUID, status: str
-    ) -> ReceivingSlip | None:
+    def update_status(self, slip_id: UUID, status: str) -> ReceivingSlip | None:
         """
         Update the status of a receiving slip.
 
@@ -80,11 +76,7 @@ class ReceivingSlipRepository:
         Returns:
             Updated ReceivingSlip or None if not found.
         """
-        slip = (
-            self.db.query(ReceivingSlip)
-            .filter(ReceivingSlip.id == slip_id)
-            .first()
-        )
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
         if slip is None:
             return None
 
@@ -97,9 +89,7 @@ class ReceivingSlipRepository:
     # ADD ITEM
     # ------------------------------------------------------------------
 
-    def add_item(
-        self, slip_id: UUID, item_data: dict
-    ) -> ReceivingSlipItem:
+    def add_item(self, slip_id: UUID, item_data: dict) -> ReceivingSlipItem:
         """
         Add a line item to a receiving slip.
 
@@ -143,9 +133,7 @@ class ReceivingSlipRepository:
     # GET ITEM BY ID
     # ------------------------------------------------------------------
 
-    def get_item_by_id(
-        self, item_id: UUID, org_id: UUID
-    ) -> ReceivingSlipItem | None:
+    def get_item_by_id(self, item_id: UUID, org_id: UUID) -> ReceivingSlipItem | None:
         """
         Get a receiving slip item by ID scoped to an organization.
 
@@ -215,11 +203,7 @@ class ReceivingSlipRepository:
         Returns:
             Updated ReceivingSlip or None if not found.
         """
-        slip = (
-            self.db.query(ReceivingSlip)
-            .filter(ReceivingSlip.id == slip_id)
-            .first()
-        )
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
         if slip is None:
             return None
 
@@ -266,13 +250,9 @@ class ReceivingSlipRepository:
                     ReceivingSlip.warehouse_id == filters["warehouse_id"]
                 )
             if filters.get("session_id"):
-                query = query.filter(
-                    ReceivingSlip.session_id == filters["session_id"]
-                )
+                query = query.filter(ReceivingSlip.session_id == filters["session_id"])
             if filters.get("status"):
-                query = query.filter(
-                    ReceivingSlip.status == filters["status"]
-                )
+                query = query.filter(ReceivingSlip.status == filters["status"])
 
         total = query.count()
 

@@ -76,14 +76,18 @@ def decode_qr_payload(qr_data: str) -> QRPayload:
     if qr_id is None:
         errors.append({"field": "id", "reason": "Missing required field 'id'"})
     elif not isinstance(qr_id, str) or not qr_id.strip():
-        errors.append({"field": "id", "reason": "Field 'id' must be a non-empty string"})
+        errors.append(
+            {"field": "id", "reason": "Field 'id' must be a non-empty string"}
+        )
 
     # Validate 'sku' field
     sku = data.get("sku")
     if sku is None:
         errors.append({"field": "sku", "reason": "Missing required field 'sku'"})
     elif not isinstance(sku, str) or not sku.strip():
-        errors.append({"field": "sku", "reason": "Field 'sku' must be a non-empty string"})
+        errors.append(
+            {"field": "sku", "reason": "Field 'sku' must be a non-empty string"}
+        )
 
     # Validate 'qty' field
     qty = data.get("qty")
@@ -92,14 +96,18 @@ def decode_qr_payload(qr_data: str) -> QRPayload:
     elif not isinstance(qty, int) or isinstance(qty, bool):
         errors.append({"field": "qty", "reason": "Field 'qty' must be an integer"})
     elif qty <= 0:
-        errors.append({"field": "qty", "reason": "Field 'qty' must be a positive integer"})
+        errors.append(
+            {"field": "qty", "reason": "Field 'qty' must be a positive integer"}
+        )
 
     # Validate 'batch' field
     batch = data.get("batch")
     if batch is None:
         errors.append({"field": "batch", "reason": "Missing required field 'batch'"})
     elif not isinstance(batch, str) or not batch.strip():
-        errors.append({"field": "batch", "reason": "Field 'batch' must be a non-empty string"})
+        errors.append(
+            {"field": "batch", "reason": "Field 'batch' must be a non-empty string"}
+        )
 
     if errors:
         raise ValidationError(

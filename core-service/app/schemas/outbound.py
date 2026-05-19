@@ -12,7 +12,6 @@ Requirements: 9.1, 10.1, 11.3, 11.4
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -20,7 +19,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import PaginationMeta
-
 
 # ===========================================
 # REQUEST SCHEMAS
@@ -48,9 +46,7 @@ class SAPInvoicePayload(BaseModel):
         max_length=255,
         description="SAP invoice reference number",
     )
-    warehouse_id: UUID = Field(
-        ..., description="Target warehouse for the pick list"
-    )
+    warehouse_id: UUID = Field(..., description="Target warehouse for the pick list")
     items: list[SAPInvoiceItem] = Field(
         ..., min_length=1, description="Invoice line items to pick"
     )
@@ -77,9 +73,7 @@ class PickListFilters(BaseModel):
         None,
         description="Filter by status: draft, in_progress, completed, cancelled",
     )
-    warehouse_id: Optional[UUID] = Field(
-        None, description="Filter by warehouse ID"
-    )
+    warehouse_id: Optional[UUID] = Field(None, description="Filter by warehouse ID")
     invoice_reference: Optional[str] = Field(
         None, description="Filter by SAP invoice reference"
     )
@@ -87,9 +81,7 @@ class PickListFilters(BaseModel):
         default="created_at",
         description="Sort field: created_at, pick_list_no, status",
     )
-    sort_order: str = Field(
-        default="desc", description="Sort order: asc or desc"
-    )
+    sort_order: str = Field(default="desc", description="Sort order: asc or desc")
     page: int = Field(default=1, ge=1, description="Page number")
     page_size: int = Field(default=20, ge=1, le=100, description="Items per page")
 
@@ -106,9 +98,7 @@ class PickListProgress(BaseModel):
     """
 
     total_items: int = Field(..., description="Total number of pick list items")
-    picked_items: int = Field(
-        ..., description="Number of items fully picked"
-    )
+    picked_items: int = Field(..., description="Number of items fully picked")
     remaining_items: int = Field(
         ..., description="Number of items not yet fully picked"
     )

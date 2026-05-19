@@ -276,9 +276,7 @@ class TestLocationRepositoryGetChildren:
         assert len(children) == 1
         assert children[0].id == aisle_location.id
 
-    def test_get_children_of_leaf(
-        self, location_repo, sample_org_id, bay_location
-    ):
+    def test_get_children_of_leaf(self, location_repo, sample_org_id, bay_location):
         """Test getting children of a leaf node returns empty list."""
         children = location_repo.get_children(bay_location.id, sample_org_id)
         assert children == []
@@ -303,9 +301,7 @@ class TestLocationRepositoryGetDescendants:
         assert aisle_location.id in descendant_ids
         assert bay_location.id in descendant_ids
 
-    def test_get_descendants_of_leaf(
-        self, location_repo, sample_org_id, bay_location
-    ):
+    def test_get_descendants_of_leaf(self, location_repo, sample_org_id, bay_location):
         """Test getting descendants of a leaf node returns empty list."""
         descendants = location_repo.get_descendants(bay_location.id, sample_org_id)
         assert descendants == []
@@ -336,9 +332,7 @@ class TestLocationRepositorySearch:
         zone_location,
     ):
         """Test searching by name."""
-        results = location_repo.search(
-            sample_warehouse_id, sample_org_id, "Receiving"
-        )
+        results = location_repo.search(sample_warehouse_id, sample_org_id, "Receiving")
 
         assert len(results) == 1
         assert results[0].name == "Receiving Zone"
@@ -353,9 +347,7 @@ class TestLocationRepositorySearch:
         bay_location,
     ):
         """Test searching by full_path."""
-        results = location_repo.search(
-            sample_warehouse_id, sample_org_id, "Z01-A01"
-        )
+        results = location_repo.search(sample_warehouse_id, sample_org_id, "Z01-A01")
 
         # Should match aisle (Z01-A01) and bay (Z01-A01-B01)
         assert len(results) == 2

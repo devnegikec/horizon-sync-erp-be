@@ -61,7 +61,11 @@ from app.services.gate_verification_service import GateVerificationService
 from app.services.outbound_service import OutboundService
 from app.services.pick_list_service import (
     PickListService,
+)
+from app.services.pick_list_service import (
     SAPInvoiceItem as ServiceSAPInvoiceItem,
+)
+from app.services.pick_list_service import (
     SAPInvoicePayload as ServiceSAPInvoicePayload,
 )
 
@@ -506,9 +510,7 @@ async def list_pick_lists(
         alias="status",
         description="Filter by status: draft, in_progress, completed, cancelled",
     ),
-    warehouse_id: UUID | None = Query(
-        None, description="Filter by warehouse ID"
-    ),
+    warehouse_id: UUID | None = Query(None, description="Filter by warehouse ID"),
     invoice_reference: str | None = Query(
         None, description="Filter by SAP invoice reference"
     ),
@@ -587,9 +589,7 @@ async def list_pick_lists(
                     "completed_at": pl.completed_at.isoformat()
                     if pl.completed_at
                     else None,
-                    "created_at": pl.created_at.isoformat()
-                    if pl.created_at
-                    else None,
+                    "created_at": pl.created_at.isoformat() if pl.created_at else None,
                     "progress": progress,
                 }
             )

@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field
 
 from app.schemas.common import PaginationMeta
 
-
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
@@ -36,9 +35,7 @@ class WorkerTaskCreate(BaseModel):
         description="Type of task: 'put_away' or 'pick'",
         pattern="^(put_away|pick)$",
     )
-    worker_id: UUID = Field(
-        ..., description="UUID of the worker assigned to the task"
-    )
+    worker_id: UUID = Field(..., description="UUID of the worker assigned to the task")
     reference_id: UUID = Field(
         ..., description="UUID of the put_away_list or pick_list"
     )

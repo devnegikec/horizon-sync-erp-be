@@ -37,21 +37,15 @@ async def list_scan_events(
     session_id: UUID | None = Query(
         None, description="Filter by session ID (inbound or gate session)"
     ),
-    worker_id: UUID | None = Query(
-        None, description="Filter by worker ID"
-    ),
+    worker_id: UUID | None = Query(None, description="Filter by worker ID"),
     date_from: datetime | None = Query(
         None, description="Start date filter (inclusive)"
     ),
-    date_to: datetime | None = Query(
-        None, description="End date filter (inclusive)"
-    ),
+    date_to: datetime | None = Query(None, description="End date filter (inclusive)"),
     scan_context: str | None = Query(
         None, description="Filter by scan context: 'inbound', 'pick', or 'gate'"
     ),
-    serial_number: str | None = Query(
-        None, description="Filter by serial number"
-    ),
+    serial_number: str | None = Query(None, description="Filter by serial number"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),

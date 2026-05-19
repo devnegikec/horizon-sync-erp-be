@@ -134,8 +134,13 @@ class TestCreateFromInvoiceWiring:
         _create_item(db_session, item_id, org_id, "SKU-A")
 
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
-            position_x=5, position_y=5,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
+            position_x=5,
+            position_y=5,
         )
         _create_bin_stock(db_session, org_id, bin1.id, item_id, 100)
         db_session.commit()
@@ -169,12 +174,22 @@ class TestCreateFromInvoiceWiring:
 
         # Create bins at different positions in different aisles
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A02-B01-L01-BIN01",
-            position_x=10, position_y=10,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A02-B01-L01-BIN01",
+            position_x=10,
+            position_y=10,
         )
         bin2 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN02", "Z01-A01-B01-L01-BIN02",
-            position_x=1, position_y=1,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN02",
+            "Z01-A01-B01-L01-BIN02",
+            position_x=1,
+            position_y=1,
         )
 
         _create_bin_stock(db_session, org_id, bin1.id, item1_id, 100)
@@ -211,7 +226,11 @@ class TestCreateFromInvoiceWiring:
         _create_item(db_session, item_id, org_id, "SKU-A")
 
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
         )
         _create_bin_stock(db_session, org_id, bin1.id, item_id, 100)
         db_session.commit()
@@ -254,7 +273,11 @@ class TestCreateFromInvoiceWiring:
         _create_item(db_session, item_id, org_id, "SKU-A")
 
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
         )
         _create_bin_stock(db_session, org_id, bin1.id, item_id, 100)
         db_session.commit()
@@ -294,12 +317,22 @@ class TestCreateFromInvoiceWiring:
         _create_item(db_session, item2_id, org_id, "SKU-Y")
 
         bin1 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN01", "Z01-A01-B01-L01-BIN01",
-            position_x=3, position_y=3,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN01",
+            "Z01-A01-B01-L01-BIN01",
+            position_x=3,
+            position_y=3,
         )
         bin2 = _create_bin_location(
-            db_session, org_id, warehouse_id, "BIN02", "Z01-A02-B01-L01-BIN02",
-            position_x=8, position_y=8,
+            db_session,
+            org_id,
+            warehouse_id,
+            "BIN02",
+            "Z01-A02-B01-L01-BIN02",
+            position_x=8,
+            position_y=8,
         )
 
         _create_bin_stock(db_session, org_id, bin1.id, item1_id, 50)
@@ -325,12 +358,12 @@ class TestCreateFromInvoiceWiring:
 
         # All items should have bin_location_id set
         for item in result.items:
-            assert item.bin_location_id is not None, (
-                f"Item {item.item_id} should have bin_location_id set"
-            )
-            assert item.sort_order > 0, (
-                f"Item {item.item_id} should have sort_order > 0"
-            )
+            assert (
+                item.bin_location_id is not None
+            ), f"Item {item.item_id} should have bin_location_id set"
+            assert (
+                item.sort_order > 0
+            ), f"Item {item.item_id} should have sort_order > 0"
 
         # Verify bin assignments are correct
         item_bins = {item.item_id: item.bin_location_id for item in result.items}

@@ -16,7 +16,6 @@ Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7,
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -48,7 +47,7 @@ class SAPInvoicePayload:
 
     invoice_reference: str
     warehouse_id: UUID
-    items: List[SAPInvoiceItem]
+    items: list[SAPInvoiceItem]
 
 
 class PickListService:
@@ -136,7 +135,10 @@ class PickListService:
     # ------------------------------------------------------------------
 
     def create_from_invoice(
-        self, invoice_data: SAPInvoicePayload, org_id: UUID, worker_id: UUID | None = None
+        self,
+        invoice_data: SAPInvoicePayload,
+        org_id: UUID,
+        worker_id: UUID | None = None,
     ) -> PickList:
         """Create a pick list from a SAP invoice payload.
 
@@ -561,14 +563,10 @@ class PickListService:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
         if pick_list.status == PickListStatus.COMPLETED:
-            raise ValidationError(
-                "Cannot cancel a completed pick list"
-            )
+            raise ValidationError("Cannot cancel a completed pick list")
 
         if pick_list.status == PickListStatus.CANCELLED:
-            raise ValidationError(
-                "Pick list is already cancelled"
-            )
+            raise ValidationError("Pick list is already cancelled")
 
         # Release reserved stock: add back any picked quantities to bin stock
         from app.services.bin_stock_service import BinStockService

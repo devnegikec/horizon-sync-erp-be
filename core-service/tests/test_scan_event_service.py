@@ -38,7 +38,9 @@ def scan_event_service(db_session):
 class TestRecordEvent:
     """Tests for ScanEventService.record_event"""
 
-    def test_records_inbound_scan_event(self, scan_event_service, org_id, worker_id, session_id):
+    def test_records_inbound_scan_event(
+        self, scan_event_service, org_id, worker_id, session_id
+    ):
         """Should record an inbound scan event with context in extra_data."""
         result = scan_event_service.record_event(
             organization_id=org_id,
@@ -46,7 +48,12 @@ class TestRecordEvent:
             scan_context="inbound",
             serial_number="QR-001",
             session_id=session_id,
-            decoded_payload={"id": "QR-001", "sku": "ITEM-001", "qty": 10, "batch": "B001"},
+            decoded_payload={
+                "id": "QR-001",
+                "sku": "ITEM-001",
+                "qty": 10,
+                "batch": "B001",
+            },
             device_type="mobile",
             os="Android 14",
         )
@@ -64,7 +71,9 @@ class TestRecordEvent:
         assert result["scan_timestamp"] is not None
         assert result["id"] is not None
 
-    def test_records_pick_scan_event(self, scan_event_service, org_id, worker_id, pick_list_id):
+    def test_records_pick_scan_event(
+        self, scan_event_service, org_id, worker_id, pick_list_id
+    ):
         """Should record a pick scan event with pick_list_id in extra_data."""
         result = scan_event_service.record_event(
             organization_id=org_id,
@@ -72,14 +81,21 @@ class TestRecordEvent:
             scan_context="pick",
             serial_number="QR-002",
             pick_list_id=pick_list_id,
-            decoded_payload={"id": "QR-002", "sku": "ITEM-002", "qty": 5, "batch": "B002"},
+            decoded_payload={
+                "id": "QR-002",
+                "sku": "ITEM-002",
+                "qty": 5,
+                "batch": "B002",
+            },
         )
 
         assert result["extra_data"]["scan_context"] == "pick"
         assert result["extra_data"]["pick_list_id"] == str(pick_list_id)
         assert result["extra_data"]["worker_id"] == str(worker_id)
 
-    def test_records_gate_scan_event(self, scan_event_service, org_id, worker_id, session_id, pick_list_id):
+    def test_records_gate_scan_event(
+        self, scan_event_service, org_id, worker_id, session_id, pick_list_id
+    ):
         """Should record a gate scan event with both session_id and pick_list_id."""
         result = scan_event_service.record_event(
             organization_id=org_id,
@@ -88,7 +104,12 @@ class TestRecordEvent:
             serial_number="QR-003",
             session_id=session_id,
             pick_list_id=pick_list_id,
-            decoded_payload={"id": "QR-003", "sku": "ITEM-003", "qty": 20, "batch": "B003"},
+            decoded_payload={
+                "id": "QR-003",
+                "sku": "ITEM-003",
+                "qty": 20,
+                "batch": "B003",
+            },
             device_type="tablet",
             os="iOS 17",
         )
@@ -121,7 +142,9 @@ class TestRecordEvent:
         assert result["state"] == "Delhi"
         assert result["country"] == "India"
 
-    def test_records_event_with_minimal_data(self, scan_event_service, org_id, worker_id):
+    def test_records_event_with_minimal_data(
+        self, scan_event_service, org_id, worker_id
+    ):
         """Should record scan event with only required fields."""
         result = scan_event_service.record_event(
             organization_id=org_id,
@@ -161,12 +184,19 @@ class TestQueryEvents:
                 scan_context="inbound",
                 serial_number=f"QR-{i:03d}",
                 session_id=session_id,
-                decoded_payload={"id": f"QR-{i:03d}", "sku": f"ITEM-{i:03d}", "qty": i + 1, "batch": "B001"},
+                decoded_payload={
+                    "id": f"QR-{i:03d}",
+                    "sku": f"ITEM-{i:03d}",
+                    "qty": i + 1,
+                    "batch": "B001",
+                },
             )
             events.append(event)
         return events
 
-    def test_queries_all_events_for_org(self, scan_event_service, org_id, worker_id, session_id):
+    def test_queries_all_events_for_org(
+        self, scan_event_service, org_id, worker_id, session_id
+    ):
         """Should return all scan events for the organization."""
         self._create_events(scan_event_service, org_id, worker_id, session_id)
 
@@ -265,7 +295,9 @@ class TestQueryEvents:
 
         assert len(result["scan_events"]) == 2
 
-    def test_filters_by_date_range(self, scan_event_service, db_session, org_id, worker_id):
+    def test_filters_by_date_range(
+        self, scan_event_service, db_session, org_id, worker_id
+    ):
         """Should filter events by date range."""
         now = datetime.now(UTC)
 
@@ -354,7 +386,9 @@ class TestQueryEvents:
         assert result["pagination"]["has_next"] is False
         assert result["pagination"]["has_prev"] is True
 
-    def test_does_not_return_other_org_events(self, scan_event_service, org_id, worker_id):
+    def test_does_not_return_other_org_events(
+        self, scan_event_service, org_id, worker_id
+    ):
         """Should not return events from other organizations."""
         other_org_id = uuid.uuid4()
 
@@ -376,7 +410,9 @@ class TestQueryEvents:
         assert len(result["scan_events"]) == 1
         assert result["scan_events"][0]["serial_number"] == "QR-ORG-A"
 
-    def test_orders_by_most_recent_first(self, scan_event_service, db_session, org_id, worker_id):
+    def test_orders_by_most_recent_first(
+        self, scan_event_service, db_session, org_id, worker_id
+    ):
         """Should return events ordered by scan_timestamp descending."""
         now = datetime.now(UTC)
 

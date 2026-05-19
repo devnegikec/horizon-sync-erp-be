@@ -8,16 +8,14 @@ Verifies that:
 Requirements: 7.3, 8.1
 """
 
-import json
 import uuid
 from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import NotFoundError, StateError
 from app.models.item import Item
 from app.models.location_allocation import LocationAllocation
-from app.models.put_away_list import PutAwayList, PutAwayListItem
+from app.models.put_away_list import PutAwayList
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
 from app.models.scan_session import ScanSession
 from app.models.warehouse_location import WarehouseLocation
@@ -164,12 +162,20 @@ class TestApproveSlipTriggersPutAway:
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
         item = _create_item(db_session, org_id, "SKU-001")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-001", "BATCH-A", 10
+        )
 
         # Create a bin with capacity
         _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN01",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -204,12 +210,20 @@ class TestApproveSlipTriggersPutAway:
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
         item = _create_item(db_session, org_id, "SKU-002")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-002", "BATCH-B", 5)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-002", "BATCH-B", 5
+        )
 
         # Create a bin with capacity
         _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN02",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN02",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -252,11 +266,19 @@ class TestApproveSlipTriggersPutAway:
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
         _create_item(db_session, org_id, "SKU-003")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-003", "BATCH-C", 8)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-003", "BATCH-C", 8
+        )
 
         _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN03",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN03",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -283,11 +305,19 @@ class TestApproveSlipTriggersPutAway:
             db_session, org_id, warehouse_id, session.id, status="pending_review"
         )
         _create_item(db_session, org_id, "SKU-004")
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-004", "BATCH-D", 3)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-004", "BATCH-D", 3
+        )
 
         _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-BIN04",
-            capacity=100, total_capacity=100, available_capacity=100,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN04",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
         )
         db_session.commit()
 
@@ -317,16 +347,30 @@ class TestPutAwayRespectsAllocations:
 
         # Create an exclusively allocated bin
         exclusive_bin = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-EXCL",
-            capacity=100, total_capacity=100, available_capacity=100,
-            position_x=1, position_y=1,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-EXCL",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
+            position_x=1,
+            position_y=1,
         )
 
         # Create an unallocated bin
         unallocated_bin = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A02-B01-L01-FREE",
-            capacity=100, total_capacity=100, available_capacity=100,
-            position_x=5, position_y=5,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A02-B01-L01-FREE",
+            capacity=100,
+            total_capacity=100,
+            available_capacity=100,
+            position_x=5,
+            position_y=5,
         )
 
         # Create exclusive allocation
@@ -346,7 +390,9 @@ class TestPutAwayRespectsAllocations:
         slip = _create_receiving_slip(
             db_session, org_id, warehouse_id, session.id, status="pending_putaway"
         )
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-EXCL", "BATCH-E", 10)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-EXCL", "BATCH-E", 10
+        )
         db_session.commit()
 
         result = put_away_service.generate_from_slip(slip.id, org_id)
@@ -364,14 +410,28 @@ class TestPutAwayRespectsAllocations:
 
         # Create multiple bins at different positions
         bin1 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B01-L01-B01",
-            capacity=50, total_capacity=50, available_capacity=50,
-            position_x=10, position_y=10,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-B01",
+            capacity=50,
+            total_capacity=50,
+            available_capacity=50,
+            position_x=10,
+            position_y=10,
         )
         bin2 = _create_location(
-            db_session, org_id, warehouse_id, "bin", "Z01-A01-B02-L01-B01",
-            capacity=50, total_capacity=50, available_capacity=50,
-            position_x=1, position_y=1,
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B02-L01-B01",
+            capacity=50,
+            total_capacity=50,
+            available_capacity=50,
+            position_x=1,
+            position_y=1,
         )
 
         # Create receiving slip with quantity that needs splitting
@@ -379,7 +439,9 @@ class TestPutAwayRespectsAllocations:
         slip = _create_receiving_slip(
             db_session, org_id, warehouse_id, session.id, status="pending_putaway"
         )
-        _create_receiving_slip_item(db_session, org_id, slip.id, "SKU-ROUTE", "BATCH-F", 80)
+        _create_receiving_slip_item(
+            db_session, org_id, slip.id, "SKU-ROUTE", "BATCH-F", 80
+        )
         db_session.commit()
 
         result = put_away_service.generate_from_slip(slip.id, org_id)

@@ -15,7 +15,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
@@ -27,9 +26,7 @@ class LocationScanRequest(BaseModel):
     Requirements: 17.1
     """
 
-    worker_id: UUID = Field(
-        ..., description="UUID of the worker performing the scan"
-    )
+    worker_id: UUID = Field(..., description="UUID of the worker performing the scan")
     task_id: UUID = Field(
         ..., description="UUID of the worker_task this scan belongs to"
     )
@@ -56,15 +53,9 @@ class TimeSummaryFilters(BaseModel):
     Requirements: 17.6
     """
 
-    worker_id: Optional[UUID] = Field(
-        None, description="Filter by worker UUID"
-    )
-    task_id: Optional[UUID] = Field(
-        None, description="Filter by worker_task UUID"
-    )
-    location_code: Optional[str] = Field(
-        None, description="Filter by location code"
-    )
+    worker_id: Optional[UUID] = Field(None, description="Filter by worker UUID")
+    task_id: Optional[UUID] = Field(None, description="Filter by worker_task UUID")
+    location_code: Optional[str] = Field(None, description="Filter by location code")
     date_from: Optional[date] = Field(
         None, description="Start date for the date range filter"
     )

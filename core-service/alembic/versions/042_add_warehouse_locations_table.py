@@ -8,9 +8,10 @@ Creates the warehouse_locations table with full hierarchy support
 (Zone → Aisle → Bay → Level → Bin), capacity tracking, and optimistic locking.
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "042_add_warehouse_locations_table"

@@ -181,7 +181,9 @@ class InboundService:
             "sku": payload.sku,
             "quantity": payload.qty,
             "batch_number": payload.batch,
-            "scanned_at": scan_item.scanned_at.isoformat() if scan_item.scanned_at else None,
+            "scanned_at": scan_item.scanned_at.isoformat()
+            if scan_item.scanned_at
+            else None,
             "total_boxes_scanned": session.total_boxes_scanned,
         }
 
@@ -329,7 +331,9 @@ class InboundService:
             "warehouse_id": str(session.warehouse_id),
             "worker_id": str(session.worker_id),
             "dock_location": session.dock_location,
-            "started_at": session.started_at.isoformat() if session.started_at else None,
+            "started_at": session.started_at.isoformat()
+            if session.started_at
+            else None,
             "ended_at": session.ended_at.isoformat() if session.ended_at else None,
             "total_boxes": total_boxes,
             "total_quantity": total_quantity,
@@ -458,7 +462,9 @@ class InboundService:
         from app.services.put_away_service import PutAwayService
 
         put_away_service = PutAwayService(self.db)
-        put_away_service.generate_from_slip(slip_id, organization_id, worker_id=worker_id)
+        put_away_service.generate_from_slip(
+            slip_id, organization_id, worker_id=worker_id
+        )
 
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
@@ -690,9 +696,13 @@ class InboundService:
             "dock_location": session.dock_location,
             "status": session.status,
             "total_boxes_scanned": session.total_boxes_scanned or 0,
-            "started_at": session.started_at.isoformat() if session.started_at else None,
+            "started_at": session.started_at.isoformat()
+            if session.started_at
+            else None,
             "ended_at": session.ended_at.isoformat() if session.ended_at else None,
-            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "created_at": session.created_at.isoformat()
+            if session.created_at
+            else None,
         }
 
     def _slip_to_dict(self, slip) -> dict:

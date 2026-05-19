@@ -15,7 +15,6 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from sqlalchemy import func
@@ -276,7 +275,9 @@ class PutAwayService:
             ValidationError: If reason is empty.
         """
         if not reason or not reason.strip():
-            raise ValidationError("A reason must be provided when skipping a put-away item")
+            raise ValidationError(
+                "A reason must be provided when skipping a put-away item"
+            )
 
         put_away_item = (
             self.db.query(PutAwayListItem)
@@ -324,7 +325,7 @@ class PutAwayService:
         quantity: Decimal,
         warehouse_id: UUID,
         org_id: UUID,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Assign bins for an item respecting allocations and capacity.
 
         Allocation priority:
@@ -347,7 +348,7 @@ class PutAwayService:
 
         Requirements: 20.3, 20.4, 20.5, 20.6
         """
-        assignments: List[dict] = []
+        assignments: list[dict] = []
         remaining_qty = quantity
 
         if item_group_id is not None:
@@ -416,9 +417,7 @@ class PutAwayService:
 
         # Step 3: Fall back to unallocated bins if still remaining
         if remaining_qty > 0:
-            unallocated_bins = self._get_unallocated_bins(
-                warehouse_id, org_id
-            )
+            unallocated_bins = self._get_unallocated_bins(warehouse_id, org_id)
             additional_assignments, remaining_qty = self._fill_bins(
                 unallocated_bins, remaining_qty, org_id
             )
@@ -427,14 +426,14 @@ class PutAwayService:
         return assignments
 
     def _get_bins_from_allocations(
-        self, allocations: List[LocationAllocation], org_id: UUID
-    ) -> List[WarehouseLocation]:
+        self, allocations: list[LocationAllocation], org_id: UUID
+    ) -> list[WarehouseLocation]:
         """Get active bin locations from allocation records.
 
         Allocations can point to bins, levels, bays, etc. We need to resolve
         down to actual bin locations.
         """
-        bins: List[WarehouseLocation] = []
+        bins: list[WarehouseLocation] = []
 
         for allocation in allocations:
             location = (
@@ -458,9 +457,9 @@ class PutAwayService:
 
         return bins
 
-    def _get_descendant_bins(self, location_id: UUID) -> List[WarehouseLocation]:
+    def _get_descendant_bins(self, location_id: UUID) -> list[WarehouseLocation]:
         """Get all active descendant bin locations using BFS."""
-        bins: List[WarehouseLocation] = []
+        bins: list[WarehouseLocation] = []
         queue = [location_id]
 
         while queue:
@@ -484,7 +483,7 @@ class PutAwayService:
 
     def _get_unallocated_bins(
         self, warehouse_id: UUID, org_id: UUID
-    ) -> List[WarehouseLocation]:
+    ) -> list[WarehouseLocation]:
         """Get active bins that have no exclusive allocation.
 
         Returns bins in the warehouse that are not exclusively allocated
@@ -519,10 +518,10 @@ class PutAwayService:
 
     def _fill_bins(
         self,
-        bins: List[WarehouseLocation],
+        bins: list[WarehouseLocation],
         quantity: Decimal,
         org_id: UUID,
-    ) -> tuple[List[dict], Decimal]:
+    ) -> tuple[list[dict], Decimal]:
         """Fill bins with the given quantity, respecting capacity.
 
         Splits across bins if a single bin is insufficient.
@@ -535,7 +534,7 @@ class PutAwayService:
         Returns:
             Tuple of (assignments list, remaining quantity).
         """
-        assignments: List[dict] = []
+        assignments: list[dict] = []
         remaining = quantity
 
         for bin_loc in bins:
@@ -550,10 +549,12 @@ class PutAwayService:
 
             # Assign as much as possible to this bin
             assign_qty = min(remaining, available)
-            assignments.append({
-                "bin_location_id": bin_loc.id,
-                "quantity": assign_qty,
-            })
+            assignments.append(
+                {
+                    "bin_location_id": bin_loc.id,
+                    "quantity": assign_qty,
+                }
+            )
             remaining -= assign_qty
 
         return assignments, remaining
@@ -573,7 +574,7 @@ class PutAwayService:
 
         return bin_capacity - Decimal(str(current_stock))
 
-    def _optimize_item_routing(self, put_away_items: List[PutAwayListItem]) -> None:
+    def _optimize_item_routing(self, put_away_items: list[PutAwayListItem]) -> None:
         """Optimize the routing order for put-away items using the RoutingOptimizer.
 
         Groups items by aisle and sorts by optimal traversal order.
@@ -592,7 +593,7 @@ class PutAwayService:
             return
 
         # Load bin location data for routing
-        bin_locations: List[BinLocation] = []
+        bin_locations: list[BinLocation] = []
         item_map: dict = {}  # Map BinLocation index to PutAwayListItem
 
         for i, item in enumerate(items_with_bins):

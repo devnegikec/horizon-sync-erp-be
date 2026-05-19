@@ -8,7 +8,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum,
     ForeignKey,
     Integer,
     Numeric,
@@ -175,9 +174,7 @@ class WarehouseLocation(Base):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            "warehouse_id", "full_path", name="idx_wl_warehouse_path"
-        ),
+        UniqueConstraint("warehouse_id", "full_path", name="idx_wl_warehouse_path"),
     )
 
     # Relationships

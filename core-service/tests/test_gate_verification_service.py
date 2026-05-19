@@ -267,9 +267,11 @@ class TestRecordGateScan:
         # Manually close the session to simulate verified state
         from app.models.gate_verification import GateVerificationSession
 
-        gate_session = db_session.query(GateVerificationSession).filter(
-            GateVerificationSession.id == uuid.UUID(session["id"])
-        ).first()
+        gate_session = (
+            db_session.query(GateVerificationSession)
+            .filter(GateVerificationSession.id == uuid.UUID(session["id"]))
+            .first()
+        )
         gate_session.status = "verified"
         db_session.commit()
 
@@ -430,7 +432,9 @@ class TestVerifySession:
         # Scan enough verified items
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-V1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-V1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -450,7 +454,13 @@ class TestVerifySession:
         assert "unauthorized" in str(exc_info.value).lower()
 
     def test_raises_state_error_for_already_verified_session(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
     ):
         """Should raise StateError if session is already verified."""
         session = gate_service.start_session(
@@ -463,7 +473,9 @@ class TestVerifySession:
         # Scan all items and verify
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-V1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-V1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -492,7 +504,13 @@ class TestVerifySessionDispatchIntegration:
     """
 
     def test_verify_creates_dispatch_record(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
     ):
         """Should create a dispatch record when session is verified.
 
@@ -510,7 +528,9 @@ class TestVerifySessionDispatchIntegration:
         # Scan all items
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-D1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-D1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -527,7 +547,13 @@ class TestVerifySessionDispatchIntegration:
         assert dispatch["dispatched_at"] is not None
 
     def test_verify_generates_unique_dispatch_number(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
     ):
         """Should generate a unique dispatch number via document numbering service.
 
@@ -542,7 +568,9 @@ class TestVerifySessionDispatchIntegration:
 
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-DN1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-DN1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -555,7 +583,14 @@ class TestVerifySessionDispatchIntegration:
         assert "DSP" in dispatch["dispatch_number"]
 
     def test_verify_decrements_stock_levels(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item, warehouse_id
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
+        warehouse_id,
     ):
         """Should decrement warehouse stock levels for dispatched items.
 
@@ -585,7 +620,9 @@ class TestVerifySessionDispatchIntegration:
 
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-STK1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-STK1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -598,7 +635,13 @@ class TestVerifySessionDispatchIntegration:
         assert stock_level.quantity_on_hand == 400
 
     def test_verify_links_dispatch_to_pick_list(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
     ):
         """Should update pick list with dispatch record reference.
 
@@ -613,7 +656,9 @@ class TestVerifySessionDispatchIntegration:
 
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-LNK1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-LNK1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )
@@ -626,7 +671,13 @@ class TestVerifySessionDispatchIntegration:
         assert completed_pick_list.dispatch_record_id == dispatch_id
 
     def test_verify_and_dispatch_are_atomic(
-        self, gate_service, db_session, org_id, worker_id, completed_pick_list, test_item
+        self,
+        gate_service,
+        db_session,
+        org_id,
+        worker_id,
+        completed_pick_list,
+        test_item,
     ):
         """Session verification and dispatch creation should happen in same transaction.
 
@@ -644,7 +695,9 @@ class TestVerifySessionDispatchIntegration:
 
         gate_service.record_gate_scan(
             session_id=session_id,
-            qr_payload=_make_qr_payload(qr_id="QR-ATM1", sku=test_item.item_code, qty=100),
+            qr_payload=_make_qr_payload(
+                qr_id="QR-ATM1", sku=test_item.item_code, qty=100
+            ),
             worker_id=worker_id,
             org_id=org_id,
         )

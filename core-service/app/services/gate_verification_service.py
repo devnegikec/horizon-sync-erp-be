@@ -244,7 +244,9 @@ class GateVerificationService:
             "quantity": payload.qty,
             "batch": payload.batch,
             "status": item_status,
-            "scanned_at": gate_item.scanned_at.isoformat() if gate_item.scanned_at else None,
+            "scanned_at": gate_item.scanned_at.isoformat()
+            if gate_item.scanned_at
+            else None,
         }
 
     # ------------------------------------------------------------------
@@ -327,7 +329,9 @@ class GateVerificationService:
                     "sku": item.sku,
                     "quantity": item.quantity,
                     "status": item.status,
-                    "scanned_at": item.scanned_at.isoformat() if item.scanned_at else None,
+                    "scanned_at": item.scanned_at.isoformat()
+                    if item.scanned_at
+                    else None,
                 }
             )
 
@@ -437,15 +441,11 @@ class GateVerificationService:
 
         # Check that all pick list items have been verified
         pick_list = gate_session.pick_list
-        total_expected_qty = sum(
-            Decimal(str(item.qty)) for item in pick_list.items
-        )
+        total_expected_qty = sum(Decimal(str(item.qty)) for item in pick_list.items)
 
         # Sum verified quantities from gate items
         verified_items = [item for item in gate_items if item.status == "verified"]
-        total_verified_qty = sum(
-            Decimal(str(item.quantity)) for item in verified_items
-        )
+        total_verified_qty = sum(Decimal(str(item.quantity)) for item in verified_items)
 
         if total_verified_qty < total_expected_qty:
             raise ValidationError(
@@ -545,7 +545,9 @@ class GateVerificationService:
                         "sku": item.sku,
                         "quantity": item.quantity,
                         "status": item.status,
-                        "scanned_at": item.scanned_at.isoformat() if item.scanned_at else None,
+                        "scanned_at": item.scanned_at.isoformat()
+                        if item.scanned_at
+                        else None,
                     }
                 )
 
@@ -559,8 +561,14 @@ class GateVerificationService:
             "driver_name": session.driver_name,
             "driver_contact": session.driver_contact,
             "status": session.status,
-            "verified_at": session.verified_at.isoformat() if session.verified_at else None,
+            "verified_at": session.verified_at.isoformat()
+            if session.verified_at
+            else None,
             "items": items,
-            "created_at": session.created_at.isoformat() if session.created_at else None,
-            "updated_at": session.updated_at.isoformat() if session.updated_at else None,
+            "created_at": session.created_at.isoformat()
+            if session.created_at
+            else None,
+            "updated_at": session.updated_at.isoformat()
+            if session.updated_at
+            else None,
         }
