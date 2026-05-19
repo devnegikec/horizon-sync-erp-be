@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.authorization import (
+    has_permission,
     is_system_admin,
     require_permission,
     validate_user_in_organization,
@@ -19,6 +20,8 @@ from app.core.exceptions import (
 from app.database import get_db
 from app.dependencies import CurrentUser, get_core_service_client, get_current_active_user
 from app.models.role import UserOrganizationRole
+from app.models.user import User
+from app.models.base import UserStatus
 from app.schemas.organization import (
     OrganizationCreate,
     OrganizationListItem,
@@ -239,13 +242,21 @@ async def create_organization(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied. Required: org.create (or create your first organization)",
         )
+    is_first_org = _user_has_no_organization(db, current_user.id)
+
     svc = OrganizationService(
-        db, 
+        db,
         core_client=core_client,
-        retry_attempts=settings.chart_creation_retry_attempts
+        retry_attempts=settings.chart_creation_retry_attempts,
     )
     try:
         data = svc.create(body.model_dump(), owner_id=current_user.id, user_type=current_user.user_type)
+
+        # Activate the first-time organization owner immediately at onboarding
+        if is_first_org and current_user.status == UserStatus.PENDING:
+            db.query(User).filter(User.id == current_user.id).update({"status": UserStatus.ACTIVE})
+            db.commit()
+
         return OrganizationResponse.model_validate(data)
     except DuplicateOrganizationSlugException:
         raise
