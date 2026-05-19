@@ -1,0 +1,322 @@
+"""Outbound service for managing dispatch records and stock deduction.
+
+Handles the outbound dispatch workflow:
+- Create dispatch records from verified gate sessions
+- Decrement warehouse stock levels for dispatched items
+- Generate unique dispatch numbers
+- List and retrieve dispatch records with filters
+
+Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
+"""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
+from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.models.dispatch_record import DispatchRecord
+from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.pick_list import PickList, PickListItem
+from app.models.stock_level import StockLevel
+
+
+class OutboundService:
+    """Service for managing dispatch records and outbound stock deduction."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    # ------------------------------------------------------------------
+    # CREATE DISPATCH
+    # ------------------------------------------------------------------
+
+    def create_dispatch(self, gate_session_id: UUID, org_id: UUID) -> dict:
+        """
+        Create a dispatch record from a verified gate verification session.
+
+        Validates the gate session is VERIFIED, creates a dispatch record with
+        pick_list_id, gate_session_id, vehicle/driver details, invoice_reference
+        from the pick list, generates a unique dispatch_number, and decrements
+        warehouse stock_levels for all dispatched items.
+
+        Args:
+            gate_session_id: UUID of the verified gate verification session.
+            org_id: Organization UUID for tenant isolation.
+
+        Returns:
+            Dictionary representation of the created DispatchRecord.
+
+        Raises:
+            NotFoundError: If gate session is not found.
+            StateError: If gate session is not in VERIFIED status.
+
+        Requirements: 13.1, 13.4, 13.5
+        """
+        # Fetch the gate session
+        gate_session = (
+            self.db.query(GateVerificationSession)
+            .filter(
+                GateVerificationSession.id == gate_session_id,
+                GateVerificationSession.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if not gate_session:
+            raise NotFoundError(
+                message="Gate verification session not found",
+                entity_type="GateVerificationSession",
+                entity_id=str(gate_session_id),
+            )
+
+        if gate_session.status != "verified":
+            raise StateError(
+                message="Gate session must be in VERIFIED status to create dispatch",
+                current_state=gate_session.status,
+                required_state=["verified"],
+            )
+
+        # Fetch the associated pick list
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id == gate_session.pick_list_id,
+                PickList.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if not pick_list:
+            raise NotFoundError(
+                message="Associated pick list not found",
+                entity_type="PickList",
+                entity_id=str(gate_session.pick_list_id),
+            )
+
+        # Generate unique dispatch number
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        dispatch_number = DocumentNumberingService(self.db).get_next_number(
+            org_id, "dispatch"
+        )
+
+        # Create the dispatch record
+        dispatch_record = DispatchRecord(
+            organization_id=org_id,
+            dispatch_number=dispatch_number,
+            pick_list_id=gate_session.pick_list_id,
+            gate_session_id=gate_session_id,
+            invoice_reference=pick_list.invoice_reference,
+            vehicle_number=gate_session.vehicle_number,
+            driver_name=gate_session.driver_name,
+            dispatched_at=datetime.now(UTC),
+        )
+        self.db.add(dispatch_record)
+        self.db.flush()
+
+        # Update pick list with dispatch record reference (Requirement 13.2)
+        pick_list.dispatch_record_id = dispatch_record.id
+
+        # Decrement warehouse stock levels for all dispatched items (Requirement 13.4)
+        self._decrement_stock_levels(pick_list, org_id)
+
+        self.db.commit()
+        self.db.refresh(dispatch_record)
+
+        return self._to_response(dispatch_record)
+
+    # ------------------------------------------------------------------
+    # LIST DISPATCHES
+    # ------------------------------------------------------------------
+
+    def list_dispatches(
+        self,
+        org_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        vehicle_number: str | None = None,
+        invoice_reference: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        """
+        List dispatch records with optional filters.
+
+        Args:
+            org_id: Organization UUID for tenant isolation.
+            date_from: Filter dispatches from this date (inclusive).
+            date_to: Filter dispatches up to this date (inclusive).
+            vehicle_number: Filter by vehicle number (partial match).
+            invoice_reference: Filter by invoice reference (partial match).
+            page: Page number (1-indexed).
+            page_size: Number of records per page.
+
+        Returns:
+            Dictionary with dispatches list and pagination metadata.
+
+        Requirements: 13.3
+        """
+        query = self.db.query(DispatchRecord).filter(
+            DispatchRecord.organization_id == org_id
+        )
+
+        # Apply filters
+        if date_from:
+            query = query.filter(DispatchRecord.dispatched_at >= date_from)
+        if date_to:
+            query = query.filter(DispatchRecord.dispatched_at <= date_to)
+        if vehicle_number:
+            query = query.filter(
+                DispatchRecord.vehicle_number.ilike(f"%{vehicle_number}%")
+            )
+        if invoice_reference:
+            query = query.filter(
+                DispatchRecord.invoice_reference.ilike(f"%{invoice_reference}%")
+            )
+
+        # Get total count
+        total_items = query.count()
+
+        # Apply pagination
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
+        offset = (page - 1) * page_size
+        dispatches = (
+            query.order_by(DispatchRecord.dispatched_at.desc())
+            .offset(offset)
+            .limit(page_size)
+            .all()
+        )
+
+        return {
+            "dispatches": [self._to_response(d) for d in dispatches],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total_items,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # GET DISPATCH
+    # ------------------------------------------------------------------
+
+    def get_dispatch(self, dispatch_id: UUID, org_id: UUID) -> dict:
+        """
+        Get a single dispatch record by ID.
+
+        Args:
+            dispatch_id: UUID of the dispatch record.
+            org_id: Organization UUID for tenant isolation.
+
+        Returns:
+            Dictionary representation of the DispatchRecord.
+
+        Raises:
+            NotFoundError: If dispatch record is not found.
+
+        Requirements: 13.3
+        """
+        dispatch_record = (
+            self.db.query(DispatchRecord)
+            .filter(
+                DispatchRecord.id == dispatch_id,
+                DispatchRecord.organization_id == org_id,
+            )
+            .first()
+        )
+
+        if not dispatch_record:
+            raise NotFoundError(
+                message="Dispatch record not found",
+                entity_type="DispatchRecord",
+                entity_id=str(dispatch_id),
+            )
+
+        return self._to_response(dispatch_record)
+
+    # ------------------------------------------------------------------
+    # PRIVATE HELPERS
+    # ------------------------------------------------------------------
+
+    def _decrement_stock_levels(self, pick_list: PickList, org_id: UUID) -> None:
+        """
+        Decrement warehouse stock_levels for all items in the pick list.
+
+        For each pick list item, finds the corresponding stock_level record
+        and decrements quantity_on_hand by the picked quantity.
+
+        Args:
+            pick_list: The PickList whose items should be decremented.
+            org_id: Organization UUID for tenant isolation.
+
+        Requirements: 13.4
+        """
+        pick_list_items = (
+            self.db.query(PickListItem)
+            .filter(
+                PickListItem.pick_list_id == pick_list.id,
+                PickListItem.organization_id == org_id,
+            )
+            .all()
+        )
+
+        for item in pick_list_items:
+            # Use picked_qty if available, otherwise fall back to qty
+            dispatch_qty = item.picked_qty if item.picked_qty else item.qty
+
+            if not dispatch_qty or dispatch_qty <= 0:
+                continue
+
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.organization_id == org_id,
+                    StockLevel.product_id == item.item_id,
+                    StockLevel.warehouse_id == item.warehouse_id,
+                )
+                .first()
+            )
+
+            if stock_level:
+                dispatch_qty_int = int(dispatch_qty)
+                stock_level.quantity_on_hand = max(
+                    0, (stock_level.quantity_on_hand or 0) - dispatch_qty_int
+                )
+                # Also update available quantity
+                stock_level.quantity_available = max(
+                    0, (stock_level.quantity_on_hand or 0) - (stock_level.quantity_reserved or 0)
+                )
+
+    def _to_response(self, dispatch_record: DispatchRecord) -> dict:
+        """Convert a DispatchRecord model to a response dictionary."""
+        return {
+            "id": str(dispatch_record.id),
+            "organization_id": str(dispatch_record.organization_id),
+            "dispatch_number": dispatch_record.dispatch_number,
+            "pick_list_id": str(dispatch_record.pick_list_id),
+            "gate_session_id": str(dispatch_record.gate_session_id),
+            "invoice_reference": dispatch_record.invoice_reference,
+            "vehicle_number": dispatch_record.vehicle_number,
+            "driver_name": dispatch_record.driver_name,
+            "dispatched_at": (
+                dispatch_record.dispatched_at.isoformat()
+                if dispatch_record.dispatched_at
+                else None
+            ),
+            "created_at": (
+                dispatch_record.created_at.isoformat()
+                if dispatch_record.created_at
+                else None
+            ),
+            "updated_at": (
+                dispatch_record.updated_at.isoformat()
+                if dispatch_record.updated_at
+                else None
+            ),
+        }

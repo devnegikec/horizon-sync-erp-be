@@ -11,6 +11,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
 )
@@ -81,6 +82,52 @@ class AllocationType(str, enum.Enum):
     PREFERRED = "preferred"
 
 
+class ScanSessionType(str, enum.Enum):
+    """Scan session type enumeration"""
+
+    INBOUND = "inbound"
+    GATE = "gate"
+
+
+class ScanSessionStatus(str, enum.Enum):
+    """Scan session status enumeration"""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class ReceivingSlipStatus(str, enum.Enum):
+    """Receiving slip status enumeration"""
+
+    PENDING_REVIEW = "pending_review"
+    PENDING_PUTAWAY = "pending_putaway"
+    PUTAWAY_COMPLETE = "putaway_complete"
+    REJECTED = "rejected"
+
+
+class ReceivingSlipItemFlag(str, enum.Enum):
+    """Receiving slip item flag enumeration"""
+
+    OK = "ok"
+    SHORT = "short"
+    DAMAGED = "damaged"
+
+
+class GateVerificationStatus(str, enum.Enum):
+    """Gate verification session status enumeration"""
+
+    OPEN = "open"
+    VERIFIED = "verified"
+    CANCELLED = "cancelled"
+
+
+class GateVerificationItemStatus(str, enum.Enum):
+    """Gate verification item status enumeration"""
+
+    VERIFIED = "verified"
+    UNAUTHORIZED = "unauthorized"
+
+
 # ===========================================
 # WAREHOUSE LOCATION MODEL
 # ===========================================
@@ -105,22 +152,16 @@ class WarehouseLocation(Base):
         nullable=True,
         index=True,
     )
-    location_type = Column(
-        Enum(
-            LocationType,
-            name="locationtype",
-            create_type=False,
-            values_callable=lambda obj: [e.value for e in obj],
-        ),
-        nullable=False,
-    )
+    location_type = Column(String(20), nullable=False)
     code = Column(String(50), nullable=False)
-    full_code = Column(String(255), nullable=False)
-    name = Column(String(255), nullable=False)
-    total_capacity = Column(Integer, default=0)
+    full_path = Column(String(255), nullable=True)
+    name = Column(String(255), nullable=True)
+    capacity = Column(Numeric(15, 3), default=0)
+    total_capacity = Column(Numeric(15, 3), default=0)
+    available_capacity = Column(Numeric(15, 3), default=0)
     capacity_uom = Column(String(50), nullable=True)
-    position_x = Column(Integer, default=0)
-    position_y = Column(Integer, default=0)
+    position_x = Column(Numeric(10, 2), default=0)
+    position_y = Column(Numeric(10, 2), default=0)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
 
@@ -132,20 +173,18 @@ class WarehouseLocation(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    # Audit fields
-    created_by = Column(UUID(as_uuid=True), nullable=True)
-    updated_by = Column(UUID(as_uuid=True), nullable=True)
-
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "warehouse_id", "full_code", name="uq_location_code_warehouse"
+            "warehouse_id", "full_path", name="idx_wl_warehouse_path"
         ),
     )
 
     # Relationships
     parent = relationship("WarehouseLocation", remote_side=[id], backref="children")
     warehouse = relationship("Warehouse", backref="locations")
+    bin_stock_levels = relationship("BinStockLevel", back_populates="bin_location")
+    allocations = relationship("LocationAllocation", back_populates="location")
 
     def __repr__(self):
-        return f"<WarehouseLocation(id={self.id}, code='{self.full_code}', type='{self.location_type}')>"
+        return f"<WarehouseLocation(id={self.id}, code='{self.full_path}', type='{self.location_type}')>"

@@ -1,348 +1,430 @@
-# Implementation Plan: Warehouse QR-Based Inbound/Outbound Workflow
+# Implementation Plan: Warehouse QR-Based Inbound/Outbound with Bin Management
 
 ## Overview
 
-Implement a QR code-driven warehouse inbound and outbound workflow on top of the existing warehouse bin management system. The implementation covers: scan sessions, receiving slips with review workflow, put-away list generation, SAP invoice-triggered pick lists with QR-based fulfillment, gate verification, dispatch records, and a unified scan event audit trail. All built with Python FastAPI, SQLAlchemy, PostgreSQL, and Alembic migrations.
+This plan implements a warehouse management system with physical layout hierarchy, bin-level stock tracking, QR code-driven inbound/outbound workflows, worker task tracking, and capacity management. Built with Python FastAPI, PostgreSQL (SQLAlchemy + Alembic), and Hypothesis for property-based tests.
 
 ## Tasks
 
-- [ ] 1. Database models and migrations
+- [x] 1. Database schema and models
+  - [x] 1.1 Create Alembic migration for warehouse_locations table
+    - Create `warehouse_locations` table with all columns (id, organization_id, warehouse_id, parent_location_id, location_type, code, full_path, name, capacity, total_capacity, available_capacity, capacity_uom, position_x, position_y, is_active, version)
+    - Add CHECK constraint for location_type enum (zone, aisle, bay, level, bin)
+    - Add all indexes (org, warehouse, parent, type, active, full_path, unique warehouse+path)
+    - _Requirements: 1.1, 1.5_
 
-  - [ ] 1.1 Create Alembic migration for new tables (scan_sessions, scan_session_items, receiving_slips, receiving_slip_items, gate_verification_sessions, gate_verification_items, dispatch_records) and ALTER existing tables (pick_lists, pick_list_items)
+  - [x] 1.2 Create Alembic migration for bin_stock_levels and location_allocations tables
+    - Create `bin_stock_levels` table with unique constraint on (bin_location_id, item_id, batch_number)
+    - Create `location_allocations` table with CHECK constraint on allocation_type and partial unique index for exclusive allocations
+    - Add all indexes
+    - _Requirements: 3.1, 20.1, 20.2_
 
-    - Add all columns, constraints, indexes as specified in the design
-    - Add CHECK constraints for status and type enums
-    - Add UNIQUE constraint on (session_id, qr_identifier) for scan_session_items
-    - Add UNIQUE constraint on (gate_session_id, qr_identifier) for gate_verification_items
+  - [x] 1.3 Create Alembic migration for scan_sessions and scan_session_items tables
+    - Create `scan_sessions` table with CHECK constraints for session_type and status
+    - Create `scan_session_items` table with unique constraint on (session_id, qr_identifier)
+    - Add all indexes
+    - _Requirements: 5.1, 5.2_
+
+  - [x] 1.4 Create Alembic migration for receiving_slips and receiving_slip_items tables
+    - Create `receiving_slips` table with CHECK constraint for status enum
+    - Create `receiving_slip_items` table with CHECK constraint for flag enum
+    - Add all indexes
+    - _Requirements: 6.1, 7.1_
+
+  - [x] 1.5 Create Alembic migration for gate_verification_sessions, gate_verification_items, and dispatch_records tables
+    - Create `gate_verification_sessions` with CHECK constraints for status
+    - Create `gate_verification_items` with CHECK constraints and unique constraint on (gate_session_id, qr_identifier)
+    - Create `dispatch_records` with all indexes
+    - _Requirements: 12.1, 12.6, 13.1_
+
+  - [x] 1.6 Create Alembic migration for worker_tasks and location_scans tables
+    - Create `worker_tasks` with CHECK constraints for task_type and status
+    - Create `location_scans` with CHECK constraint for scan_type
+    - Add all indexes
+    - _Requirements: 16.1, 16.2, 17.5_
+
+  - [x] 1.7 Create Alembic migration to extend existing pick_lists, pick_list_items, and put_away_list_items tables
     - ALTER pick_lists: add invoice_reference, invoice_data, dispatch_record_id columns
-    - ALTER pick_list_items: add picked_qty column with default 0
-    - _Requirements: 2.1, 3.1, 7.1, 11.1_
+    - ALTER pick_list_items: add picked_qty, bin_location_id, sort_order columns
+    - ALTER put_away_list_items: add bin_location_id, sort_order, status columns
+    - _Requirements: 9.1, 9.4, 8.4_
 
-  - [ ] 1.2 Create SQLAlchemy models for ScanSession, ScanSessionItem, ReceivingSlip, ReceivingSlipItem, GateVerificationSession, GateVerificationItem, DispatchRecord
+  - [x] 1.8 Create SQLAlchemy models for all new tables
+    - Create `WarehouseLocation` model in `core-service/app/models/warehouse_location.py`
+    - Create `BinStockLevel` model in `core-service/app/models/bin_stock_level.py`
+    - Create `LocationAllocation` model in `core-service/app/models/location_allocation.py`
+    - Create `ScanSession` and `ScanSessionItem` models in `core-service/app/models/scan_session.py`
+    - Create `ReceivingSlip` and `ReceivingSlipItem` models in `core-service/app/models/receiving_slip.py`
+    - Create `GateVerificationSession` and `GateVerificationItem` models in `core-service/app/models/gate_verification.py`
+    - Create `DispatchRecord` model in `core-service/app/models/dispatch_record.py`
+    - Create `WorkerTask` model in `core-service/app/models/worker_task.py`
+    - Create `LocationScan` model in `core-service/app/models/location_scan.py`
+    - _Requirements: 1.5, 3.1, 5.1, 6.1, 12.1, 13.1, 16.2, 17.5_
 
-    - Define enums: SessionType, SessionStatus, ReceivingSlipStatus, LineItemFlag, GateSessionStatus, GateItemStatus
-    - Set up relationships (session ↔ items, slip ↔ items, gate_session ↔ items)
-    - _Requirements: 2.1, 3.1, 7.1, 11.1_
+- [x] 2. Checkpoint - Verify database migrations
+  - Ensure all migrations run cleanly, ask the user if questions arise.
 
-  - [ ] 1.3 Update existing PickList and PickListItem models to include new columns (invoice_reference, invoice_data, dispatch_record_id, picked_qty)
-    - _Requirements: 5.1, 6.3, 11.2_
+- [x] 3. Layout Service and Capacity Rollup
+  - [x] 3.1 Implement LayoutService with hierarchy enforcement
+    - Create `core-service/app/services/layout_service.py`
+    - Implement `create_location` with parent-child hierarchy validation (VALID_PARENT_TYPES mapping)
+    - Implement `generate_location_code` to concatenate ancestor codes into full_path
+    - Implement `update_location`, `deactivate_location` (cascade to descendants)
+    - Implement `get_tree` returning full hierarchy for a warehouse
+    - Implement `list_locations` with filters (location_type, parent_location_id, is_active, has_stock)
+    - Implement `get_location_summary` for subtree stats
+    - Implement `search_locations` matching code or name
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 19.1, 19.2, 19.3, 19.4, 19.5, 19.6_
 
-- [ ] 2. Inbound service — scan sessions and QR decoding
+  - [ ]\* 3.2 Write property test for location hierarchy enforcement
+    - **Property 1: Location Hierarchy Enforcement**
+    - **Validates: Requirements 1.2, 1.3**
 
-  - [ ] 2.1 Implement QR payload decoding utility (decode_qr_payload)
+  - [ ]\* 3.3 Write property test for location code generation
+    - **Property 2: Location Code Generation**
+    - **Validates: Requirements 1.4**
 
-    - Parse JSON payload extracting sku, quantity, batch_number, qr_identifier
-    - Validate sku is present and non-empty
-    - Validate quantity is a positive integer
-    - Validate batch_number is present
-    - Raise ValidationError with specific field messages on failure
-    - _Requirements: 1.1, 1.2, 1.3_
+  - [x] 3.4 Implement CapacityService with rollup algorithm
+    - Create `core-service/app/services/capacity_service.py`
+    - Implement `recalculate_ancestors` walking up the tree and summing children capacities
+    - Implement `compute_available_capacity` (total_capacity minus stock in subtree)
+    - Implement `get_capacity_summary` for any location node
+    - Use optimistic locking (version column) for concurrent updates
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 18.3, 18.4, 18.5_
 
-  - [ ]\* 2.2 Write property test for QR payload round-trip
+  - [ ]\* 3.5 Write property test for capacity rollup consistency
+    - **Property 3: Capacity Rollup Consistency**
+    - **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.6**
 
-    - **Property 1: QR Payload Round-Trip**
-    - **Validates: Requirements 1.1**
+  - [ ]\* 3.6 Write property test for available capacity invariant
+    - **Property 4: Available Capacity Invariant**
+    - **Validates: Requirements 2.5**
 
-  - [ ]\* 2.3 Write property test for invalid quantity rejection
+  - [x] 3.7 Implement LocationRepository
+    - Create `core-service/app/repositories/location_repository.py`
+    - CRUD operations for warehouse_locations
+    - Tree query with recursive CTE for hierarchy
+    - Filtered list with pagination
+    - _Requirements: 1.7, 19.1, 19.6_
 
-    - **Property 2: Invalid Quantity Rejection**
-    - **Validates: Requirements 1.3**
+  - [x] 3.8 Create Pydantic schemas for layout and capacity endpoints
+    - Create `core-service/app/schemas/warehouse_location.py`
+    - CreateLocationRequest, UpdateLocationRequest, LocationResponse, LocationTree, LocationSummary, LocationFilters, PaginatedLocations
+    - _Requirements: 1.5, 19.2_
 
-  - [ ] 2.4 Implement InboundService.start_session
+  - [x] 3.9 Implement layout and capacity API endpoints
+    - Create `core-service/app/api/v1/endpoints/warehouse_locations.py`
+    - POST /warehouse-locations, GET /warehouse-locations/tree/{warehouse_id}, GET /warehouse-locations, GET /warehouse-locations/{id}, PATCH /warehouse-locations/{id}, POST /warehouse-locations/{id}/deactivate, GET /warehouse-locations/{id}/summary, GET /warehouse-locations/search
+    - Register router in main app
+    - _Requirements: 1.1, 1.7, 19.1, 19.5_
 
-    - Create ScanSession with status OPEN, worker_id, warehouse_id, dock_location, organization_id
-    - Record start timestamp
-    - _Requirements: 2.1_
+- [x] 4. Bin Stock Service and Location Allocations
+  - [x] 4.1 Implement BinStockService
+    - Create `core-service/app/services/bin_stock_service.py`
+    - Implement `add_stock` with capacity check, bin stock increment, warehouse stock_levels sync, and capacity rollup trigger
+    - Implement `remove_stock` with on-hand check, bin stock decrement, warehouse stock_levels sync, and capacity rollup trigger
+    - Implement `get_bins_for_item` and `get_bin_stock`
+    - Reject stock operations on deactivated locations
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 18.1, 18.2_
 
-  - [ ] 2.5 Implement InboundService.record_scan
+  - [ ]\* 4.2 Write property test for deactivated location stock prevention
+    - **Property 5: Deactivated Location Stock Prevention**
+    - **Validates: Requirements 1.6**
 
-    - Decode QR payload
-    - Check session is OPEN (reject if closed)
-    - Check for duplicate qr_identifier in session (reject with warning)
-    - Create ScanSessionItem record
-    - Increment total_boxes_scanned on session
-    - Record scan event via ScanEventService
-    - _Requirements: 1.1, 1.4, 2.2, 2.3, 2.4_
+  - [ ]\* 4.3 Write property test for bin stock addition and removal consistency
+    - **Property 6: Bin Stock Addition and Removal Consistency**
+    - **Validates: Requirements 3.2, 3.3, 3.4**
 
-  - [ ]\* 2.6 Write property test for duplicate scan rejection
+  - [ ]\* 4.4 Write property test for bin capacity overflow prevention
+    - **Property 7: Bin Capacity Overflow Prevention**
+    - **Validates: Requirements 3.5**
 
-    - **Property 3: Duplicate Scan Rejection**
-    - **Validates: Requirements 2.4**
+  - [ ]\* 4.5 Write property test for real-time capacity update on stock change
+    - **Property 28: Real-Time Capacity Update on Stock Change**
+    - **Validates: Requirements 18.1, 18.2, 18.3, 18.4**
 
-  - [ ]\* 2.7 Write property test for session aggregation correctness
+  - [x] 4.6 Implement AllocationService
+    - Create `core-service/app/services/allocation_service.py`
+    - Implement `create_allocation` with exclusive overlap check
+    - Implement `update_allocation`, `deactivate_allocation`, `list_allocations`
+    - Implement `check_exclusive_overlap` validation
+    - _Requirements: 20.1, 20.2, 20.7, 20.8_
 
-    - **Property 4: Session Aggregation Correctness**
-    - **Validates: Requirements 2.3, 2.6**
+  - [ ]\* 4.7 Write property test for no overlapping exclusive allocations
+    - **Property 30: No Overlapping Exclusive Allocations**
+    - **Validates: Requirements 20.8**
 
-  - [ ] 2.8 Implement InboundService.end_session and get_session_summary
-    - Set session status to CLOSED, record end timestamp
-    - Generate receiving slip from session items (grouped by SKU + batch)
-    - Return session summary with per-SKU counts
-    - _Requirements: 2.5, 2.6, 3.1_
+  - [x] 4.8 Create Pydantic schemas and API endpoints for bin stock and allocations
+    - Create `core-service/app/schemas/bin_stock.py` and `core-service/app/schemas/location_allocation.py`
+    - Create `core-service/app/api/v1/endpoints/bin_stock.py` (GET /bin-stock/{bin_id}, GET /bin-stock/item/{item_id}, POST /bin-stock/add, POST /bin-stock/remove)
+    - Create `core-service/app/api/v1/endpoints/location_allocations.py` (POST, GET list, GET detail, PATCH, POST deactivate)
+    - Register routers
+    - _Requirements: 3.6, 20.7_
 
-- [ ] 3. Checkpoint - Ensure all tests pass
-
+- [x] 5. Checkpoint - Verify layout, capacity, stock, and allocation services
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Receiving slip generation and review workflow
+- [x] 6. Inbound Service (Scan Sessions, Receiving Slips, QR Decoding)
+  - [x] 6.1 Implement QR payload decoding and validation
+    - Add `decode_qr_payload` method to InboundService
+    - Parse JSON payload extracting id, sku, qty, batch
+    - Validate SKU is non-empty, quantity is positive integer, batch is non-empty
+    - Return structured QRPayload dataclass
+    - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ] 4.1 Implement receiving slip generation logic
+  - [ ]\* 6.2 Write property test for QR payload round-trip
+    - **Property 8: QR Payload Round-Trip**
+    - **Validates: Requirements 4.1**
 
-    - Group scan session items by (SKU, batch_number)
-    - Create ReceivingSlip with slip_number (auto-generated), total_box_count, total_item_count
-    - Create ReceivingSlipItem records for each group
-    - Set status to PENDING_REVIEW
-    - Store raw QR scan data as audit trail
-    - _Requirements: 3.1, 3.2, 3.4, 3.5, 3.6_
+  - [ ]\* 6.3 Write property test for invalid quantity rejection
+    - **Property 9: Invalid Quantity Rejection**
+    - **Validates: Requirements 4.3**
 
-  - [ ]\* 4.2 Write property test for receiving slip generation correctness
+  - [x] 6.4 Implement InboundService scan session management
+    - Create `core-service/app/services/inbound_service.py`
+    - Implement `start_session` creating ScanSession with status OPEN
+    - Implement `record_scan` with duplicate detection (unique qr_identifier per session), payload decoding, and scan event recording
+    - Implement `end_session` closing session and generating receiving slip
+    - Implement `get_session_summary` with per-SKU/batch aggregation and box count
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 14.1_
 
-    - **Property 5: Receiving Slip Generation Correctness**
-    - **Validates: Requirements 3.1, 3.4**
+  - [ ]\* 6.5 Write property test for duplicate scan rejection within session
+    - **Property 10: Duplicate Scan Rejection Within Session**
+    - **Validates: Requirements 5.4**
 
-  - [ ] 4.3 Implement InboundService.approve_slip
+  - [ ]\* 6.6 Write property test for session aggregation correctness
+    - **Property 11: Session Aggregation Correctness**
+    - **Validates: Requirements 5.3, 5.6**
 
-    - Validate slip is in PENDING_REVIEW status
-    - Transition to PENDING_PUTAWAY
-    - Create corresponding purchase receipt record
-    - Trigger put-away list generation via PutAwayService
-    - _Requirements: 9.3, 3.3_
+  - [x] 6.7 Implement receiving slip generation and review workflow
+    - Implement `generate_receiving_slip` from closed session (group by SKU+batch, compute totals)
+    - Implement `approve_slip` transitioning to PENDING_PUTAWAY
+    - Implement `reject_slip` with reason
+    - Implement `flag_line_item` for SHORT/DAMAGED
+    - Generate unique slip_number using document numbering service
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 7.3, 7.4, 7.5_
 
-  - [ ]\* 4.4 Write property test for receiving slip to purchase receipt consistency
+  - [ ]\* 6.8 Write property test for receiving slip generation correctness
+    - **Property 12: Receiving Slip Generation Correctness**
+    - **Validates: Requirements 6.1, 6.4**
 
-    - **Property 6: Receiving Slip to Purchase Receipt Consistency**
-    - **Validates: Requirements 3.3**
+  - [x] 6.9 Create Pydantic schemas and API endpoints for inbound
+    - Create `core-service/app/schemas/inbound.py` (StartSessionRequest, ScanResult, SessionSummary, ReceivingSlipResponse, etc.)
+    - Create `core-service/app/api/v1/endpoints/inbound.py` with all inbound endpoints
+    - Register router
+    - _Requirements: 5.1, 5.6, 6.1, 7.2_
 
-  - [ ] 4.5 Implement InboundService.reject_slip
+  - [x] 6.10 Implement ScanSessionRepository and ReceivingSlipRepository
+    - Create `core-service/app/repositories/scan_session_repository.py`
+    - Create `core-service/app/repositories/receiving_slip_repository.py`
+    - _Requirements: 5.1, 6.1_
 
-    - Validate slip is in PENDING_REVIEW status
-    - Transition to REJECTED, record rejection reason
-    - _Requirements: 9.4_
+- [x] 7. Put-Away Service and Routing Optimizer
+  - [x] 7.1 Implement RoutingOptimizer
+    - Create `core-service/app/services/routing_optimizer.py`
+    - Implement nearest-neighbor heuristic with aisle grouping
+    - Group locations by aisle, sort aisle groups by distance from origin
+    - Within each aisle, sort by position (nearest-neighbor)
+    - Assign sequential sort_order integers
+    - Default origin to (0, 0) if not configured
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5_
 
-  - [ ] 4.6 Implement InboundService.flag_line_item
+  - [ ]\* 7.2 Write property test for routing optimizer aisle grouping
+    - **Property 26: Routing Optimizer Aisle Grouping**
+    - **Validates: Requirements 15.1, 15.2, 15.3, 15.4**
 
-    - Allow flagging specific line items as SHORT or DAMAGED with notes
-    - _Requirements: 9.5_
+  - [x] 7.3 Implement PutAwayService
+    - Create `core-service/app/services/put_away_service.py`
+    - Implement `generate_from_slip` that assigns bins respecting allocations (exclusive first, then preferred, then unallocated) and capacity
+    - Implement `assign_bins` logic with allocation priority and capacity filtering
+    - Implement `complete_item` updating bin stock and marking item COMPLETED
+    - Implement `skip_item` with reason
+    - Trigger capacity rollup on item completion
+    - Update receiving slip to PUTAWAY_COMPLETE when all items done
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6_
 
-  - [ ]\* 4.7 Write property test for approval triggers put-away generation
-    - **Property 17: Approval Triggers Put-Away Generation**
+  - [ ]\* 7.4 Write property test for put-away respects bin capacity
+    - **Property 15: Put-Away Respects Bin Capacity**
+    - **Validates: Requirements 8.2**
+
+  - [ ]\* 7.5 Write property test for put-away routing groups by aisle
+    - **Property 16: Put-Away Routing Groups by Aisle**
+    - **Validates: Requirements 8.3, 8.4**
+
+  - [ ]\* 7.6 Write property test for exclusive allocation enforcement
+    - **Property 29: Exclusive Allocation Enforcement**
+    - **Validates: Requirements 20.3, 20.5, 20.6**
+
+  - [x] 7.7 Create Pydantic schemas and API endpoints for put-away
+    - Create `core-service/app/schemas/put_away.py`
+    - Create `core-service/app/api/v1/endpoints/put_away.py` (GET list, GET detail, POST complete item, POST skip item)
+    - Register router
+    - _Requirements: 8.5, 8.6_
+
+- [x] 8. Checkpoint - Verify inbound flow end-to-end
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. Outbound Service (Pick Lists, FIFO Resolution, Pick Scanning)
+  - [x] 9.1 Implement PickListService with SAP invoice trigger
+    - Create `core-service/app/services/pick_list_service.py`
+    - Implement `create_from_invoice` parsing SAP invoice payload, creating pick list with status OPEN, populating items from invoice lines
+    - Implement `resolve_bin_locations` using FIFO (oldest bin_stock_levels.created_at first), splitting across bins if needed
+    - Pass resolved locations through RoutingOptimizer for sort ordering
+    - Set pick list warehouse from invoice data
+    - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
+
+  - [ ]\* 9.2 Write property test for pick list creation from invoice
+    - **Property 18: Pick List Creation from Invoice**
+    - **Validates: Requirements 9.1, 9.2**
+
+  - [ ]\* 9.3 Write property test for FIFO bin resolution
+    - **Property 19: FIFO Bin Resolution**
     - **Validates: Requirements 9.3**
 
-- [ ] 5. Put-away list generation integration
+  - [x] 9.4 Implement pick scan recording and status transitions
+    - Implement `record_pick_scan` matching scanned SKU against pick list items, incrementing picked_qty
+    - Reject scans for items not on pick list
+    - Reject over-picking (scanned qty would exceed required qty)
+    - Transition pick list from OPEN to IN_PROGRESS on first scan
+    - Implement `complete_pick_list` (only when all items fully picked)
+    - Implement `cancel_pick_list` releasing reserved stock
+    - Decrement bin stock on successful pick scan
+    - Record scan event in qr_scan_events
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 11.1, 11.2, 11.5_
 
-  - [ ] 5.1 Implement put-away list generation from receiving slip
+  - [ ]\* 9.5 Write property test for pick scan matching and over-pick prevention
+    - **Property 20: Pick Scan Matching and Over-Pick Prevention**
+    - **Validates: Requirements 10.2, 10.3, 10.4, 10.5**
 
-    - For each slip item, assign target bin locations using existing put-away rules and item-group allocations
-    - Check available bin capacity
-    - Group items by target zone/aisle for minimal travel
-    - Sort within groups by bin position coordinates (optimal traversal)
-    - Use existing PutAwayService and RoutingOptimizer
-    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  - [ ]\* 9.6 Write property test for pick list status transitions
+    - **Property 21: Pick List Status Transitions**
+    - **Validates: Requirements 10.6, 11.2**
 
-  - [ ]\* 5.2 Write property test for put-away assignment completeness
+  - [ ]\* 9.7 Write property test for stock release on pick list cancellation
+    - **Property 22: Stock Release on Pick List Cancellation**
+    - **Validates: Requirements 11.5**
 
-    - **Property 7: Put-Away Assignment Completeness**
-    - **Validates: Requirements 4.1, 4.2**
+  - [x] 9.8 Create Pydantic schemas and API endpoints for outbound pick lists
+    - Create `core-service/app/schemas/outbound.py` (SAPInvoicePayload, PickListResponse, PickScanResult, PickListProgress, PickListFilters)
+    - Create `core-service/app/api/v1/endpoints/outbound.py` with pick list endpoints (POST from-invoice, GET list, GET detail, POST scan, POST complete, POST cancel)
+    - Register router
+    - _Requirements: 9.1, 10.1, 11.3, 11.4_
 
-  - [ ]\* 5.3 Write property test for put-away routing grouping
+- [x] 10. Gate Verification and Dispatch
+  - [x] 10.1 Implement GateVerificationService
+    - Create `core-service/app/services/gate_verification_service.py`
+    - Implement `start_session` creating gate session linked to completed pick list with vehicle/driver details
+    - Implement `record_gate_scan` validating scanned item against pick list (mark VERIFIED or UNAUTHORIZED)
+    - Implement `get_session_progress` showing scanned vs expected counts
+    - Implement `verify_session` transitioning to VERIFIED when all items scanned
+    - Record scan events in qr_scan_events with gate context
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.7_
 
-    - **Property 8: Put-Away Routing Grouping**
-    - **Validates: Requirements 4.3, 4.4**
+  - [ ]\* 10.2 Write property test for gate verification against pick list
+    - **Property 23: Gate Verification Against Pick List**
+    - **Validates: Requirements 12.3, 12.4**
 
-  - [ ] 5.4 Implement put-away item completion handler
+  - [x] 10.3 Implement OutboundService (dispatch records)
+    - Create `core-service/app/services/outbound_service.py`
+    - Implement `create_dispatch` from verified gate session: create dispatch record, decrement warehouse stock_levels, generate unique dispatch_number
+    - Implement `list_dispatches` with filters (date range, vehicle, invoice reference)
+    - Implement `get_dispatch` detail
+    - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-    - When worker scans at bin: update bin_stock_levels, mark put-away item COMPLETED
-    - When all items completed: update receiving slip status to PUTAWAY_COMPLETE
-    - _Requirements: 4.5, 4.6_
+  - [ ]\* 10.4 Write property test for gate session completion triggers dispatch
+    - **Property 24: Gate Session Completion Triggers Dispatch**
+    - **Validates: Requirements 12.5, 12.6, 13.1, 13.4**
 
-  - [ ]\* 5.5 Write property test for put-away completion updates stock
-    - **Property 9: Put-Away Completion Updates Stock**
-    - **Validates: Requirements 4.5, 4.6**
+  - [x] 10.5 Create Pydantic schemas and API endpoints for gate verification and dispatch
+    - Create `core-service/app/schemas/gate_verification.py` (GateSessionRequest, GateScanResult, GateSessionProgress)
+    - Create `core-service/app/schemas/dispatch.py` (DispatchResponse, DispatchFilters)
+    - Add gate and dispatch endpoints to `core-service/app/api/v1/endpoints/outbound.py`
+    - _Requirements: 12.1, 12.7, 13.3_
 
-- [ ] 6. Checkpoint - Ensure all tests pass
-
+- [x] 11. Checkpoint - Verify outbound flow end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Outbound — SAP invoice-triggered pick list
+- [x] 12. Worker Tasks and Time Tracking
+  - [x] 12.1 Implement TaskService
+    - Create `core-service/app/services/task_service.py`
+    - Implement `create_task` with task_type (put_away/pick), worker_id, reference_id
+    - Implement `start_task` (ASSIGNED → IN_PROGRESS with started_at)
+    - Implement `complete_task` (IN_PROGRESS → COMPLETED with completed_at)
+    - Implement `cancel_task`
+    - Implement `list_worker_tasks` with filters (worker_id, status, date range)
+    - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.6_
 
-  - [ ] 7.1 Implement PickListService.create_from_invoice
+  - [x] 12.2 Implement QRScanService (location time tracking)
+    - Create `core-service/app/services/qr_scan_service.py`
+    - Implement `record_location_scan` accepting worker_id, task_id, location_code, scan_type (start/finish)
+    - On finish scan: validate preceding start scan exists, calculate elapsed_seconds
+    - Reject finish scan without preceding start scan
+    - Implement `get_time_summary` with filters (worker, task, location, date range)
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6_
 
-    - Parse SAP invoice payload (validate required fields)
-    - Create pick list with status OPEN, link invoice_reference and invoice_data
-    - Populate pick list items with SKUs and quantities from invoice
-    - Set warehouse from invoice delivery warehouse or default
-    - _Requirements: 5.1, 5.2, 5.5_
+  - [ ]\* 12.3 Write property test for time tracking elapsed calculation
+    - **Property 27: Time Tracking Elapsed Calculation**
+    - **Validates: Requirements 17.2, 17.3, 17.4**
 
-  - [ ]\* 7.2 Write property test for pick list creation from invoice
+  - [x] 12.4 Create Pydantic schemas and API endpoints for worker tasks and location scans
+    - Create `core-service/app/schemas/worker_task.py` (WorkerTaskCreate, WorkerTaskResponse, TaskFilters)
+    - Create `core-service/app/schemas/location_scan.py` (LocationScanRequest, TimeSummary, TimeSummaryFilters)
+    - Create `core-service/app/api/v1/endpoints/worker_tasks.py` (POST, GET list, GET detail, POST start, POST complete, POST cancel)
+    - Create `core-service/app/api/v1/endpoints/location_scans.py` (POST, GET summary)
+    - Register routers
+    - _Requirements: 16.6, 17.6_
 
-    - **Property 10: Pick List Creation from Invoice**
-    - **Validates: Requirements 5.1, 5.2**
+- [x] 13. Scan Event Audit Trail
+  - [x] 13.1 Implement ScanEventService
+    - Create `core-service/app/services/scan_event_service.py`
+    - Implement `record_event` storing scan in existing qr_scan_events table with context in extra_data (scan_context, session_id, pick_list_id, decoded_payload, device_type, os)
+    - Implement `query_events` with filters (session_id, worker_id, date range, scan_context)
+    - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
-  - [ ] 7.3 Implement PickListService.resolve_bin_locations
+  - [ ]\* 13.2 Write property test for scan event audit completeness
+    - **Property 25: Scan Event Audit Completeness**
+    - **Validates: Requirements 14.1**
 
-    - For each pick list item, query bin_stock_levels ordered by created_at ASC (FIFO)
-    - Allocate from oldest bins first, split across bins if needed
-    - Sort resolved items by optimal traversal order using RoutingOptimizer
-    - _Requirements: 5.3, 5.4_
+  - [x] 13.3 Create Pydantic schemas and API endpoint for scan events
+    - Create `core-service/app/schemas/scan_event.py` (ScanEventCreate, ScanEventFilters, PaginatedScanEvents)
+    - Create `core-service/app/api/v1/endpoints/scan_events.py` (GET /scan-events with filters)
+    - Register router
+    - _Requirements: 14.3_
 
-  - [ ]\* 7.4 Write property test for FIFO bin resolution
-    - **Property 11: FIFO Bin Resolution**
-    - **Validates: Requirements 5.3**
+- [x] 14. Integration wiring and remaining property tests
+  - [x] 14.1 Wire put-away generation into receiving slip approval flow
+    - In InboundService.approve_slip: trigger PutAwayService.generate_from_slip
+    - In PutAwayService.generate_from_slip: create worker task via TaskService
+    - Ensure put-away list generation respects allocations and routes items
+    - _Requirements: 7.3, 8.1_
 
-- [ ] 8. Outbound — pick list fulfillment via QR scanning
+  - [ ]\* 14.2 Write property test for approval triggers put-away generation
+    - **Property 14: Approval Triggers Put-Away Generation**
+    - **Validates: Requirements 7.3, 8.1**
 
-  - [ ] 8.1 Implement PickListService.record_pick_scan
+  - [x] 14.3 Wire pick list creation into SAP invoice webhook
+    - In PickListService.create_from_invoice: resolve bins, optimize route, create worker task
+    - Ensure pick list items have bin_location_id and sort_order set
+    - _Requirements: 9.3, 9.4_
 
-    - Decode QR payload
-    - Validate pick list is OPEN or IN_PROGRESS
-    - Match scanned SKU against pending pick list items (picked_qty < required_qty)
-    - Reject if SKU not on list or would exceed required qty
-    - Increment picked_qty on match
-    - Transition OPEN → IN_PROGRESS on first scan
-    - Record scan event for audit
-    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 10.2_
+  - [x] 14.4 Wire gate verification into dispatch creation
+    - In GateVerificationService.verify_session: call OutboundService.create_dispatch
+    - Ensure stock deduction and dispatch number generation happen atomically
+    - _Requirements: 12.6, 13.1, 13.4, 13.5_
 
-  - [ ]\* 8.2 Write property test for pick scanning correctness
+  - [ ]\* 14.5 Write property test for location filter accuracy
+    - **Property 31: Location Filter Accuracy**
+    - **Validates: Requirements 19.1, 19.2, 19.3**
 
-    - **Property 12: Pick Scanning Correctness**
-    - **Validates: Requirements 6.2, 6.3, 6.5**
+  - [ ]\* 14.6 Write property test for location search correctness
+    - **Property 32: Location Search Correctness**
+    - **Validates: Requirements 19.4**
 
-  - [ ]\* 8.3 Write property test for pick list status transitions
+  - [ ]\* 14.7 Write property test for put-away completion updates stock and slip status
+    - **Property 17: Put-Away Completion Updates Stock and Slip Status**
+    - **Validates: Requirements 8.5, 8.6**
 
-    - **Property 13: Pick List Status Transitions**
-    - **Validates: Requirements 6.6, 10.2**
-
-  - [ ] 8.4 Implement PickListService.complete_pick_list
-
-    - Validate all items have picked_qty == required_qty
-    - Set status to COMPLETED, record completion timestamp
-    - _Requirements: 6.6, 6.7_
-
-  - [ ] 8.5 Implement PickListService.cancel_pick_list
-
-    - Set status to CANCELLED
-    - Release any reserved stock back to available inventory
-    - _Requirements: 10.5_
-
-  - [ ]\* 8.6 Write property test for stock release on pick list cancellation
-
-    - **Property 18: Stock Release on Pick List Cancellation**
-    - **Validates: Requirements 10.5**
-
-  - [ ] 8.7 Implement PickListService.get_pick_list_progress and list_pick_lists
-    - Return progress info (total items, picked items, remaining)
-    - Support filtering by status, date range, invoice reference
-    - _Requirements: 10.1, 10.3, 10.4_
-
-- [ ] 9. Checkpoint - Ensure all tests pass
-
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [ ] 10. Gate verification and dispatch
-
-  - [ ] 10.1 Implement GateVerificationService.start_session
-
-    - Create gate verification session with vehicle_number, driver details, pick_list_id
-    - Validate pick list is COMPLETED
-    - Set total_expected from pick list items
-    - _Requirements: 7.1_
-
-  - [ ] 10.2 Implement GateVerificationService.record_gate_scan
-
-    - Decode QR payload
-    - Validate session is OPEN
-    - Check scanned SKU against associated pick list items
-    - If match: create GateVerificationItem with status VERIFIED, increment total_verified
-    - If no match: create GateVerificationItem with status UNAUTHORIZED, return alert
-    - Record scan event for audit
-    - _Requirements: 7.2, 7.3, 7.4_
-
-  - [ ]\* 10.3 Write property test for gate verification against pick list
-
-    - **Property 14: Gate Verification Against Pick List**
-    - **Validates: Requirements 7.3, 7.4, 7.5**
-
-  - [ ] 10.4 Implement GateVerificationService.verify_session
-
-    - Validate all pick list items have been verified
-    - Set session status to VERIFIED, record verified_at timestamp
-    - Trigger dispatch record creation via OutboundService
-    - _Requirements: 7.5, 7.6_
-
-  - [ ] 10.5 Implement OutboundService.create_dispatch
-
-    - Create dispatch record with pick_list_id, vehicle_number, driver, gate_session_id, dispatch timestamp
-    - Generate unique dispatch number (DP-YYYY-NNNN)
-    - Decrement warehouse stock_levels for all dispatched items
-    - Create stock_movements records (type=OUT)
-    - Update pick list with dispatch_record_id reference
-    - _Requirements: 11.1, 11.2, 11.4, 11.5, 7.6_
-
-  - [ ]\* 10.6 Write property test for dispatch record completeness and stock deduction
-
-    - **Property 15: Dispatch Record Completeness and Stock Deduction**
-    - **Validates: Requirements 7.6, 11.1, 11.4**
-
-  - [ ] 10.7 Implement OutboundService.list_dispatches and get_dispatch
-    - Support filtering by date range, vehicle number, invoice reference
-    - _Requirements: 11.3_
-
-- [ ] 11. Scan event audit trail
-
-  - [ ] 11.1 Implement ScanEventService.record_event
-
-    - Create qr_scan_events record with worker_id, timestamp, location, session_id, scan_context (inbound/pick/gate), decoded payload
-    - Store device info in extra_data when available
-    - _Requirements: 8.1, 8.2, 8.4_
-
-  - [ ] 11.2 Implement ScanEventService.query_events
-
-    - Support filtering by session_id, worker_id, date range, scan_context
-    - _Requirements: 8.3_
-
-  - [ ]\* 11.3 Write property test for scan event audit completeness
-    - **Property 16: Scan Event Audit Completeness**
-    - **Validates: Requirements 8.1**
-
-- [ ] 12. API endpoints — Inbound
-
-  - [ ] 12.1 Create inbound router with endpoints: POST /sessions, POST /sessions/{id}/scan, POST /sessions/{id}/end, GET /sessions/{id}
-
-    - Wire to InboundService methods
-    - Add request/response Pydantic schemas
-    - _Requirements: 1.1, 2.1, 2.2, 2.5_
-
-  - [ ] 12.2 Create receiving slip endpoints: GET /receiving-slips, GET /receiving-slips/{id}, POST /receiving-slips/{id}/approve, POST /receiving-slips/{id}/reject, PATCH /receiving-slips/{id}/items/{item_id}
-    - Wire to InboundService methods
-    - Add request/response Pydantic schemas
-    - _Requirements: 3.1, 9.1, 9.2, 9.3, 9.4, 9.5_
-
-- [ ] 13. API endpoints — Outbound
-
-  - [ ] 13.1 Create pick list endpoints: POST /pick-lists/from-invoice, GET /pick-lists, GET /pick-lists/{id}, POST /pick-lists/{id}/scan, POST /pick-lists/{id}/complete, POST /pick-lists/{id}/cancel
-
-    - Wire to PickListService methods
-    - Add request/response Pydantic schemas
-    - _Requirements: 5.1, 6.1, 6.6, 10.1, 10.3, 10.5_
-
-  - [ ] 13.2 Create gate verification endpoints: POST /gate-sessions, POST /gate-sessions/{id}/scan, GET /gate-sessions/{id}, POST /gate-sessions/{id}/verify
-
-    - Wire to GateVerificationService methods
-    - Add request/response Pydantic schemas
-    - _Requirements: 7.1, 7.2, 7.3, 7.5, 7.7_
-
-  - [ ] 13.3 Create dispatch endpoints: GET /dispatches, GET /dispatches/{id}
-
-    - Wire to OutboundService methods
-    - Add request/response Pydantic schemas
-    - _Requirements: 11.3_
-
-  - [ ] 13.4 Create scan event endpoint: GET /scan-events
-    - Wire to ScanEventService.query_events
-    - Add request/response Pydantic schemas with filters
-    - _Requirements: 8.3_
-
-- [ ] 14. Final checkpoint - Ensure all tests pass
+- [-] 15. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
@@ -350,35 +432,39 @@ Implement a QR code-driven warehouse inbound and outbound workflow on top of the
 - Tasks marked with `*` are optional and can be skipped for faster MVP
 - Each task references specific requirements for traceability
 - Checkpoints ensure incremental validation
-- Property tests validate universal correctness properties from the design document
+- Property tests validate universal correctness properties from the design document using Hypothesis
 - Unit tests validate specific examples and edge cases
-- The implementation reuses existing infrastructure: PutAwayService, RoutingOptimizer, BinStockService, qr_scan_events table, pick_lists/pick_list_items tables
-- All services are org-scoped via organization_id from JWT
-- Document numbering (receiving slip, dispatch) follows existing org naming series patterns
+- All services follow the existing project pattern: Repository → Service → API endpoint
+- Existing tables (pick_lists, pick_list_items, put_away_list_items, qr_scan_events, stock_levels) are extended rather than replaced
+- Optimistic locking via version column on warehouse_locations prevents concurrent capacity conflicts
 
 ## Task Dependency Graph
 
 ```json
 {
   "waves": [
-    { "id": 0, "tasks": ["1.1"] },
-    { "id": 1, "tasks": ["1.2", "1.3"] },
-    { "id": 2, "tasks": ["2.1", "11.1"] },
-    { "id": 3, "tasks": ["2.2", "2.3", "2.4", "11.2"] },
-    { "id": 4, "tasks": ["2.5", "2.6", "2.7"] },
-    { "id": 5, "tasks": ["2.8", "4.6"] },
-    { "id": 6, "tasks": ["4.1", "4.2", "4.5"] },
-    { "id": 7, "tasks": ["4.3", "4.4", "4.7"] },
-    { "id": 8, "tasks": ["5.1", "7.1"] },
-    { "id": 9, "tasks": ["5.2", "5.3", "5.4", "7.2", "7.3"] },
-    { "id": 10, "tasks": ["5.5", "7.4", "8.1"] },
-    { "id": 11, "tasks": ["8.2", "8.3", "8.4", "8.5", "8.7"] },
-    { "id": 12, "tasks": ["8.6", "10.1"] },
-    { "id": 13, "tasks": ["10.2", "10.3"] },
-    { "id": 14, "tasks": ["10.4"] },
-    { "id": 15, "tasks": ["10.5", "10.6", "10.7"] },
-    { "id": 16, "tasks": ["11.3", "12.1", "12.2"] },
-    { "id": 17, "tasks": ["13.1", "13.2", "13.3", "13.4"] }
+    { "id": 0, "tasks": ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"] },
+    { "id": 1, "tasks": ["1.8"] },
+    { "id": 2, "tasks": ["3.1", "3.4", "3.7", "3.8"] },
+    { "id": 3, "tasks": ["3.2", "3.3", "3.5", "3.6", "3.9"] },
+    { "id": 4, "tasks": ["4.1", "4.6"] },
+    { "id": 5, "tasks": ["4.2", "4.3", "4.4", "4.5", "4.7", "4.8"] },
+    { "id": 6, "tasks": ["6.1", "6.10"] },
+    { "id": 7, "tasks": ["6.2", "6.3", "6.4"] },
+    { "id": 8, "tasks": ["6.5", "6.6", "6.7"] },
+    { "id": 9, "tasks": ["6.8", "6.9", "7.1"] },
+    { "id": 10, "tasks": ["7.2", "7.3"] },
+    { "id": 11, "tasks": ["7.4", "7.5", "7.6", "7.7"] },
+    { "id": 12, "tasks": ["9.1"] },
+    { "id": 13, "tasks": ["9.2", "9.3", "9.4"] },
+    { "id": 14, "tasks": ["9.5", "9.6", "9.7", "9.8"] },
+    { "id": 15, "tasks": ["10.1", "10.3"] },
+    { "id": 16, "tasks": ["10.2", "10.4", "10.5"] },
+    { "id": 17, "tasks": ["12.1", "12.2"] },
+    { "id": 18, "tasks": ["12.3", "12.4", "13.1"] },
+    { "id": 19, "tasks": ["13.2", "13.3"] },
+    { "id": 20, "tasks": ["14.1", "14.3", "14.4"] },
+    { "id": 21, "tasks": ["14.2", "14.5", "14.6", "14.7"] }
   ]
 }
 ```

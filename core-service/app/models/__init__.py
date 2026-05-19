@@ -163,14 +163,29 @@ from app.models.warehouse import Warehouse
 # Warehouse Bin Management module
 from app.models.warehouse_location import (
     AllocationType,
+    GateVerificationItemStatus,
+    GateVerificationStatus,
     LocationType,
     PutAwayListItemStatus,
     PutAwayListStatus,
+    ReceivingSlipItemFlag,
+    ReceivingSlipStatus,
+    ScanSessionStatus,
+    ScanSessionType,
     ScanType,
     WarehouseLocation,
     WorkerTaskStatus,
     WorkerTaskType,
 )
+from app.models.bin_stock_level import BinStockLevel
+from app.models.location_allocation import LocationAllocation
+from app.models.scan_session import ScanSession, ScanSessionItem
+from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+from app.models.gate_verification import GateVerificationSession, GateVerificationItem
+from app.models.dispatch_record import DispatchRecord
+from app.models.worker_task import WorkerTask
+from app.models.location_scan import LocationScan
+from app.models.put_away_list import PutAwayList, PutAwayListItem
 
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
@@ -348,7 +363,26 @@ __all__ = [
     "WorkerTaskStatus",
     "ScanType",
     "AllocationType",
+    "ScanSessionType",
+    "ScanSessionStatus",
+    "ReceivingSlipStatus",
+    "ReceivingSlipItemFlag",
+    "GateVerificationStatus",
+    "GateVerificationItemStatus",
     "WarehouseLocation",
+    "BinStockLevel",
+    "LocationAllocation",
+    "ScanSession",
+    "ScanSessionItem",
+    "ReceivingSlip",
+    "ReceivingSlipItem",
+    "GateVerificationSession",
+    "GateVerificationItem",
+    "DispatchRecord",
+    "WorkerTask",
+    "LocationScan",
+    "PutAwayList",
+    "PutAwayListItem",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

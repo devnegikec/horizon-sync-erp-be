@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin,
     analytics,
     bank_accounts,
+    bin_stock,
     charge_templates,
     organization_onboarding,
     batches,
@@ -27,6 +28,7 @@ from app.api.v1.endpoints import (
     document_numbering,
     exchange_rates,
     feature_flag_evaluate,
+    inbound,
     invoices,
     item_groups,
     item_prices,
@@ -34,13 +36,17 @@ from app.api.v1.endpoints import (
     items_picker,
     journal_entries,
     landed_cost,
+    location_allocations,
+    location_scans,
     material_requests,
     messaging,
+    outbound,
     payments,
     pick_lists,
     public_marketing,
     purchase_orders,
     purchase_receipts,
+    put_away,
     put_away_rules,
     qr_product_settings,
     qr_products,
@@ -49,6 +55,7 @@ from app.api.v1.endpoints import (
     reconciliations,
     rfqs,
     sales_orders,
+    scan_events,
     serial_numbers,
     short_urls,
     smart_picking,
@@ -62,8 +69,10 @@ from app.api.v1.endpoints import (
     tax_templates,
     uom_conversions,
     uoms,
+    warehouse_locations,
     warehouses,
     warranties,
+    worker_tasks,
 )
 
 api_router = APIRouter()
@@ -92,6 +101,57 @@ api_router.include_router(
 api_router.include_router(bulk_import.router)
 api_router.include_router(bulk_export.router)
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["Warehouses"])
+api_router.include_router(
+    warehouse_locations.router,
+    prefix="/warehouse-locations",
+    tags=["Warehouse Locations"],
+)
+api_router.include_router(
+    bin_stock.router,
+    prefix="/bin-stock",
+    tags=["Bin Stock"],
+)
+api_router.include_router(
+    location_allocations.router,
+    prefix="/location-allocations",
+    tags=["Location Allocations"],
+)
+# Inbound (scan sessions, receiving slips)
+api_router.include_router(
+    inbound.router,
+    prefix="/inbound",
+    tags=["Inbound"],
+)
+# Outbound (SAP invoice-triggered pick lists)
+api_router.include_router(
+    outbound.router,
+    prefix="/outbound",
+    tags=["Outbound"],
+)
+# Put-Away (put-away lists and items)
+api_router.include_router(
+    put_away.router,
+    prefix="/put-away",
+    tags=["Put Away"],
+)
+# Worker Tasks (put-away and pick task assignments)
+api_router.include_router(
+    worker_tasks.router,
+    prefix="/worker-tasks",
+    tags=["Worker Tasks"],
+)
+# Location Scans (QR-based time tracking)
+api_router.include_router(
+    location_scans.router,
+    prefix="/location-scans",
+    tags=["Location Scans"],
+)
+# Scan Events (QR scan audit trail)
+api_router.include_router(
+    scan_events.router,
+    prefix="/scan-events",
+    tags=["Scan Events"],
+)
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["Suppliers"])
 api_router.include_router(

@@ -47,6 +47,16 @@ class PickList(Base):
     remarks = Column(Text, nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # Columns added by migration 047 for SAP invoice-triggered outbound workflow
+    invoice_reference = Column(String(255), nullable=True)
+    invoice_data = Column(JSONB, nullable=True)
+    dispatch_record_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dispatch_records.id"),
+        nullable=True,
+    )
+
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -59,6 +69,7 @@ class PickList(Base):
     items = relationship(
         "PickListItem", back_populates="pick_list", cascade="all, delete-orphan"
     )
+    dispatch_record = relationship("DispatchRecord", foreign_keys=[dispatch_record_id])
 
 
 class PickListItem(Base):
@@ -85,6 +96,12 @@ class PickListItem(Base):
     batch_no = Column(String(100), nullable=True)
     serial_nos = Column(JSONB, nullable=True)
     sort_order = Column(Integer, default=0)
+    # Column added by migration 047 for bin location tracking
+    bin_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id"),
+        nullable=True,
+    )
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
@@ -94,3 +111,4 @@ class PickListItem(Base):
     )
 
     pick_list = relationship("PickList", back_populates="items")
+    bin_location = relationship("WarehouseLocation")
