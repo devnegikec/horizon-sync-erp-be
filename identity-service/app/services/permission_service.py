@@ -501,7 +501,43 @@ class PermissionService:
                 }
             )
 
+        # ── Build module-grouped structure (new, for module-toggle UI) ──────────
+        from app.core.modules import MODULES
+
+        # Build a flat lookup of all perm_dicts by code for the module builder
+        all_perm_dicts: dict[str, dict] = {}
+        for cat in categories:
+            for p in cat["permissions"]:
+                all_perm_dicts[p["code"]] = p
+        for p in uncategorized:
+            all_perm_dicts[p["code"]] = p
+
+        modules_output = []
+        for mod_def in MODULES:
+            resources_output = []
+            for resource_def in mod_def.resources:
+                resource_perms = []
+                for action in resource_def.actions:
+                    code = f"{resource_def.key}.{action}"
+                    if code in all_perm_dicts:
+                        resource_perms.append(all_perm_dicts[code])
+                if resource_perms:
+                    resources_output.append({
+                        "key": resource_def.key,
+                        "label": resource_def.label,
+                        "permissions": resource_perms,
+                    })
+            if resources_output:
+                modules_output.append({
+                    "key": mod_def.key,
+                    "label": mod_def.label,
+                    "description": mod_def.description,
+                    "icon": mod_def.icon,
+                    "resources": resources_output,
+                })
+
         return {
+            "modules": modules_output,
             "categories": categories,
             "uncategorized": uncategorized,
         }

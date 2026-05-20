@@ -70,10 +70,35 @@ class PermissionCategoryGroup(BaseModel):
     permissions: list[PermissionResponse] = Field(default_factory=list)
 
 
-class GroupedPermissionsResponse(BaseModel):
-    """Schema for permissions grouped by category"""
+class ModuleResourceGroup(BaseModel):
+    """A resource within a module (e.g. 'Items' inside 'Inventory')."""
 
-    categories: list[PermissionCategoryGroup] = Field(default_factory=list)
+    key: str = Field(..., description="Resource key, e.g. 'item'")
+    label: str = Field(..., description="Human-readable label, e.g. 'Items'")
+    permissions: list[PermissionResponse] = Field(default_factory=list)
+
+
+class ModuleGroup(BaseModel):
+    """A top-level ERP module grouping related resources."""
+
+    key: str = Field(..., description="Module key, e.g. 'inventory'")
+    label: str = Field(..., description="Human-readable label, e.g. 'Inventory'")
+    description: str = Field(..., description="Module description")
+    icon: str = Field(..., description="Icon identifier for UI")
+    resources: list[ModuleResourceGroup] = Field(default_factory=list)
+
+
+class GroupedPermissionsResponse(BaseModel):
+    """Schema for permissions grouped by module and category."""
+
+    modules: list[ModuleGroup] = Field(
+        default_factory=list,
+        description="Permissions grouped by ERP module → resource (new structure for module-toggle UI)",
+    )
+    categories: list[PermissionCategoryGroup] = Field(
+        default_factory=list,
+        description="Permissions grouped by category (legacy structure, kept for backward compat)",
+    )
     uncategorized: list[PermissionResponse] = Field(
         default_factory=list, description="Permissions without a category"
     )

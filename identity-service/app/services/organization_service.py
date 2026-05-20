@@ -86,10 +86,15 @@ class OrganizationService:
 
         org = self.repo.create(payload)
 
-        # Ensure creating user is always assigned as Owner with full access (*.*) in this org
-        full_access = self.db.query(Permission).filter(Permission.code == "*.*").first()
-        if not full_access:
-            # Create *.* permission if missing (e.g. DB seeded before wildcards were added)
+        # ── Seed all preloaded roles for this org ──────────────────────────────
+        # Import here to avoid circular imports at module load time
+        from app.core.modules import PRELOADED_ORG_ROLES
+
+        all_permissions = self.db.query(Permission).all()
+        permissions_map: dict[str, Permission] = {p.code: p for p in all_permissions}
+
+        # Ensure *.* permission exists (needed by Owner role)
+        if "*.*" not in permissions_map:
             full_access = Permission(
                 code="*.*",
                 name="Full access (all resources and actions)",
@@ -100,25 +105,31 @@ class OrganizationService:
             )
             self.db.add(full_access)
             self.db.flush()
+            permissions_map["*.*"] = full_access
 
-        owner_role = Role(
-            organization_id=org.id,
-            name="Organization Owner",
-            code="owner",
-            description="User who created the organization; has full access in this org.",
-            is_system=False,
-            is_default=False,
-            hierarchy_level=100,
-            is_active=True,
-        )
-        self.db.add(owner_role)
-        self.db.flush()
-        self.db.add(
-            RolePermission(
-                role_id=owner_role.id,
-                permission_id=full_access.id,
+        created_roles: dict[str, Role] = {}
+        for template in PRELOADED_ORG_ROLES:
+            role = Role(
+                organization_id=org.id,
+                name=template.name,
+                code=template.code,
+                description=template.description,
+                is_system=template.is_system,
+                is_default=False,
+                hierarchy_level=template.hierarchy_level,
+                is_active=True,
             )
-        )
+            self.db.add(role)
+            self.db.flush()
+            created_roles[template.code] = role
+
+            for perm_code in template.permission_codes:
+                perm = permissions_map.get(perm_code)
+                if perm:
+                    self.db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+
+        # Assign the Owner role to the creating user
+        owner_role = created_roles["owner"]
         self.db.add(
             UserOrganizationRole(
                 user_id=owner_id,
