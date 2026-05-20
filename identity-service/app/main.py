@@ -61,6 +61,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"System admin seed skipped or failed: {e}")
 
+    # Ensure canonical organization.* permissions exist (idempotent safety net)
+    try:
+        from app.database import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        try:
+            for action in ("read", "create", "update", "delete", "manage"):
+                code = f"organization.{action}"
+                db.execute(text("""
+                    INSERT INTO permissions (id, code, name, resource, action, module, is_active, created_at, updated_at, extra_data)
+                    SELECT
+                        gen_random_uuid(),
+                        :code,
+                        :name,
+                        'organization',
+                        :action,
+                        'identity',
+                        true,
+                        NOW(),
+                        NOW(),
+                        '{}'::jsonb
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM permissions WHERE code = :code
+                    )
+                """), {"code": code, "name": f"Organization {action.title()}", "action": action})
+            db.commit()
+            logger.info("organization.* permissions ensured")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"organization.* permission ensure step failed: {e}")
+
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.app_name}")

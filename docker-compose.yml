@@ -88,6 +88,7 @@ services:
     volumes:
       - ./identity-service/app:/app/app
       - ./identity-service/alembic:/app/alembic
+      - ./identity-service/scripts:/app/scripts
     command: >
       bash -c "
         echo 'Waiting for database...' &&

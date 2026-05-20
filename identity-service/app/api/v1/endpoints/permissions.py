@@ -130,22 +130,11 @@ async def get_permissions_grouped(
         result = permission_service.get_permissions_grouped_by_category(
             organization_id=organization_id,
             module=module,
+            include_system_admin=include_system_admin,
         )
 
-        # Filter out system_admin category unless explicitly requested
-        if not include_system_admin:
-            result["categories"] = [
-                cat for cat in result["categories"]
-                if cat.get("name", "").lower() != "system admin"
-                and cat.get("name", "").lower() != "system_admin"
-            ]
-            # Also filter system_admin permissions from remaining categories
-            for cat in result["categories"]:
-                cat["permissions"] = [
-                    p for p in cat.get("permissions", [])
-                    if not (hasattr(p, "code") and str(getattr(p, "code", "")).startswith("system_admin."))
-                    and not (isinstance(p, dict) and str(p.get("code", "")).startswith("system_admin."))
-                ]
+        # No additional post-filtering needed — system_admin exclusion is handled
+        # at the service level via the include_system_admin flag.
 
         logger.info(
             f"Retrieved {len(result['categories'])} categories "
