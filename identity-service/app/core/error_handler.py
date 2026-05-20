@@ -186,6 +186,20 @@ def handle_login_errors(email: str, error: Exception) -> HTTPException:
         HTTPException with appropriate status code and message
     """
     if isinstance(error, AuthenticationError):
+        # `login_user` raises AuthenticationError for several distinct cases.
+        # Detect "account inactive / suspended" so users see a useful message
+        # (and aren't misled into thinking their password is wrong after a
+        # successful reset).
+        original = str(error).lower()
+        if "inactive" in original or "suspended" in original:
+            return HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=create_error_response(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message=ErrorMessages.ACCOUNT_SUSPENDED,
+                    error_code="ACCOUNT_SUSPENDED",
+                )["error"],
+            )
         return HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=create_error_response(

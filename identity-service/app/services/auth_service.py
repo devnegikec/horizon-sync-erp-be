@@ -367,14 +367,38 @@ class AuthService:
 
         self.token_repo.create_refresh_token(token_data)
 
+    # Minimum interval between password-reset emails for the same account.
+    # Within this window we silently skip issuing a new token / sending a new
+    # email, which both prevents abuse (e.g. attackers spamming a victim's
+    # inbox) and gives the user a chance to actually find the email already
+    # delivered.
+    PASSWORD_RESET_COOLDOWN_SECONDS = 5 * 60
+
     def forgot_password(
         self,
         email: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> str:
+    ) -> tuple[str | None, int]:
         """
-        Generate password reset token for user.
+        Generate (or skip) a password reset token for the given email.
+
+        To prevent email enumeration, this method behaves identically for known
+        and unknown emails from the caller's perspective: it always returns a
+        ``(token, retry_after_seconds)`` tuple where ``token`` may be ``None``
+        when no email should be sent (cooldown active or user not found).
+
+        Behaviour:
+
+        * Unknown email → returns ``(None, COOLDOWN)`` so the endpoint can
+          still respond with the generic "if the email exists" message and a
+          consistent cooldown hint.
+        * Known email with an unused, unexpired token issued within the
+          cooldown window → returns ``(None, remaining_seconds)``; **no new
+          token is created and no email should be sent**. The user must use
+          (or wait for the cooldown on) the previously-emailed link.
+        * Otherwise → revokes any prior tokens, creates a fresh one, and
+          returns ``(token, COOLDOWN)``.
 
         Args:
             email: User email
@@ -382,28 +406,33 @@ class AuthService:
             user_agent: Optional user agent string
 
         Returns:
-            Password reset token (plain text)
-
-        Raises:
-            UserNotFoundException: If user not found (silently handled for security)
+            Tuple of ``(reset_token_or_None, retry_after_seconds)``.
         """
-        # Get user by email
+        cooldown = self.PASSWORD_RESET_COOLDOWN_SECONDS
+
         user = self.user_repo.get_user_by_email(email)
-
-        # For security, don't reveal if email exists or not
-        # Always return success, but only create token if user exists
         if not user:
-            # Return a fake token to prevent email enumeration
-            return secrets.token_urlsafe(32)
+            # Return no token (so no email is sent) but still surface a
+            # cooldown to keep the response timing/content uniform.
+            return None, cooldown
 
-        # Revoke any existing unused tokens for this user
+        # If a still-valid token was issued recently, do nothing — the user
+        # already has an email with a working link in their inbox.
+        latest = self.password_reset_repo.get_latest_active_for_user(user.id)
+        if latest is not None:
+            created = latest.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            elapsed = (datetime.now(UTC) - created).total_seconds()
+            if elapsed < cooldown:
+                remaining = max(1, int(cooldown - elapsed))
+                return None, remaining
+
+        # Cooldown elapsed (or no prior token): rotate.
         self.password_reset_repo.revoke_user_tokens(user.id)
 
-        # Generate reset token
         reset_token = secrets.token_urlsafe(32)
         token_hash_value = hash_token(reset_token)
-
-        # Store reset token
         reset_data = {
             "user_id": user.id,
             "token_hash": token_hash_value,
@@ -412,10 +441,15 @@ class AuthService:
             "ip_address": ip_address,
             "user_agent": user_agent,
         }
-
         self.password_reset_repo.create_password_reset(reset_data)
 
-        return reset_token
+        return reset_token, cooldown
+
+    def is_password_reset_token_valid(self, token: str) -> bool:
+        """Return True if `token` is a valid (unused, unexpired) password reset token."""
+        if not token:
+            return False
+        return self.password_reset_repo.is_token_valid(hash_token(token))
 
     def reset_password(self, token: str, new_password: str) -> bool:
         """
@@ -453,15 +487,20 @@ class AuthService:
         # Hash new password
         password_hash = hash_password(new_password)
 
-        # Update user password
-        self.user_repo.update_user(
-            user,
-            {
-                "password_hash": password_hash,
-                "failed_login_attempts": 0,
-                "locked_until": None,
-            },
-        )
+        # Update user password.
+        # Also clear any prior lockout/suspension that resulted from failed
+        # login attempts — otherwise the user resets their password
+        # successfully but is still blocked at login by the suspended-status
+        # check, which is then surfaced as a misleading
+        # "Invalid email or password" error.
+        update_data: dict = {
+            "password_hash": password_hash,
+            "failed_login_attempts": 0,
+            "locked_until": None,
+        }
+        if user.status == UserStatus.SUSPENDED:
+            update_data["status"] = UserStatus.ACTIVE
+        self.user_repo.update_user(user, update_data)
 
         # Mark token as used
         self.password_reset_repo.mark_as_used(reset)
