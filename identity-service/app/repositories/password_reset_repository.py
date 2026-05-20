@@ -50,6 +50,26 @@ class PasswordResetRepository:
             .first()
         )
 
+    def is_token_valid(self, token_hash: str) -> bool:
+        """Return True if the token exists, is not yet used, and not expired."""
+        return self.get_password_reset(token_hash) is not None
+
+    def get_latest_active_for_user(self, user_id: UUID) -> PasswordReset | None:
+        """
+        Return the most recently-created unused, unexpired reset token for a user,
+        if any. Used to enforce a cooldown between forgot-password requests.
+        """
+        return (
+            self.db.query(PasswordReset)
+            .filter(
+                PasswordReset.user_id == user_id,
+                PasswordReset.used_at.is_(None),
+                PasswordReset.expires_at > datetime.now(UTC),
+            )
+            .order_by(PasswordReset.created_at.desc())
+            .first()
+        )
+
     def mark_as_used(self, reset: PasswordReset) -> PasswordReset:
         """
         Mark a password reset token as used.

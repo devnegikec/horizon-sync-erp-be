@@ -108,6 +108,9 @@ class ForgotPasswordResponse(BaseModel):
     """Schema for forgot password response"""
 
     message: str
+    # Generic cooldown hint (in seconds) before the user should retry. Always
+    # populated and identical for known/unknown emails to avoid enumeration.
+    retry_after_seconds: int = 0
 
 
 class ResetPasswordRequest(BaseModel):
@@ -121,3 +124,9 @@ class ResetPasswordResponse(BaseModel):
     """Schema for reset password response"""
 
     message: str
+
+
+class VerifyResetTokenResponse(BaseModel):
+    """Schema for password-reset-token verification response"""
+
+    valid: bool

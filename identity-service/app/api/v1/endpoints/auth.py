@@ -31,6 +31,7 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     ResetPasswordResponse,
     TokenResponse,
+    VerifyResetTokenResponse,
 )
 from app.schemas.error import ErrorResponse
 from app.schemas.user import UserCreate, UserResponse
@@ -362,25 +363,36 @@ async def forgot_password(
     logger.info(f"Client IP: {ip_address}")
     logger.info(f"User Agent: {user_agent}")
 
-    # Generate reset token
+    # Generate reset token (or skip silently if cooldown is active / unknown email)
     logger.info("Generating reset token...")
-    reset_token = auth_service.forgot_password(
+    reset_token, retry_after = auth_service.forgot_password(
         email=request_data.email, ip_address=ip_address, user_agent=user_agent
     )
-    logger.info(f"Reset token generated (length: {len(reset_token)})")
 
-    # Send email in background
-    logger.info("Adding email task to background...")
-    background_tasks.add_task(
-        email_service.send_password_reset_email,
-        recipient=request_data.email,
-        token=reset_token,
-    )
-    logger.info("Email task added to background queue")
+    if reset_token is not None:
+        logger.info(f"Reset token generated (length: {len(reset_token)})")
+        logger.info("Adding email task to background...")
+        background_tasks.add_task(
+            email_service.send_password_reset_email,
+            recipient=request_data.email,
+            token=reset_token,
+        )
+        logger.info("Email task added to background queue")
+    else:
+        # Either user doesn't exist OR a previous token is still within the
+        # cooldown window. Either way, do not send a new email — and crucially
+        # do not differentiate the two cases in the response.
+        logger.info(
+            f"Skipping email send (cooldown active or unknown email); "
+            f"retry_after={retry_after}s"
+        )
     logger.info("=" * 60)
 
+    # Generic response — same message and retry hint regardless of whether the
+    # email is registered or whether we just skipped due to cooldown.
     return ForgotPasswordResponse(
-        message="If the email exists, a password reset link has been sent"
+        message="If the email exists, a password reset link has been sent",
+        retry_after_seconds=retry_after,
     )
 
 
@@ -423,6 +435,25 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
         ) from e
+
+
+@router.get(
+    "/verify-reset-token",
+    response_model=VerifyResetTokenResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def verify_reset_token(token: str, db: Session = Depends(get_db)):
+    """
+    Verify whether a password-reset token is still valid (unused & unexpired).
+
+    Used by the front-end to show an "expired link" page immediately if the
+    user revisits a reset-password URL after consuming it, instead of waiting
+    until form submission.
+    """
+    auth_service = AuthService(db)
+    return VerifyResetTokenResponse(
+        valid=auth_service.is_password_reset_token_valid(token)
+    )
 
 
 @router.get(
