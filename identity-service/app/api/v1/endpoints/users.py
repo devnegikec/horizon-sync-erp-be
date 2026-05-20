@@ -158,7 +158,42 @@ async def list_users(
             email_verified=email_verified,
             search=search,
         )
-        user_items = [UserListItem.model_validate(user) for user in users]
+
+        # Batch-fetch org-level role names for all returned users to avoid N+1 queries.
+        # We join UserOrganizationRole → Role scoped to the same organization_ids the
+        # list was filtered by, so we only show roles relevant to the current org context.
+        from app.models.role import Role, UserOrganizationRole as UOR
+        from sqlalchemy import tuple_ as sa_tuple
+
+        user_ids = [u.id for u in users]
+        roles_map: dict[str, list[str]] = {str(u.id): [] for u in users}
+
+        if user_ids:
+            role_rows = (
+                db.query(UOR.user_id, Role.name)
+                .join(Role, Role.id == UOR.role_id)
+                .filter(
+                    UOR.user_id.in_(user_ids),
+                    UOR.is_active == True,  # noqa: E712
+                    Role.is_active == True,  # noqa: E712
+                )
+            )
+            # Scope to the same orgs the list was filtered by
+            if organization_ids:
+                role_rows = role_rows.filter(
+                    UOR.organization_id.in_(organization_ids)
+                )
+            for user_id, role_name in role_rows.all():
+                key = str(user_id)
+                if key in roles_map:
+                    roles_map[key].append(role_name)
+
+        user_items = []
+        for user in users:
+            item = UserListItem.model_validate(user)
+            item.roles = roles_map.get(str(user.id), [])
+            user_items.append(item)
+
         return UserListResponse(
             users=user_items,
             pagination=PaginationMeta(**pagination),

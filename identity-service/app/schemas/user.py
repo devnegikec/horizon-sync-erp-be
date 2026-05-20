@@ -101,6 +101,8 @@ class UserListItem(BaseModel):
     email_verified: bool
     last_login_at: datetime | None = None
     created_at: datetime
+    # Org-level role names assigned to this user (e.g. ["Sales Agent", "Viewer"])
+    roles: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
