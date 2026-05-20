@@ -367,13 +367,6 @@ class AuthService:
 
         self.token_repo.create_refresh_token(token_data)
 
-    # Minimum interval between password-reset emails for the same account.
-    # Within this window we silently skip issuing a new token / sending a new
-    # email, which both prevents abuse (e.g. attackers spamming a victim's
-    # inbox) and gives the user a chance to actually find the email already
-    # delivered.
-    PASSWORD_RESET_COOLDOWN_SECONDS = 5 * 60
-
     def forgot_password(
         self,
         email: str,
@@ -408,7 +401,7 @@ class AuthService:
         Returns:
             Tuple of ``(reset_token_or_None, retry_after_seconds)``.
         """
-        cooldown = self.PASSWORD_RESET_COOLDOWN_SECONDS
+        cooldown = settings.password_reset_cooldown_seconds
 
         user = self.user_repo.get_user_by_email(email)
         if not user:

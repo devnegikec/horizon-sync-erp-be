@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     remember_me_access_token_expire_days: int = 30  # 30 days for remember me
     remember_me_refresh_token_expire_days: int = 90  # 90 days for remember me
     password_reset_token_expire_hours: int = 1
+    # Cooldown (in seconds) between password-reset emails for the same account.
+    # Within this window the back-end silently skips issuing a new token and
+    # sending a new email. Override via the PASSWORD_RESET_COOLDOWN_SECONDS env
+    # var (e.g. set to 60 in development for faster iteration).
+    password_reset_cooldown_seconds: int = 2 * 60
     password_reset_url: str = "http://localhost:4200/reset-password"
     invitation_url: str = "http://localhost:4200/accept-invitation"
 
