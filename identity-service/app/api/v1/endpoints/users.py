@@ -14,7 +14,7 @@ from app.core.exceptions import DuplicateEmailException, UserNotFoundException
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.models.base import UserType
-from app.models.role import UserOrganizationRole
+from app.models.role import Role, UserOrganizationRole
 from app.schemas.user import (
     PaginationMeta,
     UserCreate,
@@ -54,6 +54,34 @@ def _users_share_organization(db: Session, user_id: UUID, other_user_id: UUID) -
         return False
     other_orgs = set(_user_organization_ids(db, other_user_id))
     return bool(my_orgs & other_orgs)
+
+
+def _normalize_role_name(role_name: str) -> str:
+    return role_name.lower().replace("_", " ").replace("-", " ").strip()
+
+
+def _user_has_owner_role(db: Session, user_id: UUID, organization_ids: list[UUID] | None = None) -> bool:
+    query = (
+        db.query(Role.name)
+        .join(UserOrganizationRole, UserOrganizationRole.role_id == Role.id)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.is_active,
+            Role.is_active,
+        )
+    )
+    if organization_ids:
+        query = query.filter(UserOrganizationRole.organization_id.in_(organization_ids))
+    return any(
+        _normalize_role_name(role_name) in {"owner", "organization owner"}
+        for (role_name,) in query.all()
+    )
+
+
+def _is_org_admin_without_owner_role(current_user: CurrentUser, db: Session) -> bool:
+    if current_user.user_type != UserType.ORGANIZATION_ADMIN:
+        return False
+    return not _user_has_owner_role(db, current_user.id)
 
 
 @router.get(
@@ -151,6 +179,12 @@ async def list_users(
         # system_admin.users_* holders only manage org-level users
         if not caller_is_super_admin:
             users = [u for u in users if u.user_type != UserType.SYSTEM_ADMIN]
+
+        if _is_org_admin_without_owner_role(current_user, db):
+            users = [
+                u for u in users
+                if not _user_has_owner_role(db, u.id, organization_ids)
+            ]
 
         status_counts = user_service.get_user_status_counts(
             organization_ids=organization_ids,
@@ -615,6 +649,11 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrators cannot modify organization owner accounts",
+        )
 
     # Escalation guard: prevent user_type changes involving system_admin without system_admin.master
     payload = body.model_dump(exclude_unset=True)
@@ -667,6 +706,11 @@ async def delete_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
+        )
+    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(db, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrators cannot delete organization owner accounts",
         )
     user_service = UserService(db)
     try:

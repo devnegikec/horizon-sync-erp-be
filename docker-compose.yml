@@ -65,8 +65,8 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
-      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
-      SMTP_HOST: ${SMTP_HOST:-localhost}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
