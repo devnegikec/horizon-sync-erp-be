@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/admin.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'action', 'admin_audit_logs', 'admin_notifications', 'created_at', 'is_read', 'is_read = FALSE', 'metadata', 'recipient_user_id', 'target_id', 'target_type', 'user_activity_logs']

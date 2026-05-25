@@ -88,8 +88,9 @@ class ScanResult(BaseModel):
     session_id: str
     qr_identifier: str
     sku: str
-    quantity: int
+    raw_quantity: int
     batch_number: str
+    packaging_unit_id: UUID | None = None
     scanned_at: str | None = None
     total_boxes_scanned: int = 0
 

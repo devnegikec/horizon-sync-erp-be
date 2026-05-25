@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/put_away_list.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'Item', 'PutAwayList', 'PutAwayListItem', 'ReceivingSlip', 'Warehouse', 'WarehouseLocation', 'all, delete-orphan', 'items', 'items.id', 'pending', 'put_away_list', 'put_away_list_items', 'put_away_lists', 'put_away_lists.id', 'receiving_slips.id']

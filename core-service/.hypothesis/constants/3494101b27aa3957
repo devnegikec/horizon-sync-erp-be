@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/put_away_rules.py
+# hypothesis_version: 6.152.8
+
+[100, '/{rule_id}', '^(asc|desc)$', 'asc', 'priority']

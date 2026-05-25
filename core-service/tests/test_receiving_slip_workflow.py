@@ -69,7 +69,7 @@ def closed_session(db_session, org_id, worker_id, warehouse_id):
             session_id=session.id,
             qr_identifier=qr_id,
             sku=sku,
-            quantity=qty,
+            raw_quantity=qty,
             batch_number=batch,
             raw_qr_data=f'{{"id":"{qr_id}","sku":"{sku}","qty":{qty},"batch":"{batch}"}}',
         )
@@ -471,7 +471,7 @@ class TestFlagLineItem:
             session_id=other_session.id,
             qr_identifier="qr-other-001",
             sku="OTHER-SKU",
-            quantity=10,
+            raw_quantity=10,
             batch_number="OTHER-BATCH",
             raw_qr_data='{"id":"qr-other-001","sku":"OTHER-SKU","qty":10,"batch":"OTHER-BATCH"}',
         )

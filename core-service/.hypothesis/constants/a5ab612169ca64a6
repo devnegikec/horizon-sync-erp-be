@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/bin_stock.py
+# hypothesis_version: 6.152.8
+
+['/add', '/item/{item_id}', '/remove', '/{bin_id}', 'Add stock to bin', 'Get bin stock levels', 'Get bins for item']

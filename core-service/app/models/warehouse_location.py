@@ -161,6 +161,8 @@ class WarehouseLocation(Base):
     capacity_uom = Column(String(50), nullable=True)
     position_x = Column(Numeric(10, 2), default=0)
     position_y = Column(Numeric(10, 2), default=0)
+    max_volume_cc = Column(Numeric(15, 2), nullable=True)
+    max_weight_grams = Column(Numeric(15, 2), nullable=True)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
 

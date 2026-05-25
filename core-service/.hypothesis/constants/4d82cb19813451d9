@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/organization_onboarding.py
+# hypothesis_version: 6.152.8
+
+[100, 'Organization Setup', 'USD', 'base_currency', 'created_by', 'error', 'error_type', 'organization_id']

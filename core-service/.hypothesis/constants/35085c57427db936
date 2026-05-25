@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/admin/system.py
+# hypothesis_version: 6.152.8
+
+[0.02, 25.0, 10000, '/me/permissions', '/system/admin-users', '/system/health', '/system/settings', '/system/stats', '0.00', 'Bearer ', 'Check system health', 'Get system settings', '^(ok|error)$', '^[^@]+@[^@]+\\.[^@]+$', 'authorization', 'error', 'healthy', 'message', 'monthly', 'ok', 'permissions', 'quarterly', 'system_admin.master', 'system_admin_master', 'total', 'user_id', 'user_type', 'users', 'warning', 'yearly']

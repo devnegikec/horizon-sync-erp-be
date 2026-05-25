@@ -105,6 +105,7 @@ from app.models.gate_verification import GateVerificationItem, GateVerificationS
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.location_allocation import LocationAllocation
 from app.models.location_scan import LocationScan
@@ -265,6 +266,7 @@ __all__ = [
     "Invoice",
     "Item",
     "ItemGroup",
+    "ItemPackagingUnit",
     "JournalEntry",
     "JournalEntryLine",
     "PaymentEntry",

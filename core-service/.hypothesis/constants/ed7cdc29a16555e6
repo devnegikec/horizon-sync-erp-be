@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/admin_organization_service.py
+# hypothesis_version: 6.152.8
+
+[10.0, 30.0, 200, 201, 401, 403, 404, 409, 500, '0', 'Authorization', 'active', 'address_line1', 'address_line2', 'base_currency', 'billing_cycle', 'billing_status', 'city', 'completed', 'country', 'created_at', 'customer_since', 'desc', 'description', 'detail', 'display_name', 'email', 'extra_data', 'has_next', 'has_prev', 'id', 'industry', 'invoice_count', 'is_active', 'last_billed_date', 'logo_url', 'master', 'max_credits', 'max_users', 'name', 'next_billing_date', 'on_trial', 'organization_type', 'organizations', 'owner_id', 'page', 'page_size', 'pagination', 'paid_until', 'payment_total', 'phone', 'postal_code', 'search', 'settings', 'slug', 'sort_by', 'sort_order', 'state', 'status', 'total_items', 'total_pages', 'trial', 'trial_end_date', 'trial_expiry', 'updated_at', 'user_count', 'website']

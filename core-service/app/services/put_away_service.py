@@ -30,6 +30,7 @@ from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_stock_service import BinStockService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+from app.services.volumetric_assignment_service import VolumetricAssignmentService
 
 
 class PutAwayService:
@@ -160,6 +161,16 @@ class PutAwayService:
 
         self.db.flush()
 
+        # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
+        volumetric_service = VolumetricAssignmentService()
+        volumetric_service.assign_bins(
+            put_away_list_items=put_away_list.items,
+            warehouse_id=slip.warehouse_id,
+            org_id=org_id,
+            db=self.db,
+        )
+        self.db.flush()
+
         # Optimize routing order for all put-away items
         self._optimize_item_routing(put_away_items)
 
@@ -236,13 +247,20 @@ class PutAwayService:
             )
 
         # Add stock to the assigned bin using BinStockService
-        self.bin_stock_service.add_stock(
+        bin_stock = self.bin_stock_service.add_stock(
             bin_id=put_away_item.bin_location_id,
             item_id=put_away_item.item_id,
             quantity=Decimal(str(put_away_item.quantity)),
             org_id=org_id,
             batch_number=put_away_item.batch_number,
         )
+
+        # If the put-away item carries a packaging_unit_id, propagate it to the
+        # BinStockLevel row as metadata (Req 3.3).
+        put_away_packaging_unit_id = getattr(put_away_item, "packaging_unit_id", None)
+        if put_away_packaging_unit_id is not None:
+            bin_stock.packaging_unit_id = put_away_packaging_unit_id
+            self.db.flush()
 
         # Mark item as completed
         put_away_item.status = "completed"

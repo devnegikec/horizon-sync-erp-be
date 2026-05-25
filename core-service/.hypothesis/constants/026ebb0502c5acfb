@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/uoms.py
+# hypothesis_version: 6.152.8
+
+[100, '/{uom_id}', 'Create UOM', 'Delete UOM', 'Field to sort by', 'Get UOM', 'Items per page', 'List UOMs', 'Page number', 'Soft delete a UOM', 'Sort order', 'Update UOM', '^(asc|desc)$', 'created_at', 'desc']

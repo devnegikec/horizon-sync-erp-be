@@ -51,6 +51,7 @@ class Item(Base):
 
     # Unit of Measure
     uom = Column(String(50), default="Nos")
+    sku = Column(String(100), nullable=True, index=True)
 
     # Stock Settings
     maintain_stock = Column(Boolean, default=True)
@@ -137,6 +138,9 @@ class Item(Base):
     variant_parent = relationship("Item", remote_side=[id], backref="variants")
     item_prices = relationship(
         "ItemPrice", back_populates="item", cascade="all, delete-orphan"
+    )
+    packaging_units = relationship(
+        "ItemPackagingUnit", back_populates="item", cascade="all, delete-orphan"
     )
 
     @property

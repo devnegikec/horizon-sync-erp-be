@@ -8,14 +8,15 @@ QR Payload Format:
     "id": "unique-qr-identifier",
     "sku": "ITEM-001",
     "qty": 50,
-    "batch": "BATCH-2025-01"
+    "batch": "BATCH-2025-01",
+    "packaging_unit_qr_id": "BOX-12-WIDGET"  // optional
 }
 
-Requirements: 4.1, 4.2, 4.3
+Requirements: 4.1, 4.2, 4.3, 5.3
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.exceptions import ValidationError
 
@@ -29,12 +30,15 @@ class QRPayload:
         sku: Stock Keeping Unit identifier (non-empty string)
         qty: Item quantity (positive integer)
         batch: Batch number (non-empty string)
+        packaging_unit_qr_id: Optional QR identifier that resolves to an
+            item_packaging_units.qr_identifier for multi-UOM support.
     """
 
     id: str
     sku: str
     qty: int
     batch: str
+    packaging_unit_qr_id: str | None = field(default=None)
 
 
 def decode_qr_payload(qr_data: str) -> QRPayload:  # noqa: C901
@@ -120,4 +124,5 @@ def decode_qr_payload(qr_data: str) -> QRPayload:  # noqa: C901
         sku=sku.strip(),
         qty=qty,
         batch=batch.strip(),
+        packaging_unit_qr_id=data.get("packaging_unit_qr_id") or None,
     )

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/outbound.py
+# hypothesis_version: 6.152.8
+
+[0.0, 100, '/dispatches', '/from-invoice', '/gate-sessions', '/{pick_list_id}', '/{pick_list_id}/scan', '0', 'Cancel pick list', 'Complete pick list', 'Get dispatch detail', 'Get pick list detail', 'Items per page', 'Page number', 'Record a gate scan', 'Record pick scan', 'Verify gate session', 'batch_no', 'bin_location_id', 'completed_at', 'created_at', 'desc', 'draft', 'id', 'invoice_reference', 'item_id', 'organization_id', 'pick_date', 'pick_list_no', 'picked_qty', 'progress', 'qty', 'sort_order', 'status', 'uom', 'warehouse_id']

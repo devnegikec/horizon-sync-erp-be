@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/user_activity_log_repository.py
+# hypothesis_version: 6.152.8
+
+[' AND ', '1=1', 'action', 'al.action = :action', 'created_at', 'date_from', 'date_to', 'id', 'ip_address', 'limit', 'metadata', 'offset', 'organization_id', 'organization_name', 'resource_id', 'resource_type', 'user_agent', 'user_email', 'user_id']

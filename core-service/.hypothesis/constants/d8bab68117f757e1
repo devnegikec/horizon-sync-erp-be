@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/analytics_service.py
+# hypothesis_version: 6.152.8
+
+['campaigns', 'events', 'has_next', 'has_prev', 'organization_id', 'page', 'page_size', 'pagination', 'scan_timestamp', 'total_items', 'total_pages']

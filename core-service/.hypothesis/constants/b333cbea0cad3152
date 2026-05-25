@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/inbound.py
+# hypothesis_version: 6.152.8
+
+['/sessions', 'End scan session', 'Flag line item', 'Get receiving slip', 'Get session summary', 'ReceivingSlip', 'Record QR scan']

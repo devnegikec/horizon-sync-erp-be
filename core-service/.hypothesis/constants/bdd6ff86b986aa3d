@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/scan_event_service.py
+# hypothesis_version: 6.152.8
+
+['$.scan_context', '$.session_id', '$.worker_id', 'browser', 'city', 'country', 'decoded_payload', 'device_type', 'extra_data', 'field', 'gate', 'has_next', 'has_prev', 'id', 'inbound', 'ip_address', 'latitude', 'longitude', 'organization_id', 'os', 'page', 'page_size', 'pagination', 'pick', 'pick_list_id', 'product_item_id', 'reason', 'scan_context', 'scan_events', 'scan_timestamp', 'serial_number', 'session_id', 'state', 'total_items', 'total_pages', 'worker_id']

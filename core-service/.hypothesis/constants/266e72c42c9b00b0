@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/admin/payment_reminders.py
+# hypothesis_version: 6.152.8
+
+[100, 120, 365, 500, '/configs', '/configs/{config_id}', '/logs', '/process-batch', '/send', '/send-batch', '/stats', 'Default', 'Filter by config ID', 'Filter by invoice ID', 'Filter by status', 'Page number', 'Page size', 'Unknown Organization', '_sa_instance_state', 'created_at', 'dry_run', 'duplicate key', 'invoice_number', 'organization_name', 'sent_at', 'updated_at']

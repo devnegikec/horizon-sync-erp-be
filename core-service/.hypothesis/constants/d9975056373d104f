@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/delivery_note.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'Customer', 'DeliveryNote', 'DeliveryNoteItem', 'SET NULL', 'Warehouse', 'all, delete-orphan', 'customers.id', 'delivery_note', 'delivery_note_items', 'delivery_notes', 'delivery_notes.id', 'documentstatus', 'items', 'items.id', 'pick_lists.id']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/location_scan.py
+# hypothesis_version: 6.152.8
+
+[255, 'WorkerTask', 'location_scans', 'worker_tasks.id']

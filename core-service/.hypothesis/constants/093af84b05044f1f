@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/quotation.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'Customer', 'INR', 'Item', 'Quotation', 'QuotationItem', 'SET NULL', 'all, delete-orphan', 'customers.id', 'items', 'items.id', 'percentage', 'quotation', 'quotation_items', 'quotations', 'quotations.id', 'quotationstatus', 'tax_templates.id']

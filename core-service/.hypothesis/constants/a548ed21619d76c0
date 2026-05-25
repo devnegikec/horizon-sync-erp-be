@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/layout_service.py
+# hypothesis_version: 6.152.8
+
+['0', 'aisle', 'available_capacity', 'bay', 'bin', 'capacity', 'capacity_uom', 'children', 'code', 'distinct_items', 'full_path', 'has_next', 'has_prev', 'id', 'is_active', 'level', 'location_id', 'location_type', 'locations', 'name', 'occupied_bins', 'page', 'page_size', 'pagination', 'parent_location_id', 'position_x', 'position_y', 'total', 'total_bins', 'total_capacity', 'total_items', 'total_pages', 'used_capacity', 'warehouse', 'warehouse_id', 'zone']

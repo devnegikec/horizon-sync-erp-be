@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/destination_market_service.py
+# hypothesis_version: 6.152.8
+
+['code', 'created_by', 'currency', 'currency_code', 'currency_name', 'currency_symbol', 'deleted_at', 'has_next', 'has_prev', 'market_code', 'market_id', 'market_name', 'markets', 'name', 'organization_id', 'page', 'page_size', 'pagination', 'symbol', 'total_items', 'total_pages', 'updated_by']

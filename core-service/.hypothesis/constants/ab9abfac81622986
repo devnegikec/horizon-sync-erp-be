@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/stock_levels.py
+# hypothesis_version: 6.152.8
+
+[100, '/by-location', '/{level_id}', 'Item (product) ID', 'Warehouse ID', '^(asc|desc)$', 'desc', 'updated_at']

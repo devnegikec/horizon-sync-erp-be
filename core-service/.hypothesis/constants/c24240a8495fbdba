@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/utils/naming_series.py
+# hypothesis_version: 6.152.8
+
+['DN', 'INV', 'MR', 'PAY', 'PL', 'PO', 'PR', 'QT', 'RFQ', 'SO', '\\d+', 'delivery_note', 'invoice', 'material_request', 'payment', 'pick_list', 'purchase_order', 'purchase_receipt', 'quotation', 'rfq', 'sales_order']

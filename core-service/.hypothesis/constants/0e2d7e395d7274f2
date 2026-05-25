@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/__init__.py
+# hypothesis_version: 6.152.8
+
+['DefaultChartResult', 'ItemCreate', 'ItemGroupCreate', 'ItemGroupListItem', 'ItemGroupResponse', 'ItemGroupTreeNode', 'ItemGroupUpdate', 'ItemListItem', 'ItemListResponse', 'ItemPriceBulkCreate', 'ItemPriceCreate', 'ItemPriceListItem', 'ItemPriceResponse', 'ItemPriceUpdate', 'ItemResponse', 'ItemUpdate', 'ManualTriggerRequest', 'PaginationMeta', 'RFQCreate', 'RFQLineCreate', 'RFQLineResponse', 'RFQListItem', 'RFQListResponse', 'RFQResponse', 'RFQStatusUpdate', 'RFQSupplierCreate', 'RFQSupplierResponse', 'RFQUpdate', 'RecordQuoteRequest', 'SupplierQuoteCreate', 'WarehouseCreate', 'WarehouseListItem', 'WarehouseResponse', 'WarehouseTreeNode', 'WarehouseUpdate']

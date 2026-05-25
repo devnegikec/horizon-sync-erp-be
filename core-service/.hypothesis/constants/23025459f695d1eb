@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/uom_conversion.py
+# hypothesis_version: 6.152.8
+
+['deleted_at IS NULL', 'from_uom', 'item_id', 'items.id', 'organization_id', 'to_uom', 'uom_conversions']

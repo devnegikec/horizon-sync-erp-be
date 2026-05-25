@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/feature_flag.py
+# hypothesis_version: 6.152.8
+
+[255, 'GLOBAL', 'feature_flags', 'name', 'scope', 'tenant_id', 'user_id']

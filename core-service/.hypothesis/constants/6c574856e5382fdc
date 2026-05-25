@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/purchase_order_service.py
+# hypothesis_version: 6.152.8
+
+['PURCHASE', 'PURCHASE_ORDER', 'RFQ', 'SUPPLIER', 'cancelled', 'closed', 'created_at', 'created_by', 'desc', 'discount_amount', 'grand_total', 'has_next', 'has_prev', 'id', 'item_id', 'line_items', 'line_items_count', 'line_total', 'organization_id', 'page', 'page_size', 'party_id', 'party_type', 'purchase_order', 'purchase_order_id', 'purchase_order_no', 'qty', 'quantity', 'received_quantity', 'reference_id', 'reference_type', 'rfq_id', 'status', 'submitted', 'subtotal', 'tax_amount', 'tax_rate', 'total_items', 'total_pages', 'unit_price', 'updated_at', 'updated_by']

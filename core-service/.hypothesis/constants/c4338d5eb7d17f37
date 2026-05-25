@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/item_prices.py
+# hypothesis_version: 6.152.8
+
+[100, '/bulk', '/by-item/{item_id}', '/{item_price_id}', 'Create item price', 'Delete an item price', 'Delete item price', 'Field to sort by', 'Filter by currency', 'Filter by item ID', 'Get item price', 'Include item details', 'List item prices', 'Sort order', 'Update item price', '^(asc|desc)$', 'created_at', 'desc']

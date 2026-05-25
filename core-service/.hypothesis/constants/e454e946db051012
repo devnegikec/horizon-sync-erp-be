@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/currency.py
+# hypothesis_version: 6.152.8
+
+[100, 404, '/base-currency', '/convert', '/currencies', '/exchange-rates', 'Convert currency', 'Create currency', 'Create exchange rate', 'Currency name', 'Currency not found', 'Currency symbol', 'Delete currency', 'Delete exchange rate', 'Filter by end date', 'Filter by start date', 'Get base currency', 'Get exchange rate', 'List currencies', 'List exchange rates', 'Set base currency', 'Update exchange rate', 'is_base_currency']

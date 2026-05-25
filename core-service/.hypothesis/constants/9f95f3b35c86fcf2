@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/quality_inspection.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'CASCADE', 'QualityInspection', 'SET NULL', 'all, delete-orphan', 'inspection', 'inspectionstatus', 'inspectiontype', 'item_groups.id', 'items.id', 'parameters', 'quality_inspections', 'readings', 'readingtype', 'template']

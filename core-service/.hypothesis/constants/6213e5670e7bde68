@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/exchange_rate.py
+# hypothesis_version: 6.152.8
+
+['effective_date', 'exchange_rates', 'from_currency', 'organization_id', 'rate > 0', 'to_currency']

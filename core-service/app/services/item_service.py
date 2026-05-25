@@ -455,6 +455,7 @@ class ItemService:
                     item_code=item.item_code,
                     item_name=item.item_name,
                     uom=item.uom or "Nos",
+                    sku=item.sku,
                     min_order_qty=item.min_order_qty or 1,
                     max_order_qty=item.max_order_qty,
                     standard_rate=item.standard_rate,

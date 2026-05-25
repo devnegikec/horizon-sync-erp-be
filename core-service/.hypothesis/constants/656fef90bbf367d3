@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/stock_level_repository.py
+# hypothesis_version: 6.152.8
+
+['desc', 'quantity_available', 'quantity_on_hand', 'quantity_reserved', 'updated_at']

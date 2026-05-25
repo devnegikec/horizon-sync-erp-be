@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/bank_account.py
+# hypothesis_version: 6.152.8
+
+[100, 200, '*', '-', 'Account holder name', 'Bank account number', 'Bank branch code', 'Bank branch name', 'Bank name', 'Daily transfer limit', 'IBAN number', 'IFSC code (India)', 'Routing number (US)', 'SWIFT/BIC code', 'Sort code (UK)', 'Sync frequency', '^[0-9]{6}$', '^[0-9]{9}$', 'account_number', 'account_purpose', 'account_type', 'bsb_number', 'business', 'certificate_deposit', 'checking', 'daily', 'escrow', 'extra', 'forbid', 'iban', 'ifsc_code', 'investment', 'manual', 'money_market', 'monthly', 'operating', 'other', 'payroll', 'petty_cash', 'routing_number', 'savings', 'sort_code', 'swift_code', 'sync_frequency', 'tax', 'weekly']

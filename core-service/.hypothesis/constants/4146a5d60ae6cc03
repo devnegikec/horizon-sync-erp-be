@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/admin_user_service.py
+# hypothesis_version: 6.152.8
+
+[10.0, 30.0, 200, 201, 404, 409, 500, 'Authorization', 'Failed to fetch user', 'User not found', 'active', 'admin_users', 'created_at', 'desc', 'display_name', 'email', 'first_name', 'has_next', 'has_prev', 'id', 'inactive', 'is_active', 'json', 'last_login', 'last_name', 'organization_id', 'organization_name', 'page', 'page_size', 'pagination', 'permissions', 'phone', 'roles', 'search', 'sort_by', 'sort_order', 'status', 'system_admin', 'total_items', 'total_pages', 'uid', 'updated_at', 'user', 'user_id', 'user_ids', 'user_type', 'users', 'value']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/quality_inspections.py
+# hypothesis_version: 6.152.8
+
+[100, '/templates', '/{inspection_id}', '^(asc|desc)$', 'created_at', 'desc', 'inspection_date']

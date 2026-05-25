@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/tax_template.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'CASCADE', 'TaxRule', 'TaxRule.sequence', 'TaxTemplate', 'all, delete-orphan', 'tax_rules', 'tax_template', 'tax_templates', 'tax_templates.id']
