@@ -60,8 +60,23 @@ class QRProductResponse(QRProductBase):
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    # Linked inventory item (auto-created when the QR product is created)
+    linked_item_id: UUID | None = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        """Populate linked_item_id from the items back-reference if loaded."""
+        instance = super().model_validate(obj, *args, **kwargs)
+        # SQLAlchemy relationship: qr_product.items is a list
+        try:
+            items = obj.items  # type: ignore[attr-defined]
+            if items:
+                instance.linked_item_id = items[0].id
+        except Exception:
+            pass
+        return instance
 
 
 class QRProductListItem(BaseModel):

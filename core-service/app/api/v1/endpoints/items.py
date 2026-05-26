@@ -45,6 +45,7 @@ async def create_item(
     - **maintain_stock**: Track inventory levels (default: true)
     - **standard_rate**: Standard selling rate
     - **valuation_rate**: Valuation rate for inventory
+    - **qr_product_id**: Link to a QR Product profile for unit-level tracking
     - And more...
 
     **Returns:** Created item details
@@ -217,3 +218,116 @@ async def delete_item(
         user_id=current_user.id,
     )
     return None
+
+
+@router.get(
+    "/{item_id}/qr-product",
+    summary="Get linked QR product",
+    description="Returns the QR product profile linked to this item, if any.",
+)
+async def get_item_qr_product(
+    item_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the QR product linked to an inventory item.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **item_id**: Item UUID
+
+    **Returns:** QR product details, or 404 if the item has no linked QR product.
+    """
+    from fastapi import HTTPException
+
+    from app.schemas.qr_product import QRProductResponse
+    from app.services.qr_product_service import QRProductService
+
+    item_service = ItemService(db)
+    item = item_service.get_item_by_id(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+    )
+
+    if not item.qr_product_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This item has no linked QR product",
+        )
+
+    qr_service = QRProductService(db)
+    qr_product = qr_service.get_product(item.qr_product_id, current_user.organization_id)
+    return QRProductResponse.model_validate(qr_product)
+
+
+@router.get(
+    "/{item_id}/qr-serials",
+    summary="List QR serial numbers for an item",
+    description=(
+        "Returns all ProductItem serial numbers generated under the QR product "
+        "linked to this item. Paginated."
+    ),
+)
+async def list_item_qr_serials(
+    item_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    List QR serial numbers (ProductItems) for an inventory item.
+
+    Requires authentication.
+
+    **Path Parameters:**
+    - **item_id**: Item UUID
+
+    **Query Parameters:**
+    - **page**: Page number (default: 1)
+    - **page_size**: Items per page (default: 50, max: 200)
+
+    **Returns:** Paginated list of ProductItem serial numbers, or 404 if no QR product is linked.
+    """
+    from fastapi import HTTPException
+
+    from app.schemas.qr_product import ProductItemListResponse, ProductItemResponse
+    from app.services.qr_product_service import QRProductService
+
+    item_service = ItemService(db)
+    item = item_service.get_item_by_id(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+    )
+
+    if not item.qr_product_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This item has no linked QR product",
+        )
+
+    qr_service = QRProductService(db)
+    # Validate the QR product belongs to this org
+    qr_service.get_product(item.qr_product_id, current_user.organization_id)
+
+    from app.repositories.qr_product_repository import ProductItemRepository
+
+    item_repo = ProductItemRepository(db)
+    serials, total = item_repo.list_by_product(
+        item.qr_product_id, current_user.organization_id, page, page_size
+    )
+    total_pages = (total + page_size - 1) // page_size
+
+    return ProductItemListResponse(
+        items=[ProductItemResponse.model_validate(s) for s in serials],
+        pagination={
+            "page": page,
+            "page_size": page_size,
+            "total_items": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        },
+    )

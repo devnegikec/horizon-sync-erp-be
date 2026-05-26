@@ -64,6 +64,9 @@ class ItemBase(BaseModel):
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
 
+    # QR Product link — enables unit-level QR tracking for this item
+    qr_product_id: UUID | None = None
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str = Field(default="ACTIVE")
@@ -133,6 +136,9 @@ class ItemUpdate(BaseModel):
     # Tax Templates
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
+
+    # QR Product link
+    qr_product_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
@@ -213,6 +219,9 @@ class ItemResponse(BaseModel):
     # Tax Templates
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
+
+    # QR Product link
+    qr_product_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = None

@@ -92,6 +92,8 @@ services:
       bash -c "
         echo 'Waiting for database...' &&
         sleep 5 &&
+        echo 'Normalizing Identity Service alembic version...' &&
+        python scripts/normalize_alembic_version.py &&
         echo 'Running Identity Service migrations...' &&
         python -m alembic upgrade head &&
         echo 'Starting Identity Service with Debugger...' &&

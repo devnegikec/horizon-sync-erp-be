@@ -202,6 +202,28 @@ class ProductItemRepository:
                  .offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 
+    def list_by_product(
+        self,
+        product_id: UUID,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[ProductItem], int]:
+        """List all serial numbers across every block for a given QR product."""
+        q = self.db.query(ProductItem).filter(
+            ProductItem.product_id == product_id,
+            ProductItem.organization_id == organization_id,
+            ProductItem.deleted_at.is_(None),
+        )
+        total = q.count()
+        items = (
+            q.order_by(ProductItem.created_at.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return items, total
+
     def update(self, item: ProductItem, data: dict) -> ProductItem:
         for k, v in data.items():
             setattr(item, k, v)
