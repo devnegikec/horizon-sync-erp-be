@@ -101,6 +101,8 @@ async def record_scan(
     Requirements: 5.2, 5.3, 5.4
     """
     service = InboundService(db)
+    import logging
+    logging.getLogger(__name__).warning("SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data))
     result = service.record_scan(
         session_id=session_id,
         qr_data=data.qr_data,

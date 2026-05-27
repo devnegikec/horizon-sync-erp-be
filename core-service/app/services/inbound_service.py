@@ -129,8 +129,8 @@ class InboundService:
                 required_state=["open"],
             )
 
-        # Decode QR payload (raises ValidationError if invalid)
-        payload = decode_qr_payload(qr_data)
+        # Decode QR payload — supports both JSON and URL format QR codes
+        payload = decode_qr_payload(qr_data, db=self.db)
 
         # Check for duplicate qr_identifier within this session
         existing_items = self.session_repo.get_items(session_id)

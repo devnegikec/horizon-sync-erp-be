@@ -600,12 +600,13 @@ class QRProductService:
 
     # ── QR Validate (public) ──────────────────────────────────────────────────
 
-    def validate_qr(self, organization_id: UUID, req: QRValidateRequest) -> dict:
+    def validate_qr(self, req: QRValidateRequest) -> dict:
         """
         Authenticate a QR scan. Records the scan event and returns authenticity.
         This endpoint is typically called from the consumer-facing landing page.
+        organization_id is resolved from the serial number — callers don't need to supply it.
         """
-        item = self.item_repo.get_by_serial(req.serial_number, organization_id)
+        item = self.item_repo.get_by_serial_global(req.serial_number)
         if not item:
             return {
                 "is_authentic": False,
@@ -634,7 +635,7 @@ class QRProductService:
         logger.info(
             "QR scan: serial=%s org=%s scans=%d suspicious=%s",
             req.serial_number,
-            organization_id,
+            item.organization_id,
             item.scans,
             item.is_suspicious,
         )
@@ -653,14 +654,18 @@ class QRProductService:
 
     # ── QR Authenticate (public, ECDSA) ─────────────────────────────────────
 
-    def authenticate(self, organization_id: UUID, data: AuthenticateRequest) -> dict:
+    def authenticate(self, data: AuthenticateRequest) -> dict:
         """
         Verify a QR scan using ECDSA signature verification.
 
+        organization_id is NOT required — serial numbers are globally unique,
+        so we look up the item across all orgs. This allows the public
+        /authenticate endpoint to work without the caller knowing the org.
+
         Requirements: 9.1-9.9, 8.4
         """
-        # 1. Look up item by serial_number
-        item = self.item_repo.get_by_serial(data.serial_number, organization_id)
+        # 1. Look up item by serial_number globally (no org filter)
+        item = self.item_repo.get_by_serial_global(data.serial_number)
         if not item:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -713,7 +718,7 @@ class QRProductService:
         logger.info(
             "QR authenticate: serial=%s org=%s authentic=True scan_count=%d",
             data.serial_number,
-            organization_id,
+            item.organization_id,
             item.scan_count,
         )
 
