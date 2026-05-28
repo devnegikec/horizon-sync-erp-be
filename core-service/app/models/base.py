@@ -464,6 +464,7 @@ class CommunicationDocType(str, enum.Enum):
     PAYMENT = "payment"
     RFQ = "rfq"
     MATERIAL_REQUEST = "material_request"
+    ASN = "asn"
 
 
 class CommunicationChannel(str, enum.Enum):
