@@ -35,6 +35,7 @@ DOCUMENT_TYPES = [
     "receiving_slip",
     "put_away_list",
     "dispatch",
+    "asn_order",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -59,6 +60,7 @@ DEFAULT_PREFIXES = {
     "receiving_slip": "RS",
     "put_away_list": "PA",
     "dispatch": "DSP",
+    "asn_order": "ASN",
 }
 
 
