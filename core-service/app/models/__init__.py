@@ -51,6 +51,7 @@ from app.models.base import (
     ReconciliationStatus,
     ReconciliationType,
     RFQStatus,
+    AsnOrderStatus,
     SalesOrderStatus,
     StockEntryStatus,
     StockEntryType,
@@ -147,6 +148,7 @@ from app.models.reminder_config import (
     ReminderStatus,
     ReminderType,
 )
+from app.models.asn_order import AsnOrder, AsnOrderItem
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
 from app.models.serial_no import SerialNo
@@ -270,6 +272,8 @@ __all__ = [
     "PaymentEntry",
     "PaymentReference",
     "PaymentAuditLog",
+    "AsnOrder",
+    "AsnOrderItem",
     "Quotation",
     "QuotationItem",
     "SalesOrder",

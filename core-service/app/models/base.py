@@ -281,6 +281,17 @@ class SalesOrderStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class AsnOrderStatus(str, enum.Enum):
+    """Advance Stock Notice (ASN) order status enumeration"""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    PARTIALLY_DELIVERED = "partially_delivered"
+    DELIVERED = "delivered"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
 # ===========================================
 # SOURCING/PROCUREMENT ENUMS
 # ===========================================
@@ -453,6 +464,7 @@ class CommunicationDocType(str, enum.Enum):
     PAYMENT = "payment"
     RFQ = "rfq"
     MATERIAL_REQUEST = "material_request"
+    ASN = "asn"
 
 
 class CommunicationChannel(str, enum.Enum):

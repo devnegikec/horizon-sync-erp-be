@@ -88,6 +88,11 @@ SALES_ORDER_READ = "sales_order.read"
 SALES_ORDER_CREATE = "sales_order.create"
 SALES_ORDER_UPDATE = "sales_order.update"
 
+# Advance Stock Notice (ASN)
+ASN_ORDER_READ = "asn_order.read"
+ASN_ORDER_CREATE = "asn_order.create"
+ASN_ORDER_UPDATE = "asn_order.update"
+
 # UOM
 UOM_READ = "uom.read"
 UOM_CREATE = "uom.create"

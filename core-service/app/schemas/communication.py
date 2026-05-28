@@ -11,7 +11,7 @@ from app.schemas.common import PaginationMeta
 class CommunicationBase(BaseModel):
     doc_type: str = Field(
         ...,
-        pattern="^(quotation|sales_order|purchase_order|invoice|delivery_note|purchase_receipt|payment|rfq|material_request)$",
+        pattern="^(quotation|sales_order|purchase_order|invoice|delivery_note|purchase_receipt|payment|rfq|material_request|asn)$",
     )
     doc_id: UUID
     doc_no: str | None = Field(None, max_length=100)
@@ -93,7 +93,7 @@ class SendEmailRequest(BaseModel):
     # Optional: Link to a document for logging
     doc_type: str | None = Field(
         None,
-        pattern="^(quotation|sales_order|purchase_order|invoice|delivery_note|purchase_receipt|payment|rfq|material_request)$",
+        pattern="^(quotation|sales_order|purchase_order|invoice|delivery_note|purchase_receipt|payment|rfq|material_request|asn)$",
     )
     doc_id: str | None = None
     doc_no: str | None = Field(None, max_length=100)

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     analytics,
+    asn_orders,
     bank_accounts,
     batches,
     bin_stock,
@@ -265,6 +266,9 @@ api_router.include_router(
 api_router.include_router(quotations.router, prefix="/quotations", tags=["Quotations"])
 api_router.include_router(
     sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
+)
+api_router.include_router(
+    asn_orders.router, prefix="/asn-orders", tags=["ASN Orders"]
 )
 # Sourcing Flow
 api_router.include_router(
