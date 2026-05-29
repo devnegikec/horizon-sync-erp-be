@@ -2,9 +2,11 @@
 
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.base import MovementType
+from app.models.item import Item
 from app.models.stock_movement import StockMovement
 
 
@@ -44,6 +46,7 @@ class StockMovementRepository:
         movement_type: MovementType | None = None,
         reference_type: str | None = None,
         reference_id: UUID | None = None,
+        search: str | None = None,
         page: int = 1,
         page_size: int = 20,
         sort_by: str = "performed_at",
@@ -66,6 +69,15 @@ class StockMovementRepository:
             q = q.filter(StockMovement.reference_type == reference_type)
         if reference_id:
             q = q.filter(StockMovement.reference_id == reference_id)
+        if search:
+            t = f"%{search}%"
+            q = q.join(Item, Item.id == StockMovement.product_id).filter(
+                or_(
+                    Item.item_name.ilike(t),
+                    Item.item_code.ilike(t),
+                    StockMovement.notes.ilike(t),
+                )
+            )
         total = q.count()
         col = getattr(StockMovement, sort_by, StockMovement.performed_at)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())

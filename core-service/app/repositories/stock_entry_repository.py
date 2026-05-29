@@ -76,6 +76,7 @@ class StockEntryRepository:
         status: StockEntryStatus | None = None,
         from_warehouse_id: UUID | None = None,
         to_warehouse_id: UUID | None = None,
+        warehouse_id: UUID | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -98,6 +99,13 @@ class StockEntryRepository:
             q = q.filter(StockEntry.from_warehouse_id == from_warehouse_id)
         if to_warehouse_id is not None:
             q = q.filter(StockEntry.to_warehouse_id == to_warehouse_id)
+        if warehouse_id is not None:
+            q = q.filter(
+                or_(
+                    StockEntry.from_warehouse_id == warehouse_id,
+                    StockEntry.to_warehouse_id == warehouse_id,
+                )
+            )
         if search:
             t = f"%{search}%"
             q = q.filter(

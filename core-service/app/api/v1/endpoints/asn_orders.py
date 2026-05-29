@@ -46,6 +46,8 @@ async def list_asn_orders(
         None,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     ),
+    warehouse_id: UUID | None = Query(None, description="Filter where from OR to warehouse matches"),
+    search: str | None = Query(None, description="Search by ASN order number"),
     sort_by: str = Query("order_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
@@ -58,6 +60,8 @@ async def list_asn_orders(
         page=page,
         page_size=page_size,
         status=status,
+        warehouse_id=warehouse_id,
+        search=search,
         sort_by=sort_by,
         sort_order=sort_order,
     )

@@ -181,6 +181,7 @@ async def list_stock_reconciliations(
     items, pagination = svc.get_list(
         organization_id=current_user.organization_id,
         status=status,
+        warehouse_id=warehouse_id,
         search=search,
         page=page,
         page_size=page_size,

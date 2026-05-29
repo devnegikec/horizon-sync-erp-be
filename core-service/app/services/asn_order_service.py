@@ -89,6 +89,8 @@ class AsnOrderService:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        warehouse_id: UUID | None = None,
+        search: str | None = None,
         sort_by: str = "order_date",
         sort_order: str = "desc",
     ) -> tuple[list[dict], dict]:
@@ -97,6 +99,8 @@ class AsnOrderService:
             page=page,
             page_size=page_size,
             status=status,
+            warehouse_id=warehouse_id,
+            search=search,
             sort_by=sort_by,
             sort_order=sort_order,
         )
