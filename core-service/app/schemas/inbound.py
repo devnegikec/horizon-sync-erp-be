@@ -169,3 +169,21 @@ class FlaggedItemResponse(BaseModel):
     box_count: int
     flag: str
     notes: str | None = None
+
+
+class ReceivingSlipPagination(BaseModel):
+    """Pagination metadata for receiving slip list."""
+
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class ReceivingSlipListResponse(BaseModel):
+    """Paginated list of receiving slips."""
+
+    receiving_slips: list[ReceivingSlipResponse]
+    pagination: ReceivingSlipPagination
