@@ -64,6 +64,7 @@ class StockReconciliationRepository:
         self,
         organization_id: UUID,
         status: StockEntryStatus | None = None,
+        warehouse_id: UUID | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -75,6 +76,14 @@ class StockReconciliationRepository:
         )
         if status is not None:
             q = q.filter(StockReconciliation.status == status)
+        if warehouse_id is not None:
+            q = q.filter(
+                StockReconciliation.id.in_(
+                    self.db.query(StockReconciliationItem.reconciliation_id).filter(
+                        StockReconciliationItem.warehouse_id == warehouse_id
+                    )
+                )
+            )
         if search:
             t = f"%{search}%"
             q = q.filter(

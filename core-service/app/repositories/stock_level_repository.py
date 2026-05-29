@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.models.item import Item
 from app.models.stock_level import StockLevel
 
 
@@ -63,6 +64,7 @@ class StockLevelRepository:
         organization_id: UUID,
         product_id: UUID | None = None,
         warehouse_id: UUID | None = None,
+        search: str | None = None,
         page: int = 1,
         page_size: int = 20,
         sort_by: str = "updated_at",
@@ -80,6 +82,11 @@ class StockLevelRepository:
             q = q.filter(StockLevel.product_id == product_id)
         if warehouse_id:
             q = q.filter(StockLevel.warehouse_id == warehouse_id)
+        if search:
+            t = f"%{search}%"
+            q = q.join(Item, Item.id == StockLevel.product_id).filter(
+                or_(Item.item_name.ilike(t), Item.item_code.ilike(t))
+            )
         total = q.count()
         col = getattr(StockLevel, sort_by, StockLevel.updated_at)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())

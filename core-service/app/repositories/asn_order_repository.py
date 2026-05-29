@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
@@ -52,6 +53,8 @@ class AsnOrderRepository:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        warehouse_id: UUID | None = None,
+        search: str | None = None,
         sort_by: str = "order_date",
         sort_order: str = "desc",
     ) -> tuple[list[AsnOrder], int]:
@@ -65,6 +68,16 @@ class AsnOrderRepository:
         )
         if status is not None:
             q = q.filter(AsnOrder.status == status)
+        if warehouse_id is not None:
+            q = q.filter(
+                or_(
+                    AsnOrder.warehouse_id_from == warehouse_id,
+                    AsnOrder.warehouse_id_to == warehouse_id,
+                )
+            )
+        if search:
+            t = f"%{search}%"
+            q = q.filter(AsnOrder.asn_order_no.ilike(t))
         total = q.count()
         col = getattr(AsnOrder, sort_by, AsnOrder.created_at)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())

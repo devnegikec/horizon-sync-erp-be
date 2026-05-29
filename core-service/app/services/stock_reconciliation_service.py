@@ -105,6 +105,7 @@ class StockReconciliationService:
         self,
         organization_id: UUID,
         status: str | None = None,
+        warehouse_id: UUID | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -116,6 +117,7 @@ class StockReconciliationService:
         items, total = self.repo.list_reconciliations(
             organization_id=organization_id,
             status=status_enum,
+            warehouse_id=warehouse_id,
             search=search,
             page=page,
             page_size=page_size,
