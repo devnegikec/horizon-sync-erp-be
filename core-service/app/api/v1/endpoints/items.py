@@ -258,7 +258,9 @@ async def get_item_qr_product(
         )
 
     qr_service = QRProductService(db)
-    qr_product = qr_service.get_product(item.qr_product_id, current_user.organization_id)
+    qr_product = qr_service.get_product(
+        item.qr_product_id, current_user.organization_id
+    )
     return QRProductResponse.model_validate(qr_product)
 
 

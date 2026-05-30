@@ -1,15 +1,18 @@
 """Pydantic schemas for put-away list endpoints.
 
 Handles:
+- Generating put-away lists from receiving slips
 - Listing put-away lists with filters
 - Getting put-away list detail with items
 - Completing a put-away item
 - Skipping a put-away item with reason
 
-Requirements: 8.5, 8.6
+Requirements: 8.1, 8.5, 8.6
 """
 
 from __future__ import annotations
+
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +21,14 @@ from app.schemas.common import PaginationMeta
 # ===========================================
 # REQUEST SCHEMAS
 # ===========================================
+
+
+class GeneratePutAwayRequest(BaseModel):
+    """Schema for generating a put-away list from a receiving slip."""
+
+    worker_id: UUID | None = Field(
+        None, description="Optional worker UUID to assign the put-away task to"
+    )
 
 
 class CompletePutAwayItemRequest(BaseModel):
