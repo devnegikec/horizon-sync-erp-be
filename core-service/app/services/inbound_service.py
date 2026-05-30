@@ -13,12 +13,17 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.qr_scan_event import QRScanEvent
+from app.models.receiving_slip import ReceivingSlipItem
+from app.models.scan_session import ScanSessionItem
 from app.repositories.receiving_slip_repository import ReceivingSlipRepository
 from app.repositories.scan_session_repository import ScanSessionRepository
+from app.services.item_packaging_unit_service import ItemPackagingUnitService
 from app.services.qr_decoder import decode_qr_payload
 
 
@@ -124,8 +129,8 @@ class InboundService:
                 required_state=["open"],
             )
 
-        # Decode QR payload (raises ValidationError if invalid)
-        payload = decode_qr_payload(qr_data)
+        # Decode QR payload — supports both JSON and URL format QR codes
+        payload = decode_qr_payload(qr_data, db=self.db)
 
         # Check for duplicate qr_identifier within this session
         existing_items = self.session_repo.get_items(session_id)
@@ -141,14 +146,24 @@ class InboundService:
                     ],
                 )
 
+        # Resolve packaging unit from QR payload (best-effort — null if not found)
+        packaging_unit_id = None
+        if payload.packaging_unit_qr_id:
+            pu = ItemPackagingUnitService().resolve_by_qr_identifier(
+                payload.packaging_unit_qr_id, organization_id, self.db
+            )
+            if pu is not None:
+                packaging_unit_id = pu.id
+
         # Add scan session item
         item_data = {
             "organization_id": organization_id,
             "qr_identifier": payload.id,
             "sku": payload.sku,
-            "quantity": payload.qty,
+            "raw_quantity": payload.qty,
             "batch_number": payload.batch,
             "raw_qr_data": qr_data,
+            "packaging_unit_id": packaging_unit_id,
         }
         scan_item = self.session_repo.add_item(session_id, item_data)
 
@@ -168,6 +183,7 @@ class InboundService:
                     "sku": payload.sku,
                     "qty": payload.qty,
                     "batch": payload.batch,
+                    "packaging_unit_qr_id": payload.packaging_unit_qr_id,
                 },
             },
         )
@@ -179,8 +195,9 @@ class InboundService:
             "session_id": str(session_id),
             "qr_identifier": payload.id,
             "sku": payload.sku,
-            "quantity": payload.qty,
+            "raw_quantity": payload.qty,
             "batch_number": payload.batch,
+            "packaging_unit_id": str(packaging_unit_id) if packaging_unit_id else None,
             "scanned_at": scan_item.scanned_at.isoformat()
             if scan_item.scanned_at
             else None,
@@ -292,7 +309,7 @@ class InboundService:
         )
         for item in items:
             key = (item.sku, item.batch_number)
-            sku_batch_agg[key]["quantity"] += item.quantity
+            sku_batch_agg[key]["quantity"] += item.raw_quantity
             sku_batch_agg[key]["box_count"] += 1
 
         # Build per-SKU summary
@@ -322,7 +339,7 @@ class InboundService:
             )
 
         total_boxes = len(items)
-        total_quantity = sum(item.quantity for item in items)
+        total_quantity = sum(item.raw_quantity for item in items)
 
         return {
             "session_id": str(session.id),
@@ -422,9 +439,11 @@ class InboundService:
         Approve a receiving slip, transitioning it to PENDING_PUTAWAY.
 
         Validates that the slip is in PENDING_REVIEW status before
-        transitioning. After transitioning, triggers put-away list
-        generation via PutAwayService and creates a worker task via
-        TaskService if a worker_id is provided.
+        transitioning. Converts raw_quantity on each ScanSessionItem to
+        Eaches using the associated ItemPackagingUnit.conversion_factor,
+        then re-aggregates receiving_slip_items by (sku, batch_number)
+        with the converted Eaches quantities. After transitioning, triggers
+        put-away list generation via PutAwayService.
 
         Args:
             slip_id: UUID of the receiving slip to approve.
@@ -437,8 +456,10 @@ class InboundService:
         Raises:
             NotFoundError: If slip is not found.
             StateError: If slip is not in PENDING_REVIEW status.
+            HTTPException 422: If a referenced packaging unit is not found or
+                inactive.
 
-        Requirements: 7.1, 7.3, 8.1
+        Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
         """
         slip = self.slip_repo.get_by_id(slip_id, organization_id)
         if slip is None:
@@ -455,6 +476,70 @@ class InboundService:
                 required_state=["pending_review"],
             )
 
+        # ------------------------------------------------------------------
+        # Step 1: Fetch all ScanSessionItems for this slip's session
+        # ------------------------------------------------------------------
+        scan_items = (
+            self.db.query(ScanSessionItem)
+            .filter(ScanSessionItem.session_id == slip.session_id)
+            .all()
+        )
+
+        # ------------------------------------------------------------------
+        # Step 2: Convert raw_quantity → Eaches and aggregate by (sku, batch)
+        # ------------------------------------------------------------------
+        # key: (sku, batch_number) → {"eaches_qty": int, "box_count": int}
+        slip_items_by_key: dict[tuple[str, str], dict] = defaultdict(
+            lambda: {"eaches_qty": 0, "box_count": 0}
+        )
+
+        for scan_item in scan_items:
+            if scan_item.packaging_unit_id is not None:
+                pu = self.db.get(ItemPackagingUnit, scan_item.packaging_unit_id)
+                if pu is None or not pu.is_active:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Packaging unit {scan_item.packaging_unit_id} "
+                            "not found or inactive. Cannot approve slip."
+                        ),
+                    )
+                eaches_qty = int(scan_item.raw_quantity * pu.conversion_factor)
+            else:
+                eaches_qty = scan_item.raw_quantity
+
+            key = (scan_item.sku, scan_item.batch_number)
+            slip_items_by_key[key]["eaches_qty"] += eaches_qty
+            slip_items_by_key[key]["box_count"] += 1
+
+        # ------------------------------------------------------------------
+        # Step 3: Delete existing receiving_slip_items and recreate with
+        #         converted Eaches quantities
+        # ------------------------------------------------------------------
+        self.db.query(ReceivingSlipItem).filter(
+            ReceivingSlipItem.slip_id == slip_id
+        ).delete(synchronize_session="fetch")
+
+        total_eaches = 0
+        for (sku, batch_number), agg in slip_items_by_key.items():
+            item_data = {
+                "organization_id": organization_id,
+                "sku": sku,
+                "batch_number": batch_number,
+                "quantity": agg["eaches_qty"],
+                "box_count": agg["box_count"],
+                "flag": "ok",
+            }
+            self.slip_repo.add_item(slip_id, item_data)
+            total_eaches += agg["eaches_qty"]
+
+        # Update total_items on the slip to reflect converted Eaches total
+        slip.total_items = total_eaches
+        self.db.flush()
+
+        # ------------------------------------------------------------------
+        # Step 4: Transition slip status to PENDING_PUTAWAY
+        # ------------------------------------------------------------------
         updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
         self.db.refresh(updated_slip)
 
@@ -651,7 +736,7 @@ class InboundService:
         )
         for item in items:
             key = (item.sku, item.batch_number)
-            sku_batch_agg[key]["quantity"] += item.quantity
+            sku_batch_agg[key]["quantity"] += item.raw_quantity
             sku_batch_agg[key]["box_count"] += 1
 
         total_boxes = len(items)

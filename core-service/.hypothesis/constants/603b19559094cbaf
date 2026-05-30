@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/create_master_organization.py
+# hypothesis_version: 6.152.8
+
+[100, 999, 12345, ', ', '=', 'CA', 'DATABASE_URL', 'Master Organization', 'No location', 'San Francisco', 'USA', 'USD', '_', '__main__', 'active', 'base_currency', 'city', 'code', 'country', 'created_at', 'display_name', 'duplicate_id', 'email', 'extra_data', 'id', 'keep_id', 'lock_id', 'master', 'master-organization', 'master_id', 'name', 'org_id', 'org_type', 'organization_type', 'parent_id', 'primary_id', 'root_id', 'slug', 'state', 'status', 'tags', 'updated_at', 'website']

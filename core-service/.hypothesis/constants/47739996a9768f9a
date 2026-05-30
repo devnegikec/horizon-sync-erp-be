@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/bank_accounts.py
+# hypothesis_version: 6.152.8
+
+[100, '%Y-%m-%d', '.csv', '.mt940', '.pdf', '.sta', '.txt', '/bank-accounts', '/banking/overview', '0', 'Delete bank account', 'Get banking overview', 'USD', 'Unknown', 'Update bank account', 'cleared', 'confirmed', 'credit', 'posted', 'reconciled', 'utf-8']

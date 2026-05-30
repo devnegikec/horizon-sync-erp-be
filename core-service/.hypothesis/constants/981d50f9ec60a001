@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/bank_account.py
+# hypothesis_version: 6.152.8
+
+[100, 200, '*', 'Account', 'BankAccount', 'BankAccountHistory', 'BankTransaction', 'CASCADE', 'accounts.id', 'all, delete-orphan', 'bank_account', 'bank_account_history', 'bank_accounts', 'bank_accounts.id', 'daily_limit', 'history', 'iban', 'manual', 'monthly_limit', 'organization_id', 'unique_iban_per_org']

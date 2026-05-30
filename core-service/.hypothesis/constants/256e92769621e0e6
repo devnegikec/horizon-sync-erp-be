@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/journal_entry.py
+# hypothesis_version: 6.152.8
+
+[100, 'Account', 'CASCADE', 'JournalEntry', 'JournalEntryLine', 'SET NULL', 'accounts.id', 'all, delete-orphan', 'journal_entries', 'journal_entries.id', 'journal_entry', 'journal_entry_lines', 'journalstatus', 'lines']

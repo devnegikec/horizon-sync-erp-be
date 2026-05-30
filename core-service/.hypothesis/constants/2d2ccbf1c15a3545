@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/payment_entry_service.py
+# hypothesis_version: 6.152.8
+
+[300, 1000, '.', '10000.00', 'Cash', 'Customer_Payment', 'PaymentEntryCreate', 'PaymentEntryResponse', 'PaymentEntryUpdate', 'PaymentFilters', 'Supplier_Payment', 'action', 'amount', 'cancellation_reason', 'cancelled_at', 'cancelled_by', 'code', 'created_at', 'created_by', 'currency_code', 'customer', 'customer_code', 'desc', 'email', 'id', 'json', 'name', 'new_values', 'old_values', 'organization_id', 'party_code', 'party_email', 'party_id', 'party_name', 'party_phone', 'payment', 'payment_date', 'payment_id', 'payment_mode', 'payment_type', 'phone', 'receipt_number', 'reference_no', 'source', 'status', 'supplier', 'supplier_code', 'timestamp', 'unallocated_amount', 'updated_by', 'user_id', 'value']

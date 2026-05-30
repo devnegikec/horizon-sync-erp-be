@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/charge_template_service.py
+# hypothesis_version: 6.152.8
+
+['Custom', 'FIXED', 'Grand_Total', 'Handling', 'Insurance', 'Net_Total', 'PERCENTAGE', 'Packaging', 'Shipping', 'account_head_id', 'applicability_rules', 'base_on', 'calculation_method', 'charge_type', 'created_at', 'created_by', 'customer_location', 'desc', 'description', 'extra_data', 'fixed_amount', 'has_next', 'has_prev', 'id', 'is_active', 'net_total', 'organization_id', 'page', 'page_size', 'percentage_rate', 'search', 'sort_by', 'sort_order', 'template_code', 'template_name', 'total_items', 'total_pages', 'total_weight', 'transaction_type', 'transactions', 'updated_at', 'updated_by']

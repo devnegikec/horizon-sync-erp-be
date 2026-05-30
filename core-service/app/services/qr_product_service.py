@@ -118,7 +118,70 @@ class QRProductService:
                     detail="Brand not found",
                 )
 
-        return self.product_repo.create(product_dict)
+        qr_product = self.product_repo.create(product_dict)
+
+        # Auto-create a corresponding inventory Item linked to this QR product.
+        # This ensures every QR product has a trackable item in the ERP without
+        # requiring a separate frontend call.
+        self._create_linked_item(qr_product, organization_id, user_id)
+
+        return qr_product
+
+    def _create_linked_item(
+        self, qr_product: QRProduct, organization_id: UUID, user_id: UUID
+    ) -> None:
+        """Create an inventory Item that references this QR product.
+
+        Uses the QR product's name as the item name. The item_code is
+        auto-generated via DocumentNumberingService. Errors are logged but
+        never bubble up — a failed item creation must not roll back the
+        QR product itself.
+        """
+        try:
+            from app.models.base import ItemStatus, ItemType
+            from app.models.item import Item
+            from app.repositories.item_repository import ItemRepository
+            from app.services.document_numbering_service import DocumentNumberingService
+
+            item_code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "item"
+            )
+
+            item_repo = ItemRepository(self.db)
+            item = Item(
+                organization_id=organization_id,
+                item_code=item_code,
+                item_name=qr_product.name,
+                description=qr_product.generic_name,
+                item_type=ItemType.STOCK,
+                uom="Nos",
+                sku=qr_product.gtin,
+                maintain_stock=True,
+                status=ItemStatus.ACTIVE,
+                qr_product_id=qr_product.id,
+                image_url=qr_product.image_url,
+                created_by=user_id,
+                updated_by=user_id,
+            )
+            self.db.add(item)
+            self.db.commit()
+            self.db.refresh(item)
+            logger.info(
+                "Auto-created item '%s' (id=%s) linked to QR product '%s' (id=%s)",
+                item.item_code,
+                item.id,
+                qr_product.name,
+                qr_product.id,
+            )
+        except Exception as exc:
+            # Roll back only the item insert, keep the QR product committed
+            self.db.rollback()
+            logger.error(
+                "Failed to auto-create item for QR product '%s' (id=%s): %s",
+                qr_product.name,
+                qr_product.id,
+                exc,
+            )
 
     def get_product(self, product_id: UUID, organization_id: UUID) -> QRProduct:
         product = self.product_repo.get_by_id(product_id, organization_id)
@@ -399,7 +462,9 @@ class QRProductService:
         if block.download_url:
             if storage_service.is_full_url(block.download_url):
                 return block.download_url, expires_at
-            signed_url = storage_service.get_signed_url(block.download_url, expiry_minutes)
+            signed_url = storage_service.get_signed_url(
+                block.download_url, expiry_minutes
+            )
             return signed_url, expires_at
 
         # No stored URL — raise so the endpoint falls back to streaming
@@ -500,9 +565,7 @@ class QRProductService:
         enriched = []
         for block, product_name in rows:
             block_dict = {
-                k: v
-                for k, v in block.__dict__.items()
-                if k != "_sa_instance_state"
+                k: v for k, v in block.__dict__.items() if k != "_sa_instance_state"
             }
             block_dict["product_name"] = product_name
             enriched.append(block_dict)
@@ -538,12 +601,13 @@ class QRProductService:
 
     # ── QR Validate (public) ──────────────────────────────────────────────────
 
-    def validate_qr(self, organization_id: UUID, req: QRValidateRequest) -> dict:
+    def validate_qr(self, req: QRValidateRequest) -> dict:
         """
         Authenticate a QR scan. Records the scan event and returns authenticity.
         This endpoint is typically called from the consumer-facing landing page.
+        organization_id is resolved from the serial number — callers don't need to supply it.
         """
-        item = self.item_repo.get_by_serial(req.serial_number, organization_id)
+        item = self.item_repo.get_by_serial_global(req.serial_number)
         if not item:
             return {
                 "is_authentic": False,
@@ -572,7 +636,7 @@ class QRProductService:
         logger.info(
             "QR scan: serial=%s org=%s scans=%d suspicious=%s",
             req.serial_number,
-            organization_id,
+            item.organization_id,
             item.scans,
             item.is_suspicious,
         )
@@ -591,14 +655,18 @@ class QRProductService:
 
     # ── QR Authenticate (public, ECDSA) ─────────────────────────────────────
 
-    def authenticate(self, organization_id: UUID, data: AuthenticateRequest) -> dict:
+    def authenticate(self, data: AuthenticateRequest) -> dict:
         """
         Verify a QR scan using ECDSA signature verification.
 
+        organization_id is NOT required — serial numbers are globally unique,
+        so we look up the item across all orgs. This allows the public
+        /authenticate endpoint to work without the caller knowing the org.
+
         Requirements: 9.1-9.9, 8.4
         """
-        # 1. Look up item by serial_number
-        item = self.item_repo.get_by_serial(data.serial_number, organization_id)
+        # 1. Look up item by serial_number globally (no org filter)
+        item = self.item_repo.get_by_serial_global(data.serial_number)
         if not item:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -651,7 +719,7 @@ class QRProductService:
         logger.info(
             "QR authenticate: serial=%s org=%s authentic=True scan_count=%d",
             data.serial_number,
-            organization_id,
+            item.organization_id,
             item.scan_count,
         )
 

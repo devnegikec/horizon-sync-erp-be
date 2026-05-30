@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/dispatch.py
+# hypothesis_version: 6.152.8
+
+[100, 'Items per page', 'Page number']

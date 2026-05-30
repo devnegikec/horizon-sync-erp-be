@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/qr_product_service.py
+# hypothesis_version: 6.152.8
+
+['Authentic Product', 'Authentic product.', 'B', 'Brand not found', 'D', 'O', 'QR Codes', 'QR URL', 'QR block not found', 'QR product not found', 'R4DAN', 'R6DAN', 'S', 'S10DN', 'S8DN', 'SC', 'Secret Code', 'Serial Number', 'URL (Covert)', 'URL (Overt)', '_sa_instance_state', 'authentic', 'block_id', 'brand_id', 'brand_name', 'center', 'completed', 'covert_url', 'created_at', 'created_by', 'extra_data', 'failed', 'gtin', 'has_next', 'has_prev', 'id', 'in_progress', 'is_authentic', 'is_suspicious', 'message', 'organization_id', 'overt_url', 'page', 'page_size', 'pending', 'post', 'pre', 'product_id', 'product_name', 'qr_active', 'qr_type', 'scans', 'secret_code', 'secrete_code', 'serial', 'serial_number', 'short_url', 'status', 'task_status', 'token_id', 'total_items', 'total_pages', 'updated_at', 'updated_by']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/task_service.py
+# hypothesis_version: 6.152.8
+
+['WorkerTask', 'assigned', 'assigned_at', 'cancelled', 'completed', 'completed_at', 'created_at', 'field', 'has_next', 'has_prev', 'id', 'in_progress', 'organization_id', 'page', 'page_size', 'pagination', 'pick', 'put_away', 'reason', 'reference_id', 'started_at', 'status', 'task_type', 'tasks', 'total_items', 'total_pages', 'updated_at', 'worker_id']

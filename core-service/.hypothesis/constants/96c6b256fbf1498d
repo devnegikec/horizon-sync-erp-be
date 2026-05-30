@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/serial_no.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'Item', 'SerialNo', 'SerialNoHistory', 'Warehouse', 'history', 'items.id', 'serial_no', 'serial_no_history', 'serial_nos', 'serial_nos.id']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/subscription_invoice_service.py
+# hypothesis_version: 6.152.8
+
+['%Y%m', '-', '0', '0.00', '0.01', '10.00', 'CREDIT-USAGE', 'Initial Setup Fee', 'M', 'ONBOARD-FEE', 'Q', 'S', 'SETUP-FEE', 'USD', 'Y', 'addon', 'adjustment', 'amount', 'billing_cycle', 'created_at', 'created_by', 'credit', 'credit_adjustment', 'credit_usage', 'credits', 'currency', 'description', 'draft', 'due_date', 'grand_total', 'id', 'invoice_id', 'invoice_no', 'invoice_type', 'item_code', 'item_name', 'items', 'monthly', 'net_total', 'organization', 'organization_id', 'outstanding_amount', 'overage', 'paid', 'partial', 'party_id', 'party_type', 'pending', 'posting_date', 'qty', 'quarterly', 'rate', 'reference_id', 'reference_type', 'refund', 'remarks', 'seat_count', 'seats', 'service', 'setup_fee', 'sort_order', 'status', 'subscription', 'total_amount', 'total_tax', 'units', 'uom', 'updated_at', 'yearly']

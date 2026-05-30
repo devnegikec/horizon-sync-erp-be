@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/purchase_receipt_repository.py
+# hypothesis_version: 6.152.8
+
+['desc', 'organization_id', 'purchase_receipt_id', 'receipt_date']

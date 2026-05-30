@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/material_request_service.py
+# hypothesis_version: 6.152.8
+
+['MATERIAL_REQUEST', 'amount', 'cancelled', 'closing_date', 'created_at', 'created_by', 'department', 'desc', 'description', 'estimated_unit_cost', 'grand_total', 'has_next', 'has_prev', 'id', 'invoice_no', 'invoices', 'item_id', 'line_items', 'line_items_count', 'material_request', 'material_request_id', 'medium', 'notes', 'organization_id', 'page', 'page_size', 'party_id', 'payment_no', 'payments', 'posting_date', 'priority', 'purchase', 'purchase_orders', 'purchase_receipt_no', 'quantity', 'receipt_date', 'receipts', 'request_no', 'requested_by', 'requested_for', 'required_date', 'rfqs', 'status', 'submitted', 'target_warehouse_id', 'total_items', 'total_pages', 'type', 'uom', 'updated_at', 'updated_by', 'value']

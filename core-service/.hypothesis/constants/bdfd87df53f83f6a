@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/cascade_qr_service.py
+# hypothesis_version: 6.152.8
+
+[10000, 'CHD', 'PAR', 'QR node not found', 'app_cascade_map', 'browser', 'capacity', 'children', 'children_count', 'city', 'country', 'created_at', 'device_type', 'events', 'extra_data', 'has_next', 'has_prev', 'id', 'ip_address', 'labels', 'latitude', 'longitude', 'mapped_count', 'message', 'name', 'node_id', 'nodes', 'organization_id', 'os', 'page', 'page_size', 'pagination', 'parent_app_id', 'parent_id', 'parent_serial', 'qr_code_link', 'qr_type', 'scan_timestamp', 'serial_number', 'state', 'total', 'total_items', 'total_pages']

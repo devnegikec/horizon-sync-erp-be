@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/bulk_customer_import_service.py
+# hypothesis_version: 6.152.8
+
+[10000, 'COMPLETED', 'active', 'address', 'address_line1', 'address_line2', 'blocked', 'city', 'country', 'created_by', 'credit_limit', 'customer', 'customer_code', 'customer_name', 'email', 'error', 'errors', 'failed_rows', 'inactive', 'organization_id', 'phone', 'postal_code', 'row_number', 'state', 'status', 'success', 'successful_rows', 'tax_number', 'total_rows', 'updated_by']

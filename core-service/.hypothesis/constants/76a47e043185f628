@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/bin_stock_level.py
+# hypothesis_version: 6.152.8
+
+[100, 'Item', 'ItemPackagingUnit', 'SET NULL', 'WarehouseLocation', 'batch_number', 'bin_location_id', 'bin_stock_levels', 'item_id', 'items.id', 'uq_bin_item_batch']

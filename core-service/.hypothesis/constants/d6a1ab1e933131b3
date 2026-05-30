@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/payment_audit_log.py
+# hypothesis_version: 6.152.8
+
+['CASCADE', 'PaymentEntry', 'audit_logs', 'payment_audit_action', 'payment_audit_log', 'payment_entries.id']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/coupon.py
+# hypothesis_version: 6.152.8
+
+[255, 256, '1500', 'CASCADE', 'Campaign', 'CampaignLead', 'CampaignTag', 'Coupon', 'CouponUnlockLog', 'RS', 'WebCampaign', 'all, delete-orphan', 'campaign_leads', 'campaign_leads.id', 'campaign_tags', 'campaign_tags.id', 'campaigns.id', 'coupon', 'coupon_durations', 'coupon_unlock_logs', 'coupons', 'coupons.id', 'external_coupons', 'lead', 'lead_id', 'lead_tags', 'leads', 'none', 'shopify_configs', 'tag_id', 'tags', 'unlock_logs', 'web_campaigns.id']

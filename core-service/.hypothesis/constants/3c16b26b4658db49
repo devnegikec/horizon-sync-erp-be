@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/quality_inspection_service.py
+# hypothesis_version: 6.152.8
+
+['batch_no', 'code', 'created_at', 'created_by', 'desc', 'description', 'has_next', 'has_prev', 'id', 'inspection_date', 'inspection_no', 'inspection_type', 'is_active', 'item_group_id', 'item_id', 'name', 'organization_id', 'page', 'page_size', 'parameters', 'reading_type', 'readings', 'reference_id', 'reference_type', 'remarks', 'serial_no', 'status', 'submitted_at', 'template_id', 'total_items', 'total_pages', 'updated_at', 'updated_by', 'warehouse_id']

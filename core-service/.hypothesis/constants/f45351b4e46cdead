@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/bulk_operations.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 500, 'Active, Inactive', 'Item name', 'Nos', 'Stock, Service, etc.', 'Unique item code', 'description', 'item_code', 'item_group_id', 'item_name', 'item_type', 'standard_rate', 'status', 'uom']

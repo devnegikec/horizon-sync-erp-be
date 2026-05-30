@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/charge_template_repository.py
+# hypothesis_version: 6.152.8
+
+['country', 'created_at', 'customer_location', 'desc', 'max_order_value', 'max_weight', 'min_order_value', 'min_weight', 'shipping_zone', 'state', 'transactions']

@@ -185,6 +185,22 @@ class ProductItemRepository:
             .first()
         )
 
+    def get_by_serial_global(self, serial_number: str) -> ProductItem | None:
+        """Look up a ProductItem by serial number without an org filter.
+
+        Used by the public /authenticate endpoint where the caller (a consumer
+        scanning a QR code) does not know the organization_id.
+        Serial numbers are unique across the entire system.
+        """
+        return (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == serial_number,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
     def list_by_block(
         self,
         block_id: UUID,
@@ -200,6 +216,28 @@ class ProductItemRepository:
         total = q.count()
         items = q.order_by(ProductItem.created_at.asc()) \
                  .offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
+
+    def list_by_product(
+        self,
+        product_id: UUID,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[ProductItem], int]:
+        """List all serial numbers across every block for a given QR product."""
+        q = self.db.query(ProductItem).filter(
+            ProductItem.product_id == product_id,
+            ProductItem.organization_id == organization_id,
+            ProductItem.deleted_at.is_(None),
+        )
+        total = q.count()
+        items = (
+            q.order_by(ProductItem.created_at.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total
 
     def update(self, item: ProductItem, data: dict) -> ProductItem:

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/reconciliation_report_service.py
+# hypothesis_version: 6.152.8
+
+['0.00', 'allocated_amount', 'allocated_invoices', 'allocation_count', 'amount', 'count', 'created_at', 'currency_code', 'date_from', 'date_to', 'desc', 'exchange_rate', 'filters', 'grand_total', 'id', 'invoice', 'invoice_amount', 'invoice_date', 'invoice_id', 'invoice_number', 'party_id', 'payment_count', 'payment_date', 'payment_mode', 'payment_type', 'payments', 'payments_by_mode', 'payments_by_status', 'receipt_number', 'reference_no', 'status', 'summary', 'total_allocated', 'total_amount', 'total_unallocated', 'unallocated_amount', 'unallocated_payments']

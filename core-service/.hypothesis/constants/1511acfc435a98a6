@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/bulk_export_job.py
+# hypothesis_version: 6.152.8
+
+[255, '0', 'COMPLETED', 'FAILED', 'PENDING', 'PROCESSING', 'bulk_export_jobs']

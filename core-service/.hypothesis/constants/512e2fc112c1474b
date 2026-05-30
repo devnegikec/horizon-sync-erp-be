@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/put_away.py
+# hypothesis_version: 6.152.8
+
+[100, '/{put_away_list_id}', 'Items per page', 'List put-away lists', 'Page number', 'PutAwayList', 'PutAwayListItem', 'Skip a put-away item', 'completed', 'pending', 'status']

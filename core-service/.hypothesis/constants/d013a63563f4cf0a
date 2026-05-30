@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/messaging.py
+# hypothesis_version: 6.152.8
+
+[100, 404, '/credits', '/credits/balance', '/jobs', '/jobs/{job_id}', '/rcs/send', '/scheduled', '/sms/webhook', '/templates', '/whatsapp/send', '/whatsapp/webhook', 'Get bulk message job', 'Get message template', 'Job not found', 'Schedule a message', 'Send RCS message', 'Template not found', 'balance_credit', 'credit_type', 'organization_id', 'sms|whatsapp|rcs', 'user_id']

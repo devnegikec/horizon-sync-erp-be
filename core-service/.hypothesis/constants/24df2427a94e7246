@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/analytics.py
+# hypothesis_version: 6.152.8
+
+[100, 200, 404, '/meta-campaigns', '/scans', '/scans/ingest', '/scans/summary', 'List QR scan events', 'organization_id']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/warehouse_location.py
+# hypothesis_version: 6.152.8
+
+[255, 'BinStockLevel', 'CASCADE', 'LocationAllocation', 'Warehouse', 'WarehouseLocation', 'aisle', 'assigned', 'bay', 'bin', 'bin_location', 'cancelled', 'children', 'closed', 'completed', 'damaged', 'exclusive', 'finish', 'full_path', 'gate', 'in_progress', 'inbound', 'level', 'location', 'locations', 'ok', 'open', 'pending', 'pending_putaway', 'pending_review', 'pick', 'preferred', 'put_away', 'putaway_complete', 'rejected', 'short', 'skipped', 'start', 'unauthorized', 'verified', 'warehouse_id', 'warehouse_locations', 'zone']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/qr_block.py
+# hypothesis_version: 6.152.8
+
+[255, 256, 'ProductItem', 'QRCreditUsage', 'QRProduct', 'block', 'qr_blocks', 'qr_products.id']

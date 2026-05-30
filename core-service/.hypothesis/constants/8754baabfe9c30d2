@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/item_groups.py
+# hypothesis_version: 6.152.8
+
+[100, 400, 413, 500, 1024, '.', '/active', '/import', '/tree', '/{item_group_id}', '0', '1', 'Create item group', 'Delete item group', 'Field to sort by', 'Get item group', 'Get item group tree', 'List item groups', 'Name is required', 'Search in name, code', 'Sort order', 'Update item group', '^(asc|desc)$', '_', 'code', 'created_at', 'csv', 'default_uom', 'desc', 'description', 'f', 'false', 'field', 'fifo', 'general', 'is_active', 'latin-1', 'lifo', 'message', 'moving_average', 'name', 'no', 'row', 'standard', 't', 'true', 'updated_by', 'utf-8-sig', 'yes']

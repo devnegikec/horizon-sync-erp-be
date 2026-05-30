@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/uom.py
+# hypothesis_version: 6.152.8
+
+['abbreviation', 'deleted_at IS NULL', 'ix_uoms_org_id', 'name', 'organization_id', 'uoms', 'uq_uom_org_abbr', 'uq_uom_org_name']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/bank_reconciliation.py
+# hypothesis_version: 6.152.8
+
+['auto_exact', 'auto_fuzzy', 'confirmed', 'from_attributes', 'journal_entry_ids', 'manual', 'many_to_one', 'reconciliation_type', 'rejected', 'suggested']

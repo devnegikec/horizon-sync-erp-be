@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/pick_lists.py
+# hypothesis_version: 6.152.8
+
+[100, '/{pick_list_id}', '^(asc|desc)$', 'created_at', 'desc', 'id', 'items_count', 'organization_id', 'pick_date', 'pick_list_no', 'reference_id', 'reference_type', 'status', 'warehouse_id']

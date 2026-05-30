@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     inbound,
     invoices,
     item_groups,
+    item_packaging_units,
     item_prices,
     items,
     items_picker,
@@ -100,6 +101,12 @@ api_router.include_router(
 )
 api_router.include_router(
     item_prices.router, prefix="/item-prices", tags=["Item Prices"]
+)
+# Item Packaging Units — nested under /items/{item_id}/packaging-units
+api_router.include_router(
+    item_packaging_units.router,
+    prefix="/items/{item_id}/packaging-units",
+    tags=["Item Packaging Units"],
 )
 # Bulk Operations
 api_router.include_router(bulk_import.router)

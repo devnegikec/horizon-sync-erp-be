@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/default_chart_setup_service.py
+# hypothesis_version: 6.152.8
+
+['USD', 'account_code', 'account_id', 'account_name', 'account_type', 'accounts_created', 'active', 'created_by', 'created_via', 'currency', 'currency_validated', 'default_chart_setup', 'default_currency', 'duration_seconds', 'error', 'error_type', 'event', 'id', 'mappings_created', 'organization_id', 'provided_currency', 'scenario', 'source', 'status', 'timestamp', 'transaction_type', 'validation_error']

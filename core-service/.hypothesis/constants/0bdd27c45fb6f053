@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/communication_service.py
+# hypothesis_version: 6.152.8
+
+['attachment', 'attachment_count', 'attachment_names', 'cc', 'channel', 'communication_id', 'content', 'content_type', 'created_at', 'delivered_at', 'desc', 'doc_id', 'doc_no', 'doc_type', 'error_message', 'extra_data', 'failed', 'failed_at', 'filename', 'has_attachments', 'has_next', 'has_prev', 'id', 'message', 'organization_id', 'page', 'page_size', 'pending', 'recipient', 'recipient_name', 'recipient_roles', 'recipient_type', 'sender_email', 'sender_id', 'sender_name', 'sent', 'sent_at', 'status', 'subject', 'template_name', 'total_items', 'total_pages', 'updated_at', 'version']

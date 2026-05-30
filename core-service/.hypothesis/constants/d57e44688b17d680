@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/rfq_service.py
+# hypothesis_version: 6.152.8
+
+['MATERIAL_REQUEST', 'RFQ', 'closed', 'closing_date', 'created_at', 'created_by', 'desc', 'description', 'has_next', 'has_prev', 'id', 'item_id', 'line_items', 'line_items_count', 'material_request_id', 'organization_id', 'page', 'page_size', 'quantity', 'quoted_delivery_date', 'quoted_price', 'quotes', 'reference_id', 'reference_type', 'required_date', 'rfq', 'rfq_id', 'rfq_line_id', 'rfq_no', 'status', 'supplier_id', 'supplier_ids', 'supplier_notes', 'suppliers', 'suppliers_count', 'total_items', 'total_pages', 'updated_at', 'updated_by', 'value']

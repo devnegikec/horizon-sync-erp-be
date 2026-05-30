@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/transaction_importer.py
+# hypothesis_version: 6.152.8
+
+['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '([A-Z]{4})', '([\\d,\\.]+)', ',', ', ', '.', '//', '20', ':60F:', ':61:', ':62F:', ':86:', 'C', 'CR', 'D', 'DR', 'No amount found', 'amount', 'bank_reference', 'cleared', 'credit', 'csv', 'date', 'debit', 'description', 'mt940', 'pdf', 'reference', 'statement_date', 'transaction_amount', 'transaction_type', 'type', 'utf-8']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/chart_of_account.py
+# hypothesis_version: 6.152.8
+
+[0.0, 200, 'ACTIVE', 'ASSET', 'Name of primary bank', 'USD', 'account_code', 'account_name', 'account_type', 'active', 'parent_account', 'status']

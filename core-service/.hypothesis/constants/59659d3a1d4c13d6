@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/admin_payment_service.py
+# hypothesis_version: 6.152.8
+
+[10.0, 200, 1000, ' AND ', '1=1', 'Authorization', 'code', 'email', 'id', 'limit', 'master_org_id', 'name', 'offset', 'organization_id', 'organizations', 'p.status = :status', 'page_size', 'phone', 'status']

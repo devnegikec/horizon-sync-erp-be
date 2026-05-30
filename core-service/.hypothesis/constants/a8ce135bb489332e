@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/volumetric_assignment_service.py
+# hypothesis_version: 6.152.8
+
+['1000', 'batch_number', 'item_id', 'org_id', 'packaging_unit_id', 'required_volume_cc', 'required_weight_g', 'warehouse_id']

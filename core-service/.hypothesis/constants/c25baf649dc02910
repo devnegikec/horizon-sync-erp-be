@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/dependencies.py
+# hypothesis_version: 6.152.8
+
+[5.0, 200, '*.*', '.', 'Authorization', 'Bearer', 'Invalid token type', 'WWW-Authenticate', '_', 'access', 'billing', 'code', 'email', 'feature', 'invitation', 'invoice', 'message', 'organization', 'organization_id', 'organizations', 'permission', 'permissions', 'report', 'reporting', 'role', 'sub', 'subscription', 'system_admin', 'system_admin.', 'system_admin.master', 'type', 'user', 'user_type', 'users']

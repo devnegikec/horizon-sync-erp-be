@@ -1,15 +1,18 @@
 """Pydantic schemas for put-away list endpoints.
 
 Handles:
+- Generating put-away lists from receiving slips
 - Listing put-away lists with filters
 - Getting put-away list detail with items
 - Completing a put-away item
 - Skipping a put-away item with reason
 
-Requirements: 8.5, 8.6
+Requirements: 8.1, 8.5, 8.6
 """
 
 from __future__ import annotations
+
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -20,10 +23,25 @@ from app.schemas.common import PaginationMeta
 # ===========================================
 
 
-class CompletePutAwayItemRequest(BaseModel):
-    """Schema for completing a put-away item (no body needed, worker from auth)."""
+class GeneratePutAwayRequest(BaseModel):
+    """Schema for generating a put-away list from a receiving slip."""
 
-    pass
+    worker_id: UUID | None = Field(
+        None, description="Optional worker UUID to assign the put-away task to"
+    )
+
+
+class CompletePutAwayItemRequest(BaseModel):
+    """Schema for completing a put-away item.
+
+    Optionally override the bin location where stock should be placed.
+    When not provided, the pre-assigned bin_location_id from the put-away
+    item is used.
+    """
+
+    bin_id: UUID | None = Field(
+        None, description="Optional override bin location ID for put-away"
+    )
 
 
 class SkipPutAwayItemRequest(BaseModel):
@@ -68,6 +86,7 @@ class PutAwayListResponse(BaseModel):
     reference_id: str | None = None
     receiving_slip_id: str | None = None
     remarks: str | None = None
+    warnings: list[str] | None = None
     assigned_to: str | None = None
     completed_at: str | None = None
     created_at: str | None = None

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/bank_account_service.py
+# hypothesis_version: 6.152.8
+
+['***MASKED***', '-', '1000', ':', 'AT', 'AU', 'Account Number', 'BE', 'Bank account deleted', 'Bank account updated', 'DE', 'ES', 'FI', 'FR', 'GB', 'GR', 'IBAN', 'IE', 'IN', 'IT', 'LU', 'NL', 'PT', 'US', 'account_holder_name', 'account_name', 'account_number', 'account_purpose', 'account_type', 'activated', 'asset', 'bank_name', 'bsb_account', 'bsb_number', 'cash', 'count', 'country_code', 'created', 'currency', 'deactivated', 'deleted', 'iban', 'ifsc_account', 'ifsc_code', 'is_active', 'is_primary', 'liability', 'reconciled', 'routing_account', 'routing_number', 'sort_account', 'sort_code', 'swift_code', 'unspecified', 'updated']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/admin/roles.py
+# hypothesis_version: 6.152.8
+
+[100, '/permissions', '/{role_id}', 'code', 'description', 'id', 'is_system', 'name', 'name = :name', 'org_id', 'perm_id', 'permissions', 'role_id', 'updated_at = NOW()']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/stock_reconciliations.py
+# hypothesis_version: 6.152.8
+
+[100, 200, 400, 404, 413, 422, 1024, '.csv', '/template', '/upload', '/{rec_id}', '/{rec_id}/items', 'CSV template file', 'Content-Disposition', 'Filter by warehouse', 'Warehouse UUID', '^(asc|desc)$', 'content', 'desc', 'description', 'details', 'errors', 'message', 'not found', 'posting_date', 'status_code', 'text/csv']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/pick_list.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'CASCADE', 'DispatchRecord', 'PickList', 'PickListItem', 'WarehouseLocation', 'all, delete-orphan', 'dispatch_records.id', 'items', 'items.id', 'pick_list', 'pick_list_items', 'pick_lists', 'pick_lists.id', 'pickliststatus']
