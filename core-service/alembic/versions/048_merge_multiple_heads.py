@@ -1,6 +1,6 @@
 """merge_multiple_heads
 
-Revision ID: a52be5b21cef
+Revision ID: 048_merge_multiple_heads
 Revises: 042_add_scan_sessions_tables, 042_bulk_import, 047_extend_pick_lists_and_create_put_away_lists
 Create Date: 2026-05-16 00:53:21.673446
 
@@ -13,7 +13,7 @@ Merges three parallel branches that all diverged from 041_create_core_tables_bas
 from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
-revision: str = "a52be5b21cef"
+revision: str = "048_merge_multiple_heads"
 down_revision: tuple = (
     "042_add_scan_sessions_tables",
     "042_bulk_import",

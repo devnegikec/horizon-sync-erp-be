@@ -14,8 +14,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "048_add_asn_orders_table"
-down_revision = "a52be5b21cef"
+revision = "049_add_asn_orders_table"
+down_revision = "048_merge_multiple_heads"
 branch_labels = None
 depends_on = None
 

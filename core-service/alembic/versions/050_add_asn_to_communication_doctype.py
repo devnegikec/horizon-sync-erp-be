@@ -1,7 +1,7 @@
 """add_asn_to_communication_doctype
 
-Revision ID: 4672f880d63d
-Revises: 048_add_asn_orders_table
+Revision ID: 050_add_asn_to_communication_doctype
+Revises: 049_add_asn_orders_table
 Create Date: 2026-05-28 15:46:55.550308
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '4672f880d63d'
-down_revision: Union[str, None] = '048_add_asn_orders_table'
+revision: str = '050_add_asn_to_communication_doctype'
+down_revision: Union[str, None] = '049_add_asn_orders_table'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
