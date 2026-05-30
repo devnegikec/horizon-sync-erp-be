@@ -13,6 +13,7 @@ Handles:
 Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6
 """
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -112,16 +113,23 @@ class PutAwayService:
 
         # Process each receiving slip item and assign bins
         put_away_items = []
+        skipped_damaged: list[str] = []
+        skipped_unresolved: list[str] = []
         for slip_item in slip.items:
             # Skip items flagged as damaged
             if slip_item.flag == "damaged":
+                skipped_damaged.append(
+                    f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
+                )
                 continue
 
-            # Resolve item from SKU
+            # Resolve item from SKU — match by item_code or sku field.
+            # QR-product-linked items store the GTIN in Item.sku while
+            # manually-created items are typically matched by item_code.
             item = (
                 self.db.query(Item)
                 .filter(
-                    Item.item_code == slip_item.sku,
+                    (Item.item_code == slip_item.sku) | (Item.sku == slip_item.sku),
                     Item.organization_id == org_id,
                 )
                 .first()
@@ -129,6 +137,9 @@ class PutAwayService:
 
             if item is None:
                 # If item not found by code, skip this item
+                skipped_unresolved.append(
+                    f"{slip_item.sku} (batch: {slip_item.batch_number})"
+                )
                 continue
 
             quantity = Decimal(str(slip_item.quantity))
@@ -158,6 +169,21 @@ class PutAwayService:
                 )
                 self.db.add(put_away_item)
                 put_away_items.append(put_away_item)
+
+        # Build warnings for skipped items (stored in remarks as JSON)
+        warnings_parts: list[str] = []
+        if skipped_damaged:
+            warnings_parts.append(
+                f"Skipped {len(skipped_damaged)} damaged item(s): "
+                + "; ".join(skipped_damaged)
+            )
+        if skipped_unresolved:
+            warnings_parts.append(
+                f"Skipped {len(skipped_unresolved)} item(s) with unknown SKU (no matching Item found): "
+                + "; ".join(skipped_unresolved)
+            )
+        if warnings_parts:
+            put_away_list.remarks = json.dumps({"warnings": warnings_parts})
 
         self.db.flush()
 
@@ -196,7 +222,11 @@ class PutAwayService:
         return put_away_list
 
     def complete_item(
-        self, put_away_item_id: UUID, worker_id: UUID, org_id: UUID
+        self,
+        put_away_item_id: UUID,
+        worker_id: UUID,
+        org_id: UUID,
+        bin_id_override: UUID | None = None,
     ) -> PutAwayListItem:
         """Complete a put-away item, updating bin stock and marking as COMPLETED.
 
@@ -207,6 +237,8 @@ class PutAwayService:
             put_away_item_id: The put-away list item ID to complete.
             worker_id: The worker completing the item.
             org_id: Organization ID for scoping.
+            bin_id_override: Optional bin location ID to use instead of the
+                pre-assigned bin_location_id on the put-away item.
 
         Returns:
             The updated PutAwayListItem.
@@ -241,14 +273,24 @@ class PutAwayService:
                 required_state=["pending"],
             )
 
-        if put_away_item.bin_location_id is None:
+        # Use override bin if provided, otherwise fall back to pre-assigned bin
+        target_bin_id = bin_id_override or put_away_item.bin_location_id
+        if target_bin_id is None:
             raise ValidationError(
                 "Cannot complete put-away item without an assigned bin location"
             )
 
-        # Add stock to the assigned bin using BinStockService
+        # If the worker chose a bin different from the pre-assigned one,
+        # update the put-away item record to reflect the actual destination.
+        if (
+            bin_id_override is not None
+            and bin_id_override != put_away_item.bin_location_id
+        ):
+            put_away_item.bin_location_id = bin_id_override
+
+        # Add stock to the target bin using BinStockService
         bin_stock = self.bin_stock_service.add_stock(
-            bin_id=put_away_item.bin_location_id,
+            bin_id=target_bin_id,
             item_id=put_away_item.item_id,
             quantity=Decimal(str(put_away_item.quantity)),
             org_id=org_id,

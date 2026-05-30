@@ -138,7 +138,7 @@ class QRProductService:
         QR product itself.
         """
         try:
-            from app.models.base import ItemStatus, ItemType, ValuationMethod
+            from app.models.base import ItemStatus, ItemType
             from app.models.item import Item
             from app.repositories.item_repository import ItemRepository
             from app.services.document_numbering_service import DocumentNumberingService
@@ -155,6 +155,7 @@ class QRProductService:
                 description=qr_product.generic_name,
                 item_type=ItemType.STOCK,
                 uom="Nos",
+                sku=qr_product.gtin,
                 maintain_stock=True,
                 status=ItemStatus.ACTIVE,
                 qr_product_id=qr_product.id,
@@ -461,7 +462,9 @@ class QRProductService:
         if block.download_url:
             if storage_service.is_full_url(block.download_url):
                 return block.download_url, expires_at
-            signed_url = storage_service.get_signed_url(block.download_url, expiry_minutes)
+            signed_url = storage_service.get_signed_url(
+                block.download_url, expiry_minutes
+            )
             return signed_url, expires_at
 
         # No stored URL — raise so the endpoint falls back to streaming
@@ -562,9 +565,7 @@ class QRProductService:
         enriched = []
         for block, product_name in rows:
             block_dict = {
-                k: v
-                for k, v in block.__dict__.items()
-                if k != "_sa_instance_state"
+                k: v for k, v in block.__dict__.items() if k != "_sa_instance_state"
             }
             block_dict["product_name"] = product_name
             enriched.append(block_dict)

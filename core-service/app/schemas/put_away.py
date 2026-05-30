@@ -32,9 +32,16 @@ class GeneratePutAwayRequest(BaseModel):
 
 
 class CompletePutAwayItemRequest(BaseModel):
-    """Schema for completing a put-away item (no body needed, worker from auth)."""
+    """Schema for completing a put-away item.
 
-    pass
+    Optionally override the bin location where stock should be placed.
+    When not provided, the pre-assigned bin_location_id from the put-away
+    item is used.
+    """
+
+    bin_id: UUID | None = Field(
+        None, description="Optional override bin location ID for put-away"
+    )
 
 
 class SkipPutAwayItemRequest(BaseModel):
@@ -79,6 +86,7 @@ class PutAwayListResponse(BaseModel):
     reference_id: str | None = None
     receiving_slip_id: str | None = None
     remarks: str | None = None
+    warnings: list[str] | None = None
     assigned_to: str | None = None
     completed_at: str | None = None
     created_at: str | None = None

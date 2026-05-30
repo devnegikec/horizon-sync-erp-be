@@ -10,6 +10,7 @@ Handles:
 Requirements: 8.1, 8.5, 8.6
 """
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -23,6 +24,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
+    CompletePutAwayItemRequest,
     GeneratePutAwayRequest,
     PutAwayListItemResponse,
     PutAwayListListResponse,
@@ -33,6 +35,18 @@ from app.schemas.put_away import (
 from app.services.put_away_service import PutAwayService
 
 router = APIRouter()
+
+
+def _extract_warnings(remarks: str | None) -> list[str] | None:
+    """Extract warnings list from remarks JSON field. Returns None if no warnings."""
+    if not remarks:
+        return None
+    try:
+        data = json.loads(remarks)
+        warnings = data.get("warnings")
+        return warnings if isinstance(warnings, list) else None
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 @router.post(
@@ -119,6 +133,7 @@ async def generate_put_away_from_slip(
         if put_away_list.receiving_slip_id
         else None,
         remarks=put_away_list.remarks,
+        warnings=_extract_warnings(put_away_list.remarks),
         assigned_to=str(put_away_list.assigned_to)
         if put_away_list.assigned_to
         else None,
@@ -334,6 +349,7 @@ async def get_put_away_list(
         if put_away_list.receiving_slip_id
         else None,
         remarks=put_away_list.remarks,
+        warnings=_extract_warnings(put_away_list.remarks),
         assigned_to=str(put_away_list.assigned_to)
         if put_away_list.assigned_to
         else None,
@@ -359,19 +375,24 @@ async def get_put_away_list(
 async def complete_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
+    data: CompletePutAwayItemRequest = CompletePutAwayItemRequest(),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
     Complete a put-away item.
 
-    Marks the item as COMPLETED, adds stock to the assigned bin,
-    and triggers capacity rollup. When all items are done, the
-    put-away list and receiving slip statuses are updated.
+    Marks the item as COMPLETED, adds stock to the specified or
+    pre-assigned bin, and triggers capacity rollup. When all items
+    are done, the put-away list and receiving slip statuses are updated.
 
     **Path Parameters:**
     - **put_away_list_id**: UUID of the put-away list
     - **item_id**: UUID of the put-away list item to complete
+
+    **Request Body (optional):**
+    - **bin_id**: Override bin location ID for put-away. When omitted,
+      the pre-assigned bin from the put-away item is used.
 
     **Returns:** Updated put-away list item
 
@@ -400,6 +421,7 @@ async def complete_put_away_item(
         put_away_item_id=item_id,
         worker_id=current_user.id,
         org_id=current_user.organization_id,
+        bin_id_override=data.bin_id,
     )
 
     bin_location_code = None

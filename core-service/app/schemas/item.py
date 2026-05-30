@@ -248,7 +248,7 @@ class ItemListItem(BaseModel):
     item_code: str | None = None
     item_name: str
     item_type: str
-    uom: str
+    uom: str | None = None
     sku: str | None = None
     item_group_id: UUID | None = None
     item_group_name: str | None = None
