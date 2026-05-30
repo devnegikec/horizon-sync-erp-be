@@ -463,6 +463,8 @@ def _seed_org_level_permissions(db: Session) -> None:
         (ResourceType.STOCK_ENTRY,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.BATCH,          [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.SERIAL,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.ASN_ORDER,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.PICK_LIST,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.INVOICE,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.PAYMENT,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.SALES_ORDER,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
@@ -605,6 +607,154 @@ def _seed_org_admin_wildcard(db: Session) -> None:
     db.flush()
 
 
+def _seed_wms_default_roles(db: Session) -> None:
+    """Create default WMS roles for every non-master organization.
+
+    Creates 4 roles per org:
+      - wms_supervisor  : full warehouse ops across all warehouses
+      - wms_manager     : warehouse manager for assigned warehouse(s)
+      - wms_operator    : floor worker (scan, pick, put-away)
+      - asn_coordinator : manages ASN / inter-warehouse transfers
+    """
+    orgs = (
+        db.query(Organization)
+        .filter(Organization.organization_type != OrganizationType.MASTER)
+        .all()
+    )
+
+    # Permission-code → Permission map for lookup
+    perm_codes = [
+        "warehouse.read", "warehouse.create", "warehouse.update",
+        "warehouse.delete", "warehouse.manage",
+        "pick_list.read", "pick_list.create", "pick_list.update",
+        "pick_list.delete", "pick_list.manage",
+        "asn_order.read", "asn_order.create", "asn_order.update",
+        "asn_order.delete", "asn_order.manage",
+        "stock_entry.read", "stock_entry.create", "stock_entry.update",
+        "stock_entry.delete", "stock_entry.manage",
+        "item.read", "batch.read", "serial.read",
+    ]
+    perm_map: dict[str, Permission] = {}
+    for code in perm_codes:
+        p = db.query(Permission).filter(Permission.code == code).first()
+        if p:
+            perm_map[code] = p
+
+    WMS_ROLE_DEFS = [
+        {
+            "name": "WMS Supervisor",
+            "code": "wms_supervisor",
+            "description": "Full warehouse operations across all warehouses — layout, inbound, put-away, outbound, gate, ASN, and dispatches",
+            "hierarchy_level": 75,
+            "permission_codes": [
+                "warehouse.read", "warehouse.create", "warehouse.update",
+                "warehouse.delete", "warehouse.manage",
+                "pick_list.read", "pick_list.create", "pick_list.update",
+                "pick_list.delete", "pick_list.manage",
+                "asn_order.read", "asn_order.create", "asn_order.update",
+                "asn_order.delete", "asn_order.manage",
+                "stock_entry.read", "stock_entry.create", "stock_entry.update",
+                "stock_entry.delete", "stock_entry.manage",
+                "item.read", "batch.read", "serial.read",
+            ],
+        },
+        {
+            "name": "WMS Manager",
+            "code": "wms_manager",
+            "description": "Warehouse manager for assigned warehouse(s) — inbound, put-away, outbound, picking, and ASN coordination",
+            "hierarchy_level": 70,
+            "permission_codes": [
+                "warehouse.read", "warehouse.create", "warehouse.update",
+                "warehouse.delete", "warehouse.manage",
+                "pick_list.read", "pick_list.create", "pick_list.update",
+                "pick_list.delete", "pick_list.manage",
+                "asn_order.read", "asn_order.create", "asn_order.update",
+                "asn_order.delete", "asn_order.manage",
+                "stock_entry.read", "stock_entry.create", "stock_entry.update",
+                "stock_entry.delete", "stock_entry.manage",
+                "item.read", "batch.read", "serial.read",
+            ],
+        },
+        {
+            "name": "WMS Operator",
+            "code": "wms_operator",
+            "description": "Floor worker — dock scanning, put-away execution, picking, and gate verification",
+            "hierarchy_level": 50,
+            "permission_codes": [
+                "warehouse.read",
+                "pick_list.read", "pick_list.update",
+                "stock_entry.read",
+                "item.read", "batch.read", "serial.read",
+            ],
+        },
+        {
+            "name": "ASN Coordinator",
+            "code": "asn_coordinator",
+            "description": "Manages advance stock notices (ASN) and inter-warehouse transfers — create, confirm, and track fulfillment",
+            "hierarchy_level": 65,
+            "permission_codes": [
+                "asn_order.read", "asn_order.create", "asn_order.update",
+                "asn_order.delete", "asn_order.manage",
+                "warehouse.read",
+                "stock_entry.read",
+                "item.read",
+                "pick_list.read",
+            ],
+        },
+    ]
+
+    roles_created = 0
+    roles_skipped = 0
+    links_created = 0
+    links_skipped = 0
+
+    for org in orgs:
+        for rdef in WMS_ROLE_DEFS:
+            role = (
+                db.query(Role)
+                .filter(Role.code == rdef["code"], Role.organization_id == org.id)
+                .first()
+            )
+            if not role:
+                role = Role(
+                    organization_id=org.id,
+                    name=rdef["name"],
+                    code=rdef["code"],
+                    description=rdef["description"],
+                    is_system=False,
+                    is_default=True,
+                    hierarchy_level=rdef["hierarchy_level"],
+                    is_active=True,
+                )
+                db.add(role)
+                db.flush()
+                roles_created += 1
+            else:
+                roles_skipped += 1
+
+            for pcode in rdef["permission_codes"]:
+                perm = perm_map.get(pcode)
+                if not perm:
+                    continue
+                existing_link = (
+                    db.query(RolePermission)
+                    .filter(
+                        RolePermission.role_id == role.id,
+                        RolePermission.permission_id == perm.id,
+                    )
+                    .first()
+                )
+                if not existing_link:
+                    db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+                    links_created += 1
+                else:
+                    links_skipped += 1
+
+    db.flush()
+    print(f"  WMS default roles: {roles_created} created, {roles_skipped} already existed")
+    print(f"  WMS role-permission links: {links_created} created, {links_skipped} already existed")
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -637,6 +787,9 @@ def seed_system_admin_roles():
 
         print("\n6. Seeding org-level admin wildcard permission & roles...")
         _seed_org_admin_wildcard(db)
+
+        print("\n7. Seeding WMS default roles for customer organizations...")
+        _seed_wms_default_roles(db)
 
         db.commit()
 

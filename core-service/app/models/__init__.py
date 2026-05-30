@@ -52,6 +52,7 @@ from app.models.base import (
     ReconciliationType,
     RFQStatus,
     AsnOrderStatus,
+    NotificationType,
     SalesOrderStatus,
     StockEntryStatus,
     StockEntryType,
@@ -61,6 +62,7 @@ from app.models.base import (
     TransactionTypeEnum,
     ValuationMethod,
     WarehouseType,
+    WarehouseUserRole,
 )
 from app.models.batch import Batch
 from app.models.bin_stock_level import BinStockLevel
@@ -123,6 +125,8 @@ from app.models.messaging import (
     SMSReport,
     WhatsAppReport,
 )
+from app.models.notification import Notification
+from app.models.warehouse_user import WarehouseUser
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
@@ -356,6 +360,11 @@ __all__ = [
     "AdminAuditLog",
     "AdminNotification",
     "FeatureFlag",
+    # WMS / Notification module
+    "Notification",
+    "NotificationType",
+    "WarehouseUser",
+    "WarehouseUserRole",
     # Audit Trail module
     "AuditLog",
     "AuditLogAction",

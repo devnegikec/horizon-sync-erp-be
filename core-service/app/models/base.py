@@ -493,3 +493,26 @@ class RecipientType(str, enum.Enum):
     SUPPLIER = "supplier"
     EMPLOYEE = "employee"
     OTHER = "other"
+
+
+class NotificationType(str, enum.Enum):
+    """In-app notification type enumeration for WMS/ASN events"""
+
+    ASN_CREATED = "asn_created"
+    ASN_CONFIRMED = "asn_confirmed"
+    ASN_CANCELLED = "asn_cancelled"
+    FULFILLMENT_INITIATED = "fulfillment_initiated"
+    FULFILLMENT_COMPLETED = "fulfillment_completed"
+    FULFILLMENT_PARTIALLY_COMPLETED = "fulfillment_partially_completed"
+    RECEIVING_SLIP_CREATED = "receiving_slip_created"
+    PUT_AWAY_LIST_CREATED = "put_away_list_created"
+    PICK_LIST_CREATED = "pick_list_created"
+
+
+class WarehouseUserRole(str, enum.Enum):
+    """Role of a user assigned to a warehouse"""
+
+    SUPERVISOR = "supervisor"
+    MANAGER = "manager"
+    OPERATOR = "operator"
+    COORDINATOR = "coordinator"

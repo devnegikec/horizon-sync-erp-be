@@ -82,6 +82,8 @@ class ResourceType(str, enum.Enum):
     STOCK_ENTRY = "stock_entry"
     BATCH = "batch"
     SERIAL = "serial"
+    ASN_ORDER = "asn_order"
+    PICK_LIST = "pick_list"
 
     # Accounting
     CHART_OF_ACCOUNT = "chart_of_account"
