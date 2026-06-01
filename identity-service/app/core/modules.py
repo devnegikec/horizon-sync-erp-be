@@ -88,14 +88,16 @@ MODULES: list[ModuleDefinition] = [
     ModuleDefinition(
         key="inventory",
         label="Inventory",
-        description="Manage items, warehouses, stock entries, batches, and serials",
+        description="Manage items, warehouses, stock entries, batches, serials, pick lists, and ASN orders",
         icon="box",
         resources=[
             ModuleResource("item", "Items"),
-            ModuleResource("warehouse", "Warehouses", ["read", "create", "update"]),
-            ModuleResource("stock_entry", "Stock Movements", ["read", "create"]),
+            ModuleResource("warehouse", "Warehouses", ["read", "create", "update", "delete", "manage"]),
+            ModuleResource("stock_entry", "Stock Movements", ["read", "create", "update", "delete", "manage"]),
             ModuleResource("batch", "Batches", ["read"]),
             ModuleResource("serial", "Serial Numbers", ["read"]),
+            ModuleResource("pick_list", "Pick Lists", ["read", "create", "update", "delete", "manage"]),
+            ModuleResource("asn_order", "ASN Orders", ["read", "create", "update", "delete", "manage"]),
         ],
     ),
     ModuleDefinition(
@@ -243,6 +245,62 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             MODULE_BY_KEY["inventory"].read_permission_codes,
             MODULE_BY_KEY["accounting"].read_permission_codes,
         ),
+    ),
+    # ── WMS Roles ────────────────────────────────────────────────────────────
+    RoleTemplate(
+        code="wms_supervisor",
+        name="WMS Supervisor",
+        description="Full warehouse operations across all warehouses — layout, inbound, put-away, outbound, gate, ASN, and dispatches",
+        is_system=False,
+        hierarchy_level=75,
+        permission_codes=[
+            "warehouse.read", "warehouse.create", "warehouse.update", "warehouse.delete", "warehouse.manage",
+            "pick_list.read", "pick_list.create", "pick_list.update", "pick_list.delete", "pick_list.manage",
+            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
+            "stock_entry.read", "stock_entry.create", "stock_entry.update", "stock_entry.delete", "stock_entry.manage",
+            "item.read", "batch.read", "serial.read",
+        ],
+    ),
+    RoleTemplate(
+        code="wms_manager",
+        name="WMS Manager",
+        description="Warehouse manager for assigned warehouse(s) — inbound, put-away, outbound, picking, and ASN coordination",
+        is_system=False,
+        hierarchy_level=70,
+        permission_codes=[
+            "warehouse.read", "warehouse.create", "warehouse.update", "warehouse.delete", "warehouse.manage",
+            "pick_list.read", "pick_list.create", "pick_list.update", "pick_list.delete", "pick_list.manage",
+            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
+            "stock_entry.read", "stock_entry.create", "stock_entry.update", "stock_entry.delete", "stock_entry.manage",
+            "item.read", "batch.read", "serial.read",
+        ],
+    ),
+    RoleTemplate(
+        code="wms_operator",
+        name="WMS Operator",
+        description="Floor worker — dock scanning, put-away execution, picking, and gate verification",
+        is_system=False,
+        hierarchy_level=50,
+        permission_codes=[
+            "warehouse.read",
+            "pick_list.read", "pick_list.update",
+            "stock_entry.read",
+            "item.read", "batch.read", "serial.read",
+        ],
+    ),
+    RoleTemplate(
+        code="asn_coordinator",
+        name="ASN Coordinator",
+        description="Manages advance stock notices (ASN) and inter-warehouse transfers — create, confirm, and track fulfillment",
+        is_system=False,
+        hierarchy_level=65,
+        permission_codes=[
+            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
+            "warehouse.read",
+            "stock_entry.read",
+            "item.read",
+            "pick_list.read",
+        ],
     ),
 ]
 

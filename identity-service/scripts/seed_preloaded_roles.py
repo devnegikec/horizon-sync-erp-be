@@ -2,9 +2,10 @@
 Seed preloaded organization roles.
 
 This script is IDEMPOTENT — safe to run multiple times.
-It creates the 7 standard org-level roles (Owner, Administrator, Sales Agent,
-Procurement Officer, Accountant, Warehouse Staff, Viewer) for every existing
-organization that doesn't already have them.
+It creates the 11 standard org-level roles (Owner, Administrator, Sales Agent,
+Procurement Officer, Accountant, Warehouse Staff, Viewer, WMS Supervisor,
+WMS Manager, WMS Operator, ASN Coordinator) for every existing organization
+that doesn't already have them.
 
 Usage:
     cd horizon-sync-erp-be

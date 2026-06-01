@@ -23,7 +23,7 @@ NEW_VALUES = [
     'customer', 'sales_order', 'invoice', 'supplier', 'purchase_order',
     'item', 'item_group', 'warehouse', 'stock_entry', 'batch', 'serial',
     'chart_of_account', 'payment', 'billing', 'report', 'reporting',
-    'setting', 'all', 'invitation',
+    'setting', 'all', 'invitation', 'asn_order', 'pick_list',
 ]
 
 

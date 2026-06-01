@@ -126,6 +126,9 @@ class AsnOrderService:
 
         payload = {k: v for k, v in data.items() if v is not None and k != "items"}
 
+        # Capture old status to detect changes
+        old_status = asn_order.status
+
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = AsnOrderStatus(payload["status"])
@@ -174,6 +177,47 @@ class AsnOrderService:
 
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
+
+        # Emit notifications when status changes via the general update endpoint
+        new_status = asn_order.status
+        if old_status != new_status:
+            if new_status == AsnOrderStatus.CONFIRMED:
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="asn_confirmed",
+                    title="ASN Confirmed",
+                    message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
+                    warehouse_id=asn_order.warehouse_id_from,
+                    sender_id=user_id,
+                )
+            elif new_status == AsnOrderStatus.PARTIALLY_DELIVERED:
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="fulfillment_partially_completed",
+                    title="ASN Partially Delivered",
+                    message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
+                    warehouse_id=asn_order.warehouse_id_from,
+                    sender_id=user_id,
+                )
+            elif new_status == AsnOrderStatus.DELIVERED:
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="fulfillment_completed",
+                    title="ASN Fully Delivered",
+                    message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
+                    warehouse_id=asn_order.warehouse_id_from,
+                    sender_id=user_id,
+                )
+            elif new_status == AsnOrderStatus.CANCELLED:
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="asn_cancelled",
+                    title="ASN Cancelled",
+                    message=f"ASN {asn_order.asn_order_no} has been cancelled.",
+                    warehouse_id=asn_order.warehouse_id_to,
+                    sender_id=user_id,
+                )
+
         return self._to_response(asn_order)
 
     def delete(self, asn_order_id: UUID, organization_id: UUID) -> None:
@@ -217,6 +261,78 @@ class AsnOrderService:
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
         return self._to_response(asn_order)
+
+    # ── notification helpers ─────────────────────────────────────────
+
+    def _emit_asn_notification(
+        self,
+        asn_order: AsnOrder,
+        notif_type: str,
+        title: str,
+        message: str,
+        warehouse_id: UUID | None,
+        sender_id: UUID | None,
+    ) -> None:
+        """Emit an in-app notification to users assigned to the target warehouse.
+
+        If no users are assigned to the target warehouse, falls back to notifying
+        all WMS Supervisors in the organization so the ASN never goes unnoticed.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        try:
+            from app.services.notification_service import NotificationService
+
+            notif_svc = NotificationService(self.db)
+            created = notif_svc.create_for_warehouse_users(
+                organization_id=asn_order.organization_id,
+                warehouse_id=warehouse_id,
+                type=notif_type,
+                title=title,
+                message=message,
+                entity_type="asn_order",
+                entity_id=asn_order.id,
+                entity_no=asn_order.asn_order_no,
+                sender_id=sender_id,
+                exclude_user_id=sender_id,
+            )
+            logger.warning(
+                "ASN notification %s for order %s: created %s notification(s) for warehouse %s",
+                notif_type,
+                asn_order.asn_order_no,
+                len(created),
+                warehouse_id,
+            )
+
+            # Fallback: if no users assigned to this warehouse, notify supervisors
+            if not created:
+                fallback = notif_svc.create_for_role_users(
+                    organization_id=asn_order.organization_id,
+                    role="supervisor",
+                    type=notif_type,
+                    title=f"{title} (unassigned warehouse)",
+                    message=message,
+                    entity_type="asn_order",
+                    entity_id=asn_order.id,
+                    entity_no=asn_order.asn_order_no,
+                    sender_id=sender_id,
+                    exclude_user_id=sender_id,
+                )
+                logger.warning(
+                    "ASN notification %s fallback: created %s supervisor notification(s)",
+                    notif_type,
+                    len(fallback),
+                )
+        except Exception as exc:
+            # Notifications are best-effort; don't fail the ASN operation
+            logger.error(
+                "Failed to emit ASN notification %s for order %s: %s",
+                notif_type,
+                asn_order.asn_order_no,
+                exc,
+                exc_info=True,
+            )
 
     # ── validation helpers ─────────────────────────────────────────────
 

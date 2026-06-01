@@ -31,6 +31,7 @@ from app.schemas.warehouse import (
     WarehouseUpdate,
 )
 from app.services.warehouse_service import WarehouseService
+from app.services.warehouse_user_service import WarehouseUserService
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,11 @@ async def list_warehouses(
     search: str | None = Query(None, description="Search in name, code, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
+    scope: str = Query(
+        "assigned",
+        pattern="^(assigned|all)$",
+        description="Scope: 'assigned' (default) = only user's assigned warehouses; 'all' = all organization warehouses",
+    ),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ):
@@ -121,9 +127,22 @@ async def list_warehouses(
     - **search**: Search term for name, code, city
     - **sort_by**: Field to sort by (default: created_at)
     - **sort_order**: Sort order - asc or desc (default: desc)
+    - **scope**: 'assigned' (default) for user-scoped view, 'all' for organization-wide view (e.g. ASN destination selection)
 
     **Returns:** Paginated list of warehouses with status and type counts
     """
+    # Determine scoped warehouse IDs for this user
+    allowed_warehouse_ids = None
+    if current_user.user_type != "system_admin" and scope != "all":
+        wh_user_svc = WarehouseUserService(db)
+        scoped_warehouses = wh_user_svc.get_user_warehouses(
+            user_id=current_user.id,
+            organization_id=current_user.organization_id,
+            user_type=current_user.user_type,
+            user_email=current_user.email,
+        )
+        allowed_warehouse_ids = [w["id"] for w in scoped_warehouses]
+
     warehouse_service = WarehouseService(db)
 
     (
@@ -141,6 +160,7 @@ async def list_warehouses(
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
+        warehouse_ids=allowed_warehouse_ids,
     )
 
     # Convert to response schema

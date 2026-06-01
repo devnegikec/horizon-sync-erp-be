@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
+    is_system_admin,
     require_permission,
     validate_user_in_organization,
 )
@@ -22,6 +23,8 @@ from app.schemas.user import (
     UserListResponse,
     UserProfileResponse,
     UserResponse,
+    UserRolesResponse,
+    UserRolesUpdate,
     UserSelfUpdate,
     UserStatusCounts,
     UserUpdate,
@@ -717,3 +720,150 @@ async def delete_user(
         user_service.delete_user(user_id)
     except UserNotFoundException:
         raise
+
+
+@router.put(
+    "/users/{user_id}/roles",
+    response_model=UserRolesResponse,
+    summary="Update user roles",
+    description="Replace a user's organization roles with the provided list",
+)
+async def update_user_roles(
+    user_id: UUID,
+    body: UserRolesUpdate,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update a user's roles within an organization.
+
+    Requires authentication and 'user.update' permission.
+    Deactivates all existing role assignments for the user in the specified
+    organization and creates new ones for the provided role IDs.
+
+    **Path Parameters:**
+    - **user_id**: UUID of the user to update
+
+    **Request Body:**
+    - **organization_id**: UUID of the organization
+    - **role_ids**: List of role UUIDs to assign (replaces existing)
+    """
+    require_permission(current_user.permissions, "user.update")
+
+    if not _users_share_organization(db, current_user.id, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    try:
+        validate_user_in_organization(current_user.id, body.organization_id, db)
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this organization",
+        )
+
+    # Verify target user is also in the organization
+    target_in_org = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == body.organization_id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    if not target_in_org:
+        # Allow if caller has cross-org access, otherwise target must be in org
+        has_cross_org = (
+            current_user.user_type == "system_admin"
+            or any(p.startswith("system_admin.") for p in current_user.permissions)
+        )
+        if not has_cross_org:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User is not a member of this organization",
+            )
+
+    # Load requested roles and validate they belong to the org
+    requested_roles = (
+        db.query(Role)
+        .filter(
+            Role.id.in_(body.role_ids) if body.role_ids else False,
+            Role.organization_id == body.organization_id,
+        )
+        .all()
+    ) if body.role_ids else []
+
+    requested_role_ids = {r.id for r in requested_roles}
+    missing = set(body.role_ids) - requested_role_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role IDs for this organization: {[str(r) for r in missing]}",
+        )
+
+    # Check for system roles
+    system_roles = [r for r in requested_roles if r.is_system]
+    if system_roles and not is_system_admin(current_user.permissions):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only system admins can assign system roles",
+        )
+
+    # Deactivate existing role assignments for this user/org
+    (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == body.organization_id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .update({"is_active": False})
+    )
+
+    # Create new role assignments
+    for role in requested_roles:
+        existing = (
+            db.query(UserOrganizationRole)
+            .filter(
+                UserOrganizationRole.user_id == user_id,
+                UserOrganizationRole.organization_id == body.organization_id,
+                UserOrganizationRole.role_id == role.id,
+            )
+            .first()
+        )
+        if existing:
+            existing.is_active = True
+        else:
+            db.add(
+                UserOrganizationRole(
+                    user_id=user_id,
+                    organization_id=body.organization_id,
+                    role_id=role.id,
+                    is_primary=False,
+                    is_active=True,
+                )
+            )
+
+    db.commit()
+
+    # Fetch updated role names
+    updated_roles = (
+        db.query(Role.name)
+        .join(UserOrganizationRole, UserOrganizationRole.role_id == Role.id)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == body.organization_id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+            Role.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+
+    return UserRolesResponse(
+        user_id=user_id,
+        organization_id=body.organization_id,
+        roles=[name for (name,) in updated_roles],
+    )
