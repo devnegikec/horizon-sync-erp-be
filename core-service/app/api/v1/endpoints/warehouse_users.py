@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,6 +17,13 @@ from app.schemas.warehouse_user import (
 from app.services.warehouse_user_service import WarehouseUserService
 
 router = APIRouter()
+
+
+class PendingAssignmentPayload(BaseModel):
+    email: str
+    warehouse_ids: list[UUID]
+    role: str = "operator"
+    is_primary: bool = False
 
 
 @router.post("", response_model=WarehouseUserResponse, status_code=status.HTTP_201_CREATED)
@@ -32,6 +40,31 @@ async def assign_user_to_warehouse(
         created_by=current_user.id,
     )
     return WarehouseUserResponse.model_validate(data)
+
+
+@router.post("/pending", status_code=status.HTTP_201_CREATED)
+async def create_pending_assignments(
+    body: PendingAssignmentPayload,
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+    db: Session = Depends(get_db),
+):
+    """Store warehouse assignments keyed by email for a not-yet-accepted invitation.
+
+    When the invited user logs in and calls /my-warehouses,
+    these pending rows are resolved into actual warehouse_users rows.
+    """
+    svc = WarehouseUserService(db)
+    for wh_id in body.warehouse_ids:
+        svc.create_pending(
+            email=body.email,
+            organization_id=current_user.organization_id,
+            warehouse_id=wh_id,
+            role=body.role,
+            is_primary=body.is_primary,
+            created_by=current_user.id,
+        )
+    db.commit()
+    return {"created": len(body.warehouse_ids)}
 
 
 @router.get("", response_model=WarehouseUserListResponse)
@@ -65,13 +98,17 @@ async def get_my_warehouses(
 ):
     """Get warehouses assigned to the current user.
 
-    If user has no explicit assignments, returns all active warehouses
-    for the organization (fallback for backward compatibility).
+    - System admins see all warehouses.
+    - Users with a primary assignment see all warehouses.
+    - Everyone else sees only their assigned warehouses.
+    - Pending assignments (by email) are resolved on first call.
     """
     svc = WarehouseUserService(db)
     warehouses = svc.get_user_warehouses(
         user_id=current_user.id,
         organization_id=current_user.organization_id,
+        user_type=current_user.user_type,
+        user_email=current_user.email,
     )
     return {"warehouses": warehouses}
 

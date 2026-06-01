@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class UserBase(BaseModel):
@@ -126,6 +126,30 @@ class UserStatusCounts(BaseModel):
     suspended: int = 0
     pending: int = 0
     mfa_enabled: int = 0
+
+
+class UserRolesUpdate(BaseModel):
+    """Schema for updating a user's organization roles"""
+
+    organization_id: UUID
+    role_ids: list[UUID] = Field(default_factory=list)
+
+    @field_validator("role_ids", mode="before")
+    @classmethod
+    def coerce_role_ids(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        return []
+
+
+class UserRolesResponse(BaseModel):
+    """Schema for user roles update response"""
+
+    user_id: UUID
+    organization_id: UUID
+    roles: list[str]
 
 
 class UserListResponse(BaseModel):

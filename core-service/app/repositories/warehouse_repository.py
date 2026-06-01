@@ -126,6 +126,7 @@ class WarehouseRepository:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        warehouse_ids: list[UUID] | None = None,
     ) -> tuple[list[Warehouse], int]:
         """
         List warehouses with pagination and filters.
@@ -140,6 +141,7 @@ class WarehouseRepository:
             search: Search term for name, code
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            warehouse_ids: Optional list of warehouse IDs to restrict to
 
         Returns:
             Tuple of (list of warehouses, total count)
@@ -148,6 +150,10 @@ class WarehouseRepository:
             Warehouse.organization_id == organization_id,
             Warehouse.deleted_at.is_(None),
         )
+
+        # Apply scoping filter
+        if warehouse_ids is not None:
+            query = query.filter(Warehouse.id.in_(warehouse_ids))
 
         # Apply filters
         if is_active is not None:

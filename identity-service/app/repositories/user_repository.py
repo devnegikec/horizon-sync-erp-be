@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.base import UserStatus, UserType
@@ -53,7 +53,7 @@ class UserRepository:
 
     def get_user_by_email(self, email: str) -> User | None:
         """
-        Get user by email address.
+        Get user by email address (case-insensitive).
 
         Args:
             email: User email address
@@ -63,7 +63,10 @@ class UserRepository:
         """
         return (
             self.db.query(User)
-            .filter(User.email == email, User.deleted_at.is_(None))
+            .filter(
+                func.lower(User.email) == email.lower(),
+                User.deleted_at.is_(None),
+            )
             .first()
         )
 
@@ -260,7 +263,7 @@ class UserRepository:
 
     def email_exists(self, email: str) -> bool:
         """
-        Check if email already exists.
+        Check if email already exists (case-insensitive).
 
         Args:
             email: Email address to check
@@ -270,7 +273,10 @@ class UserRepository:
         """
         return (
             self.db.query(User)
-            .filter(User.email == email, User.deleted_at.is_(None))
+            .filter(
+                func.lower(User.email) == email.lower(),
+                User.deleted_at.is_(None),
+            )
             .count()
             > 0
         )

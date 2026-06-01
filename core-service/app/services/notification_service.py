@@ -45,6 +45,7 @@ class NotificationService:
         )
         self.db.add(notification)
         self.db.flush()
+        self.db.commit()
         self.db.refresh(notification)
         return notification
 
@@ -75,7 +76,78 @@ class NotificationService:
             WarehouseUser.is_active == True,
         )
         if warehouse_id:
-            query = query.filter(WarehouseUser.warehouse_id == warehouse_id)
+            # Notify users explicitly assigned to this warehouse OR primary users
+            # (is_primary=True means access to all warehouses in the org)
+            query = query.filter(
+                (WarehouseUser.warehouse_id == warehouse_id)
+                | (WarehouseUser.is_primary == True)
+            )
+        if exclude_user_id:
+            query = query.filter(WarehouseUser.user_id != exclude_user_id)
+
+        assignments = query.all()
+
+        # Deduplicate by user_id — a primary user may also be explicitly assigned
+        seen_user_ids = set()
+        unique_assignments = []
+        for a in assignments:
+            if a.user_id not in seen_user_ids:
+                seen_user_ids.add(a.user_id)
+                unique_assignments.append(a)
+
+        created = []
+        for assignment in unique_assignments:
+            n = self.create(
+                organization_id=organization_id,
+                user_id=assignment.user_id,
+                type=type,
+                title=title,
+                message=message,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                entity_no=entity_no,
+                warehouse_id=warehouse_id,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                extra_data=extra_data,
+            )
+            created.append(n)
+        return created
+
+    def create_for_role_users(
+        self,
+        organization_id: UUID,
+        role: str,
+        type: str,
+        title: str,
+        message: str,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
+        entity_no: str | None = None,
+        sender_id: UUID | None = None,
+        sender_name: str | None = None,
+        extra_data: dict | None = None,
+        exclude_user_id: UUID | None = None,
+    ) -> list[Notification]:
+        """Create notifications for all users with a given warehouse role.
+
+        Used as a fallback when no users are explicitly assigned to a target
+        warehouse (e.g. notify WMS Supervisors about an ASN for an unstaffed
+        warehouse).
+        """
+        from app.models.warehouse_user import WarehouseUser
+        from app.models.base import WarehouseUserRole
+
+        try:
+            role_enum = WarehouseUserRole(role)
+        except ValueError:
+            return []
+
+        query = self.db.query(WarehouseUser).filter(
+            WarehouseUser.organization_id == organization_id,
+            WarehouseUser.role == role_enum,
+            WarehouseUser.is_active == True,
+        )
         if exclude_user_id:
             query = query.filter(WarehouseUser.user_id != exclude_user_id)
 
@@ -91,7 +163,7 @@ class NotificationService:
                 entity_type=entity_type,
                 entity_id=entity_id,
                 entity_no=entity_no,
-                warehouse_id=warehouse_id,
+                warehouse_id=assignment.warehouse_id,
                 sender_id=sender_id,
                 sender_name=sender_name,
                 extra_data=extra_data,
@@ -171,6 +243,7 @@ class NotificationService:
         notification.is_read = True
         notification.read_at = datetime.now(UTC)
         self.db.flush()
+        self.db.commit()
         self.db.refresh(notification)
         return notification
 
@@ -186,4 +259,4 @@ class NotificationService:
             {"is_read": True, "read_at": datetime.now(UTC)},
             synchronize_session=False,
         )
-        self.db.flush()
+        self.db.commit()

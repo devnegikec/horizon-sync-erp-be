@@ -235,6 +235,7 @@ class WarehouseService:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        warehouse_ids: list[UUID] | None = None,
     ) -> tuple[list[Warehouse], dict, dict, dict]:
         """
         Get paginated list of warehouses with filters.
@@ -249,6 +250,7 @@ class WarehouseService:
             search: Search term
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            warehouse_ids: Optional list of warehouse IDs to restrict to
 
         Returns:
             Tuple of (list of warehouses, pagination metadata, status counts, type counts)
@@ -276,6 +278,7 @@ class WarehouseService:
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
+            warehouse_ids=warehouse_ids,
         )
 
         # Get status and type counts

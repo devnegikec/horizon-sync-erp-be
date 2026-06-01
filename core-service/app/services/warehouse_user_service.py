@@ -2,9 +2,11 @@
 
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException
+from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
 from app.models.warehouse import Warehouse
 from app.models.warehouse_user import WarehouseUser
 from app.schemas.common import PaginationMeta
@@ -44,6 +46,43 @@ class WarehouseUserService:
         self.db.flush()
         self.db.refresh(assignment)
         return assignment
+
+    def create_pending(
+        self,
+        email: str,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        role: str,
+        is_primary: bool,
+        created_by: UUID,
+    ) -> PendingWarehouseAssignment:
+        """Store a pending assignment keyed by email (user hasn't accepted invite yet)."""
+        # Delete any existing pending for this email + warehouse to avoid duplicates
+        existing = (
+            self.db.query(PendingWarehouseAssignment)
+            .filter(
+                PendingWarehouseAssignment.email == email,
+                PendingWarehouseAssignment.organization_id == organization_id,
+                PendingWarehouseAssignment.warehouse_id == warehouse_id,
+            )
+            .first()
+        )
+        if existing:
+            self.db.delete(existing)
+            self.db.flush()
+
+        pending = PendingWarehouseAssignment(
+            organization_id=organization_id,
+            email=email,
+            warehouse_id=warehouse_id,
+            role=role,
+            is_primary=is_primary,
+            created_by=created_by,
+        )
+        self.db.add(pending)
+        self.db.flush()
+        self.db.refresh(pending)
+        return pending
 
     def get_list(
         self,
@@ -108,25 +147,93 @@ class WarehouseUserService:
         self,
         user_id: UUID,
         organization_id: UUID,
+        user_type: str | None = None,
+        user_email: str | None = None,
     ) -> list[dict]:
         """Get warehouses assigned to a user.
 
-        If no explicit assignments exist, return all active warehouses
-        for backward compatibility.
+        Rules:
+          - System admins always see all active warehouses.
+          - Users with a primary (mother-warehouse) assignment see all warehouses.
+          - Everyone else sees only explicitly assigned warehouses.
+          - Pending assignments keyed by email are resolved on first call.
         """
-        # Check if user has any explicit assignments
-        has_assignments = (
+        # System admins get global access
+        if user_type == "system_admin":
+            warehouses = (
+                self.db.query(Warehouse)
+                .filter(
+                    Warehouse.organization_id == organization_id,
+                    Warehouse.is_active == True,
+                )
+                .order_by(Warehouse.name)
+                .all()
+            )
+            return [
+                {
+                    "id": w.id,
+                    "name": w.name,
+                    "code": w.code,
+                    "city": w.city,
+                    "type": w.warehouse_type.value if w.warehouse_type else None,
+                    "is_default": w.is_default,
+                }
+                for w in warehouses
+            ]
+
+        # Resolve any pending assignments for this user's email (case-insensitive)
+        if user_email:
+            pending = (
+                self.db.query(PendingWarehouseAssignment)
+                .filter(
+                    func.lower(PendingWarehouseAssignment.email) == user_email.lower(),
+                    PendingWarehouseAssignment.organization_id == organization_id,
+                )
+                .all()
+            )
+            for p in pending:
+                # Create the actual assignment (update if exists)
+                existing = (
+                    self.db.query(WarehouseUser)
+                    .filter(
+                        WarehouseUser.user_id == user_id,
+                        WarehouseUser.warehouse_id == p.warehouse_id,
+                        WarehouseUser.organization_id == organization_id,
+                    )
+                    .first()
+                )
+                if existing:
+                    existing.role = p.role
+                    existing.is_primary = p.is_primary
+                    existing.is_active = True
+                else:
+                    self.db.add(
+                        WarehouseUser(
+                            organization_id=organization_id,
+                            user_id=user_id,
+                            warehouse_id=p.warehouse_id,
+                            role=p.role,
+                            is_primary=p.is_primary,
+                            is_active=True,
+                        )
+                    )
+                self.db.delete(p)
+            if pending:
+                self.db.commit()
+
+        # Check if user has primary (global) access (after resolving pending)
+        has_primary = (
             self.db.query(WarehouseUser)
             .filter(
                 WarehouseUser.organization_id == organization_id,
                 WarehouseUser.user_id == user_id,
+                WarehouseUser.is_primary == True,
                 WarehouseUser.is_active == True,
             )
             .first()
         )
 
-        if not has_assignments:
-            # Fallback: return all active warehouses
+        if has_primary:
             warehouses = (
                 self.db.query(Warehouse)
                 .filter(
