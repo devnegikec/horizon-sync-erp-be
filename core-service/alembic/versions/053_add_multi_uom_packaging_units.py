@@ -2,8 +2,8 @@
    volumetric capacity on warehouse_locations, packaging_unit_id on
    bin_stock_levels and scan_session_items, rename quantity→raw_quantity.
 
-Revision ID: 048_add_multi_uom_packaging_units
-Revises: a52be5b21cef
+Revision ID: 053_add_multi_uom_packaging_units
+Revises: 052_add_pending_warehouse_assignments
 Create Date: 2025-07-15
 
 Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
@@ -15,8 +15,8 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "048_add_multi_uom_packaging_units"
-down_revision = "a52be5b21cef"
+revision = "053_add_multi_uom_packaging_units"
+down_revision = "052_add_pending_warehouse_assignments"
 branch_labels = None
 depends_on = None
 

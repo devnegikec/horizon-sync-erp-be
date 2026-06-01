@@ -1,7 +1,7 @@
 """fix product_items token_id column type
 
-Revision ID: 050_fix_product_items_token_id_column
-Revises: 049_add_qr_product_id_to_items
+Revision ID: 055_fix_product_items_token_id_column
+Revises: 054_add_qr_product_id_to_items
 Create Date: 2026-05-26
 
 The token_id column on product_items was VARCHAR(75) in the database but the
@@ -18,8 +18,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "050_fix_product_items_token_id_column"
-down_revision = "049_add_qr_product_id_to_items"
+revision = "055_fix_product_items_token_id_column"
+down_revision = "054_add_qr_product_id_to_items"
 branch_labels = None
 depends_on = None
 
