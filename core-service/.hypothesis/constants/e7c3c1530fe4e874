@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/stock_entry_service.py
+# hypothesis_version: 6.152.8
+
+[100, '1', 'basic_amount', 'basic_rate', 'created_by', 'desc', 'has_next', 'has_prev', 'id', 'items', 'organization_id', 'page', 'page_size', 'posting_date', 'qty', 'status', 'stock_entry', 'stock_entry_id', 'stock_entry_type', 'total_items', 'total_pages', 'updated_by']

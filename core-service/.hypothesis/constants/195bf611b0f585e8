@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/bank_reconciliation.py
+# hypothesis_version: 6.152.8
+
+[100, 'BankTransaction', 'CASCADE', 'JournalEntry', 'bank_reconciliations', 'bank_transactions.id', 'chk_match_confidence', 'confirmed', 'journal_entries.id', 'reconciliations', 'suggested']

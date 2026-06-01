@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/warranty.py
+# hypothesis_version: 6.152.8
+
+[120, 255, 'ProductItem', 'product_items.id', 'warranties', 'warranty_periods']

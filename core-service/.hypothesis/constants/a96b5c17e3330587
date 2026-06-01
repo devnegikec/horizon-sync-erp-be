@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/chart_of_account.py
+# hypothesis_version: 6.152.8
+
+[100, 200, 'Account', 'AccountBalance', 'BankAccount', 'USD', 'account', 'account_code', 'accounts', 'accounts.id', 'accountstatus', 'accounttype', 'all, delete-orphan', 'bank_accounts_count', 'child_accounts', 'gl_account', 'is_bank_enabled', 'organization_id', 'primary_bank_name']

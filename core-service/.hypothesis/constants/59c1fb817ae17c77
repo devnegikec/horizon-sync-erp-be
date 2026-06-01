@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/inbound_service.py
+# hypothesis_version: 6.152.8
+
+[422, 'ReceivingSlip', 'ReceivingSlipItem', 'ScanSession', 'batch', 'batch_number', 'batches', 'box_count', 'closed', 'created_at', 'damaged', 'decoded_payload', 'dock_location', 'eaches_qty', 'ended_at', 'fetch', 'field', 'flag', 'id', 'inbound', 'item_id', 'items', 'notes', 'ok', 'open', 'organization_id', 'packaging_unit_id', 'packaging_unit_qr_id', 'pending_putaway', 'pending_review', 'qr_identifier', 'qty', 'quantity', 'raw_qr_data', 'raw_quantity', 'reason', 'receiving_slip', 'rejection_reason', 'scan_context', 'scan_item_id', 'scanned_at', 'session_id', 'session_type', 'short', 'sku', 'slip_id', 'slip_number', 'started_at', 'status', 'total_boxes', 'total_boxes_scanned', 'total_items', 'total_quantity', 'updated_at', 'warehouse_id', 'worker_id']

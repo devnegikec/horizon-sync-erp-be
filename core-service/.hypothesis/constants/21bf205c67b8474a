@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/sales_order.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'Customer', 'INR', 'Item', 'SET NULL', 'SalesOrder', 'SalesOrderItem', 'all, delete-orphan', 'customers.id', 'items', 'items.id', 'percentage', 'sales_order', 'sales_order_items', 'sales_orders', 'sales_orders.id', 'salesorderstatus', 'tax_templates.id']

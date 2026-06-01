@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/destination_market.py
+# hypothesis_version: 6.152.8
+
+[100, 'ISO 4217 code', 'e.g. 0.18 for 18%', 'from_attributes']

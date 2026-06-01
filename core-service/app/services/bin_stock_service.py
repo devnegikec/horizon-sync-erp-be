@@ -97,6 +97,13 @@ class BinStockService:
         )
         self.db.flush()
 
+        # Update the bin's own available_capacity (recalculate_ancestors only walks up)
+        bin_location.available_capacity = bin_capacity - (
+            current_stock_in_bin + quantity
+        )
+        bin_location.version = (bin_location.version or 1) + 1
+        self.db.flush()
+
         # Sync warehouse-level stock_levels
         self._sync_warehouse_stock(
             item_id=item_id,
@@ -177,6 +184,12 @@ class BinStockService:
 
         # Decrement the stock
         bin_stock.quantity_on_hand = current_qty - quantity
+        self.db.flush()
+
+        # Update the bin's own available_capacity (recalculate_ancestors only walks up)
+        bin_capacity = Decimal(str(bin_location.capacity or 0))
+        bin_location.available_capacity = bin_capacity - (current_qty - quantity)
+        bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
         # Sync warehouse-level stock_levels (negative delta)

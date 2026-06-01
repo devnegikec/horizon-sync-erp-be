@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/customers.py
+# hypothesis_version: 6.152.8
+
+[100, '/{customer_id}', 'Create customer', 'Delete customer', 'Field to sort by', 'Get customer', 'List customers', 'Sort order', 'Update customer', '^(asc|desc)$', 'created_at', 'desc']

@@ -107,7 +107,7 @@ class TestRecordScan:
         )
 
         assert result["sku"] == "ITEM-001"
-        assert result["quantity"] == 50
+        assert result["raw_quantity"] == 50
         assert result["batch_number"] == "BATCH-2025-01"
         assert result["qr_identifier"] == "QR-001"
         assert result["total_boxes_scanned"] == 1

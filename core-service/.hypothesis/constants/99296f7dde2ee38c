@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/exchange_rates.py
+# hypothesis_version: 6.152.8
+
+[100, '/{rate_id}', 'Create Exchange Rate', 'Delete Exchange Rate', 'Field to sort by', 'Get Exchange Rate', 'Items per page', 'List Exchange Rates', 'Page number', 'Sort order', 'Update Exchange Rate', '^(asc|desc)$', 'desc', 'effective_date']

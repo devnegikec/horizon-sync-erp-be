@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/__init__.py
+# hypothesis_version: 6.152.8
+
+['batches', 'chart_of_accounts', 'customers', 'item_groups', 'item_prices', 'item_suppliers', 'items', 'put_away_rules', 'serial_numbers', 'stock_entries', 'stock_levels', 'stock_movements', 'stock_settings', 'suppliers', 'warehouses']

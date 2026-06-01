@@ -73,6 +73,17 @@ class AsnOrderService:
         # Update grand_total
         self.repo.update(asn_order, {"grand_total": grand_total})
         self.db.refresh(asn_order)
+
+        # Emit notification to receiving warehouse users
+        self._emit_asn_notification(
+            asn_order=asn_order,
+            notif_type="asn_created",
+            title="New ASN Order",
+            message=f"ASN {asn_order.asn_order_no} has been created for your warehouse.",
+            warehouse_id=asn_order.warehouse_id_to,
+            sender_id=user_id,
+        )
+
         return self._to_response(asn_order)
 
     def get_by_id(self, asn_order_id: UUID, organization_id: UUID) -> dict:
@@ -260,6 +271,45 @@ class AsnOrderService:
 
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
+
+        # Emit notifications based on status change
+        if new_status_enum == AsnOrderStatus.CONFIRMED:
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="asn_confirmed",
+                title="ASN Confirmed",
+                message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
+                warehouse_id=asn_order.warehouse_id_from,
+                sender_id=user_id,
+            )
+        elif new_status_enum == AsnOrderStatus.PARTIALLY_DELIVERED:
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="fulfillment_partially_completed",
+                title="ASN Partially Delivered",
+                message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
+                warehouse_id=asn_order.warehouse_id_from,
+                sender_id=user_id,
+            )
+        elif new_status_enum == AsnOrderStatus.DELIVERED:
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="fulfillment_completed",
+                title="ASN Fully Delivered",
+                message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
+                warehouse_id=asn_order.warehouse_id_from,
+                sender_id=user_id,
+            )
+        elif new_status_enum == AsnOrderStatus.CANCELLED:
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="asn_cancelled",
+                title="ASN Cancelled",
+                message=f"ASN {asn_order.asn_order_no} has been cancelled.",
+                warehouse_id=asn_order.warehouse_id_to,
+                sender_id=user_id,
+            )
+
         return self._to_response(asn_order)
 
     # ── notification helpers ─────────────────────────────────────────

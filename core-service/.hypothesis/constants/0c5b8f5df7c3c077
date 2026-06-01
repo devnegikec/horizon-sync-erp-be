@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/delivery_note_repository.py
+# hypothesis_version: 6.152.8
+
+['delivery_date', 'delivery_note_id', 'desc', 'organization_id']

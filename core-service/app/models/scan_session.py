@@ -76,10 +76,15 @@ class ScanSessionItem(Base):
     )
     qr_identifier = Column(String(255), nullable=False)
     sku = Column(String(100), nullable=False, index=True)
-    quantity = Column(Integer, nullable=False)
+    raw_quantity = Column(Integer, nullable=False)
     batch_number = Column(String(100), nullable=False)
     raw_qr_data = Column(Text, nullable=False)
     scanned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    packaging_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("item_packaging_units.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Constraints
     __table_args__ = (
@@ -88,9 +93,10 @@ class ScanSessionItem(Base):
 
     # Relationships
     session = relationship("ScanSession", back_populates="items")
+    packaging_unit = relationship("ItemPackagingUnit")
 
     def __repr__(self):
         return (
             f"<ScanSessionItem(id={self.id}, session={self.session_id}, "
-            f"sku={self.sku}, qty={self.quantity})>"
+            f"sku={self.sku}, raw_qty={self.raw_quantity})>"
         )

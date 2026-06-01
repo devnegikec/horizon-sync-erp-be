@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/chart_of_account_repository.py
+# hypothesis_version: 6.152.8
+
+['1000', '2000', '3000', '4000', '5000', 'account_code', 'account_id', 'account_name', 'account_type', 'accounts', 'asc', 'created_at', 'created_by', 'currency', 'desc', 'description', 'id', 'is_posting_account', 'name', 'organization_id', 'parent_account_id', 'status', 'updated_at', 'updated_by']

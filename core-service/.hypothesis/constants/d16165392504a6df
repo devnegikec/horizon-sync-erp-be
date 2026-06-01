@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/short_urls.py
+# hypothesis_version: 6.152.8
+
+[100, '/resolve/{slug}', '/{url_id}', 'Delete a short URL', 'Generate a short URL', 'Update a short URL', 'organization_id', 'user_id']

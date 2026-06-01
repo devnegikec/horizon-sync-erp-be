@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/qr_product.py
+# hypothesis_version: 6.152.8
+
+[100, '^(pre|post)$', 'from_attributes', 'pre']

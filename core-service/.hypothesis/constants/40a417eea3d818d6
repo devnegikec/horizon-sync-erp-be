@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/quotations.py
+# hypothesis_version: 6.152.8
+
+[100, '/{quotation_id}', 'Authorization', 'Bearer ', '^(asc|desc)$', 'desc', 'id', 'quotation', 'quotation_date', 'quotation_no', 'sales_order_no']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/bulk_import_service.py
+# hypothesis_version: 6.152.8
+
+['1', 'Job not found', '_', 'allow_negative_stock', 'created_by', 'data', 'enable_auto_reorder', 'error', 'errors', 'failed_rows', 'has_batch_no', 'has_errors', 'has_serial_no', 'has_variants', 'item', 'item_code', 'item_group_id', 'item_group_name', 'item_name', 'job_id', 'maintain_stock', 'max_order_qty', 'min_order_qty', 'organization_id', 'reorder_level', 'reorder_qty', 'row_number', 'standard_rate', 'success', 'successful_rows', 't', 'total_rows', 'true', 'updated_by', 'valuation_rate', 'weight_per_unit', 'yes']

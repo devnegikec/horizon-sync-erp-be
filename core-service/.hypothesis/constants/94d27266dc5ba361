@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/warehouses.py
+# hypothesis_version: 6.152.8
+
+[100, 400, 413, 500, 1024, '.', '/import', '/tree', '/{warehouse_id}', '0', '1', 'Create warehouse', 'Delete warehouse', 'Field to sort by', 'Get warehouse', 'Get warehouse tree', 'List warehouses', 'Name is required', 'Sort order', 'Update warehouse', '^(asc|desc)$', 'address_line1', 'address_line2', 'capacity_uom', 'city', 'code', 'contact_email', 'contact_name', 'contact_phone', 'country', 'created_at', 'csv', 'desc', 'description', 'f', 'false', 'field', 'general', 'is_active', 'latin-1', 'message', 'name', 'no', 'postal_code', 'row', 'state', 'store', 't', 'total_capacity', 'transit', 'true', 'updated_by', 'utf-8-sig', 'virtual', 'warehouse', 'warehouse_type', 'yes']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/item_suppliers.py
+# hypothesis_version: 6.152.8
+
+[100, '/{item_supplier_id}', 'Filter by item ID', '^(asc|desc)$', 'created_at', 'desc']

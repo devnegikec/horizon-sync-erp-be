@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/hierarchy_manager.py
+# hypothesis_version: 6.152.8
+
+['is_posting_account', 'parent_account_id']

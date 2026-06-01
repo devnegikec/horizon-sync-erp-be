@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/put_away_service.py
+# hypothesis_version: 6.152.8
+
+['0', 'PutAwayListItem', 'ReceivingSlip', 'bin', 'bin_location_id', 'completed', 'damaged', 'exclusive', 'packaging_unit_id', 'pending', 'pending_putaway', 'preferred', 'put_away', 'put_away_list', 'putaway_complete', 'quantity', 'receiving_slip', 'skipped']

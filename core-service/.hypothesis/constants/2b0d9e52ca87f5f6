@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/journal_entry_service.py
+# hypothesis_version: 6.152.8
+
+['account', 'account_code', 'account_id', 'account_name', 'created_at', 'created_by', 'credit', 'debit', 'desc', 'entry_no', 'has_next', 'has_prev', 'id', 'journal_entry', 'lines', 'organization_id', 'page', 'page_size', 'posted_at', 'posting_date', 'reference_id', 'reference_type', 'remarks', 'status', 'total_credit', 'total_debit', 'total_items', 'total_pages', 'updated_at', 'updated_by', 'voucher_type']

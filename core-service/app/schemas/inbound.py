@@ -88,8 +88,9 @@ class ScanResult(BaseModel):
     session_id: str
     qr_identifier: str
     sku: str
-    quantity: int
+    raw_quantity: int
     batch_number: str
+    packaging_unit_id: UUID | None = None
     scanned_at: str | None = None
     total_boxes_scanned: int = 0
 
@@ -168,3 +169,21 @@ class FlaggedItemResponse(BaseModel):
     box_count: int
     flag: str
     notes: str | None = None
+
+
+class ReceivingSlipPagination(BaseModel):
+    """Pagination metadata for receiving slip list."""
+
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class ReceivingSlipListResponse(BaseModel):
+    """Paginated list of receiving slips."""
+
+    receiving_slips: list[ReceivingSlipResponse]
+    pagination: ReceivingSlipPagination

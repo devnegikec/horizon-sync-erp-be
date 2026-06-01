@@ -51,6 +51,7 @@ class Item(Base):
 
     # Unit of Measure
     uom = Column(String(50), default="Nos")
+    sku = Column(String(100), nullable=True, index=True)
 
     # Stock Settings
     maintain_stock = Column(Boolean, default=True)
@@ -104,6 +105,11 @@ class Item(Base):
         UUID(as_uuid=True), ForeignKey("tax_templates.id"), nullable=True
     )
 
+    # QR Product link — enables unit-level QR tracking for this item
+    qr_product_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=True, index=True
+    )
+
     # Additional Info
     barcode = Column(String(100), nullable=True)
     status = Column(
@@ -138,6 +144,10 @@ class Item(Base):
     item_prices = relationship(
         "ItemPrice", back_populates="item", cascade="all, delete-orphan"
     )
+    packaging_units = relationship(
+        "ItemPackagingUnit", back_populates="item", cascade="all, delete-orphan"
+    )
+    qr_product = relationship("QRProduct", back_populates="items", foreign_keys=[qr_product_id])
 
     @property
     def item_group_name(self) -> str | None:

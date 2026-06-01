@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/outbound.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'Items per page', 'Page number', 'Quantity to pick', 'SKU / item code', 'Unit of measure', 'created_at', 'desc']

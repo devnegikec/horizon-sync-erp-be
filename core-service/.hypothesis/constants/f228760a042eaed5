@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/bank_transaction.py
+# hypothesis_version: 6.152.8
+
+[100, 500, 'BankAccount', 'BankReconciliation', 'CASCADE', 'all, delete-orphan', 'bank_accounts.id', 'bank_transaction', 'bank_transactions', 'chk_transaction_type', 'cleared', 'pending', 'reconciled', 'transactions']

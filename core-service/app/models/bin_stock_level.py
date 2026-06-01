@@ -31,6 +31,11 @@ class BinStockLevel(Base):
     )
     quantity_on_hand = Column(Numeric(15, 3), default=0)
     batch_number = Column(String(100), nullable=True)
+    packaging_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("item_packaging_units.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -50,6 +55,7 @@ class BinStockLevel(Base):
     # Relationships
     bin_location = relationship("WarehouseLocation", back_populates="bin_stock_levels")
     item = relationship("Item")
+    packaging_unit = relationship("ItemPackagingUnit")
 
     def __repr__(self):
         return (

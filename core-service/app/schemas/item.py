@@ -22,6 +22,7 @@ class ItemBase(BaseModel):
 
     # Unit of Measure
     uom: str = Field(default="Nos", max_length=50)
+    sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
     maintain_stock: bool = True
@@ -63,6 +64,9 @@ class ItemBase(BaseModel):
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
 
+    # QR Product link — enables unit-level QR tracking for this item
+    qr_product_id: UUID | None = None
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str = Field(default="ACTIVE")
@@ -91,6 +95,7 @@ class ItemUpdate(BaseModel):
 
     # Unit of Measure
     uom: str | None = Field(None, max_length=50)
+    sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
     maintain_stock: bool | None = None
@@ -132,6 +137,9 @@ class ItemUpdate(BaseModel):
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
 
+    # QR Product link
+    qr_product_id: UUID | None = None
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str | None = None
@@ -168,6 +176,9 @@ class ItemResponse(BaseModel):
 
     # Unit of Measure
     uom: str
+
+    # Warehouse SKU
+    sku: str | None = None
 
     # Stock Settings
     maintain_stock: bool | None = None
@@ -209,6 +220,9 @@ class ItemResponse(BaseModel):
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
 
+    # QR Product link
+    qr_product_id: UUID | None = None
+
     # Additional Info
     barcode: str | None = None
     status: str
@@ -234,7 +248,8 @@ class ItemListItem(BaseModel):
     item_code: str | None = None
     item_name: str
     item_type: str
-    uom: str
+    uom: str | None = None
+    sku: str | None = None
     item_group_id: UUID | None = None
     item_group_name: str | None = None
     standard_rate: Decimal | None = None
@@ -299,6 +314,7 @@ class ItemPickerItem(BaseModel):
     item_code: str | None = None
     item_name: str
     uom: str
+    sku: str | None = None
     min_order_qty: int = 1
     max_order_qty: int | None = None
     standard_rate: Decimal | None = None

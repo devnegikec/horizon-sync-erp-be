@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/cascade_qr.py
+# hypothesis_version: 6.152.8
+
+[100, 200, '/history', '/parents', '/parents/{node_id}', '/scan', 'Get a parent QR node', 'List parent QR nodes', 'organization_id']

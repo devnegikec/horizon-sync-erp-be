@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/purchase_orders.py
+# hypothesis_version: 6.152.8
+
+[100, '/{po_id}', '/{po_id}/cancel', '/{po_id}/close', '/{po_id}/submit', 'Filter by RFQ ID', '^(asc|desc)$', 'created_at', 'desc', 'line_items', 'purchase_order.read']

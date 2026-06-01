@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/gate_verification_service.py
+# hypothesis_version: 6.152.8
+
+[', ', 'Pick list not found', 'PickList', 'all_verified', 'batch', 'completed', 'created_at', 'decoded_payload', 'dispatch', 'driver_contact', 'driver_name', 'expected_total_qty', 'field', 'gate', 'gate_item_id', 'gate_session_id', 'id', 'items', 'open', 'organization_id', 'pick_list_id', 'qr_identifier', 'qty', 'quantity', 'reason', 'scan_context', 'scanned_at', 'scanned_items', 'session_id', 'sku', 'status', 'total_scanned', 'unauthorized', 'unauthorized_count', 'unauthorized_items', 'updated_at', 'vehicle_number', 'verification_status', 'verified', 'verified_at', 'verified_count', 'verified_qty', 'warehouse_id', 'worker_id']

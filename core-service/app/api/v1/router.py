@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     inbound,
     invoices,
     item_groups,
+    item_packaging_units,
     item_prices,
     items,
     items_picker,
@@ -41,6 +42,7 @@ from app.api.v1.endpoints import (
     location_scans,
     material_requests,
     messaging,
+    notifications,
     organization_onboarding,
     outbound,
     payments,
@@ -72,6 +74,7 @@ from app.api.v1.endpoints import (
     uom_conversions,
     uoms,
     warehouse_locations,
+    warehouse_users,
     warehouses,
     warranties,
     worker_tasks,
@@ -99,6 +102,12 @@ api_router.include_router(
 api_router.include_router(
     item_prices.router, prefix="/item-prices", tags=["Item Prices"]
 )
+# Item Packaging Units — nested under /items/{item_id}/packaging-units
+api_router.include_router(
+    item_packaging_units.router,
+    prefix="/items/{item_id}/packaging-units",
+    tags=["Item Packaging Units"],
+)
 # Bulk Operations
 api_router.include_router(bulk_import.router)
 api_router.include_router(bulk_export.router)
@@ -107,6 +116,11 @@ api_router.include_router(
     warehouse_locations.router,
     prefix="/warehouse-locations",
     tags=["Warehouse Locations"],
+)
+api_router.include_router(
+    warehouse_users.router,
+    prefix="/warehouse-users",
+    tags=["Warehouse Users"],
 )
 api_router.include_router(
     bin_stock.router,
@@ -349,6 +363,13 @@ api_router.include_router(
     messaging.router,
     prefix="/messaging",
     tags=["Messaging"],
+)
+
+# Notifications module (WMS/ASN in-app notifications)
+api_router.include_router(
+    notifications.router,
+    prefix="/notifications",
+    tags=["Notifications"],
 )
 
 # Analytics module

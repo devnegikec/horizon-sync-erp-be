@@ -12,7 +12,7 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
@@ -22,6 +22,7 @@ from app.schemas.inbound import (
     ApproveSlipRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
+    ReceivingSlipListResponse,
     ReceivingSlipResponse,
     RecordScanRequest,
     RejectSlipRequest,
@@ -101,6 +102,8 @@ async def record_scan(
     Requirements: 5.2, 5.3, 5.4
     """
     service = InboundService(db)
+    import logging
+    logging.getLogger(__name__).warning("SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data))
     result = service.record_scan(
         session_id=session_id,
         qr_data=data.qr_data,
@@ -174,6 +177,70 @@ async def get_session_summary(
         organization_id=current_user.organization_id,
     )
     return SessionSummary(**result)
+
+
+@router.get(
+    "/receiving-slips",
+    response_model=ReceivingSlipListResponse,
+    summary="List receiving slips",
+    description="List receiving slips with optional filters for warehouse, session, and status",
+)
+async def list_receiving_slips(
+    warehouse_id: UUID | None = Query(None, description="Filter by warehouse UUID"),
+    session_id: UUID | None = Query(None, description="Filter by scan session UUID"),
+    status: str | None = Query(None, description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    List receiving slips with optional filters.
+
+    **Query Parameters:**
+    - **warehouse_id**: Filter by warehouse UUID
+    - **session_id**: Filter by scan session UUID
+    - **status**: Filter by status (pending_review, pending_putaway, putaway_complete, rejected)
+    - **page**: Page number (default: 1)
+    - **page_size**: Items per page (default: 20)
+
+    **Returns:** Paginated list of receiving slips with line items
+    """
+    from app.schemas.inbound import ReceivingSlipPagination
+
+    service = InboundService(db)
+    filters: dict = {}
+    if warehouse_id:
+        filters["warehouse_id"] = warehouse_id
+    if session_id:
+        filters["session_id"] = session_id
+    if status:
+        filters["status"] = status
+
+    slips, total = service.slip_repo.list_slips(
+        org_id=current_user.organization_id,
+        filters=filters,
+        page=page,
+        page_size=page_size,
+    )
+
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    slip_responses = [
+        ReceivingSlipResponse(**service._slip_to_dict(slip)) for slip in slips
+    ]
+
+    return ReceivingSlipListResponse(
+        receiving_slips=slip_responses,
+        pagination=ReceivingSlipPagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1,
+        ),
+    )
 
 
 @router.get(

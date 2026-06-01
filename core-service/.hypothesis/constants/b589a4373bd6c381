@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/worker_tasks.py
+# hypothesis_version: 6.152.8
+
+[100, '/{task_id}', '/{task_id}/cancel', '/{task_id}/complete', '/{task_id}/start', 'Cancel a worker task', 'Create a worker task', 'Items per page', 'List worker tasks', 'Page number', 'Start a worker task', 'status']

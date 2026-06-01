@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/admin/audit_logs.py
+# hypothesis_version: 6.152.8
+
+[100, '/{record_id}/history', 'Filter by record ID', 'Filter by table name', 'Filter by user ID', 'Filter from date', 'Filter to date', 'Items per page', 'Page number']

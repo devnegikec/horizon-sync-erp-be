@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/admin_dashboard_service.py
+# hypothesis_version: 6.152.8
+
+[5.0, 200, 'Authorization', 'active', 'on_trial', 'page', 'page_size', 'pagination', 'status', 'status_counts', 'total', 'total_items', 'trial']

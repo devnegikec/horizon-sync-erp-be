@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/qr_product_settings.py
+# hypothesis_version: 6.152.8
+
+[200, '/{setting_id}', 'pagination', 'qr_product.create', 'qr_product.delete', 'qr_product.read', 'qr_product.update', 'settings']

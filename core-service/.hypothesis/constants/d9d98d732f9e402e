@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/rfq.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'RESTRICT', 'RFQ', 'RFQLine', 'RFQSupplier', 'SupplierQuote', 'all, delete-orphan', 'items.id', 'line_items', 'material_requests.id', 'quotes', 'rfq', 'rfq_line', 'rfq_lines', 'rfq_lines.id', 'rfq_suppliers', 'rfqs', 'rfqs.id', 'rfqstatus', 'supplier_quotes', 'suppliers', 'suppliers.id']

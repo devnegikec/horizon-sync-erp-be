@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/stock_movement.py
+# hypothesis_version: 6.152.8
+
+['CASCADE', 'Item', 'Warehouse', 'items.id', 'movementtype', 'stock_movements']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/config.py
+# hypothesis_version: 6.152.8
+
+[1.0, 587, 8001, ',', '.env', '0.0.0.0', '1.0.0', 'Core Service', 'HS256', 'Horizon Sync ERP', 'INFO', 'development', 'ignore', 'localhost', 'noreply@example.com', 'redis://redis:6379/0', 'search:events', 'verify.example.com']

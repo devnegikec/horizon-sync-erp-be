@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/customer_bulk.py
+# hypothesis_version: 6.152.8
+
+[1024, '+1-555-0100', '+44-20-7946-0958', '.', '/customers/bulk', '/export', '/import', '/template', '10001', '123 Business Ave', '25000', '45 Commerce Street', '50000', 'Acme Corporation', 'Content-Disposition', 'EC1A 1BB', 'Filter by status', 'GB-VAT-67890', 'Global Supplies Ltd', 'London', 'NY', 'New York', 'Search filter', 'Suite 400', 'UK', 'US-TAX-12345', 'USA', 'active', 'address_line1', 'address_line2', 'city', 'contact@acme.com', 'country', 'credit_limit', 'csv', 'customer_code', 'customer_name', 'email', 'error', 'json', 'phone', 'postal_code', 'state', 'status', 'success', 'tax_number', 'text/csv', 'xls', 'xlsx']

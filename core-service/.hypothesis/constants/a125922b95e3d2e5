@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/events/schemas.py
+# hypothesis_version: 6.152.8
+
+['Organization ID', 'entity.created', 'entity.deleted', 'entity.updated']

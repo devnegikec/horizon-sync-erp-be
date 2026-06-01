@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/sales_orders.py
+# hypothesis_version: 6.152.8
+
+[100, '/{sales_order_id}', '^(asc|desc)$', 'delivery_note_no', 'desc', 'id', 'invoice_no', 'order_date']

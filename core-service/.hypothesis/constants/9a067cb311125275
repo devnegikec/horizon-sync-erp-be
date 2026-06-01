@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/pick_list_service.py
+# hypothesis_version: 6.152.8
+
+['0', 'batch', 'batch_no', 'code', 'completed_at', 'created_at', 'created_by', 'decoded_payload', 'desc', 'has_next', 'has_prev', 'id', 'invoice_reference', 'item', 'item_id', 'items', 'items_count', 'name', 'organization_id', 'page', 'page_size', 'pick', 'pick_date', 'pick_list', 'pick_list_id', 'pick_list_item_id', 'pick_list_no', 'pick_list_status', 'picked_qty', 'qty', 'quantity', 'reference', 'reference_id', 'reference_type', 'remaining_qty', 'remarks', 'required_qty', 'sales_order', 'sap_invoice', 'scan_context', 'scanned_qty', 'sku', 'sort_order', 'status', 'total_items', 'total_pages', 'uom', 'updated_at', 'updated_by', 'warehouse', 'warehouse_id', 'worker_id']

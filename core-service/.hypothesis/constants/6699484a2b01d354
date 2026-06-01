@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/transaction_engine.py
+# hypothesis_version: 6.152.8
+
+['0', 'PURCHASE', 'SALES', 'discount_amount', 'grand_total', 'line_totals', 'quantity', 'subtotal', 'tax_amount', 'unit_price']
