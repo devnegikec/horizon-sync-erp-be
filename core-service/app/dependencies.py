@@ -59,7 +59,32 @@ async def get_current_user(
         )
 
     # Verify token type
-    if payload.get("type") != "access":
+    token_type = payload.get("type")
+    
+    # ── Service token (machine-to-machine) ────────────────────────────────
+    if token_type == "service":
+        sub = payload.get("sub", "")
+        # sub format: "service:client_id"
+        if not sub.startswith("service:"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid service token subject",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        service_client_id = sub.split(":", 1)[1]
+        permissions = payload.get("permissions") or []
+        if not isinstance(permissions, list):
+            permissions = []
+        return CurrentUser(
+            id=UUID("00000000-0000-0000-0000-000000000000"),  # synthetic ID
+            email=f"service@{service_client_id}",
+            organization_id=None,
+            user_type="service",
+            permissions=permissions,
+        )
+
+    # ── Human access token ────────────────────────────────────────────────
+    if token_type != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",

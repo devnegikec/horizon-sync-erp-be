@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     remember_me_access_token_expire_days: int = 30  # 30 days for remember me
     remember_me_refresh_token_expire_days: int = 90  # 90 days for remember me
+    service_token_expire_minutes: int = 60  # machine-to-machine tokens
     password_reset_token_expire_hours: int = 1
     # Cooldown (in seconds) between password-reset emails for the same account.
     # Within this window the back-end silently skips issuing a new token and

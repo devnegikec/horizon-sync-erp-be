@@ -1,5 +1,7 @@
 """Authentication API endpoints"""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -15,10 +17,13 @@ from app.core.exceptions import (
     TokenExpiredException,
     UserNotFoundException,
 )
+from app.core.security import create_service_token, verify_client_secret
 from app.database import get_db
 from app.dependencies import CurrentUser, get_client_ip, get_current_user
 from app.models.role import UserOrganizationRole
+from app.models.service_credential import ServiceCredential
 from app.schemas.auth import (
+    ClientCredentialsRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -30,6 +35,7 @@ from app.schemas.auth import (
     RegisterResponse,
     ResetPasswordRequest,
     ResetPasswordResponse,
+    ServiceTokenResponse,
     TokenResponse,
     VerifyResetTokenResponse,
 )
@@ -453,6 +459,69 @@ async def verify_reset_token(token: str, db: Session = Depends(get_db)):
     auth_service = AuthService(db)
     return VerifyResetTokenResponse(
         valid=auth_service.is_password_reset_token_valid(token)
+    )
+
+
+@router.post(
+    "/token",
+    response_model=ServiceTokenResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid client credentials"},
+        400: {"model": ErrorResponse, "description": "Unsupported grant type"},
+    },
+    summary="Obtain a service token (client-credentials)",
+    description="Machine-to-machine OAuth2 endpoint. Used by services like ai-service to get a JWT with embedded permissions.",
+)
+async def client_credentials_token(
+    request_data: ClientCredentialsRequest, db: Session = Depends(get_db)
+):
+    """Exchange a client_id + client_secret for a short-lived service JWT.
+
+    The returned token has ``type: "service"`` in its payload so that
+    core-service can distinguish it from a human user token and read
+    permissions directly from the JWT instead of calling ``/me``.
+    """
+    if request_data.grant_type != "client_credentials":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported grant_type. Use 'client_credentials'.",
+        )
+
+    credential = (
+        db.query(ServiceCredential)
+        .filter(
+            ServiceCredential.client_id == request_data.client_id,
+            ServiceCredential.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+
+    if not credential or not verify_client_secret(
+        request_data.client_secret, credential.client_secret_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid client credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Update last_used_at
+    credential.last_used_at = datetime.now(UTC)
+    db.commit()
+
+    token_data = {
+        "sub": f"service:{credential.client_id}",
+        "service_name": credential.service_name,
+        "permissions": credential.permissions or [],
+        "scopes": credential.scopes,
+    }
+    access_token = create_service_token(token_data)
+
+    return ServiceTokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=settings.service_token_expire_minutes * 60,
     )
 
 
