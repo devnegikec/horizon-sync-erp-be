@@ -7,6 +7,7 @@ Create Date: 2026-03-20 12:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '026_add_warranty_module'
@@ -17,7 +18,13 @@ depends_on = None
 
 def upgrade() -> None:
     # ── warranty_periods ──────────────────────────────────────────────────────
-    op.create_table(
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    if not inspector.has_table('warranty_periods'):
+        op.create_table(
         'warranty_periods',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -28,10 +35,12 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_warranty_periods_org', 'warranty_periods', ['organization_id'])
+    if not _has_index('warranty_periods', 'idx_warranty_periods_org'):
+        op.create_index('idx_warranty_periods_org', 'warranty_periods', ['organization_id'])
 
     # ── warranties ────────────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('warranties'):
+        op.create_table(
         'warranties',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -50,9 +59,12 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_warranties_org', 'warranties', ['organization_id'])
-    op.create_index('idx_warranties_serial', 'warranties', ['serial_number'])
-    op.create_index('idx_warranties_mobile', 'warranties', ['mobile'])
+    if not _has_index('warranties', 'idx_warranties_org'):
+        op.create_index('idx_warranties_org', 'warranties', ['organization_id'])
+    if not _has_index('warranties', 'idx_warranties_serial'):
+        op.create_index('idx_warranties_serial', 'warranties', ['serial_number'])
+    if not _has_index('warranties', 'idx_warranties_mobile'):
+        op.create_index('idx_warranties_mobile', 'warranties', ['mobile'])
 
 
 def downgrade() -> None:

@@ -7,6 +7,7 @@ Create Date: 2026-03-20 13:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '027_add_messaging_module'
@@ -17,7 +18,13 @@ depends_on = None
 
 def upgrade() -> None:
     # ── message_templates ─────────────────────────────────────────────────────
-    op.create_table(
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    if not inspector.has_table('message_templates'):
+        op.create_table(
         'message_templates',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -52,11 +59,14 @@ def upgrade() -> None:
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index('idx_msg_templates_org', 'message_templates', ['organization_id'])
-    op.create_index('idx_msg_templates_channel', 'message_templates', ['channel'])
+    if not _has_index('message_templates', 'idx_msg_templates_org'):
+        op.create_index('idx_msg_templates_org', 'message_templates', ['organization_id'])
+    if not _has_index('message_templates', 'idx_msg_templates_channel'):
+        op.create_index('idx_msg_templates_channel', 'message_templates', ['channel'])
 
     # ── bulk_message_jobs ─────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('bulk_message_jobs'):
+        op.create_table(
         'bulk_message_jobs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -84,11 +94,14 @@ def upgrade() -> None:
         sa.Column('extra_data', postgresql.JSONB, nullable=True),
         sa.Column('created_at', sa.Date, server_default=sa.text('CURRENT_DATE')),
     )
-    op.create_index('idx_bulk_jobs_org', 'bulk_message_jobs', ['organization_id'])
-    op.create_index('idx_bulk_jobs_status', 'bulk_message_jobs', ['status'])
+    if not _has_index('bulk_message_jobs', 'idx_bulk_jobs_org'):
+        op.create_index('idx_bulk_jobs_org', 'bulk_message_jobs', ['organization_id'])
+    if not _has_index('bulk_message_jobs', 'idx_bulk_jobs_status'):
+        op.create_index('idx_bulk_jobs_status', 'bulk_message_jobs', ['status'])
 
     # ── scheduled_messages ────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('scheduled_messages'):
+        op.create_table(
         'scheduled_messages',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -107,11 +120,14 @@ def upgrade() -> None:
         sa.Column('extra_data', postgresql.JSONB, nullable=True),
         sa.Column('created_at', sa.Date, server_default=sa.text('CURRENT_DATE')),
     )
-    op.create_index('idx_scheduled_msgs_org', 'scheduled_messages', ['organization_id'])
-    op.create_index('idx_scheduled_msgs_schedule', 'scheduled_messages', ['schedule'])
+    if not _has_index('scheduled_messages', 'idx_scheduled_msgs_org'):
+        op.create_index('idx_scheduled_msgs_org', 'scheduled_messages', ['organization_id'])
+    if not _has_index('scheduled_messages', 'idx_scheduled_msgs_schedule'):
+        op.create_index('idx_scheduled_msgs_schedule', 'scheduled_messages', ['schedule'])
 
     # ── sms_reports ───────────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('sms_reports'):
+        op.create_table(
         'sms_reports',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -133,11 +149,14 @@ def upgrade() -> None:
         sa.Column('submit_date', sa.DateTime(timezone=True), nullable=True),
         sa.Column('created_at', sa.Date, server_default=sa.text('CURRENT_DATE')),
     )
-    op.create_index('idx_sms_reports_org', 'sms_reports', ['organization_id'])
-    op.create_index('idx_sms_reports_recipient', 'sms_reports', ['recipient_number'])
+    if not _has_index('sms_reports', 'idx_sms_reports_org'):
+        op.create_index('idx_sms_reports_org', 'sms_reports', ['organization_id'])
+    if not _has_index('sms_reports', 'idx_sms_reports_recipient'):
+        op.create_index('idx_sms_reports_recipient', 'sms_reports', ['recipient_number'])
 
     # ── whatsapp_reports ──────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('whatsapp_reports'):
+        op.create_table(
         'whatsapp_reports',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -159,11 +178,14 @@ def upgrade() -> None:
         sa.Column('sent_date', sa.DateTime(timezone=True), nullable=True),
         sa.Column('deliver_date', sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index('idx_wa_reports_org', 'whatsapp_reports', ['organization_id'])
-    op.create_index('idx_wa_reports_recipient', 'whatsapp_reports', ['recipient_number'])
+    if not _has_index('whatsapp_reports', 'idx_wa_reports_org'):
+        op.create_index('idx_wa_reports_org', 'whatsapp_reports', ['organization_id'])
+    if not _has_index('whatsapp_reports', 'idx_wa_reports_recipient'):
+        op.create_index('idx_wa_reports_recipient', 'whatsapp_reports', ['recipient_number'])
 
     # ── rcs_credentials ───────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('rcs_credentials'):
+        op.create_table(
         'rcs_credentials',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -174,7 +196,8 @@ def upgrade() -> None:
     )
 
     # ── rcs_templates ─────────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('rcs_templates'):
+        op.create_table(
         'rcs_templates',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -185,10 +208,12 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_rcs_templates_org', 'rcs_templates', ['organization_id'])
+    if not _has_index('rcs_templates', 'idx_rcs_templates_org'):
+        op.create_index('idx_rcs_templates_org', 'rcs_templates', ['organization_id'])
 
     # ── rcs_reports ───────────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('rcs_reports'):
+        op.create_table(
         'rcs_reports',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -201,10 +226,12 @@ def upgrade() -> None:
         sa.Column('sent_date', sa.DateTime(timezone=True), nullable=True),
         sa.Column('deliver_date', sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index('idx_rcs_reports_org', 'rcs_reports', ['organization_id'])
+    if not _has_index('rcs_reports', 'idx_rcs_reports_org'):
+        op.create_index('idx_rcs_reports_org', 'rcs_reports', ['organization_id'])
 
     # ── message_credits ───────────────────────────────────────────────────────
-    op.create_table(
+    if not inspector.has_table('message_credits'):
+        op.create_table(
         'message_credits',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -219,7 +246,8 @@ def upgrade() -> None:
         sa.Column('transaction_date', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_msg_credits_org', 'message_credits', ['organization_id'])
+    if not _has_index('message_credits', 'idx_msg_credits_org'):
+        op.create_index('idx_msg_credits_org', 'message_credits', ['organization_id'])
 
 
 def downgrade() -> None:

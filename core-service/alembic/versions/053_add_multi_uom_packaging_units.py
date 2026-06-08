@@ -10,6 +10,7 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -26,6 +27,11 @@ def upgrade() -> None:
     # 1. Create item_packaging_units
     #    (must come first — other tables FK to it)
     # ══════════════════════════════════════════════════════════════════
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.create_table(
         "item_packaging_units",
         sa.Column(

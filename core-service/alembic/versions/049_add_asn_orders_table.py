@@ -9,6 +9,7 @@ feature, allowing pre-notification of incoming stock transfers.
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -22,6 +23,11 @@ depends_on = None
 
 def upgrade() -> None:
     # Create asnorderstatus enum
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.execute(
         "CREATE TYPE asnorderstatus AS ENUM ('draft', 'confirmed', 'partially_delivered', 'delivered', 'closed', 'cancelled')"
     )

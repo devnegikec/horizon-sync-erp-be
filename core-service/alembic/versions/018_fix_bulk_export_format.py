@@ -6,6 +6,7 @@ Create Date: 2026-02-28
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.engine.reflection import Inspector
 
@@ -19,6 +20,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     # Get the current connection and inspect existing tables
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)

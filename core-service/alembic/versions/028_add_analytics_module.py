@@ -10,6 +10,7 @@ Create Date: 2026-03-20 12:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '028_add_analytics_module'
@@ -20,7 +21,13 @@ depends_on = None
 
 def upgrade() -> None:
     # ── meta_campaigns ────────────────────────────────────────────────────────
-    op.create_table(
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    if not inspector.has_table('meta_campaigns'):
+        op.create_table(
         'meta_campaigns',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -35,9 +42,12 @@ def upgrade() -> None:
         sa.Column('fetched_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_meta_campaigns_org', 'meta_campaigns', ['organization_id'])
-    op.create_index('idx_meta_campaigns_campaign_id', 'meta_campaigns', ['campaign_id'])
-    op.create_index('idx_meta_campaigns_fetched_at', 'meta_campaigns', ['fetched_at'])
+    if not _has_index('meta_campaigns', 'idx_meta_campaigns_org'):
+        op.create_index('idx_meta_campaigns_org', 'meta_campaigns', ['organization_id'])
+    if not _has_index('meta_campaigns', 'idx_meta_campaigns_campaign_id'):
+        op.create_index('idx_meta_campaigns_campaign_id', 'meta_campaigns', ['campaign_id'])
+    if not _has_index('meta_campaigns', 'idx_meta_campaigns_fetched_at'):
+        op.create_index('idx_meta_campaigns_fetched_at', 'meta_campaigns', ['fetched_at'])
 
 
 def downgrade() -> None:

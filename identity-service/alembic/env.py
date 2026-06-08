@@ -72,6 +72,14 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
         )
 
+        # Make all create_* / add_column / CREATE TYPE operations idempotent
+        # so re-running migrations against an existing schema does not raise
+        # DuplicateTable / DuplicateColumn / DuplicateObject errors.
+        sys.path.insert(0, os.path.dirname(__file__))
+        from idempotent_ops import apply_idempotent_patches
+
+        apply_idempotent_patches()
+
         with context.begin_transaction():
             context.run_migrations()
 

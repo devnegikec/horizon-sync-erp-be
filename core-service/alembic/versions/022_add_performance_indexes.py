@@ -15,6 +15,7 @@ These indexes improve performance when:
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from alembic import op
 from sqlalchemy.engine.reflection import Inspector
 
@@ -31,6 +32,16 @@ def _existing_indexes(conn, table_name):
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     """Add performance indexes"""
     conn = op.get_bind()
 

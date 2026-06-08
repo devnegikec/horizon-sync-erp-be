@@ -10,6 +10,7 @@ Create Date: 2026-03-27 16:00:00
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 # revision identifiers
 revision = '037_add_b2b_billing_invoice_types'
@@ -19,6 +20,11 @@ depends_on = None
 
 
 def upgrade():
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     """Add new B2B billing invoice types"""
     # invoicetype is NOT a PostgreSQL enum in this codebase — the Invoice model
     # uses String(50) for invoice_type. These values are enforced at the

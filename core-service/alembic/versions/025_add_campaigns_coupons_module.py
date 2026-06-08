@@ -7,6 +7,7 @@ Create Date: 2026-03-20 11:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '025_add_campaigns_coupons_module'
@@ -16,9 +17,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     # ── campaigns ─────────────────────────────────────────────────────────────
-    op.create_table(
-        'campaigns',
+    if not inspector.has_table('campaigns'):
+        if not inspector.has_table('campaigns'):
+            op.create_table(
+            'campaigns',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -69,13 +77,17 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_campaigns_org', 'campaigns', ['organization_id'])
-    op.create_index('idx_campaigns_status', 'campaigns', ['campaign_status'])
+        )
+    if not _has_index('campaigns', 'idx_campaigns_org'):
+        op.create_index('idx_campaigns_org', 'campaigns', ['organization_id'])
+    if not _has_index('campaigns', 'idx_campaigns_status'):
+        op.create_index('idx_campaigns_status', 'campaigns', ['campaign_status'])
 
     # ── play2win_prizes ───────────────────────────────────────────────────────
-    op.create_table(
-        'play2win_prizes',
+    if not inspector.has_table('play2win_prizes'):
+        if not inspector.has_table('play2win_prizes'):
+            op.create_table(
+            'play2win_prizes',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -90,12 +102,15 @@ def upgrade() -> None:
         sa.Column('is_active', sa.Boolean, server_default='true'),
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_prizes_campaign', 'play2win_prizes', ['campaign_id'])
+        )
+    if not _has_index('play2win_prizes', 'idx_prizes_campaign'):
+        op.create_index('idx_prizes_campaign', 'play2win_prizes', ['campaign_id'])
 
     # ── web_campaigns ─────────────────────────────────────────────────────────
-    op.create_table(
-        'web_campaigns',
+    if not inspector.has_table('web_campaigns'):
+        if not inspector.has_table('web_campaigns'):
+            op.create_table(
+            'web_campaigns',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -116,12 +131,15 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_web_campaigns_org', 'web_campaigns', ['organization_id'])
+        )
+    if not _has_index('web_campaigns', 'idx_web_campaigns_org'):
+        op.create_index('idx_web_campaigns_org', 'web_campaigns', ['organization_id'])
 
     # ── tags ──────────────────────────────────────────────────────────────────
-    op.create_table(
-        'campaign_tags',
+    if not inspector.has_table('campaign_tags'):
+        if not inspector.has_table('campaign_tags'):
+            op.create_table(
+            'campaign_tags',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -134,12 +152,15 @@ def upgrade() -> None:
                   server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_campaign_tags_org', 'campaign_tags', ['organization_id'])
+        )
+    if not _has_index('campaign_tags', 'idx_campaign_tags_org'):
+        op.create_index('idx_campaign_tags_org', 'campaign_tags', ['organization_id'])
 
     # ── leads ─────────────────────────────────────────────────────────────────
-    op.create_table(
-        'campaign_leads',
+    if not inspector.has_table('campaign_leads'):
+        if not inspector.has_table('campaign_leads'):
+            op.create_table(
+            'campaign_leads',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -173,14 +194,19 @@ def upgrade() -> None:
                   server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_leads_org', 'campaign_leads', ['organization_id'])
-    op.create_index('idx_leads_mobile', 'campaign_leads', ['mobilenumber'])
-    op.create_index('idx_leads_campaign', 'campaign_leads', ['campaign_id'])
+        )
+    if not _has_index('campaign_leads', 'idx_leads_org'):
+        op.create_index('idx_leads_org', 'campaign_leads', ['organization_id'])
+    if not _has_index('campaign_leads', 'idx_leads_mobile'):
+        op.create_index('idx_leads_mobile', 'campaign_leads', ['mobilenumber'])
+    if not _has_index('campaign_leads', 'idx_leads_campaign'):
+        op.create_index('idx_leads_campaign', 'campaign_leads', ['campaign_id'])
 
     # ── lead_tags (M2M) ───────────────────────────────────────────────────────
-    op.create_table(
-        'lead_tags',
+    if not inspector.has_table('lead_tags'):
+        if not inspector.has_table('lead_tags'):
+            op.create_table(
+            'lead_tags',
         sa.Column('lead_id', postgresql.UUID(as_uuid=True),
                   sa.ForeignKey('campaign_leads.id', ondelete='CASCADE'),
                   nullable=False),
@@ -188,11 +214,13 @@ def upgrade() -> None:
                   sa.ForeignKey('campaign_tags.id', ondelete='CASCADE'),
                   nullable=False),
         sa.PrimaryKeyConstraint('lead_id', 'tag_id'),
-    )
+        )
 
     # ── coupons ───────────────────────────────────────────────────────────────
-    op.create_table(
-        'coupons',
+    if not inspector.has_table('coupons'):
+        if not inspector.has_table('coupons'):
+            op.create_table(
+            'coupons',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -233,15 +261,21 @@ def upgrade() -> None:
         sa.Column('extra_data', postgresql.JSONB, nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_coupons_org', 'coupons', ['organization_id'])
-    op.create_index('idx_coupons_code', 'coupons', ['coupon_code'])
-    op.create_index('idx_coupons_mobile', 'coupons', ['mobilenumber'])
-    op.create_index('idx_coupons_campaign', 'coupons', ['campaign_id'])
+        )
+    if not _has_index('coupons', 'idx_coupons_org'):
+        op.create_index('idx_coupons_org', 'coupons', ['organization_id'])
+    if not _has_index('coupons', 'idx_coupons_code'):
+        op.create_index('idx_coupons_code', 'coupons', ['coupon_code'])
+    if not _has_index('coupons', 'idx_coupons_mobile'):
+        op.create_index('idx_coupons_mobile', 'coupons', ['mobilenumber'])
+    if not _has_index('coupons', 'idx_coupons_campaign'):
+        op.create_index('idx_coupons_campaign', 'coupons', ['campaign_id'])
 
     # ── coupon_unlock_logs ────────────────────────────────────────────────────
-    op.create_table(
-        'coupon_unlock_logs',
+    if not inspector.has_table('coupon_unlock_logs'):
+        if not inspector.has_table('coupon_unlock_logs'):
+            op.create_table(
+            'coupon_unlock_logs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -253,13 +287,17 @@ def upgrade() -> None:
         sa.Column('user_reference', sa.String(255), nullable=True),
         sa.Column('timestamp', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_coupon_logs_org', 'coupon_unlock_logs', ['organization_id'])
-    op.create_index('idx_coupon_logs_coupon', 'coupon_unlock_logs', ['coupon_id'])
+        )
+    if not _has_index('coupon_unlock_logs', 'idx_coupon_logs_org'):
+        op.create_index('idx_coupon_logs_org', 'coupon_unlock_logs', ['organization_id'])
+    if not _has_index('coupon_unlock_logs', 'idx_coupon_logs_coupon'):
+        op.create_index('idx_coupon_logs_coupon', 'coupon_unlock_logs', ['coupon_id'])
 
     # ── external_coupons ──────────────────────────────────────────────────────
-    op.create_table(
-        'external_coupons',
+    if not inspector.has_table('external_coupons'):
+        if not inspector.has_table('external_coupons'):
+            op.create_table(
+            'external_coupons',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -280,23 +318,28 @@ def upgrade() -> None:
         sa.Column('extra_data', postgresql.JSONB, nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_ext_coupons_org', 'external_coupons', ['organization_id'])
+        )
+    if not _has_index('external_coupons', 'idx_ext_coupons_org'):
+        op.create_index('idx_ext_coupons_org', 'external_coupons', ['organization_id'])
 
     # ── coupon_durations ──────────────────────────────────────────────────────
-    op.create_table(
-        'coupon_durations',
+    if not inspector.has_table('coupon_durations'):
+        if not inspector.has_table('coupon_durations'):
+            op.create_table(
+            'coupon_durations',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('delivery_type', sa.String(3), nullable=False),
         sa.Column('cooling_periods', sa.Integer, nullable=False),
         sa.Column('min_order_amount', sa.String(256), server_default='1500'),
-    )
+        )
 
     # ── shopify_configs ───────────────────────────────────────────────────────
-    op.create_table(
-        'shopify_configs',
+    if not inspector.has_table('shopify_configs'):
+        if not inspector.has_table('shopify_configs'):
+            op.create_table(
+            'shopify_configs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),

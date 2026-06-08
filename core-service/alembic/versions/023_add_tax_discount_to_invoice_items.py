@@ -7,6 +7,7 @@ Create Date: 2024-01-15 10:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -17,6 +18,11 @@ depends_on = None
 
 
 def upgrade():
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     conn = op.get_bind()
     from sqlalchemy.engine.reflection import Inspector
     existing = set(Inspector.from_engine(conn).get_table_names())

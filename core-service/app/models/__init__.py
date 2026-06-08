@@ -128,6 +128,7 @@ from app.models.messaging import (
 )
 from app.models.notification import Notification
 from app.models.warehouse_user import WarehouseUser
+from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
@@ -135,6 +136,7 @@ from app.models.product_item import ProductItem
 
 # Public Marketing module
 # Public Marketing module
+from app.models.pick_list import PickList, PickListItem
 from app.models.public_submission import PublicSubmission
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
@@ -275,6 +277,7 @@ __all__ = [
     "ItemPackagingUnit",
     "JournalEntry",
     "JournalEntryLine",
+    "Payment",
     "PaymentEntry",
     "PaymentReference",
     "PaymentAuditLog",
@@ -398,6 +401,8 @@ __all__ = [
     "LocationScan",
     "PutAwayList",
     "PutAwayListItem",
+    "PickList",
+    "PickListItem",
     # Temporarily commented out - models with FK to non-existent tables
     # "Batch",
     # "ItemPrice",

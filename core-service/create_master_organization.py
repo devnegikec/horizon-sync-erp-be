@@ -88,58 +88,79 @@ def ensure_single_master_organization():
         
         print("   ✓ Advisory lock acquired")
         
-        # Step 3: Atomic UPSERT operation - thread safe
-        print("\n3. Performing atomic UPSERT of master organization...")
-        
-        result = db.execute(text("""
-            INSERT INTO organizations (
-                id, name, slug, display_name, organization_type, status, is_active,
-                email, website, city, state, country, billing_status,
-                base_currency, max_users, max_credits, created_at, updated_at
-            ) VALUES (
-                :id, :name, :slug, :display_name, :org_type, :status, true,
-                :email, :website, :city, :state, :country, 'active',
-                'USD', 10000, 1000000, :created_at, :updated_at
-            ) 
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                slug = EXCLUDED.slug, 
-                display_name = EXCLUDED.display_name,
-                organization_type = EXCLUDED.organization_type,
-                status = EXCLUDED.status,
-                email = EXCLUDED.email,
-                website = EXCLUDED.website,
-                city = EXCLUDED.city,
-                state = EXCLUDED.state,
-                country = EXCLUDED.country,
-                updated_at = EXCLUDED.updated_at
-            RETURNING id, name, organization_type
-        """), {
-            **MASTER_ORG_CONFIG,
-            'org_type': MASTER_ORG_CONFIG["organization_type"],
-            'created_at': datetime.now(),
-            'updated_at': datetime.now()
-        }).fetchone()
-        
-        print(f"   ✓ Master organization ready: {result.name} (ID: {result.id})")
-        
+        # Step 3: Idempotent master organization setup - thread safe
+        print("\n3. Ensuring master organization exists...")
+
+        # A master organization may already exist (e.g. from a restored backup)
+        # with a DIFFERENT id than the canonical one. Inserting the canonical
+        # row would attempt to create a *second* master and the
+        # check_single_master_org() trigger would reject it. So we first adopt
+        # any existing master and normalise its configuration; only when no
+        # master exists at all do we insert the canonical row.
+        existing_master = db.execute(text("""
+            SELECT id, name FROM organizations
+            WHERE organization_type = 'master'
+            ORDER BY created_at
+            LIMIT 1
+        """)).fetchone()
+
+        if existing_master:
+            update_master_organization(db, existing_master.id)
+            master_id = str(existing_master.id)
+            print(
+                f"   ✓ Master organization ready (existing): "
+                f"{MASTER_ORG_CONFIG['name']} (ID: {master_id})"
+            )
+        else:
+            result = db.execute(text("""
+                INSERT INTO organizations (
+                    id, name, slug, display_name, organization_type, status, is_active,
+                    email, website, city, state, country, billing_status,
+                    base_currency, max_users, max_credits, created_at, updated_at
+                ) VALUES (
+                    :id, :name, :slug, :display_name, :org_type, :status, true,
+                    :email, :website, :city, :state, :country, 'active',
+                    'USD', 10000, 1000000, :created_at, :updated_at
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    slug = EXCLUDED.slug,
+                    display_name = EXCLUDED.display_name,
+                    organization_type = EXCLUDED.organization_type,
+                    status = EXCLUDED.status,
+                    email = EXCLUDED.email,
+                    website = EXCLUDED.website,
+                    city = EXCLUDED.city,
+                    state = EXCLUDED.state,
+                    country = EXCLUDED.country,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id, name, organization_type
+            """), {
+                **MASTER_ORG_CONFIG,
+                'org_type': MASTER_ORG_CONFIG["organization_type"],
+                'created_at': datetime.now(),
+                'updated_at': datetime.now()
+            }).fetchone()
+            master_id = str(result.id)
+            print(f"   ✓ Master organization ready: {result.name} (ID: {master_id})")
+
         # Step 4: Clean up any duplicate masters that might exist from before constraints
         print("\n4. Cleaning up any pre-existing duplicates...")
-        cleanup_duplicate_masters(db, str(result.id))
+        cleanup_duplicate_masters(db, master_id)
         
         # Step 5: Make all non-master organizations customers of master organization (Step 2)
         print("\n5. Setting up customer relationships...")
-        setup_customer_relationships(db, str(result.id))
+        setup_customer_relationships(db, master_id)
         
         # Step 6: Create customer records in core service for all customer organizations (Step 3)
         print("\n6. Syncing customer organizations to core service...")
-        sync_customer_records_to_core(str(result.id))
+        sync_customer_records_to_core(master_id)
         
         db.commit()
         print("\n✅ Thread-safe master organization, customer relationships, and core sync completed!")
         
         # Verify final state
-        verify_complete_setup(str(result.id))
+        verify_complete_setup(master_id)
         
     except Exception as e:
         print(f"\n❌ Error setting up master organization: {e}")

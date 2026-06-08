@@ -7,6 +7,7 @@ Create Date: 2026-03-20 13:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 revision = '029_add_url_management'
@@ -16,7 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    if not inspector.has_table('short_urls'):
+        op.create_table(
         'short_urls',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -37,8 +44,10 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
     )
-    op.create_index('idx_short_urls_org', 'short_urls', ['organization_id'])
-    op.create_index('idx_short_urls_slug', 'short_urls', ['slug'], unique=True)
+    if not _has_index('short_urls', 'idx_short_urls_org'):
+        op.create_index('idx_short_urls_org', 'short_urls', ['organization_id'])
+    if not _has_index('short_urls', 'idx_short_urls_slug'):
+        op.create_index('idx_short_urls_slug', 'short_urls', ['slug'], unique=True)
 
 
 def downgrade() -> None:

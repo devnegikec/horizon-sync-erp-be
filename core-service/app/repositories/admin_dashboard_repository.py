@@ -11,11 +11,28 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.models.admin import UserActivityLog
 from app.models.invoice import Invoice
 from app.models.payment import Payment
+
+
+def _safe_scalar(query, fallback=Decimal("0")):
+    """Execute a scalar query, returning fallback if the underlying table
+    does not exist (schema drift / migration pending).
+    Rolls back the session so the failed transaction doesn't poison
+    subsequent queries."""
+    try:
+        return query.scalar() or fallback
+    except ProgrammingError as exc:
+        if "does not exist" in str(exc).lower():
+            # Rollback to clear the aborted transaction state
+            if query.session and hasattr(query.session, "rollback"):
+                query.session.rollback()
+            return fallback
+        raise
 
 
 class AdminDashboardRepository:
@@ -40,7 +57,7 @@ class AdminDashboardRepository:
             inv_q = inv_q.filter(Invoice.posting_date >= date_from)
         if date_to:
             inv_q = inv_q.filter(Invoice.posting_date <= date_to)
-        total_invoiced = inv_q.scalar() or Decimal("0")
+        total_invoiced = _safe_scalar(inv_q)
 
         # Total outstanding (pending / partial / overdue)
         out_q = self.db.query(
@@ -52,7 +69,7 @@ class AdminDashboardRepository:
             out_q = out_q.filter(Invoice.posting_date >= date_from)
         if date_to:
             out_q = out_q.filter(Invoice.posting_date <= date_to)
-        total_outstanding = out_q.scalar() or Decimal("0")
+        total_outstanding = _safe_scalar(out_q)
 
         # Total received (completed payments)
         pay_q = self.db.query(
@@ -64,7 +81,7 @@ class AdminDashboardRepository:
             pay_q = pay_q.filter(Payment.posting_date >= date_from)
         if date_to:
             pay_q = pay_q.filter(Payment.posting_date <= date_to)
-        total_received = pay_q.scalar() or Decimal("0")
+        total_received = _safe_scalar(pay_q)
 
         return {
             "total_invoiced": total_invoiced,
@@ -80,10 +97,18 @@ class AdminDashboardRepository:
         date_from: datetime | None = None,
         date_to: datetime | None = None,
     ) -> list[UserActivityLog]:
-        """Return the most recent activity log entries, sorted by created_at desc."""
+        """Return the most recent activity log entries, sorted by created_at desc.
+        Returns empty list if the table does not exist (schema drift)."""
         q = self.db.query(UserActivityLog)
         if date_from:
             q = q.filter(UserActivityLog.created_at >= date_from)
         if date_to:
             q = q.filter(UserActivityLog.created_at <= date_to)
-        return q.order_by(UserActivityLog.created_at.desc()).limit(limit).all()
+        try:
+            return q.order_by(UserActivityLog.created_at.desc()).limit(limit).all()
+        except ProgrammingError as exc:
+            if "does not exist" in str(exc).lower():
+                if self.db and hasattr(self.db, "rollback"):
+                    self.db.rollback()
+                return []
+            raise

@@ -9,6 +9,7 @@ Creates the warehouse_locations table with full hierarchy support
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import UUID
 
 from alembic import op
@@ -21,6 +22,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     conn = op.get_bind()
 
     # Drop existing table if it exists (handles schema mismatches from prior model-based creation)

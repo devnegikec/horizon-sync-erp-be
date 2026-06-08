@@ -16,6 +16,7 @@ Requirements: 9.1, 9.4, 8.4
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -32,6 +33,11 @@ def upgrade() -> None:
     # ALTER pick_lists: add invoice_reference, invoice_data,
     #                   dispatch_record_id columns
     # ══════════════════════════════════════════════════════════════════
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.add_column(
         "pick_lists",
         sa.Column("invoice_reference", sa.String(255), nullable=True),

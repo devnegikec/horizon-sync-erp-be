@@ -25,7 +25,8 @@ def upgrade() -> None:
     
     # ── brand_industries ──────────────────────────────────────────────────────
     if not inspector.has_table('brand_industries'):
-        op.create_table(
+        if not inspector.has_table('brand_industries'):
+            op.create_table(
         'brand_industries',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
@@ -38,7 +39,8 @@ def upgrade() -> None:
 
     # ── brand_trust_questions ─────────────────────────────────────────────────
     if not inspector.has_table('brand_trust_questions'):
-        op.create_table(
+        if not inspector.has_table('brand_trust_questions'):
+            op.create_table(
             'brand_trust_questions',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                       server_default=sa.text('gen_random_uuid()')),
@@ -65,7 +67,8 @@ def upgrade() -> None:
 
     # ── brand_trust_assessments ───────────────────────────────────────────────
     if not inspector.has_table('brand_trust_assessments'):
-        op.create_table(
+        if not inspector.has_table('brand_trust_assessments'):
+            op.create_table(
             'brand_trust_assessments',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                       server_default=sa.text('gen_random_uuid()')),
@@ -92,7 +95,8 @@ def upgrade() -> None:
 
     # ── brand_trust_answers ───────────────────────────────────────────────────
     if not inspector.has_table('brand_trust_answers'):
-        op.create_table(
+        if not inspector.has_table('brand_trust_answers'):
+            op.create_table(
             'brand_trust_answers',
             sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                       server_default=sa.text('gen_random_uuid()')),

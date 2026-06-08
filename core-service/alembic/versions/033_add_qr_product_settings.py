@@ -50,17 +50,26 @@ def upgrade() -> None:
         ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.create_index(
-        "idx_qr_prod_settings_org", "qr_product_settings", ["organization_id"]
-    )
-    op.create_index(
-        "idx_qr_prod_settings_type", "qr_product_settings", ["setting_type"]
-    )
-    op.create_unique_constraint(
-        "uq_qr_prod_settings_org_type_value",
-        "qr_product_settings",
-        ["organization_id", "setting_type", "value"],
-    )
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
+    def _has_constraint(table_name: str, constraint_name: str) -> bool:
+        return any(c['name'] == constraint_name for c in inspector.get_unique_constraints(table_name))
+
+    if not _has_index('qr_product_settings', 'idx_qr_prod_settings_org'):
+        op.create_index(
+            "idx_qr_prod_settings_org", "qr_product_settings", ["organization_id"]
+        )
+    if not _has_index('qr_product_settings', 'idx_qr_prod_settings_type'):
+        op.create_index(
+            "idx_qr_prod_settings_type", "qr_product_settings", ["setting_type"]
+        )
+    if not _has_constraint('qr_product_settings', 'uq_qr_prod_settings_org_type_value'):
+        op.create_unique_constraint(
+            "uq_qr_prod_settings_org_type_value",
+            "qr_product_settings",
+            ["organization_id", "setting_type", "value"],
+        )
 
 
 def downgrade() -> None:

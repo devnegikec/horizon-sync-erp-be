@@ -31,7 +31,9 @@ CREATE DATABASE search_db;
 -- ===========================================
 -- Note: horizon_user is created by POSTGRES_USER env var
 GRANT ALL PRIVILEGES ON DATABASE identity_db TO horizon_user;
+
 GRANT ALL PRIVILEGES ON DATABASE core_db TO horizon_user;
+
 GRANT ALL PRIVILEGES ON DATABASE search_db TO horizon_user;
 
 -- ===========================================
@@ -208,4 +210,6 @@ CREATE TYPE readingtype AS ENUM (
 \c search_db;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";  -- For fuzzy text search
+
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+-- For fuzzy text search

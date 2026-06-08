@@ -7,6 +7,7 @@ Create Date: 2026-03-20 10:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -17,9 +18,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     # ── qr_products ──────────────────────────────────────────────────────────
-    op.create_table(
-        'qr_products',
+    if not inspector.has_table('qr_products'):
+        if not inspector.has_table('qr_products'):
+            op.create_table(
+            'qr_products',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -49,12 +57,15 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_qr_products_org', 'qr_products', ['organization_id'])
+        )
+    if not _has_index('qr_products', 'idx_qr_products_org'):
+        op.create_index('idx_qr_products_org', 'qr_products', ['organization_id'])
 
     # ── qr_blocks ─────────────────────────────────────────────────────────────
-    op.create_table(
-        'qr_blocks',
+    if not inspector.has_table('qr_blocks'):
+        if not inspector.has_table('qr_blocks'):
+            op.create_table(
+            'qr_blocks',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -84,13 +95,17 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_qr_blocks_org', 'qr_blocks', ['organization_id'])
-    op.create_index('idx_qr_blocks_product', 'qr_blocks', ['product_id'])
+        )
+    if not _has_index('qr_blocks', 'idx_qr_blocks_org'):
+        op.create_index('idx_qr_blocks_org', 'qr_blocks', ['organization_id'])
+    if not _has_index('qr_blocks', 'idx_qr_blocks_product'):
+        op.create_index('idx_qr_blocks_product', 'qr_blocks', ['product_id'])
 
     # ── product_items ─────────────────────────────────────────────────────────
-    op.create_table(
-        'product_items',
+    if not inspector.has_table('product_items'):
+        if not inspector.has_table('product_items'):
+            op.create_table(
+            'product_items',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -119,14 +134,19 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_product_items_org', 'product_items', ['organization_id'])
-    op.create_index('idx_product_items_serial', 'product_items', ['serial_number'])
-    op.create_index('idx_product_items_product', 'product_items', ['product_id'])
+        )
+    if not _has_index('product_items', 'idx_product_items_org'):
+        op.create_index('idx_product_items_org', 'product_items', ['organization_id'])
+    if not _has_index('product_items', 'idx_product_items_serial'):
+        op.create_index('idx_product_items_serial', 'product_items', ['serial_number'])
+    if not _has_index('product_items', 'idx_product_items_product'):
+        op.create_index('idx_product_items_product', 'product_items', ['product_id'])
 
     # ── qr_activation_parameters ──────────────────────────────────────────────
-    op.create_table(
-        'qr_activation_parameters',
+    if not inspector.has_table('qr_activation_parameters'):
+        if not inspector.has_table('qr_activation_parameters'):
+            op.create_table(
+            'qr_activation_parameters',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -149,13 +169,16 @@ def upgrade() -> None:
         sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_qr_act_params_org', 'qr_activation_parameters',
-                    ['organization_id'])
+        )
+    if not _has_index('qr_activation_parameters', 'idx_qr_act_params_org'):
+        op.create_index('idx_qr_act_params_org', 'qr_activation_parameters',
+                        ['organization_id'])
 
     # ── qr_activation_tracks ──────────────────────────────────────────────────
-    op.create_table(
-        'qr_activation_tracks',
+    if not inspector.has_table('qr_activation_tracks'):
+        if not inspector.has_table('qr_activation_tracks'):
+            op.create_table(
+            'qr_activation_tracks',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -171,13 +194,16 @@ def upgrade() -> None:
                   sa.ForeignKey('qr_activation_tracks.id'), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_qr_act_tracks_org', 'qr_activation_tracks',
-                    ['organization_id'])
+        )
+    if not _has_index('qr_activation_tracks', 'idx_qr_act_tracks_org'):
+        op.create_index('idx_qr_act_tracks_org', 'qr_activation_tracks',
+                        ['organization_id'])
 
     # ── qr_credit_usage ───────────────────────────────────────────────────────
-    op.create_table(
-        'qr_credit_usage',
+    if not inspector.has_table('qr_credit_usage'):
+        if not inspector.has_table('qr_credit_usage'):
+            op.create_table(
+            'qr_credit_usage',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -186,12 +212,15 @@ def upgrade() -> None:
         sa.Column('quantity', sa.Integer, nullable=False),
         sa.Column('used_at', sa.DateTime(timezone=True),
                   server_default=sa.text('now()')),
-    )
-    op.create_index('idx_qr_credit_org', 'qr_credit_usage', ['organization_id'])
+        )
+    if not _has_index('qr_credit_usage', 'idx_qr_credit_org'):
+        op.create_index('idx_qr_credit_org', 'qr_credit_usage', ['organization_id'])
 
     # ── qr_scan_events ────────────────────────────────────────────────────────
-    op.create_table(
-        'qr_scan_events',
+    if not inspector.has_table('qr_scan_events'):
+        if not inspector.has_table('qr_scan_events'):
+            op.create_table(
+            'qr_scan_events',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -210,10 +239,13 @@ def upgrade() -> None:
         sa.Column('state', sa.String(100), nullable=True),
         sa.Column('country', sa.String(100), nullable=True),
         sa.Column('extra_data', postgresql.JSONB, nullable=True),
-    )
-    op.create_index('idx_qr_scan_org', 'qr_scan_events', ['organization_id'])
-    op.create_index('idx_qr_scan_serial', 'qr_scan_events', ['serial_number'])
-    op.create_index('idx_qr_scan_ts', 'qr_scan_events', ['scan_timestamp'])
+        )
+    if not _has_index('qr_scan_events', 'idx_qr_scan_org'):
+        op.create_index('idx_qr_scan_org', 'qr_scan_events', ['organization_id'])
+    if not _has_index('qr_scan_events', 'idx_qr_scan_serial'):
+        op.create_index('idx_qr_scan_serial', 'qr_scan_events', ['serial_number'])
+    if not _has_index('qr_scan_events', 'idx_qr_scan_ts'):
+        op.create_index('idx_qr_scan_ts', 'qr_scan_events', ['scan_timestamp'])
 
 
 def downgrade() -> None:

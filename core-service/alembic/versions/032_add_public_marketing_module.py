@@ -20,7 +20,8 @@ def upgrade() -> None:
     # Check if table already exists
     inspector = inspect(op.get_bind())
     if not inspector.has_table('public_submissions'):
-        op.create_table(
+        if not inspector.has_table('public_submissions'):
+            op.create_table(
             'public_submissions',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text('gen_random_uuid()')),

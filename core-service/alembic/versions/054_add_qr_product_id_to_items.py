@@ -11,6 +11,7 @@ reference the same QR product profile, but each item has at most one.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = "054_add_qr_product_id_to_items"
@@ -21,6 +22,11 @@ depends_on = None
 
 def upgrade() -> None:
     # Add qr_product_id FK column to items
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.add_column(
         "items",
         sa.Column(

@@ -133,13 +133,17 @@ def upgrade():
     
     
     # Add foreign key constraint within reminder system tables only
-    op.create_foreign_key(
-        'fk_reminder_logs_config',
-        'reminder_logs', 'reminder_configs',
-        ['config_id'], ['id'], 
-        ondelete='SET NULL'
-    )
-    
+    def _has_fk(table_name: str, fk_name: str) -> bool:
+        return any(fk['name'] == fk_name for fk in inspector.get_foreign_keys(table_name))
+
+    if not _has_fk('reminder_logs', 'fk_reminder_logs_config'):
+        op.create_foreign_key(
+            'fk_reminder_logs_config',
+            'reminder_logs', 'reminder_configs',
+            ['config_id'], ['id'],
+            ondelete='SET NULL'
+        )
+
     # Add trigger for updated_at timestamp on reminder_configs
     op.execute("""
         CREATE OR REPLACE FUNCTION update_reminder_config_updated_at()
@@ -150,14 +154,15 @@ def upgrade():
         END;
         $$ LANGUAGE plpgsql;
     """)
-    
+
     op.execute("""
+        DROP TRIGGER IF EXISTS trigger_update_reminder_config_updated_at ON reminder_configs;
         CREATE TRIGGER trigger_update_reminder_config_updated_at
             BEFORE UPDATE ON reminder_configs
             FOR EACH ROW
             EXECUTE FUNCTION update_reminder_config_updated_at();
     """)
-    
+
     # Add trigger for updated_at timestamp on reminder_logs
     op.execute("""
         CREATE OR REPLACE FUNCTION update_reminder_log_updated_at()
@@ -168,8 +173,9 @@ def upgrade():
         END;
         $$ LANGUAGE plpgsql;
     """)
-    
+
     op.execute("""
+        DROP TRIGGER IF EXISTS trigger_update_reminder_log_updated_at ON reminder_logs;
         CREATE TRIGGER trigger_update_reminder_log_updated_at
             BEFORE UPDATE ON reminder_logs
             FOR EACH ROW

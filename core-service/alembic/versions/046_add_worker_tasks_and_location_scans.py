@@ -14,6 +14,7 @@ Requirements: 16.1, 16.2, 17.5
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -27,6 +28,11 @@ depends_on = None
 
 def upgrade() -> None:
     # ── worker_tasks ───────────────────────────────────────────────
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.create_table(
         "worker_tasks",
         sa.Column(

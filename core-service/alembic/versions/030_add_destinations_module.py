@@ -17,39 +17,44 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Check if table already exists
     inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     if not inspector.has_table('destination_markets'):
         op.create_table(
-        'destination_markets',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text('gen_random_uuid()')),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('name', sa.String(100), nullable=False),
-        sa.Column('code', sa.String(20), nullable=False),
-        sa.Column('country', sa.String(100), nullable=True),
-        sa.Column('region', sa.String(100), nullable=True),
-        sa.Column('currency_code', sa.String(3), nullable=True,
-                  comment='ISO 4217 currency code, links to currency_masters.code'),
-        sa.Column('language', sa.String(10), nullable=True,
-                  comment='BCP-47 language tag, e.g. en-US'),
-        sa.Column('tax_rate', sa.Numeric(5, 4), nullable=True,
-                  comment='Default tax rate for this market, e.g. 0.18 for 18%'),
-        sa.Column('is_active', sa.Boolean, server_default='true'),
-        sa.Column('notes', sa.Text, nullable=True),
-        sa.Column('extra_data', postgresql.JSONB, nullable=True),
-        sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True),
-                  server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True),
-                  server_default=sa.text('now()')),
-        sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
-    )
-    op.create_index('idx_dest_markets_org', 'destination_markets', ['organization_id'])
-    op.create_index('idx_dest_markets_code', 'destination_markets', ['organization_id', 'code'],
-                    unique=True,
-                    postgresql_where=sa.text('deleted_at IS NULL'))
+            'destination_markets',
+            sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True,
+                      server_default=sa.text('gen_random_uuid()')),
+            sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('name', sa.String(100), nullable=False),
+            sa.Column('code', sa.String(20), nullable=False),
+            sa.Column('country', sa.String(100), nullable=True),
+            sa.Column('region', sa.String(100), nullable=True),
+            sa.Column('currency_code', sa.String(3), nullable=True,
+                      comment='ISO 4217 currency code, links to currency_masters.code'),
+            sa.Column('language', sa.String(10), nullable=True,
+                      comment='BCP-47 language tag, e.g. en-US'),
+            sa.Column('tax_rate', sa.Numeric(5, 4), nullable=True,
+                      comment='Default tax rate for this market, e.g. 0.18 for 18%'),
+            sa.Column('is_active', sa.Boolean, server_default='true'),
+            sa.Column('notes', sa.Text, nullable=True),
+            sa.Column('extra_data', postgresql.JSONB, nullable=True),
+            sa.Column('created_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('updated_by', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('created_at', sa.DateTime(timezone=True),
+                      server_default=sa.text('now()')),
+            sa.Column('updated_at', sa.DateTime(timezone=True),
+                      server_default=sa.text('now()')),
+            sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
+        )
+    if not _has_index('destination_markets', 'idx_dest_markets_org'):
+        op.create_index('idx_dest_markets_org', 'destination_markets', ['organization_id'])
+    if not _has_index('destination_markets', 'idx_dest_markets_code'):
+        op.create_index('idx_dest_markets_code', 'destination_markets', ['organization_id', 'code'],
+                        unique=True,
+                        postgresql_where=sa.text('deleted_at IS NULL'))
 
 
 def downgrade() -> None:

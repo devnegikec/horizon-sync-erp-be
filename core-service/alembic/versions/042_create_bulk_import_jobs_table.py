@@ -7,6 +7,7 @@ Create Date: 2026-05-14
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers
@@ -17,6 +18,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.create_table(
         "bulk_import_jobs",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),

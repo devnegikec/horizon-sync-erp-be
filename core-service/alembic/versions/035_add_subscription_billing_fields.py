@@ -7,6 +7,7 @@ Create Date: 2024-12-20 12:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -17,6 +18,11 @@ depends_on = None
 
 
 def upgrade():
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     """Add subscription billing fields to invoices table (Task 1B-1)"""
     conn = op.get_bind()
     from sqlalchemy.engine.reflection import Inspector
@@ -48,9 +54,11 @@ def upgrade():
 
     existing_indexes = {i['name'] for i in inspector.get_indexes('invoices')}
     if 'ix_invoices_billing_cycle' not in existing_indexes:
-        op.create_index('ix_invoices_billing_cycle', 'invoices', ['billing_cycle'])
+        if not _has_index('invoices', 'ix_invoices_billing_cycle'):
+            op.create_index('ix_invoices_billing_cycle', 'invoices', ['billing_cycle'])
     if 'ix_invoices_subscription_period' not in existing_indexes:
-        op.create_index('ix_invoices_subscription_period', 'invoices',
+        if not _has_index('invoices', 'ix_invoices_subscription_period'):
+            op.create_index('ix_invoices_subscription_period', 'invoices',
                         ['subscription_period_start', 'subscription_period_end'])
 
 

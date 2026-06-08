@@ -16,6 +16,7 @@ This migration alters the column to TEXT (unlimited length) to match the model.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = "055_fix_product_items_token_id_column"
@@ -27,6 +28,11 @@ depends_on = None
 def upgrade() -> None:
     # ALTER the column from VARCHAR(75) to TEXT.
     # USING cast is not needed — VARCHAR is implicitly castable to TEXT in Postgres.
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     op.alter_column(
         "product_items",
         "token_id",

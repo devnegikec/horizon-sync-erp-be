@@ -6,6 +6,7 @@ Create Date: 2026-04-01 10:00:00.000000
 
 """
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -19,6 +20,11 @@ depends_on = None
 
 def upgrade() -> None:
     # Always drop and recreate to handle schema mismatches
+    inspector = inspect(op.get_bind())
+
+    def _has_index(table_name: str, index_name: str) -> bool:
+        return any(i['name'] == index_name for i in inspector.get_indexes(table_name))
+
     conn = op.get_bind()
     conn.execute(sa.text("DROP TABLE IF EXISTS feature_flags CASCADE"))
 

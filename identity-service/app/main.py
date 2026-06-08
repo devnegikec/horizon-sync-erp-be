@@ -61,6 +61,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"System admin seed skipped or failed: {e}")
 
+    # Ensure fully-privileged system_admin user exists (idempotent)
+    try:
+        from scripts.create_system_admin_user import main as ensure_system_admin_user
+        ensure_system_admin_user()
+        logger.info("System admin user ensured")
+    except Exception as e:
+        logger.warning(f"System admin user ensure step skipped or failed: {e}")
+
     # Ensure canonical organization.* permissions exist (idempotent safety net)
     try:
         from app.database import SessionLocal
@@ -283,6 +291,13 @@ async def user_not_found_exception_handler(
 @app.exception_handler(SQLAlchemyError)
 async def database_exception_handler(request: Request, exc: SQLAlchemyError):
     """Handle database errors"""
+    logger.error(
+        "Database error on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+        exc_info=True,
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
