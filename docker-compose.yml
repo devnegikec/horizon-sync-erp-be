@@ -282,6 +282,7 @@ services:
       - identity-service
       - core-service
       - search-service
+      - ai-service
     networks:
       - horizon_network
     restart: unless-stopped
