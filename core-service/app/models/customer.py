@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, Enum, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Numeric, String, Text, UniqueConstraint
 
 from app.database import Base
 from app.models.base import CustomerStatus
@@ -15,6 +15,12 @@ class Customer(Base):
 
     __tablename__ = "customers"
     __audited__ = True
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "customer_code", name="uq_customers_org_code"
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -38,6 +44,8 @@ class Customer(Base):
 
     # Tax
     tax_number = Column(String(50), nullable=True)
+    is_tax_exempt = Column(Boolean, nullable=False, default=False, server_default="false")
+    tax_exemption_certificate_no = Column(String(100), nullable=True)
 
     # Status
     status = Column(

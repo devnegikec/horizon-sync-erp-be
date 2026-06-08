@@ -39,6 +39,8 @@ class CustomerBase(BaseModel):
 
     # Tax
     tax_number: str | None = Field(None, max_length=50)
+    is_tax_exempt: bool = False
+    tax_exemption_certificate_no: str | None = Field(None, max_length=100)
 
     # Status
     status: str = Field(default="active")
@@ -79,6 +81,8 @@ class CustomerUpdate(BaseModel):
 
     # Tax
     tax_number: str | None = Field(None, max_length=50)
+    is_tax_exempt: bool | None = None
+    tax_exemption_certificate_no: str | None = Field(None, max_length=100)
 
     # Status
     status: str | None = None
@@ -116,6 +120,8 @@ class CustomerResponse(BaseModel):
 
     # Tax
     tax_number: str | None = None
+    is_tax_exempt: bool = False
+    tax_exemption_certificate_no: str | None = None
 
     # Status
     status: str
