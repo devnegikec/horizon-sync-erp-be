@@ -197,18 +197,30 @@ from app.models.warehouse_location import (
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.worker_task import WorkerTask
 
-# Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
-# from app.models.batch import Batch
-# from app.models.item_price import ItemPrice
-# from app.models.material_request import MaterialRequest, MaterialRequestLine
-# from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
-# from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
-# from app.models.serial_no import SerialNo
-# from app.models.status_transition import StatusTransition
-# from app.models.stock_entry import StockEntry, StockEntryItem
-# from app.models.stock_level import StockLevel
-# from app.models.stock_movement import StockMovement
-# from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
+# Procurement / Sourcing / Fulfillment modules
+from app.models.communication import CommunicationLog
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
+from app.models.document_numbering import (
+    DocumentNumberingConfig,
+    DocumentSequenceCounter,
+)
+from app.models.item_price import ItemPrice
+from app.models.item_supplier import ItemSupplier
+from app.models.landed_cost import LandedCostVoucher
+from app.models.material_request import MaterialRequest, MaterialRequestLine
+from app.models.payment import Payment
+from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+from app.models.purchase_receipt import PurchaseReceipt, PurchaseReceiptItem
+from app.models.put_away_rule import PutAwayRule
+from app.models.quality_inspection import (
+    QualityInspection,
+    QualityInspectionParameter,
+    QualityInspectionReading,
+    QualityInspectionTemplate,
+)
+from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
+from app.models.status_transition import StatusTransition
+from app.models.stock_settings import StockSettings
 
 __all__ = [
     # Inventory Enums
@@ -398,23 +410,31 @@ __all__ = [
     "LocationScan",
     "PutAwayList",
     "PutAwayListItem",
-    # Temporarily commented out - models with FK to non-existent tables
-    # "Batch",
-    # "ItemPrice",
-    # "MaterialRequest",
-    # "MaterialRequestLine",
-    # "RFQ",
-    # "RFQLine",
-    # "RFQSupplier",
-    # "SupplierQuote",
-    # "PurchaseOrder",
-    # "PurchaseOrderLine",
-    # "StatusTransition",
-    # "SerialNo",
-    # "StockEntry",
-    # "StockEntryItem",
-    # "StockLevel",
-    # "StockMovement",
-    # "StockReconciliation",
-    # "StockReconciliationItem",
+    # Procurement / Sourcing / Fulfillment modules
+    "CommunicationLog",
+    "DeliveryNote",
+    "DeliveryNoteItem",
+    "DocumentNumberingConfig",
+    "DocumentSequenceCounter",
+    "ItemPrice",
+    "ItemSupplier",
+    "LandedCostVoucher",
+    "MaterialRequest",
+    "MaterialRequestLine",
+    "Payment",
+    "PurchaseOrder",
+    "PurchaseOrderLine",
+    "PurchaseReceipt",
+    "PurchaseReceiptItem",
+    "PutAwayRule",
+    "QualityInspection",
+    "QualityInspectionParameter",
+    "QualityInspectionReading",
+    "QualityInspectionTemplate",
+    "RFQ",
+    "RFQLine",
+    "RFQSupplier",
+    "SupplierQuote",
+    "StatusTransition",
+    "StockSettings",
 ]
