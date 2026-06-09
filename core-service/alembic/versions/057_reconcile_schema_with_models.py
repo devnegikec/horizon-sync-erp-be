@@ -127,7 +127,11 @@ def upgrade() -> None:
             if col.name in existing_cols:
                 continue
             try:
-                col_type = col.type.compile(dialect=conn.dialect)
+                # Use dialect_impl() first so TypeDecorator subclasses
+                # (e.g. our custom UUID) resolve to the proper PG type
+                # (UUID) rather than their fallback impl (CHAR(32)).
+                dialect_impl = col.type.dialect_impl(conn.dialect)
+                col_type = dialect_impl.compile(dialect=conn.dialect)
             except Exception as exc:  # pragma: no cover - defensive
                 print(f"[057] Could not compile type for {table.name}.{col.name}: {exc}")
                 continue
