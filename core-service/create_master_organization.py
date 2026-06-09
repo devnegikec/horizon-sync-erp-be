@@ -88,39 +88,74 @@ def ensure_single_master_organization():
         
         print("   ✓ Advisory lock acquired")
         
-        # Step 3: Atomic UPSERT operation - thread safe
-        print("\n3. Performing atomic UPSERT of master organization...")
-        
-        result = db.execute(text("""
-            INSERT INTO organizations (
-                id, name, slug, display_name, organization_type, status, is_active,
-                email, website, city, state, country, billing_status,
-                base_currency, max_users, max_credits, created_at, updated_at
-            ) VALUES (
-                :id, :name, :slug, :display_name, :org_type, :status, true,
-                :email, :website, :city, :state, :country, 'active',
-                'USD', 10000, 1000000, :created_at, :updated_at
-            ) 
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                slug = EXCLUDED.slug, 
-                display_name = EXCLUDED.display_name,
-                organization_type = EXCLUDED.organization_type,
-                status = EXCLUDED.status,
-                email = EXCLUDED.email,
-                website = EXCLUDED.website,
-                city = EXCLUDED.city,
-                state = EXCLUDED.state,
-                country = EXCLUDED.country,
-                updated_at = EXCLUDED.updated_at
-            RETURNING id, name, organization_type
-        """), {
-            **MASTER_ORG_CONFIG,
-            'org_type': MASTER_ORG_CONFIG["organization_type"],
-            'created_at': datetime.now(),
-            'updated_at': datetime.now()
-        }).fetchone()
-        
+        # Step 3: Idempotent master organization setup - thread safe
+        print("\n3. Performing master organization setup...")
+
+        # A master organization may already exist with a DIFFERENT id than the
+        # configured one (e.g. created by an Alembic migration). Relying solely on
+        # ON CONFLICT (id) would attempt to INSERT a second master org in that case,
+        # which the check_single_master_org() trigger rejects. So we first look up
+        # any existing master org by organization_type and update it in place,
+        # preserving its id (and any child FK references that point to it).
+        existing_master = db.execute(text("""
+            SELECT id FROM organizations
+            WHERE organization_type = 'master'
+              AND deleted_at IS NULL
+            ORDER BY created_at
+            LIMIT 1
+        """)).fetchone()
+
+        if existing_master:
+            result = db.execute(text("""
+                UPDATE organizations SET
+                    name = :name,
+                    slug = :slug,
+                    display_name = :display_name,
+                    status = :status,
+                    email = :email,
+                    website = :website,
+                    city = :city,
+                    state = :state,
+                    country = :country,
+                    updated_at = :updated_at
+                WHERE id = :existing_id
+                RETURNING id, name, organization_type
+            """), {
+                **MASTER_ORG_CONFIG,
+                'existing_id': existing_master.id,
+                'updated_at': datetime.now()
+            }).fetchone()
+        else:
+            result = db.execute(text("""
+                INSERT INTO organizations (
+                    id, name, slug, display_name, organization_type, status, is_active,
+                    email, website, city, state, country, billing_status,
+                    base_currency, max_users, max_credits, created_at, updated_at
+                ) VALUES (
+                    :id, :name, :slug, :display_name, :org_type, :status, true,
+                    :email, :website, :city, :state, :country, 'active',
+                    'USD', 10000, 1000000, :created_at, :updated_at
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    slug = EXCLUDED.slug,
+                    display_name = EXCLUDED.display_name,
+                    organization_type = EXCLUDED.organization_type,
+                    status = EXCLUDED.status,
+                    email = EXCLUDED.email,
+                    website = EXCLUDED.website,
+                    city = EXCLUDED.city,
+                    state = EXCLUDED.state,
+                    country = EXCLUDED.country,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id, name, organization_type
+            """), {
+                **MASTER_ORG_CONFIG,
+                'org_type': MASTER_ORG_CONFIG["organization_type"],
+                'created_at': datetime.now(),
+                'updated_at': datetime.now()
+            }).fetchone()
+
         print(f"   ✓ Master organization ready: {result.name} (ID: {result.id})")
         
         # Step 4: Clean up any duplicate masters that might exist from before constraints
