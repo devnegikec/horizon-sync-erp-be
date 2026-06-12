@@ -135,6 +135,7 @@ class EmailService:
         org_name: str,
         inviter_name: str,
         message: str | None = None,
+        role_name: str | None = None,
     ):
         """
         Send an organization invitation email.
@@ -145,14 +146,16 @@ class EmailService:
             org_name: Name of the organization
             inviter_name: Name of the person inviting
             message: Optional personal message
+            role_name: Optional role name assigned to the invitee
         """
         subject = f"Invitation to join {org_name}"
         # Use URL from settings
         invitation_link = f"{settings.invitation_url}?token={token}"
 
+        role_part = f" as {role_name}" if role_name else ""
         body = (
             f"Hello,\n\n"
-            f"{inviter_name} has invited you to join {org_name} on Horizon Sync ERP.\n\n"
+            f"{inviter_name} has invited you to join {org_name}{role_part} on Horizon Sync ERP.\n\n"
         )
 
         if message:

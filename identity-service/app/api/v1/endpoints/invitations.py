@@ -77,6 +77,14 @@ async def send_invitation(
             .first()
         )
         org_name = org.name if org else "the organization"
+
+        # Look up role name for the email template
+        role_name = None
+        if result.get("role_id"):
+            from app.models.role import Role
+            role = db.query(Role).filter(Role.id == result["role_id"]).first()
+            role_name = role.name if role else None
+
         inviter_name = (
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
@@ -89,6 +97,7 @@ async def send_invitation(
             org_name=org_name,
             inviter_name=inviter_name,
             message=result.get("message"),
+            role_name=role_name,
         )
         logger.info(f"Invitation email task added to background for {result['email']}")
 
@@ -309,6 +318,14 @@ async def resend_invitation(
             .first()
         )
         org_name = org.name if org else "the organization"
+
+        # Look up role name for the email
+        role_name = None
+        if result.get("role_id"):
+            from app.models.role import Role
+            role = db.query(Role).filter(Role.id == result["role_id"]).first()
+            role_name = role.name if role else None
+
         inviter_name = (
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
@@ -321,6 +338,7 @@ async def resend_invitation(
             org_name=org_name,
             inviter_name=inviter_name,
             message=result.get("message"),
+            role_name=role_name,
         )
         logger.info(
             f"Invitation resend email task added to background for {result['email']}"
