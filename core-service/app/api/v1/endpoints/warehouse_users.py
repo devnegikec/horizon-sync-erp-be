@@ -103,6 +103,50 @@ async def get_my_warehouses(
     - Everyone else sees only their assigned warehouses.
     - Pending assignments (by email) are resolved on first call.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[my-warehouses] user_id=%s org_id=%s user_type=%s email=%s",
+        current_user.id,
+        current_user.organization_id,
+        current_user.user_type,
+        current_user.email,
+    )
+    # Global access: only true admins bypass warehouse scoping.
+    # warehouse.manage is an operational permission (assign users, manage assignments)
+    # and must NOT grant visibility of all warehouses — that would defeat the scoped-access
+    # model for WMS Managers and Supervisors who hold that permission.
+    has_global_access = (
+        current_user.user_type in ("system_admin", "organization_admin")
+        or "*.*" in current_user.permissions
+    )
+
+    if has_global_access:
+        from app.models.warehouse import Warehouse
+        warehouses = (
+            db.query(Warehouse)
+            .filter(
+                Warehouse.organization_id == current_user.organization_id,
+                Warehouse.is_active == True,
+            )
+            .order_by(Warehouse.name)
+            .all()
+        )
+        logger.info("[my-warehouses] global access path: returned %d warehouses", len(warehouses))
+        return {
+            "warehouses": [
+                {
+                    "id": w.id,
+                    "name": w.name,
+                    "code": w.code,
+                    "city": w.city,
+                    "type": w.warehouse_type.value if w.warehouse_type else None,
+                    "is_default": w.is_default,
+                }
+                for w in warehouses
+            ]
+        }
+
     svc = WarehouseUserService(db)
     warehouses = svc.get_user_warehouses(
         user_id=current_user.id,
@@ -110,6 +154,7 @@ async def get_my_warehouses(
         user_type=current_user.user_type,
         user_email=current_user.email,
     )
+    logger.info("[my-warehouses] returned %d warehouses", len(warehouses))
     return {"warehouses": warehouses}
 
 

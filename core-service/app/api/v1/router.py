@@ -78,6 +78,9 @@ from app.api.v1.endpoints import (
     warehouses,
     warranties,
     worker_tasks,
+    wms_dashboard,
+    wms_workers,
+    wms_devices,
 )
 
 api_router = APIRouter()
@@ -126,6 +129,21 @@ api_router.include_router(
     bin_stock.router,
     prefix="/bin-stock",
     tags=["Bin Stock"],
+)
+api_router.include_router(
+    wms_workers.router,
+    prefix="/wms-workers",
+    tags=["WMS Workers"],
+)
+api_router.include_router(
+    wms_devices.router,
+    prefix="/wms-devices",
+    tags=["WMS Devices"],
+)
+api_router.include_router(
+    wms_dashboard.router,
+    prefix="/wms-dashboard",
+    tags=["WMS Dashboard"],
 )
 api_router.include_router(
     location_allocations.router,

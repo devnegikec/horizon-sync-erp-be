@@ -17,7 +17,7 @@ from app.core.authorization import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
-from app.models.base import WarehouseType
+from app.models.base import WarehouseType, WarehouseUserRole
 from app.models.warehouse import Warehouse
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse import (
@@ -83,6 +83,22 @@ async def create_warehouse(
         organization_id=current_user.organization_id,
         user_id=current_user.id,
     )
+
+    # Auto-assign creator so the warehouse appears in /my-warehouses
+    wh_user_svc = WarehouseUserService(db)
+    wh_user_svc.create(
+        data={
+            "user_id": current_user.id,
+            "warehouse_id": warehouse.id,
+            "role": WarehouseUserRole.MANAGER,
+            "is_primary": False,
+            "is_active": True,
+        },
+        organization_id=current_user.organization_id,
+        created_by=current_user.id,
+    )
+    db.commit()
+
     return WarehouseResponse.model_validate(warehouse)
 
 
@@ -423,7 +439,23 @@ async def import_warehouses(
                 )
                 db.add(new_warehouse)
                 db.commit()
+                db.refresh(new_warehouse)
                 created += 1
+
+                # Auto-assign importer to the new warehouse so it appears in /my-warehouses
+                wh_user_svc = WarehouseUserService(db)
+                wh_user_svc.create(
+                    data={
+                        "user_id": current_user.id,
+                        "warehouse_id": new_warehouse.id,
+                        "role": WarehouseUserRole.MANAGER,
+                        "is_primary": False,
+                        "is_active": True,
+                    },
+                    organization_id=current_user.organization_id,
+                    created_by=current_user.id,
+                )
+                db.commit()
 
         except Exception as e:
             db.rollback()

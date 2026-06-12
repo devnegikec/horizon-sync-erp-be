@@ -282,28 +282,30 @@ class WarehouseRepository:
 
         self.db.commit()
 
-    def get_warehouse_status_counts(self, organization_id: UUID) -> dict:
+    def get_warehouse_status_counts(self, organization_id: UUID, warehouse_ids: list[UUID] | None = None) -> dict:
         """
         Get count of warehouses by status.
 
         Args:
             organization_id: Organization UUID
+            warehouse_ids: Optional list of warehouse IDs to restrict to
 
         Returns:
             Dictionary with status counts
         """
         from sqlalchemy import func
 
-        # Get counts for active/inactive
-        status_counts = (
+        query = (
             self.db.query(Warehouse.is_active, func.count(Warehouse.id))
             .filter(
                 Warehouse.organization_id == organization_id,
                 Warehouse.deleted_at.is_(None),
             )
-            .group_by(Warehouse.is_active)
-            .all()
         )
+        if warehouse_ids is not None:
+            query = query.filter(Warehouse.id.in_(warehouse_ids))
+
+        status_counts = query.group_by(Warehouse.is_active).all()
 
         # Initialize counts
         counts = {
@@ -322,28 +324,30 @@ class WarehouseRepository:
 
         return counts
 
-    def get_warehouse_type_counts(self, organization_id: UUID) -> dict:
+    def get_warehouse_type_counts(self, organization_id: UUID, warehouse_ids: list[UUID] | None = None) -> dict:
         """
         Get count of warehouses by type.
 
         Args:
             organization_id: Organization UUID
+            warehouse_ids: Optional list of warehouse IDs to restrict to
 
         Returns:
             Dictionary with type counts
         """
         from sqlalchemy import func
 
-        # Get counts for each type
-        type_counts = (
+        query = (
             self.db.query(Warehouse.warehouse_type, func.count(Warehouse.id))
             .filter(
                 Warehouse.organization_id == organization_id,
                 Warehouse.deleted_at.is_(None),
             )
-            .group_by(Warehouse.warehouse_type)
-            .all()
         )
+        if warehouse_ids is not None:
+            query = query.filter(Warehouse.id.in_(warehouse_ids))
+
+        type_counts = query.group_by(Warehouse.warehouse_type).all()
 
         # Initialize counts
         counts = {
