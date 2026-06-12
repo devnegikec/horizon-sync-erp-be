@@ -112,12 +112,11 @@ async def get_my_warehouses(
         current_user.user_type,
         current_user.email,
     )
-    # Global access: only true admins bypass warehouse scoping.
-    # warehouse.manage is an operational permission (assign users, manage assignments)
-    # and must NOT grant visibility of all warehouses — that would defeat the scoped-access
-    # model for WMS Managers and Supervisors who hold that permission.
+    # Global access: true admins or users with warehouse.manage (WMS Admin role).
+    # WMS Manager does NOT have warehouse.manage, so they go through scoped path.
     has_global_access = (
         current_user.user_type in ("system_admin", "organization_admin")
+        or "warehouse.manage" in current_user.permissions
         or "*.*" in current_user.permissions
     )
 

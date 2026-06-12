@@ -248,16 +248,14 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
     ),
     # ── WMS Roles ────────────────────────────────────────────────────────────
     RoleTemplate(
-        code="wms_supervisor",
-        name="WMS Supervisor",
-        description="Full warehouse operations across all warehouses — layout, inbound, put-away, outbound, gate, ASN, and dispatches",
+        code="wms_admin",
+        name="WMS Admin",
+        description="Full warehouse administration — global access to all warehouses, layout, inbound, put-away, outbound, gate, ASN, dispatches, and worker/device management",
         is_system=False,
         hierarchy_level=75,
         permission_codes=[
-            # Supervisors can read and update warehouse settings, but NOT create/delete/manage
-            # warehouses org-wide. Global warehouse visibility comes from is_primary=True on
-            # their WarehouseUser row, not from a permission shortcut.
-            "warehouse.read", "warehouse.update",
+            # WMS Admin gets warehouse.manage for global visibility and admin operations
+            "warehouse.read", "warehouse.create", "warehouse.update", "warehouse.delete", "warehouse.manage",
             "pick_list.read", "pick_list.create", "pick_list.update", "pick_list.delete", "pick_list.manage",
             "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
             "stock_entry.read", "stock_entry.create", "stock_entry.update", "stock_entry.delete", "stock_entry.manage",

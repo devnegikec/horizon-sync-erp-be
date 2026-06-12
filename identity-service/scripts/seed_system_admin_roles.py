@@ -624,7 +624,8 @@ def _seed_wms_default_roles(db: Session) -> None:
 
     # Permission-code → Permission map for lookup
     perm_codes = [
-        "warehouse.read", "warehouse.update",
+        "warehouse.read", "warehouse.create", "warehouse.update",
+        "warehouse.delete", "warehouse.manage",
         "pick_list.read", "pick_list.create", "pick_list.update",
         "pick_list.delete", "pick_list.manage",
         "asn_order.read", "asn_order.create", "asn_order.update",
@@ -641,14 +642,13 @@ def _seed_wms_default_roles(db: Session) -> None:
 
     WMS_ROLE_DEFS = [
         {
-            "name": "WMS Supervisor",
-            "code": "wms_supervisor",
-            "description": "Full warehouse operations across all warehouses — layout, inbound, put-away, outbound, gate, ASN, and dispatches",
+            "name": "WMS Admin",
+            "code": "wms_admin",
+            "description": "Full warehouse administration — global access to all warehouses, layout, inbound, put-away, outbound, gate, ASN, dispatches, and worker/device management",
             "hierarchy_level": 75,
             "permission_codes": [
-                # warehouse.manage/create/delete removed — global visibility comes from
-                # is_primary=True on WarehouseUser, not from a permission shortcut
-                "warehouse.read", "warehouse.update",
+                "warehouse.read", "warehouse.create", "warehouse.update",
+                "warehouse.delete", "warehouse.manage",
                 "pick_list.read", "pick_list.create", "pick_list.update",
                 "pick_list.delete", "pick_list.manage",
                 "asn_order.read", "asn_order.create", "asn_order.update",
@@ -664,8 +664,6 @@ def _seed_wms_default_roles(db: Session) -> None:
             "description": "Warehouse manager for assigned warehouse(s) — inbound, put-away, outbound, picking, and ASN coordination",
             "hierarchy_level": 70,
             "permission_codes": [
-                # warehouse.manage/create/delete removed — managers only see their
-                # explicitly assigned warehouses via WarehouseUser rows
                 "warehouse.read", "warehouse.update",
                 "pick_list.read", "pick_list.create", "pick_list.update",
                 "pick_list.delete", "pick_list.manage",
