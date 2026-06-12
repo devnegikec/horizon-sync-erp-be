@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Security (must match identity-service for JWT validation)
     secret_key: str
     algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
 
     # Identity Service URL (for auth validation and permissions)
     identity_service_url: str = "http://identity-service:8000"

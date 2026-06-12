@@ -85,3 +85,46 @@ class BinStockForItemResponse(BaseModel):
     """Response schema for listing all bins containing a specific item"""
 
     bins: list[BinStockInfoResponse]
+
+
+class CopyStockRequest(BaseModel):
+    """Schema for copying stock from one bin to another"""
+
+    source_bin_id: UUID = Field(..., description="Source bin location UUID")
+    target_bin_id: UUID = Field(..., description="Target bin location UUID")
+    item_id: UUID = Field(..., description="Item UUID")
+    quantity: Decimal = Field(..., gt=0, description="Quantity to copy")
+    batch_number: str | None = Field(None, max_length=100, description="Optional batch number")
+
+
+class StockImportRow(BaseModel):
+    """Schema for a single stock import row"""
+
+    bin_code: str = Field(..., description="Target bin code")
+    sku: str = Field(..., description="Item SKU or code")
+    quantity: Decimal = Field(..., gt=0, description="Quantity")
+    batch_number: str | None = Field(None, max_length=100)
+
+
+class StockImportRequest(BaseModel):
+    """Schema for importing stock levels"""
+
+    warehouse_id: UUID = Field(..., description="Warehouse UUID")
+    rows: list[StockImportRow] = Field(..., min_length=1)
+    overwrite_existing: bool = Field(default=False, description="Overwrite existing stock for same bin+item+batch")
+
+
+class StockImportResult(BaseModel):
+    """Result of a stock import operation"""
+
+    imported: int
+    updated: int
+    errors: list[str]
+
+
+class StockExportFilters(BaseModel):
+    """Filters for stock export"""
+
+    warehouse_id: UUID | None = None
+    item_id: UUID | None = None
+    bin_id: UUID | None = None

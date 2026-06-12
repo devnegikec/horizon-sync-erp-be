@@ -153,13 +153,17 @@ class WarehouseUserService:
         """Get warehouses assigned to a user.
 
         Rules:
-          - System admins always see all active warehouses.
+          - System admins and organization admins always see all active warehouses.
           - Users with a primary (mother-warehouse) assignment see all warehouses.
           - Everyone else sees only explicitly assigned warehouses.
           - Pending assignments keyed by email are resolved on first call.
         """
-        # System admins get global access
-        if user_type == "system_admin":
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("[get_user_warehouses] user_id=%s org_id=%s user_type=%s", user_id, organization_id, user_type)
+
+        # System admins and organization admins get global access
+        if user_type in ("system_admin", "organization_admin"):
             warehouses = (
                 self.db.query(Warehouse)
                 .filter(
@@ -169,6 +173,7 @@ class WarehouseUserService:
                 .order_by(Warehouse.name)
                 .all()
             )
+            logger.info("[get_user_warehouses] admin path: found %d warehouses for org %s", len(warehouses), organization_id)
             return [
                 {
                     "id": w.id,
@@ -243,6 +248,7 @@ class WarehouseUserService:
                 .order_by(Warehouse.name)
                 .all()
             )
+            logger.info("[get_user_warehouses] primary path: found %d warehouses", len(warehouses))
             return [
                 {
                     "id": w.id,
@@ -267,6 +273,7 @@ class WarehouseUserService:
             .order_by(Warehouse.name)
             .all()
         )
+        logger.info("[get_user_warehouses] assignment path: found %d warehouses", len(results))
 
         return [
             {

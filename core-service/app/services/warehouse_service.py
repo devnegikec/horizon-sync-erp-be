@@ -281,9 +281,9 @@ class WarehouseService:
             warehouse_ids=warehouse_ids,
         )
 
-        # Get status and type counts
-        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id)
-        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id)
+        # Get status and type counts (scoped to warehouse_ids if provided)
+        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id, warehouse_ids=warehouse_ids)
+        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id, warehouse_ids=warehouse_ids)
 
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size

@@ -128,6 +128,8 @@ from app.models.messaging import (
 )
 from app.models.notification import Notification
 from app.models.warehouse_user import WarehouseUser
+from app.models.wms_worker import WMSWorker, WMSWorkerStatus
+from app.models.wms_device import WMSDevice, WMSDeviceStatus
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
@@ -379,6 +381,10 @@ __all__ = [
     "NotificationType",
     "WarehouseUser",
     "WarehouseUserRole",
+    "WMSWorker",
+    "WMSWorkerStatus",
+    "WMSDevice",
+    "WMSDeviceStatus",
     # Audit Trail module
     "AuditLog",
     "AuditLogAction",
