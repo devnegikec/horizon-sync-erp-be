@@ -32,14 +32,13 @@ def upgrade() -> None:
         sa.Column(
             "organization_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
             nullable=False,
             index=True,
         ),
         sa.Column(
             "warehouse_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("warehouses.id", ondelete="CASCADE"),
+            sa.ForeignKey("warehouses_extended.id", ondelete="CASCADE"),
             nullable=False,
             index=True,
         ),

@@ -19,13 +19,12 @@ class WarehouseFloorPlan(Base):
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     warehouse_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("warehouses.id", ondelete="CASCADE"),
+        ForeignKey("warehouses_extended.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
