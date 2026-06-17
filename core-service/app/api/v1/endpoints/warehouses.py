@@ -97,6 +97,15 @@ async def create_warehouse(
         organization_id=current_user.organization_id,
         created_by=current_user.id,
     )
+
+    # Seed preloaded layout templates for the new warehouse
+    from app.services.floor_plan_generator_service import FloorPlanGeneratorService
+    floor_plan_svc = FloorPlanGeneratorService(db)
+    floor_plan_svc.seed_templates(
+        warehouse_id=warehouse.id,
+        org_id=current_user.organization_id,
+    )
+
     db.commit()
 
     return WarehouseResponse.model_validate(warehouse)

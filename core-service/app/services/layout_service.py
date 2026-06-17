@@ -231,12 +231,13 @@ class LayoutService:
         Returns:
             A list of root-level location dicts, each with a 'children' key.
         """
-        # Fetch all locations for this warehouse
+        # Fetch all active locations for this warehouse
         locations = (
             self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == organization_id,
+                WarehouseLocation.is_active.is_(True),
             )
             .order_by(WarehouseLocation.full_path)
             .all()

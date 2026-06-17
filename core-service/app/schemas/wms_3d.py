@@ -184,3 +184,32 @@ class ReleaseRequest(BaseModel):
 class ReleaseResponse(BaseModel):
     released: bool
     bin_id: UUID
+
+
+# ===========================================
+# BIN STOCK DETAIL (FR-3D-04)
+# ===========================================
+
+
+class BinStockItem(BaseModel):
+    """Individual item record stored in a bin."""
+
+    item_id: UUID
+    item_name: str
+    item_code: str
+    sku: str | None = None
+    quantity_on_hand: float
+    batch_number: str | None = None
+    expiry_date: str | None = None
+    uom: str | None = None
+    created_at: str | None = None
+
+
+class BinStockDetailResponse(BaseModel):
+    """Detailed stock breakdown for a single bin (items, batches, expiry)."""
+
+    bin_id: UUID
+    bin_code: str | None = None
+    items: list[BinStockItem] = Field(default_factory=list)
+    total_quantity: float = 0
+    total_items: int = 0

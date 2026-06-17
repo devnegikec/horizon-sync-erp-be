@@ -29,6 +29,7 @@ from app.core.authorization import (
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.wms_3d import (
+    BinStockDetailResponse,
     LayoutResponse,
     ReleaseRequest,
     ReleaseResponse,
@@ -66,6 +67,25 @@ async def get_status(
     """Return current bin fill/reservation status (polling fallback)."""
     service = Warehouse3DService(db)
     return service.get_status(warehouse_id, current_user.organization_id)
+
+
+@router.get(
+    "/bin/{bin_id}/stock",
+    response_model=BinStockDetailResponse,
+    summary="Get bin stock details",
+)
+async def get_bin_stock_detail(
+    bin_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Return individual item records stored in a specific bin (FR-3D-04).
+
+    Shows item names, SKUs, quantities, batch numbers, and expiry dates
+    for all stock currently held in the requested bin.
+    """
+    service = Warehouse3DService(db)
+    return service.get_bin_stock_detail(bin_id, current_user.organization_id)
 
 
 @router.post("/suggest", response_model=SuggestResponse, summary="Suggest bins")

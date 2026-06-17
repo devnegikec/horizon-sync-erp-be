@@ -41,7 +41,9 @@ from app.schemas.floor_plan import (
     AisleSpec,
     FloorPlanApplyResponse,
     FloorPlanConfig,
+    FloorPlanDeleteResponse,
     FloorPlanPreviewResponse,
+    FloorPlanUpdateResponse,
     GeneratedLocationSummary,
     ZoneSpec,
 )
@@ -83,15 +85,17 @@ class FloorPlanGeneratorService:
     ) -> FloorPlanApplyResponse:
         """Generate locations and persist them.  Returns a summary.
 
-        If replace_existing=True, all existing locations for this warehouse are
-        soft-deleted (is_active=False) before the new ones are inserted.
+        Always deactivates existing locations for this warehouse and marks all
+        other floor plans as inactive — only one layout is active at a time.
         """
         warehouse = self._require_warehouse(warehouse_id, org_id)
         warehouse_code = warehouse.code or "WH"
 
-        deleted = 0
-        if replace_existing:
-            deleted = self._deactivate_existing(warehouse_id, org_id)
+        # Always deactivate existing locations (single active layout enforcement)
+        deleted = self._deactivate_existing(warehouse_id, org_id)
+
+        # Mark all existing floor plans for this warehouse as inactive
+        self._deactivate_all_plans(warehouse_id, org_id)
 
         locations = self._build_locations(
             warehouse_id, org_id, config, warehouse_code
@@ -99,7 +103,7 @@ class FloorPlanGeneratorService:
         for loc in locations:
             self.db.add(loc)
 
-        # Save or update the floor plan record
+        # Save the floor plan record (active)
         now = datetime.now(UTC)
         floor_plan = WarehouseFloorPlan(
             organization_id=org_id,
@@ -108,6 +112,7 @@ class FloorPlanGeneratorService:
             description=description,
             config=config.model_dump(),
             generated_at=now,
+            is_active=True,
         )
         self.db.add(floor_plan)
         self.db.commit()
@@ -119,6 +124,454 @@ class FloorPlanGeneratorService:
             locations_deleted=deleted,
             summary=summary,
         )
+
+    def update(
+        self,
+        floor_plan_id: UUID,
+        org_id: UUID,
+        config: FloorPlanConfig,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> FloorPlanUpdateResponse:
+        """Update an existing floor plan: deactivate old locations, regenerate new ones.
+
+        The floor plan record is updated in-place (same ID preserved).
+        Enforces single active layout — marks all other plans as inactive.
+        """
+        floor_plan = (
+            self.db.query(WarehouseFloorPlan)
+            .filter(
+                WarehouseFloorPlan.id == floor_plan_id,
+                WarehouseFloorPlan.organization_id == org_id,
+            )
+            .first()
+        )
+        if floor_plan is None:
+            raise NotFoundError(
+                message="Floor plan not found",
+                entity_type="WarehouseFloorPlan",
+                entity_id=str(floor_plan_id),
+            )
+
+        warehouse = self._require_warehouse(floor_plan.warehouse_id, org_id)
+        warehouse_code = warehouse.code or "WH"
+
+        # Deactivate all existing locations
+        deleted = self._deactivate_existing(floor_plan.warehouse_id, org_id)
+
+        # Mark all other floor plans as inactive
+        self._deactivate_all_plans(floor_plan.warehouse_id, org_id)
+
+        # Generate new locations from updated config
+        locations = self._build_locations(
+            floor_plan.warehouse_id, org_id, config, warehouse_code
+        )
+        for loc in locations:
+            self.db.add(loc)
+
+        # Update the floor plan record and mark it active
+        now = datetime.now(UTC)
+        floor_plan.config = config.model_dump()
+        floor_plan.generated_at = now
+        floor_plan.is_active = True
+        if name is not None:
+            floor_plan.name = name
+        if description is not None:
+            floor_plan.description = description
+        floor_plan.updated_at = now
+
+        self.db.commit()
+
+        summary = self._summarise(locations)
+        return FloorPlanUpdateResponse(
+            floor_plan_id=floor_plan.id,
+            name=floor_plan.name,
+            locations_created=len(locations),
+            locations_deleted=deleted,
+            summary=summary,
+        )
+
+    def delete(
+        self,
+        floor_plan_id: UUID,
+        org_id: UUID,
+        deactivate_locations: bool = False,
+    ) -> FloorPlanDeleteResponse:
+        """Soft-delete a floor plan.  Optionally deactivate its generated locations."""
+        floor_plan = (
+            self.db.query(WarehouseFloorPlan)
+            .filter(
+                WarehouseFloorPlan.id == floor_plan_id,
+                WarehouseFloorPlan.organization_id == org_id,
+            )
+            .first()
+        )
+        if floor_plan is None:
+            raise NotFoundError(
+                message="Floor plan not found",
+                entity_type="WarehouseFloorPlan",
+                entity_id=str(floor_plan_id),
+            )
+
+        deactivated = 0
+        if deactivate_locations:
+            deactivated = self._deactivate_existing(floor_plan.warehouse_id, org_id)
+
+        floor_plan.is_active = False
+        floor_plan.updated_at = datetime.now(UTC)
+        self.db.commit()
+
+        return FloorPlanDeleteResponse(
+            floor_plan_id=floor_plan.id,
+            deleted=True,
+            locations_deactivated=deactivated,
+        )
+
+    # ------------------------------------------------------------------
+    # SEED LAYOUT TEMPLATES (for onboarding)
+    # ------------------------------------------------------------------
+
+    def seed_templates(self, warehouse_id: UUID, org_id: UUID) -> int:
+        """Seed preloaded layout templates as inactive floor plans for a new warehouse.
+
+        Called during warehouse creation so that admins/owners can see ready-made
+        templates in the Layout Designer and modify/apply them.
+
+        Templates are saved as `is_active=False` so they don't generate any
+        locations until the user explicitly applies one.
+
+        Returns the number of templates seeded.
+        """
+        templates = self._get_preset_templates()
+
+        seeded = 0
+        for tpl in templates:
+            # Check if this template already exists (idempotent)
+            exists = (
+                self.db.query(WarehouseFloorPlan)
+                .filter(
+                    WarehouseFloorPlan.warehouse_id == warehouse_id,
+                    WarehouseFloorPlan.organization_id == org_id,
+                    WarehouseFloorPlan.name == tpl["name"],
+                )
+                .first()
+            )
+            if exists:
+                continue
+
+            plan = WarehouseFloorPlan(
+                organization_id=org_id,
+                warehouse_id=warehouse_id,
+                name=tpl["name"],
+                description=tpl["description"],
+                config=tpl["config"],
+                generated_at=None,  # Not applied yet
+                is_active=False,  # Templates are inactive until user applies
+            )
+            self.db.add(plan)
+            seeded += 1
+
+        if seeded:
+            self.db.flush()
+        return seeded
+
+    @staticmethod
+    def _get_preset_templates() -> list[dict]:
+        """Return the preset layout template definitions."""
+        return [
+            {
+                "name": "Small Warehouse",
+                "description": "1 zone, 2 aisles, 24 bins — ideal for small stockrooms",
+                "config": {
+                    "grid_unit": 1.0,
+                    "zones": [
+                        {
+                            "code": "A",
+                            "name": "Main Storage",
+                            "grid_x": 0,
+                            "grid_y": 0,
+                            "aisles": [
+                                {
+                                    "code": "A01",
+                                    "name": "Aisle 1",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 4,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 3,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 100,
+                                },
+                                {
+                                    "code": "A02",
+                                    "name": "Aisle 2",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 3,
+                                    "num_bays": 4,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 3,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 100,
+                                },
+                            ],
+                        }
+                    ],
+                },
+            },
+            {
+                "name": "Medium Warehouse",
+                "description": "2 zones, 4 aisles, 96 bins — standard distribution center",
+                "config": {
+                    "grid_unit": 1.0,
+                    "zones": [
+                        {
+                            "code": "A",
+                            "name": "Fast Movers",
+                            "grid_x": 0,
+                            "grid_y": 0,
+                            "aisles": [
+                                {
+                                    "code": "A01",
+                                    "name": "Aisle 1",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 4,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 150,
+                                },
+                                {
+                                    "code": "A02",
+                                    "name": "Aisle 2",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 3,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 4,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 150,
+                                },
+                            ],
+                        },
+                        {
+                            "code": "B",
+                            "name": "Bulk Storage",
+                            "grid_x": 0,
+                            "grid_y": 10,
+                            "aisles": [
+                                {
+                                    "code": "B01",
+                                    "name": "Aisle 3",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 500,
+                                },
+                                {
+                                    "code": "B02",
+                                    "name": "Aisle 4",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 3,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 500,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            {
+                "name": "Large Warehouse",
+                "description": "3 zones, 6 aisles, 216 bins — high-density racking layout",
+                "config": {
+                    "grid_unit": 1.0,
+                    "zones": [
+                        {
+                            "code": "A",
+                            "name": "Picking Zone",
+                            "grid_x": 0,
+                            "grid_y": 0,
+                            "aisles": [
+                                {
+                                    "code": "A01",
+                                    "name": "Pick Aisle 1",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 8,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 4,
+                                    "bins_per_level": 2,
+                                    "bin_capacity": 100,
+                                },
+                                {
+                                    "code": "A02",
+                                    "name": "Pick Aisle 2",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 4,
+                                    "num_bays": 8,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 4,
+                                    "bins_per_level": 2,
+                                    "bin_capacity": 100,
+                                },
+                            ],
+                        },
+                        {
+                            "code": "B",
+                            "name": "Reserve Storage",
+                            "grid_x": 0,
+                            "grid_y": 12,
+                            "aisles": [
+                                {
+                                    "code": "B01",
+                                    "name": "Reserve 1",
+                                    "orientation": "y",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 2.0,
+                                    "num_levels": 5,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 300,
+                                },
+                                {
+                                    "code": "B02",
+                                    "name": "Reserve 2",
+                                    "orientation": "y",
+                                    "grid_x": 4,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 2.0,
+                                    "num_levels": 5,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 300,
+                                },
+                            ],
+                        },
+                        {
+                            "code": "C",
+                            "name": "Cold Storage",
+                            "grid_x": 0,
+                            "grid_y": 26,
+                            "aisles": [
+                                {
+                                    "code": "C01",
+                                    "name": "Cold Aisle 1",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 4,
+                                    "bay_spacing": 2.0,
+                                    "num_levels": 3,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 200,
+                                },
+                                {
+                                    "code": "C02",
+                                    "name": "Cold Aisle 2",
+                                    "orientation": "x",
+                                    "grid_x": 0,
+                                    "grid_y": 4,
+                                    "num_bays": 4,
+                                    "bay_spacing": 2.0,
+                                    "num_levels": 3,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 200,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            {
+                "name": "Cross-Dock Facility",
+                "description": "2 zones (inbound/outbound), 4 aisles, 48 bins — transit hub",
+                "config": {
+                    "grid_unit": 1.0,
+                    "zones": [
+                        {
+                            "code": "IN",
+                            "name": "Inbound Staging",
+                            "grid_x": 0,
+                            "grid_y": 0,
+                            "aisles": [
+                                {
+                                    "code": "IN1",
+                                    "name": "Receiving 1",
+                                    "orientation": "y",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 250,
+                                },
+                                {
+                                    "code": "IN2",
+                                    "name": "Receiving 2",
+                                    "orientation": "y",
+                                    "grid_x": 3,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 250,
+                                },
+                            ],
+                        },
+                        {
+                            "code": "OUT",
+                            "name": "Outbound Staging",
+                            "grid_x": 10,
+                            "grid_y": 0,
+                            "aisles": [
+                                {
+                                    "code": "OUT1",
+                                    "name": "Dispatch 1",
+                                    "orientation": "y",
+                                    "grid_x": 0,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 250,
+                                },
+                                {
+                                    "code": "OUT2",
+                                    "name": "Dispatch 2",
+                                    "orientation": "y",
+                                    "grid_x": 3,
+                                    "grid_y": 0,
+                                    "num_bays": 6,
+                                    "bay_spacing": 1.5,
+                                    "num_levels": 2,
+                                    "bins_per_level": 1,
+                                    "bin_capacity": 250,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        ]
 
     # ------------------------------------------------------------------
     # INTERNAL — HIERARCHY BUILDER
@@ -346,6 +799,24 @@ class FloorPlanGeneratorService:
         if rows:
             self.db.flush()
         return len(rows)
+
+    def _deactivate_all_plans(
+        self, warehouse_id: UUID, org_id: UUID
+    ) -> None:
+        """Mark all floor plans for this warehouse as inactive (single active enforcement)."""
+        plans = (
+            self.db.query(WarehouseFloorPlan)
+            .filter(
+                WarehouseFloorPlan.warehouse_id == warehouse_id,
+                WarehouseFloorPlan.organization_id == org_id,
+                WarehouseFloorPlan.is_active.is_(True),
+            )
+            .all()
+        )
+        for plan in plans:
+            plan.is_active = False
+        if plans:
+            self.db.flush()
 
     @staticmethod
     def _summarise(locations: list[WarehouseLocation]) -> GeneratedLocationSummary:

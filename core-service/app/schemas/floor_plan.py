@@ -113,3 +113,26 @@ class FloorPlanApplyResponse(BaseModel):
     locations_created: int
     locations_deleted: int
     summary: GeneratedLocationSummary
+
+
+class FloorPlanUpdateRequest(BaseModel):
+    """Request to update an existing floor plan and re-generate locations."""
+    name: str | None = None
+    description: str | None = None
+    config: FloorPlanConfig
+
+
+class FloorPlanUpdateResponse(BaseModel):
+    """Response after updating a floor plan."""
+    floor_plan_id: UUID
+    name: str
+    locations_created: int
+    locations_deleted: int
+    summary: GeneratedLocationSummary
+
+
+class FloorPlanDeleteResponse(BaseModel):
+    """Response after deleting a floor plan."""
+    floor_plan_id: UUID
+    deleted: bool
+    locations_deactivated: int

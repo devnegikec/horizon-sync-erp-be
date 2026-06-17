@@ -53,6 +53,7 @@ class Warehouse3DService:
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
+                WarehouseLocation.is_active.is_(True),
             )
             .all()
         )
@@ -251,3 +252,84 @@ class Warehouse3DService:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
         return max(0, int((expires_at - now).total_seconds()))
+
+    # ------------------------------------------------------------------
+    # BIN STOCK DETAIL (FR-3D-04)
+    # ------------------------------------------------------------------
+
+    def get_bin_stock_detail(self, bin_id: UUID, org_id: UUID) -> dict:
+        """Return individual item records stored in a specific bin.
+
+        Implements FR-3D-04: clicking a bin shows items stored with name,
+        SKU, quantity, batch number, and expiry date.
+        """
+        from app.models.item import Item
+
+        # Verify the bin exists and belongs to this org
+        bin_loc = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == bin_id,
+                WarehouseLocation.organization_id == org_id,
+                WarehouseLocation.location_type == "bin",
+            )
+            .first()
+        )
+        if bin_loc is None:
+            raise NotFoundError(
+                message="Bin location not found",
+                entity_type="WarehouseLocation",
+                entity_id=str(bin_id),
+            )
+
+        rows = (
+            self.db.query(
+                BinStockLevel.item_id,
+                Item.item_name,
+                Item.item_code,
+                Item.sku,
+                Item.uom,
+                BinStockLevel.quantity_on_hand,
+                BinStockLevel.batch_number,
+                BinStockLevel.expiry_date,
+                BinStockLevel.created_at,
+            )
+            .join(Item, BinStockLevel.item_id == Item.id)
+            .filter(
+                BinStockLevel.bin_location_id == bin_id,
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .order_by(
+                BinStockLevel.expiry_date.asc().nullslast(),
+                BinStockLevel.created_at.asc(),
+            )
+            .all()
+        )
+
+        items = []
+        total_qty = Decimal("0")
+        for row in rows:
+            qty = Decimal(str(row[5] or 0))
+            total_qty += qty
+            items.append(
+                {
+                    "item_id": row[0],
+                    "item_name": row[1],
+                    "item_code": row[2],
+                    "sku": row[3],
+                    "uom": row[4],
+                    "quantity_on_hand": float(qty),
+                    "batch_number": row[6],
+                    "expiry_date": row[7].isoformat() if row[7] else None,
+                    "created_at": row[8].isoformat() if row[8] else None,
+                }
+            )
+
+        return {
+            "bin_id": bin_id,
+            "bin_code": bin_loc.code,
+            "items": items,
+            "total_quantity": float(total_qty),
+            "total_items": len(items),
+        }
