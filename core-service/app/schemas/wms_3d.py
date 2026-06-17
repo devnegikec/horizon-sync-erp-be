@@ -39,6 +39,7 @@ class LayoutBin(BaseModel):
     capacity: float
     available_capacity: float
     fill_percentage: float
+    is_active: bool = True
     is_reserved: bool
     reserved_by_worker_id: UUID | None = None
     items_count: int

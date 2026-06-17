@@ -53,7 +53,6 @@ class Warehouse3DService:
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
-                WarehouseLocation.is_active.is_(True),
             )
             .all()
         )
@@ -90,6 +89,7 @@ class Warehouse3DService:
                 "capacity": float(capacity),
                 "available_capacity": float(available),
                 "fill_percentage": fill_pct,
+                "is_active": bool(loc.is_active),
                 "is_reserved": res is not None,
                 "reserved_by_worker_id": res.worker_id if res else None,
                 "items_count": agg["items"],
