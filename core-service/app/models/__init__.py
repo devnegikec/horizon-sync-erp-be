@@ -65,6 +65,7 @@ from app.models.base import (
     WarehouseUserRole,
 )
 from app.models.batch import Batch
+from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
 
 # QR Products module
@@ -404,6 +405,7 @@ __all__ = [
     "GateVerificationItemStatus",
     "WarehouseLocation",
     "BinStockLevel",
+    "BinReservation",
     "LocationAllocation",
     "ScanSession",
     "ScanSessionItem",

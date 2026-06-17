@@ -27,6 +27,7 @@ from app.models.pick_list import PickList, PickListItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.warehouse_location import WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
+from app.services.bin_reservation_service import BinReservationService
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 
@@ -54,6 +55,7 @@ class PickListService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = PickListRepository(db)
+        self.reservation_service = BinReservationService(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
         payload = {k: v for k, v in data.items() if k != "items"}
@@ -266,10 +268,16 @@ class PickListService:
         resolved_items: list[PickListItem] = []
         items_to_remove: list[PickListItem] = []
 
+        # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
+        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(
+            org_id=org_id
+        )
+
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
 
-            # Query bin stock levels for this item using FIFO (oldest first)
+            # Query bin stock levels for this item using FEFO then FIFO:
+            # earliest expiry first (NULLs last), then oldest arrival.
             bin_stocks = (
                 self.db.query(BinStockLevel)
                 .filter(
@@ -277,9 +285,17 @@ class PickListService:
                     BinStockLevel.organization_id == org_id,
                     BinStockLevel.quantity_on_hand > 0,
                 )
-                .order_by(BinStockLevel.created_at.asc())
+                .order_by(
+                    BinStockLevel.expiry_date.asc().nullslast(),
+                    BinStockLevel.created_at.asc(),
+                )
                 .all()
             )
+
+            # Drop bins reserved by other workers.
+            bin_stocks = [
+                bs for bs in bin_stocks if bs.bin_location_id not in reserved_bin_ids
+            ]
 
             if not bin_stocks:
                 # No stock available; keep item without bin assignment
@@ -450,6 +466,15 @@ class PickListService:
                 org_id=org_id,
                 batch_number=payload.batch,
             )
+
+            # Once this pick line is fully satisfied, release the worker's
+            # reservation on the bin so it is available to others (FR-CW).
+            if new_picked >= required_qty:
+                self.reservation_service.release(
+                    bin_id=matching_pick_item.bin_location_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                )
 
         # Transition to IN_PROGRESS on first scan
         if pick_list.status == PickListStatus.DRAFT:

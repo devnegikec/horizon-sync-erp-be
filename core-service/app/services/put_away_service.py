@@ -28,6 +28,7 @@ from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
@@ -42,6 +43,7 @@ class PutAwayService:
         self.bin_stock_service = BinStockService(db)
         self.capacity_service = CapacityService(db)
         self.routing_optimizer = RoutingOptimizer()
+        self.reservation_service = BinReservationService(db)
 
     def generate_from_slip(
         self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
@@ -309,6 +311,12 @@ class PutAwayService:
         put_away_item.completed_at = datetime.now(UTC)
         self.db.flush()
 
+        # Release any reservation the worker held on the destination bin so it
+        # becomes immediately available to others (FR-CW lifecycle).
+        self.reservation_service.release(
+            bin_id=target_bin_id, worker_id=worker_id, org_id=org_id
+        )
+
         # Check if all items in the put-away list are done
         self._check_and_update_list_completion(put_away_item.put_away_list_id)
 
@@ -411,6 +419,12 @@ class PutAwayService:
         assignments: list[dict] = []
         remaining_qty = quantity
 
+        # Exclude bins actively reserved by workers so generated put-away tasks
+        # do not collide with in-progress work (FR-CW-01).
+        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(
+            org_id=org_id, warehouse_id=warehouse_id
+        )
+
         if item_group_id is not None:
             # Step 1: Check for exclusive allocations
             exclusive_allocations = (
@@ -438,7 +452,7 @@ class PutAwayService:
                     exclusive_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    exclusive_bins, remaining_qty, org_id
+                    exclusive_bins, remaining_qty, org_id, reserved_bin_ids
                 )
                 # For exclusive allocations, we don't fall back to other bins
                 if remaining_qty > 0:
@@ -472,14 +486,14 @@ class PutAwayService:
                     preferred_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    preferred_bins, remaining_qty, org_id
+                    preferred_bins, remaining_qty, org_id, reserved_bin_ids
                 )
 
         # Step 3: Fall back to unallocated bins if still remaining
         if remaining_qty > 0:
             unallocated_bins = self._get_unallocated_bins(warehouse_id, org_id)
             additional_assignments, remaining_qty = self._fill_bins(
-                unallocated_bins, remaining_qty, org_id
+                unallocated_bins, remaining_qty, org_id, reserved_bin_ids
             )
             assignments.extend(additional_assignments)
 
@@ -581,25 +595,32 @@ class PutAwayService:
         bins: list[WarehouseLocation],
         quantity: Decimal,
         org_id: UUID,
+        reserved_bin_ids: set[UUID] | None = None,
     ) -> tuple[list[dict], Decimal]:
         """Fill bins with the given quantity, respecting capacity.
 
-        Splits across bins if a single bin is insufficient.
+        Splits across bins if a single bin is insufficient. Bins in
+        ``reserved_bin_ids`` are skipped to avoid worker contention.
 
         Args:
             bins: List of candidate bin locations.
             quantity: Remaining quantity to assign.
             org_id: Organization ID.
+            reserved_bin_ids: Bin ids currently reserved by workers.
 
         Returns:
             Tuple of (assignments list, remaining quantity).
         """
         assignments: list[dict] = []
         remaining = quantity
+        reserved = reserved_bin_ids or set()
 
         for bin_loc in bins:
             if remaining <= 0:
                 break
+
+            if bin_loc.id in reserved:
+                continue
 
             # Calculate available capacity for this bin
             available = self._get_bin_available_capacity(bin_loc)
