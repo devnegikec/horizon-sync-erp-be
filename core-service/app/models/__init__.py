@@ -177,6 +177,7 @@ from app.models.transaction_breakdown import (
 from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
+from app.models.warehouse_floor_plan import WarehouseFloorPlan
 
 # Warehouse Bin Management module
 from app.models.warehouse_location import (
@@ -404,6 +405,7 @@ __all__ = [
     "GateVerificationStatus",
     "GateVerificationItemStatus",
     "WarehouseLocation",
+    "WarehouseFloorPlan",
     "BinStockLevel",
     "BinReservation",
     "LocationAllocation",

@@ -78,6 +78,7 @@ from app.api.v1.endpoints import (
     warehouses,
     warranties,
     worker_tasks,
+    floor_plans,
     wms_3d,
     wms_dashboard,
     wms_workers,
@@ -135,6 +136,11 @@ api_router.include_router(
     wms_workers.router,
     prefix="/wms-workers",
     tags=["WMS Workers"],
+)
+api_router.include_router(
+    floor_plans.router,
+    prefix="/floor-plans",
+    tags=["Floor Plan Designer"],
 )
 api_router.include_router(
     wms_3d.router,
