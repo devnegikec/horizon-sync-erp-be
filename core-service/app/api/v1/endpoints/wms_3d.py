@@ -7,14 +7,18 @@ Exposes:
 - POST /wms-3d/reserve   — atomically reserve a bin for a worker
 - POST /wms-3d/release   — release a worker's reservation
 - POST /wms-3d/force-release/{bin_id} — manager override
+- WS   /wms-3d/ws        — real-time bin events via Redis Pub/Sub (Phase 3)
 
 Design ref: docs/3D_WAREHOUSE_VIEW_DESIGN.md section 5
 """
 
+import asyncio
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -39,6 +43,7 @@ from app.services.location_suggestion_service import LocationSuggestionService
 from app.services.warehouse_3d_service import Warehouse3DService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/layout", response_model=LayoutResponse, summary="Get 3D layout")
@@ -141,6 +146,68 @@ async def force_release_bin(
     service = BinReservationService(db)
     released = service.force_release(bin_id, current_user.organization_id)
     return ReleaseResponse(released=released, bin_id=bin_id)
+
+
+@router.websocket("/ws")
+async def warehouse_realtime_ws(
+    websocket: WebSocket,
+    warehouse_id: UUID = Query(...),
+    token: str = Query(...),
+):
+    """WebSocket endpoint — streams real-time bin events to connected clients.
+
+    Authentication: pass the Bearer access token as the ``token`` query param
+    (standard browsers cannot set custom headers on WebSocket upgrades).
+
+    Each message is a JSON object:
+      {"type": "bin_reserved"|"bin_released", "bin_id": "...", "warehouse_id": "...", ...}
+
+    Clients should merge incoming events into their local status state instead
+    of waiting for the 5-second polling interval.
+    """
+    from app.config import settings
+    from app.core.security import decode_token
+
+    # Authenticate before accepting (close with 4001 on failure)
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        await websocket.close(code=4001)
+        return
+
+    await websocket.accept()
+
+    channel = f"warehouse:3d:{warehouse_id}"
+    redis_client = aioredis.from_url(settings.redis_warehouse_url, decode_responses=True)
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(channel)
+    logger.info("WS client connected to channel %s", channel)
+
+    async def _forward_redis_to_ws() -> None:
+        """Read Redis Pub/Sub messages and forward them to the WebSocket."""
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                try:
+                    await websocket.send_text(message["data"])
+                except Exception:
+                    return  # client gone — exit the loop
+
+    forward_task = asyncio.create_task(_forward_redis_to_ws())
+    try:
+        # Keep the handler alive; detect client disconnect via receive_text()
+        while True:
+            await websocket.receive_text()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        forward_task.cancel()
+        try:
+            await forward_task
+        except asyncio.CancelledError:
+            pass
+        await pubsub.unsubscribe(channel)
+        await pubsub.aclose()
+        await redis_client.aclose()
+        logger.info("WS client disconnected from channel %s", channel)
 
 
 def _reservation_to_response(reservation) -> ReservationResponse:

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.core.redis_pubsub import publish_bin_event
 from app.models.bin_reservation import BinReservation
 from app.models.warehouse_location import WarehouseLocation
 from app.models.worker_task import WorkerTask
@@ -126,6 +127,13 @@ class BinReservationService:
                     active.task_type = task_type
                 self.db.commit()
                 self.db.refresh(active)
+                publish_bin_event(
+                    "bin_reserved",
+                    bin_id,
+                    bin_location.warehouse_id,
+                    worker_id=worker_id,
+                    expires_in_seconds=ttl_seconds,
+                )
                 return active
             else:
                 raise StateError(
@@ -149,6 +157,13 @@ class BinReservationService:
         self.db.add(reservation)
         self.db.commit()
         self.db.refresh(reservation)
+        publish_bin_event(
+            "bin_reserved",
+            bin_id,
+            bin_location.warehouse_id,
+            worker_id=worker_id,
+            expires_in_seconds=ttl_seconds,
+        )
         return reservation
 
     def release(self, bin_id: UUID, worker_id: UUID, org_id: UUID) -> bool:
@@ -172,6 +187,13 @@ class BinReservationService:
 
         active.released_at = datetime.now(UTC)
         self.db.commit()
+        warehouse_id = (
+            self.db.query(WarehouseLocation.warehouse_id)
+            .filter(WarehouseLocation.id == bin_id)
+            .scalar()
+        )
+        if warehouse_id is not None:
+            publish_bin_event("bin_released", bin_id, warehouse_id, worker_id=worker_id)
         return True
 
     def release_for_worker(self, worker_id: UUID, org_id: UUID) -> int:
@@ -208,6 +230,13 @@ class BinReservationService:
 
         active.released_at = datetime.now(UTC)
         self.db.commit()
+        warehouse_id = (
+            self.db.query(WarehouseLocation.warehouse_id)
+            .filter(WarehouseLocation.id == bin_id)
+            .scalar()
+        )
+        if warehouse_id is not None:
+            publish_bin_event("bin_released", bin_id, warehouse_id)
         return True
 
     def cleanup_expired(self, org_id: UUID | None = None) -> int:
