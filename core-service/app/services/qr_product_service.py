@@ -41,12 +41,50 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
+def _embed_qr(ws, url: str, row: int, col: int, size: int = 150) -> None:
+    """Generate a QR code image from a URL and embed it into a worksheet cell."""
+    from io import BytesIO
+
+    import qrcode
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.utils import get_column_letter
+
+    if not url:
+        return
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    xl_img = XLImage(buf)
+    xl_img.width = size
+    xl_img.height = size
+
+    cell_ref = f"{get_column_letter(col)}{row}"
+    ws.add_image(xl_img, cell_ref)
+
+
 def _build_excel(rows: list[dict], qr_type: str) -> bytes:
-    """Build an Excel file from block item rows. Returns raw bytes."""
+    """Build an Excel file from block item rows. Returns raw bytes.
+
+    Includes embedded QR code images so users can print the sheet and
+    scan QR codes directly from the Excel.
+    """
     from io import BytesIO
 
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
 
     wb = Workbook()
     ws = wb.active
@@ -54,29 +92,67 @@ def _build_excel(rows: list[dict], qr_type: str) -> bytes:
 
     qr_type = qr_type.upper()
     if qr_type == "B":
-        headers = ["URL (Overt)", "URL (Covert)", "Serial Number"]
+        headers = [
+            "URL (Overt)",
+            "QR Code (Overt)",
+            "URL (Covert)",
+            "QR Code (Covert)",
+            "Serial Number",
+        ]
     elif qr_type == "SC":
-        headers = ["QR URL", "Serial Number", "Secret Code"]
+        headers = ["QR URL", "QR Code", "Serial Number", "Secret Code"]
     else:
-        headers = ["QR URL", "Serial Number"]
+        headers = ["QR URL", "QR Code", "Serial Number"]
 
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=h)
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center")
 
+    # Set column widths: URL columns wider, QR code columns sized for ~150px image
+    url_col_width = 55
+    qr_col_width = 24  # ~150px at default DPI
+    if qr_type == "B":
+        ws.column_dimensions[get_column_letter(1)].width = url_col_width
+        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
+        ws.column_dimensions[get_column_letter(3)].width = url_col_width
+        ws.column_dimensions[get_column_letter(4)].width = qr_col_width
+        ws.column_dimensions[get_column_letter(5)].width = 20
+    elif qr_type == "SC":
+        ws.column_dimensions[get_column_letter(1)].width = url_col_width
+        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
+        ws.column_dimensions[get_column_letter(3)].width = 20
+        ws.column_dimensions[get_column_letter(4)].width = 18
+    else:
+        ws.column_dimensions[get_column_letter(1)].width = url_col_width
+        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
+        ws.column_dimensions[get_column_letter(3)].width = 20
+
+    qr_size = 150  # pixels for QR image
+
     for row_idx, item in enumerate(rows, 2):
+        # Set row height to accommodate the QR code image
+        ws.row_dimensions[row_idx].height = 115
+
         if qr_type == "B":
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("overt_url", ""))
-            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
+            overt_url = item.get("short_url", "")
+            covert_url = item.get("overt_url", "")
+            ws.cell(row=row_idx, column=1, value=overt_url)
+            _embed_qr(ws, overt_url, row_idx, 2, qr_size)
+            ws.cell(row=row_idx, column=3, value=covert_url)
+            _embed_qr(ws, covert_url, row_idx, 4, qr_size)
+            ws.cell(row=row_idx, column=5, value=item.get("serial", ""))
         elif qr_type == "SC":
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
-            ws.cell(row=row_idx, column=3, value=item.get("secret_code", ""))
+            url = item.get("short_url", "")
+            ws.cell(row=row_idx, column=1, value=url)
+            _embed_qr(ws, url, row_idx, 2, qr_size)
+            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
+            ws.cell(row=row_idx, column=4, value=item.get("secret_code", ""))
         else:
-            ws.cell(row=row_idx, column=1, value=item.get("short_url", ""))
-            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+            url = item.get("short_url", "")
+            ws.cell(row=row_idx, column=1, value=url)
+            _embed_qr(ws, url, row_idx, 2, qr_size)
+            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
 
     buf = BytesIO()
     wb.save(buf)
