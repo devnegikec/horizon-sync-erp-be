@@ -98,8 +98,8 @@ class EventPublisher:
                 "data": json.dumps(event_data["data"]),
             }
 
-            # Publish to Redis Stream
-            message_id = self.redis.xadd(self.stream_name, redis_data)
+            # Publish to Redis Stream (trim to ~10 000 entries to prevent unbounded growth)
+            message_id = self.redis.xadd(self.stream_name, redis_data, maxlen=10000, approximate=True)
             logger.info(
                 f"Published {event.event_type} event for {event.entity_type}:{event.entity_id} "
                 f"to stream {self.stream_name} with ID {message_id}"
