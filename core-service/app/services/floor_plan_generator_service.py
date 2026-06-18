@@ -706,7 +706,7 @@ class FloorPlanGeneratorService:
 
         for k in range(spec.bins_per_level):
             if spec.bins_per_level == 1:
-                bin_code = level_loc.code
+                bin_code = f"{level_loc.code}-01"
             else:
                 bin_code = f"{level_loc.code}-{k + 1:02d}"
 
@@ -755,6 +755,7 @@ class FloorPlanGeneratorService:
             parent_location_id=parent_id,
             location_type=location_type,
             code=code,
+            full_path=code,
             name=name,
             position_x=pos_x,
             position_y=pos_y,
@@ -785,6 +786,13 @@ class FloorPlanGeneratorService:
     def _deactivate_existing(
         self, warehouse_id: UUID, org_id: UUID
     ) -> int:
+        """Remove existing active locations for this warehouse.
+
+        Hard-deletes locations that have no stock, soft-deletes (is_active=False)
+        locations that still have stock references to preserve audit trail.
+        This avoids unique constraint conflicts on (warehouse_id, full_path)
+        when re-applying a layout with the same codes.
+        """
         rows = (
             self.db.query(WarehouseLocation)
             .filter(
@@ -794,11 +802,36 @@ class FloorPlanGeneratorService:
             )
             .all()
         )
+        count = len(rows)
+
+        # Check which bins have stock — those get soft-deleted, the rest get hard-deleted
+        from app.models.bin_stock_level import BinStockLevel
+
+        bins_with_stock = set()
+        if rows:
+            stock_rows = (
+                self.db.query(BinStockLevel.bin_location_id)
+                .filter(
+                    BinStockLevel.bin_location_id.in_([r.id for r in rows]),
+                    BinStockLevel.quantity_on_hand > 0,
+                )
+                .distinct()
+                .all()
+            )
+            bins_with_stock = {r[0] for r in stock_rows}
+
         for loc in rows:
-            loc.is_active = False
+            if loc.id in bins_with_stock:
+                # Soft-delete — preserve for stock audit trail
+                loc.is_active = False
+                loc.full_path = f"_inactive_{loc.id}_{loc.full_path or loc.code}"
+            else:
+                # Hard-delete — no stock, safe to remove (avoids unique constraint conflict)
+                self.db.delete(loc)
+
         if rows:
             self.db.flush()
-        return len(rows)
+        return count
 
     def _deactivate_all_plans(
         self, warehouse_id: UUID, org_id: UUID
