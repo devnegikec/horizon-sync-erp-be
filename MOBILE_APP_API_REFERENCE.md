@@ -3,6 +3,7 @@
 > **Version**: 1.0
 > **Date**: 2026-06-15
 > **Base URLs**:
+>
 > - Identity Service (Auth): `http://<host>:8001/api/v1`
 > - Core Service (WMS/Inventory): `http://<host>:8000/api/v1`
 
@@ -52,37 +53,37 @@
 
 ### Token Expiry
 
-| Login Method | Access Token TTL | Refresh Token TTL |
-|---|---|---|
-| Username/Password | 3 days (default) / 30 days (remember_me) | 7 days / 90 days |
-| Barcode/QR Scan | 24 hours | N/A |
+| Login Method      | Access Token TTL                         | Refresh Token TTL |
+| ----------------- | ---------------------------------------- | ----------------- |
+| Username/Password | 3 days (default) / 30 days (remember_me) | 7 days / 90 days  |
+| Barcode/QR Scan   | 24 hours                                 | N/A               |
 
 ---
 
 ## 2. Technology Stack Recommendations
 
-| Layer | Recommendation |
-|---|---|
-| **Framework** | React Native (Expo) or Flutter |
+| Layer                  | Recommendation                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| **Framework**          | React Native (Expo) or Flutter                                                    |
 | **QR/Barcode Scanner** | `react-native-camera` / `expo-barcode-scanner` (RN) or `mobile_scanner` (Flutter) |
-| **HTTP Client** | Axios / Fetch with interceptor for JWT refresh |
-| **State Management** | Zustand / Redux Toolkit (RN) or Riverpod / Bloc (Flutter) |
-| **Offline Support** | SQLite (local cache) + background sync |
-| **Push Notifications** | Firebase Cloud Messaging (FCM) |
-| **Navigation** | React Navigation (RN) or GoRouter (Flutter) |
+| **HTTP Client**        | Axios / Fetch with interceptor for JWT refresh                                    |
+| **State Management**   | Zustand / Redux Toolkit (RN) or Riverpod / Bloc (Flutter)                         |
+| **Offline Support**    | SQLite (local cache) + background sync                                            |
+| **Push Notifications** | Firebase Cloud Messaging (FCM)                                                    |
+| **Navigation**         | React Navigation (RN) or GoRouter (Flutter)                                       |
 
 ### HTTP Client Setup (Pseudocode)
 
 ```typescript
 // api-client.ts
 const apiClient = axios.create({
-  baseURL: 'https://your-server.com/api/v1',
-  headers: { 'Content-Type': 'application/json' },
+  baseURL: "https://your-server.com/api/v1",
+  headers: { "Content-Type": "application/json" },
 });
 
 // Attach JWT token
 apiClient.interceptors.request.use((config) => {
-  const token = await SecureStore.get('access_token');
+  const token = await SecureStore.get("access_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -92,14 +93,16 @@ apiClient.interceptors.response.use(
   (res) => res,
   async (error) => {
     if (error.response?.status === 401) {
-      const refreshToken = await SecureStore.get('refresh_token');
-      const { data } = await axios.post('/identity/refresh', { refresh_token: refreshToken });
-      await SecureStore.set('access_token', data.access_token);
+      const refreshToken = await SecureStore.get("refresh_token");
+      const { data } = await axios.post("/identity/refresh", {
+        refresh_token: refreshToken,
+      });
+      await SecureStore.set("access_token", data.access_token);
       error.config.headers.Authorization = `Bearer ${data.access_token}`;
       return axios(error.config);
     }
     return Promise.reject(error);
-  }
+  },
 );
 ```
 
@@ -112,6 +115,7 @@ apiClient.interceptors.response.use(
 **Endpoint**: `POST /identity/login` (Identity Service)
 
 **Request**:
+
 ```json
 {
   "email": "worker@example.com",
@@ -126,6 +130,7 @@ apiClient.interceptors.response.use(
 ```
 
 **Response** `200`:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
@@ -148,10 +153,10 @@ apiClient.interceptors.response.use(
 
 **Error Responses**:
 
-| Status | Meaning |
-|---|---|
-| `400` | Invalid credentials |
-| `403` | Account locked (too many failed attempts) |
+| Status | Meaning                                   |
+| ------ | ----------------------------------------- |
+| `400`  | Invalid credentials                       |
+| `403`  | Account locked (too many failed attempts) |
 
 ---
 
@@ -163,6 +168,7 @@ apiClient.interceptors.response.use(
 **Auth**: None (public endpoint)
 
 **Request**:
+
 ```json
 {
   "barcode": "WH-2024-A1B2C3D4"
@@ -170,6 +176,7 @@ apiClient.interceptors.response.use(
 ```
 
 **Response** `200`:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
@@ -194,9 +201,9 @@ apiClient.interceptors.response.use(
 
 **Error Responses**:
 
-| Status | Meaning |
-|---|---|
-| `401` | Invalid barcode or worker inactive |
+| Status | Meaning                            |
+| ------ | ---------------------------------- |
+| `401`  | Invalid barcode or worker inactive |
 
 ---
 
@@ -205,6 +212,7 @@ apiClient.interceptors.response.use(
 **Endpoint**: `POST /identity/refresh` (Identity Service)
 
 **Request**:
+
 ```json
 {
   "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
@@ -212,6 +220,7 @@ apiClient.interceptors.response.use(
 ```
 
 **Response** `200`:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIs...",
@@ -230,6 +239,7 @@ After login, call this to know which warehouses the worker has access to.
 **Auth**: `warehouse.read`
 
 **Response** `200`:
+
 ```json
 {
   "warehouses": [
@@ -250,6 +260,7 @@ After login, call this to know which warehouses the worker has access to.
 ## 4. Inbound Process (Receiving)
 
 The inbound workflow consists of:
+
 1. **Start a scan session** → open a session at a dock
 2. **Scan QR codes** of incoming items → record each scan
 3. **View session summary** → see what's been scanned
@@ -261,6 +272,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.create`
 
 **Request**:
+
 ```json
 {
   "warehouse_id": "880e8400-e29b-41d4-a716-446655440003",
@@ -269,6 +281,7 @@ The inbound workflow consists of:
 ```
 
 **Response** `201`:
+
 ```json
 {
   "id": "990e8400-e29b-41d4-a716-446655440004",
@@ -292,6 +305,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.create`
 
 **Request**:
+
 ```json
 {
   "qr_data": "{\"sku\":\"SKU-12345\",\"batch\":\"B-2026-001\",\"qty\":10,\"serial\":\"SN-ABC123\"}",
@@ -303,6 +317,7 @@ The inbound workflow consists of:
 > **QR Payload Format**: The `qr_data` field expects a JSON string. The backend decodes it and extracts `sku`, `batch_number`, `quantity` etc.
 
 **Response** `201`:
+
 ```json
 {
   "scan_item_id": "aa0e8400-e29b-41d4-a716-446655440005",
@@ -319,10 +334,10 @@ The inbound workflow consists of:
 
 **Error Responses**:
 
-| Status | Meaning |
-|---|---|
-| `400` | Duplicate scan detected |
-| `404` | Session not found or not OPEN |
+| Status | Meaning                       |
+| ------ | ----------------------------- |
+| `400`  | Duplicate scan detected       |
+| `404`  | Session not found or not OPEN |
 
 ---
 
@@ -332,6 +347,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.read`
 
 **Response** `200`:
+
 ```json
 {
   "session_id": "990e8400-e29b-41d4-a716-446655440004",
@@ -365,6 +381,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.create`
 
 **Response** `200`:
+
 ```json
 {
   "id": "bb0e8400-e29b-41d4-a716-446655440006",
@@ -399,15 +416,16 @@ The inbound workflow consists of:
 
 **Query Parameters**:
 
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `warehouse_id` | UUID | No | Filter by warehouse |
-| `session_id` | UUID | No | Filter by scan session |
-| `status` | string | No | `pending_review`, `pending_putaway`, `putaway_complete`, `rejected` |
-| `page` | int | No | Default: 1 |
-| `page_size` | int | No | Default: 20, max: 100 |
+| Param          | Type   | Required | Description                                                         |
+| -------------- | ------ | -------- | ------------------------------------------------------------------- |
+| `warehouse_id` | UUID   | No       | Filter by warehouse                                                 |
+| `session_id`   | UUID   | No       | Filter by scan session                                              |
+| `status`       | string | No       | `pending_review`, `pending_putaway`, `putaway_complete`, `rejected` |
+| `page`         | int    | No       | Default: 1                                                          |
+| `page_size`    | int    | No       | Default: 20, max: 100                                               |
 
 **Response** `200`:
+
 ```json
 {
   "receiving_slips": [
@@ -446,6 +464,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.update`
 
 **Request** (optional):
+
 ```json
 {
   "worker_id": "770e8400-e29b-41d4-a716-446655440002"
@@ -462,6 +481,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.update`
 
 **Request**:
+
 ```json
 {
   "reason": "Damaged packaging on 3 boxes"
@@ -476,6 +496,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.update`
 
 **Request**:
+
 ```json
 {
   "flag": "damaged",
@@ -497,6 +518,7 @@ The inbound workflow consists of:
 **Auth**: `warehouse.create`
 
 **Request** (optional):
+
 ```json
 {
   "worker_id": "770e8400-e29b-41d4-a716-446655440002"
@@ -504,6 +526,7 @@ The inbound workflow consists of:
 ```
 
 **Response** `201`:
+
 ```json
 {
   "id": "dd0e8400-e29b-41d4-a716-446655440008",
@@ -542,14 +565,15 @@ The inbound workflow consists of:
 
 **Query Parameters**:
 
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `warehouse_id` | UUID | No | Filter by warehouse |
-| `status` | string | No | `pending`, `completed` |
-| `page` | int | No | Default: 1 |
-| `page_size` | int | No | Default: 20, max: 100 |
+| Param          | Type   | Required | Description            |
+| -------------- | ------ | -------- | ---------------------- |
+| `warehouse_id` | UUID   | No       | Filter by warehouse    |
+| `status`       | string | No       | `pending`, `completed` |
+| `page`         | int    | No       | Default: 1             |
+| `page_size`    | int    | No       | Default: 20, max: 100  |
 
 **Response** `200`:
+
 ```json
 {
   "put_away_lists": [
@@ -563,7 +587,14 @@ The inbound workflow consists of:
       "assigned_to": "770e8400-e29b-41d4-a716-446655440002"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 18, "total_pages": 1, "has_next": false, "has_prev": false }
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total": 18,
+    "total_pages": 1,
+    "has_next": false,
+    "has_prev": false
+  }
 }
 ```
 
@@ -584,6 +615,7 @@ Returns the full put-away list with all items and bin assignments.
 **Auth**: `warehouse.create`
 
 **Request** (optional — override pre-assigned bin):
+
 ```json
 {
   "bin_id": "hh0e8400-e29b-41d4-a716-446655440012"
@@ -591,6 +623,7 @@ Returns the full put-away list with all items and bin assignments.
 ```
 
 **Response** `200`:
+
 ```json
 {
   "id": "ee0e8400-e29b-41d4-a716-446655440009",
@@ -616,6 +649,7 @@ Returns the full put-away list with all items and bin assignments.
 **Auth**: `warehouse.create`
 
 **Request**:
+
 ```json
 {
   "reason": "Bin full — need supervisor override"
@@ -632,6 +666,7 @@ Returns the full put-away list with all items and bin assignments.
 **Auth**: `pick_list.create`
 
 **Request**:
+
 ```json
 {
   "warehouse_id": "880e8400-e29b-41d4-a716-446655440003",
@@ -664,16 +699,17 @@ Returns the full put-away list with all items and bin assignments.
 
 **Query Parameters**:
 
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `warehouse_id` | UUID | No | Filter by warehouse |
-| `status` | string | No | `draft`, `in_progress`, `completed`, `cancelled` |
-| `page` | int | No | Default: 1 |
-| `page_size` | int | No | Default: 20, max: 100 |
-| `sort_by` | string | No | Default: `created_at` |
-| `sort_order` | string | No | `asc` or `desc` |
+| Param          | Type   | Required | Description                                      |
+| -------------- | ------ | -------- | ------------------------------------------------ |
+| `warehouse_id` | UUID   | No       | Filter by warehouse                              |
+| `status`       | string | No       | `draft`, `in_progress`, `completed`, `cancelled` |
+| `page`         | int    | No       | Default: 1                                       |
+| `page_size`    | int    | No       | Default: 20, max: 100                            |
+| `sort_by`      | string | No       | Default: `created_at`                            |
+| `sort_order`   | string | No       | `asc` or `desc`                                  |
 
 **Response** `200`:
+
 ```json
 {
   "pick_lists": [
@@ -707,6 +743,7 @@ Returns the full put-away list with all items and bin assignments.
 **Auth**: `pick_list.update`
 
 **Request** — Start picking:
+
 ```json
 {
   "status": "in_progress"
@@ -714,6 +751,7 @@ Returns the full put-away list with all items and bin assignments.
 ```
 
 **Request** — Complete picking:
+
 ```json
 {
   "status": "completed"
@@ -721,6 +759,7 @@ Returns the full put-away list with all items and bin assignments.
 ```
 
 **Request** — Cancel:
+
 ```json
 {
   "status": "cancelled"
@@ -755,6 +794,7 @@ Returns which warehouses have stock for each SO line item.
 **Auth**: `pick_list.create`
 
 **Request**:
+
 ```json
 {
   "sales_order_id": "ii0e8400-e29b-41d4-a716-446655440013",
@@ -787,6 +827,7 @@ Worker tasks track the assignment and progress of put-away and pick operations.
 **Auth**: `pick_list.create`
 
 **Request**:
+
 ```json
 {
   "task_type": "put_away",
@@ -795,10 +836,10 @@ Worker tasks track the assignment and progress of put-away and pick operations.
 }
 ```
 
-> `task_type`: `"put_away"` or `"pick"`
-> `reference_id`: UUID of the `put_away_list` or `pick_list`
+> `task_type`: `"put_away"` or `"pick"` > `reference_id`: UUID of the `put_away_list` or `pick_list`
 
 **Response** `201`:
+
 ```json
 {
   "id": "kk0e8400-e29b-41d4-a716-446655440015",
@@ -820,14 +861,14 @@ Worker tasks track the assignment and progress of put-away and pick operations.
 
 **Query Parameters**:
 
-| Param | Type | Required | Description |
-|---|---|---|---|
-| `worker_id` | UUID | **Yes** | Worker to list tasks for |
-| `status` | string | No | `assigned`, `in_progress`, `completed`, `cancelled` |
-| `date_from` | datetime | No | Filter from date |
-| `date_to` | datetime | No | Filter to date |
-| `page` | int | No | Default: 1 |
-| `page_size` | int | No | Default: 20, max: 100 |
+| Param       | Type     | Required | Description                                         |
+| ----------- | -------- | -------- | --------------------------------------------------- |
+| `worker_id` | UUID     | **Yes**  | Worker to list tasks for                            |
+| `status`    | string   | No       | `assigned`, `in_progress`, `completed`, `cancelled` |
+| `date_from` | datetime | No       | Filter from date                                    |
+| `date_to`   | datetime | No       | Filter to date                                      |
+| `page`      | int      | No       | Default: 1                                          |
+| `page_size` | int      | No       | Default: 20, max: 100                               |
 
 ---
 
@@ -846,6 +887,7 @@ Worker tasks track the assignment and progress of put-away and pick operations.
 > Call this when a worker begins working on a put-away or pick task.
 
 **Response** `200`:
+
 ```json
 {
   "id": "kk0e8400-e29b-41d4-a716-446655440015",
@@ -865,6 +907,7 @@ Worker tasks track the assignment and progress of put-away and pick operations.
 > Call this when a worker finishes all items in the task.
 
 **Response** `200`:
+
 ```json
 {
   "id": "kk0e8400-e29b-41d4-a716-446655440015",
@@ -893,6 +936,7 @@ Track time spent at each bin location during put-away/pick.
 **Auth**: `pick_list.create`
 
 **Request** — Start at a location:
+
 ```json
 {
   "worker_id": "770e8400-e29b-41d4-a716-446655440002",
@@ -903,6 +947,7 @@ Track time spent at each bin location during put-away/pick.
 ```
 
 **Request** — Finish at a location:
+
 ```json
 {
   "worker_id": "770e8400-e29b-41d4-a716-446655440002",
@@ -913,6 +958,7 @@ Track time spent at each bin location during put-away/pick.
 ```
 
 **Response** `201`:
+
 ```json
 {
   "id": "ll0e8400-e29b-41d4-a716-446655440016",
@@ -942,16 +988,17 @@ Record every QR scan for full audit trail.
 **Auth**: `pick_list.read`
 
 **Request**:
+
 ```json
 {
   "worker_id": "770e8400-e29b-41d4-a716-446655440002",
   "scan_context": "pick",
   "serial_number": "SN-ABC123",
   "pick_list_id": "jj0e8400-e29b-41d4-a716-446655440014",
-  "decoded_payload": {"sku": "SKU-12345", "batch": "B-2026-001"},
+  "decoded_payload": { "sku": "SKU-12345", "batch": "B-2026-001" },
   "device_type": "mobile",
   "os": "iOS 18.0",
-  "latitude": 19.0760,
+  "latitude": 19.076,
   "longitude": 72.8777
 }
 ```
@@ -966,6 +1013,7 @@ Record every QR scan for full audit trail.
 **Auth**: Authenticated user
 
 **Request** — Transfer between bins:
+
 ```json
 {
   "item_id": "ff0e8400-e29b-41d4-a716-446655440010",
@@ -981,6 +1029,7 @@ Record every QR scan for full audit trail.
 > `movement_type`: `"in"`, `"out"`, `"transfer"`, `"adjustment"`
 
 **Response** `201`:
+
 ```json
 {
   "id": "mm0e8400-e29b-41d4-a716-446655440017",
@@ -1009,6 +1058,7 @@ Use the bin-stock APIs for direct bin-to-bin transfers:
 **Auth**: `warehouse.create`
 
 **Request**:
+
 ```json
 {
   "source_bin_id": "gg0e8400-e29b-41d4-a716-446655440011",
@@ -1021,9 +1071,9 @@ Use the bin-stock APIs for direct bin-to-bin transfers:
 
 **Manually add/remove from bin**:
 
-| Action | Endpoint | Auth |
-|---|---|---|
-| Add stock to bin | `POST /bin-stock/add` | `warehouse.create` |
+| Action                | Endpoint                 | Auth               |
+| --------------------- | ------------------------ | ------------------ |
+| Add stock to bin      | `POST /bin-stock/add`    | `warehouse.create` |
 | Remove stock from bin | `POST /bin-stock/remove` | `warehouse.create` |
 
 ---
@@ -1035,15 +1085,15 @@ Use the bin-stock APIs for direct bin-to-bin transfers:
 
 **Query Parameters**:
 
-| Param | Type | Description |
-|---|---|---|
-| `item_id` | UUID | Filter by item |
-| `warehouse_id` | UUID | Filter by warehouse |
-| `movement_type` | string | `in`, `out`, `transfer`, `adjustment` |
-| `reference_type` | string | Filter by reference type |
-| `search` | string | Search by item name, code, or notes |
-| `page` | int | Default: 1 |
-| `page_size` | int | Default: 20 |
+| Param            | Type   | Description                           |
+| ---------------- | ------ | ------------------------------------- |
+| `item_id`        | UUID   | Filter by item                        |
+| `warehouse_id`   | UUID   | Filter by warehouse                   |
+| `movement_type`  | string | `in`, `out`, `transfer`, `adjustment` |
+| `reference_type` | string | Filter by reference type              |
+| `search`         | string | Search by item name, code, or notes   |
+| `page`           | int    | Default: 1                            |
+| `page_size`      | int    | Default: 20                           |
 
 ---
 
@@ -1063,6 +1113,7 @@ Use the bin-stock APIs for direct bin-to-bin transfers:
 **Get all bins for an item**: `GET /bin-stock/item/{item_id}` (Auth: `warehouse.read`)
 
 **Response**:
+
 ```json
 {
   "bins": [
@@ -1101,10 +1152,12 @@ Returns a CSV file pre-populated with current stock levels for the warehouse. Th
 **Content-Type**: `multipart/form-data`
 
 **Form Fields**:
+
 - `warehouse_id`: UUID
 - `file`: CSV file
 
 **Response** `200`:
+
 ```json
 {
   "reconciliation_id": "nn0e8400-e29b-41d4-a716-446655440018",
@@ -1147,6 +1200,7 @@ Returns a CSV file pre-populated with current stock levels for the warehouse. Th
 **Update**: `PUT /stock-reconciliations/{rec_id}`
 
 **Create request**:
+
 ```json
 {
   "purpose": "Monthly cycle count",
@@ -1170,25 +1224,25 @@ Returns a CSV file pre-populated with current stock levels for the warehouse. Th
 
 ### 11.1 Warehouse Locations (Bins)
 
-| Action | Endpoint | Auth |
-|---|---|---|
-| List locations | `GET /warehouse-locations` | `warehouse.read` |
+| Action             | Endpoint                        | Auth             |
+| ------------------ | ------------------------------- | ---------------- |
+| List locations     | `GET /warehouse-locations`      | `warehouse.read` |
 | Get location by ID | `GET /warehouse-locations/{id}` | `warehouse.read` |
 
 ### 11.2 Items / Products
 
-| Action | Endpoint | Auth |
-|---|---|---|
-| List items | `GET /items` | Authenticated |
-| Search/Picker | `GET /items/picker?search=...` | Authenticated |
-| Get item detail | `GET /items/{item_id}` | Authenticated |
+| Action          | Endpoint                       | Auth          |
+| --------------- | ------------------------------ | ------------- |
+| List items      | `GET /items`                   | Authenticated |
+| Search/Picker   | `GET /items/picker?search=...` | Authenticated |
+| Get item detail | `GET /items/{item_id}`         | Authenticated |
 
 ### 11.3 WMS Workers
 
-| Action | Endpoint | Auth |
-|---|---|---|
-| List workers | `GET /wms-workers` | `warehouse.read` |
-| Get worker | `GET /wms-workers/{worker_id}` | `warehouse.read` |
+| Action       | Endpoint                       | Auth             |
+| ------------ | ------------------------------ | ---------------- |
+| List workers | `GET /wms-workers`             | `warehouse.read` |
+| Get worker   | `GET /wms-workers/{worker_id}` | `warehouse.read` |
 
 ### 11.4 WMS Dashboard
 
@@ -1245,6 +1299,7 @@ Returns stats: total stock items, low stock count, out-of-stock count, active wo
 ### Detailed Screen-by-Screen Flow
 
 #### A. Inbound Flow
+
 ```
 Home → Select "Inbound" → Select Warehouse → Start Session
   → Scan QR codes (each box/item)
@@ -1253,6 +1308,7 @@ Home → Select "Inbound" → Select Warehouse → Start Session
 ```
 
 #### B. Put-Away Flow
+
 ```
 Home → Select "Put-Away" → List of Put-Away Lists
   → Select a List → View Items (sorted by bin order)
@@ -1262,6 +1318,7 @@ Home → Select "Put-Away" → List of Put-Away Lists
 ```
 
 #### C. Pick List Flow
+
 ```
 Home → Select "Pick List" → List of Pick Lists
   → Select a List → Start Task → View Items (sorted)
@@ -1270,6 +1327,7 @@ Home → Select "Pick List" → List of Pick Lists
 ```
 
 #### D. Stock Movement Flow
+
 ```
 Home → Select "Move Stock" → Scan source bin QR
   → Select item → Enter qty → Scan destination bin QR
@@ -1277,6 +1335,7 @@ Home → Select "Move Stock" → Scan source bin QR
 ```
 
 #### E. Stock Audit Flow
+
 ```
 Home → Select "Audit" → Select Warehouse
   → Download Template (optional: if using CSV method)
@@ -1298,17 +1357,17 @@ Home → Select "Audit" → Select Warehouse
 
 ### Common HTTP Status Codes
 
-| Status | Meaning | Action |
-|---|---|---|
-| `200` | Success | — |
-| `201` | Created | — |
-| `204` | Deleted (no body) | — |
-| `400` | Bad Request | Check request payload |
-| `401` | Unauthorized | Refresh token or re-login |
-| `403` | Forbidden | Insufficient permissions |
-| `404` | Not Found | Resource doesn't exist |
-| `409` | Conflict | Duplicate detected |
-| `422` | Validation Error | Invalid field values |
+| Status | Meaning           | Action                    |
+| ------ | ----------------- | ------------------------- |
+| `200`  | Success           | —                         |
+| `201`  | Created           | —                         |
+| `204`  | Deleted (no body) | —                         |
+| `400`  | Bad Request       | Check request payload     |
+| `401`  | Unauthorized      | Refresh token or re-login |
+| `403`  | Forbidden         | Insufficient permissions  |
+| `404`  | Not Found         | Resource doesn't exist    |
+| `409`  | Conflict          | Duplicate detected        |
+| `422`  | Validation Error  | Invalid field values      |
 
 ### Mobile App Error Handling Strategy
 
@@ -1344,18 +1403,18 @@ function handleApiError(error: AxiosError) {
 
 ## Appendix A: Permission Reference
 
-| Feature | Required Permission |
-|---|---|
-| Start/end scan session, record scans | `warehouse.create` |
-| View sessions, receiving slips, put-away lists | `warehouse.read` |
-| Approve/reject slips, flag items | `warehouse.update` |
-| Create pick lists, worker tasks | `pick_list.create` |
-| View pick lists, worker tasks | `pick_list.read` |
-| Update pick lists, start/complete tasks | `pick_list.update` |
-| Stock movements, stock levels | Authenticated user (any) |
-| Bin stock add/remove/copy | `warehouse.create` |
-| Stock reconciliation | Authenticated user (any) |
-| WMS dashboard | `warehouse.read` |
+| Feature                                        | Required Permission      |
+| ---------------------------------------------- | ------------------------ |
+| Start/end scan session, record scans           | `warehouse.create`       |
+| View sessions, receiving slips, put-away lists | `warehouse.read`         |
+| Approve/reject slips, flag items               | `warehouse.update`       |
+| Create pick lists, worker tasks                | `pick_list.create`       |
+| View pick lists, worker tasks                  | `pick_list.read`         |
+| Update pick lists, start/complete tasks        | `pick_list.update`       |
+| Stock movements, stock levels                  | Authenticated user (any) |
+| Bin stock add/remove/copy                      | `warehouse.create`       |
+| Stock reconciliation                           | Authenticated user (any) |
+| WMS dashboard                                  | `warehouse.read`         |
 
 > **Barcode/QR Login**: Workers receive `WMS_WORKER_PERMISSIONS` automatically, which includes `warehouse.create`, `warehouse.read`, `warehouse.update`, `pick_list.create`, `pick_list.read`, `pick_list.update`.
 
@@ -1364,6 +1423,7 @@ function handleApiError(error: AxiosError) {
 ## Appendix B: QR Code Formats
 
 ### For Inbound Scanning (Item QR)
+
 ```json
 {
   "sku": "SKU-12345",
@@ -1374,64 +1434,66 @@ function handleApiError(error: AxiosError) {
 ```
 
 ### For Bin Location QR
+
 The location code itself (e.g., `Z01-A03-B02-L04-B01`) encoded as a QR code.
 
 ### For Worker Login QR
+
 The worker's barcode value (e.g., `WH-2024-A1B2C3D4`) encoded as a QR code. This is the same value stored in the `wms_workers.barcode` column.
 
 ---
 
 ## Appendix C: Quick Reference — All Endpoints
 
-| # | Method | Endpoint | Auth Required | Feature |
-|---|---|---|---|---|
-| 1 | `POST` | `/identity/login` | No | Username/password login |
-| 2 | `POST` | `/identity/refresh` | No | Refresh access token |
-| 3 | `POST` | `/identity/logout` | No | Logout |
-| 4 | `POST` | `/wms-workers/login/barcode` | No | QR/barcode login |
-| 5 | `GET` | `/warehouse-users/my-warehouses` | `warehouse.read` | Get user's warehouses |
-| 6 | `POST` | `/inbound/sessions` | `warehouse.create` | Start inbound session |
-| 7 | `POST` | `/inbound/sessions/{id}/scan` | `warehouse.create` | Record QR scan |
-| 8 | `GET` | `/inbound/sessions/{id}/summary` | `warehouse.read` | Session summary |
-| 9 | `POST` | `/inbound/sessions/{id}/end` | `warehouse.create` | End session → slip |
-| 10 | `GET` | `/inbound/receiving-slips` | `warehouse.read` | List receiving slips |
-| 11 | `GET` | `/inbound/receiving-slips/{id}` | `warehouse.read` | Get slip detail |
-| 12 | `POST` | `/inbound/receiving-slips/{id}/approve` | `warehouse.update` | Approve slip |
-| 13 | `POST` | `/inbound/receiving-slips/{id}/reject` | `warehouse.update` | Reject slip |
-| 14 | `POST` | `/inbound/receiving-slips/{sid}/items/{iid}/flag` | `warehouse.update` | Flag line item |
-| 15 | `POST` | `/put-away/generate-from-slip/{id}` | `warehouse.create` | Generate put-away |
-| 16 | `GET` | `/put-away` | `warehouse.read` | List put-away lists |
-| 17 | `GET` | `/put-away/{id}` | `warehouse.read` | Get put-away detail |
-| 18 | `POST` | `/put-away/{pid}/items/{iid}/complete` | `warehouse.create` | Complete put-away item |
-| 19 | `POST` | `/put-away/{pid}/items/{iid}/skip` | `warehouse.create` | Skip put-away item |
-| 20 | `POST` | `/pick-lists` | `pick_list.create` | Create pick list |
-| 21 | `GET` | `/pick-lists` | `pick_list.read` | List pick lists |
-| 22 | `GET` | `/pick-lists/{id}` | `pick_list.read` | Get pick list detail |
-| 23 | `PUT` | `/pick-lists/{id}` | `pick_list.update` | Update pick list |
-| 24 | `DELETE` | `/pick-lists/{id}` | `pick_list.update` | Delete pick list |
-| 25 | `GET` | `/smart-picking/suggest-allocation/{id}` | `pick_list.read` | Suggest allocation |
-| 26 | `POST` | `/smart-picking/create` | `pick_list.create` | Create from allocation |
-| 27 | `POST` | `/worker-tasks` | `pick_list.create` | Create worker task |
-| 28 | `GET` | `/worker-tasks?worker_id=...` | `pick_list.read` | List worker tasks |
-| 29 | `GET` | `/worker-tasks/{id}` | `pick_list.read` | Get task detail |
-| 30 | `POST` | `/worker-tasks/{id}/start` | `pick_list.update` | Start task |
-| 31 | `POST` | `/worker-tasks/{id}/complete` | `pick_list.update` | Complete task |
-| 32 | `POST` | `/worker-tasks/{id}/cancel` | `pick_list.update` | Cancel task |
-| 33 | `POST` | `/location-scans` | `pick_list.create` | Record location scan |
-| 34 | `GET` | `/location-scans/summary` | `pick_list.read` | Time tracking summary |
-| 35 | `POST` | `/scan-events` | `pick_list.read` | Record scan event |
-| 36 | `GET` | `/scan-events` | `pick_list.read` | Query scan events |
-| 37 | `POST` | `/stock-movements` | Authenticated | Record stock movement |
-| 38 | `GET` | `/stock-movements` | Authenticated | List stock movements |
-| 39 | `POST` | `/bin-stock/copy` | `warehouse.create` | Move stock between bins |
-| 40 | `POST` | `/bin-stock/add` | `warehouse.create` | Add stock to bin |
-| 41 | `POST` | `/bin-stock/remove` | `warehouse.create` | Remove stock from bin |
-| 42 | `GET` | `/bin-stock/item/{id}` | `warehouse.read` | Get bins for item |
-| 43 | `GET` | `/stock-levels` | Authenticated | List stock levels |
-| 44 | `GET` | `/stock-reconciliations/template` | Authenticated | Download audit template |
-| 45 | `POST` | `/stock-reconciliations/upload` | Authenticated | Upload audit CSV |
-| 46 | `POST` | `/stock-reconciliations/{id}/confirm` | Authenticated | Confirm audit |
-| 47 | `GET` | `/stock-reconciliations` | Authenticated | List reconciliations |
-| 48 | `POST` | `/stock-reconciliations` | Authenticated | Create reconciliation |
-| 49 | `GET` | `/items/picker?search=...` | Authenticated | Search items |
-| 50 | `GET` | `/wms-dashboard/stats` | `warehouse.read` | Dashboard stats |
+| #   | Method   | Endpoint                                          | Auth Required      | Feature                 |
+| --- | -------- | ------------------------------------------------- | ------------------ | ----------------------- |
+| 1   | `POST`   | `/identity/login`                                 | No                 | Username/password login |
+| 2   | `POST`   | `/identity/refresh`                               | No                 | Refresh access token    |
+| 3   | `POST`   | `/identity/logout`                                | No                 | Logout                  |
+| 4   | `POST`   | `/wms-workers/login/barcode`                      | No                 | QR/barcode login        |
+| 5   | `GET`    | `/warehouse-users/my-warehouses`                  | `warehouse.read`   | Get user's warehouses   |
+| 6   | `POST`   | `/inbound/sessions`                               | `warehouse.create` | Start inbound session   |
+| 7   | `POST`   | `/inbound/sessions/{id}/scan`                     | `warehouse.create` | Record QR scan          |
+| 8   | `GET`    | `/inbound/sessions/{id}/summary`                  | `warehouse.read`   | Session summary         |
+| 9   | `POST`   | `/inbound/sessions/{id}/end`                      | `warehouse.create` | End session → slip      |
+| 10  | `GET`    | `/inbound/receiving-slips`                        | `warehouse.read`   | List receiving slips    |
+| 11  | `GET`    | `/inbound/receiving-slips/{id}`                   | `warehouse.read`   | Get slip detail         |
+| 12  | `POST`   | `/inbound/receiving-slips/{id}/approve`           | `warehouse.update` | Approve slip            |
+| 13  | `POST`   | `/inbound/receiving-slips/{id}/reject`            | `warehouse.update` | Reject slip             |
+| 14  | `POST`   | `/inbound/receiving-slips/{sid}/items/{iid}/flag` | `warehouse.update` | Flag line item          |
+| 15  | `POST`   | `/put-away/generate-from-slip/{id}`               | `warehouse.create` | Generate put-away       |
+| 16  | `GET`    | `/put-away`                                       | `warehouse.read`   | List put-away lists     |
+| 17  | `GET`    | `/put-away/{id}`                                  | `warehouse.read`   | Get put-away detail     |
+| 18  | `POST`   | `/put-away/{pid}/items/{iid}/complete`            | `warehouse.create` | Complete put-away item  |
+| 19  | `POST`   | `/put-away/{pid}/items/{iid}/skip`                | `warehouse.create` | Skip put-away item      |
+| 20  | `POST`   | `/pick-lists`                                     | `pick_list.create` | Create pick list        |
+| 21  | `GET`    | `/pick-lists`                                     | `pick_list.read`   | List pick lists         |
+| 22  | `GET`    | `/pick-lists/{id}`                                | `pick_list.read`   | Get pick list detail    |
+| 23  | `PUT`    | `/pick-lists/{id}`                                | `pick_list.update` | Update pick list        |
+| 24  | `DELETE` | `/pick-lists/{id}`                                | `pick_list.update` | Delete pick list        |
+| 25  | `GET`    | `/smart-picking/suggest-allocation/{id}`          | `pick_list.read`   | Suggest allocation      |
+| 26  | `POST`   | `/smart-picking/create`                           | `pick_list.create` | Create from allocation  |
+| 27  | `POST`   | `/worker-tasks`                                   | `pick_list.create` | Create worker task      |
+| 28  | `GET`    | `/worker-tasks?worker_id=...`                     | `pick_list.read`   | List worker tasks       |
+| 29  | `GET`    | `/worker-tasks/{id}`                              | `pick_list.read`   | Get task detail         |
+| 30  | `POST`   | `/worker-tasks/{id}/start`                        | `pick_list.update` | Start task              |
+| 31  | `POST`   | `/worker-tasks/{id}/complete`                     | `pick_list.update` | Complete task           |
+| 32  | `POST`   | `/worker-tasks/{id}/cancel`                       | `pick_list.update` | Cancel task             |
+| 33  | `POST`   | `/location-scans`                                 | `pick_list.create` | Record location scan    |
+| 34  | `GET`    | `/location-scans/summary`                         | `pick_list.read`   | Time tracking summary   |
+| 35  | `POST`   | `/scan-events`                                    | `pick_list.read`   | Record scan event       |
+| 36  | `GET`    | `/scan-events`                                    | `pick_list.read`   | Query scan events       |
+| 37  | `POST`   | `/stock-movements`                                | Authenticated      | Record stock movement   |
+| 38  | `GET`    | `/stock-movements`                                | Authenticated      | List stock movements    |
+| 39  | `POST`   | `/bin-stock/copy`                                 | `warehouse.create` | Move stock between bins |
+| 40  | `POST`   | `/bin-stock/add`                                  | `warehouse.create` | Add stock to bin        |
+| 41  | `POST`   | `/bin-stock/remove`                               | `warehouse.create` | Remove stock from bin   |
+| 42  | `GET`    | `/bin-stock/item/{id}`                            | `warehouse.read`   | Get bins for item       |
+| 43  | `GET`    | `/stock-levels`                                   | Authenticated      | List stock levels       |
+| 44  | `GET`    | `/stock-reconciliations/template`                 | Authenticated      | Download audit template |
+| 45  | `POST`   | `/stock-reconciliations/upload`                   | Authenticated      | Upload audit CSV        |
+| 46  | `POST`   | `/stock-reconciliations/{id}/confirm`             | Authenticated      | Confirm audit           |
+| 47  | `GET`    | `/stock-reconciliations`                          | Authenticated      | List reconciliations    |
+| 48  | `POST`   | `/stock-reconciliations`                          | Authenticated      | Create reconciliation   |
+| 49  | `GET`    | `/items/picker?search=...`                        | Authenticated      | Search items            |
+| 50  | `GET`    | `/wms-dashboard/stats`                            | `warehouse.read`   | Dashboard stats         |
