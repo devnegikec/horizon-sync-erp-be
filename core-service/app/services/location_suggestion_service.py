@@ -497,7 +497,7 @@ class LocationSuggestionService:
         estimated_time = int(distance_from_worker + 5)
         return {
             "bin_id": bin_location.id,
-            "bin_code": bin_location.full_path,
+            "bin_code": bin_location.full_path or bin_location.code,
             "position": {
                 "x": float(bin_location.position_x or 0),
                 "y": float(bin_location.position_y or 0),
