@@ -128,6 +128,42 @@ async def seed_templates(
     return {"seeded": count, "warehouse_id": warehouse_id}
 
 
+@router.post("/reset", summary="Reset warehouse layout (delete all plans + locations)")
+async def reset_warehouse_layout(
+    warehouse_id: UUID = Query(...),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_MANAGE)),
+    db: Session = Depends(get_db),
+):
+    """Delete ALL floor plans and locations for a warehouse.
+
+    This is a destructive action — use to start fresh.
+    Locations with stock are soft-deleted; stockless locations are hard-deleted.
+    Floor plan records are hard-deleted.
+    """
+    from app.models.warehouse_location import WarehouseLocation
+
+    # Delete all floor plans for this warehouse
+    plans_deleted = (
+        db.query(WarehouseFloorPlan)
+        .filter(
+            WarehouseFloorPlan.warehouse_id == warehouse_id,
+            WarehouseFloorPlan.organization_id == current_user.organization_id,
+        )
+        .delete(synchronize_session='fetch')
+    )
+
+    # Delete all locations (hard-delete stockless, soft-delete with stock)
+    service = FloorPlanGeneratorService(db)
+    locations_removed = service._deactivate_existing(warehouse_id, current_user.organization_id)
+
+    db.commit()
+    return {
+        "warehouse_id": warehouse_id,
+        "plans_deleted": plans_deleted,
+        "locations_removed": locations_removed,
+    }
+
+
 @router.put(
     "/{floor_plan_id}",
     response_model=FloorPlanUpdateResponse,
