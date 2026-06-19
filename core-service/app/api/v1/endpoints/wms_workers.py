@@ -27,7 +27,7 @@ router = APIRouter()
 @router.post("", response_model=WMSWorkerResponse, status_code=status.HTTP_201_CREATED)
 async def create_worker(
     body: WMSWorkerCreate,
-    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage", "wms_worker.manage")),
     db: Session = Depends(get_db),
 ):
     """Create a new warehouse worker with optional login credentials and barcode."""
@@ -82,7 +82,7 @@ async def get_worker(
 async def update_worker(
     worker_id: UUID,
     body: WMSWorkerUpdate,
-    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage", "wms_worker.manage")),
     db: Session = Depends(get_db),
 ):
     """Update a warehouse worker."""
@@ -98,7 +98,7 @@ async def update_worker(
 @router.delete("/{worker_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_worker(
     worker_id: UUID,
-    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage", "wms_worker.manage")),
     db: Session = Depends(get_db),
 ):
     """Soft-delete (disable) a warehouse worker."""
@@ -110,7 +110,7 @@ async def delete_worker(
 @router.post("/{worker_id}/regenerate-barcode", response_model=WMSWorkerResponse)
 async def regenerate_barcode(
     worker_id: UUID,
-    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage", "wms_worker.manage")),
     db: Session = Depends(get_db),
 ):
     """Generate a new barcode for a worker."""
