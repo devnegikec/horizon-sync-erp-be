@@ -26,7 +26,9 @@ class PendingAssignmentPayload(BaseModel):
     is_primary: bool = False
 
 
-@router.post("", response_model=WarehouseUserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=WarehouseUserResponse, status_code=status.HTTP_201_CREATED
+)
 async def assign_user_to_warehouse(
     body: WarehouseUserCreate,
     current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
@@ -104,6 +106,7 @@ async def get_my_warehouses(
     - Pending assignments (by email) are resolved on first call.
     """
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(
         "[my-warehouses] user_id=%s org_id=%s user_type=%s email=%s",
@@ -121,6 +124,7 @@ async def get_my_warehouses(
 
     if has_global_access:
         from app.models.warehouse import Warehouse
+
         warehouses = (
             db.query(Warehouse)
             .filter(
@@ -130,7 +134,10 @@ async def get_my_warehouses(
             .order_by(Warehouse.name)
             .all()
         )
-        logger.info("[my-warehouses] global access path: returned %d warehouses", len(warehouses))
+        logger.info(
+            "[my-warehouses] global access path: returned %d warehouses",
+            len(warehouses),
+        )
         return {
             "warehouses": [
                 {

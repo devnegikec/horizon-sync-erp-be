@@ -16,7 +16,9 @@ class WarehouseUserService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, data: dict, organization_id: UUID, created_by: UUID) -> WarehouseUser:
+    def create(
+        self, data: dict, organization_id: UUID, created_by: UUID
+    ) -> WarehouseUser:
         """Assign a user to a warehouse."""
         payload = dict(data)
         payload["organization_id"] = organization_id
@@ -157,12 +159,18 @@ class WarehouseUserService:
           - Pending assignments keyed by email are resolved on first call.
         """
         import logging
+
         logger = logging.getLogger(__name__)
         user_id = current_user.id
         org_id = organization_id or current_user.organization_id
         user_type = current_user.user_type
-        user_email = getattr(current_user, 'email', None)
-        logger.info("[get_user_warehouses] user_id=%s org_id=%s user_type=%s", user_id, org_id, user_type)
+        user_email = getattr(current_user, "email", None)
+        logger.info(
+            "[get_user_warehouses] user_id=%s org_id=%s user_type=%s",
+            user_id,
+            org_id,
+            user_type,
+        )
 
         # Global access: only system_admin or organization_admin (not WMS roles).
         # WMS roles (manager, operator) are scoped by WarehouseUser assignments.
@@ -176,7 +184,11 @@ class WarehouseUserService:
                 .order_by(Warehouse.name)
                 .all()
             )
-            logger.info("[get_user_warehouses] admin/manage path: found %d warehouses for org %s", len(warehouses), org_id)
+            logger.info(
+                "[get_user_warehouses] admin/manage path: found %d warehouses for org %s",
+                len(warehouses),
+                org_id,
+            )
             return [
                 {
                     "id": w.id,
@@ -251,7 +263,10 @@ class WarehouseUserService:
                 .order_by(Warehouse.name)
                 .all()
             )
-            logger.info("[get_user_warehouses] primary path: found %d warehouses", len(warehouses))
+            logger.info(
+                "[get_user_warehouses] primary path: found %d warehouses",
+                len(warehouses),
+            )
             return [
                 {
                     "id": w.id,
@@ -276,7 +291,9 @@ class WarehouseUserService:
             .order_by(Warehouse.name)
             .all()
         )
-        logger.info("[get_user_warehouses] assignment path: found %d warehouses", len(results))
+        logger.info(
+            "[get_user_warehouses] assignment path: found %d warehouses", len(results)
+        )
 
         if results:
             return [
@@ -285,9 +302,13 @@ class WarehouseUserService:
                     "name": warehouse.name,
                     "code": warehouse.code,
                     "city": warehouse.city,
-                    "type": warehouse.warehouse_type.value if warehouse.warehouse_type else None,
+                    "type": warehouse.warehouse_type.value
+                    if warehouse.warehouse_type
+                    else None,
                     "is_default": warehouse.is_default,
-                    "assignment_role": assignment.role.value if assignment.role else None,
+                    "assignment_role": assignment.role.value
+                    if assignment.role
+                    else None,
                     "assignment_id": assignment.id,
                 }
                 for assignment, warehouse in results

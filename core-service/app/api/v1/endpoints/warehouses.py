@@ -100,6 +100,7 @@ async def create_warehouse(
 
     # Seed preloaded layout templates for the new warehouse
     from app.services.floor_plan_generator_service import FloorPlanGeneratorService
+
     floor_plan_svc = FloorPlanGeneratorService(db)
     floor_plan_svc.seed_templates(
         warehouse_id=warehouse.id,
@@ -357,7 +358,9 @@ async def import_warehouses(
         raise HTTPException(status_code=400, detail="No data rows found in file.")
 
     if len(rows) > 500:
-        raise HTTPException(status_code=400, detail="Maximum 500 rows allowed per import.")
+        raise HTTPException(
+            status_code=400, detail="Maximum 500 rows allowed per import."
+        )
 
     created = 0
     updated = 0
@@ -365,15 +368,26 @@ async def import_warehouses(
     errors: list[dict] = []
 
     # Auto-generate code counter
-    code_counter = db.query(Warehouse).filter(
-        Warehouse.organization_id == current_user.organization_id
-    ).count()
+    code_counter = (
+        db.query(Warehouse)
+        .filter(Warehouse.organization_id == current_user.organization_id)
+        .count()
+    )
 
     VALID_TYPES = {"warehouse", "store", "transit", "virtual"}
     STRING_FIELDS = [
-        "name", "description", "address_line1", "address_line2",
-        "city", "state", "country", "postal_code",
-        "contact_name", "contact_phone", "contact_email", "capacity_uom",
+        "name",
+        "description",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state",
+        "country",
+        "postal_code",
+        "contact_name",
+        "contact_phone",
+        "contact_email",
+        "capacity_uom",
     ]
 
     for row_num, row in enumerate(rows, start=1):
@@ -383,7 +397,9 @@ async def import_warehouses(
         name = row.get("name", "")
         if not name:
             failed += 1
-            errors.append({"row": row_num, "field": "name", "message": "Name is required"})
+            errors.append(
+                {"row": row_num, "field": "name", "message": "Name is required"}
+            )
             continue
 
         code = row.get("code", "")
@@ -393,11 +409,15 @@ async def import_warehouses(
 
         try:
             # Check if warehouse with same code exists (upsert)
-            existing = db.query(Warehouse).filter(
-                Warehouse.organization_id == current_user.organization_id,
-                Warehouse.code == code,
-                Warehouse.deleted_at.is_(None),
-            ).first()
+            existing = (
+                db.query(Warehouse)
+                .filter(
+                    Warehouse.organization_id == current_user.organization_id,
+                    Warehouse.code == code,
+                    Warehouse.deleted_at.is_(None),
+                )
+                .first()
+            )
 
             # Build data dict
             data: dict = {"name": name}

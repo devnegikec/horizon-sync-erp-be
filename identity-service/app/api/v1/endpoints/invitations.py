@@ -14,9 +14,12 @@ from app.core.exceptions import (
     UserAlreadyExistsException,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_core_service_client, get_current_active_user
+from app.dependencies import (
+    CurrentUser,
+    get_core_service_client,
+    get_current_active_user,
+)
 from app.models.organization import Organization
-from app.models.role import Role
 from app.repositories.invitation_repository import InvitationRepository
 from app.schemas.invitation import (
     InvitationAcceptRequest,
@@ -85,6 +88,7 @@ async def send_invitation(
         role_name = None
         if result.get("role_id"):
             from app.models.role import Role
+
             role = db.query(Role).filter(Role.id == result["role_id"]).first()
             role_name = role.name if role else None
 
@@ -326,6 +330,7 @@ async def resend_invitation(
         role_name = None
         if result.get("role_id"):
             from app.models.role import Role
+
             role = db.query(Role).filter(Role.id == result["role_id"]).first()
             role_name = role.name if role else None
 
@@ -392,6 +397,7 @@ async def _assign_warehouses_from_invitation(
         return
 
     import hashlib
+
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     invitation_repo = InvitationRepository(db)
     invitation = invitation_repo.get_invitation_by_token(token_hash)
