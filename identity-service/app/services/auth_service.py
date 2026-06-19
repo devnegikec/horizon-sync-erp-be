@@ -216,6 +216,81 @@ class AuthService:
 
         return user, access_token, refresh_token
 
+    def login_by_qr_code(
+        self,
+        qr_code: str,
+        device_info: dict | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
+        """
+        Authenticate a warehouse worker via QR code scan.
+
+        Looks up the user by their unique QR code, validates they are an active
+        warehouse worker, and returns JWT tokens. No password required.
+
+        Args:
+            qr_code: The worker's unique QR code string (from QR scan)
+            device_info: Optional device information
+            ip_address: Optional IP address
+            user_agent: Optional user agent string
+
+        Returns:
+            Tuple of (User, access_token, refresh_token)
+
+        Raises:
+            AuthenticationError: If QR code is invalid or worker is not active
+        """
+        # Look up user by QR code
+        user = self.user_repo.get_user_by_qr_code(qr_code)
+        if not user:
+            raise AuthenticationError("Invalid QR code")
+
+        # Verify user is a warehouse worker
+        if user.user_type != UserType.WAREHOUSE_WORKER:
+            raise AuthenticationError(
+                "QR code login is only available for warehouse workers"
+            )
+
+        # Check if user is active
+        if not user.is_active or user.status == UserStatus.SUSPENDED:
+            raise AuthenticationError("Worker account is inactive or suspended")
+
+        # Update login tracking
+        self.user_repo.update_user(
+            user,
+            {
+                "last_login_at": datetime.now(UTC),
+                "last_login_ip": ip_address,
+            },
+        )
+
+        # Generate tokens with worker-specific TTL
+        worker_ttl_hours = getattr(settings, "worker_token_expire_hours", 20)
+        access_token_expires = timedelta(hours=worker_ttl_hours)
+        refresh_token_expires = timedelta(hours=worker_ttl_hours * 2)
+
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_type": user.user_type.value,
+            },
+            expires_delta=access_token_expires,
+        )
+
+        refresh_token = create_refresh_token(
+            {"sub": str(user.id), "token_family": str(uuid.uuid4())},
+            expires_delta=refresh_token_expires,
+        )
+
+        # Store refresh token
+        self._store_refresh_token(
+            user.id, refresh_token, device_info, ip_address, user_agent
+        )
+
+        return user, access_token, refresh_token
+
     def refresh_access_token(self, refresh_token: str) -> str:
         """
         Generate new access token from refresh token.

@@ -82,6 +82,14 @@ def seed_database():
                 "is_default": True,
                 "hierarchy_level": 10,
             },
+            {
+                "name": "Warehouse Work User",
+                "code": "warehouse_work_user",
+                "description": "Limited warehouse worker access — QR login only, scan/read/update receiving slips and pick lists",
+                "is_system": True,
+                "is_default": False,
+                "hierarchy_level": 5,
+            },
         ]
 
         roles = {}
@@ -415,6 +423,35 @@ def seed_database():
                 "action": ActionType.READ,
                 "module": "inventory",
             },
+            # WMS warehouse worker permissions (QR login)
+            {
+                "code": "wms.scan",
+                "name": "WMS Scan",
+                "resource": ResourceType.WAREHOUSE,
+                "action": ActionType.SCAN,
+                "module": "inventory",
+            },
+            {
+                "code": "receiving_slip.create",
+                "name": "Create Receiving Slip",
+                "resource": ResourceType.RECEIVING_SLIP,
+                "action": ActionType.CREATE,
+                "module": "inventory",
+            },
+            {
+                "code": "receiving_slip.read",
+                "name": "Read Receiving Slip",
+                "resource": ResourceType.RECEIVING_SLIP,
+                "action": ActionType.READ,
+                "module": "inventory",
+            },
+            {
+                "code": "receiving_slip.update",
+                "name": "Update Receiving Slip",
+                "resource": ResourceType.RECEIVING_SLIP,
+                "action": ActionType.UPDATE,
+                "module": "inventory",
+            },
         ]
 
         permissions = {}
@@ -440,7 +477,9 @@ def seed_database():
         org_admin_perms = [
             p
             for code, p in permissions.items()
-            if code.startswith(("org.", "user.read", "user.update", "user.invite", "invitation.create"))
+            if code.startswith(
+                ("org.", "user.read", "user.update", "user.invite", "invitation.create")
+            )
         ]
         for perm in org_admin_perms:
             role_perm = RolePermission(
@@ -455,6 +494,25 @@ def seed_database():
             role_perm = RolePermission(role_id=roles["user"].id, permission_id=perm.id)
             db.add(role_perm)
         print("✓ Assigned basic permissions to User role")
+
+        # Warehouse work user gets WMS scan + receiving slip + pick list permissions
+        try:
+            warehouse_worker_perms = [
+                permissions["wms.scan"],
+                permissions["receiving_slip.create"],
+                permissions["receiving_slip.read"],
+                permissions["receiving_slip.update"],
+                permissions["pick_list.read"],
+                permissions["pick_list.update"],
+            ]
+            for perm in warehouse_worker_perms:
+                role_perm = RolePermission(
+                    role_id=roles["warehouse_work_user"].id, permission_id=perm.id
+                )
+                db.add(role_perm)
+            print("✓ Assigned WMS permissions to Warehouse Work User role")
+        except KeyError as e:
+            print(f"⚠ Warning: Could not assign permission {e} — skipping")
 
         # 5. Create test users
         print("\nCreating test users...")

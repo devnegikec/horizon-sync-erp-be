@@ -30,6 +30,7 @@ from app.api.v1.endpoints import (
     exchange_rates,
     feature_flag_evaluate,
     inbound,
+    internal_warehouse_users,
     invoices,
     item_groups,
     item_packaging_units,
@@ -81,7 +82,6 @@ from app.api.v1.endpoints import (
     floor_plans,
     wms_3d,
     wms_dashboard,
-    wms_workers,
     wms_devices,
 )
 
@@ -131,11 +131,6 @@ api_router.include_router(
     bin_stock.router,
     prefix="/bin-stock",
     tags=["Bin Stock"],
-)
-api_router.include_router(
-    wms_workers.router,
-    prefix="/wms-workers",
-    tags=["WMS Workers"],
 )
 api_router.include_router(
     floor_plans.router,
@@ -217,6 +212,12 @@ api_router.include_router(
     organization_onboarding.router,
     prefix="",  # No prefix since endpoint already includes /setup
     tags=["Organization Setup"],
+)
+# Internal Warehouse Users (service-to-service, no auth)
+api_router.include_router(
+    internal_warehouse_users.router,
+    prefix="",  # No prefix since endpoint already includes /internal
+    tags=["Internal"],
 )
 # Bank accounts integration
 api_router.include_router(

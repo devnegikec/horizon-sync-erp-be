@@ -28,6 +28,45 @@ class CoreServiceClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
+    async def assign_user_to_warehouse(
+        self,
+        user_id: UUID,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        role: str = "operator",
+    ) -> dict:
+        """Create a warehouse-user assignment in Core Service.
+
+        Calls POST /api/v1/internal/warehouse-users on the Core Service to assign
+        a user to a specific warehouse with a given operational role.
+        This is a service-to-service endpoint that does not require user auth.
+
+        Args:
+            user_id: UUID of the user to assign
+            organization_id: UUID of the organization
+            warehouse_id: UUID of the warehouse
+            role: Warehouse role (supervisor, manager, operator, coordinator)
+
+        Returns:
+            dict: Response from Core Service
+
+        Raises:
+            httpx.RequestError: If the request fails due to connection issues
+            httpx.HTTPStatusError: If the response status code indicates an error
+        """
+        url = f"{self.base_url}/api/v1/internal/warehouse-users"
+        payload = {
+            "user_id": str(user_id),
+            "organization_id": str(organization_id),
+            "warehouse_id": str(warehouse_id),
+            "role": role,
+            "is_primary": False,
+        }
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+
     # ------------------------------------------------------------------
     # Chart of Accounts
     # ------------------------------------------------------------------

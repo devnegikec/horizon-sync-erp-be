@@ -1,7 +1,18 @@
 """Authentication API endpoints"""
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+import io
+from uuid import UUID
+
+import qrcode
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -16,7 +27,13 @@ from app.core.exceptions import (
     UserNotFoundException,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_client_ip, get_current_user
+from app.dependencies import (
+    CurrentUser,
+    get_client_ip,
+    get_current_user,
+    require_permission,
+)
+from app.models.base import UserType
 from app.models.role import UserOrganizationRole
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -25,6 +42,8 @@ from app.schemas.auth import (
     LoginUserResponse,
     LogoutRequest,
     LogoutResponse,
+    QRCodeLoginRequest,
+    QRCodeLoginResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterResponse,
@@ -503,3 +522,162 @@ async def get_me(
         "organization_id": organization_id,
         "permissions": current_user.permissions,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# QR Code Login (Warehouse Workers)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/login/qr-code",
+    response_model=QRCodeLoginResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid QR code"},
+        403: {"model": ErrorResponse, "description": "Not a warehouse worker"},
+    },
+    summary="QR code login for warehouse workers",
+    description="Warehouse workers authenticate by scanning a QR code. Returns JWT tokens.",
+)
+async def qr_code_login(
+    body: QRCodeLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Authenticate a warehouse worker using their unique QR code.
+
+    The worker scans a QR code with their mobile device. The app extracts
+    the QR code string and sends it here to obtain JWT access/refresh tokens.
+
+    - **qr_code**: The worker's unique QR code string (from scan)
+    """
+    auth_service = AuthService(db)
+
+    ip_address = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent")
+
+    try:
+        user, access_token, refresh_token = auth_service.login_by_qr_code(
+            qr_code=body.qr_code,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
+
+    # Get user's organization_id
+    user_org_role = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user.id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .order_by(UserOrganizationRole.is_primary.desc())
+        .first()
+    )
+    organization_id = str(user_org_role.organization_id) if user_org_role else None
+
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "display_name": user.display_name,
+        "phone": user.phone,
+        "avatar_url": user.avatar_url,
+        "user_type": user.user_type.value if user.user_type else None,
+        "status": user.status.value if user.status else None,
+        "is_active": user.is_active,
+        "email_verified": user.email_verified,
+        "email_verified_at": user.email_verified_at,
+        "last_login_at": user.last_login_at,
+        "last_login_ip": user.last_login_ip,
+        "preferences": user.preferences,
+        "timezone": user.timezone,
+        "language": user.language,
+        "extra_data": user.extra_data,
+        "organization_id": organization_id,
+    }
+
+    worker_ttl_hours = getattr(settings, "worker_token_expire_hours", 20)
+    expires_in = worker_ttl_hours * 60 * 60
+
+    return QRCodeLoginResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=expires_in,
+        user=LoginUserResponse.model_validate(user_dict),
+    )
+
+
+@router.get(
+    "/workers/{user_id}/qr-image",
+    responses={
+        404: {"model": ErrorResponse, "description": "Worker not found"},
+        403: {"model": ErrorResponse, "description": "Permission denied"},
+    },
+    summary="Generate QR code image for a warehouse worker",
+    description="Admin downloads a QR code PNG image for a worker. The worker scans it to log in.",
+)
+async def get_worker_qr_image(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
+):
+    """
+    Generate a printable QR code image for a warehouse worker.
+
+    The QR code encodes the worker's unique qr_code string. When scanned
+    by the mobile app, it is sent to POST /login/qr-code to authenticate.
+
+    Requires `warehouse.manage` permission.
+    """
+    from app.repositories.user_repository import UserRepository
+
+    user_repo = UserRepository(db)
+    worker = user_repo.get_user_by_id(user_id)
+    if not worker:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Worker not found",
+        )
+
+    if worker.user_type != UserType.WAREHOUSE_WORKER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not a warehouse worker",
+        )
+
+    qr_code_value = worker.qr_code
+    if not qr_code_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Worker has no QR code assigned. Create the worker first.",
+        )
+
+    # Generate QR code image encoding just the qr_code string
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(qr_code_value)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f"inline; filename=worker-qr-{qr_code_value}.png"
+        },
+    )

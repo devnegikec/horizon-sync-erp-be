@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     system_admin_users,
     system_admin_audit_log,
 )
+from app.api.v1.endpoints import workers as identity_workers
 from app.api.v1.endpoints.admin import auth as admin_auth
 
 # Create main API router
@@ -39,6 +40,10 @@ api_router.include_router(otp.router, prefix="/identity", tags=["OTP"])
 
 api_router.include_router(
     admin_auth.router, prefix="/identity/admin", tags=["Admin Auth"]
+)
+
+api_router.include_router(
+    identity_workers.router, prefix="/identity", tags=["Warehouse Workers"]
 )
 
 api_router.include_router(

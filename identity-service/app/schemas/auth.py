@@ -130,3 +130,19 @@ class VerifyResetTokenResponse(BaseModel):
     """Schema for password-reset-token verification response"""
 
     valid: bool
+
+
+class QRCodeLoginRequest(BaseModel):
+    """Schema for QR code login request (warehouse workers)"""
+
+    qr_code: str
+
+
+class QRCodeLoginResponse(BaseModel):
+    """Schema for QR code login response (returns JWT tokens + user info)"""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: LoginUserResponse
