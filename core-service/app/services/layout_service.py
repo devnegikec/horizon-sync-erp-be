@@ -1,5 +1,6 @@
 """Layout service for managing warehouse location hierarchy (Zone → Aisle → Bay → Level → Bin)"""
 
+import re
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -78,8 +79,12 @@ class LayoutService:
         # Validate hierarchy
         self._validate_hierarchy(location_type, parent_location_id, organization_id)
 
-        # Generate full_path
-        full_path = self._generate_location_code(parent_location_id, code)
+        # Build clean raw code for DB storage (e.g. zone + "01" → "Z01")
+        # Display formatting (e.g. "Z-01") is done on-the-fly in get_tree()
+        raw_code = self._build_raw_code(location_type, code)
+
+        # Generate full_path using the clean raw code (no dashes inside codes)
+        full_path = self._generate_location_code(parent_location_id, raw_code)
 
         # Check for duplicate full_path within the same warehouse
         existing = (
@@ -99,7 +104,7 @@ class LayoutService:
             warehouse_id=warehouse_id,
             organization_id=organization_id,
             location_type=location_type,
-            code=code,
+            code=raw_code,
             full_path=full_path,
             name=name,
             parent_location_id=parent_location_id,
@@ -248,12 +253,14 @@ class LayoutService:
         roots: list[dict] = []
 
         for loc in locations:
+            # Build raw code (Z01, A01, B01, L01, BN001) — no dashes
+            individual_code = self._build_raw_code(loc.location_type, loc.code or "")
             node = {
                 "id": loc.id,
                 "warehouse_id": loc.warehouse_id,
                 "location_type": loc.location_type,
-                "code": loc.code,
-                "full_path": loc.full_path,
+                "code": individual_code,
+                "full_path": "",  # computed below from parent chain
                 "name": loc.name,
                 "capacity": loc.capacity,
                 "total_capacity": loc.total_capacity,
@@ -270,8 +277,13 @@ class LayoutService:
         for loc in locations:
             node = location_map[loc.id]
             if loc.parent_location_id and loc.parent_location_id in location_map:
-                location_map[loc.parent_location_id]["children"].append(node)
+                parent = location_map[loc.parent_location_id]
+                # Build full_path from parent chain using raw codes
+                node["full_path"] = parent["full_path"] + "-" + node["code"]
+                parent["children"].append(node)
             else:
+                # Root node (zone) — full_path is just its own code
+                node["full_path"] = node["code"]
                 roots.append(node)
 
         return roots
@@ -593,6 +605,93 @@ class LayoutService:
                     f"'{parent.full_path}'."
                 )
 
+    # Map location_type to its code prefix letter
+    TYPE_CODE_PREFIX: dict[str, str] = {
+        "zone": "Z",
+        "aisle": "A",
+        "bay": "B",
+        "level": "L",
+        "bin": "BN",
+    }
+
+    @staticmethod
+    def _format_individual_code(code: str) -> str:
+        """
+        Insert a dash between letters and digits for readability.
+
+        Examples:
+            B01   → B-01
+            L01   → L-01
+            A01   → A-01
+            Z01   → Z-01
+            001   → 001   (no letters, unchanged)
+            Z-01  → Z-01  (already formatted)
+        """
+        if not code:
+            return code
+        return re.sub(r'([A-Za-z]+)(\d+)', r'\1-\2', code)
+
+    @classmethod
+    def _extract_trailing_number(cls, raw_code: str) -> str:
+        """Extract the trailing digit sequence from any code format."""
+        if not raw_code:
+            return ""
+        m = re.search(r'(\d+)$', raw_code)
+        return m.group(1) if m else ""
+
+    @classmethod
+    def _build_individual_code(cls, location_type: str, raw_code: str) -> str:
+        """
+        Build a consistent dashed display code: {type-prefix}-{trailing-number}.
+
+        Extracts the trailing digits from raw_code, so it handles:
+          - Clean codes:            "01", "B01"
+          - Full-path codes (legacy): "Z01-A01-B01", "z-01-A-01-B01"
+
+        Examples:
+            zone  + "01"            → Z-01
+            aisle + "01"            → A-01
+            bay   + "Z01-A01-B01"   → B-01
+            level + "L01"           → L-01
+            bin   + "z-01-A-01-001" → BN-001
+        """
+        prefix = cls.TYPE_CODE_PREFIX.get(location_type, "")
+        numeric = cls._extract_trailing_number(raw_code)
+        if not numeric:
+            return raw_code
+        return f"{prefix}-{numeric}"
+
+    @classmethod
+    def _build_raw_code(cls, location_type: str, code: str) -> str:
+        """
+        Build a clean raw code for DB storage (no dashes inside the code).
+
+        Examples:
+            zone  + "01"  → Z01
+            aisle + "01"  → A01
+            bay   + "B01" → B01
+            level + "L01" → L01
+            bin   + "001" → BN001
+        """
+        prefix = cls.TYPE_CODE_PREFIX.get(location_type, "")
+        numeric = cls._extract_trailing_number(code)
+        if not numeric:
+            return code
+        return f"{prefix}{numeric}"
+
+    @classmethod
+    def _format_full_path(cls, full_path: str | None) -> str:
+        """
+        Format a DB full_path for display by inserting a dash only into the
+        last segment (e.g. Z01-A01-B01-L01-BN001 → Z01-A01-B01-L01-BN-001).
+        """
+        if not full_path:
+            return ""
+        segments = full_path.split("-")
+        if segments:
+            segments[-1] = cls._format_individual_code(segments[-1])
+        return "-".join(segments)
+
     def _generate_location_code(
         self,
         parent_location_id: UUID | None,
@@ -603,6 +702,9 @@ class LayoutService:
 
         For zones (no parent), the full_path is just the code itself.
         For deeper levels, it's parent.full_path + '-' + code.
+
+        Codes are stored raw (e.g. "01") — display formatting is applied
+        separately in get_tree().
         """
         if parent_location_id is None:
             return code
