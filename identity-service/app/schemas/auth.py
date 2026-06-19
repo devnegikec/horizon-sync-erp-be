@@ -130,3 +130,24 @@ class VerifyResetTokenResponse(BaseModel):
     """Schema for password-reset-token verification response"""
 
     valid: bool
+
+
+class QRCodeLoginRequest(BaseModel):
+    """Schema for QR code / barcode login request (warehouse workers).
+
+    Accepts either 'qr_code' or 'barcode' field for backward compatibility
+    with mobile apps that used the old core-service /wms-workers/login/barcode.
+    """
+
+    qr_code: str | None = None
+    barcode: str | None = None
+
+
+class QRCodeLoginResponse(BaseModel):
+    """Schema for QR code login response (returns JWT tokens + user info)"""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: LoginUserResponse

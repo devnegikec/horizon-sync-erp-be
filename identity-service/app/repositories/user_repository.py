@@ -70,6 +70,25 @@ class UserRepository:
             .first()
         )
 
+    def get_user_by_qr_code(self, qr_code: str) -> User | None:
+        """
+        Get user by QR code (for warehouse worker QR login).
+
+        Args:
+            qr_code: Worker's unique QR code string
+
+        Returns:
+            User object or None if not found
+        """
+        return (
+            self.db.query(User)
+            .filter(
+                User.qr_code == qr_code,
+                User.deleted_at.is_(None),
+            )
+            .first()
+        )
+
     def update_user(self, user: User, update_data: dict) -> User:
         """
         Update user fields.

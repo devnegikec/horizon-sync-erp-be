@@ -29,7 +29,9 @@ from app.api.v1.endpoints import (
     document_numbering,
     exchange_rates,
     feature_flag_evaluate,
+    floor_plans,
     inbound,
+    internal_warehouse_users,
     invoices,
     item_groups,
     item_packaging_units,
@@ -77,12 +79,10 @@ from app.api.v1.endpoints import (
     warehouse_users,
     warehouses,
     warranties,
-    worker_tasks,
-    floor_plans,
     wms_3d,
     wms_dashboard,
-    wms_workers,
     wms_devices,
+    worker_tasks,
 )
 
 api_router = APIRouter()
@@ -131,11 +131,6 @@ api_router.include_router(
     bin_stock.router,
     prefix="/bin-stock",
     tags=["Bin Stock"],
-)
-api_router.include_router(
-    wms_workers.router,
-    prefix="/wms-workers",
-    tags=["WMS Workers"],
 )
 api_router.include_router(
     floor_plans.router,
@@ -217,6 +212,12 @@ api_router.include_router(
     organization_onboarding.router,
     prefix="",  # No prefix since endpoint already includes /setup
     tags=["Organization Setup"],
+)
+# Internal Warehouse Users (service-to-service, no auth)
+api_router.include_router(
+    internal_warehouse_users.router,
+    prefix="",  # No prefix since endpoint already includes /internal
+    tags=["Internal"],
 )
 # Bank accounts integration
 api_router.include_router(
@@ -311,9 +312,7 @@ api_router.include_router(quotations.router, prefix="/quotations", tags=["Quotat
 api_router.include_router(
     sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
 )
-api_router.include_router(
-    asn_orders.router, prefix="/asn-orders", tags=["ASN Orders"]
-)
+api_router.include_router(asn_orders.router, prefix="/asn-orders", tags=["ASN Orders"])
 # Sourcing Flow
 api_router.include_router(
     material_requests.router,
