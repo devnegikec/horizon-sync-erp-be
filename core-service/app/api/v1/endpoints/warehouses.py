@@ -160,12 +160,7 @@ async def list_warehouses(
     allowed_warehouse_ids = None
     if current_user.user_type != "system_admin" and scope != "all":
         wh_user_svc = WarehouseUserService(db)
-        scoped_warehouses = wh_user_svc.get_user_warehouses(
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            user_type=current_user.user_type,
-            user_email=current_user.email,
-        )
+        scoped_warehouses = wh_user_svc.get_user_warehouses(current_user)
         allowed_warehouse_ids = [w["id"] for w in scoped_warehouses]
 
     warehouse_service = WarehouseService(db)

@@ -129,23 +129,23 @@ async def get_master_organization(
 ):
     """Get master organization details. Requires system admin permissions."""
     require_permission(current_user.permissions, "system_admin.master")
-    
+
     svc = OrganizationService(db)
-    
+
     # Find the master organization (should be unique)
     from app.models.organization import Organization
     from app.models.base import OrganizationType
-    
+
     master_org = db.query(Organization).filter(
         Organization.organization_type == OrganizationType.MASTER
     ).first()
-    
+
     if not master_org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Master organization not found"
         )
-    
+
     # Convert to response format
     return OrganizationResponse(
         id=master_org.id,
@@ -180,15 +180,15 @@ async def get_master_organization(
     "/organizations/{organization_id}",
     response_model=OrganizationResponse,
     summary="Get organization",
-    description="Get organization by ID; requires org.read and membership.",
+    description="Get organization by ID. Any authenticated user can read their own organization.",
 )
 async def get_organization(
     organization_id: UUID,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Get organization by ID. Requires org.read and membership (unless system admin)."""
-    require_permission(current_user.permissions, "org.read")
+    """Get organization by ID. Any valid logged-in user can read — no permission check needed.
+    System admins can read any org; regular users must be members."""
     if not is_system_admin(current_user.permissions):
         validate_user_in_organization(current_user.id, organization_id, db)
     svc = OrganizationService(db)

@@ -317,8 +317,8 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         is_system=False,
         hierarchy_level=70,
         permission_codes=[
-            # Managers can read and update their assigned warehouses.
-            # warehouse.manage is needed for worker management (create/update/delete workers).
+            # warehouse.read/update for assigned warehouse access.
+            # warehouse.manage needed for worker CRUD (not warehouse visibility).
             "warehouse.read",
             "warehouse.update",
             "warehouse.manage",
