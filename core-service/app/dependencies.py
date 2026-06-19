@@ -237,25 +237,25 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     return False
 
 
-def require_permission(permission: str):
+def require_permission(*permissions: str):
     """
-    Dependency factory to require a specific permission (RBAC from identity-service).
+    Dependency factory to require at least one of the specified permissions (OR logic).
     Supports wildcards: user has resource.* or *.* to grant all actions for that resource.
 
     Args:
-        permission: Permission code required (e.g. "item.create", "warehouse.read")
+        *permissions: One or more permission codes. User needs ANY one to pass.
 
     Returns:
-        Dependency function that raises 403 if permission is missing
+        Dependency function that raises 403 if none of the permissions are present
     """
 
     async def check_permission(
         current_user: CurrentUser = Depends(get_current_active_user),
     ) -> CurrentUser:
-        if not has_permission(current_user.permissions, permission):
+        if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission denied. Required: {permission}",
+                detail=f"Permission denied. Required one of: {', '.join(permissions)}",
             )
         return current_user
 

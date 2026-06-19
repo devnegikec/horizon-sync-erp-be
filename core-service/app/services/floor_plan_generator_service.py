@@ -31,6 +31,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import String, func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
@@ -277,43 +278,50 @@ class FloorPlanGeneratorService:
 
     @staticmethod
     def _get_preset_templates() -> list[dict]:
-        """Return the preset layout template definitions."""
+        """Return the preset layout template definitions using corridor model."""
         return [
             {
                 "name": "Small Warehouse",
-                "description": "1 zone, 2 aisles, 24 bins — ideal for small stockrooms",
+                "description": "1 zone, 2 aisles (corridor), 5 levels, 100 bins — ideal for small stockrooms",
                 "config": {
                     "grid_unit": 1.0,
                     "zones": [
                         {
                             "code": "A",
                             "name": "Main Storage",
-                            "grid_x": 0,
-                            "grid_y": 0,
+                            "offset_x": 0,
+                            "offset_y": 0,
+                            "aisle_spacing": 6.5,
                             "aisles": [
                                 {
                                     "code": "A01",
                                     "name": "Aisle 1",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 4,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 3,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 3.0,
+                                    "rows": "right_only",
+                                    "num_levels": 5,
+                                    "level_height": 1.4,
                                     "bins_per_level": 1,
                                     "bin_capacity": 100,
+                                    "num_bays_per_row": 10,
+                                    "bay_depth": 1.8,
                                 },
                                 {
                                     "code": "A02",
                                     "name": "Aisle 2",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 3,
-                                    "num_bays": 4,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 3,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 3.0,
+                                    "rows": "left_only",
+                                    "num_levels": 5,
+                                    "level_height": 1.4,
                                     "bins_per_level": 1,
                                     "bin_capacity": 100,
+                                    "num_bays_per_row": 10,
+                                    "bay_depth": 1.8,
                                 },
                             ],
                         }
@@ -322,71 +330,85 @@ class FloorPlanGeneratorService:
             },
             {
                 "name": "Medium Warehouse",
-                "description": "2 zones, 4 aisles, 96 bins — standard distribution center",
+                "description": "2 zones, 4 aisles (corridors), 5 levels, 400 bins — standard distribution",
                 "config": {
                     "grid_unit": 1.0,
                     "zones": [
                         {
                             "code": "A",
                             "name": "Fast Movers",
-                            "grid_x": 0,
-                            "grid_y": 0,
+                            "offset_x": 0,
+                            "offset_y": 0,
+                            "aisle_spacing": 6.5,
                             "aisles": [
                                 {
                                     "code": "A01",
                                     "name": "Aisle 1",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 4,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 3.0,
+                                    "rows": "right_only",
+                                    "num_levels": 5,
+                                    "level_height": 1.4,
                                     "bins_per_level": 1,
                                     "bin_capacity": 150,
+                                    "num_bays_per_row": 15,
+                                    "bay_depth": 1.8,
                                 },
                                 {
                                     "code": "A02",
                                     "name": "Aisle 2",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 3,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 4,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 3.0,
+                                    "rows": "both",
+                                    "num_levels": 5,
+                                    "level_height": 1.4,
                                     "bins_per_level": 1,
                                     "bin_capacity": 150,
+                                    "num_bays_per_row": 15,
+                                    "bay_depth": 1.8,
                                 },
                             ],
                         },
                         {
                             "code": "B",
                             "name": "Bulk Storage",
-                            "grid_x": 0,
-                            "grid_y": 10,
+                            "offset_x": 0,
+                            "offset_y": 50,
+                            "aisle_spacing": 6.5,
                             "aisles": [
                                 {
                                     "code": "B01",
                                     "name": "Aisle 3",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 4.0,
+                                    "rows": "both",
+                                    "num_levels": 3,
+                                    "level_height": 2.0,
                                     "bins_per_level": 1,
                                     "bin_capacity": 500,
+                                    "num_bays_per_row": 10,
+                                    "bay_depth": 2.0,
                                 },
                                 {
                                     "code": "B02",
                                     "name": "Aisle 4",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 3,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
+                                    "direction": "horizontal",
+                                    "position_along": 0,
+                                    "position_start": 0,
+                                    "corridor_width": 4.0,
+                                    "rows": "left_only",
+                                    "num_levels": 3,
+                                    "level_height": 2.0,
                                     "bins_per_level": 1,
                                     "bin_capacity": 500,
+                                    "num_bays_per_row": 10,
+                                    "bay_depth": 2.0,
                                 },
                             ],
                         },
@@ -395,104 +417,41 @@ class FloorPlanGeneratorService:
             },
             {
                 "name": "Large Warehouse",
-                "description": "3 zones, 6 aisles, 216 bins — high-density racking layout",
+                "description": "3 zones, 6 aisles, 5 levels, 900 bins — high-density racking",
                 "config": {
                     "grid_unit": 1.0,
                     "zones": [
                         {
                             "code": "A",
                             "name": "Picking Zone",
-                            "grid_x": 0,
-                            "grid_y": 0,
+                            "offset_x": 0,
+                            "offset_y": 0,
+                            "aisle_spacing": 6.5,
                             "aisles": [
-                                {
-                                    "code": "A01",
-                                    "name": "Pick Aisle 1",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 8,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 4,
-                                    "bins_per_level": 2,
-                                    "bin_capacity": 100,
-                                },
-                                {
-                                    "code": "A02",
-                                    "name": "Pick Aisle 2",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 4,
-                                    "num_bays": 8,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 4,
-                                    "bins_per_level": 2,
-                                    "bin_capacity": 100,
-                                },
+                                {"code": "A01", "name": "Pick 1", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 3.0, "rows": "right_only", "num_levels": 5, "level_height": 1.4, "bins_per_level": 2, "bin_capacity": 100, "num_bays_per_row": 20, "bay_depth": 1.8},
+                                {"code": "A02", "name": "Pick 2", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 3.0, "rows": "left_only", "num_levels": 5, "level_height": 1.4, "bins_per_level": 2, "bin_capacity": 100, "num_bays_per_row": 20, "bay_depth": 1.8},
                             ],
                         },
                         {
                             "code": "B",
                             "name": "Reserve Storage",
-                            "grid_x": 0,
-                            "grid_y": 12,
+                            "offset_x": 0,
+                            "offset_y": 55,
+                            "aisle_spacing": 7.0,
                             "aisles": [
-                                {
-                                    "code": "B01",
-                                    "name": "Reserve 1",
-                                    "orientation": "y",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 2.0,
-                                    "num_levels": 5,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 300,
-                                },
-                                {
-                                    "code": "B02",
-                                    "name": "Reserve 2",
-                                    "orientation": "y",
-                                    "grid_x": 4,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 2.0,
-                                    "num_levels": 5,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 300,
-                                },
+                                {"code": "B01", "name": "Reserve 1", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 4.0, "rows": "right_only", "num_levels": 6, "level_height": 1.4, "bins_per_level": 1, "bin_capacity": 300, "num_bays_per_row": 15, "bay_depth": 2.0},
+                                {"code": "B02", "name": "Reserve 2", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 4.0, "rows": "left_only", "num_levels": 6, "level_height": 1.4, "bins_per_level": 1, "bin_capacity": 300, "num_bays_per_row": 15, "bay_depth": 2.0},
                             ],
                         },
                         {
                             "code": "C",
                             "name": "Cold Storage",
-                            "grid_x": 0,
-                            "grid_y": 26,
+                            "offset_x": 0,
+                            "offset_y": 110,
+                            "aisle_spacing": 6.5,
                             "aisles": [
-                                {
-                                    "code": "C01",
-                                    "name": "Cold Aisle 1",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 4,
-                                    "bay_spacing": 2.0,
-                                    "num_levels": 3,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 200,
-                                },
-                                {
-                                    "code": "C02",
-                                    "name": "Cold Aisle 2",
-                                    "orientation": "x",
-                                    "grid_x": 0,
-                                    "grid_y": 4,
-                                    "num_bays": 4,
-                                    "bay_spacing": 2.0,
-                                    "num_levels": 3,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 200,
-                                },
+                                {"code": "C01", "name": "Cold 1", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 3.0, "rows": "right_only", "num_levels": 4, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 200, "num_bays_per_row": 12, "bay_depth": 1.8},
+                                {"code": "C02", "name": "Cold 2", "direction": "horizontal", "position_along": 0, "position_start": 0, "corridor_width": 3.0, "rows": "left_only", "num_levels": 4, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 200, "num_bays_per_row": 12, "bay_depth": 1.8},
                             ],
                         },
                     ],
@@ -500,72 +459,30 @@ class FloorPlanGeneratorService:
             },
             {
                 "name": "Cross-Dock Facility",
-                "description": "2 zones (inbound/outbound), 4 aisles, 48 bins — transit hub",
+                "description": "2 zones (inbound/outbound), 4 aisles, 3 levels, 240 bins — transit hub",
                 "config": {
                     "grid_unit": 1.0,
                     "zones": [
                         {
                             "code": "IN",
                             "name": "Inbound Staging",
-                            "grid_x": 0,
-                            "grid_y": 0,
+                            "offset_x": 0,
+                            "offset_y": 0,
+                            "aisle_spacing": 6.5,
                             "aisles": [
-                                {
-                                    "code": "IN1",
-                                    "name": "Receiving 1",
-                                    "orientation": "y",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 250,
-                                },
-                                {
-                                    "code": "IN2",
-                                    "name": "Receiving 2",
-                                    "orientation": "y",
-                                    "grid_x": 3,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 250,
-                                },
+                                {"code": "IN1", "name": "Receiving 1", "direction": "vertical", "position_along": 0, "position_start": 0, "corridor_width": 3.5, "rows": "right_only", "num_levels": 3, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 250, "num_bays_per_row": 12, "bay_depth": 1.8},
+                                {"code": "IN2", "name": "Receiving 2", "direction": "vertical", "position_along": 0, "position_start": 0, "corridor_width": 3.5, "rows": "left_only", "num_levels": 3, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 250, "num_bays_per_row": 12, "bay_depth": 1.8},
                             ],
                         },
                         {
                             "code": "OUT",
                             "name": "Outbound Staging",
-                            "grid_x": 10,
-                            "grid_y": 0,
+                            "offset_x": 30,
+                            "offset_y": 0,
+                            "aisle_spacing": 6.5,
                             "aisles": [
-                                {
-                                    "code": "OUT1",
-                                    "name": "Dispatch 1",
-                                    "orientation": "y",
-                                    "grid_x": 0,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 250,
-                                },
-                                {
-                                    "code": "OUT2",
-                                    "name": "Dispatch 2",
-                                    "orientation": "y",
-                                    "grid_x": 3,
-                                    "grid_y": 0,
-                                    "num_bays": 6,
-                                    "bay_spacing": 1.5,
-                                    "num_levels": 2,
-                                    "bins_per_level": 1,
-                                    "bin_capacity": 250,
-                                },
+                                {"code": "OUT1", "name": "Dispatch 1", "direction": "vertical", "position_along": 0, "position_start": 0, "corridor_width": 3.5, "rows": "right_only", "num_levels": 3, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 250, "num_bays_per_row": 12, "bay_depth": 1.8},
+                                {"code": "OUT2", "name": "Dispatch 2", "direction": "vertical", "position_along": 0, "position_start": 0, "corridor_width": 3.5, "rows": "left_only", "num_levels": 3, "level_height": 1.5, "bins_per_level": 1, "bin_capacity": 250, "num_bays_per_row": 12, "bay_depth": 1.8},
                             ],
                         },
                     ],
@@ -584,7 +501,15 @@ class FloorPlanGeneratorService:
         config: FloorPlanConfig,
         warehouse_code: str,
     ) -> list[WarehouseLocation]:
-        """Return the full flat list of WarehouseLocation objects (unsaved)."""
+        """Return the full flat list of WarehouseLocation objects (unsaved).
+
+        New corridor model:
+        - Zone at (offset_x, offset_y, 0)
+        - Aisles spaced by zone.aisle_spacing along the perpendicular axis
+        - Each aisle has up to 2 bays (Left Row, Right Row) offset by corridor_width/2
+        - Levels stack in Z (height) by level_height
+        - Bins spread along the aisle length by bay_depth
+        """
         locs: list[WarehouseLocation] = []
 
         for zone_spec in config.zones:
@@ -593,16 +518,37 @@ class FloorPlanGeneratorService:
                 warehouse_id=warehouse_id,
                 parent_id=None,
                 location_type="zone",
-                code=f"{warehouse_code}-{zone_spec.code}",
+                code=zone_spec.code,
                 name=zone_spec.name,
-                pos_x=zone_spec.grid_x,
-                pos_y=zone_spec.grid_y,
+                pos_x=zone_spec.offset_x,
+                pos_y=zone_spec.offset_y,
                 pos_z=0.0,
                 capacity=None,
             )
             locs.append(zone_loc)
 
-            for aisle_spec in zone_spec.aisles:
+            num_aisles = len(zone_spec.aisles)
+            for aisle_idx, aisle_spec in enumerate(zone_spec.aisles):
+                # Auto-detect edge aisles: first aisle → right_only, last → left_only
+                # (user can override via the rows field)
+                rows = aisle_spec.rows
+                if rows == "both":
+                    # Auto-detect edge: first aisle has no left neighbor, last has no right
+                    if num_aisles > 1 and aisle_idx == 0:
+                        rows = "right_only"
+                    elif num_aisles > 1 and aisle_idx == num_aisles - 1:
+                        rows = "left_only"
+
+                # Aisle center position
+                if aisle_spec.direction == "horizontal":
+                    # Aisle runs along X-axis, aisles stacked along Y
+                    aisle_cx = zone_spec.offset_x + aisle_spec.position_start
+                    aisle_cy = zone_spec.offset_y + aisle_idx * zone_spec.aisle_spacing + aisle_spec.position_along
+                else:
+                    # Aisle runs along Y-axis, aisles stacked along X
+                    aisle_cx = zone_spec.offset_x + aisle_idx * zone_spec.aisle_spacing + aisle_spec.position_along
+                    aisle_cy = zone_spec.offset_y + aisle_spec.position_start
+
                 aisle_loc = self._make_loc(
                     org_id=org_id,
                     warehouse_id=warehouse_id,
@@ -610,124 +556,148 @@ class FloorPlanGeneratorService:
                     location_type="aisle",
                     code=f"{zone_loc.code}-{aisle_spec.code}",
                     name=aisle_spec.name,
-                    pos_x=zone_spec.grid_x + aisle_spec.grid_x,
-                    pos_y=zone_spec.grid_y + aisle_spec.grid_y,
+                    pos_x=aisle_cx,
+                    pos_y=aisle_cy,
                     pos_z=0.0,
                     capacity=None,
                 )
                 locs.append(aisle_loc)
 
-                locs += self._build_bays(
-                    org_id, warehouse_id, aisle_loc, aisle_spec
+                locs += self._build_corridor_bays(
+                    org_id, warehouse_id, aisle_loc, aisle_spec,
+                    aisle_cx, aisle_cy, rows,
                 )
 
         return locs
 
-    def _build_bays(
+    def _build_corridor_bays(
         self,
         org_id: UUID,
         warehouse_id: UUID,
         aisle_loc: WarehouseLocation,
         spec: AisleSpec,
+        aisle_cx: float,
+        aisle_cy: float,
+        rows: str,
     ) -> list[WarehouseLocation]:
+        """Build left and/or right bay rows for a corridor aisle."""
         locs: list[WarehouseLocation] = []
-        ax, ay = aisle_loc.position_x or 0.0, aisle_loc.position_y or 0.0
+        half_corridor = spec.corridor_width / 2.0
 
-        for i in range(spec.num_bays):
-            if spec.orientation == "x":
-                bx, by = ax + i * spec.bay_spacing, ay
+        # Determine which bay rows to create
+        bay_sides: list[tuple[str, float]] = []
+        if rows in ("both", "left_only"):
+            bay_sides.append(("B01", -half_corridor))
+        if rows in ("both", "right_only"):
+            bay_sides.append(("B02", +half_corridor) if bay_sides else ("B01", +half_corridor))
+
+        for side_code, offset in bay_sides:
+            # Bay position: offset perpendicular to aisle direction
+            if spec.direction == "horizontal":
+                bay_x = aisle_cx
+                bay_y = aisle_cy + offset
             else:
-                bx, by = ax, ay + i * spec.bay_spacing
+                bay_x = aisle_cx + offset
+                bay_y = aisle_cy
 
             bay_loc = self._make_loc(
                 org_id=org_id,
                 warehouse_id=warehouse_id,
                 parent_id=aisle_loc.id,
                 location_type="bay",
-                code=f"{aisle_loc.code}-B{i + 1:02d}",
+                code=f"{aisle_loc.code}-{side_code}",
                 name=None,
-                pos_x=bx,
-                pos_y=by,
+                pos_x=bay_x,
+                pos_y=bay_y,
                 pos_z=0.0,
                 capacity=None,
             )
             locs.append(bay_loc)
 
-            locs += self._build_levels(
-                org_id, warehouse_id, bay_loc, spec, bx, by
+            locs += self._build_levels_corridor(
+                org_id, warehouse_id, bay_loc, spec, bay_x, bay_y,
             )
 
         return locs
 
-    def _build_levels(
+    def _build_levels_corridor(
         self,
         org_id: UUID,
         warehouse_id: UUID,
         bay_loc: WarehouseLocation,
         spec: AisleSpec,
-        bx: float,
-        by: float,
+        bay_x: float,
+        bay_y: float,
     ) -> list[WarehouseLocation]:
+        """Build levels stacking in Z (height) within a bay."""
         locs: list[WarehouseLocation] = []
 
         for j in range(spec.num_levels):
-            lz = float(j)
+            lz = float(j) * spec.level_height
+
             level_loc = self._make_loc(
                 org_id=org_id,
                 warehouse_id=warehouse_id,
                 parent_id=bay_loc.id,
                 location_type="level",
-                code=f"{bay_loc.code}-L{j + 1}",
+                code=f"{bay_loc.code}-L{j + 1:02d}",
                 name=None,
-                pos_x=bx,
-                pos_y=by,
+                pos_x=bay_x,
+                pos_y=bay_y,
                 pos_z=lz,
                 capacity=None,
             )
             locs.append(level_loc)
 
-            locs += self._build_bins(
-                org_id, warehouse_id, level_loc, spec, bx, by, lz
+            locs += self._build_bins_corridor(
+                org_id, warehouse_id, level_loc, spec, bay_x, bay_y, lz,
             )
 
         return locs
 
-    def _build_bins(
+    def _build_bins_corridor(
         self,
         org_id: UUID,
         warehouse_id: UUID,
         level_loc: WarehouseLocation,
         spec: AisleSpec,
-        bx: float,
-        by: float,
+        bay_x: float,
+        bay_y: float,
         lz: float,
     ) -> list[WarehouseLocation]:
+        """Build bin slots along the aisle length within a level.
+
+        Each bay position (along the aisle depth) × bins_per_level = total bins.
+        Bins spread along the aisle direction by bay_depth.
+        """
         locs: list[WarehouseLocation] = []
 
-        for k in range(spec.bins_per_level):
-            if spec.bins_per_level == 1:
-                bin_code = f"{level_loc.code}-01"
-            else:
-                bin_code = f"{level_loc.code}-{k + 1:02d}"
+        for b in range(spec.num_bays_per_row):
+            for k in range(spec.bins_per_level):
+                bin_num = b * spec.bins_per_level + k + 1
+                bin_code = f"{level_loc.code}-BN-{bin_num:02d}"
 
-            if spec.orientation == "x":
-                bin_x, bin_y = bx, by + float(k)
-            else:
-                bin_x, bin_y = bx + float(k), by
+                # Position along aisle direction
+                if spec.direction == "horizontal":
+                    bin_x = bay_x + float(b) * spec.bay_depth
+                    bin_y = bay_y + float(k) * 0.9 if spec.bins_per_level > 1 else bay_y
+                else:
+                    bin_x = bay_x + float(k) * 0.9 if spec.bins_per_level > 1 else bay_x
+                    bin_y = bay_y + float(b) * spec.bay_depth
 
-            bin_loc = self._make_loc(
-                org_id=org_id,
-                warehouse_id=warehouse_id,
-                parent_id=level_loc.id,
-                location_type="bin",
-                code=bin_code,
-                name=None,
-                pos_x=bin_x,
-                pos_y=bin_y,
-                pos_z=lz,
-                capacity=spec.bin_capacity,
-            )
-            locs.append(bin_loc)
+                bin_loc = self._make_loc(
+                    org_id=org_id,
+                    warehouse_id=warehouse_id,
+                    parent_id=level_loc.id,
+                    location_type="bin",
+                    code=bin_code,
+                    name=None,
+                    pos_x=bin_x,
+                    pos_y=bin_y,
+                    pos_z=lz,
+                    capacity=spec.bin_capacity,
+                )
+                locs.append(bin_loc)
 
         return locs
 
@@ -761,6 +731,8 @@ class FloorPlanGeneratorService:
             position_y=pos_y,
             position_z=pos_z,
             capacity=capacity,
+            total_capacity=capacity or 0,
+            available_capacity=capacity or 0,
             is_active=True,
         )
 
@@ -788,49 +760,61 @@ class FloorPlanGeneratorService:
     ) -> int:
         """Remove existing active locations for this warehouse.
 
-        Hard-deletes locations that have no stock, soft-deletes (is_active=False)
-        locations that still have stock references to preserve audit trail.
-        This avoids unique constraint conflicts on (warehouse_id, full_path)
-        when re-applying a layout with the same codes.
+        Uses bulk SQL operations for performance — avoids loading every row into Python.
+        Hard-deletes locations without stock; soft-deletes locations with stock.
         """
-        rows = (
+        from app.models.bin_stock_level import BinStockLevel
+        from sqlalchemy import update, delete as sa_delete
+
+        # 1. Find bin IDs that have stock (must soft-delete, not hard-delete)
+        bins_with_stock_q = (
+            self.db.query(BinStockLevel.bin_location_id)
+            .join(WarehouseLocation, BinStockLevel.bin_location_id == WarehouseLocation.id)
+            .filter(
+                WarehouseLocation.warehouse_id == warehouse_id,
+                WarehouseLocation.organization_id == org_id,
+                WarehouseLocation.is_active.is_(True),
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .distinct()
+        )
+        bins_with_stock = {r[0] for r in bins_with_stock_q.all()}
+
+        # 2. Count total active locations
+        count = (
             self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.is_active.is_(True),
             )
-            .all()
+            .count()
         )
-        count = len(rows)
 
-        # Check which bins have stock — those get soft-deleted, the rest get hard-deleted
-        from app.models.bin_stock_level import BinStockLevel
+        if count == 0:
+            return 0
 
-        bins_with_stock = set()
-        if rows:
-            stock_rows = (
-                self.db.query(BinStockLevel.bin_location_id)
-                .filter(
-                    BinStockLevel.bin_location_id.in_([r.id for r in rows]),
-                    BinStockLevel.quantity_on_hand > 0,
+        # 3. Soft-delete locations that have stock (rename full_path to avoid constraint)
+        if bins_with_stock:
+            for loc_id in bins_with_stock:
+                self.db.query(WarehouseLocation).filter(
+                    WarehouseLocation.id == loc_id,
+                ).update(
+                    {
+                        "is_active": False,
+                        "full_path": func.concat("_inactive_", func.cast(WarehouseLocation.id, String), "_", WarehouseLocation.full_path),
+                    },
+                    synchronize_session='fetch',
                 )
-                .distinct()
-                .all()
-            )
-            bins_with_stock = {r[0] for r in stock_rows}
 
-        for loc in rows:
-            if loc.id in bins_with_stock:
-                # Soft-delete — preserve for stock audit trail
-                loc.is_active = False
-                loc.full_path = f"_inactive_{loc.id}_{loc.full_path or loc.code}"
-            else:
-                # Hard-delete — no stock, safe to remove (avoids unique constraint conflict)
-                self.db.delete(loc)
+        # 4. Bulk hard-delete all remaining active locations (no stock)
+        self.db.query(WarehouseLocation).filter(
+            WarehouseLocation.warehouse_id == warehouse_id,
+            WarehouseLocation.organization_id == org_id,
+            WarehouseLocation.is_active.is_(True),
+        ).delete(synchronize_session='fetch')
 
-        if rows:
-            self.db.flush()
+        self.db.flush()
         return count
 
     def _deactivate_all_plans(

@@ -24,25 +24,39 @@ class BinSpec(BaseModel):
 
 
 class AisleSpec(BaseModel):
-    """Single aisle specification inside a zone."""
+    """Single aisle (corridor) specification inside a zone.
+
+    An aisle is a corridor with rack rows on one or both sides.
+    - 'both': left and right bays (standard corridor)
+    - 'left_only': rack row on left side only (edge aisle)
+    - 'right_only': rack row on right side only (edge aisle)
+    """
     code: str
     name: str | None = None
-    orientation: Literal["x", "y"] = "x"
-    grid_x: float = 0.0
-    grid_y: float = 0.0
-    num_bays: Annotated[int, Field(ge=1, le=200)] = 4
-    bay_spacing: Annotated[float, Field(gt=0)] = 1.5
-    num_levels: Annotated[int, Field(ge=1, le=20)] = 3
+    direction: Literal["horizontal", "vertical"] = "horizontal"
+    # Aisle position relative to zone origin
+    position_along: float = 0.0  # meters from zone edge (perpendicular to aisle direction)
+    position_start: float = 0.0  # meters from zone start (along aisle direction)
+    # Corridor configuration
+    corridor_width: Annotated[float, Field(gt=0)] = 3.0  # meters between left and right rack rows
+    rows: Literal["both", "left_only", "right_only"] = "both"
+    # Rack configuration
+    num_levels: Annotated[int, Field(ge=1, le=20)] = 5
+    level_height: Annotated[float, Field(gt=0)] = 1.4  # meters between levels
     bins_per_level: Annotated[int, Field(ge=1, le=10)] = 1
     bin_capacity: Annotated[float, Field(gt=0)] = 100.0
+    # Bay depth (how many bay positions along the aisle length)
+    num_bays_per_row: Annotated[int, Field(ge=1, le=200)] = 10
+    bay_depth: Annotated[float, Field(gt=0)] = 1.8  # meters between bays along aisle
 
 
 class ZoneSpec(BaseModel):
     """Single zone specification."""
     code: str
     name: str | None = None
-    grid_x: float = 0.0
-    grid_y: float = 0.0
+    offset_x: float = 0.0  # meters from warehouse left wall
+    offset_y: float = 0.0  # meters from warehouse front wall
+    aisle_spacing: Annotated[float, Field(gt=0)] = 6.5  # meters between aisle centers
     aisles: list[AisleSpec] = Field(default_factory=list)
 
 
