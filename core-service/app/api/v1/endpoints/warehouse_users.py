@@ -114,9 +114,9 @@ async def get_my_warehouses(
     )
     # Global access: true admins or users with warehouse.manage (WMS Admin role).
     # WMS Manager does NOT have warehouse.manage, so they go through scoped path.
+    # Only org admins and users with explicit global wildcard get all warehouses.
     has_global_access = (
         current_user.user_type in ("system_admin", "organization_admin")
-        or "warehouse.manage" in current_user.permissions
         or "*.*" in current_user.permissions
     )
 

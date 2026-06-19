@@ -68,6 +68,12 @@ class BarcodeLoginRequest(BaseModel):
     barcode: str = Field(..., min_length=1, max_length=100)
 
 
+class CredentialsLoginRequest(BaseModel):
+    """Worker login via username/password (fallback for QR scan failure)."""
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
 class BarcodeLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
