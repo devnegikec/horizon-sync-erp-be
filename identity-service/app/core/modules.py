@@ -317,11 +317,11 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         is_system=False,
         hierarchy_level=70,
         permission_codes=[
-            # Managers can read and update their assigned warehouses only.
-            # warehouse.manage/create/delete are admin-level permissions that would bypass
-            # the WarehouseUser scoping and expose all org warehouses.
+            # Managers can read and update their assigned warehouses.
+            # warehouse.manage is needed for worker management (create/update/delete workers).
             "warehouse.read",
             "warehouse.update",
+            "warehouse.manage",
             "pick_list.read",
             "pick_list.create",
             "pick_list.update",

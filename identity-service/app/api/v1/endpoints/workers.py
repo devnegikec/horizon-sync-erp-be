@@ -19,6 +19,7 @@ from app.models.base import UserStatus, UserType
 from app.models.role import Role, UserOrganizationRole
 from app.models.user import User
 from app.schemas.admin import (
+    CreateWarehouseWorkerRequest,
     WarehouseWorkerListResponse,
     WarehouseWorkerResponse,
     WarehouseWorkerUpdateRequest,
@@ -38,13 +39,15 @@ router = APIRouter()
 async def require_worker_manager(
     current_user: CurrentUser = Depends(get_current_active_user),
 ) -> CurrentUser:
-    """Allow system_admin or organization_admin to manage workers."""
-    if current_user.user_type not in (UserType.SYSTEM_ADMIN, UserType.ORGANIZATION_ADMIN):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin or organization admin access required",
-        )
-    return current_user
+    """Allow system_admin, organization_admin, or users with warehouse.manage permission."""
+    if current_user.user_type in (UserType.SYSTEM_ADMIN, UserType.ORGANIZATION_ADMIN):
+        return current_user
+    if "warehouse.manage" in current_user.permissions:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin, org admin, or warehouse.manage permission required",
+    )
 
 
 # ------------------------------------------------------------------
@@ -72,7 +75,7 @@ def _user_to_response(user: User, warehouse_assignments: list[str] | None = None
 
 
 def _get_org_id(user: User) -> str | None:
-    """Get the primary organization ID for a user."""
+    """Get the primary organization ID for a SQLAlchemy User model."""
     if user.user_organization_roles:
         for uor in user.user_organization_roles:
             if uor.is_active:
@@ -80,9 +83,177 @@ def _get_org_id(user: User) -> str | None:
     return None
 
 
+def _get_org_id_from_current_user(current_user: CurrentUser, db: Session) -> str | None:
+    """Get the primary organization ID for the current authenticated user.
+
+    Looks up UserOrganizationRole from DB since CurrentUser (from JWT)
+    does not carry organization info.
+    """
+    uor = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == current_user.id,
+            UserOrganizationRole.is_active == True,
+        )
+        .order_by(UserOrganizationRole.is_primary.desc())
+        .first()
+    )
+    return str(uor.organization_id) if uor else None
+
+
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
+
+
+@router.post(
+    "/workers",
+    response_model=WarehouseWorkerResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a warehouse worker",
+    description="Create a warehouse worker with QR code login and warehouse assignments.",
+)
+async def create_worker(
+    body: CreateWarehouseWorkerRequest,
+    current_user: CurrentUser = Depends(require_worker_manager),
+    db: Session = Depends(get_db),
+    core_client: CoreServiceClient | None = Depends(get_core_service_client),
+):
+    """Create a new warehouse worker user for QR code login.
+
+    Accepts both formats:
+    - New: { first_name, last_name, qr_code, organization_id, warehouse_ids }
+    - Legacy WMS: { first_name, last_name, email, phone, login_username,
+                     employee_id, password, role, warehouse_id }
+    """
+    # --- Resolve organization_id ---
+    org_id = body.organization_id
+
+    # --- Resolve QR code ---
+    qr_code = body.qr_code
+    if not qr_code:
+        if body.employee_id:
+            qr_code = body.employee_id  # use employee_id as QR code
+        else:
+            qr_code = f"WRK-{secrets.token_hex(6).upper()}"
+
+    # --- Resolve email ---
+    worker_email = body.email if body.email else f"{qr_code}@warehouse.local"
+
+    # --- Resolve warehouse_ids (support both warehouse_id and warehouse_ids) ---
+    warehouse_ids: list = []
+    if body.warehouse_ids:
+        warehouse_ids = list(body.warehouse_ids)
+    if body.warehouse_id and body.warehouse_id not in warehouse_ids:
+        warehouse_ids.append(body.warehouse_id)
+
+    warehouse_role_str = body.warehouse_role or body.role or "operator"
+
+    # --- Validate ---
+    existing = (
+        db.query(User)
+        .filter(User.email == worker_email, User.deleted_at.is_(None))
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Email {worker_email} is already registered",
+        )
+
+    existing_qr = db.query(User).filter(User.qr_code == qr_code).first()
+    if existing_qr:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"QR code {qr_code} is already in use",
+        )
+
+    # Find the warehouse_work_user role
+    ww_role = (
+        db.query(Role)
+        .filter(Role.code == "warehouse_work_user", Role.is_active == True)  # noqa: E712
+        .first()
+    )
+    if not ww_role:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="warehouse_work_user role not found. Run seed data first.",
+        )
+
+    # --- Build extra_data for legacy fields ---
+    extra_data = {}
+    if body.login_username:
+        extra_data["login_username"] = body.login_username
+    if body.employee_id:
+        extra_data["employee_id"] = body.employee_id
+
+    # --- Password: hash if provided, else generate random ---
+    if body.password:
+        password_hash = hash_password(body.password)
+    else:
+        password_hash = hash_password(secrets.token_urlsafe(16))
+
+    # --- Create user ---
+    user = User(
+        email=worker_email,
+        password_hash=password_hash,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        display_name=f"{body.first_name} {body.last_name}",
+        phone=body.phone,
+        user_type=UserType.WAREHOUSE_WORKER,
+        status=UserStatus.ACTIVE,
+        is_active=True,
+        email_verified=True,
+        qr_code=qr_code,
+        extra_data=extra_data if extra_data else None,
+    )
+    db.add(user)
+    db.flush()
+
+    # Assign the warehouse_work_user role
+    db.add(UserOrganizationRole(
+        user_id=user.id,
+        organization_id=org_id,
+        role_id=ww_role.id,
+        is_primary=True,
+        is_active=True,
+        status="active",
+    ))
+    db.commit()
+    db.refresh(user)
+
+    # --- Assign warehouse access ---
+    if warehouse_ids and core_client:
+        for wh_id in warehouse_ids:
+            try:
+                await core_client.assign_user_to_warehouse(
+                    user_id=user.id,
+                    organization_id=org_id,
+                    warehouse_id=wh_id,
+                    role=warehouse_role_str,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to assign worker to warehouse",
+                    extra={"user_id": str(user.id), "warehouse_id": str(wh_id), "error": str(exc)},
+                )
+
+    return WarehouseWorkerResponse(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        display_name=user.display_name,
+        phone=user.phone,
+        user_type=user.user_type.value,
+        status=user.status.value,
+        is_active=user.is_active,
+        qr_code=user.qr_code,
+        organization_id=str(org_id),
+        created_at=user.created_at,
+        warehouse_assignments=[str(wid) for wid in warehouse_ids],
+    )
 
 
 @router.get(
@@ -100,7 +271,8 @@ async def list_workers(
     db: Session = Depends(get_db),
 ):
     """List warehouse worker users with pagination and filters."""
-    org_id = _get_org_id(current_user)
+    # Look up org from DB (CurrentUser from JWT doesn't carry org info)
+    org_id = _get_org_id_from_current_user(current_user, db)
 
     query = db.query(User).filter(
         User.user_type == UserType.WAREHOUSE_WORKER,

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_core_service_client, require_admin
+from app.api.v1.endpoints.workers import require_worker_manager
 from app.models.base import UserStatus, UserType
 from app.models.role import Role, UserOrganizationRole
 from app.models.user import User
@@ -78,7 +79,7 @@ async def get_admin_me(
 )
 async def create_warehouse_worker(
     body: CreateWarehouseWorkerRequest,
-    current_user: CurrentUser = Depends(require_admin),
+    current_user: CurrentUser = Depends(require_worker_manager),
     db: Session = Depends(get_db),
     core_client: CoreServiceClient | None = Depends(get_core_service_client),
 ):
@@ -92,8 +93,25 @@ async def create_warehouse_worker(
     - Get a random secure password (they log in via QR, not password)
     - Be assigned to specified warehouses (if warehouse_ids provided)
     """
-    # Auto-generate email from QR code if not provided (workers may not have email)
-    worker_email = body.email if body.email else f"{body.qr_code}@warehouse.local"
+    org_id = body.organization_id
+
+    # Resolve QR code
+    qr_code = body.qr_code
+    if not qr_code:
+        if body.employee_id:
+            qr_code = body.employee_id
+        else:
+            qr_code = f"WRK-{secrets.token_hex(6).upper()}"
+
+    # Auto-generate email from QR code if not provided
+    worker_email = body.email if body.email else f"{qr_code}@warehouse.local"
+
+    # Resolve warehouse_ids
+    warehouse_ids: list = []
+    if body.warehouse_ids:
+        warehouse_ids = list(body.warehouse_ids)
+    if body.warehouse_id and body.warehouse_id not in warehouse_ids:
+        warehouse_ids.append(body.warehouse_id)
 
     # Check if email already exists
     existing = (
@@ -108,11 +126,11 @@ async def create_warehouse_worker(
         )
 
     # Check if QR code already exists
-    existing_qr = db.query(User).filter(User.qr_code == body.qr_code).first()
+    existing_qr = db.query(User).filter(User.qr_code == qr_code).first()
     if existing_qr:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"QR code {body.qr_code} is already in use",
+            detail=f"QR code {qr_code} is already in use",
         )
 
     # Find the warehouse_work_user role
@@ -139,8 +157,8 @@ async def create_warehouse_worker(
         user_type=UserType.WAREHOUSE_WORKER,
         status=UserStatus.ACTIVE,
         is_active=True,
-        email_verified=True,  # Workers don't need email verification
-        qr_code=body.qr_code,
+        email_verified=True,
+        qr_code=qr_code,
     )
     db.add(user)
     db.flush()
@@ -148,7 +166,7 @@ async def create_warehouse_worker(
     # Assign the warehouse_work_user role
     user_org_role = UserOrganizationRole(
         user_id=user.id,
-        organization_id=body.organization_id,
+        organization_id=org_id,
         role_id=warehouse_role.id,
         is_primary=True,
         is_active=True,
@@ -160,12 +178,12 @@ async def create_warehouse_worker(
 
     # Assign warehouse access if warehouse_ids provided
     warehouse_errors = []
-    if body.warehouse_ids and core_client:
-        for wh_id in body.warehouse_ids:
+    if warehouse_ids and core_client:
+        for wh_id in warehouse_ids:
             try:
                 await core_client.assign_user_to_warehouse(
                     user_id=user.id,
-                    organization_id=body.organization_id,
+                    organization_id=org_id,
                     warehouse_id=wh_id,
                     role=body.warehouse_role or "operator",
                 )
@@ -201,10 +219,10 @@ async def create_warehouse_worker(
         status=user.status.value,
         is_active=user.is_active,
         qr_code=user.qr_code,
-        organization_id=str(body.organization_id),
+        organization_id=str(org_id),
         created_at=user.created_at,
         warehouse_assignments=(
-            [str(wid) for wid in body.warehouse_ids]
+            [str(wid) for wid in warehouse_ids]
             if body.warehouse_ids
             else []
         ),

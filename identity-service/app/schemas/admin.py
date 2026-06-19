@@ -20,21 +20,36 @@ class AdminProfileResponse(BaseModel):
 
 
 class CreateWarehouseWorkerRequest(BaseModel):
-    """Schema for creating a warehouse worker user (admin only)
+    """Schema for creating a warehouse worker user.
 
-    Workers log in exclusively via QR code scan — they do not use
-    email/password auth. If email is not provided, one is auto-generated
-    from the QR code value.
+    Workers log in via QR code scan. Supports both the new compact format
+    and the legacy WMS worker format with login_username/employee_id/password.
     """
 
-    email: EmailStr | None = None
     first_name: str
     last_name: str
+    email: EmailStr | None = None
     phone: str | None = None
-    qr_code: str
+
+    # QR code — auto-generated from employee_id if not provided
+    qr_code: str | None = None
+
+    # Organization — required, pass from Zustand state
     organization_id: UUID
-    warehouse_ids: list[UUID] | None = None
-    warehouse_role: str | None = "operator"  # supervisor, manager, operator, coordinator
+
+    # Warehouse assignment
+    warehouse_id: UUID | None = None  # legacy single-warehouse format
+    warehouse_ids: list[UUID] | None = None  # multi-warehouse format
+    warehouse_role: str | None = "operator"
+
+    # Legacy WMS worker fields (stored in extra_data)
+    login_username: str | None = None
+    employee_id: str | None = None
+    password: str | None = None
+
+    # Role/status
+    role: str | None = None
+    status: str | None = None
 
 
 class WarehouseWorkerResponse(BaseModel):
