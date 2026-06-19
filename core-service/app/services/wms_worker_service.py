@@ -195,6 +195,10 @@ class WMSWorkerService:
         self.db.commit()
         return worker
 
+    def authenticate_by_credentials(self, username: str, password: str) -> WMSWorker | None:
+        """Alias for authenticate_by_username — used by the credentials login endpoint."""
+        return self.authenticate_by_username(username, password)
+
     def regenerate_barcode(self, worker_id: uuid.UUID, organization_id: uuid.UUID) -> WMSWorker:
         worker = self.get_by_id(worker_id, organization_id)
         worker.barcode = self._generate_barcode()

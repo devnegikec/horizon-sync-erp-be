@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # WMS Worker token (for mobile scanner sessions — long-lived)
+    wms_worker_token_expire_hours: int = 20
+
     # Identity Service URL (for auth validation and permissions)
     identity_service_url: str = "http://identity-service:8000"
 
