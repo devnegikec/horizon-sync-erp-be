@@ -487,6 +487,12 @@ async def delete_worker(
 
 
 @router.post(
+    "/workers/{worker_id}/regenerate-barcode",
+    response_model=WarehouseWorkerResponse,
+    summary="Regenerate QR code (legacy path)",
+    description="Generate a new QR/barcode for a warehouse worker. Alias for /regenerate-qr.",
+)
+@router.post(
     "/workers/{worker_id}/regenerate-qr",
     response_model=WarehouseWorkerResponse,
     summary="Regenerate QR code",

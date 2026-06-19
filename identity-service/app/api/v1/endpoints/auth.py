@@ -530,6 +530,16 @@ async def get_me(
 
 
 @router.post(
+    "/login/barcode",
+    response_model=QRCodeLoginResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid barcode"},
+        403: {"model": ErrorResponse, "description": "Not a warehouse worker"},
+    },
+    summary="Barcode login for warehouse workers (legacy path)",
+    description="Backward-compatible alias for /login/qr-code. Accepts 'barcode' field.",
+)
+@router.post(
     "/login/qr-code",
     response_model=QRCodeLoginResponse,
     responses={
@@ -550,16 +560,24 @@ async def qr_code_login(
     The worker scans a QR code with their mobile device. The app extracts
     the QR code string and sends it here to obtain JWT access/refresh tokens.
 
-    - **qr_code**: The worker's unique QR code string (from scan)
+    - **qr_code** (or **barcode**): The worker's unique QR/barcode string (from scan)
     """
     auth_service = AuthService(db)
+
+    # Support both "qr_code" and "barcode" field names (backward compat)
+    code = body.qr_code or body.barcode
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either qr_code or barcode is required",
+        )
 
     ip_address = get_client_ip(request)
     user_agent = request.headers.get("User-Agent")
 
     try:
         user, access_token, refresh_token = auth_service.login_by_qr_code(
-            qr_code=body.qr_code,
+            qr_code=code,
             ip_address=ip_address,
             user_agent=user_agent,
         )

@@ -133,9 +133,14 @@ class VerifyResetTokenResponse(BaseModel):
 
 
 class QRCodeLoginRequest(BaseModel):
-    """Schema for QR code login request (warehouse workers)"""
+    """Schema for QR code / barcode login request (warehouse workers).
 
-    qr_code: str
+    Accepts either 'qr_code' or 'barcode' field for backward compatibility
+    with mobile apps that used the old core-service /wms-workers/login/barcode.
+    """
+
+    qr_code: str | None = None
+    barcode: str | None = None
 
 
 class QRCodeLoginResponse(BaseModel):
