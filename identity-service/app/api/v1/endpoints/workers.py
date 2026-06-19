@@ -9,12 +9,15 @@ import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.database import get_db
-from app.dependencies import CurrentUser, get_core_service_client, get_current_active_user
+from app.dependencies import (
+    CurrentUser,
+    get_core_service_client,
+    get_current_active_user,
+)
 from app.models.base import UserStatus, UserType
 from app.models.role import Role, UserOrganizationRole
 from app.models.user import User
@@ -55,7 +58,9 @@ async def require_worker_manager(
 # ------------------------------------------------------------------
 
 
-def _user_to_response(user: User, warehouse_assignments: list[str] | None = None) -> dict:
+def _user_to_response(
+    user: User, warehouse_assignments: list[str] | None = None
+) -> dict:
     return {
         "id": user.id,
         "email": user.email,
@@ -212,14 +217,16 @@ async def create_worker(
     db.flush()
 
     # Assign the warehouse_work_user role
-    db.add(UserOrganizationRole(
-        user_id=user.id,
-        organization_id=org_id,
-        role_id=ww_role.id,
-        is_primary=True,
-        is_active=True,
-        status="active",
-    ))
+    db.add(
+        UserOrganizationRole(
+            user_id=user.id,
+            organization_id=org_id,
+            role_id=ww_role.id,
+            is_primary=True,
+            is_active=True,
+            status="active",
+        )
+    )
     db.commit()
     db.refresh(user)
 
@@ -236,7 +243,11 @@ async def create_worker(
             except Exception as exc:
                 logger.error(
                     "Failed to assign worker to warehouse",
-                    extra={"user_id": str(user.id), "warehouse_id": str(wh_id), "error": str(exc)},
+                    extra={
+                        "user_id": str(user.id),
+                        "warehouse_id": str(wh_id),
+                        "error": str(exc),
+                    },
                 )
 
     return WarehouseWorkerResponse(
@@ -264,7 +275,9 @@ async def create_worker(
 )
 async def list_workers(
     search: str | None = Query(None, description="Search by name, email, or QR code"),
-    status_filter: str | None = Query(None, alias="status", description="Filter by status: active, inactive"),
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by status: active, inactive"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUser = Depends(require_worker_manager),

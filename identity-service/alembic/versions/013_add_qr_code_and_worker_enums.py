@@ -10,9 +10,9 @@ Create Date: 2026-06-19
 - Adds 'scan' to actiontype enum
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "013"
 down_revision = "012"

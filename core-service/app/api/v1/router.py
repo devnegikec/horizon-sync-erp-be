@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     document_numbering,
     exchange_rates,
     feature_flag_evaluate,
+    floor_plans,
     inbound,
     internal_warehouse_users,
     invoices,
@@ -78,11 +79,10 @@ from app.api.v1.endpoints import (
     warehouse_users,
     warehouses,
     warranties,
-    worker_tasks,
-    floor_plans,
     wms_3d,
     wms_dashboard,
     wms_devices,
+    worker_tasks,
 )
 
 api_router = APIRouter()
@@ -312,9 +312,7 @@ api_router.include_router(quotations.router, prefix="/quotations", tags=["Quotat
 api_router.include_router(
     sales_orders.router, prefix="/sales-orders", tags=["Sales Orders"]
 )
-api_router.include_router(
-    asn_orders.router, prefix="/asn-orders", tags=["ASN Orders"]
-)
+api_router.include_router(asn_orders.router, prefix="/asn-orders", tags=["ASN Orders"])
 # Sourcing Flow
 api_router.include_router(
     material_requests.router,

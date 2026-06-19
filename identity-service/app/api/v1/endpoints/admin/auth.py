@@ -6,10 +6,10 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.v1.endpoints.workers import require_worker_manager
 from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_core_service_client, require_admin
-from app.api.v1.endpoints.workers import require_worker_manager
 from app.models.base import UserStatus, UserType
 from app.models.role import Role, UserOrganizationRole
 from app.models.user import User
@@ -222,8 +222,6 @@ async def create_warehouse_worker(
         organization_id=str(org_id),
         created_at=user.created_at,
         warehouse_assignments=(
-            [str(wid) for wid in warehouse_ids]
-            if body.warehouse_ids
-            else []
+            [str(wid) for wid in warehouse_ids] if body.warehouse_ids else []
         ),
     )

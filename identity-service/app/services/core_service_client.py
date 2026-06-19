@@ -140,7 +140,7 @@ class CoreServiceClient:
 
             except httpx.RequestError as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    wait_time = 2**attempt  # 1s, 2s, 4s
                     logger.warning(
                         f"Chart creation attempt {attempt + 1} failed, retrying in {wait_time}s",
                         extra={
@@ -257,7 +257,7 @@ class CoreServiceClient:
 
             except httpx.RequestError as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(
                         f"Org defaults seed attempt {attempt + 1} failed, retrying in {wait_time}s",
                         extra={

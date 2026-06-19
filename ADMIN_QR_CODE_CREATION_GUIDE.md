@@ -33,13 +33,13 @@ The worker scans the QR with the mobile app, which sends the QR code string to `
 
 ## 2. Quick Reference — API Endpoints
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `POST` | `/identity/admin/create-worker` | Admin Bearer | Create warehouse worker + assign warehouses |
-| `GET` | `/identity/workers/{user_id}/qr-image` | `warehouse.manage` | Download QR code PNG image |
-| `GET` | `/warehouses` | `warehouse.read` | List warehouses (for the warehouse picker) |
-| `POST` | `/wms-workers` | `warehouse.manage` | Create WMS worker (also creates identity User) |
-| `GET` | `/wms-workers` | `warehouse.read` | List WMS workers (includes barcode) |
+| Method | Path                                   | Auth               | Purpose                                        |
+| ------ | -------------------------------------- | ------------------ | ---------------------------------------------- |
+| `POST` | `/identity/admin/create-worker`        | Admin Bearer       | Create warehouse worker + assign warehouses    |
+| `GET`  | `/identity/workers/{user_id}/qr-image` | `warehouse.manage` | Download QR code PNG image                     |
+| `GET`  | `/warehouses`                          | `warehouse.read`   | List warehouses (for the warehouse picker)     |
+| `POST` | `/wms-workers`                         | `warehouse.manage` | Create WMS worker (also creates identity User) |
+| `GET`  | `/wms-workers`                         | `warehouse.read`   | List WMS workers (includes barcode)            |
 
 ---
 
@@ -71,16 +71,16 @@ Content-Type: application/json
 }
 ```
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `first_name` | string | **Yes** | |
-| `last_name` | string | **Yes** | |
-| `qr_code` | string | **Yes** | Unique QR code string. Generate client-side |
-| `organization_id` | UUID | **Yes** | The org the worker belongs to |
-| `warehouse_ids` | UUID[] | **Yes** | Warehouses to assign. Worker will ONLY see these warehouses. |
-| `warehouse_role` | string | No | `operator` (default), `supervisor`, `manager`, `coordinator` |
-| `email` | string | No | Auto-generated as `{qr_code}@warehouse.local` if omitted |
-| `phone` | string | No | |
+| Field             | Type   | Required | Notes                                                        |
+| ----------------- | ------ | -------- | ------------------------------------------------------------ |
+| `first_name`      | string | **Yes**  |                                                              |
+| `last_name`       | string | **Yes**  |                                                              |
+| `qr_code`         | string | **Yes**  | Unique QR code string. Generate client-side                  |
+| `organization_id` | UUID   | **Yes**  | The org the worker belongs to                                |
+| `warehouse_ids`   | UUID[] | **Yes**  | Warehouses to assign. Worker will ONLY see these warehouses. |
+| `warehouse_role`  | string | No       | `operator` (default), `supervisor`, `manager`, `coordinator` |
+| `email`           | string | No       | Auto-generated as `{qr_code}@warehouse.local` if omitted     |
+| `phone`           | string | No       |                                                              |
 
 > ⚠️ **Important**: `warehouse_ids` is required. Without it, the worker will have **zero warehouses** and cannot do any work. This is a list — assign all warehouses the worker operates in.
 
@@ -116,8 +116,8 @@ Generate client-side before calling the endpoint:
 ```typescript
 // Generate a unique QR code string
 function generateQRCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = 'WRK-';
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "WRK-";
   for (let i = 0; i < 12; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -175,6 +175,7 @@ Content-Type: application/json
 ```
 
 **What happens automatically**:
+
 - An Identity Service `User` is created with the same `qr_code` = `barcode`
 - The `warehouse_work_user` role is assigned
 - The user gets `user_type=warehouse_worker`
@@ -207,17 +208,14 @@ Authorization: Bearer <admin_token>
 
 ```typescript
 async function downloadWorkerQR(userId: string): Promise<Blob> {
-  const response = await fetch(
-    `/api/v1/identity/workers/${userId}/qr-image`,
-    {
-      headers: {
-        Authorization: `Bearer ${getAdminToken()}`,
-      },
-    }
-  );
+  const response = await fetch(`/api/v1/identity/workers/${userId}/qr-image`, {
+    headers: {
+      Authorization: `Bearer ${getAdminToken()}`,
+    },
+  });
 
   if (!response.ok) {
-    throw new Error('Failed to download QR code');
+    throw new Error("Failed to download QR code");
   }
 
   return response.blob();
@@ -248,6 +246,7 @@ function WorkerQRCode({ userId }: { userId: string }) {
 ```
 
 > **Note**: Since the `<img>` tag can't send `Authorization` headers, use one of:
+>
 > 1. A backend proxy that forwards the request with the token
 > 2. Fetch the blob client-side with auth, then create an object URL:
 >    ```typescript
@@ -267,7 +266,7 @@ The QR image is designed for printing. Recommended print size: **5cm × 5cm (≈
 ### Complete React Component Example
 
 ```tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface WorkerQRProps {
   userId: string;
@@ -285,7 +284,7 @@ export function WorkerQRCard({ userId, workerName }: WorkerQRProps) {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
-        if (!res.ok) throw new Error('Failed to load QR');
+        if (!res.ok) throw new Error("Failed to load QR");
         return res.blob();
       })
       .then((blob) => {
@@ -311,7 +310,9 @@ export function WorkerQRCard({ userId, workerName }: WorkerQRProps) {
       <p className="worker-name">{workerName}</p>
       <div className="actions">
         <button onClick={() => window.print()}>🖨 Print</button>
-        <button onClick={() => downloadBlob(qrBlobUrl!, `${workerName}-qr.png`)}>
+        <button
+          onClick={() => downloadBlob(qrBlobUrl!, `${workerName}-qr.png`)}
+        >
           ⬇ Download
         </button>
       </div>
@@ -397,14 +398,14 @@ In the users/workers list, show a QR icon next to `warehouse_worker` type users.
 
 ### Error States
 
-| Scenario | What to Show |
-|----------|-------------|
-| QR endpoint fails (404) | "Worker not found. They may not have a QR code yet." |
-| QR endpoint fails (403) | "You don't have permission. Need warehouse.manage." |
-| QR endpoint fails (5xx) | "Server error. Try again later." |
-| Email already exists | "A user with this email already exists." (only if email was provided) |
-| QR code already in use | "This QR code is already assigned. Try generating a new one." |
-| No warehouses selected | "Select at least one warehouse. Workers need warehouse access." |
+| Scenario                   | What to Show                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| QR endpoint fails (404)    | "Worker not found. They may not have a QR code yet."                           |
+| QR endpoint fails (403)    | "You don't have permission. Need warehouse.manage."                            |
+| QR endpoint fails (5xx)    | "Server error. Try again later."                                               |
+| Email already exists       | "A user with this email already exists." (only if email was provided)          |
+| QR code already in use     | "This QR code is already assigned. Try generating a new one."                  |
+| No warehouses selected     | "Select at least one warehouse. Workers need warehouse access."                |
 | Warehouse assignment fails | "Worker created but warehouse assignment failed for: WH-003. Assign manually." |
 
 ---
@@ -415,15 +416,15 @@ In the users/workers list, show a QR icon next to `warehouse_worker` type users.
 
 Assigned automatically on worker creation. Grants 7 permissions:
 
-| Permission | Allows |
-|------------|--------|
-| `warehouse.read` | View warehouse info + call `GET /my-warehouses` |
-| `wms.scan` | QR/barcode scanning (inbound + outbound) |
-| `receiving_slip.create` | Create inbound receiving slips |
-| `receiving_slip.read` | View receiving slips |
-| `receiving_slip.update` | Update receiving slip status/quantities |
-| `pick_list.read` | View outbound pick lists |
-| `pick_list.update` | Update pick list status (start/finish picking) |
+| Permission              | Allows                                          |
+| ----------------------- | ----------------------------------------------- |
+| `warehouse.read`        | View warehouse info + call `GET /my-warehouses` |
+| `wms.scan`              | QR/barcode scanning (inbound + outbound)        |
+| `receiving_slip.create` | Create inbound receiving slips                  |
+| `receiving_slip.read`   | View receiving slips                            |
+| `receiving_slip.update` | Update receiving slip status/quantities         |
+| `pick_list.read`        | View outbound pick lists                        |
+| `pick_list.update`      | Update pick list status (start/finish picking)  |
 
 ### Warehouse Access (NEW)
 
@@ -434,6 +435,7 @@ When `warehouse_ids` is provided, a `WarehouseUser` record is created in core-se
 - Without warehouse assignments, the worker sees an empty list and cannot operate
 
 **Workers CANNOT**:
+
 - Create pick lists
 - Delete anything
 - Access admin, billing, or reporting

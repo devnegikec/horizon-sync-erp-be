@@ -28,14 +28,14 @@ Warehouse workers log in by **scanning a QR code** — no email/password needed.
 
 ### Key design decisions
 
-| Decision | Detail |
-|----------|--------|
-| **QR encodes** | The worker's unique `qr_code` string (e.g., `WRK-A1B2C3D4E5F6`) |
-| **Login endpoint** | `POST /identity/login/qr-code` (Identity Service, **public**) |
-| **Token type** | Standard identity JWT (`type: "access"`) — works with existing middleware |
-| **Token TTL** | 20 hours (configurable: `WORKER_TOKEN_EXPIRE_HOURS` env var) |
-| **Refresh token** | Provided (40h TTL) — enables seamless session extension |
-| **Role** | `warehouse_work_user` — limited WMS permissions only |
+| Decision           | Detail                                                                    |
+| ------------------ | ------------------------------------------------------------------------- |
+| **QR encodes**     | The worker's unique `qr_code` string (e.g., `WRK-A1B2C3D4E5F6`)           |
+| **Login endpoint** | `POST /identity/login/qr-code` (Identity Service, **public**)             |
+| **Token type**     | Standard identity JWT (`type: "access"`) — works with existing middleware |
+| **Token TTL**      | 20 hours (configurable: `WORKER_TOKEN_EXPIRE_HOURS` env var)              |
+| **Refresh token**  | Provided (40h TTL) — enables seamless session extension                   |
+| **Role**           | `warehouse_work_user` — limited WMS permissions only                      |
 
 ---
 
@@ -125,11 +125,11 @@ The mobile app reads this string and sends it to the login endpoint. **It is NOT
 
 ### QR Scanner Integration
 
-| Platform | Library |
-|----------|---------|
-| React Native (Expo) | `expo-camera` / `expo-barcode-scanner` |
+| Platform            | Library                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| React Native (Expo) | `expo-camera` / `expo-barcode-scanner`                      |
 | React Native (bare) | `react-native-vision-camera` + `vision-camera-code-scanner` |
-| Flutter | `mobile_scanner` or `qr_code_scanner` |
+| Flutter             | `mobile_scanner` or `qr_code_scanner`                       |
 
 **Important**: Configure the scanner to read **QR codes only** (disable other barcode formats for speed).
 
@@ -152,9 +152,9 @@ Content-Type: application/json
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `qr_code` | string | Yes | The QR code string extracted from the scan |
+| Field     | Type   | Required | Description                                |
+| --------- | ------ | -------- | ------------------------------------------ |
+| `qr_code` | string | Yes      | The QR code string extracted from the scan |
 
 **Success Response** `200`:
 
@@ -188,22 +188,22 @@ Content-Type: application/json
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `access_token` | string | JWT for `Authorization: Bearer` header |
-| `refresh_token` | string | JWT for silent token refresh |
-| `expires_in` | int | Seconds until access token expires (default: 72000 = 20h) |
-| `user.id` | UUID | Worker's unique ID |
-| `user.user_type` | string | Always `warehouse_worker` |
-| `user.organization_id` | UUID | The org the worker belongs to |
+| Field                  | Type   | Description                                               |
+| ---------------------- | ------ | --------------------------------------------------------- |
+| `access_token`         | string | JWT for `Authorization: Bearer` header                    |
+| `refresh_token`        | string | JWT for silent token refresh                              |
+| `expires_in`           | int    | Seconds until access token expires (default: 72000 = 20h) |
+| `user.id`              | UUID   | Worker's unique ID                                        |
+| `user.user_type`       | string | Always `warehouse_worker`                                 |
+| `user.organization_id` | UUID   | The org the worker belongs to                             |
 
 **Error Responses**:
 
-| Status | Body | Meaning |
-|--------|------|---------|
-| `401` | `{"detail": "Invalid QR code"}` | QR code doesn't match any active worker |
-| `403` | `{"detail": "QR code login is only available for warehouse workers"}` | User exists but is not a warehouse worker |
-| `422` | `{"detail": [{"loc": ["body","qr_code"], ...}]}` | Missing or invalid `qr_code` field |
+| Status | Body                                                                  | Meaning                                   |
+| ------ | --------------------------------------------------------------------- | ----------------------------------------- |
+| `401`  | `{"detail": "Invalid QR code"}`                                       | QR code doesn't match any active worker   |
+| `403`  | `{"detail": "QR code login is only available for warehouse workers"}` | User exists but is not a warehouse worker |
+| `422`  | `{"detail": [{"loc": ["body","qr_code"], ...}]}`                      | Missing or invalid `qr_code` field        |
 
 ### 5.2 Validate Token / Get Current User
 
@@ -283,11 +283,11 @@ Content-Type: application/json
 
 ### Storage
 
-| Token | Storage | Reason |
-|-------|---------|--------|
-| `access_token` | Secure storage (Keychain/Keystore) | Short-lived, used for every API call |
-| `refresh_token` | Secure storage (Keychain/Keystore) | Long-lived, used for silent refresh |
-| `user` object | Local state / AsyncStorage | Display name, org_id for UI |
+| Token           | Storage                            | Reason                               |
+| --------------- | ---------------------------------- | ------------------------------------ |
+| `access_token`  | Secure storage (Keychain/Keystore) | Short-lived, used for every API call |
+| `refresh_token` | Secure storage (Keychain/Keystore) | Long-lived, used for silent refresh  |
+| `user` object   | Local state / AsyncStorage         | Display name, org_id for UI          |
 
 ### Token Refresh Strategy
 
@@ -307,10 +307,10 @@ Content-Type: application/json
 
 ### Token TTL
 
-| Token | Duration | Configurable via |
-|-------|----------|------------------|
-| Access Token | 20 hours | `WORKER_TOKEN_EXPIRE_HOURS` env var |
-| Refresh Token | 40 hours | 2 × `WORKER_TOKEN_EXPIRE_HOURS` |
+| Token         | Duration | Configurable via                    |
+| ------------- | -------- | ----------------------------------- |
+| Access Token  | 20 hours | `WORKER_TOKEN_EXPIRE_HOURS` env var |
+| Refresh Token | 40 hours | 2 × `WORKER_TOKEN_EXPIRE_HOURS`     |
 
 ---
 
@@ -318,16 +318,17 @@ Content-Type: application/json
 
 Workers with the `warehouse_work_user` role have these permissions:
 
-| Permission | What It Allows |
-|------------|---------------|
-| `wms.scan` | QR/barcode scanning for inbound/outbound operations |
-| `receiving_slip.create` | Create inbound receiving slips |
-| `receiving_slip.read` | View receiving slips |
-| `receiving_slip.update` | Update receiving slip details |
-| `pick_list.read` | View outbound pick lists |
-| `pick_list.update` | Update pick list status (start/finish picking) |
+| Permission              | What It Allows                                      |
+| ----------------------- | --------------------------------------------------- |
+| `wms.scan`              | QR/barcode scanning for inbound/outbound operations |
+| `receiving_slip.create` | Create inbound receiving slips                      |
+| `receiving_slip.read`   | View receiving slips                                |
+| `receiving_slip.update` | Update receiving slip details                       |
+| `pick_list.read`        | View outbound pick lists                            |
+| `pick_list.update`      | Update pick list status (start/finish picking)      |
 
 **Workers CANNOT**:
+
 - Create pick lists
 - Manage other workers or devices
 - Access billing, reporting, or admin functions
@@ -381,7 +382,7 @@ export function QRScannerScreen() {
 
 ```typescript
 // auth-service.ts
-const BASE_URL = 'https://your-server.com/api/v1';
+const BASE_URL = "https://your-server.com/api/v1";
 
 interface QRLoginResponse {
   access_token: string;
@@ -403,14 +404,14 @@ interface QRLoginResponse {
 
 async function loginWithQRCode(qrCode: string): Promise<QRLoginResponse> {
   const response = await fetch(`${BASE_URL}/identity/login/qr-code`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ qr_code: qrCode }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || 'QR login failed');
+    throw new Error(error.detail || "QR login failed");
   }
 
   return response.json();
@@ -421,10 +422,10 @@ async function loginWithQRCode(qrCode: string): Promise<QRLoginResponse> {
 
 ```typescript
 // token-store.ts
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from "expo-secure-store";
 
-const ACCESS_TOKEN_KEY = 'access_token';
-const REFRESH_TOKEN_KEY = 'refresh_token';
+const ACCESS_TOKEN_KEY = "access_token";
+const REFRESH_TOKEN_KEY = "refresh_token";
 
 export async function storeTokens(access: string, refresh: string) {
   await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, access);
@@ -449,21 +450,26 @@ export async function clearTokens() {
 
 ```typescript
 // api-client.ts
-import { getAccessToken, getRefreshToken, storeTokens, clearTokens } from './token-store';
+import {
+  getAccessToken,
+  getRefreshToken,
+  storeTokens,
+  clearTokens,
+} from "./token-store";
 
-const BASE_URL = 'https://your-server.com/api/v1';
+const BASE_URL = "https://your-server.com/api/v1";
 
 async function apiClient<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
 ): Promise<T> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   let response = await fetch(`${BASE_URL}${path}`, {
@@ -476,8 +482,8 @@ async function apiClient<T>(
     const refreshToken = await getRefreshToken();
     if (refreshToken) {
       const refreshResp = await fetch(`${BASE_URL}/identity/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
 
@@ -486,7 +492,7 @@ async function apiClient<T>(
         await storeTokens(access_token, refreshToken);
 
         // Retry original request
-        headers['Authorization'] = `Bearer ${access_token}`;
+        headers["Authorization"] = `Bearer ${access_token}`;
         response = await fetch(`${BASE_URL}${path}`, {
           ...options,
           headers,
@@ -499,7 +505,7 @@ async function apiClient<T>(
   if (response.status === 401) {
     await clearTokens();
     // Navigate to QR scanner screen
-    throw new Error('Session expired. Please scan QR code again.');
+    throw new Error("Session expired. Please scan QR code again.");
   }
 
   if (!response.ok) {
@@ -517,12 +523,12 @@ async function apiClient<T>(
 export const api = {
   get: <T>(path: string) => apiClient<T>(path),
   post: <T>(path: string, body: unknown) =>
-    apiClient<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+    apiClient<T>(path, { method: "POST", body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>
-    apiClient<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
+    apiClient<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) =>
-    apiClient<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: <T>(path: string) => apiClient<T>(path, { method: 'DELETE' }),
+    apiClient<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  delete: <T>(path: string) => apiClient<T>(path, { method: "DELETE" }),
 };
 ```
 
@@ -536,15 +542,15 @@ async function checkExistingSession(): Promise<boolean> {
 
   try {
     // Validate token by calling /identity/me
-    const user = await api.get('/identity/me');
-    return user.user_type === 'warehouse_worker' && user.is_active;
+    const user = await api.get("/identity/me");
+    return user.user_type === "warehouse_worker" && user.is_active;
   } catch {
     // Token invalid/expired — try refresh
     const refreshToken = await getRefreshToken();
     if (!refreshToken) return false;
 
     try {
-      const { access_token } = await api.post('/identity/refresh', {
+      const { access_token } = await api.post("/identity/refresh", {
         refresh_token: refreshToken,
       });
       await storeTokens(access_token, refreshToken);
@@ -567,14 +573,14 @@ async function checkExistingSession(): Promise<boolean> {
 
 ### Error Codes Summary
 
-| HTTP Status | Meaning | Mobile App Action |
-|-------------|---------|-------------------|
-| `200` | Success | Store tokens, navigate to Home |
-| `401` | Invalid QR code | Show "Invalid QR code. Please try again." → re-enable scanner |
-| `401` | Token expired (API calls) | Try refresh → if fails, go to scanner |
-| `403` | Not a warehouse worker | Show "This QR code is not for a warehouse worker." |
-| `422` | Validation error | Check request format (shouldn't happen in normal flow) |
-| `503` | Server unavailable | Show "Service unavailable. Try again later." → retry button |
+| HTTP Status | Meaning                   | Mobile App Action                                             |
+| ----------- | ------------------------- | ------------------------------------------------------------- |
+| `200`       | Success                   | Store tokens, navigate to Home                                |
+| `401`       | Invalid QR code           | Show "Invalid QR code. Please try again." → re-enable scanner |
+| `401`       | Token expired (API calls) | Try refresh → if fails, go to scanner                         |
+| `403`       | Not a warehouse worker    | Show "This QR code is not for a warehouse worker."            |
+| `422`       | Validation error          | Check request format (shouldn't happen in normal flow)        |
+| `503`       | Server unavailable        | Show "Service unavailable. Try again later." → retry button   |
 
 ### UX Recommendations
 
@@ -616,13 +622,13 @@ Yes. The QR code is a standard PNG image from `GET /identity/workers/{id}/qr-ima
 
 ## Quick Reference — All Relevant Endpoints
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `POST` | `/identity/login/qr-code` | None | **Worker login via QR scan** |
-| `GET` | `/identity/me` | Bearer | Get current user + permissions |
-| `POST` | `/identity/refresh` | None* | Refresh access token |
-| `POST` | `/identity/logout` | None* | Revoke refresh token |
-| `GET` | `/identity/workers/{id}/qr-image` | Admin | Generate QR PNG (admin only) |
-| `POST` | `/identity/admin/create-worker` | Admin | Create worker user (admin only) |
+| Method | Path                              | Auth   | Purpose                         |
+| ------ | --------------------------------- | ------ | ------------------------------- |
+| `POST` | `/identity/login/qr-code`         | None   | **Worker login via QR scan**    |
+| `GET`  | `/identity/me`                    | Bearer | Get current user + permissions  |
+| `POST` | `/identity/refresh`               | None\* | Refresh access token            |
+| `POST` | `/identity/logout`                | None\* | Revoke refresh token            |
+| `GET`  | `/identity/workers/{id}/qr-image` | Admin  | Generate QR PNG (admin only)    |
+| `POST` | `/identity/admin/create-worker`   | Admin  | Create worker user (admin only) |
 
 > \* Sends refresh_token in body, not Bearer header.

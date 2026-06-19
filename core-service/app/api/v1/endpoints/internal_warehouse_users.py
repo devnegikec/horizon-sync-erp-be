@@ -26,8 +26,13 @@ class InternalWarehouseUserCreateRequest(BaseModel):
     user_id: UUID = Field(..., description="UUID of the worker user")
     organization_id: UUID = Field(..., description="UUID of the organization")
     warehouse_id: UUID = Field(..., description="UUID of the warehouse to assign")
-    role: str = Field(default="operator", description="Warehouse role (supervisor, manager, operator, coordinator)")
-    is_primary: bool = Field(default=False, description="If True, user sees all warehouses")
+    role: str = Field(
+        default="operator",
+        description="Warehouse role (supervisor, manager, operator, coordinator)",
+    )
+    is_primary: bool = Field(
+        default=False, description="If True, user sees all warehouses"
+    )
 
 
 class InternalWarehouseUserResponse(BaseModel):
