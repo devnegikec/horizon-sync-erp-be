@@ -518,7 +518,7 @@ class FloorPlanGeneratorService:
                 warehouse_id=warehouse_id,
                 parent_id=None,
                 location_type="zone",
-                code=f"{warehouse_code}-{zone_spec.code}",
+                code=zone_spec.code,
                 name=zone_spec.name,
                 pos_x=zone_spec.offset_x,
                 pos_y=zone_spec.offset_y,
@@ -587,9 +587,9 @@ class FloorPlanGeneratorService:
         # Determine which bay rows to create
         bay_sides: list[tuple[str, float]] = []
         if rows in ("both", "left_only"):
-            bay_sides.append(("L", -half_corridor))
+            bay_sides.append(("B01", -half_corridor))
         if rows in ("both", "right_only"):
-            bay_sides.append(("R", +half_corridor))
+            bay_sides.append(("B02", +half_corridor) if bay_sides else ("B01", +half_corridor))
 
         for side_code, offset in bay_sides:
             # Bay position: offset perpendicular to aisle direction
@@ -606,7 +606,7 @@ class FloorPlanGeneratorService:
                 parent_id=aisle_loc.id,
                 location_type="bay",
                 code=f"{aisle_loc.code}-{side_code}",
-                name=f"{'Left' if side_code == 'L' else 'Right'} Row",
+                name=None,
                 pos_x=bay_x,
                 pos_y=bay_y,
                 pos_z=0.0,
@@ -640,7 +640,7 @@ class FloorPlanGeneratorService:
                 warehouse_id=warehouse_id,
                 parent_id=bay_loc.id,
                 location_type="level",
-                code=f"{bay_loc.code}-L{j + 1}",
+                code=f"{bay_loc.code}-L{j + 1:02d}",
                 name=None,
                 pos_x=bay_x,
                 pos_y=bay_y,
@@ -675,7 +675,7 @@ class FloorPlanGeneratorService:
         for b in range(spec.num_bays_per_row):
             for k in range(spec.bins_per_level):
                 bin_num = b * spec.bins_per_level + k + 1
-                bin_code = f"{level_loc.code}-{bin_num:02d}"
+                bin_code = f"{level_loc.code}-BN-{bin_num:02d}"
 
                 # Position along aisle direction
                 if spec.direction == "horizontal":
@@ -731,6 +731,8 @@ class FloorPlanGeneratorService:
             position_y=pos_y,
             position_z=pos_z,
             capacity=capacity,
+            total_capacity=capacity or 0,
+            available_capacity=capacity or 0,
             is_active=True,
         )
 
