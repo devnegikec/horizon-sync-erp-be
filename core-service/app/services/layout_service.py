@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
 from app.models.bin_stock_level import BinStockLevel
+from app.models.warehouse import Warehouse
 from app.models.warehouse_location import LocationType, WarehouseLocation
 
 # Valid parent type mapping: child_type -> expected parent location_type
@@ -739,6 +740,36 @@ class LayoutService:
             raise ValidationError(f"Location with ID '{location_id}' not found.")
 
         return location
+
+    def get_location_qr_payload(
+        self,
+        location_id: UUID,
+        organization_id: UUID,
+    ) -> "LocationQRPayload":
+        """Build QR payload with warehouse and location context.
+
+        Returns a payload suitable for encoding into a bin location QR code.
+        The mobile app decodes this JSON to identify the exact bin.
+        """
+        from app.schemas.warehouse_location import LocationQRPayload
+
+        location = self._get_location(location_id, organization_id)
+        warehouse = (
+            self.db.query(Warehouse)
+            .filter(Warehouse.id == location.warehouse_id)
+            .first()
+        )
+
+        return LocationQRPayload(
+            org_id=organization_id,
+            warehouse_id=location.warehouse_id,
+            warehouse_code=warehouse.code if warehouse else "",
+            warehouse_name=warehouse.name if warehouse else "",
+            location_id=location.id,
+            full_path=location.full_path or "",
+            location_type=location.location_type,
+            location_code=location.code,
+        )
 
     def _get_all_descendants(
         self,
