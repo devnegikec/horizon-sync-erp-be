@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
@@ -317,4 +318,55 @@ async def get_location_summary(
         used_capacity=summary["used_capacity"],
         available_capacity=summary["available_capacity"],
         item_count=summary.get("distinct_items", 0),
+    )
+
+
+@router.get(
+    "/{location_id}/qr-image",
+    responses={
+        404: {"description": "Location not found"},
+    },
+    summary="Generate QR code image for a bin location",
+    description="Generate a printable QR code PNG for a bin. The QR encodes org, warehouse, and bin full path as JSON.",
+)
+async def get_location_qr_image(
+    location_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Generate a printable QR code for a bin location.
+
+    The QR encodes org, warehouse, and full bin path as JSON.
+    Mobile app scans this to identify the exact bin during inbound/outbound.
+    """
+    import io
+
+    import qrcode
+
+    layout_service = LayoutService(db)
+    payload = layout_service.get_location_qr_payload(
+        location_id=location_id,
+        organization_id=current_user.organization_id,
+    )
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(payload.model_dump_json())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f"inline; filename=bin-qr-{payload.full_path}.png"
+        },
     )

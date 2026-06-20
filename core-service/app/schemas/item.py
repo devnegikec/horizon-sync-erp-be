@@ -327,3 +327,22 @@ class ItemPickerListResponse(BaseModel):
     """Response for item picker endpoint"""
 
     items: list[ItemPickerItem]
+
+
+# --- SKU Lookup ---
+
+
+class ItemSkuLookupResponse(BaseModel):
+    """Lightweight response for SKU/barcode lookup by mobile app"""
+
+    id: UUID
+    item_code: str
+    item_name: str
+    item_type: str | None = None
+    uom: str | None = None
+    barcode: str | None = None
+    standard_rate: Decimal | None = None
+    maintain_stock: bool | None = None
+    image_url: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)

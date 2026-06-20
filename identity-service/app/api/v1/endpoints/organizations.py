@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.authorization import (
-    has_permission,
     is_system_admin,
     require_permission,
     validate_user_in_organization,
@@ -18,10 +17,14 @@ from app.core.exceptions import (
     OrganizationNotFoundException,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_core_service_client, get_current_active_user
+from app.dependencies import (
+    CurrentUser,
+    get_core_service_client,
+    get_current_active_user,
+)
+from app.models.base import UserStatus
 from app.models.role import UserOrganizationRole
 from app.models.user import User
-from app.models.base import UserStatus
 from app.schemas.organization import (
     OrganizationCreate,
     OrganizationListItem,
@@ -121,7 +124,7 @@ async def list_organizations(
     "/organizations/master",
     response_model=OrganizationResponse,
     summary="Get master organization",
-    description="Get the master organization details for system administration"
+    description="Get the master organization details for system administration",
 )
 async def get_master_organization(
     current_user: CurrentUser = Depends(get_current_active_user),
@@ -129,23 +132,25 @@ async def get_master_organization(
 ):
     """Get master organization details. Requires system admin permissions."""
     require_permission(current_user.permissions, "system_admin.master")
-    
+
     svc = OrganizationService(db)
-    
+
     # Find the master organization (should be unique)
-    from app.models.organization import Organization
     from app.models.base import OrganizationType
-    
-    master_org = db.query(Organization).filter(
-        Organization.organization_type == OrganizationType.MASTER
-    ).first()
-    
+    from app.models.organization import Organization
+
+    master_org = (
+        db.query(Organization)
+        .filter(Organization.organization_type == OrganizationType.MASTER)
+        .first()
+    )
+
     if not master_org:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Master organization not found"
+            detail="Master organization not found",
         )
-    
+
     # Convert to response format
     return OrganizationResponse(
         id=master_org.id,
@@ -180,15 +185,15 @@ async def get_master_organization(
     "/organizations/{organization_id}",
     response_model=OrganizationResponse,
     summary="Get organization",
-    description="Get organization by ID; requires org.read and membership.",
+    description="Get organization by ID. Any authenticated user can read their own organization.",
 )
 async def get_organization(
     organization_id: UUID,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Get organization by ID. Requires org.read and membership (unless system admin)."""
-    require_permission(current_user.permissions, "org.read")
+    """Get organization by ID. Any valid logged-in user can read — no permission check needed.
+    System admins can read any org; regular users must be members."""
     if not is_system_admin(current_user.permissions):
         validate_user_in_organization(current_user.id, organization_id, db)
     svc = OrganizationService(db)
@@ -250,11 +255,17 @@ async def create_organization(
         retry_attempts=settings.chart_creation_retry_attempts,
     )
     try:
-        data = svc.create(body.model_dump(), owner_id=current_user.id, user_type=current_user.user_type)
+        data = svc.create(
+            body.model_dump(),
+            owner_id=current_user.id,
+            user_type=current_user.user_type,
+        )
 
         # Activate the first-time organization owner immediately at onboarding
         if is_first_org and current_user.status == UserStatus.PENDING:
-            db.query(User).filter(User.id == current_user.id).update({"status": UserStatus.ACTIVE})
+            db.query(User).filter(User.id == current_user.id).update(
+                {"status": UserStatus.ACTIVE}
+            )
             db.commit()
 
         return OrganizationResponse.model_validate(data)
@@ -287,8 +298,6 @@ async def update_organization(
         raise
     except DuplicateOrganizationSlugException:
         raise
-
-
 
 
 @router.delete(
@@ -326,9 +335,10 @@ async def backfill_billing_defaults(
     on all non-master orgs that currently have NULL billing fields."""
     require_permission(current_user.permissions, "*.*")
 
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.base import BillingStatus, OrganizationType
     from app.models.organization import Organization
-    from app.models.base import OrganizationType, BillingStatus
 
     orgs = (
         db.query(Organization)
@@ -351,13 +361,25 @@ async def backfill_billing_defaults(
         if not org.customer_since:
             org.customer_since = org.created_at or now
         if not org.subscription_start_date:
-            org.subscription_start_date = (org.created_at or now).date() if hasattr(org.created_at or now, 'date') else org.created_at or now
+            org.subscription_start_date = (
+                (org.created_at or now).date()
+                if hasattr(org.created_at or now, "date")
+                else org.created_at or now
+            )
         if not org.trial_end_date:
             base = org.created_at or now
-            org.trial_end_date = (base + timedelta(days=trial_days)).date() if hasattr(base, 'date') else base + timedelta(days=trial_days)
+            org.trial_end_date = (
+                (base + timedelta(days=trial_days)).date()
+                if hasattr(base, "date")
+                else base + timedelta(days=trial_days)
+            )
         if not org.next_billing_date:
             base = org.created_at or now
-            org.next_billing_date = (base + timedelta(days=trial_days + cycle_days.get(cycle, 30))).date() if hasattr(base, 'date') else base + timedelta(days=trial_days + cycle_days.get(cycle, 30))
+            org.next_billing_date = (
+                (base + timedelta(days=trial_days + cycle_days.get(cycle, 30))).date()
+                if hasattr(base, "date")
+                else base + timedelta(days=trial_days + cycle_days.get(cycle, 30))
+            )
         if not org.max_users:
             org.max_users = settings.default_max_users
         if not org.max_credits:
@@ -367,4 +389,7 @@ async def backfill_billing_defaults(
         updated += 1
 
     db.commit()
-    return {"updated": updated, "message": f"Backfilled billing defaults for {updated} organizations"}
+    return {
+        "updated": updated,
+        "message": f"Backfilled billing defaults for {updated} organizations",
+    }

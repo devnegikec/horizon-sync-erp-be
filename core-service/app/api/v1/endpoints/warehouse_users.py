@@ -26,7 +26,9 @@ class PendingAssignmentPayload(BaseModel):
     is_primary: bool = False
 
 
-@router.post("", response_model=WarehouseUserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=WarehouseUserResponse, status_code=status.HTTP_201_CREATED
+)
 async def assign_user_to_warehouse(
     body: WarehouseUserCreate,
     current_user: CurrentUser = Depends(require_permission("warehouse.manage")),
@@ -104,6 +106,7 @@ async def get_my_warehouses(
     - Pending assignments (by email) are resolved on first call.
     """
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(
         "[my-warehouses] user_id=%s org_id=%s user_type=%s email=%s",
@@ -112,9 +115,8 @@ async def get_my_warehouses(
         current_user.user_type,
         current_user.email,
     )
-    # Global access: true admins or users with warehouse.manage (WMS Admin role).
-    # WMS Manager does NOT have warehouse.manage, so they go through scoped path.
-    # Only org admins and users with explicit global wildcard get all warehouses.
+    # Global access: only system_admin, org_admin, or super admin (*.*).
+    # WMS roles (manager, operator) are scoped by WarehouseUser assignments.
     has_global_access = (
         current_user.user_type in ("system_admin", "organization_admin")
         or "*.*" in current_user.permissions
@@ -122,6 +124,7 @@ async def get_my_warehouses(
 
     if has_global_access:
         from app.models.warehouse import Warehouse
+
         warehouses = (
             db.query(Warehouse)
             .filter(
@@ -131,7 +134,10 @@ async def get_my_warehouses(
             .order_by(Warehouse.name)
             .all()
         )
-        logger.info("[my-warehouses] global access path: returned %d warehouses", len(warehouses))
+        logger.info(
+            "[my-warehouses] global access path: returned %d warehouses",
+            len(warehouses),
+        )
         return {
             "warehouses": [
                 {
@@ -147,12 +153,7 @@ async def get_my_warehouses(
         }
 
     svc = WarehouseUserService(db)
-    warehouses = svc.get_user_warehouses(
-        user_id=current_user.id,
-        organization_id=current_user.organization_id,
-        user_type=current_user.user_type,
-        user_email=current_user.email,
-    )
+    warehouses = svc.get_user_warehouses(current_user)
     logger.info("[my-warehouses] returned %d warehouses", len(warehouses))
     return {"warehouses": warehouses}
 
