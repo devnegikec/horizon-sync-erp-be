@@ -20,13 +20,13 @@
 
 ### Current state
 
-| What exists | Where |
-|-------------|-------|
-| Worker QR codes (for login) | `identity-service` → `GET /identity/workers/{id}/qr-image` |
-| `qrcode` library | Already installed in identity-service |
-| Location hierarchy | `core-service` → `warehouse_locations` table (Zone→Aisle→Bay→Level→Bin) |
-| `full_path` column | e.g. `Z01-A01-B01-L01-BN001` — already stored |
-| Location scans | `POST /location-scans` — records start/finish at bin |
+| What exists                 | Where                                                                   |
+| --------------------------- | ----------------------------------------------------------------------- |
+| Worker QR codes (for login) | `identity-service` → `GET /identity/workers/{id}/qr-image`              |
+| `qrcode` library            | Already installed in identity-service                                   |
+| Location hierarchy          | `core-service` → `warehouse_locations` table (Zone→Aisle→Bay→Level→Bin) |
+| `full_path` column          | e.g. `Z01-A01-B01-L01-BN001` — already stored                           |
+| Location scans              | `POST /location-scans` — records start/finish at bin                    |
 
 ### What's missing
 
@@ -82,6 +82,7 @@ Response: image/png (330×330px QR code)
 **Implementation**: core-service `warehouse_locations.py`
 
 **Logic**:
+
 1. Look up `WarehouseLocation` by ID
 2. Look up parent `Warehouse` for name/code
 3. Look up `Organization` for name
@@ -114,12 +115,12 @@ Response: application/zip (ZIP of PNG files, one per bin)
 
 ### core-service
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `app/api/v1/endpoints/warehouse_locations.py` | **Modify** | Add `GET /{location_id}/qr-image` endpoint |
-| `app/services/layout_service.py` | **Modify** | Add `get_location_with_context()` method (loads org + warehouse) |
-| `app/schemas/warehouse_location.py` | **Modify** | Add `LocationQRPayload` schema |
-| `pyproject.toml` | **Modify** | Add `qrcode` + `Pillow` dependencies |
+| File                                          | Action     | Purpose                                                          |
+| --------------------------------------------- | ---------- | ---------------------------------------------------------------- |
+| `app/api/v1/endpoints/warehouse_locations.py` | **Modify** | Add `GET /{location_id}/qr-image` endpoint                       |
+| `app/services/layout_service.py`              | **Modify** | Add `get_location_with_context()` method (loads org + warehouse) |
+| `app/schemas/warehouse_location.py`           | **Modify** | Add `LocationQRPayload` schema                                   |
+| `pyproject.toml`                              | **Modify** | Add `qrcode` + `Pillow` dependencies                             |
 
 ### Dependencies to add (core-service)
 
@@ -298,10 +299,13 @@ export interface BinQRPayload {
 
 export type LabelSize = "small" | "medium" | "large";
 
-export const LABEL_DIMENSIONS: Record<LabelSize, { width: string; height: string; fontSize: string }> = {
-  small:  { width: "4cm",  height: "4cm",  fontSize: "8px"  },
-  medium: { width: "5cm",  height: "5cm",  fontSize: "10px" },
-  large:  { width: "7cm",  height: "7cm",  fontSize: "12px" },
+export const LABEL_DIMENSIONS: Record<
+  LabelSize,
+  { width: string; height: string; fontSize: string }
+> = {
+  small: { width: "4cm", height: "4cm", fontSize: "8px" },
+  medium: { width: "5cm", height: "5cm", fontSize: "10px" },
+  large: { width: "7cm", height: "7cm", fontSize: "12px" },
 };
 ```
 
@@ -320,11 +324,11 @@ const BASE_URL = "/api/v1";
  */
 export async function fetchBinQRImage(
   locationId: string,
-  token: string
+  token: string,
 ): Promise<string> {
   const response = await fetch(
     `${BASE_URL}/warehouse-locations/${locationId}/qr-image`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!response.ok) {
     throw new Error(`Failed to fetch QR: ${response.status}`);
@@ -338,7 +342,7 @@ export async function fetchBinQRImage(
  */
 export async function fetchBinQRImages(
   locationIds: string[],
-  token: string
+  token: string,
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   const promises = locationIds.map(async (id) => {
@@ -475,11 +479,20 @@ import { useAuthStore } from "@/stores/auth";
 
 interface BinQRBulkPrintProps {
   locationIds: string[];
-  locations: Array<{ id: string; full_path: string; warehouse_name: string; warehouse_code: string }>;
+  locations: Array<{
+    id: string;
+    full_path: string;
+    warehouse_name: string;
+    warehouse_code: string;
+  }>;
   onClose: () => void;
 }
 
-export function BinQRBulkPrint({ locationIds, locations, onClose }: BinQRBulkPrintProps) {
+export function BinQRBulkPrint({
+  locationIds,
+  locations,
+  onClose,
+}: BinQRBulkPrintProps) {
   const [qrUrls, setQrUrls] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
   const [labelSize, setLabelSize] = useState<LabelSize>("medium");
@@ -500,13 +513,19 @@ export function BinQRBulkPrint({ locationIds, locations, onClose }: BinQRBulkPri
 
   return (
     <div className="bin-qr-modal-overlay" onClick={onClose}>
-      <div className="bin-qr-modal bin-qr-bulk" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="bin-qr-modal bin-qr-bulk"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2>Print Bin QR Labels — {locationIds.length} bins</h2>
 
         <div className="bin-qr-bulk-controls no-print">
           <label>
             Label Size:
-            <select value={labelSize} onChange={(e) => setLabelSize(e.target.value as LabelSize)}>
+            <select
+              value={labelSize}
+              onChange={(e) => setLabelSize(e.target.value as LabelSize)}
+            >
               <option value="small">Small (4cm × 4cm)</option>
               <option value="medium">Medium (5cm × 5cm)</option>
               <option value="large">Large (7cm × 7cm)</option>
@@ -514,7 +533,11 @@ export function BinQRBulkPrint({ locationIds, locations, onClose }: BinQRBulkPri
           </label>
 
           {qrUrls.size === 0 ? (
-            <button onClick={handleGenerate} disabled={loading} className="btn-primary">
+            <button
+              onClick={handleGenerate}
+              disabled={loading}
+              className="btn-primary"
+            >
               {loading ? "Generating..." : "📱 Generate QR Codes"}
             </button>
           ) : (
@@ -523,7 +546,9 @@ export function BinQRBulkPrint({ locationIds, locations, onClose }: BinQRBulkPri
             </button>
           )}
 
-          <button onClick={onClose} className="btn-ghost">✕ Cancel</button>
+          <button onClick={onClose} className="btn-ghost">
+            ✕ Cancel
+          </button>
         </div>
 
         {/* Printable labels grid */}
@@ -537,13 +562,23 @@ export function BinQRBulkPrint({ locationIds, locations, onClose }: BinQRBulkPri
               <div
                 key={id}
                 className="bin-qr-label"
-                style={{ width: dims.width, height: dims.height, fontSize: dims.fontSize }}
+                style={{
+                  width: dims.width,
+                  height: dims.height,
+                  fontSize: dims.fontSize,
+                }}
               >
                 {qrUrl ? (
                   <>
-                    <img src={qrUrl} alt={`QR for ${loc.full_path}`} className="bin-qr-image" />
+                    <img
+                      src={qrUrl}
+                      alt={`QR for ${loc.full_path}`}
+                      className="bin-qr-image"
+                    />
                     <div className="bin-qr-text">
-                      <div className="bin-qr-warehouse">{loc.warehouse_name}</div>
+                      <div className="bin-qr-warehouse">
+                        {loc.warehouse_name}
+                      </div>
                       <div className="bin-qr-path">{loc.full_path}</div>
                     </div>
                   </>
@@ -759,12 +794,13 @@ function LocationTreeNode({ location, warehouse, allBins }) {
 
 ### 6.9 API Endpoints Reference (Frontend)
 
-| Endpoint | Method | Auth | Purpose |
-|----------|--------|------|---------|
-| `/warehouse-locations/{id}/qr-image` | `GET` | `warehouse.read` | Single bin QR PNG |
-| `/warehouse-locations?warehouse_id=X&location_type=bin` | `GET` | `warehouse.read` | List all bins (for bulk print) |
+| Endpoint                                                | Method | Auth             | Purpose                        |
+| ------------------------------------------------------- | ------ | ---------------- | ------------------------------ |
+| `/warehouse-locations/{id}/qr-image`                    | `GET`  | `warehouse.read` | Single bin QR PNG              |
+| `/warehouse-locations?warehouse_id=X&location_type=bin` | `GET`  | `warehouse.read` | List all bins (for bulk print) |
 
 > ⚠️ **CORS Note**: If using `<img src={qrUrl}>` with auth, the image request must include the `Authorization` header. Options:
+>
 > 1. Fetch blob client-side with auth header, create `blob:` URL (recommended — shown above)
 > 2. Proxy through your frontend server
 > 3. Use a short-lived signed URL
@@ -792,16 +828,16 @@ function LocationTreeNode({ location, warehouse, allBins }) {
 
 ## 8. Summary
 
-| Deliverable | Service | Effort |
-|-------------|---------|--------|
-| `GET /warehouse-locations/{id}/qr-image` | core-service ✅ | 1 endpoint + 1 service method |
-| `LocationQRPayload` schema | core-service ✅ | 1 Pydantic model |
-| `qrcode` + `Pillow` dependency | core-service ✅ | `requirements.txt` |
-| `BinQRLabel` component | Frontend | 1 React component (~80 lines) |
-| `BinQRBulkPrint` component | Frontend | 1 React component (~100 lines) |
-| Print CSS | Frontend | 1 CSS file (~100 lines) |
-| API helper (`fetchBinQRImage`) | Frontend | 1 utility function (~20 lines) |
-| Mobile app location QR handler | Mobile App | Parse `type: "location"` JSON |
+| Deliverable                              | Service         | Effort                         |
+| ---------------------------------------- | --------------- | ------------------------------ |
+| `GET /warehouse-locations/{id}/qr-image` | core-service ✅ | 1 endpoint + 1 service method  |
+| `LocationQRPayload` schema               | core-service ✅ | 1 Pydantic model               |
+| `qrcode` + `Pillow` dependency           | core-service ✅ | `requirements.txt`             |
+| `BinQRLabel` component                   | Frontend        | 1 React component (~80 lines)  |
+| `BinQRBulkPrint` component               | Frontend        | 1 React component (~100 lines) |
+| Print CSS                                | Frontend        | 1 CSS file (~100 lines)        |
+| API helper (`fetchBinQRImage`)           | Frontend        | 1 utility function (~20 lines) |
+| Mobile app location QR handler           | Mobile App      | Parse `type: "location"` JSON  |
 
 **Total backend effort**: ~50 lines of new code across 3 files (✅ DONE)
 **Total frontend effort**: ~300 lines across 4 files (Components + CSS + API helper)

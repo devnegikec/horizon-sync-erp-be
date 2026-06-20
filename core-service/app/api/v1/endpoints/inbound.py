@@ -15,7 +15,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import RECEIVING_SLIP_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
+from app.core.authorization import (
+    RECEIVING_SLIP_CREATE,
+    WAREHOUSE_READ,
+    WAREHOUSE_UPDATE,
+)
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.inbound import (
@@ -103,7 +107,10 @@ async def record_scan(
     """
     service = InboundService(db)
     import logging
-    logging.getLogger(__name__).warning("SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data))
+
+    logging.getLogger(__name__).warning(
+        "SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data)
+    )
     result = service.record_scan(
         session_id=session_id,
         qr_data=data.qr_data,
@@ -188,7 +195,10 @@ async def get_session_summary(
 async def list_receiving_slips(
     warehouse_id: UUID | None = Query(None, description="Filter by warehouse UUID"),
     session_id: UUID | None = Query(None, description="Filter by scan session UUID"),
-    status: str | None = Query(None, description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected"),
+    status: str | None = Query(
+        None,
+        description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected",
+    ),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),

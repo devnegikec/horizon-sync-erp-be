@@ -12,7 +12,6 @@ from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse_location import (
     CreateLocationRequest,
-    LocationQRPayload,
     LocationResponse,
     LocationSummary,
     LocationTree,

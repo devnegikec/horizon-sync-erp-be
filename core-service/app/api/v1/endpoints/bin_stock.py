@@ -4,7 +4,7 @@ import csv
 import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -21,10 +21,8 @@ from app.schemas.bin_stock import (
     BinStockListResponse,
     CopyStockRequest,
     RemoveStockRequest,
-    StockExportFilters,
     StockImportRequest,
     StockImportResult,
-    StockImportRow,
 )
 from app.services.bin_stock_service import BinStockService
 
@@ -230,7 +228,13 @@ async def export_stock_csv(
     )
     if warehouse_id:
         from app.models.warehouse_location import WarehouseLocation
-        bin_ids = [b.id for b in db.query(WarehouseLocation).filter(WarehouseLocation.warehouse_id == warehouse_id).all()]
+
+        bin_ids = [
+            b.id
+            for b in db.query(WarehouseLocation)
+            .filter(WarehouseLocation.warehouse_id == warehouse_id)
+            .all()
+        ]
         query = query.filter(BinStockLevel.bin_location_id.in_(bin_ids))
     if item_id:
         query = query.filter(BinStockLevel.item_id == item_id)
@@ -241,9 +245,27 @@ async def export_stock_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["bin_location_id", "item_id", "quantity_on_hand", "batch_number", "created_at", "updated_at"])
+    writer.writerow(
+        [
+            "bin_location_id",
+            "item_id",
+            "quantity_on_hand",
+            "batch_number",
+            "created_at",
+            "updated_at",
+        ]
+    )
     for r in records:
-        writer.writerow([str(r.bin_location_id), str(r.item_id), str(r.quantity_on_hand), r.batch_number or "", r.created_at.isoformat() if r.created_at else "", r.updated_at.isoformat() if r.updated_at else ""])
+        writer.writerow(
+            [
+                str(r.bin_location_id),
+                str(r.item_id),
+                str(r.quantity_on_hand),
+                r.batch_number or "",
+                r.created_at.isoformat() if r.created_at else "",
+                r.updated_at.isoformat() if r.updated_at else "",
+            ]
+        )
 
     output.seek(0)
     return StreamingResponse(
@@ -272,16 +294,24 @@ async def import_stock(
     errors: list[str] = []
 
     # Build SKU -> item_id map
-    items = db.query(Item).filter(
-        Item.organization_id == current_user.organization_id,
-        Item.item_code.in_([r.sku for r in data.rows]),
-    ).all()
+    items = (
+        db.query(Item)
+        .filter(
+            Item.organization_id == current_user.organization_id,
+            Item.item_code.in_([r.sku for r in data.rows]),
+        )
+        .all()
+    )
     sku_to_item = {item.item_code: item.id for item in items}
 
     # Build bin_code -> bin_id map within warehouse
-    bins = db.query(WarehouseLocation).filter(
-        WarehouseLocation.warehouse_id == data.warehouse_id,
-    ).all()
+    bins = (
+        db.query(WarehouseLocation)
+        .filter(
+            WarehouseLocation.warehouse_id == data.warehouse_id,
+        )
+        .all()
+    )
     code_to_bin = {bin_loc.code: bin_loc.id for bin_loc in bins}
 
     for row in data.rows:
@@ -295,17 +325,23 @@ async def import_stock(
             continue
 
         try:
-            existing = db.query(BinStockLevel).filter(
-                BinStockLevel.bin_location_id == bin_id,
-                BinStockLevel.item_id == item_id,
-                BinStockLevel.batch_number == row.batch_number,
-            ).first()
+            existing = (
+                db.query(BinStockLevel)
+                .filter(
+                    BinStockLevel.bin_location_id == bin_id,
+                    BinStockLevel.item_id == item_id,
+                    BinStockLevel.batch_number == row.batch_number,
+                )
+                .first()
+            )
 
             if existing and data.overwrite_existing:
                 existing.quantity_on_hand = row.quantity
                 updated += 1
             elif existing:
-                errors.append(f"Stock already exists for bin {row.bin_code}, SKU {row.sku}, batch {row.batch_number or 'N/A'}")
+                errors.append(
+                    f"Stock already exists for bin {row.bin_code}, SKU {row.sku}, batch {row.batch_number or 'N/A'}"
+                )
                 continue
             else:
                 service.add_stock(

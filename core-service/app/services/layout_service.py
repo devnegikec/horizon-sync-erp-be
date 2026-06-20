@@ -630,14 +630,14 @@ class LayoutService:
         """
         if not code:
             return code
-        return re.sub(r'([A-Za-z]+)(\d+)', r'\1-\2', code)
+        return re.sub(r"([A-Za-z]+)(\d+)", r"\1-\2", code)
 
     @classmethod
     def _extract_trailing_number(cls, raw_code: str) -> str:
         """Extract the trailing digit sequence from any code format."""
         if not raw_code:
             return ""
-        m = re.search(r'(\d+)$', raw_code)
+        m = re.search(r"(\d+)$", raw_code)
         return m.group(1) if m else ""
 
     @classmethod

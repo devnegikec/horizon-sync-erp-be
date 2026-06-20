@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.models.item import Item
-from app.repositories.item_repository import ItemRepository
 from app.schemas.common import PaginationMeta
 from app.schemas.item import (
     ItemCreate,
@@ -146,6 +145,7 @@ async def get_item_by_sku(
     sku → item_code → barcode.
     """
     import logging
+
     _log = logging.getLogger(__name__)
     org_id = current_user.organization_id
     _log.info("SKU lookup: sku=%s org_id=%s", sku, org_id)
