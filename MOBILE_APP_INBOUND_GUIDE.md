@@ -356,12 +356,30 @@ for (const item of putAwayList.items) {
 
 ## 8. Permissions Reference
 
-| Operation | Permission Required | Role |
-|-----------|-------------------|------|
-| Start/end scan session | `receiving_slip.create` | `warehouse_work_user` ✅ |
-| Record QR scan | `receiving_slip.create` | `warehouse_work_user` ✅ |
-| Look up items | (any authenticated) | All roles ✅ |
-| View put-away lists | `warehouse.read` | `warehouse_work_user` ✅ |
-| Complete put-away item | `warehouse.read` | `warehouse_work_user` ✅ |
-| Generate put-away list | `warehouse.create` | Admin/Manager only |
-| Scan bin QR | `warehouse.read` | `warehouse_work_user` ✅ |
+### `warehouse_work_user` Role (assigned automatically on worker creation)
+
+| Permission | Enables |
+|-----------|---------|
+| `warehouse.read` | View warehouses, scan bin QR codes, view put-away lists |
+| `wms.scan` | QR/barcode scanning |
+| `receiving_slip.create` | Start scan session, record QR scans, end session |
+| `receiving_slip.read` | View receiving slips |
+| `receiving_slip.update` | Update receiving slip details |
+| `pick_list.read` | View outbound pick lists |
+| `pick_list.update` | Start/finish picking items |
+| `stock_entry.create` | Add/remove stock from bins |
+| `stock_entry.read` | View bin stock levels |
+
+| Operation | Permission Required | Worker has? |
+|-----------|-------------------|:---:|
+| Start scan session | `receiving_slip.create` | ✅ |
+| Record QR scan | `receiving_slip.create` | ✅ |
+| End session (generate slip) | `receiving_slip.create` | ✅ |
+| Look up item by SKU | (any authenticated) | ✅ |
+| List put-away tasks | `warehouse.read` | ✅ |
+| Complete put-away item | `warehouse.read` | ✅ |
+| Add stock to bin | `stock_entry.create` | ✅ |
+| Remove stock from bin | `stock_entry.create` | ✅ |
+| View bin stock | `stock_entry.read` | ✅ |
+| Scan bin QR | `warehouse.read` | ✅ |
+| Generate put-away list | `warehouse.create` | ❌ Admin/Manager only |

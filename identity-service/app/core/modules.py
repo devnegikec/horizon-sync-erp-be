@@ -391,6 +391,8 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "receiving_slip.update",
             "pick_list.read",
             "pick_list.update",
+            "stock_entry.create",
+            "stock_entry.read",
         ],
     ),
 ]

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ
+from app.core.authorization import STOCK_ENTRY_CREATE, WAREHOUSE_READ
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.item import Item
@@ -69,7 +69,7 @@ async def get_bins_for_item(
 )
 async def add_stock(
     data: AddStockRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -112,7 +112,7 @@ async def add_stock(
 )
 async def remove_stock(
     data: RemoveStockRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -186,7 +186,7 @@ async def get_bin_stock(
 )
 async def copy_stock(
     data: CopyStockRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Copy stock from source bin to target bin."""
@@ -262,7 +262,7 @@ async def export_stock_csv(
 )
 async def import_stock(
     data: StockImportRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Import stock levels into bins."""
