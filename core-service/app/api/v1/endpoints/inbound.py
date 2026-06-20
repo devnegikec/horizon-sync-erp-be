@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
+from app.core.authorization import RECEIVING_SLIP_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.inbound import (
@@ -45,7 +45,7 @@ router = APIRouter()
 )
 async def start_session(
     data: StartSessionRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -81,7 +81,7 @@ async def start_session(
 async def record_scan(
     session_id: UUID,
     data: RecordScanRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -123,7 +123,7 @@ async def record_scan(
 )
 async def end_session(
     session_id: UUID,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """

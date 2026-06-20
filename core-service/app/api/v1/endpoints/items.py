@@ -2,17 +2,20 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.item import Item
+from app.repositories.item_repository import ItemRepository
 from app.schemas.common import PaginationMeta
 from app.schemas.item import (
     ItemCreate,
     ItemListItem,
     ItemListResponse,
     ItemResponse,
+    ItemSkuLookupResponse,
     ItemUpdate,
 )
 from app.services.item_service import ItemService
@@ -124,6 +127,47 @@ async def list_items(
     item_items = [ItemListItem.model_validate(item) for item in items]
 
     return ItemListResponse(items=item_items, pagination=PaginationMeta(**pagination))
+
+
+@router.get(
+    "/by-sku/{sku}",
+    response_model=ItemSkuLookupResponse,
+    summary="Lookup item by SKU or barcode",
+    description="Find an item by item_code or barcode. Used by mobile app when scanning items during inbound.",
+)
+async def get_item_by_sku(
+    sku: str,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Lookup an item by SKU, item_code, or barcode.
+
+    Returns item details for inbound scanning. Searches in order:
+    sku → item_code → barcode.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+    org_id = current_user.organization_id
+    _log.info("SKU lookup: sku=%s org_id=%s", sku, org_id)
+
+    # Search order: sku → item_code → barcode
+    item = None
+    base_query = db.query(Item).filter(Item.deleted_at.is_(None))
+    if org_id:
+        base_query = base_query.filter(Item.organization_id == org_id)
+
+    for field in [Item.sku, Item.item_code, Item.barcode]:
+        item = base_query.filter(field == sku).first()
+        if item:
+            break
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No item found for SKU: {sku}",
+        )
+
+    return ItemSkuLookupResponse.model_validate(item)
 
 
 @router.get(
