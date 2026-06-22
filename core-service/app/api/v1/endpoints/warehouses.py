@@ -16,7 +16,8 @@ from app.core.authorization import (
     WAREHOUSE_UPDATE,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, require_permission, security
+from fastapi.security import HTTPAuthorizationCredentials
 from app.models.base import WarehouseType, WarehouseUserRole
 from app.models.warehouse import Warehouse
 from app.schemas.common import PaginationMeta
@@ -30,6 +31,7 @@ from app.schemas.warehouse import (
     WarehouseTypeCounts,
     WarehouseUpdate,
 )
+from app.services.identity_role_service import ensure_warehouse_work_user_role
 from app.services.warehouse_service import WarehouseService
 from app.services.warehouse_user_service import WarehouseUserService
 
@@ -57,6 +59,7 @@ async def create_warehouse(
     warehouse_data: WarehouseCreate,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """
     Create a new warehouse.
@@ -108,6 +111,14 @@ async def create_warehouse(
     )
 
     db.commit()
+
+    # Ensure the warehouse_work_user role exists so WMS worker management
+    # works immediately without manual seed-script execution.
+    if current_user.organization_id:
+        await ensure_warehouse_work_user_role(
+            organization_id=current_user.organization_id,
+            auth_token=credentials.credentials,
+        )
 
     return WarehouseResponse.model_validate(warehouse)
 
@@ -321,6 +332,7 @@ async def import_warehouses(
     file: UploadFile = File(..., description="CSV file with warehouse data"),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> WarehouseImportResponse:
     """
     Import warehouses from a CSV file.
@@ -486,6 +498,13 @@ async def import_warehouses(
             failed += 1
             errors.append({"row": row_num, "field": "general", "message": str(e)})
             logger.error(f"Warehouse import row {row_num} failed: {e}")
+
+    # Auto-seed the warehouse_work_user role if any warehouses were created
+    if created > 0 and current_user.organization_id:
+        await ensure_warehouse_work_user_role(
+            organization_id=current_user.organization_id,
+            auth_token=credentials.credentials,
+        )
 
     return WarehouseImportResponse(
         total_rows=len(rows),

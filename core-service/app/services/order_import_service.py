@@ -148,6 +148,8 @@ class OrderImportService:
         result.parsed_orders = orders
 
         # Create pick lists for each parsed order
+        overwritten_count = 0
+        skipped_count = 0
         for order in orders:
             if order.errors:
                 result.errors.extend(
@@ -162,13 +164,28 @@ class OrderImportService:
                 continue
 
             try:
-                self._create_pick_list_from_order(order, org_id, warehouse_id)
-                result.pick_lists_created += 1
-                result.total_items += len(order.items)
+                action = self._create_pick_list_from_order(order, org_id, warehouse_id)
+                if action == "created":
+                    result.pick_lists_created += 1
+                    result.total_items += len(order.items)
+                elif action == "overwritten":
+                    overwritten_count += 1
+                    result.total_items += len(order.items)
+                elif action == "skipped":
+                    skipped_count += 1
             except Exception as e:
                 result.errors.append(
                     f"Order {order.invoice_reference}: {str(e)}"
                 )
+
+        if overwritten_count:
+            result.errors.append(
+                f"{overwritten_count} existing draft pick list(s) were overwritten with new data."
+            )
+        if skipped_count:
+            result.errors.append(
+                f"{skipped_count} order(s) skipped — pick list already exists in non-draft status."
+            )
 
         return result
 
@@ -307,17 +324,34 @@ class OrderImportService:
 
         result.parsed_orders = list(orders_by_invoice.values())
 
+        overwritten_count = 0
+        skipped_count = 0
         for order in result.parsed_orders:
             if not order.items:
                 result.errors.append(f"Order {order.invoice_reference}: no items found")
                 continue
 
             try:
-                self._create_pick_list_from_order(order, org_id, warehouse_id)
-                result.pick_lists_created += 1
-                result.total_items += len(order.items)
+                action = self._create_pick_list_from_order(order, org_id, warehouse_id)
+                if action == "created":
+                    result.pick_lists_created += 1
+                    result.total_items += len(order.items)
+                elif action == "overwritten":
+                    overwritten_count += 1
+                    result.total_items += len(order.items)
+                elif action == "skipped":
+                    skipped_count += 1
             except Exception as e:
                 result.errors.append(f"Order {order.invoice_reference}: {str(e)}")
+
+        if overwritten_count:
+            result.errors.append(
+                f"{overwritten_count} existing draft pick list(s) were overwritten."
+            )
+        if skipped_count:
+            result.errors.append(
+                f"{skipped_count} order(s) skipped — pick list already exists in non-draft status."
+            )
 
         return result
 
@@ -330,15 +364,38 @@ class OrderImportService:
         order: ParsedOrder,
         org_id: UUID,
         warehouse_id: UUID,
-    ) -> None:
-        """Create a pick list from a parsed order, resolving items by SKU."""
+    ) -> str:
+        """Create or overwrite a pick list from a parsed order. Returns action: created/overwritten/skipped."""
         from sqlalchemy import text
 
+        # Check for existing pick list with same invoice reference
+        from app.models.pick_list import PickList
+        from app.models.base import PickListStatus
+
+        existing = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == org_id,
+                PickList.invoice_reference == order.invoice_reference,
+            )
+            .order_by(PickList.created_at.desc())
+            .first()
+        )
+
+        if existing:
+            if existing.status == PickListStatus.DRAFT:
+                # Overwrite the existing draft pick list
+                self._update_pick_list_items(existing, order, org_id, warehouse_id)
+                return "overwritten"
+            else:
+                # Non-draft exists — skip
+                return "skipped"
+
+        # Create new pick list
         sap_items: list[SAPInvoiceItem] = []
         unresolved: list[str] = []
 
         for item in order.items:
-            # Look up the item UUID by SKU/code from the items table
             item_row = self.db.execute(
                 text(
                     "SELECT id FROM items "
@@ -350,7 +407,6 @@ class OrderImportService:
             ).fetchone()
 
             if item_row:
-                # item_row[0] may be a UUID or string depending on DB driver
                 raw_id = item_row[0]
                 item_uuid = raw_id if isinstance(raw_id, UUID) else UUID(raw_id)
                 sap_items.append(
@@ -378,6 +434,61 @@ class OrderImportService:
         )
 
         self.pick_list_service.create_from_invoice(payload, org_id)
+        return "created"
+
+    def _update_pick_list_items(
+        self,
+        pick_list,
+        order: ParsedOrder,
+        org_id: UUID,
+        warehouse_id: UUID,
+    ) -> None:
+        """Replace items on an existing draft pick list with new order data."""
+        from sqlalchemy import text
+        from app.models.pick_list import PickListItem
+
+        # Remove existing items
+        self.db.query(PickListItem).filter(
+            PickListItem.pick_list_id == pick_list.id
+        ).delete()
+
+        # Add new items
+        for item in order.items:
+            item_row = self.db.execute(
+                text(
+                    "SELECT id FROM items "
+                    "WHERE (sku = :sku OR item_code = :sku) "
+                    "AND organization_id = :org_id "
+                    "LIMIT 1"
+                ),
+                {"sku": item.sku, "org_id": str(org_id)},
+            ).fetchone()
+
+            if not item_row:
+                continue
+
+            raw_id = item_row[0]
+            item_uuid = raw_id if isinstance(raw_id, UUID) else UUID(raw_id)
+
+            pl_item = PickListItem(
+                organization_id=org_id,
+                pick_list_id=pick_list.id,
+                item_id=item_uuid,
+                warehouse_id=warehouse_id,
+                qty=item.quantity,
+                picked_qty=Decimal("0"),
+                uom=item.uom or 'pcs',
+                sort_order=0,
+            )
+            self.db.add(pl_item)
+
+        self.db.commit()
+
+        # Re-resolve bin locations
+        from app.models.pick_list import PickList as PL
+        pick_list = self.db.query(PL).filter(PL.id == pick_list.id).first()
+        if pick_list:
+            self.pick_list_service.resolve_bin_locations(pick_list.id, org_id)
 
     @staticmethod
     def _find_column(headers: list[str], candidates: list[str]) -> str:
