@@ -28,6 +28,7 @@ redis==5.0.1
 
 # Utilities
 python-dotenv==1.0.0
+PyPDF2==3.0.1
 
 # QR Code generation
 qrcode==7.4.2
