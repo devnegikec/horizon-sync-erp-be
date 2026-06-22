@@ -114,12 +114,15 @@ class PickListItemResponse(BaseModel):
 
     id: str
     item_id: str
+    item_name: str | None = None
+    sku: str | None = None
     warehouse_id: str
     qty: float
     picked_qty: float
     uom: str
     batch_no: str | None = None
     bin_location_id: str | None = None
+    bin_location_path: str | None = None
     sort_order: int = 0
 
 
