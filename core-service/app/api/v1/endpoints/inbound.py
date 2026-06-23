@@ -447,10 +447,15 @@ async def assign_bin_to_slip_item(
         .first()
     )
     if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found"
+        )
 
     if item.put_away_status == "completed":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Item already assigned to a bin")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Item already assigned to a bin",
+        )
 
     # Validate bin
     bin_location = (
@@ -463,7 +468,9 @@ async def assign_bin_to_slip_item(
         .first()
     )
     if not bin_location:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bin not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Bin not found"
+        )
 
     if bin_location.location_type != "bin":
         raise HTTPException(
@@ -473,6 +480,7 @@ async def assign_bin_to_slip_item(
 
     # Find item by SKU for stock update
     from app.models.item import Item
+
     db_item = (
         db.query(Item)
         .filter(
@@ -493,7 +501,10 @@ async def assign_bin_to_slip_item(
             .first()
         )
     if not db_item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item not found for SKU: {item.sku}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item not found for SKU: {item.sku}",
+        )
 
     # Add stock to bin
     qty = body.quantity if body.quantity else item.quantity
@@ -575,16 +586,26 @@ async def get_fifo_bins_for_slip_item(
         .first()
     )
     if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found"
+        )
 
     # Find item by SKU
     db_item = (
         db.query(Item)
-        .filter(Item.sku == item.sku, Item.organization_id == current_user.organization_id, Item.deleted_at.is_(None))
+        .filter(
+            Item.sku == item.sku,
+            Item.organization_id == current_user.organization_id,
+            Item.deleted_at.is_(None),
+        )
         .first()
     ) or (
         db.query(Item)
-        .filter(Item.item_code == item.sku, Item.organization_id == current_user.organization_id, Item.deleted_at.is_(None))
+        .filter(
+            Item.item_code == item.sku,
+            Item.organization_id == current_user.organization_id,
+            Item.deleted_at.is_(None),
+        )
         .first()
     )
     if not db_item:
@@ -611,7 +632,9 @@ async def get_fifo_bins_for_slip_item(
                 "bin_path": loc.full_path or loc.code,
                 "batch_number": stock.batch_number,
                 "quantity_on_hand": int(stock.quantity_on_hand),
-                "stock_age_days": (now - stock.created_at).days if stock.created_at else None,
+                "stock_age_days": (now - stock.created_at).days
+                if stock.created_at
+                else None,
             }
             for stock, loc in bins
         ],

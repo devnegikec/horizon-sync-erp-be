@@ -29,12 +29,12 @@ Worker scans items → Receiving Slip (PENDING_PUTAWAY)
 
 ### Why This is Better
 
-| Current | Proposed |
-|---------|----------|
-| 3 steps (slip → approve → put-away list → bin) | 2 steps (slip → bin) |
-| Requires admin approval before put-away | Worker can put-away immediately |
-| Separate PutAwayList table | ReceivingSlipItem tracks bin directly |
-| QR is unique per box → each scan is unique | Worker scans item QR → places in bin → confirms |
+| Current                                        | Proposed                                        |
+| ---------------------------------------------- | ----------------------------------------------- |
+| 3 steps (slip → approve → put-away list → bin) | 2 steps (slip → bin)                            |
+| Requires admin approval before put-away        | Worker can put-away immediately                 |
+| Separate PutAwayList table                     | ReceivingSlipItem tracks bin directly           |
+| QR is unique per box → each scan is unique     | Worker scans item QR → places in bin → confirms |
 
 ---
 
@@ -94,10 +94,10 @@ async def assign_bin_to_slip_item(slip_id, item_id, body, current_user, db):
         ReceivingSlipItem.id == item_id,
         ReceivingSlipItem.slip_id == slip_id,
     ).first()
-    
+
     # 2. Validate bin exists, is active, type='bin'
     bin_location = validate_bin(body.bin_location_id)
-    
+
     # 3. Add stock to bin via BinStockService
     bin_stock_service.add_stock(
         bin_id=body.bin_location_id,
@@ -106,23 +106,23 @@ async def assign_bin_to_slip_item(slip_id, item_id, body, current_user, db):
         org_id=current_user.organization_id,
         batch_number=item.batch_number,
     )
-    
+
     # 4. Update ReceivingSlipItem
     item.bin_location_id = body.bin_location_id
     item.put_away_status = "completed"
     item.put_away_at = datetime.now(UTC)
     item.put_away_by = current_user.id
-    
+
     # 5. Check if ALL items on slip are completed
     pending = db.query(ReceivingSlipItem).filter(
         ReceivingSlipItem.slip_id == slip_id,
         ReceivingSlipItem.put_away_status == "pending",
         ReceivingSlipItem.flag == "ok",
     ).count()
-    
+
     if pending == 0:
         slip.status = "putaway_complete"
-    
+
     db.commit()
     return item
 ```
@@ -221,12 +221,12 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
     """For each item in the pick list, suggest bins in FIFO order."""
     pick_list = self.get_by_id(pick_list_id, org_id)
     results = []
-    
+
     for item in pick_list.items:
         needed = item.quantity
         allocations = []
         total_available = 0
-        
+
         # Find bins with this item, ordered by stock age (oldest first)
         bins = (
             self.db.query(BinStockLevel, WarehouseLocation)
@@ -240,7 +240,7 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
             .order_by(BinStockLevel.created_at.asc())  # FIFO: oldest first
             .all()
         )
-        
+
         for stock, location in bins:
             if needed <= 0:
                 break
@@ -248,7 +248,7 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
             pick_qty = min(available, needed)
             total_available += available
             age_days = (datetime.now(UTC) - stock.created_at).days
-            
+
             allocations.append({
                 "bin_id": str(stock.bin_location_id),
                 "bin_path": location.full_path,
@@ -258,7 +258,7 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
                 "stock_age_days": age_days,
             })
             needed -= pick_qty
-        
+
         results.append({
             "pick_item_id": str(item.id),
             "sku": item.sku,
@@ -268,7 +268,7 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
             "fully_covered": needed <= 0,
             "shortfall": max(0, needed),
         })
-    
+
     return results
 ```
 
@@ -290,19 +290,19 @@ def suggest_bins_fifo(self, pick_list_id: UUID, org_id: UUID) -> list[dict]:
 
 ## Implementation Order
 
-| Phase | Feature | Effort |
-|-------|---------|--------|
-| **Phase 1** | Add columns to `receiving_slip_items` (bin_location_id, put_away_status) | 1 migration |
-| **Phase 2** | `POST /receiving-slips/{slip_id}/items/{item_id}/assign-bin` endpoint | 1 endpoint + service |
-| **Phase 3** | Update mobile app: after scan session, show slip items, scan bin, assign | Mobile app |
-| **Phase 4** | FIFO suggest-bins endpoint | 1 endpoint + service method |
-| **Phase 5** | Mobile app: FIFO pick flow with suggested bins | Mobile app |
+| Phase       | Feature                                                                  | Effort                      |
+| ----------- | ------------------------------------------------------------------------ | --------------------------- |
+| **Phase 1** | Add columns to `receiving_slip_items` (bin_location_id, put_away_status) | 1 migration                 |
+| **Phase 2** | `POST /receiving-slips/{slip_id}/items/{item_id}/assign-bin` endpoint    | 1 endpoint + service        |
+| **Phase 3** | Update mobile app: after scan session, show slip items, scan bin, assign | Mobile app                  |
+| **Phase 4** | FIFO suggest-bins endpoint                                               | 1 endpoint + service method |
+| **Phase 5** | Mobile app: FIFO pick flow with suggested bins                           | Mobile app                  |
 
 ---
 
 ## Summary
 
-| Feature | What Changes |
-|---------|-------------|
+| Feature              | What Changes                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Two-step inbound** | `ReceivingSlipItem` gets `bin_location_id` + `put_away_status`. New `assign-bin` endpoint adds stock + updates item. No more put-away list needed for simple flow. |
-| **FIFO picking** | New `/suggest-bins` endpoint returns bins sorted by `BinStockLevel.created_at` ASC. Worker picks oldest stock first. |
+| **FIFO picking**     | New `/suggest-bins` endpoint returns bins sorted by `BinStockLevel.created_at` ASC. Worker picks oldest stock first.                                               |

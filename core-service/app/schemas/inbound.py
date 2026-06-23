@@ -198,7 +198,11 @@ class AssignBinRequest(BaseModel):
     """Request to assign a bin to a receiving slip item (put-away step)."""
 
     bin_location_id: UUID = Field(..., description="Bin location UUID from scanned QR")
-    quantity: int | None = Field(None, gt=0, description="Quantity to put in bin (defaults to full slip item quantity)")
+    quantity: int | None = Field(
+        None,
+        gt=0,
+        description="Quantity to put in bin (defaults to full slip item quantity)",
+    )
 
 
 class AssignBinResponse(BaseModel):

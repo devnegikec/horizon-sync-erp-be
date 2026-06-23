@@ -454,14 +454,14 @@ const fifo = await getFifoBins(slip.id, item.id, token);
 | `stock_entry.read`      | View bin stock levels                                   |
 
 | Operation                   | Permission Required     |      Worker has?      |
-| --------------------------- | ----------------------- | :-------------------: |
+| --------------------------- | ----------------------- | :-------------------: | --- | ----------------------- | ----------------------- | --- |
 | Start scan session          | `receiving_slip.create` |          ✅           |
 | Record QR scan              | `receiving_slip.create` |          ✅           |
 | End session (generate slip) | `receiving_slip.create` |          ✅           |
 | Look up item by SKU         | (any authenticated)     |          ✅           |
 | List put-away tasks         | `warehouse.read`        |          ✅           |
-| Complete put-away item      | `warehouse.read`        |          ✅           || Assign bin to slip item    | `receiving_slip.create` |          ✅           |
-| View FIFO bin suggestions  | `warehouse.read`        |          ✅           || Add stock to bin            | `stock_entry.create`    |          ✅           |
+| Complete put-away item      | `warehouse.read`        |          ✅           |     | Assign bin to slip item | `receiving_slip.create` | ✅  |
+| View FIFO bin suggestions   | `warehouse.read`        |          ✅           |     | Add stock to bin        | `stock_entry.create`    | ✅  |
 | Remove stock from bin       | `stock_entry.create`    |          ✅           |
 | View bin stock              | `stock_entry.read`      |          ✅           |
 | Scan bin QR                 | `warehouse.read`        |          ✅           |
