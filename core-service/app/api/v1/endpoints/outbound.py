@@ -27,7 +27,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -102,7 +102,8 @@ async def start_gate_session(
     items being loaded onto a vehicle.
 
     **Request Body:**
-    - **pick_list_id**: UUID of the completed pick list
+    - **pick_list_id**: UUID of the completed pick list (preferred)
+    - **pick_list_no**: Pick list number e.g. "PL-2026-00008" (alternative)
     - **vehicle_number**: Optional vehicle registration number
     - **driver_name**: Optional driver name
     - **driver_contact**: Optional driver contact number
@@ -111,10 +112,37 @@ async def start_gate_session(
 
     Requirements: 12.1
     """
+    from app.models.pick_list import PickList
+
+    pick_list_id = data.pick_list_id
+
+    # Resolve pick_list_no to UUID if pick_list_id wasn't provided
+    if pick_list_id is None and data.pick_list_no:
+        pick_list = (
+            db.query(PickList)
+            .filter(
+                PickList.pick_list_no == data.pick_list_no.strip(),
+                PickList.organization_id == current_user.organization_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pick list not found: {data.pick_list_no}",
+            )
+        pick_list_id = pick_list.id
+
+    if pick_list_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either pick_list_id (UUID) or pick_list_no must be provided",
+        )
+
     service = GateVerificationService(db)
 
     result = service.start_session(
-        pick_list_id=data.pick_list_id,
+        pick_list_id=pick_list_id,
         worker_id=current_user.id,
         org_id=current_user.organization_id,
         vehicle_number=data.vehicle_number,
