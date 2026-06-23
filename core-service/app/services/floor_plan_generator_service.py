@@ -675,7 +675,7 @@ class FloorPlanGeneratorService:
         for b in range(spec.num_bays_per_row):
             for k in range(spec.bins_per_level):
                 bin_num = b * spec.bins_per_level + k + 1
-                bin_code = f"{level_loc.code}-BN-{bin_num:02d}"
+                bin_code = f"{level_loc.code}-BN{bin_num:02d}"
 
                 # Position along aisle direction
                 if spec.direction == "horizontal":
@@ -758,29 +758,19 @@ class FloorPlanGeneratorService:
     def _deactivate_existing(
         self, warehouse_id: UUID, org_id: UUID
     ) -> int:
-        """Remove existing active locations for this warehouse.
+        """Soft-deactivate ALL existing active locations for this warehouse.
 
-        Uses bulk SQL operations for performance — avoids loading every row into Python.
-        Hard-deletes locations without stock; soft-deletes locations with stock.
+        Renames full_path to avoid unique-constraint collisions with
+        newly generated locations, and sets is_active=False.
+
+        Previously this method hard-deleted locations without stock, but that
+        caused IntegrityError when other tables (pick_list_items,
+        put_away_items, bin_reservations, location_allocations) still
+        referenced them via foreign keys.
         """
-        from app.models.bin_stock_level import BinStockLevel
-        from sqlalchemy import update, delete as sa_delete
+        from sqlalchemy import func
 
-        # 1. Find bin IDs that have stock (must soft-delete, not hard-delete)
-        bins_with_stock_q = (
-            self.db.query(BinStockLevel.bin_location_id)
-            .join(WarehouseLocation, BinStockLevel.bin_location_id == WarehouseLocation.id)
-            .filter(
-                WarehouseLocation.warehouse_id == warehouse_id,
-                WarehouseLocation.organization_id == org_id,
-                WarehouseLocation.is_active.is_(True),
-                BinStockLevel.quantity_on_hand > 0,
-            )
-            .distinct()
-        )
-        bins_with_stock = {r[0] for r in bins_with_stock_q.all()}
-
-        # 2. Count total active locations
+        # Count total active locations
         count = (
             self.db.query(WarehouseLocation)
             .filter(
@@ -794,25 +784,25 @@ class FloorPlanGeneratorService:
         if count == 0:
             return 0
 
-        # 3. Soft-delete locations that have stock (rename full_path to avoid constraint)
-        if bins_with_stock:
-            for loc_id in bins_with_stock:
-                self.db.query(WarehouseLocation).filter(
-                    WarehouseLocation.id == loc_id,
-                ).update(
-                    {
-                        "is_active": False,
-                        "full_path": func.concat("_inactive_", func.cast(WarehouseLocation.id, String), "_", WarehouseLocation.full_path),
-                    },
-                    synchronize_session='fetch',
-                )
-
-        # 4. Bulk hard-delete all remaining active locations (no stock)
+        # Soft-deactivate ALL locations (rename full_path + set inactive)
+        # This avoids FK violations from pick_list_items, put_away_items,
+        # bin_reservations, and location_allocations.
         self.db.query(WarehouseLocation).filter(
             WarehouseLocation.warehouse_id == warehouse_id,
             WarehouseLocation.organization_id == org_id,
             WarehouseLocation.is_active.is_(True),
-        ).delete(synchronize_session='fetch')
+        ).update(
+            {
+                "is_active": False,
+                "full_path": func.concat(
+                    "_inactive_",
+                    func.cast(WarehouseLocation.id, String),
+                    "_",
+                    WarehouseLocation.full_path,
+                ),
+            },
+            synchronize_session="fetch",
+        )
 
         self.db.flush()
         return count
