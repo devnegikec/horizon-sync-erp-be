@@ -23,11 +23,17 @@ from pydantic import BaseModel, Field
 class GateSessionRequest(BaseModel):
     """Request schema for starting a gate verification session.
 
+    Accepts either a pick_list_id (UUID) or pick_list_no (e.g. "PL-2026-00008").
+    If pick_list_no is provided, the UUID is resolved automatically.
+
     Requirements: 12.1
     """
 
-    pick_list_id: UUID = Field(
-        ..., description="UUID of the completed pick list to verify against"
+    pick_list_id: UUID | None = Field(
+        None, description="UUID of the completed pick list to verify against"
+    )
+    pick_list_no: str | None = Field(
+        None, max_length=50, description="Pick list number (e.g. PL-2026-00008) — alternative to pick_list_id"
     )
     vehicle_number: str | None = Field(
         None, max_length=100, description="Vehicle registration number"
