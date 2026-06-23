@@ -187,3 +187,28 @@ class ReceivingSlipListResponse(BaseModel):
 
     receiving_slips: list[ReceivingSlipResponse]
     pagination: ReceivingSlipPagination
+
+
+# ------------------------------------------------------------------
+# Two-Step Inbound: Assign Bin
+# ------------------------------------------------------------------
+
+
+class AssignBinRequest(BaseModel):
+    """Request to assign a bin to a receiving slip item (put-away step)."""
+
+    bin_location_id: UUID = Field(..., description="Bin location UUID from scanned QR")
+    quantity: int | None = Field(None, gt=0, description="Quantity to put in bin (defaults to full slip item quantity)")
+
+
+class AssignBinResponse(BaseModel):
+    """Response after assigning a bin to a slip item."""
+
+    slip_item_id: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    bin_location_id: str
+    bin_full_path: str | None = None
+    put_away_status: str
+    put_away_at: str | None = None
