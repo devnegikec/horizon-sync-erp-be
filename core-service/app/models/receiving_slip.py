@@ -79,6 +79,17 @@ class ReceivingSlipItem(Base):
     flag = Column(String(20), default="ok")
     notes = Column(Text, nullable=True)
 
+    # Put-away tracking (two-step inbound: receive → assign bin)
+    bin_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id"),
+        nullable=True,
+        index=True,
+    )
+    put_away_status = Column(String(20), default="pending")
+    put_away_at = Column(DateTime(timezone=True), nullable=True)
+    put_away_by = Column(UUID(as_uuid=True), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
@@ -89,6 +100,7 @@ class ReceivingSlipItem(Base):
 
     # Relationships
     slip = relationship("ReceivingSlip", back_populates="items")
+    bin_location = relationship("WarehouseLocation")
 
     def __repr__(self):
         return (

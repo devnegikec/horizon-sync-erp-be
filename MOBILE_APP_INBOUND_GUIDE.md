@@ -95,19 +95,89 @@ Response 200:
 {
   "id": "slip-uuid",
   "slip_no": "RS-2025-0001",
-  "status": "pending_review",
+  "status": "pending_putaway",
   "items": [
     {
+      "id": "item-uuid",
       "sku": "ITEM-001",
       "batch_number": "BATCH-2025-01",
-      "total_quantity": 150,
-      "scan_count": 3
+      "quantity": 150,
+      "box_count": 3,
+      "put_away_status": "pending"
     }
   ]
 }
 ```
 
 **Required permission**: `receiving_slip.create`
+
+---
+
+### 2.4 Assign Bin (NEW — Two-Step Inbound)
+
+Worker scans bin QR → assigns bin to slip item → stock added to bin.
+
+```
+POST /inbound/receiving-slips/{slip_id}/items/{item_id}/assign-bin
+Authorization: Bearer <token>
+
+Body:
+{
+  "bin_location_id": "<scanned-bin-uuid>",
+  "quantity": 50
+}
+
+Response 200:
+{
+  "slip_item_id": "...",
+  "sku": "SVACHH-SS-POP-2L",
+  "batch_number": "BATCH-2025-01",
+  "quantity": 50,
+  "bin_location_id": "...",
+  "bin_full_path": "Z01-A01-B01-L01-BN001",
+  "put_away_status": "completed",
+  "put_away_at": "2026-06-22T10:00:00Z"
+}
+```
+
+- If `quantity` is omitted, the full slip item quantity is used
+- When ALL items on a slip are `put_away_status=completed`, slip status becomes `putaway_complete`
+
+**Required permission**: `receiving_slip.create`
+
+---
+
+### 2.5 FIFO Bin Suggestions (NEW)
+
+See which bins already have this SKU, sorted by stock age (oldest first).
+
+```
+GET /inbound/receiving-slips/{slip_id}/items/{item_id}/fifo-bins
+Authorization: Bearer <token>
+
+Response 200:
+{
+  "sku": "SVACHH-SS-POP-2L",
+  "bins": [
+    {
+      "bin_id": "...",
+      "bin_path": "Z01-A01-B01-L01-BN001",
+      "batch_number": "BATCH-2025-01",
+      "quantity_on_hand": 30,
+      "stock_age_days": 172
+    },
+    {
+      "bin_id": "...",
+      "bin_path": "Z01-A01-B01-L01-BN005",
+      "batch_number": "BATCH-2025-02",
+      "quantity_on_hand": 20,
+      "stock_age_days": 90
+    }
+  ]
+}
+```
+
+**Required permission**: `warehouse.read`
 
 ---
 
@@ -310,39 +380,48 @@ async function confirmPutAway(
 
 ---
 
-## 6. Complete Inbound Flow (Pseudocode)
+## 6. Complete Inbound Flow — Two-Step (NEW)
 
 ```typescript
 // 1. Start session
 const session = await startSession(warehouseId, dockLocation, token);
 
-// 2. Scan item boxes
+// 2. Scan item boxes (each box = one QR scan)
 for (const qrScan of scannedBoxes) {
   await recordScan(session.id, qrScan.rawData, token);
 }
 
-// 3. End session → receiving slip generated
+// 3. End session → receiving slip generated with items
 const slip = await endSession(session.id, token);
+// slip.items = [{ id, sku, batch_number, quantity, put_away_status: "pending" }]
 
-// --- Admin approves slip (via admin portal) ---
-// --- System generates put-away list ---
+// 4. For each slip item, assign a bin:
+for (const item of slip.items) {
+  // Show: "Put 50 × ITEM-001 (BATCH-2025-01) → Scan bin"
 
-// 4. Worker fetches put-away list
-const putAwayList = await getPutAwayList(putAwayListId, token);
-
-// 5. For each put-away item:
-for (const item of putAwayList.items) {
-  // Show: "Put 50 × ITEM-001 (BATCH-2025-01) into bin Z01-A01-B01-L01-BN001"
-  displayItem(item);
-
-  // Wait for worker to scan bin QR
+  // Worker scans bin QR → decodes location_id
   const binQR = await scanBinQR();
+  const binPayload = JSON.parse(binQR);
 
-  // Confirm put-away
-  await confirmPutAway(item.id, binQR, item.quantity, token);
+  // Assign bin → stock added to bin
+  await assignBin(
+    slip.id,
+    item.id,
+    binPayload.location_id,
+    item.quantity,
+    token,
+  );
+  // Item now: put_away_status = "completed"
 }
 
-// 6. All items done → put-away list auto-completes
+// 5. All items assigned → slip status auto-updates to "putaway_complete"
+```
+
+**No admin approval needed** — worker completes the full inbound flow. For FIFO suggestions during put-away, call:
+
+```typescript
+const fifo = await getFifoBins(slip.id, item.id, token);
+// Shows existing bins with this SKU, oldest first
 ```
 
 ---
@@ -375,14 +454,14 @@ for (const item of putAwayList.items) {
 | `stock_entry.read`      | View bin stock levels                                   |
 
 | Operation                   | Permission Required     |      Worker has?      |
-| --------------------------- | ----------------------- | :-------------------: |
+| --------------------------- | ----------------------- | :-------------------: | --- | ----------------------- | ----------------------- | --- |
 | Start scan session          | `receiving_slip.create` |          ✅           |
 | Record QR scan              | `receiving_slip.create` |          ✅           |
 | End session (generate slip) | `receiving_slip.create` |          ✅           |
 | Look up item by SKU         | (any authenticated)     |          ✅           |
 | List put-away tasks         | `warehouse.read`        |          ✅           |
-| Complete put-away item      | `warehouse.read`        |          ✅           |
-| Add stock to bin            | `stock_entry.create`    |          ✅           |
+| Complete put-away item      | `warehouse.read`        |          ✅           |     | Assign bin to slip item | `receiving_slip.create` | ✅  |
+| View FIFO bin suggestions   | `warehouse.read`        |          ✅           |     | Add stock to bin        | `stock_entry.create`    | ✅  |
 | Remove stock from bin       | `stock_entry.create`    |          ✅           |
 | View bin stock              | `stock_entry.read`      |          ✅           |
 | Scan bin QR                 | `warehouse.read`        |          ✅           |
