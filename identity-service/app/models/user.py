@@ -64,6 +64,9 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime(timezone=True))
 
+    # QR code login (for warehouse workers)
+    qr_code = Column(String(100), unique=True, index=True, nullable=True)
+
     # User preferences
     preferences = Column(JSON, default={})
     timezone = Column(String(50), default="UTC")

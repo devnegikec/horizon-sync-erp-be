@@ -3,7 +3,15 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -31,6 +39,9 @@ class BinStockLevel(Base):
     )
     quantity_on_hand = Column(Numeric(15, 3), default=0)
     batch_number = Column(String(100), nullable=True)
+    # Expiry date for FEFO (First Expired, First Out) picking. Nullable: when
+    # absent, FIFO (created_at) ordering is used instead.
+    expiry_date = Column(Date, nullable=True)
     packaging_unit_id = Column(
         UUID(as_uuid=True),
         ForeignKey("item_packaging_units.id", ondelete="SET NULL"),

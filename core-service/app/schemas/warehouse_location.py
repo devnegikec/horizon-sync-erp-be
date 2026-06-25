@@ -138,3 +138,26 @@ class PaginatedLocations(BaseModel):
 
     locations: list[LocationResponse]
     pagination: PaginationMeta
+
+
+# ===========================================
+# QR CODE SCHEMAS
+# ===========================================
+
+
+class LocationQRPayload(BaseModel):
+    """QR code payload for a bin location.
+
+    Encoded as JSON in the QR image. Mobile app scans this to identify
+    the exact bin during inbound/outbound operations.
+    """
+
+    type: str = "location"
+    org_id: UUID
+    warehouse_id: UUID
+    warehouse_code: str
+    warehouse_name: str
+    location_id: UUID
+    full_path: str
+    location_type: str
+    location_code: str

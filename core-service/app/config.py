@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Security (must match identity-service for JWT validation)
     secret_key: str
     algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
+    # WMS Worker token (for mobile scanner sessions — long-lived)
+    wms_worker_token_expire_hours: int = 20
 
     # Identity Service URL (for auth validation and permissions)
     identity_service_url: str = "http://identity-service:8000"
@@ -50,6 +55,14 @@ class Settings(BaseSettings):
     # Redis (for event publishing to search-service)
     redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
+
+    # Redis — 3D Warehouse real-time events (separate DB index for isolation)
+    redis_warehouse_url: str = "redis://redis:6379/1"
+    redis_warehouse_stream_name: str = "warehouse:3d:events"
+    redis_warehouse_stream_maxlen: int = 5000  # Trim stream to keep demo memory bounded
+
+    # Bin reservation global TTL (seconds); configurable via env var
+    bin_reservation_ttl_seconds: int = 300  # 5 minutes default (FR-CW-02)
 
     # Audit Trail
     audit_async_enabled: bool = False

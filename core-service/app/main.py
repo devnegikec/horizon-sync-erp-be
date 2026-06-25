@@ -1,5 +1,6 @@
 """Main FastAPI application for Core Service"""
 
+import asyncio
 import logging
 import warnings
 from contextlib import asynccontextmanager
@@ -93,6 +94,34 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
 
 
+async def _bin_reservation_cleanup_loop() -> None:
+    """Background task: release expired bin reservations every 60 seconds.
+
+    Handles §13 edge case: reservations tied to in_progress tasks are
+    auto-extended instead of released.
+    """
+    from app.database import SessionLocal
+    from app.services.bin_reservation_service import BinReservationService
+
+    interval = 60
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            db = SessionLocal()
+            try:
+                count = BinReservationService(db).cleanup_expired()
+                if count:
+                    logger.info(
+                        f"bin-reservation cleanup: released {count} expired reservation(s)"
+                    )
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(f"bin-reservation cleanup error: {exc}", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for the application"""
@@ -122,9 +151,18 @@ async def lifespan(app: FastAPI):
     # Register audit trail listeners
     from app.core.audit_listener import register_audit_listeners
     register_audit_listeners()
-    
+
+    # Background task: clean up expired bin reservations every 60 s
+    cleanup_task = asyncio.create_task(_bin_reservation_cleanup_loop())
+    logger.info("Started bin-reservation cleanup background task (interval: 60s)")
+
     yield
     # Shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     logger.info(f"Shutting down {settings.app_name}")
 
 

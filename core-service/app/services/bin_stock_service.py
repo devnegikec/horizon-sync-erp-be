@@ -73,17 +73,17 @@ class BinStockService:
         # Get and validate the bin location
         bin_location = self._get_active_bin(bin_id, org_id)
 
-        # Check capacity won't be exceeded
-        current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+        # Check capacity won't be exceeded (skip if capacity is 0 = unlimited)
         bin_capacity = Decimal(str(bin_location.capacity or 0))
-        available_capacity = bin_capacity - current_stock_in_bin
-
-        if quantity > available_capacity:
-            raise ValidationError(
-                f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
-                f"Available capacity is {available_capacity} "
-                f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
-            )
+        if bin_capacity > 0:
+            current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+            available_capacity = bin_capacity - current_stock_in_bin
+            if quantity > available_capacity:
+                raise ValidationError(
+                    f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                    f"Available capacity is {available_capacity} "
+                    f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
+                )
 
         # Create or update the BinStockLevel record
         bin_stock = self._get_or_create_bin_stock(

@@ -23,6 +23,9 @@ passlib[bcrypt]
 python-dotenv==1.0.0
 aiosmtplib==3.0.1
 
+# QR Code generation (warehouse worker login)
+qrcode[pil]==7.4.2
+
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1

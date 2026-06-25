@@ -52,6 +52,7 @@ class BulkImportValidator:
         "inspection_required_before_delivery",
         "quality_inspection_template",
         "barcode",
+        "sku",
         "status",
         "image_url",
         "tags",

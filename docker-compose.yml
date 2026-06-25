@@ -68,10 +68,10 @@ services:
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-vcgifurrghszmncr}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync}
-      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
       # Core Service Integration
       CORE_SERVICE_URL: http://core-service:8001
       CORE_SERVICE_TIMEOUT: 10
@@ -126,10 +126,10 @@ services:
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-yzmfmjpyjsecjqns}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-vcgifurrghszmncr}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Horizon Sync ERP}
-      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-true}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
       BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
     ports:
       - "8001:8001"

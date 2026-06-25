@@ -16,7 +16,9 @@ class WarehouseUserService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, data: dict, organization_id: UUID, created_by: UUID) -> WarehouseUser:
+    def create(
+        self, data: dict, organization_id: UUID, created_by: UUID
+    ) -> WarehouseUser:
         """Assign a user to a warehouse."""
         payload = dict(data)
         payload["organization_id"] = organization_id
@@ -145,29 +147,47 @@ class WarehouseUserService:
 
     def get_user_warehouses(
         self,
-        user_id: UUID,
-        organization_id: UUID,
-        user_type: str | None = None,
-        user_email: str | None = None,
+        current_user,  # CurrentUser from dependencies (has DB-derived permissions)
+        organization_id: UUID | None = None,
     ) -> list[dict]:
         """Get warehouses assigned to a user.
 
-        Rules:
-          - System admins always see all active warehouses.
+        Rules (evaluated from current_user which carries DB-derived permissions):
+          - System admins, org admins, and users with warehouse.manage see all.
           - Users with a primary (mother-warehouse) assignment see all warehouses.
           - Everyone else sees only explicitly assigned warehouses.
           - Pending assignments keyed by email are resolved on first call.
         """
-        # System admins get global access
-        if user_type == "system_admin":
+        import logging
+
+        logger = logging.getLogger(__name__)
+        user_id = current_user.id
+        org_id = organization_id or current_user.organization_id
+        user_type = current_user.user_type
+        user_email = getattr(current_user, "email", None)
+        logger.info(
+            "[get_user_warehouses] user_id=%s org_id=%s user_type=%s",
+            user_id,
+            org_id,
+            user_type,
+        )
+
+        # Global access: only system_admin or organization_admin (not WMS roles).
+        # WMS roles (manager, operator) are scoped by WarehouseUser assignments.
+        if user_type in ("system_admin", "organization_admin"):
             warehouses = (
                 self.db.query(Warehouse)
                 .filter(
-                    Warehouse.organization_id == organization_id,
+                    Warehouse.organization_id == org_id,
                     Warehouse.is_active == True,
                 )
                 .order_by(Warehouse.name)
                 .all()
+            )
+            logger.info(
+                "[get_user_warehouses] admin/manage path: found %d warehouses for org %s",
+                len(warehouses),
+                org_id,
             )
             return [
                 {
@@ -187,7 +207,7 @@ class WarehouseUserService:
                 self.db.query(PendingWarehouseAssignment)
                 .filter(
                     func.lower(PendingWarehouseAssignment.email) == user_email.lower(),
-                    PendingWarehouseAssignment.organization_id == organization_id,
+                    PendingWarehouseAssignment.organization_id == org_id,
                 )
                 .all()
             )
@@ -198,7 +218,7 @@ class WarehouseUserService:
                     .filter(
                         WarehouseUser.user_id == user_id,
                         WarehouseUser.warehouse_id == p.warehouse_id,
-                        WarehouseUser.organization_id == organization_id,
+                        WarehouseUser.organization_id == org_id,
                     )
                     .first()
                 )
@@ -209,7 +229,7 @@ class WarehouseUserService:
                 else:
                     self.db.add(
                         WarehouseUser(
-                            organization_id=organization_id,
+                            organization_id=org_id,
                             user_id=user_id,
                             warehouse_id=p.warehouse_id,
                             role=p.role,
@@ -225,7 +245,7 @@ class WarehouseUserService:
         has_primary = (
             self.db.query(WarehouseUser)
             .filter(
-                WarehouseUser.organization_id == organization_id,
+                WarehouseUser.organization_id == org_id,
                 WarehouseUser.user_id == user_id,
                 WarehouseUser.is_primary == True,
                 WarehouseUser.is_active == True,
@@ -237,11 +257,15 @@ class WarehouseUserService:
             warehouses = (
                 self.db.query(Warehouse)
                 .filter(
-                    Warehouse.organization_id == organization_id,
+                    Warehouse.organization_id == org_id,
                     Warehouse.is_active == True,
                 )
                 .order_by(Warehouse.name)
                 .all()
+            )
+            logger.info(
+                "[get_user_warehouses] primary path: found %d warehouses",
+                len(warehouses),
             )
             return [
                 {
@@ -260,27 +284,37 @@ class WarehouseUserService:
             self.db.query(WarehouseUser, Warehouse)
             .join(Warehouse, WarehouseUser.warehouse_id == Warehouse.id)
             .filter(
-                WarehouseUser.organization_id == organization_id,
+                WarehouseUser.organization_id == org_id,
                 WarehouseUser.user_id == user_id,
                 WarehouseUser.is_active == True,
             )
             .order_by(Warehouse.name)
             .all()
         )
+        logger.info(
+            "[get_user_warehouses] assignment path: found %d warehouses", len(results)
+        )
 
-        return [
-            {
-                "id": warehouse.id,
-                "name": warehouse.name,
-                "code": warehouse.code,
-                "city": warehouse.city,
-                "type": warehouse.warehouse_type.value if warehouse.warehouse_type else None,
-                "is_default": warehouse.is_default,
-                "assignment_role": assignment.role.value if assignment.role else None,
-                "assignment_id": assignment.id,
-            }
-            for assignment, warehouse in results
-        ]
+        if results:
+            return [
+                {
+                    "id": warehouse.id,
+                    "name": warehouse.name,
+                    "code": warehouse.code,
+                    "city": warehouse.city,
+                    "type": warehouse.warehouse_type.value
+                    if warehouse.warehouse_type
+                    else None,
+                    "is_default": warehouse.is_default,
+                    "assignment_role": assignment.role.value
+                    if assignment.role
+                    else None,
+                    "assignment_id": assignment.id,
+                }
+                for assignment, warehouse in results
+            ]
+
+        return []
 
     def update(
         self,

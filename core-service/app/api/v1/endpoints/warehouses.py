@@ -16,8 +16,9 @@ from app.core.authorization import (
     WAREHOUSE_UPDATE,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
-from app.models.base import WarehouseType
+from app.dependencies import CurrentUser, require_permission, security
+from fastapi.security import HTTPAuthorizationCredentials
+from app.models.base import WarehouseType, WarehouseUserRole
 from app.models.warehouse import Warehouse
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse import (
@@ -30,6 +31,7 @@ from app.schemas.warehouse import (
     WarehouseTypeCounts,
     WarehouseUpdate,
 )
+from app.services.identity_role_service import ensure_warehouse_work_user_role
 from app.services.warehouse_service import WarehouseService
 from app.services.warehouse_user_service import WarehouseUserService
 
@@ -57,6 +59,7 @@ async def create_warehouse(
     warehouse_data: WarehouseCreate,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """
     Create a new warehouse.
@@ -83,6 +86,40 @@ async def create_warehouse(
         organization_id=current_user.organization_id,
         user_id=current_user.id,
     )
+
+    # Auto-assign creator so the warehouse appears in /my-warehouses
+    wh_user_svc = WarehouseUserService(db)
+    wh_user_svc.create(
+        data={
+            "user_id": current_user.id,
+            "warehouse_id": warehouse.id,
+            "role": WarehouseUserRole.MANAGER,
+            "is_primary": False,
+            "is_active": True,
+        },
+        organization_id=current_user.organization_id,
+        created_by=current_user.id,
+    )
+
+    # Seed preloaded layout templates for the new warehouse
+    from app.services.floor_plan_generator_service import FloorPlanGeneratorService
+
+    floor_plan_svc = FloorPlanGeneratorService(db)
+    floor_plan_svc.seed_templates(
+        warehouse_id=warehouse.id,
+        org_id=current_user.organization_id,
+    )
+
+    db.commit()
+
+    # Ensure the warehouse_work_user role exists so WMS worker management
+    # works immediately without manual seed-script execution.
+    if current_user.organization_id:
+        await ensure_warehouse_work_user_role(
+            organization_id=current_user.organization_id,
+            auth_token=credentials.credentials,
+        )
+
     return WarehouseResponse.model_validate(warehouse)
 
 
@@ -135,12 +172,7 @@ async def list_warehouses(
     allowed_warehouse_ids = None
     if current_user.user_type != "system_admin" and scope != "all":
         wh_user_svc = WarehouseUserService(db)
-        scoped_warehouses = wh_user_svc.get_user_warehouses(
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            user_type=current_user.user_type,
-            user_email=current_user.email,
-        )
+        scoped_warehouses = wh_user_svc.get_user_warehouses(current_user)
         allowed_warehouse_ids = [w["id"] for w in scoped_warehouses]
 
     warehouse_service = WarehouseService(db)
@@ -300,6 +332,7 @@ async def import_warehouses(
     file: UploadFile = File(..., description="CSV file with warehouse data"),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
     db: Session = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> WarehouseImportResponse:
     """
     Import warehouses from a CSV file.
@@ -337,7 +370,9 @@ async def import_warehouses(
         raise HTTPException(status_code=400, detail="No data rows found in file.")
 
     if len(rows) > 500:
-        raise HTTPException(status_code=400, detail="Maximum 500 rows allowed per import.")
+        raise HTTPException(
+            status_code=400, detail="Maximum 500 rows allowed per import."
+        )
 
     created = 0
     updated = 0
@@ -345,15 +380,26 @@ async def import_warehouses(
     errors: list[dict] = []
 
     # Auto-generate code counter
-    code_counter = db.query(Warehouse).filter(
-        Warehouse.organization_id == current_user.organization_id
-    ).count()
+    code_counter = (
+        db.query(Warehouse)
+        .filter(Warehouse.organization_id == current_user.organization_id)
+        .count()
+    )
 
     VALID_TYPES = {"warehouse", "store", "transit", "virtual"}
     STRING_FIELDS = [
-        "name", "description", "address_line1", "address_line2",
-        "city", "state", "country", "postal_code",
-        "contact_name", "contact_phone", "contact_email", "capacity_uom",
+        "name",
+        "description",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state",
+        "country",
+        "postal_code",
+        "contact_name",
+        "contact_phone",
+        "contact_email",
+        "capacity_uom",
     ]
 
     for row_num, row in enumerate(rows, start=1):
@@ -363,7 +409,9 @@ async def import_warehouses(
         name = row.get("name", "")
         if not name:
             failed += 1
-            errors.append({"row": row_num, "field": "name", "message": "Name is required"})
+            errors.append(
+                {"row": row_num, "field": "name", "message": "Name is required"}
+            )
             continue
 
         code = row.get("code", "")
@@ -373,11 +421,15 @@ async def import_warehouses(
 
         try:
             # Check if warehouse with same code exists (upsert)
-            existing = db.query(Warehouse).filter(
-                Warehouse.organization_id == current_user.organization_id,
-                Warehouse.code == code,
-                Warehouse.deleted_at.is_(None),
-            ).first()
+            existing = (
+                db.query(Warehouse)
+                .filter(
+                    Warehouse.organization_id == current_user.organization_id,
+                    Warehouse.code == code,
+                    Warehouse.deleted_at.is_(None),
+                )
+                .first()
+            )
 
             # Build data dict
             data: dict = {"name": name}
@@ -423,13 +475,36 @@ async def import_warehouses(
                 )
                 db.add(new_warehouse)
                 db.commit()
+                db.refresh(new_warehouse)
                 created += 1
+
+                # Auto-assign importer to the new warehouse so it appears in /my-warehouses
+                wh_user_svc = WarehouseUserService(db)
+                wh_user_svc.create(
+                    data={
+                        "user_id": current_user.id,
+                        "warehouse_id": new_warehouse.id,
+                        "role": WarehouseUserRole.MANAGER,
+                        "is_primary": False,
+                        "is_active": True,
+                    },
+                    organization_id=current_user.organization_id,
+                    created_by=current_user.id,
+                )
+                db.commit()
 
         except Exception as e:
             db.rollback()
             failed += 1
             errors.append({"row": row_num, "field": "general", "message": str(e)})
             logger.error(f"Warehouse import row {row_num} failed: {e}")
+
+    # Auto-seed the warehouse_work_user role if any warehouses were created
+    if created > 0 and current_user.organization_id:
+        await ensure_warehouse_work_user_role(
+            organization_id=current_user.organization_id,
+            auth_token=credentials.credentials,
+        )
 
     return WarehouseImportResponse(
         total_rows=len(rows),

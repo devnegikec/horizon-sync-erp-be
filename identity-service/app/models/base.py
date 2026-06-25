@@ -10,6 +10,7 @@ class UserType(str, enum.Enum):
     ORGANIZATION_ADMIN = "organization_admin"
     USER = "user"
     GUEST = "guest"
+    WAREHOUSE_WORKER = "warehouse_worker"
 
 
 class UserStatus(str, enum.Enum):
@@ -84,12 +85,13 @@ class ResourceType(str, enum.Enum):
     SERIAL = "serial"
     ASN_ORDER = "asn_order"
     PICK_LIST = "pick_list"
+    RECEIVING_SLIP = "receiving_slip"
 
     # Accounting
     CHART_OF_ACCOUNT = "chart_of_account"
     PAYMENT = "payment"
     BILLING = "billing"  # Task 1C-1: System admin billing permissions
-    
+
     # Analytics & Reports
     REPORT = "report"
     REPORTING = "reporting"  # Task 1C-1: System admin reporting permissions
@@ -109,3 +111,4 @@ class ActionType(str, enum.Enum):
     MANAGE = "manage"
     EXECUTE = "execute"
     INVITE = "invite"
+    SCAN = "scan"

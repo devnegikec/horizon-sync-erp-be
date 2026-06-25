@@ -27,7 +27,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -35,6 +35,7 @@ from app.core.authorization import (
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
 )
+from app.core.exceptions import ValidationError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.dispatch import (
@@ -58,6 +59,7 @@ from app.schemas.outbound import (
     SAPInvoicePayload,
 )
 from app.services.gate_verification_service import GateVerificationService
+from app.services.order_import_service import ImportResult, OrderImportService
 from app.services.outbound_service import OutboundService
 from app.services.pick_list_service import (
     PickListService,
@@ -100,7 +102,8 @@ async def start_gate_session(
     items being loaded onto a vehicle.
 
     **Request Body:**
-    - **pick_list_id**: UUID of the completed pick list
+    - **pick_list_id**: UUID of the completed pick list (preferred)
+    - **pick_list_no**: Pick list number e.g. "PL-2026-00008" (alternative)
     - **vehicle_number**: Optional vehicle registration number
     - **driver_name**: Optional driver name
     - **driver_contact**: Optional driver contact number
@@ -109,10 +112,37 @@ async def start_gate_session(
 
     Requirements: 12.1
     """
+    from app.models.pick_list import PickList
+
+    pick_list_id = data.pick_list_id
+
+    # Resolve pick_list_no to UUID if pick_list_id wasn't provided
+    if pick_list_id is None and data.pick_list_no:
+        pick_list = (
+            db.query(PickList)
+            .filter(
+                PickList.pick_list_no == data.pick_list_no.strip(),
+                PickList.organization_id == current_user.organization_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pick list not found: {data.pick_list_no}",
+            )
+        pick_list_id = pick_list.id
+
+    if pick_list_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either pick_list_id (UUID) or pick_list_no must be provided",
+        )
+
     service = GateVerificationService(db)
 
     result = service.start_session(
-        pick_list_id=data.pick_list_id,
+        pick_list_id=pick_list_id,
         worker_id=current_user.id,
         org_id=current_user.organization_id,
         vehicle_number=data.vehicle_number,
@@ -406,22 +436,48 @@ def _compute_progress(pick_list) -> PickListProgress:
     )
 
 
-def _pick_list_to_response(pl) -> OutboundPickListResponse:
+def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     """Convert a PickList model to an OutboundPickListResponse."""
     progress = _compute_progress(pl)
 
+    # Batch-fetch item names and SKUs
+    item_ids = [item.item_id for item in (pl.items or [])]
+    item_map: dict[str, dict] = {}
+    bin_map: dict[str, str] = {}
+    if item_ids and db:
+        from app.models.item import Item
+        rows = db.query(Item.id, Item.item_name, Item.sku).filter(
+            Item.id.in_(item_ids)
+        ).all()
+        item_map = {str(r.id): {"item_name": r.item_name, "sku": r.sku} for r in rows}
+
+    # Batch-fetch bin full paths
+    bin_ids = [item.bin_location_id for item in (pl.items or []) if item.bin_location_id]
+    if bin_ids and db:
+        from app.models.warehouse_location import WarehouseLocation
+        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
+            WarehouseLocation.id.in_(bin_ids)
+        ).all()
+        bin_map = {str(r.id): r.full_path for r in rows}
+
     items = []
     for item in pl.items or []:
+        info = item_map.get(str(item.item_id), {})
         items.append(
             {
                 "id": str(item.id),
                 "item_id": str(item.item_id),
+                "item_name": info.get("item_name"),
+                "sku": info.get("sku"),
                 "warehouse_id": str(item.warehouse_id),
                 "qty": float(item.qty),
                 "picked_qty": float(item.picked_qty or 0),
                 "uom": item.uom,
                 "batch_no": item.batch_no,
                 "bin_location_id": str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                "bin_location_path": bin_map.get(str(item.bin_location_id))
                 if item.bin_location_id
                 else None,
                 "sort_order": item.sort_order or 0,
@@ -495,7 +551,63 @@ async def create_from_invoice(
         worker_id=current_user.id,
     )
 
-    return _pick_list_to_response(pick_list)
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/import",
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import orders from PDF/CSV and generate pick lists",
+    description="Upload a PDF packing slip or CSV order file to auto-generate pick lists",
+)
+async def import_orders(
+    file: UploadFile = File(..., description="PDF or CSV order file"),
+    warehouse_id: UUID = Query(..., description="Target warehouse UUID"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Import orders from a PDF or CSV file and automatically generate pick lists.
+
+    Supported formats:
+    - **PDF**: Packing slips / invoice PDFs with machine-readable text
+    - **CSV**: Structured order data with columns for invoice, SKU, quantity, etc.
+
+    The service extracts invoice references, line items, and quantities,
+    then creates a pick list for each order found in the file.
+
+    **Query Parameters:**
+    - **warehouse_id**: Target warehouse UUID for all generated pick lists
+
+    **Request Body:** Multipart file upload (PDF or CSV)
+
+    **Returns:**
+    - pick_lists_created: Number of pick lists generated
+    - total_items: Total items across all pick lists
+    - errors: Any parsing or creation errors encountered
+    """
+    if not file.filename:
+        raise ValidationError("No file provided")
+
+    content = await file.read()
+    if not content:
+        raise ValidationError("Uploaded file is empty")
+
+    service = OrderImportService(db)
+    result = service.import_file(
+        file_content=content,
+        filename=file.filename,
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+    )
+
+    return {
+        "pick_lists_created": result.pick_lists_created,
+        "total_items": result.total_items,
+        "errors": result.errors,
+        "orders_parsed": len(result.parsed_orders),
+    }
 
 
 @router.get(
@@ -643,7 +755,7 @@ async def get_pick_list_detail(
 
         raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-    return _pick_list_to_response(pl)
+    return _pick_list_to_response(pl, db)
 
 
 @router.post(
@@ -719,7 +831,7 @@ async def complete_pick_list(
         org_id=current_user.organization_id,
     )
 
-    return _pick_list_to_response(pick_list)
+    return _pick_list_to_response(pick_list, db)
 
 
 @router.post(
@@ -753,4 +865,4 @@ async def cancel_pick_list(
         org_id=current_user.organization_id,
     )
 
-    return _pick_list_to_response(pick_list)
+    return _pick_list_to_response(pick_list, db)

@@ -146,3 +146,30 @@ SYSTEM_ADMIN_REPORTING_MANAGE = "system_admin.reporting_manage"
 
 # System Admin — Master (super permission)
 SYSTEM_ADMIN_MASTER = "system_admin.master"
+
+# ============================================
+# WMS WORKER (mobile/PDA scanner) PERMISSIONS
+# ============================================
+# Receiving slips (Inbound)
+RECEIVING_SLIP_CREATE = "receiving_slip.create"
+RECEIVING_SLIP_READ = "receiving_slip.read"
+RECEIVING_SLIP_UPDATE = "receiving_slip.update"
+
+# QR scanning (Inbound + Outbound)
+WMS_SCAN = "wms.scan"
+
+# Warehouse worker/device management (Admin/Owner/WMS Supervisor/WMS Manager)
+WAREHOUSE_MANAGE = "warehouse.manage"
+
+# Fixed permission set embedded in a WMS worker's barcode-login token.
+# Workers are API-only mobile clients: they scan QR codes and create/update
+# receiving slips (Inbound) and read/update pick lists (Outbound). They can
+# NOT create pick lists, manage workers/devices, or access anything else.
+WMS_WORKER_PERMISSIONS = [
+    WMS_SCAN,
+    RECEIVING_SLIP_CREATE,
+    RECEIVING_SLIP_READ,
+    RECEIVING_SLIP_UPDATE,
+    PICK_LIST_READ,
+    PICK_LIST_UPDATE,
+]

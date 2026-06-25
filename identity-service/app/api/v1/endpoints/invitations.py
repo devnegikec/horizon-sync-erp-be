@@ -14,8 +14,13 @@ from app.core.exceptions import (
     UserAlreadyExistsException,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import (
+    CurrentUser,
+    get_core_service_client,
+    get_current_active_user,
+)
 from app.models.organization import Organization
+from app.repositories.invitation_repository import InvitationRepository
 from app.schemas.invitation import (
     InvitationAcceptRequest,
     InvitationAcceptResponse,
@@ -23,6 +28,7 @@ from app.schemas.invitation import (
     InvitationListResponse,
     InvitationResponse,
 )
+from app.services.core_service_client import CoreServiceClient
 from app.services.email_service import EmailService
 from app.services.invitation_service import InvitationService
 
@@ -77,6 +83,15 @@ async def send_invitation(
             .first()
         )
         org_name = org.name if org else "the organization"
+
+        # Look up role name for the email template
+        role_name = None
+        if result.get("role_id"):
+            from app.models.role import Role
+
+            role = db.query(Role).filter(Role.id == result["role_id"]).first()
+            role_name = role.name if role else None
+
         inviter_name = (
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
@@ -89,6 +104,7 @@ async def send_invitation(
             org_name=org_name,
             inviter_name=inviter_name,
             message=result.get("message"),
+            role_name=role_name,
         )
         logger.info(f"Invitation email task added to background for {result['email']}")
 
@@ -309,6 +325,15 @@ async def resend_invitation(
             .first()
         )
         org_name = org.name if org else "the organization"
+
+        # Look up role name for the email
+        role_name = None
+        if result.get("role_id"):
+            from app.models.role import Role
+
+            role = db.query(Role).filter(Role.id == result["role_id"]).first()
+            role_name = role.name if role else None
+
         inviter_name = (
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
@@ -321,6 +346,7 @@ async def resend_invitation(
             org_name=org_name,
             inviter_name=inviter_name,
             message=result.get("message"),
+            role_name=role_name,
         )
         logger.info(
             f"Invitation resend email task added to background for {result['email']}"
@@ -358,6 +384,60 @@ async def resend_invitation(
 
 
 # Public endpoints (no authentication required)
+
+
+async def _assign_warehouses_from_invitation(
+    db: Session,
+    core_client: CoreServiceClient | None,
+    token: str,
+    user_id: UUID,
+) -> None:
+    """Process warehouse_ids from invitation extra_data on acceptance."""
+    if not core_client:
+        return
+
+    import hashlib
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    invitation_repo = InvitationRepository(db)
+    invitation = invitation_repo.get_invitation_by_token(token_hash)
+
+    if not invitation or not invitation.extra_data:
+        return
+
+    extra = invitation.extra_data or {}
+    warehouse_ids = extra.get("warehouse_ids", [])
+    warehouse_role = extra.get("warehouse_role", "operator")
+
+    if not warehouse_ids:
+        return
+
+    for wh_id in warehouse_ids:
+        try:
+            await core_client.assign_user_to_warehouse(
+                user_id=user_id,
+                organization_id=invitation.organization_id,
+                warehouse_id=wh_id,
+                role=warehouse_role,
+            )
+            logger.info(
+                "Assigned invited user to warehouse",
+                extra={
+                    "user_id": str(user_id),
+                    "warehouse_id": str(wh_id),
+                    "role": warehouse_role,
+                    "event": "invitation_warehouse_assigned",
+                },
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to assign invited user to warehouse",
+                extra={
+                    "user_id": str(user_id),
+                    "warehouse_id": str(wh_id),
+                    "error": str(exc),
+                },
+            )
 
 
 @router.get(
@@ -416,6 +496,7 @@ async def validate_invitation_token(
 async def accept_invitation(
     request: InvitationAcceptRequest,
     db: Session = Depends(get_db),
+    core_client: CoreServiceClient | None = Depends(get_core_service_client),
 ):
     """
     Accept an invitation and create user account.
@@ -440,6 +521,12 @@ async def accept_invitation(
             last_name=request.last_name,
         )
         logger.info(f"Invitation accepted, user created: {result['user_id']}")
+
+        # Process warehouse assignments from invitation extra_data
+        await _assign_warehouses_from_invitation(
+            db, core_client, request.token, result["user_id"]
+        )
+
         return InvitationAcceptResponse(**result)
 
     except InvitationNotFoundException as e:

@@ -18,18 +18,22 @@ from dataclasses import dataclass, field
 @dataclass
 class ModuleResource:
     """A resource within a module (e.g. 'Items' inside 'Inventory')."""
-    key: str           # matches Permission.resource value, e.g. "item"
-    label: str         # human-readable, e.g. "Items"
-    actions: list[str] = field(default_factory=lambda: ["read", "create", "update", "delete"])
+
+    key: str  # matches Permission.resource value, e.g. "item"
+    label: str  # human-readable, e.g. "Items"
+    actions: list[str] = field(
+        default_factory=lambda: ["read", "create", "update", "delete"]
+    )
 
 
 @dataclass
 class ModuleDefinition:
     """A top-level ERP module grouping related resources."""
-    key: str           # matches Permission.module value, e.g. "inventory"
-    label: str         # human-readable, e.g. "Inventory"
+
+    key: str  # matches Permission.module value, e.g. "inventory"
+    label: str  # human-readable, e.g. "Inventory"
     description: str
-    icon: str          # icon name for the frontend
+    icon: str  # icon name for the frontend
     resources: list[ModuleResource] = field(default_factory=list)
 
     @property
@@ -58,8 +62,14 @@ MODULES: list[ModuleDefinition] = [
         description="Manage users, roles, permissions, and organization settings",
         icon="shield",
         resources=[
-            ModuleResource("user", "Users", ["read", "create", "update", "delete", "manage", "invite"]),
-            ModuleResource("role", "Roles", ["read", "create", "update", "delete", "manage"]),
+            ModuleResource(
+                "user",
+                "Users",
+                ["read", "create", "update", "delete", "manage", "invite"],
+            ),
+            ModuleResource(
+                "role", "Roles", ["read", "create", "update", "delete", "manage"]
+            ),
             ModuleResource("org", "Organization", ["read", "update"]),
             ModuleResource("invitation", "Invitations", ["create"]),
         ],
@@ -92,12 +102,28 @@ MODULES: list[ModuleDefinition] = [
         icon="box",
         resources=[
             ModuleResource("item", "Items"),
-            ModuleResource("warehouse", "Warehouses", ["read", "create", "update", "delete", "manage"]),
-            ModuleResource("stock_entry", "Stock Movements", ["read", "create", "update", "delete", "manage"]),
+            ModuleResource(
+                "warehouse",
+                "Warehouses",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+            ModuleResource(
+                "stock_entry",
+                "Stock Movements",
+                ["read", "create", "update", "delete", "manage"],
+            ),
             ModuleResource("batch", "Batches", ["read"]),
             ModuleResource("serial", "Serial Numbers", ["read"]),
-            ModuleResource("pick_list", "Pick Lists", ["read", "create", "update", "delete", "manage"]),
-            ModuleResource("asn_order", "ASN Orders", ["read", "create", "update", "delete", "manage"]),
+            ModuleResource(
+                "pick_list",
+                "Pick Lists",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+            ModuleResource(
+                "asn_order",
+                "ASN Orders",
+                ["read", "create", "update", "delete", "manage"],
+            ),
         ],
     ),
     ModuleDefinition(
@@ -106,7 +132,9 @@ MODULES: list[ModuleDefinition] = [
         description="Manage chart of accounts, payments, and financial records",
         icon="calculator",
         resources=[
-            ModuleResource("chart_of_account", "Chart of Accounts", ["read", "create", "update"]),
+            ModuleResource(
+                "chart_of_account", "Chart of Accounts", ["read", "create", "update"]
+            ),
             ModuleResource("payment", "Payments", ["read", "create", "update"]),
         ],
     ),
@@ -145,9 +173,11 @@ def get_module_for_permission_code(code: str) -> ModuleDefinition | None:
 # Preloaded Role Templates
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class RoleTemplate:
     """A preloaded role template seeded for every new organization."""
+
     code: str
     name: str
     description: str
@@ -248,17 +278,36 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
     ),
     # ── WMS Roles ────────────────────────────────────────────────────────────
     RoleTemplate(
-        code="wms_supervisor",
-        name="WMS Supervisor",
-        description="Full warehouse operations across all warehouses — layout, inbound, put-away, outbound, gate, ASN, and dispatches",
+        code="wms_admin",
+        name="WMS Admin",
+        description="Full warehouse administration — global access to all warehouses, layout, inbound, put-away, outbound, gate, ASN, dispatches, and worker/device management",
         is_system=False,
         hierarchy_level=75,
         permission_codes=[
-            "warehouse.read", "warehouse.create", "warehouse.update", "warehouse.delete", "warehouse.manage",
-            "pick_list.read", "pick_list.create", "pick_list.update", "pick_list.delete", "pick_list.manage",
-            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
-            "stock_entry.read", "stock_entry.create", "stock_entry.update", "stock_entry.delete", "stock_entry.manage",
-            "item.read", "batch.read", "serial.read",
+            # WMS Admin gets warehouse.manage for global visibility and admin operations
+            "warehouse.read",
+            "warehouse.create",
+            "warehouse.update",
+            "warehouse.delete",
+            "warehouse.manage",
+            "pick_list.read",
+            "pick_list.create",
+            "pick_list.update",
+            "pick_list.delete",
+            "pick_list.manage",
+            "asn_order.read",
+            "asn_order.create",
+            "asn_order.update",
+            "asn_order.delete",
+            "asn_order.manage",
+            "stock_entry.read",
+            "stock_entry.create",
+            "stock_entry.update",
+            "stock_entry.delete",
+            "stock_entry.manage",
+            "item.read",
+            "batch.read",
+            "serial.read",
         ],
     ),
     RoleTemplate(
@@ -268,11 +317,29 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         is_system=False,
         hierarchy_level=70,
         permission_codes=[
-            "warehouse.read", "warehouse.create", "warehouse.update", "warehouse.delete", "warehouse.manage",
-            "pick_list.read", "pick_list.create", "pick_list.update", "pick_list.delete", "pick_list.manage",
-            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
-            "stock_entry.read", "stock_entry.create", "stock_entry.update", "stock_entry.delete", "stock_entry.manage",
-            "item.read", "batch.read", "serial.read",
+            # warehouse.read/update for assigned warehouse access.
+            # warehouse.manage needed for worker CRUD (not warehouse visibility).
+            "warehouse.read",
+            "warehouse.update",
+            "warehouse.manage",
+            "pick_list.read",
+            "pick_list.create",
+            "pick_list.update",
+            "pick_list.delete",
+            "pick_list.manage",
+            "asn_order.read",
+            "asn_order.create",
+            "asn_order.update",
+            "asn_order.delete",
+            "asn_order.manage",
+            "stock_entry.read",
+            "stock_entry.create",
+            "stock_entry.update",
+            "stock_entry.delete",
+            "stock_entry.manage",
+            "item.read",
+            "batch.read",
+            "serial.read",
         ],
     ),
     RoleTemplate(
@@ -283,9 +350,12 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         hierarchy_level=50,
         permission_codes=[
             "warehouse.read",
-            "pick_list.read", "pick_list.update",
+            "pick_list.read",
+            "pick_list.update",
             "stock_entry.read",
-            "item.read", "batch.read", "serial.read",
+            "item.read",
+            "batch.read",
+            "serial.read",
         ],
     ),
     RoleTemplate(
@@ -295,13 +365,38 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         is_system=False,
         hierarchy_level=65,
         permission_codes=[
-            "asn_order.read", "asn_order.create", "asn_order.update", "asn_order.delete", "asn_order.manage",
+            "asn_order.read",
+            "asn_order.create",
+            "asn_order.update",
+            "asn_order.delete",
+            "asn_order.manage",
             "warehouse.read",
             "stock_entry.read",
             "item.read",
             "pick_list.read",
         ],
     ),
+    # ── QR Code Login Worker ─────────────────────────────────────────────────
+    RoleTemplate(
+        code="warehouse_work_user",
+        name="Warehouse Work User",
+        description="Limited warehouse worker — QR login only. Can scan, create/read/update receiving slips, and read/update pick lists.",
+        is_system=True,
+        hierarchy_level=5,
+        permission_codes=[
+            "warehouse.read",
+            "wms.scan",
+            "receiving_slip.create",
+            "receiving_slip.read",
+            "receiving_slip.update",
+            "pick_list.read",
+            "pick_list.update",
+            "stock_entry.create",
+            "stock_entry.read",
+        ],
+    ),
 ]
 
-PRELOADED_ROLE_BY_CODE: dict[str, RoleTemplate] = {r.code: r for r in PRELOADED_ORG_ROLES}
+PRELOADED_ROLE_BY_CODE: dict[str, RoleTemplate] = {
+    r.code: r for r in PRELOADED_ORG_ROLES
+}

@@ -16,6 +16,7 @@ This migration alters the column to TEXT (unlimited length) to match the model.
 
 from alembic import op
 import sqlalchemy as sa
+from app.alembic_guards import column_type
 
 
 revision = "055_fix_product_items_token_id_column"
@@ -27,22 +28,26 @@ depends_on = None
 def upgrade() -> None:
     # ALTER the column from VARCHAR(75) to TEXT.
     # USING cast is not needed — VARCHAR is implicitly castable to TEXT in Postgres.
-    op.alter_column(
-        "product_items",
-        "token_id",
-        existing_type=sa.String(75),
-        type_=sa.Text(),
-        existing_nullable=True,
-    )
+    current = column_type("product_items", "token_id")
+    if current is not None and "text" not in current:
+        op.alter_column(
+            "product_items",
+            "token_id",
+            existing_type=sa.String(75),
+            type_=sa.Text(),
+            existing_nullable=True,
+        )
 
 
 def downgrade() -> None:
     # Truncate back to 75 chars on downgrade (data loss possible if any value > 75 chars).
-    op.alter_column(
-        "product_items",
-        "token_id",
-        existing_type=sa.Text(),
-        type_=sa.String(75),
-        existing_nullable=True,
-        postgresql_using="token_id::character varying(75)",
-    )
+    current = column_type("product_items", "token_id")
+    if current is not None and "text" in current:
+        op.alter_column(
+            "product_items",
+            "token_id",
+            existing_type=sa.Text(),
+            type_=sa.String(75),
+            existing_nullable=True,
+            postgresql_using="token_id::character varying(75)",
+        )

@@ -65,6 +65,7 @@ from app.models.base import (
     WarehouseUserRole,
 )
 from app.models.batch import Batch
+from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
 
 # QR Products module
@@ -128,6 +129,8 @@ from app.models.messaging import (
 )
 from app.models.notification import Notification
 from app.models.warehouse_user import WarehouseUser
+from app.models.wms_worker import WMSWorker, WMSWorkerStatus
+from app.models.wms_device import WMSDevice, WMSDeviceStatus
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
@@ -174,6 +177,7 @@ from app.models.transaction_breakdown import (
 from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
 from app.models.warehouse import Warehouse
+from app.models.warehouse_floor_plan import WarehouseFloorPlan
 
 # Warehouse Bin Management module
 from app.models.warehouse_location import (
@@ -197,18 +201,30 @@ from app.models.warehouse_location import (
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.worker_task import WorkerTask
 
-# Temporarily commented out to fix autogenerate - these models have FK to non-existent tables
-# from app.models.batch import Batch
-# from app.models.item_price import ItemPrice
-# from app.models.material_request import MaterialRequest, MaterialRequestLine
-# from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
-# from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
-# from app.models.serial_no import SerialNo
-# from app.models.status_transition import StatusTransition
-# from app.models.stock_entry import StockEntry, StockEntryItem
-# from app.models.stock_level import StockLevel
-# from app.models.stock_movement import StockMovement
-# from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
+# Procurement / Sourcing / Fulfillment modules
+from app.models.communication import CommunicationLog
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
+from app.models.document_numbering import (
+    DocumentNumberingConfig,
+    DocumentSequenceCounter,
+)
+from app.models.item_price import ItemPrice
+from app.models.item_supplier import ItemSupplier
+from app.models.landed_cost import LandedCostVoucher
+from app.models.material_request import MaterialRequest, MaterialRequestLine
+from app.models.payment import Payment
+from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+from app.models.purchase_receipt import PurchaseReceipt, PurchaseReceiptItem
+from app.models.put_away_rule import PutAwayRule
+from app.models.quality_inspection import (
+    QualityInspection,
+    QualityInspectionParameter,
+    QualityInspectionReading,
+    QualityInspectionTemplate,
+)
+from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
+from app.models.status_transition import StatusTransition
+from app.models.stock_settings import StockSettings
 
 __all__ = [
     # Inventory Enums
@@ -367,6 +383,10 @@ __all__ = [
     "NotificationType",
     "WarehouseUser",
     "WarehouseUserRole",
+    "WMSWorker",
+    "WMSWorkerStatus",
+    "WMSDevice",
+    "WMSDeviceStatus",
     # Audit Trail module
     "AuditLog",
     "AuditLogAction",
@@ -385,7 +405,9 @@ __all__ = [
     "GateVerificationStatus",
     "GateVerificationItemStatus",
     "WarehouseLocation",
+    "WarehouseFloorPlan",
     "BinStockLevel",
+    "BinReservation",
     "LocationAllocation",
     "ScanSession",
     "ScanSessionItem",
@@ -398,23 +420,31 @@ __all__ = [
     "LocationScan",
     "PutAwayList",
     "PutAwayListItem",
-    # Temporarily commented out - models with FK to non-existent tables
-    # "Batch",
-    # "ItemPrice",
-    # "MaterialRequest",
-    # "MaterialRequestLine",
-    # "RFQ",
-    # "RFQLine",
-    # "RFQSupplier",
-    # "SupplierQuote",
-    # "PurchaseOrder",
-    # "PurchaseOrderLine",
-    # "StatusTransition",
-    # "SerialNo",
-    # "StockEntry",
-    # "StockEntryItem",
-    # "StockLevel",
-    # "StockMovement",
-    # "StockReconciliation",
-    # "StockReconciliationItem",
+    # Procurement / Sourcing / Fulfillment modules
+    "CommunicationLog",
+    "DeliveryNote",
+    "DeliveryNoteItem",
+    "DocumentNumberingConfig",
+    "DocumentSequenceCounter",
+    "ItemPrice",
+    "ItemSupplier",
+    "LandedCostVoucher",
+    "MaterialRequest",
+    "MaterialRequestLine",
+    "Payment",
+    "PurchaseOrder",
+    "PurchaseOrderLine",
+    "PurchaseReceipt",
+    "PurchaseReceiptItem",
+    "PutAwayRule",
+    "QualityInspection",
+    "QualityInspectionParameter",
+    "QualityInspectionReading",
+    "QualityInspectionTemplate",
+    "RFQ",
+    "RFQLine",
+    "RFQSupplier",
+    "SupplierQuote",
+    "StatusTransition",
+    "StockSettings",
 ]

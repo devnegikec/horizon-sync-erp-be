@@ -15,11 +15,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
+from app.core.authorization import (
+    RECEIVING_SLIP_CREATE,
+    WAREHOUSE_READ,
+    WAREHOUSE_UPDATE,
+)
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.inbound import (
     ApproveSlipRequest,
+    AssignBinRequest,
+    AssignBinResponse,
     FlaggedItemResponse,
     FlagLineItemRequest,
     ReceivingSlipListResponse,
@@ -45,7 +51,7 @@ router = APIRouter()
 )
 async def start_session(
     data: StartSessionRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -81,7 +87,7 @@ async def start_session(
 async def record_scan(
     session_id: UUID,
     data: RecordScanRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -103,7 +109,10 @@ async def record_scan(
     """
     service = InboundService(db)
     import logging
-    logging.getLogger(__name__).warning("SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data))
+
+    logging.getLogger(__name__).warning(
+        "SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data)
+    )
     result = service.record_scan(
         session_id=session_id,
         qr_data=data.qr_data,
@@ -123,7 +132,7 @@ async def record_scan(
 )
 async def end_session(
     session_id: UUID,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -188,7 +197,10 @@ async def get_session_summary(
 async def list_receiving_slips(
     warehouse_id: UUID | None = Query(None, description="Filter by warehouse UUID"),
     session_id: UUID | None = Query(None, description="Filter by scan session UUID"),
-    status: str | None = Query(None, description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected"),
+    status: str | None = Query(
+        None,
+        description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected",
+    ),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
@@ -392,3 +404,238 @@ async def flag_line_item(
         organization_id=current_user.organization_id,
     )
     return FlaggedItemResponse(**result)
+
+
+# ------------------------------------------------------------------
+# Two-Step Inbound: Assign Bin (Phase 2)
+# ------------------------------------------------------------------
+
+
+@router.post(
+    "/receiving-slips/{slip_id}/items/{item_id}/assign-bin",
+    response_model=AssignBinResponse,
+    summary="Assign bin to receiving slip item",
+    description="Worker scans bin QR and assigns it to a receiving slip item. Adds stock to bin.",
+)
+async def assign_bin_to_slip_item(
+    slip_id: UUID,
+    item_id: UUID,
+    body: AssignBinRequest,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Two-step inbound: assign a bin to a receiving slip item and add stock.
+
+    Called after the worker scans a bin QR during put-away.
+    Adds stock to the bin and updates the slip item's put-away status.
+    When all items on a slip are put away, the slip auto-completes.
+    """
+    from datetime import UTC, datetime
+
+    from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+    from app.models.warehouse_location import WarehouseLocation
+    from app.services.bin_stock_service import BinStockService
+
+    # Find the slip item
+    item = (
+        db.query(ReceivingSlipItem)
+        .filter(
+            ReceivingSlipItem.id == item_id,
+            ReceivingSlipItem.slip_id == slip_id,
+            ReceivingSlipItem.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found"
+        )
+
+    if item.put_away_status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Item already assigned to a bin",
+        )
+
+    # Validate bin
+    bin_location = (
+        db.query(WarehouseLocation)
+        .filter(
+            WarehouseLocation.id == body.bin_location_id,
+            WarehouseLocation.organization_id == current_user.organization_id,
+            WarehouseLocation.is_active == True,
+        )
+        .first()
+    )
+    if not bin_location:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Bin not found"
+        )
+
+    if bin_location.location_type != "bin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Location is type '{bin_location.location_type}', not 'bin'",
+        )
+
+    # Find item by SKU for stock update
+    from app.models.item import Item
+
+    db_item = (
+        db.query(Item)
+        .filter(
+            Item.sku == item.sku,
+            Item.organization_id == current_user.organization_id,
+            Item.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not db_item:
+        db_item = (
+            db.query(Item)
+            .filter(
+                Item.item_code == item.sku,
+                Item.organization_id == current_user.organization_id,
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item not found for SKU: {item.sku}",
+        )
+
+    # Add stock to bin
+    qty = body.quantity if body.quantity else item.quantity
+    bin_stock_svc = BinStockService(db)
+    bin_stock_svc.add_stock(
+        bin_id=body.bin_location_id,
+        item_id=db_item.id,
+        quantity=qty,
+        org_id=current_user.organization_id,
+        batch_number=item.batch_number,
+    )
+
+    # Update slip item
+    item.bin_location_id = body.bin_location_id
+    item.put_away_status = "completed"
+    item.put_away_at = datetime.now(UTC)
+    item.put_away_by = current_user.id
+
+    # Check if all items on slip are completed
+    pending = (
+        db.query(ReceivingSlipItem)
+        .filter(
+            ReceivingSlipItem.slip_id == slip_id,
+            ReceivingSlipItem.put_away_status == "pending",
+            ReceivingSlipItem.flag == "ok",
+        )
+        .count()
+    )
+    if pending == 0:
+        slip = db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
+        if slip:
+            slip.status = "putaway_complete"
+
+    db.commit()
+
+    return AssignBinResponse(
+        slip_item_id=str(item.id),
+        sku=item.sku,
+        batch_number=item.batch_number,
+        quantity=qty,
+        bin_location_id=str(body.bin_location_id),
+        bin_full_path=bin_location.full_path or bin_location.code,
+        put_away_status="completed",
+        put_away_at=item.put_away_at.isoformat() if item.put_away_at else None,
+    )
+
+
+# ------------------------------------------------------------------
+# FIFO Bin Suggestions for Picking (Phase 3)
+# ------------------------------------------------------------------
+
+
+@router.get(
+    "/receiving-slips/{slip_id}/items/{item_id}/fifo-bins",
+    summary="Get FIFO bin suggestions for a slip item",
+    description="Returns bins sorted by FIFO (oldest stock first) for put-away reference.",
+)
+async def get_fifo_bins_for_slip_item(
+    slip_id: UUID,
+    item_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Get bins containing this item, sorted by stock age (FIFO).
+
+    Used to suggest which bins already have this SKU — helps worker
+    consolidate stock or know where existing inventory is.
+    """
+    from datetime import UTC, datetime
+
+    from app.models.bin_stock_level import BinStockLevel
+    from app.models.item import Item
+    from app.models.receiving_slip import ReceivingSlipItem
+    from app.models.warehouse_location import WarehouseLocation
+
+    item = (
+        db.query(ReceivingSlipItem)
+        .filter(ReceivingSlipItem.id == item_id, ReceivingSlipItem.slip_id == slip_id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Slip item not found"
+        )
+
+    # Find item by SKU
+    db_item = (
+        db.query(Item)
+        .filter(
+            Item.sku == item.sku,
+            Item.organization_id == current_user.organization_id,
+            Item.deleted_at.is_(None),
+        )
+        .first()
+    ) or (
+        db.query(Item)
+        .filter(
+            Item.item_code == item.sku,
+            Item.organization_id == current_user.organization_id,
+            Item.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not db_item:
+        return {"sku": item.sku, "bins": [], "message": "Item not found in catalog"}
+
+    now = datetime.now(UTC)
+    bins = (
+        db.query(BinStockLevel, WarehouseLocation)
+        .join(WarehouseLocation, BinStockLevel.bin_location_id == WarehouseLocation.id)
+        .filter(
+            BinStockLevel.item_id == db_item.id,
+            BinStockLevel.organization_id == current_user.organization_id,
+            BinStockLevel.quantity_on_hand > 0,
+        )
+        .order_by(BinStockLevel.created_at.asc())
+        .all()
+    )
+
+    return {
+        "sku": item.sku,
+        "bins": [
+            {
+                "bin_id": str(stock.bin_location_id),
+                "bin_path": loc.full_path or loc.code,
+                "batch_number": stock.batch_number,
+                "quantity_on_hand": int(stock.quantity_on_hand),
+                "stock_age_days": (now - stock.created_at).days
+                if stock.created_at
+                else None,
+            }
+            for stock, loc in bins
+        ],
+    }

@@ -1,20 +1,28 @@
 """Bin stock API endpoints for managing stock at the bin level"""
 
+import csv
+import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ
+from app.core.authorization import STOCK_ENTRY_CREATE, WAREHOUSE_READ
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.item import Item
+from app.models.warehouse_location import WarehouseLocation
 from app.schemas.bin_stock import (
     AddStockRequest,
     BinStockForItemResponse,
     BinStockInfoResponse,
     BinStockLevelResponse,
     BinStockListResponse,
+    CopyStockRequest,
     RemoveStockRequest,
+    StockImportRequest,
+    StockImportResult,
 )
 from app.services.bin_stock_service import BinStockService
 
@@ -59,7 +67,7 @@ async def get_bins_for_item(
 )
 async def add_stock(
     data: AddStockRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -102,7 +110,7 @@ async def add_stock(
 )
 async def remove_stock(
     data: RemoveStockRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -165,3 +173,187 @@ async def get_bin_stock(
             BinStockLevelResponse.model_validate(sl) for sl in stock_levels
         ]
     )
+
+
+@router.post(
+    "/copy",
+    response_model=BinStockLevelResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Copy stock between bins",
+    description="Copy a specific quantity of stock from one bin to another",
+)
+async def copy_stock(
+    data: CopyStockRequest,
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Copy stock from source bin to target bin."""
+    service = BinStockService(db)
+    # Remove from source
+    service.remove_stock(
+        bin_id=data.source_bin_id,
+        item_id=data.item_id,
+        quantity=data.quantity,
+        org_id=current_user.organization_id,
+        batch_number=data.batch_number,
+    )
+    # Add to target
+    bin_stock = service.add_stock(
+        bin_id=data.target_bin_id,
+        item_id=data.item_id,
+        quantity=data.quantity,
+        org_id=current_user.organization_id,
+        batch_number=data.batch_number,
+    )
+    return BinStockLevelResponse.model_validate(bin_stock)
+
+
+@router.get(
+    "/export/csv",
+    summary="Export stock levels to CSV",
+    description="Export bin stock levels as a downloadable CSV file",
+)
+async def export_stock_csv(
+    warehouse_id: UUID | None = Query(None),
+    item_id: UUID | None = Query(None),
+    bin_id: UUID | None = Query(None),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Export stock levels as CSV."""
+    from app.models.bin_stock_level import BinStockLevel
+
+    query = db.query(BinStockLevel).filter(
+        BinStockLevel.organization_id == current_user.organization_id
+    )
+    if warehouse_id:
+        from app.models.warehouse_location import WarehouseLocation
+
+        bin_ids = [
+            b.id
+            for b in db.query(WarehouseLocation)
+            .filter(WarehouseLocation.warehouse_id == warehouse_id)
+            .all()
+        ]
+        query = query.filter(BinStockLevel.bin_location_id.in_(bin_ids))
+    if item_id:
+        query = query.filter(BinStockLevel.item_id == item_id)
+    if bin_id:
+        query = query.filter(BinStockLevel.bin_location_id == bin_id)
+
+    records = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "bin_location_id",
+            "item_id",
+            "quantity_on_hand",
+            "batch_number",
+            "created_at",
+            "updated_at",
+        ]
+    )
+    for r in records:
+        writer.writerow(
+            [
+                str(r.bin_location_id),
+                str(r.item_id),
+                str(r.quantity_on_hand),
+                r.batch_number or "",
+                r.created_at.isoformat() if r.created_at else "",
+                r.updated_at.isoformat() if r.updated_at else "",
+            ]
+        )
+
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=stock_levels.csv"},
+    )
+
+
+@router.post(
+    "/import",
+    response_model=StockImportResult,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import stock levels",
+    description="Import stock levels from structured data rows",
+)
+async def import_stock(
+    data: StockImportRequest,
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Import stock levels into bins."""
+    service = BinStockService(db)
+    imported = 0
+    updated = 0
+    errors: list[str] = []
+
+    # Build SKU -> item_id map
+    items = (
+        db.query(Item)
+        .filter(
+            Item.organization_id == current_user.organization_id,
+            Item.item_code.in_([r.sku for r in data.rows]),
+        )
+        .all()
+    )
+    sku_to_item = {item.item_code: item.id for item in items}
+
+    # Build bin_code -> bin_id map within warehouse
+    bins = (
+        db.query(WarehouseLocation)
+        .filter(
+            WarehouseLocation.warehouse_id == data.warehouse_id,
+        )
+        .all()
+    )
+    code_to_bin = {bin_loc.code: bin_loc.id for bin_loc in bins}
+
+    for row in data.rows:
+        item_id = sku_to_item.get(row.sku)
+        if not item_id:
+            errors.append(f"SKU not found: {row.sku}")
+            continue
+        bin_id = code_to_bin.get(row.bin_code)
+        if not bin_id:
+            errors.append(f"Bin code not found: {row.bin_code}")
+            continue
+
+        try:
+            existing = (
+                db.query(BinStockLevel)
+                .filter(
+                    BinStockLevel.bin_location_id == bin_id,
+                    BinStockLevel.item_id == item_id,
+                    BinStockLevel.batch_number == row.batch_number,
+                )
+                .first()
+            )
+
+            if existing and data.overwrite_existing:
+                existing.quantity_on_hand = row.quantity
+                updated += 1
+            elif existing:
+                errors.append(
+                    f"Stock already exists for bin {row.bin_code}, SKU {row.sku}, batch {row.batch_number or 'N/A'}"
+                )
+                continue
+            else:
+                service.add_stock(
+                    bin_id=bin_id,
+                    item_id=item_id,
+                    quantity=row.quantity,
+                    org_id=current_user.organization_id,
+                    batch_number=row.batch_number,
+                )
+                imported += 1
+        except Exception as e:
+            errors.append(f"Error importing {row.sku} to {row.bin_code}: {str(e)}")
+
+    db.commit()
+    return StockImportResult(imported=imported, updated=updated, errors=errors)
