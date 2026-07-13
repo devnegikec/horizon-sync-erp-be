@@ -16,6 +16,8 @@ from app.schemas.analytics import (
     QRScanAnalyticsResponse,
     QRScanEventIngest,
     QRScanEventResponse,
+    ScanInteractionIngest,
+    ScanInteractionResponse,
 )
 from app.services.analytics_service import AnalyticsService
 
@@ -90,6 +92,45 @@ def get_scan_analytics(
 ):
     org_id = UUID(current_user["organization_id"])
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
+
+
+# ── Post-Scan Interactions ────────────────────────────────────────────────────
+
+
+@router.post(
+    "/scans/{scan_id}/interactions",
+    response_model=ScanInteractionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a post-scan interaction (public)",
+)
+def record_interaction(
+    scan_id: UUID,
+    data: ScanInteractionIngest,
+    organization_id: UUID = Query(
+        ..., description="Organization that owns the QR code"
+    ),
+    service: AnalyticsService = Depends(get_service),
+):
+    """No auth required — called by the QR landing page when user clicks
+    a CTA button, fills a form, calls support, watches a video, or shares.
+
+    interaction_type examples: click, page_view, form_submit, call, share,
+    download, video_play, video_complete
+    """
+    return service.record_interaction(scan_id, data, organization_id)
+
+
+@router.get(
+    "/scans/{scan_id}/interactions",
+    summary="List all interactions for a scan event (authenticated)",
+)
+def list_interactions(
+    scan_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = UUID(current_user["organization_id"])
+    return service.list_interactions(scan_id, org_id)
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────

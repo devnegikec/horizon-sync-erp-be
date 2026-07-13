@@ -61,6 +61,33 @@ class QRScanEventResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── QR Scan Interactions ──────────────────────────────────────────────────────
+
+
+class ScanInteractionIngest(BaseModel):
+    """Payload: record a post-scan user interaction.
+
+    Called by the QR landing page whenever the user performs an action
+    after scanning: clicking a CTA button, filling a form, watching a
+    video, sharing the page, calling support, etc.
+    """
+
+    interaction_type: str
+    interaction_target: str | None = None
+    interaction_data: dict[str, Any] | None = None
+
+
+class ScanInteractionResponse(BaseModel):
+    id: UUID
+    scan_event_id: UUID
+    interaction_type: str
+    interaction_target: str | None
+    interaction_data: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── QR Scan Analytics ─────────────────────────────────────────────────────────
 
 

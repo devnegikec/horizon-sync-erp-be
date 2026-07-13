@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 from app.repositories.analytics_repository import (
     MetaCampaignRepository,
     QRScanEventRepository,
+    ScanInteractionRepository,
 )
 from app.schemas.analytics import (
     MetaCampaignCreate,
     QRScanEventIngest,
+    ScanInteractionIngest,
 )
 from app.services.geoip_service import lookup_ip
 from app.services.user_agent_service import parse_user_agent
@@ -24,6 +26,7 @@ class AnalyticsService:
     def __init__(self, db: Session):
         self.db = db
         self.scan_repo = QRScanEventRepository(db)
+        self.interaction_repo = ScanInteractionRepository(db)
         self.meta_repo = MetaCampaignRepository(db)
 
     # ── QR Scan Events ────────────────────────────────────────────────────────
@@ -114,7 +117,31 @@ class AnalyticsService:
             organization_id, date_from, date_to, serial_number
         )
 
-    # ── Meta Campaigns ────────────────────────────────────────────────────────
+    # ── QR Scan Interactions ──────────────────────────────────────────────
+
+    def record_interaction(
+        self,
+        scan_event_id: UUID,
+        data: ScanInteractionIngest,
+        organization_id: UUID,
+    ):
+        """Record a post-scan interaction (click, form submit, call, etc.)."""
+        payload = data.model_dump()
+        payload["organization_id"] = organization_id
+        payload["scan_event_id"] = scan_event_id
+
+        interaction = self.interaction_repo.create(payload)
+        logger.info(
+            "[ANALYTICS] interaction recorded scan=%s type=%s",
+            scan_event_id,
+            data.interaction_type,
+        )
+        return interaction
+
+    def list_interactions(self, scan_event_id: UUID, organization_id: UUID):
+        return self.interaction_repo.list_by_scan(scan_event_id, organization_id)
+
+    # ── Meta Campaigns ────────────────────────────────────────────────────
 
     def record_meta_snapshot(
         self,

@@ -3,11 +3,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, cast, Date
+from sqlalchemy import Date, cast, func
 from sqlalchemy.orm import Session
 
 from app.models.analytics import MetaCampaign
 from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_scan_interaction import QRScanInteraction
 
 
 class QRScanEventRepository:
@@ -70,8 +71,9 @@ class QRScanEventRepository:
 
         total_scans = q.count()
         unique_serials = (
-            q.with_entities(func.count(func.distinct(QRScanEvent.serial_number)))
-            .scalar()
+            q.with_entities(
+                func.count(func.distinct(QRScanEvent.serial_number))
+            ).scalar()
         ) or 0
 
         # Scans by date
@@ -109,7 +111,9 @@ class QRScanEventRepository:
             .order_by(func.count().desc())
             .all()
         )
-        by_device = [{"device_type": r.device_type, "count": r.count} for r in by_device_rows]
+        by_device = [
+            {"device_type": r.device_type, "count": r.count} for r in by_device_rows
+        ]
 
         return {
             "total_scans": total_scans,
@@ -118,6 +122,34 @@ class QRScanEventRepository:
             "by_country": by_country,
             "by_device": by_device,
         }
+
+
+# ── QR Scan Interactions ──────────────────────────────────────────────────────
+
+
+class ScanInteractionRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict) -> QRScanInteraction:
+        interaction = QRScanInteraction(**data)
+        self.db.add(interaction)
+        self.db.commit()
+        self.db.refresh(interaction)
+        return interaction
+
+    def list_by_scan(
+        self, scan_event_id: UUID, organization_id: UUID
+    ) -> list[QRScanInteraction]:
+        return (
+            self.db.query(QRScanInteraction)
+            .filter(
+                QRScanInteraction.scan_event_id == scan_event_id,
+                QRScanInteraction.organization_id == organization_id,
+            )
+            .order_by(QRScanInteraction.created_at.asc())
+            .all()
+        )
 
 
 class MetaCampaignRepository:
