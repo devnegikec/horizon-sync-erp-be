@@ -88,6 +88,45 @@ class ScanInteractionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Phase 4: Enhanced Analytics ───────────────────────────────────────────────
+
+
+class CTABreakdownItem(BaseModel):
+    cta_action: str
+    count: int
+
+
+class CTABreakdownResponse(BaseModel):
+    breakdown: list[CTABreakdownItem]
+    total_scans_with_cta: int
+
+
+class GeoHeatmapItem(BaseModel):
+    city: str | None
+    state: str | None = None
+    country: str | None = None
+    latitude: float
+    longitude: float
+    count: int
+
+
+class DeviceTimelineItem(BaseModel):
+    date: str
+    mobile: int
+    desktop: int
+    tablet: int
+    unknown: int
+
+
+class InteractionFunnelResponse(BaseModel):
+    total_scans: int
+    scans_with_cta: int
+    scans_with_interactions: int
+    total_interactions: int
+    conversion_rate: float
+    top_interaction_types: list[dict[str, Any]]
+
+
 # ── QR Scan Analytics ─────────────────────────────────────────────────────────
 
 

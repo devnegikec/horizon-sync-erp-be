@@ -141,6 +141,45 @@ class AnalyticsService:
     def list_interactions(self, scan_event_id: UUID, organization_id: UUID):
         return self.interaction_repo.list_by_scan(scan_event_id, organization_id)
 
+    # ── Phase 4: Enhanced Analytics ──────────────────────────────────────
+
+    def get_cta_breakdown(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_cta_breakdown(organization_id, date_from, date_to)
+
+    def get_geo_heatmap(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 500,
+    ):
+        return self.scan_repo.get_geo_heatmap(
+            organization_id, date_from, date_to, limit
+        )
+
+    def get_device_timeline(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_device_timeline(organization_id, date_from, date_to)
+
+    def get_interaction_funnel(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_interaction_funnel(
+            organization_id, date_from, date_to
+        )
+
     # ── Meta Campaigns ────────────────────────────────────────────────────
 
     def record_meta_snapshot(
