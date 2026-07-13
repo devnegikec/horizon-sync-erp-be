@@ -27,6 +27,376 @@ from app.models import (  # noqa: E402
 )
 
 
+def _seed_missing_permissions(db: Session) -> None:
+    """Idempotently seed any permissions that are missing from the database.
+
+    Called when the org already exists but permissions may have been
+    missed on a previous partial run.
+    """
+    # Same full list as in seed_database()
+    permissions_data = [
+        {
+            "code": "user.create",
+            "name": "Create User",
+            "resource": ResourceType.USER,
+            "action": ActionType.CREATE,
+            "module": "identity",
+        },
+        {
+            "code": "user.read",
+            "name": "Read User",
+            "resource": ResourceType.USER,
+            "action": ActionType.READ,
+            "module": "identity",
+        },
+        {
+            "code": "user.update",
+            "name": "Update User",
+            "resource": ResourceType.USER,
+            "action": ActionType.UPDATE,
+            "module": "identity",
+        },
+        {
+            "code": "user.delete",
+            "name": "Delete User",
+            "resource": ResourceType.USER,
+            "action": ActionType.DELETE,
+            "module": "identity",
+        },
+        {
+            "code": "user.manage",
+            "name": "Manage Users",
+            "resource": ResourceType.USER,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "user.invite",
+            "name": "Invite User",
+            "resource": ResourceType.USER,
+            "action": ActionType.INVITE,
+            "module": "identity",
+        },
+        {
+            "code": "invitation.create",
+            "name": "Create Invitation",
+            "resource": ResourceType.INVITATION,
+            "action": ActionType.CREATE,
+            "module": "identity",
+        },
+        {
+            "code": "org.create",
+            "name": "Create Organization",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.CREATE,
+            "module": "identity",
+        },
+        {
+            "code": "org.read",
+            "name": "Read Organization",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.READ,
+            "module": "identity",
+        },
+        {
+            "code": "org.update",
+            "name": "Update Organization",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.UPDATE,
+            "module": "identity",
+        },
+        {
+            "code": "org.delete",
+            "name": "Delete Organization",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.DELETE,
+            "module": "identity",
+        },
+        {
+            "code": "org.manage",
+            "name": "Manage Organizations",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "role.create",
+            "name": "Create Role",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.CREATE,
+            "module": "identity",
+        },
+        {
+            "code": "role.read",
+            "name": "Read Role",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.READ,
+            "module": "identity",
+        },
+        {
+            "code": "role.update",
+            "name": "Update Role",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.UPDATE,
+            "module": "identity",
+        },
+        {
+            "code": "role.delete",
+            "name": "Delete Role",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.DELETE,
+            "module": "identity",
+        },
+        {
+            "code": "role.manage",
+            "name": "Manage Roles",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "*.*",
+            "name": "Full access (all resources and actions)",
+            "resource": ResourceType.ALL,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "system.admin",
+            "name": "System Administrator access",
+            "resource": ResourceType.ALL,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "user.*",
+            "name": "All user actions",
+            "resource": ResourceType.USER,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "org.*",
+            "name": "All organization actions",
+            "resource": ResourceType.ORGANIZATION,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "role.*",
+            "name": "All role actions",
+            "resource": ResourceType.ROLE,
+            "action": ActionType.MANAGE,
+            "module": "identity",
+        },
+        {
+            "code": "warehouse.read",
+            "name": "Read Warehouse",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "warehouse.create",
+            "name": "Create Warehouse",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.CREATE,
+            "module": "inventory",
+        },
+        {
+            "code": "warehouse.update",
+            "name": "Update Warehouse",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.UPDATE,
+            "module": "inventory",
+        },
+        {
+            "code": "warehouse.delete",
+            "name": "Delete Warehouse",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.DELETE,
+            "module": "inventory",
+        },
+        {
+            "code": "warehouse.manage",
+            "name": "Manage Warehouses",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.MANAGE,
+            "module": "inventory",
+        },
+        {
+            "code": "stock_entry.read",
+            "name": "Read Stock Movement",
+            "resource": ResourceType.STOCK_ENTRY,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "stock_entry.create",
+            "name": "Create Stock Movement",
+            "resource": ResourceType.STOCK_ENTRY,
+            "action": ActionType.CREATE,
+            "module": "inventory",
+        },
+        {
+            "code": "stock_entry.update",
+            "name": "Update Stock Movement",
+            "resource": ResourceType.STOCK_ENTRY,
+            "action": ActionType.UPDATE,
+            "module": "inventory",
+        },
+        {
+            "code": "stock_entry.delete",
+            "name": "Delete Stock Movement",
+            "resource": ResourceType.STOCK_ENTRY,
+            "action": ActionType.DELETE,
+            "module": "inventory",
+        },
+        {
+            "code": "stock_entry.manage",
+            "name": "Manage Stock Movements",
+            "resource": ResourceType.STOCK_ENTRY,
+            "action": ActionType.MANAGE,
+            "module": "inventory",
+        },
+        {
+            "code": "pick_list.read",
+            "name": "Read Pick List",
+            "resource": ResourceType.PICK_LIST,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "pick_list.create",
+            "name": "Create Pick List",
+            "resource": ResourceType.PICK_LIST,
+            "action": ActionType.CREATE,
+            "module": "inventory",
+        },
+        {
+            "code": "pick_list.update",
+            "name": "Update Pick List",
+            "resource": ResourceType.PICK_LIST,
+            "action": ActionType.UPDATE,
+            "module": "inventory",
+        },
+        {
+            "code": "pick_list.delete",
+            "name": "Delete Pick List",
+            "resource": ResourceType.PICK_LIST,
+            "action": ActionType.DELETE,
+            "module": "inventory",
+        },
+        {
+            "code": "pick_list.manage",
+            "name": "Manage Pick Lists",
+            "resource": ResourceType.PICK_LIST,
+            "action": ActionType.MANAGE,
+            "module": "inventory",
+        },
+        {
+            "code": "asn_order.read",
+            "name": "Read ASN Order",
+            "resource": ResourceType.ASN_ORDER,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "asn_order.create",
+            "name": "Create ASN Order",
+            "resource": ResourceType.ASN_ORDER,
+            "action": ActionType.CREATE,
+            "module": "inventory",
+        },
+        {
+            "code": "asn_order.update",
+            "name": "Update ASN Order",
+            "resource": ResourceType.ASN_ORDER,
+            "action": ActionType.UPDATE,
+            "module": "inventory",
+        },
+        {
+            "code": "asn_order.delete",
+            "name": "Delete ASN Order",
+            "resource": ResourceType.ASN_ORDER,
+            "action": ActionType.DELETE,
+            "module": "inventory",
+        },
+        {
+            "code": "asn_order.manage",
+            "name": "Manage ASN Orders",
+            "resource": ResourceType.ASN_ORDER,
+            "action": ActionType.MANAGE,
+            "module": "inventory",
+        },
+        {
+            "code": "item.read",
+            "name": "Read Item",
+            "resource": ResourceType.ITEM,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "batch.read",
+            "name": "Read Batch",
+            "resource": ResourceType.BATCH,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "serial.read",
+            "name": "Read Serial Number",
+            "resource": ResourceType.SERIAL,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "wms.scan",
+            "name": "WMS Scan",
+            "resource": ResourceType.WAREHOUSE,
+            "action": ActionType.SCAN,
+            "module": "inventory",
+        },
+        {
+            "code": "receiving_slip.create",
+            "name": "Create Receiving Slip",
+            "resource": ResourceType.RECEIVING_SLIP,
+            "action": ActionType.CREATE,
+            "module": "inventory",
+        },
+        {
+            "code": "receiving_slip.read",
+            "name": "Read Receiving Slip",
+            "resource": ResourceType.RECEIVING_SLIP,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
+        {
+            "code": "receiving_slip.update",
+            "name": "Update Receiving Slip",
+            "resource": ResourceType.RECEIVING_SLIP,
+            "action": ActionType.UPDATE,
+            "module": "inventory",
+        },
+    ]
+
+    # Get existing permission codes
+    existing_codes = set(row[0] for row in db.query(Permission.code).all())
+
+    created = 0
+    for perm_data in permissions_data:
+        if perm_data["code"] in existing_codes:
+            continue
+        db.add(Permission(**perm_data))
+        created += 1
+
+    if created:
+        db.commit()
+        print(f"✓ Created {created} missing permissions")
+    else:
+        print("✓ All permissions already exist — nothing to seed")
+
+
 def seed_database():
     """Seed the database with initial data"""
     db: Session = SessionLocal()
@@ -34,10 +404,11 @@ def seed_database():
     try:
         print("Starting database seeding...")
 
-        # Check if data already exists
+        # Check if data already exists (org check) but still seed missing permissions
         existing_org = db.query(Organization).first()
         if existing_org:
-            print("Database already seeded. Skipping...")
+            print("Organization already exists. Seeding only missing permissions...")
+            _seed_missing_permissions(db)
             return
 
         # 1. Create default organization
@@ -498,12 +869,15 @@ def seed_database():
         # Warehouse work user gets WMS scan + receiving slip + pick list permissions
         try:
             warehouse_worker_perms = [
+                permissions["warehouse.read"],
                 permissions["wms.scan"],
                 permissions["receiving_slip.create"],
                 permissions["receiving_slip.read"],
                 permissions["receiving_slip.update"],
                 permissions["pick_list.read"],
                 permissions["pick_list.update"],
+                permissions["stock_entry.create"],
+                permissions["stock_entry.read"],
             ]
             for perm in warehouse_worker_perms:
                 role_perm = RolePermission(

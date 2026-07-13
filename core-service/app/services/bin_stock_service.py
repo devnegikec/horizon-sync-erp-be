@@ -119,6 +119,153 @@ class BinStockService:
         self.db.refresh(bin_stock)
         return bin_stock
 
+    def bulk_add_stock(
+        self,
+        bin_id: UUID,
+        items: list[dict],
+        org_id: UUID,
+    ) -> dict:
+        """Add multiple items to a single bin in one transaction.
+
+        Each item dict must have:
+            - item_id (UUID)
+            - quantity (Decimal)
+            - batch_number (str | None, optional)
+
+        Each item is processed independently — a failure for one item does not
+        roll back successful items. The response includes per-item status.
+
+        Args:
+            bin_id: The bin location ID to add stock to.
+            items: List of item dicts with item_id, quantity, batch_number.
+            org_id: Organization ID for scoping.
+
+        Returns:
+            dict with keys:
+                - bin_id: UUID of the bin
+                - added: count of successfully added items
+                - errors: count of failed items
+                - items: list of per-item results (status, error, bin_stock_level)
+        """
+        # Validate the bin once upfront
+        try:
+            bin_location = self._get_active_bin(bin_id, org_id)
+        except (NotFoundError, StateError, ValidationError) as e:
+            # Bin itself is invalid — fail all items
+            return {
+                "bin_id": bin_id,
+                "added": 0,
+                "errors": len(items),
+                "items": [
+                    {
+                        "item_id": item["item_id"],
+                        "quantity": item["quantity"],
+                        "batch_number": item.get("batch_number"),
+                        "status": "error",
+                        "error": str(e.detail if hasattr(e, "detail") else str(e)),
+                        "bin_stock_level": None,
+                    }
+                    for item in items
+                ],
+            }
+
+        bin_capacity = Decimal(str(bin_location.capacity or 0))
+        current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+
+        results = []
+        added_count = 0
+        error_count = 0
+
+        for item in items:
+            item_id = item["item_id"]
+            quantity = Decimal(str(item["quantity"]))
+            batch_number = item.get("batch_number")
+
+            try:
+                # Validate quantity
+                if quantity <= 0:
+                    raise ValidationError("Quantity must be positive")
+
+                # Check capacity (cumulative across items in this batch)
+                if bin_capacity > 0:
+                    available = bin_capacity - current_stock_in_bin
+                    if quantity > available:
+                        raise ValidationError(
+                            f"Cannot add {quantity}. Available capacity: {available} "
+                            f"(total: {bin_capacity}, current: {current_stock_in_bin})"
+                        )
+
+                # Create or update the BinStockLevel record
+                bin_stock = self._get_or_create_bin_stock(
+                    bin_id=bin_id,
+                    item_id=item_id,
+                    org_id=org_id,
+                    batch_number=batch_number,
+                )
+                bin_stock.quantity_on_hand = (
+                    Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
+                )
+                self.db.flush()
+
+                # Track cumulative stock for capacity checks
+                current_stock_in_bin += quantity
+
+                # Sync warehouse-level stock
+                self._sync_warehouse_stock(
+                    item_id=item_id,
+                    warehouse_id=bin_location.warehouse_id,
+                    org_id=org_id,
+                    quantity_delta=quantity,
+                )
+
+                self.db.refresh(bin_stock)
+                results.append(
+                    {
+                        "item_id": item_id,
+                        "quantity": quantity,
+                        "batch_number": batch_number,
+                        "status": "added",
+                        "error": None,
+                        "bin_stock_level": bin_stock,
+                    }
+                )
+                added_count += 1
+
+            except (ValidationError, NotFoundError) as e:
+                self.db.rollback()
+                error_msg = e.detail if hasattr(e, "detail") else str(e)
+                results.append(
+                    {
+                        "item_id": item_id,
+                        "quantity": quantity,
+                        "batch_number": batch_number,
+                        "status": "error",
+                        "error": error_msg,
+                        "bin_stock_level": None,
+                    }
+                )
+                error_count += 1
+
+        # Update bin's available_capacity and version
+        bin_location.available_capacity = (
+            bin_capacity - current_stock_in_bin if bin_capacity > 0 else Decimal("0")
+        )
+        bin_location.version = (bin_location.version or 1) + 1
+        self.db.flush()
+
+        # Trigger capacity rollup for ancestors (once for all items)
+        if added_count > 0:
+            self.capacity_service.recalculate_ancestors(bin_id)
+
+        self.db.commit()
+
+        return {
+            "bin_id": bin_id,
+            "added": added_count,
+            "errors": error_count,
+            "items": results,
+        }
+
     def remove_stock(
         self,
         bin_id: UUID,

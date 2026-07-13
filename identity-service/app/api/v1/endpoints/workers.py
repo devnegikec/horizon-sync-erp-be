@@ -19,7 +19,7 @@ from app.dependencies import (
     get_current_active_user,
 )
 from app.models.base import UserStatus, UserType
-from app.models.role import Role, UserOrganizationRole
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.models.user import User
 from app.schemas.admin import (
     CreateWarehouseWorkerRequest,
@@ -106,6 +106,73 @@ def _get_org_id_from_current_user(current_user: CurrentUser, db: Session) -> str
     return str(uor.organization_id) if uor else None
 
 
+# Permission codes required by the warehouse_work_user role.
+# Must stay in sync with seed_data.py and identity_role_service.py.
+_WAREHOUSE_WORKER_REQUIRED_PERMISSIONS = [
+    "warehouse.read",
+    "wms.scan",
+    "receiving_slip.create",
+    "receiving_slip.read",
+    "receiving_slip.update",
+    "pick_list.read",
+    "pick_list.update",
+    "stock_entry.create",
+    "stock_entry.read",
+]
+
+
+def _ensure_worker_permissions(db: Session, ww_role: Role) -> None:
+    """Ensure the warehouse_work_user role has all required permissions.
+
+    This is a safeguard for roles that were created before the seed data
+    fix or were auto-seeded by core-service without permissions.
+    Idempotent — skips permissions that are already assigned.
+    """
+    # Fetch all required Permission objects in one query
+    required_perms = (
+        db.query(Permission)
+        .filter(
+            Permission.code.in_(_WAREHOUSE_WORKER_REQUIRED_PERMISSIONS),
+            Permission.is_active == True,
+        )
+        .all()
+    )
+
+    found_codes = {p.code for p in required_perms}
+    missing_codes = set(_WAREHOUSE_WORKER_REQUIRED_PERMISSIONS) - found_codes
+    if missing_codes:
+        logger.warning(
+            "Permissions not found in DB: %s — warehouse workers may be incomplete",
+            ", ".join(sorted(missing_codes)),
+        )
+
+    if not required_perms:
+        return
+
+    # Fetch already-assigned permission IDs for this role
+    existing_ids = set(
+        row[0]
+        for row in db.query(RolePermission.permission_id)
+        .filter(RolePermission.role_id == ww_role.id)
+        .all()
+    )
+
+    # Assign any that are missing
+    assigned_count = 0
+    for perm in required_perms:
+        if perm.id not in existing_ids:
+            db.add(RolePermission(role_id=ww_role.id, permission_id=perm.id))
+            assigned_count += 1
+
+    if assigned_count:
+        db.flush()
+        logger.info(
+            "Auto-assigned %d missing permissions to warehouse_work_user role %s",
+            assigned_count,
+            ww_role.id,
+        )
+
+
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
@@ -185,6 +252,10 @@ async def create_worker(
             detail="warehouse_work_user role not found. Run seed data first.",
         )
 
+    # --- Ensure the role has all required worker permissions ---
+    # (safeguard for roles created before the fix or auto-seeded without perms)
+    _ensure_worker_permissions(db, ww_role)
+
     # --- Build extra_data for legacy fields ---
     extra_data = {}
     if body.login_username:
@@ -231,23 +302,48 @@ async def create_worker(
     db.refresh(user)
 
     # --- Assign warehouse access ---
-    if warehouse_ids and core_client:
-        for wh_id in warehouse_ids:
-            try:
-                await core_client.assign_user_to_warehouse(
-                    user_id=user.id,
-                    organization_id=org_id,
-                    warehouse_id=wh_id,
-                    role=warehouse_role_str,
-                )
-            except Exception as exc:
-                logger.error(
-                    "Failed to assign worker to warehouse",
-                    extra={
-                        "user_id": str(user.id),
-                        "warehouse_id": str(wh_id),
-                        "error": str(exc),
-                    },
+    assigned_warehouse_ids: list = []
+    failed_warehouse_ids: list = []
+
+    if warehouse_ids:
+        if not core_client:
+            logger.warning(
+                "Core service client not available — worker created without warehouse assignments",
+                extra={
+                    "user_id": str(user.id),
+                    "requested_warehouse_ids": [str(wid) for wid in warehouse_ids],
+                },
+            )
+        else:
+            for wh_id in warehouse_ids:
+                try:
+                    await core_client.assign_user_to_warehouse(
+                        user_id=user.id,
+                        organization_id=org_id,
+                        warehouse_id=wh_id,
+                        role=warehouse_role_str,
+                    )
+                    assigned_warehouse_ids.append(str(wh_id))
+                except Exception as exc:
+                    failed_warehouse_ids.append(str(wh_id))
+                    logger.error(
+                        "Failed to assign worker to warehouse",
+                        extra={
+                            "user_id": str(user.id),
+                            "warehouse_id": str(wh_id),
+                            "error": str(exc),
+                        },
+                    )
+
+            # If all assignments failed, raise an error so the caller knows
+            if failed_warehouse_ids and not assigned_warehouse_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=(
+                        f"Worker created but failed to assign to all warehouses: "
+                        f"{', '.join(failed_warehouse_ids)}. "
+                        f"Check core-service connectivity."
+                    ),
                 )
 
     return WarehouseWorkerResponse(
@@ -263,7 +359,7 @@ async def create_worker(
         qr_code=user.qr_code,
         organization_id=str(org_id),
         created_at=user.created_at,
-        warehouse_assignments=[str(wid) for wid in warehouse_ids],
+        warehouse_assignments=assigned_warehouse_ids,
     )
 
 
