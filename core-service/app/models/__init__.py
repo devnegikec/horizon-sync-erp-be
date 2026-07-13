@@ -156,6 +156,7 @@ from app.models.put_away_rule import PutAwayRule
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
 from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
+from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_scan_interaction import QRScanInteraction
@@ -329,6 +330,8 @@ __all__ = [
     "QRCreditUsage",
     "QRCreditBalance",
     "QRCreditLedger",
+    "QRCTAConfig",
+    "QRCTAConfig",
     "QRScanEvent",
     "QRScanInteraction",
     # Campaigns & Coupons module

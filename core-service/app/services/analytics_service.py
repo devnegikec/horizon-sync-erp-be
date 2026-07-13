@@ -7,11 +7,14 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.repositories.analytics_repository import (
+    CTAConfigRepository,
     MetaCampaignRepository,
     QRScanEventRepository,
     ScanInteractionRepository,
 )
 from app.schemas.analytics import (
+    CTAConfigCreate,
+    CTAConfigUpdate,
     MetaCampaignCreate,
     QRScanEventIngest,
     ScanInteractionIngest,
@@ -27,6 +30,7 @@ class AnalyticsService:
         self.db = db
         self.scan_repo = QRScanEventRepository(db)
         self.interaction_repo = ScanInteractionRepository(db)
+        self.cta_config_repo = CTAConfigRepository(db)
         self.meta_repo = MetaCampaignRepository(db)
 
     # ── QR Scan Events ────────────────────────────────────────────────────────
@@ -179,6 +183,37 @@ class AnalyticsService:
         return self.scan_repo.get_interaction_funnel(
             organization_id, date_from, date_to
         )
+
+    # ── CTA Configuration ────────────────────────────────────────────────
+
+    def create_cta_config(
+        self, data: CTAConfigCreate, organization_id: UUID, product_id: UUID
+    ):
+        payload = data.model_dump()
+        payload["organization_id"] = organization_id
+        payload["product_id"] = product_id
+        return self.cta_config_repo.create(payload)
+
+    def list_cta_configs(self, organization_id: UUID, product_id: UUID):
+        return self.cta_config_repo.list_by_product(organization_id, product_id)
+
+    def get_cta_config(self, config_id: UUID, organization_id: UUID):
+        return self.cta_config_repo.get_by_id(config_id, organization_id)
+
+    def update_cta_config(
+        self, config_id: UUID, data: CTAConfigUpdate, organization_id: UUID
+    ):
+        config = self.cta_config_repo.get_by_id(config_id, organization_id)
+        if not config:
+            return None
+        return self.cta_config_repo.update(config, data.model_dump(exclude_unset=True))
+
+    def delete_cta_config(self, config_id: UUID, organization_id: UUID) -> bool:
+        config = self.cta_config_repo.get_by_id(config_id, organization_id)
+        if not config:
+            return False
+        self.cta_config_repo.delete(config)
+        return True
 
     # ── Meta Campaigns ────────────────────────────────────────────────────
 

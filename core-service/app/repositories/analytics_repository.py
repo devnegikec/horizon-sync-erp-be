@@ -9,6 +9,7 @@ from sqlalchemy import Date, cast, func
 from sqlalchemy.orm import Session
 
 from app.models.analytics import MetaCampaign
+from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_scan_interaction import QRScanInteraction
 
@@ -360,6 +361,56 @@ class ScanInteractionRepository:
             .order_by(QRScanInteraction.created_at.asc())
             .all()
         )
+
+
+# ── CTA Config Repository ─────────────────────────────────────────────────────
+
+
+class CTAConfigRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict) -> QRCTAConfig:
+        config = QRCTAConfig(**data)
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def list_by_product(
+        self, organization_id: UUID, product_id: UUID
+    ) -> list[QRCTAConfig]:
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.organization_id == organization_id,
+                QRCTAConfig.product_id == product_id,
+            )
+            .order_by(QRCTAConfig.display_order.asc())
+            .all()
+        )
+
+    def get_by_id(self, config_id: UUID, organization_id: UUID) -> QRCTAConfig | None:
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.id == config_id,
+                QRCTAConfig.organization_id == organization_id,
+            )
+            .first()
+        )
+
+    def update(self, config: QRCTAConfig, data: dict) -> QRCTAConfig:
+        for key, value in data.items():
+            if value is not None:
+                setattr(config, key, value)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def delete(self, config: QRCTAConfig) -> None:
+        self.db.delete(config)
+        self.db.commit()
 
 
 class MetaCampaignRepository:

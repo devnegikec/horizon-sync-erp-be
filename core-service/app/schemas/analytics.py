@@ -155,6 +155,40 @@ class QRScanAnalyticsResponse(BaseModel):
     by_device: list[ScanCountByDevice]
 
 
+# ── CTA Configuration ─────────────────────────────────────────────────────────
+
+
+class CTAConfigCreate(BaseModel):
+    cta_type: str
+    cta_label: str
+    cta_target: str | None = None
+    display_order: int = 0
+    is_active: bool = True
+
+
+class CTAConfigUpdate(BaseModel):
+    cta_type: str | None = None
+    cta_label: str | None = None
+    cta_target: str | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class CTAConfigResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    product_id: UUID | None
+    cta_type: str
+    cta_label: str
+    cta_target: str | None
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Meta Campaigns ────────────────────────────────────────────────────────────
 
 

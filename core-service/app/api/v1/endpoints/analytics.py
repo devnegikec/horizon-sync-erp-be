@@ -11,6 +11,9 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_feature_flag
 from app.schemas.analytics import (
     CTABreakdownResponse,
+    CTAConfigCreate,
+    CTAConfigResponse,
+    CTAConfigUpdate,
     InteractionFunnelResponse,
     MetaCampaignCreate,
     MetaCampaignListResponse,
@@ -197,6 +200,92 @@ def get_interaction_funnel(
     return service.get_interaction_funnel(org_id, date_from, date_to)
 
 
+# ── CTA Configuration (Admin) ─────────────────────────────────────────────────
+
+
+@router.post(
+    "/products/{product_id}/ctas",
+    response_model=CTAConfigResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a CTA button config for a QR product",
+)
+def create_cta_config(
+    product_id: UUID,
+    data: CTAConfigCreate,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.create_cta_config(data, org_id, product_id)
+
+
+@router.get(
+    "/products/{product_id}/ctas",
+    summary="List CTA configs for a QR product",
+)
+def list_cta_configs(
+    product_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.list_cta_configs(org_id, product_id)
+
+
+@router.get(
+    "/products/{product_id}/ctas/{config_id}",
+    response_model=CTAConfigResponse,
+    summary="Get a single CTA config",
+)
+def get_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    config = service.get_cta_config(config_id, org_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="CTA config not found")
+    return config
+
+
+@router.put(
+    "/products/{product_id}/ctas/{config_id}",
+    response_model=CTAConfigResponse,
+    summary="Update a CTA config",
+)
+def update_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    data: CTAConfigUpdate,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    config = service.update_cta_config(config_id, data, org_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="CTA config not found")
+    return config
+
+
+@router.delete(
+    "/products/{product_id}/ctas/{config_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a CTA config",
+)
+def delete_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    deleted = service.delete_cta_config(config_id, org_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="CTA config not found")
+
+
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
 
 
@@ -211,7 +300,7 @@ def record_meta_snapshot(
     service: AnalyticsService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.record_meta_snapshot(data, org_id)
 
 
@@ -227,7 +316,7 @@ def list_meta_campaigns(
     service: AnalyticsService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_meta_campaigns(org_id, page, page_size, campaign_id)
 
 
@@ -241,7 +330,7 @@ def get_meta_campaign(
     service: AnalyticsService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     mc = service.get_meta_campaign(mc_id, org_id)
     if not mc:
         raise HTTPException(status_code=404, detail="Meta campaign record not found")
