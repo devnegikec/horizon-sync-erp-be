@@ -85,16 +85,39 @@ rediss://default:AVau_xxxx@us1-friendly-gibbon-12345.upstash.io:6379
 
 ---
 
+## ⚠️ IMPORTANT: How to Deploy on SnapDeploy
+
+SnapDeploy supports two modes. Use **Option A** (Dockerfile).
+
+### Option A: Dockerfile Mode ✅ RECOMMENDED
+
+When creating a new app, look for a **"Deployment Type"** or **"Build Method"** dropdown and select **"Dockerfile"** (not "Auto-detect" or "Python"). Then set:
+
+- **Dockerfile path:** `snapdeploy/identity.Dockerfile` (or `core.Dockerfile` / `search.Dockerfile`)
+- **Port:** 8000 / 8001 / 8002
+
+### Option B: Start Script 🔧 FALLBACK
+
+If you can't find the Dockerfile option and are stuck with the "Start command" field, use:
+
+- **Start command:** `bash snapdeploy/start-identity.sh` (or `start-core.sh` / `start-search.sh`)
+- **Port:** 8000 / 8001 / 8002
+
+> ⚠️ The start command field rejects `&&`, `cd`, and pipe operators. That's why we created these scripts — they bundle all steps into one file.
+
+---
+
 ## Step 3: Deploy Identity Service (FIRST)
 
 1. **SnapDeploy → Create New App**
-2. Connect GitHub repo, set:
-   - **Dockerfile path:** `snapdeploy/identity.Dockerfile`
-   - **Port:** `8000`
-   - **Plan:** Medium ($25/mo) — 2 GB RAM, 1 vCPU
-3. Add **Environment Variables** (see full list below)
-4. Click **Deploy**
-5. Save the URL → e.g. `https://horizon-identity-a1b2.snapdeploy.dev`
+2. Connect GitHub repo
+3. Choose deployment method (see above):
+   - **Dockerfile:** path = `snapdeploy/identity.Dockerfile`, Port = `8000`
+   - **Start command:** `bash snapdeploy/start-identity.sh`, Port = `8000`
+4. **Plan:** Medium ($25/mo) — 2 GB RAM, 1 vCPU
+5. Add **Environment Variables** (see full list below)
+6. Click **Deploy**
+7. Save the URL → e.g. `https://horizon-identity-a1b2.snapdeploy.dev`
 
 ### Identity Service — Env Vars Checklist
 
@@ -119,13 +142,13 @@ rediss://default:AVau_xxxx@us1-friendly-gibbon-12345.upstash.io:6379
 ## Step 4: Deploy Core Service (SECOND)
 
 1. **SnapDeploy → Create New App** (same repo)
-2. Set:
-   - **Dockerfile path:** `snapdeploy/core.Dockerfile`
-   - **Port:** `8001`
-   - **Plan:** Medium ($25/mo) or Large ($45/mo) for heavy use
-3. Add Environment Variables (see below)
-4. Click **Deploy**
-5. Save the URL → e.g. `https://horizon-core-c3d4.snapdeploy.dev`
+2. Choose deployment method:
+   - **Dockerfile:** path = `snapdeploy/core.Dockerfile`, Port = `8001`
+   - **Start command:** `bash snapdeploy/start-core.sh`, Port = `8001`
+3. **Plan:** Medium ($25/mo) or Large ($45/mo) for heavy use
+4. Add Environment Variables (see below)
+5. Click **Deploy**
+6. Save the URL → e.g. `https://horizon-core-c3d4.snapdeploy.dev`
 
 ### Core Service — Env Vars Checklist
 
@@ -152,13 +175,13 @@ rediss://default:AVau_xxxx@us1-friendly-gibbon-12345.upstash.io:6379
 ## Step 5: Deploy Search Service (THIRD)
 
 1. **SnapDeploy → Create New App** (same repo)
-2. Set:
-   - **Dockerfile path:** `snapdeploy/search.Dockerfile`
-   - **Port:** `8002`
-   - **Plan:** Small ($12/mo) — 512 MB, 0.25 vCPU
-3. Add Environment Variables (see below)
-4. Click **Deploy**
-5. Save the URL → e.g. `https://horizon-search-e5f6.snapdeploy.dev`
+2. Choose deployment method:
+   - **Dockerfile:** path = `snapdeploy/search.Dockerfile`, Port = `8002`
+   - **Start command:** `bash snapdeploy/start-search.sh`, Port = `8002`
+3. **Plan:** Small ($12/mo) — 512 MB, 0.25 vCPU
+4. Add Environment Variables (see below)
+5. Click **Deploy**
+6. Save the URL → e.g. `https://horizon-search-e5f6.snapdeploy.dev`
 
 ### Search Service — Env Vars Checklist
 
