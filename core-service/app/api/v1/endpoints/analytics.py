@@ -3,12 +3,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from app.core.constants import ANALYTICS_MODULE_ENABLED
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, require_feature_flag
+from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
+from app.dependencies import get_current_user, require_feature_flag
 from app.schemas.analytics import (
     MetaCampaignCreate,
     MetaCampaignListResponse,
@@ -19,7 +19,9 @@ from app.schemas.analytics import (
 )
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))])
+router = APIRouter(
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))]
+)
 
 
 def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
@@ -28,19 +30,30 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
 
 # ── QR Scan Event Ingestion ───────────────────────────────────────────────────
 
+
 @router.post(
     "/scans/ingest",
     response_model=QRScanEventResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Ingest a QR scan event (public — called by QR landing page)",
 )
-def ingest_scan(
+async def ingest_scan(
     data: QRScanEventIngest,
-    organization_id: UUID = Query(..., description="Organization that owns the QR code"),
+    request: Request,
+    organization_id: UUID = Query(
+        ..., description="Organization that owns the QR code"
+    ),
     service: AnalyticsService = Depends(get_service),
 ):
-    """No auth required — called by the consumer-facing QR landing page."""
-    return service.ingest_scan(data, organization_id)
+    """No auth required — called by the consumer-facing QR landing page.
+
+    Auto-enriches the scan with:
+    - User-Agent parsing (browser, OS, device type)
+    - Server-side IP geolocation fallback
+    - Referrer URL and language from request headers
+    """
+    headers = dict(request.headers)
+    return await service.ingest_scan(data, organization_id, headers)
 
 
 @router.get(
@@ -80,6 +93,7 @@ def get_scan_analytics(
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
+
 
 @router.post(
     "/meta-campaigns",

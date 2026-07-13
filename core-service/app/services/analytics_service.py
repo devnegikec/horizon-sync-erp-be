@@ -14,6 +14,8 @@ from app.schemas.analytics import (
     MetaCampaignCreate,
     QRScanEventIngest,
 )
+from app.services.geoip_service import lookup_ip
+from app.services.user_agent_service import parse_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -26,22 +28,46 @@ class AnalyticsService:
 
     # ── QR Scan Events ────────────────────────────────────────────────────────
 
-    def ingest_scan(
+    async def ingest_scan(
         self,
         data: QRScanEventIngest,
         organization_id: UUID,
+        request_headers: dict | None = None,
     ):
-        """Record a QR scan event. Called by the public QR landing page."""
+        """Record a QR scan event with auto-enrichment from HTTP headers.
+
+        Server-side enrichment performed:
+        1. User-Agent → parsed device/browser/OS (user_agent_parsed JSONB)
+        2. IP address → geo lookup fallback (city/country/lat/lng)
+        3. Referer & Accept-Language captured from headers
+        """
         payload = data.model_dump()
         payload["organization_id"] = organization_id
         payload["scan_timestamp"] = datetime.now(UTC)
 
+        # ── Enrich from HTTP headers ──────────────────────────────────────
+        headers = request_headers or {}
+        ua_raw = headers.get("user-agent")
+        payload["user_agent_raw"] = ua_raw
+        payload["user_agent_parsed"] = parse_user_agent(ua_raw)
+        payload["referrer_url"] = headers.get("referer")
+        payload["language"] = (headers.get("accept-language") or "")[:10]
+
+        # ── Server-side IP geolocation fallback ───────────────────────────
+        if not payload.get("city") and not payload.get("country"):
+            geo = await lookup_ip(payload.get("ip_address"))
+            if geo:
+                for key in ("country", "state", "city", "latitude", "longitude"):
+                    if geo.get(key) is not None:
+                        payload[key] = geo[key]
+
         event = self.scan_repo.create(payload)
         logger.info(
-            "[ANALYTICS] scan ingested org=%s serial=%s city=%s",
+            "[ANALYTICS] scan ingested org=%s serial=%s cta=%s ua_parsed=%s",
             organization_id,
             data.serial_number,
-            data.city,
+            data.cta_action,
+            bool(payload["user_agent_parsed"]),
         )
         return event
 
@@ -56,8 +82,13 @@ class AnalyticsService:
         date_to: datetime | None = None,
     ):
         items, total = self.scan_repo.list(
-            organization_id, page, page_size,
-            serial_number, product_item_id, date_from, date_to,
+            organization_id,
+            page,
+            page_size,
+            serial_number,
+            product_item_id,
+            date_from,
+            date_to,
         )
         total_pages = (total + page_size - 1) // page_size
         return {
@@ -101,7 +132,9 @@ class AnalyticsService:
         page_size: int = 20,
         campaign_id: str | None = None,
     ):
-        items, total = self.meta_repo.list(organization_id, page, page_size, campaign_id)
+        items, total = self.meta_repo.list(
+            organization_id, page, page_size, campaign_id
+        )
         total_pages = (total + page_size - 1) // page_size
         return {
             "campaigns": items,

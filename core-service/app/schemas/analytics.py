@@ -11,10 +11,15 @@ from pydantic import BaseModel
 
 
 class QRScanEventIngest(BaseModel):
-    """Payload sent by the QR landing page on each scan"""
+    """Payload sent by the QR landing page on each scan.
+
+    Fields marked with * are auto-enriched server-side from HTTP headers
+    or external lookups — the client does not need to send them.
+    """
 
     serial_number: str
     product_item_id: UUID | None = None
+    # ── Client-provided (optional) ──────────────────────────────────────
     device_type: str | None = None
     os: str | None = None
     browser: str | None = None
@@ -25,6 +30,9 @@ class QRScanEventIngest(BaseModel):
     state: str | None = None
     country: str | None = None
     extra_data: dict[str, Any] | None = None
+    # ── Phase 2: CTA & QR type ──────────────────────────────────────────
+    qr_type: str | None = None
+    cta_action: str | None = None
 
 
 class QRScanEventResponse(BaseModel):
@@ -36,9 +44,19 @@ class QRScanEventResponse(BaseModel):
     device_type: str | None
     os: str | None
     browser: str | None
+    ip_address: str | None
+    latitude: float | None
+    longitude: float | None
     city: str | None
     state: str | None
     country: str | None
+    # ── Phase 2 fields ──────────────────────────────────────────────────
+    user_agent_raw: str | None = None
+    user_agent_parsed: dict[str, Any] | None = None
+    qr_type: str | None = None
+    cta_action: str | None = None
+    referrer_url: str | None = None
+    language: str | None = None
 
     model_config = {"from_attributes": True}
 
