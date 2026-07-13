@@ -39,6 +39,29 @@ class RemoveStockRequest(BaseModel):
     )
 
 
+class BulkAddStockItem(BaseModel):
+    """A single item entry within a bulk add request"""
+
+    item_id: UUID = Field(..., description="Item UUID to add to the bin")
+    quantity: Decimal = Field(
+        ..., gt=0, description="Quantity to add (must be positive)"
+    )
+    batch_number: str | None = Field(
+        None, max_length=100, description="Optional batch number"
+    )
+
+
+class BulkAddStockRequest(BaseModel):
+    """Schema for adding multiple items to a single bin in one API call"""
+
+    bin_id: UUID = Field(
+        ..., description="Bin location UUID (all items go to this bin)"
+    )
+    items: list[BulkAddStockItem] = Field(
+        ..., min_length=1, max_length=50, description="List of items to add to the bin"
+    )
+
+
 # ===========================================
 # RESPONSE SCHEMAS
 # ===========================================
@@ -81,6 +104,26 @@ class BinStockListResponse(BaseModel):
     bin_stock_levels: list[BinStockLevelResponse]
 
 
+class BulkAddStockItemResult(BaseModel):
+    """Result for a single item in a bulk add operation"""
+
+    item_id: UUID
+    quantity: Decimal
+    batch_number: str | None = None
+    status: str  # "added" or "error"
+    error: str | None = None
+    bin_stock_level: BinStockLevelResponse | None = None
+
+
+class BulkAddStockResponse(BaseModel):
+    """Response schema for bulk add stock operation"""
+
+    bin_id: UUID
+    added: int
+    errors: int
+    items: list[BulkAddStockItemResult]
+
+
 class BinStockForItemResponse(BaseModel):
     """Response schema for listing all bins containing a specific item"""
 
@@ -94,7 +137,9 @@ class CopyStockRequest(BaseModel):
     target_bin_id: UUID = Field(..., description="Target bin location UUID")
     item_id: UUID = Field(..., description="Item UUID")
     quantity: Decimal = Field(..., gt=0, description="Quantity to copy")
-    batch_number: str | None = Field(None, max_length=100, description="Optional batch number")
+    batch_number: str | None = Field(
+        None, max_length=100, description="Optional batch number"
+    )
 
 
 class StockImportRow(BaseModel):
@@ -111,7 +156,9 @@ class StockImportRequest(BaseModel):
 
     warehouse_id: UUID = Field(..., description="Warehouse UUID")
     rows: list[StockImportRow] = Field(..., min_length=1)
-    overwrite_existing: bool = Field(default=False, description="Overwrite existing stock for same bin+item+batch")
+    overwrite_existing: bool = Field(
+        default=False, description="Overwrite existing stock for same bin+item+batch"
+    )
 
 
 class StockImportResult(BaseModel):

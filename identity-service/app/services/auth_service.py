@@ -26,6 +26,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.base import UserStatus, UserType
+from app.models.role import Permission, Role, RolePermission
 from app.models.user import User
 from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.token_repository import TokenRepository
@@ -34,6 +35,20 @@ from app.repositories.user_repository import UserRepository
 
 class AuthService:
     """Service for authentication operations"""
+
+    # Permission codes required by the warehouse_work_user role.
+    # Must stay in sync with workers.py and identity_role_service.py.
+    _WORKER_REQUIRED_PERMISSIONS = [
+        "warehouse.read",
+        "wms.scan",
+        "receiving_slip.create",
+        "receiving_slip.read",
+        "receiving_slip.update",
+        "pick_list.read",
+        "pick_list.update",
+        "stock_entry.create",
+        "stock_entry.read",
+    ]
 
     def __init__(self, db: Session):
         self.db = db
@@ -256,6 +271,10 @@ class AuthService:
         if not user.is_active or user.status == UserStatus.SUSPENDED:
             raise AuthenticationError("Worker account is inactive or suspended")
 
+        # --- Ensure the worker's role has all required permissions ---
+        # (patches roles created before the seed-data fix or auto-seeded without perms)
+        self._ensure_worker_permissions(user)
+
         # Update login tracking
         self.user_repo.update_user(
             user,
@@ -290,6 +309,76 @@ class AuthService:
         )
 
         return user, access_token, refresh_token
+
+    def _ensure_worker_permissions(self, user: User) -> None:
+        """Ensure the warehouse_work_user role has all required permissions.
+
+        Patches roles that were created before the seed-data fix or
+        auto-seeded by core-service without permissions.
+        Idempotent — skips permissions already assigned.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Find the worker's warehouse_work_user role
+        ww_role = (
+            self.db.query(Role)
+            .filter(
+                Role.code == "warehouse_work_user",
+                Role.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not ww_role:
+            logger.warning(
+                "warehouse_work_user role not found — cannot patch permissions"
+            )
+            return
+
+        # Fetch all required Permission objects
+        required_perms = (
+            self.db.query(Permission)
+            .filter(
+                Permission.code.in_(self._WORKER_REQUIRED_PERMISSIONS),
+                Permission.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+
+        found_codes = {p.code for p in required_perms}
+        missing_codes = set(self._WORKER_REQUIRED_PERMISSIONS) - found_codes
+        if missing_codes:
+            logger.warning(
+                "Permissions not found in DB: %s — workers may be incomplete",
+                ", ".join(sorted(missing_codes)),
+            )
+
+        if not required_perms:
+            return
+
+        # Fetch already-assigned permission IDs
+        existing_ids = set(
+            row[0]
+            for row in self.db.query(RolePermission.permission_id)
+            .filter(RolePermission.role_id == ww_role.id)
+            .all()
+        )
+
+        # Assign missing permissions
+        assigned = 0
+        for perm in required_perms:
+            if perm.id not in existing_ids:
+                self.db.add(RolePermission(role_id=ww_role.id, permission_id=perm.id))
+                assigned += 1
+
+        if assigned:
+            self.db.flush()
+            logger.info(
+                "QR login: auto-assigned %d missing permissions to warehouse_work_user role %s",
+                assigned,
+                ww_role.id,
+            )
 
     def refresh_access_token(self, refresh_token: str) -> str:
         """

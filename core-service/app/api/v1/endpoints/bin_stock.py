@@ -19,6 +19,8 @@ from app.schemas.bin_stock import (
     BinStockInfoResponse,
     BinStockLevelResponse,
     BinStockListResponse,
+    BulkAddStockRequest,
+    BulkAddStockResponse,
     CopyStockRequest,
     RemoveStockRequest,
     StockImportRequest,
@@ -100,6 +102,53 @@ async def add_stock(
         batch_number=data.batch_number,
     )
     return BinStockLevelResponse.model_validate(bin_stock)
+
+
+@router.post(
+    "/bulk-add",
+    response_model=BulkAddStockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bulk add stock to bin",
+    description="Add multiple items to a single bin in one API call. Each item is processed independently — failures for individual items do not affect others.",
+)
+async def bulk_add_stock(
+    data: BulkAddStockRequest,
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Add multiple items to a single bin in one API call.
+
+    Validates per-item:
+    - Quantity must be positive
+    - Cumulative capacity won't be exceeded (per-item check against running total)
+
+    After adding:
+    - Creates/updates BinStockLevel records for each item
+    - Syncs warehouse-level stock
+    - Triggers capacity rollup (once for all items)
+
+    **Request Body:**
+    - **bin_id**: Bin location UUID (all items go to this bin)
+    - **items**: List of { item_id, quantity, batch_number? } (max 50)
+
+    **Returns:** Per-item status with "added" or "error", plus summary counts
+    """
+    service = BinStockService(db)
+    items_dicts = [
+        {
+            "item_id": item.item_id,
+            "quantity": item.quantity,
+            "batch_number": item.batch_number,
+        }
+        for item in data.items
+    ]
+    result = service.bulk_add_stock(
+        bin_id=data.bin_id,
+        items=items_dicts,
+        org_id=current_user.organization_id,
+    )
+    return BulkAddStockResponse(**result)
 
 
 @router.post(
