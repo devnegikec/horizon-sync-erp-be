@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/messaging.py
+# hypothesis_version: 6.152.8
+
+[100, 120, 150, 250, 256, 400, 1000, 4000, 'BulkMessageJob', 'Not Approved', 'Pending', 'RCSReport', 'SMSReport', 'T', 'WhatsAppReport', 'bulk_message_jobs', 'bulk_message_jobs.id', 'campaign_tags.id', 'job', 'message_credits', 'message_templates', 'rcs_credentials', 'rcs_reports', 'rcs_templates', 'scheduled_messages', 'sms_reports', 'whatsapp_reports']

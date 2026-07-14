@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/payment_entry_repository.py
+# hypothesis_version: 6.152.8
+
+['amount', 'asc', 'created_at', 'desc', 'id', 'payment_date', 'payment_mode', 'status', 'updated_at']

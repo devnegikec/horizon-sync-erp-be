@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/schemas/__init__.py
+# hypothesis_version: 6.151.6
+
+['ItemCreate', 'ItemGroupCreate', 'ItemGroupListItem', 'ItemGroupResponse', 'ItemGroupTreeNode', 'ItemGroupUpdate', 'ItemListItem', 'ItemListResponse', 'ItemPriceBulkCreate', 'ItemPriceCreate', 'ItemPriceListItem', 'ItemPriceResponse', 'ItemPriceUpdate', 'ItemResponse', 'ItemUpdate', 'PaginationMeta', 'RFQCreate', 'RFQLineCreate', 'RFQLineResponse', 'RFQListItem', 'RFQListResponse', 'RFQResponse', 'RFQStatusUpdate', 'RFQSupplierCreate', 'RFQSupplierResponse', 'RFQUpdate', 'RecordQuoteRequest', 'SupplierQuoteCreate', 'WarehouseCreate', 'WarehouseListItem', 'WarehouseResponse', 'WarehouseTreeNode', 'WarehouseUpdate']

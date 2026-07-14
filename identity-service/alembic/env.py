@@ -1,18 +1,19 @@
-"""Alembic environment configuration"""
+"""Alembic environment configuration for Identity Service"""
 
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-import sys
 import os
+import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.config import settings
-from app.database import Base
-from app.models import *  # Import all models
+from app.config import settings  # noqa: E402
+from app.database import Base  # noqa: E402
+from app.models import *  # Import all models  # noqa: E402, F401, F403
 
 # this is the Alembic Config object
 config = context.config
@@ -67,7 +68,8 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
         )
 
         with context.begin_transaction():

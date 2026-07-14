@@ -1,0 +1,428 @@
+{
+	"info": {
+		"_postman_id": "purchase-order-api-collection",
+		"name": "Purchase Order API",
+		"description": "Complete API collection for testing Purchase Order endpoints with realistic data",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Purchase Order from RFQ",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('purchase_order_id', response.id);",
+							"    console.log('Purchase Order ID:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"description": "JWT token from identity service"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"rfq_id\": \"{{rfq_id}}\",\n  \"party_id\": \"{{supplier_id}}\",\n  \"tax_rate\": 0.10,\n  \"discount_amount\": 0,\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": 50,\n      \"unit_price\": 125.50\n    },\n    {\n      \"item_id\": \"{{item_id_2}}\",\n      \"quantity\": 25,\n      \"unit_price\": 450.00\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"]
+				},
+				"description": "Create a new Purchase Order from an RFQ with supplier quotes"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Create Standalone Purchase Order",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('purchase_order_id_2', response.id);",
+							"    console.log('Purchase Order ID 2:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"party_id\": \"{{supplier_id}}\",\n  \"tax_rate\": 0.08,\n  \"discount_amount\": 50.00,\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_3}}\",\n      \"quantity\": 100,\n      \"unit_price\": 15.75\n    },\n    {\n      \"item_id\": \"{{item_id_4}}\",\n      \"quantity\": 200,\n      \"unit_price\": 8.50\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"]
+				},
+				"description": "Create a standalone Purchase Order without RFQ reference"
+			},
+			"response": []
+		},
+		{
+			"name": "3. Get Purchase Order by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}"]
+				},
+				"description": "Retrieve a specific Purchase Order by ID with all line items"
+			},
+			"response": []
+		},
+		{
+			"name": "4. List All Purchase Orders",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders?page=1&page_size=20&sort_by=created_at&sort_order=desc",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "20"
+						},
+						{
+							"key": "sort_by",
+							"value": "created_at"
+						},
+						{
+							"key": "sort_order",
+							"value": "desc"
+						}
+					]
+				},
+				"description": "List all Purchase Orders with pagination"
+			},
+			"response": []
+		},
+		{
+			"name": "5. Filter by Status (DRAFT) - lowercase",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders?status=draft&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"],
+					"query": [
+						{
+							"key": "status",
+							"value": "draft"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Purchase Orders by DRAFT status using lowercase"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Filter by Status (DRAFT) - uppercase",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders?status=DRAFT&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"],
+					"query": [
+						{
+							"key": "status",
+							"value": "DRAFT"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Purchase Orders by DRAFT status using uppercase"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Update Purchase Order (DRAFT only)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"tax_rate\": 0.12,\n  \"discount_amount\": 100.00,\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": 60,\n      \"unit_price\": 125.50\n    },\n    {\n      \"item_id\": \"{{item_id_2}}\",\n      \"quantity\": 30,\n      \"unit_price\": 450.00\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}"]
+				},
+				"description": "Update a Purchase Order (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "8. Submit Purchase Order",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}/submit",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}", "submit"]
+				},
+				"description": "Submit Purchase Order - changes status from DRAFT to SUBMITTED"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Filter by Status (SUBMITTED) - lowercase",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders?status=submitted&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"],
+					"query": [
+						{
+							"key": "status",
+							"value": "submitted"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Purchase Orders by SUBMITTED status using lowercase"
+			},
+			"response": []
+		},
+		{
+			"name": "10. Filter by Status (SUBMITTED) - uppercase",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders?status=SUBMITTED&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"],
+					"query": [
+						{
+							"key": "status",
+							"value": "SUBMITTED"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Purchase Orders by SUBMITTED status using uppercase"
+			},
+			"response": []
+		},
+		{
+			"name": "11. Cancel Purchase Order",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id_2}}/cancel",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id_2}}", "cancel"]
+				},
+				"description": "Cancel a Purchase Order - changes status to CANCELLED"
+			},
+			"response": []
+		},
+		{
+			"name": "12. Delete Purchase Order (DRAFT only)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id_to_delete}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id_to_delete}}"]
+				},
+				"description": "Delete a Purchase Order (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "13. Error Test - Invalid Supplier",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"party_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"tax_rate\": 0.10,\n  \"discount_amount\": 0,\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": 10,\n      \"unit_price\": 100.00\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders"]
+				},
+				"description": "Test error - should return 404 Not Found (invalid supplier ID)"
+			},
+			"response": []
+		},
+		{
+			"name": "14. Error Test - Update Submitted PO",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"tax_rate\": 0.15\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}"]
+				},
+				"description": "Test error - should return 409 Conflict (cannot update submitted Purchase Order)"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8001",
+			"type": "string"
+		}
+	]
+}

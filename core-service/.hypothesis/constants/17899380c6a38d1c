@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/credit_service.py
+# hypothesis_version: 6.152.8
+
+[422, 'balance_after', 'block_id', 'organization_id', 'quantity_deducted']

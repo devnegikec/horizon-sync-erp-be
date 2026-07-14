@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/brand_trust.py
+# hypothesis_version: 6.152.8
+
+[1.0, 100, 'BrandIndustry', 'BrandTrustAnswer', 'BrandTrustAssessment', 'BrandTrustQuestion', 'CASCADE', 'all, delete-orphan', 'answers', 'assessment', 'assessments', 'brand_industries', 'brand_industries.id', 'brand_trust_answers', 'in_progress', 'industry', 'question', 'questions', 'rating']

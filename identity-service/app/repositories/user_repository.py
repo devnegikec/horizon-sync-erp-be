@@ -1,27 +1,31 @@
 """User repository for database operations"""
 
-from typing import Optional, List
+import logging
+from datetime import UTC, datetime
 from uuid import UUID
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
 
-from app.models.user import User
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
+
 from app.models.base import UserStatus, UserType
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository:
     """Repository for user database operations"""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create_user(self, user_data: dict) -> User:
         """
         Create a new user.
-        
+
         Args:
             user_data: Dictionary containing user data
-            
+
         Returns:
             Created User object
         """
@@ -30,70 +34,95 @@ class UserRepository:
         self.db.commit()
         self.db.refresh(user)
         return user
-    
-    def get_user_by_id(self, user_id: UUID) -> Optional[User]:
+
+    def get_user_by_id(self, user_id: UUID) -> User | None:
         """
         Get user by ID.
-        
+
         Args:
             user_id: User UUID
-            
+
         Returns:
             User object or None if not found
         """
-        return self.db.query(User).filter(
-            User.id == user_id,
-            User.deleted_at.is_(None)
-        ).first()
-    
-    def get_user_by_email(self, email: str) -> Optional[User]:
+        return (
+            self.db.query(User)
+            .filter(User.id == user_id, User.deleted_at.is_(None))
+            .first()
+        )
+
+    def get_user_by_email(self, email: str) -> User | None:
         """
-        Get user by email address.
-        
+        Get user by email address (case-insensitive).
+
         Args:
             email: User email address
-            
+
         Returns:
             User object or None if not found
         """
-        return self.db.query(User).filter(
-            User.email == email,
-            User.deleted_at.is_(None)
-        ).first()
-    
+        return (
+            self.db.query(User)
+            .filter(
+                func.lower(User.email) == email.lower(),
+                User.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def get_user_by_qr_code(self, qr_code: str) -> User | None:
+        """
+        Get user by QR code (for warehouse worker QR login).
+
+        Args:
+            qr_code: Worker's unique QR code string
+
+        Returns:
+            User object or None if not found
+        """
+        return (
+            self.db.query(User)
+            .filter(
+                User.qr_code == qr_code,
+                User.deleted_at.is_(None),
+            )
+            .first()
+        )
+
     def update_user(self, user: User, update_data: dict) -> User:
         """
         Update user fields.
-        
+
         Args:
             user: User object to update
             update_data: Dictionary of fields to update
-            
+
         Returns:
             Updated User object
         """
         for key, value in update_data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
-        
+
         self.db.commit()
         self.db.refresh(user)
         return user
-    
+
     def list_users(
         self,
         page: int = 1,
         page_size: int = 20,
-        status: Optional[UserStatus] = None,
-        user_type: Optional[UserType] = None,
-        email_verified: Optional[bool] = None,
-        search: Optional[str] = None,
+        status: UserStatus | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
-    ) -> tuple[List[User], int]:
+        sort_order: str = "desc",
+        organization_ids: list[UUID] | None = None,
+    ) -> tuple[list[User], int]:
         """
         List users with pagination and filters.
-        
+
         Args:
             page: Page number (1-indexed)
             page_size: Number of items per page
@@ -103,59 +132,185 @@ class UserRepository:
             search: Search term for email, first_name, last_name
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
-            
+            organization_ids: If set, only users that belong to these organizations
+
         Returns:
             Tuple of (list of users, total count)
         """
         query = self.db.query(User).filter(User.deleted_at.is_(None))
-        
-        # Apply filters
-        if status:
-            query = query.filter(User.status == status)
-        
-        if user_type:
-            query = query.filter(User.user_type == user_type)
-        
-        if email_verified is not None:
-            query = query.filter(User.email_verified == email_verified)
-        
-        if search:
-            search_term = f"%{search}%"
-            query = query.filter(
-                or_(
-                    User.email.ilike(search_term),
-                    User.first_name.ilike(search_term),
-                    User.last_name.ilike(search_term)
-                )
-            )
-        
+        query = self._apply_filters(
+            query,
+            organization_ids=organization_ids,
+            status=status,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+
         # Get total count before pagination
         total_count = query.count()
-        
+
         # Apply sorting
         sort_column = getattr(User, sort_by, User.created_at)
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
         else:
             query = query.order_by(sort_column.asc())
-        
+
         # Apply pagination
         offset = (page - 1) * page_size
         users = query.offset(offset).limit(page_size).all()
-        
+
         return users, total_count
-    
+
+    def _apply_filters(
+        self,
+        query,
+        organization_ids: list[UUID] | None = None,
+        status: UserStatus | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ):
+        """Apply filters to user query."""
+        if organization_ids is not None:
+            from app.models.role import UserOrganizationRole
+
+            query = (
+                query.join(
+                    UserOrganizationRole, UserOrganizationRole.user_id == User.id
+                )
+                .filter(
+                    UserOrganizationRole.organization_id.in_(organization_ids),
+                    UserOrganizationRole.is_active,
+                )
+                .distinct()
+            )
+
+        if status:
+            query = query.filter(User.status == status)
+
+        if user_type:
+            query = query.filter(User.user_type == user_type)
+
+        if email_verified is not None:
+            query = query.filter(User.email_verified == email_verified)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    User.email.ilike(search_term),
+                    User.first_name.ilike(search_term),
+                    User.last_name.ilike(search_term),
+                )
+            )
+        return query
+
+    def _process_status_counts(self, status_counts) -> dict[str, int]:
+        """Convert raw status counts to dict with all status keys."""
+        result = {
+            UserStatus.ACTIVE.value: 0,
+            UserStatus.INACTIVE.value: 0,
+            UserStatus.SUSPENDED.value: 0,
+            UserStatus.PENDING.value: 0,
+        }
+        for status_val, count in status_counts:
+            if status_val is None:
+                continue
+            try:
+                if hasattr(status_val, "value"):
+                    key = status_val.value
+                elif isinstance(status_val, str):
+                    key = status_val
+                else:
+                    key = str(status_val)
+
+                if key in result:
+                    result[key] = int(count) if count is not None else 0
+            except (AttributeError, ValueError, TypeError) as e:
+                logger.warning(f"Error processing status value {status_val}: {e}")
+                continue
+        return result
+
+    def get_user_status_counts(
+        self,
+        organization_ids: list[UUID] | None = None,
+        user_type: UserType | None = None,
+        email_verified: bool | None = None,
+        search: str | None = None,
+    ) -> dict[str, int]:
+        """
+        Get counts of users by status and mfa_enabled for the same scope as list_users.
+        """
+        from sqlalchemy import distinct, func
+
+        count_expr = (
+            func.count(distinct(User.id))
+            if organization_ids is not None
+            else func.count(User.id)
+        )
+
+        # Status counts
+        status_query = self.db.query(User.status, count_expr).filter(
+            User.deleted_at.is_(None)
+        )
+        status_query = self._apply_filters(
+            status_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+        status_counts = status_query.group_by(User.status).all()
+        result = self._process_status_counts(status_counts)
+
+        # MFA count
+        mfa_query = self.db.query(count_expr).filter(
+            User.deleted_at.is_(None), User.mfa_enabled.is_(True)
+        )
+        mfa_query = self._apply_filters(
+            mfa_query,
+            organization_ids=organization_ids,
+            user_type=user_type,
+            email_verified=email_verified,
+            search=search,
+        )
+        result["mfa_enabled"] = mfa_query.scalar() or 0
+
+        return result
+
     def email_exists(self, email: str) -> bool:
         """
-        Check if email already exists.
-        
+        Check if email already exists (case-insensitive).
+
         Args:
             email: Email address to check
-            
+
         Returns:
             True if email exists, False otherwise
         """
-        return self.db.query(User).filter(
-            User.email == email,
-            User.deleted_at.is_(None)
-        ).count() > 0
+        return (
+            self.db.query(User)
+            .filter(
+                func.lower(User.email) == email.lower(),
+                User.deleted_at.is_(None),
+            )
+            .count()
+            > 0
+        )
+
+    def soft_delete(self, user: User) -> User:
+        """
+        Soft delete user by setting deleted_at.
+
+        Args:
+            user: User object to soft delete
+
+        Returns:
+            Updated User object
+        """
+        user.deleted_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(user)
+        return user

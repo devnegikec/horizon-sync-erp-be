@@ -1,0 +1,18 @@
+item_name,description,item_type,status,uom,standard_rate,maintain_stock,barcode,sku,item_group_name,valuation_method,min_order_qty,max_order_qty
+Svachh SS Popular 2L Pressure Cooker,Stainless steel popular pressure cooker 2 litres,stock,active,Bag,100,TRUE,,SVACHH-SS-POP-2L,Cookware,fifo,1,100
+Svachh SS Popular 1.5L Pressure Cooker,Stainless steel popular pressure cooker 1.5 litres,stock,active,Bag,100,TRUE,,SVACHH-SS-POP-1.5L,Cookware,fifo,1,100
+DLX Alpha Svachh 5.5L Pressure Cooker,Deluxe alpha stainless steel pressure cooker 5.5 litres,stock,active,Bag,100,TRUE,,DLX-ALPHA-SVACHH-5.5L,Cookware,fifo,1,50
+Prestige Cast Iron Tawa,Cast iron tawa for roti and dosa,stock,active,Bag,100,TRUE,,PRESTIGE-CI-TAWA,Cookware,fifo,1,50
+Omega SLT Plus Fry Pan,Omega select plus non-stick fry pan,stock,active,Bag,100,TRUE,,OMEGA-SLT-PLUS-FP,Cookware,fifo,1,50
+Prestige Triply Dia 110mm Tadka Pan,Triply stainless steel tadka pan 110mm,stock,active,Bag,100,TRUE,,TRIPLY-TADKA-110,Cookware,fifo,1,100
+Prestige Triply Splendid 32cm Kadai,Triply splendid stainless steel kadai 32cm,stock,active,Bag,100,TRUE,,TRIPLY-SPLENDID-32,Cookware,fifo,1,30
+Prestige Vectra Glasstop 3 Burner,Vectra glasstop gas stove 3 burner,stock,active,Bag,100,TRUE,,VECTRA-GLASTOP-3B,Appliances,fifo,1,20
+Prestige Endura 3 Jar Mixer Grinder,Endura 750W 3 jar mixer grinder,stock,active,Bag,100,TRUE,,ENDURA-3J-MIXER,Appliances,fifo,1,20
+Prestige Prism Plus 1000W 3 Jar Mixer,Prism plus 1000W 3 jar mixer grinder,stock,active,Bag,100,TRUE,,PRISM-PLUS-1000W,Appliances,fifo,1,20
+Svachh HA 3.5L Pressure Pan,Stainless steel pressure pan 3.5 litres,stock,active,Bag,100,TRUE,,SVACHH-HA-3.5L-PAN,Cookware,fifo,1,50
+Prestige Kettle 1.5L Stainless Steel,Stainless steel electric kettle 1.5 litres,stock,active,Bag,100,TRUE,,KETTLE-1.5L-SS,Appliances,fifo,1,100
+Prestige PIC 20 Induction 1600W,PIC 20 induction cooktop 1600W,stock,active,Bag,100,TRUE,,PIC-20-IND-1600W,Appliances,fifo,1,30
+Prestige PIC 15.0 Plus Induction Cooktop,PIC 15.0 plus induction cooktop,stock,active,Bag,100,TRUE,,PIC-15-PLUS-IND,Appliances,fifo,1,30
+Prestige NutriFry Digital Air Fryer 4.5L,NutriFry digital air fryer 4.5 litres,stock,active,Bag,100,TRUE,,NUTRIFRY-DIGI-4.5L,Appliances,fifo,1,20
+Judge Insta Air Fryer 4L,Insta air fryer 4 litres,stock,active,Bag,100,TRUE,,JUDGE-INSTA-AF-4L,Appliances,fifo,1,20
+Prestige Endura 1000W Mixer Grinder,Endura 1000W mixer grinder,stock,active,Bag,100,TRUE,,ENDURA-1000W-MIX,Appliances,fifo,1,20

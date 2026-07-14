@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/warehouse_locations.py
+# hypothesis_version: 6.152.8
+
+[100, '/search', '/tree/{warehouse_id}', '/{location_id}', 'Search locations', 'Search query string', 'Warehouse UUID', 'available_capacity', 'distinct_items', 'locations', 'occupied_bins', 'pagination', 'total_bins', 'total_capacity', 'used_capacity']

@@ -1,0 +1,125 @@
+
+
+1. Add an Account in Chart of Accounts
+Step 1:
+Go to Chart of Accounts UI or use API to add a new account:
+
+Code: 1130
+Name: Petty Cash
+Type: ASSET
+Parent: 1110 (Cash)
+Expected:
+
+Account appears in the list.
+Can be selected as a default account for payments.
+2. Payment Creation and Allocation
+Step 2:
+Create a customer payment:
+
+Party: Acme Corporation (60b23cd6-744b-495f-98e7-4730a6c1c1f9)
+Payment Type: Customer_Payment
+Amount: 4450.00
+Payment Mode: bank
+Status: Draft
+Step 3:
+Allocate payment to invoice:
+
+Invoice: INV-SEED-001 (d0000001-0001-4000-a000-000000000005)
+Allocated Amount: 4450.00
+Expected:
+
+Allocation is saved.
+Cannot confirm payment if allocation is missing.
+3. Confirm Payment and Journal Entry
+Step 4:
+Confirm the payment.
+
+Expected:
+
+Status changes to Confirmed.
+Journal entry is created:
+Debit: Bank Account (from default accounts, e.g., 1110)
+Credit: Accounts Receivable (1120)
+Journal entry lines reference correct accounts and amounts.
+4. Cancel Payment
+Step 5:
+Cancel the confirmed payment.
+
+Expected:
+
+Status changes to Cancelled.
+Reversal journal entry is created (debits/credits swapped).
+5. Supplier Payment Flow
+Step 6:
+Create a supplier payment:
+
+Party: TechWorld Supplies (a1b2c3d4-1111-4aaa-bbbb-000000000001)
+Payment Type: Supplier_Payment
+Amount: 13150.00
+Payment Mode: bank
+Status: Draft
+Step 7:
+Allocate payment to supplier invoice:
+
+Invoice: INV-SEED-002 (e0000001-0001-4000-a000-000000000005)
+Allocated Amount: 13150.00
+Step 8:
+Confirm the payment.
+
+Expected:
+
+Status changes to Confirmed.
+Journal entry is created:
+Debit: Accounts Payable (2010)
+Credit: Bank Account (1110)
+6. Edge Cases
+Try confirming payment with missing default accounts (should fail).
+Try allocating more than payment amount (should fail).
+Try cancelling a payment that is not confirmed (should fail).
+7. Seed Data for Invoices
+Use /core-service/scripts/seed_full_flow.sql to ensure you have:
+5 customer invoices (e.g., INV-SEED-001)
+5 supplier invoices (e.g., INV-SEED-002)
+Use the UUIDs and party IDs from the script for realistic test data.
+
+
+
+1. Create All Types of Accounts (with Child Accounts)
+Parent Accounts (Top-level)
+Account Code	Account Name	Account Type	Currency	Status
+1100	        Assets	        asset	        USD	        active
+2100	        Liabilities	    liability	    USD	        active
+3100	        Revenue	        revenue	        USD     	active
+4100	        Expenses	    expense	        USD	        active
+5100	        Equity	        equity	        USD	        active
+
+Child Accounts (Examples)
+Account Code	Account Name	        Account Type	Parent Code	Currency	Status
+1110	        Cash and Bank	        asset       	1100	    USD	        active
+1210	        Accounts Receivable	    asset	        1100	    USD	        active
+2110	        Accounts Payable	    liability	    2100	    USD	        active
+3110	        Sales Revenue	        Revenue	        3100	    USD	        active
+4110	        Office Supplies	        expense	        4100	    USD	        active
+5110	        Retained Earnings	    equity	        5100	    USD	        active
+Manual Steps:
+
+Create each parent account (no parent_account_id).
+For each child, set parent_account_id to the corresponding parent’s ID.
+Use status "active" (lowercase).
+Use currency "USD".
+
+2. Set Default Accounts
+Default Account Types to Set:
+
+cash (e.g., 1100)
+accounts_receivable (e.g., 1200)
+accounts_payable (e.g., 2100)
+sales (e.g., 3100)
+office_supplies (e.g., 4100)
+Manual Steps:
+
+Go to the Default Accounts or System Configuration section.
+For each transaction type, select the appropriate account from the list.
+Example: Set "cash" default to "Cash and Bank" (1100).
+Example: Set "accounts_receivable" default to "Accounts Receivable" (1200).
+Save and verify that the mapping is correct.

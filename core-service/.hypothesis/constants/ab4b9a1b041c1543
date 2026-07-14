@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/campaigns.py
+# hypothesis_version: 6.152.8
+
+[100, '/coupons', '/coupons/redeem', '/coupons/unlock', '/coupons/verify', '/feedback', '/leads', '/{campaign_id}', 'A=active, I=inactive', 'Create campaign', 'Create lead (CRM)', 'Delete campaign', 'Get campaign', 'List campaigns', 'List coupons', 'List leads', 'Redeem coupon', 'Submit feedback', 'Unlock coupon', 'Update campaign', 'Verify coupon', 'campaign.create', 'campaign.delete', 'campaign.read', 'campaign.update']

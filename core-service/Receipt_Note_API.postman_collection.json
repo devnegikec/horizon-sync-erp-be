@@ -1,0 +1,421 @@
+{
+	"info": {
+		"_postman_id": "receipt-note-api-collection",
+		"name": "Receipt Note API (Purchase Receipt Integration)",
+		"description": "Complete API collection for testing Receipt Note functionality via Purchase Receipt API with Purchase Order integration",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Receipt Note for Purchase Order",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('receipt_note_id', response.id);",
+							"    console.log('Receipt Note ID:', response.id);",
+							"    console.log('Purchase Receipt No:', response.purchase_receipt_no);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"description": "JWT token from identity service"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-2024-001\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-15T10:00:00Z\",\n  \"status\": \"draft\",\n  \"warehouse_id\": \"{{warehouse_id}}\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"{{purchase_order_id}}\",\n  \"remarks\": \"Goods received in good condition\",\n  \"items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"qty\": 10,\n      \"uom\": \"Unit\",\n      \"rate\": 125.50,\n      \"amount\": 1255.00,\n      \"warehouse_id\": \"{{warehouse_id}}\",\n      \"sort_order\": 1\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Create a Receipt Note for a submitted Purchase Order using the Purchase Receipt API"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Get Receipt Note by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts/{{receipt_note_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts", "{{receipt_note_id}}"]
+				},
+				"description": "Retrieve a specific Receipt Note by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "3. List All Receipt Notes",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts?page=1&page_size=20&sort_by=receipt_date&sort_order=desc",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "20"
+						},
+						{
+							"key": "sort_by",
+							"value": "receipt_date"
+						},
+						{
+							"key": "sort_order",
+							"value": "desc"
+						}
+					]
+				},
+				"description": "List all Receipt Notes with pagination"
+			},
+			"response": []
+		},
+		{
+			"name": "4. Filter Receipt Notes by Supplier",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts?supplier_id={{supplier_id}}&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"],
+					"query": [
+						{
+							"key": "supplier_id",
+							"value": "{{supplier_id}}"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Receipt Notes by supplier"
+			},
+			"response": []
+		},
+		{
+			"name": "5. Filter Receipt Notes by Status (DRAFT)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts?status=draft&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"],
+					"query": [
+						{
+							"key": "status",
+							"value": "draft"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Receipt Notes by DRAFT status"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Update Receipt Note (DRAFT only)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"remarks\": \"UPDATED: Goods received and inspected - all items in good condition\",\n  \"status\": \"draft\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts/{{receipt_note_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts", "{{receipt_note_id}}"]
+				},
+				"description": "Update a Receipt Note (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Submit Receipt Note",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"status\": \"submitted\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts/{{receipt_note_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts", "{{receipt_note_id}}"]
+				},
+				"description": "Submit Receipt Note - changes status from DRAFT to SUBMITTED"
+			},
+			"response": []
+		},
+		{
+			"name": "8. Create Partial Receipt Note",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('partial_receipt_id', response.id);",
+							"    console.log('Partial Receipt ID:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-2024-002\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-16T14:00:00Z\",\n  \"status\": \"draft\",\n  \"warehouse_id\": \"{{warehouse_id}}\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"{{purchase_order_id}}\",\n  \"remarks\": \"Partial delivery - remaining items to follow\",\n  \"items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"qty\": 5,\n      \"uom\": \"Unit\",\n      \"rate\": 125.50,\n      \"amount\": 627.50,\n      \"warehouse_id\": \"{{warehouse_id}}\",\n      \"sort_order\": 1\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Create a partial Receipt Note (receiving less than ordered quantity)"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Create Multi-Item Receipt Note",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('multi_item_receipt_id', response.id);",
+							"    console.log('Multi-Item Receipt ID:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-2024-003\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-17T09:00:00Z\",\n  \"status\": \"draft\",\n  \"warehouse_id\": \"{{warehouse_id}}\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"{{purchase_order_id_multi}}\",\n  \"remarks\": \"Complete delivery of all ordered items\",\n  \"items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"qty\": 50,\n      \"uom\": \"Unit\",\n      \"rate\": 125.50,\n      \"amount\": 6275.00,\n      \"warehouse_id\": \"{{warehouse_id}}\",\n      \"sort_order\": 1\n    },\n    {\n      \"item_id\": \"{{item_id_2}}\",\n      \"qty\": 25,\n      \"uom\": \"Unit\",\n      \"rate\": 250.00,\n      \"amount\": 6250.00,\n      \"warehouse_id\": \"{{warehouse_id}}\",\n      \"sort_order\": 2\n    },\n    {\n      \"item_id\": \"{{item_id_3}}\",\n      \"qty\": 100,\n      \"uom\": \"Set\",\n      \"rate\": 45.00,\n      \"amount\": 4500.00,\n      \"warehouse_id\": \"{{warehouse_id}}\",\n      \"sort_order\": 3\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Create a Receipt Note with multiple items"
+			},
+			"response": []
+		},
+		{
+			"name": "10. Delete Receipt Note (DRAFT only)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts/{{receipt_note_to_delete}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts", "{{receipt_note_to_delete}}"]
+				},
+				"description": "Delete a Receipt Note (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "11. Error Test - Invalid Purchase Order Reference",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-ERROR-001\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-15T10:00:00Z\",\n  \"status\": \"draft\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"qty\": 10,\n      \"uom\": \"Unit\",\n      \"rate\": 125.50,\n      \"amount\": 1255.00\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Test error - should return 404 Not Found (invalid Purchase Order reference)"
+			},
+			"response": []
+		},
+		{
+			"name": "12. Error Test - Negative Quantity",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-ERROR-002\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-15T10:00:00Z\",\n  \"status\": \"draft\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"{{purchase_order_id}}\",\n  \"items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"qty\": -10,\n      \"uom\": \"Unit\",\n      \"rate\": 125.50,\n      \"amount\": -1255.00\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Test validation error - should return 400 Bad Request (negative quantity)"
+			},
+			"response": []
+		},
+		{
+			"name": "13. Error Test - No Items",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"purchase_receipt_no\": \"RN-ERROR-003\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"receipt_date\": \"2024-02-15T10:00:00Z\",\n  \"status\": \"draft\",\n  \"reference_type\": \"PURCHASE_ORDER\",\n  \"reference_id\": \"{{purchase_order_id}}\",\n  \"items\": []\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/purchase-receipts",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "purchase-receipts"]
+				},
+				"description": "Test validation error - should return 400 Bad Request (no items)"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8001",
+			"type": "string"
+		}
+	]
+}

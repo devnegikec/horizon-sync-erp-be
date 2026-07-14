@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/items.py
+# hypothesis_version: 6.151.6
+
+[100, '/{item_id}', 'Create item', 'Delete item', 'Field to sort by', 'Get item', 'List items', 'Soft delete an item', 'Sort order', 'Update item', '^(asc|desc)$', 'created_at', 'desc']

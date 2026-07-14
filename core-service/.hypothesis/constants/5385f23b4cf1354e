@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/brand_trust_service.py
+# hypothesis_version: 6.152.8
+
+[0.0, 1.0, 100.0, 100, '0', '1', '100', 'A', 'B', 'C', 'D', 'F', 'Industry not found.', 'answer_value', 'answered_at', 'answers', 'assessment_id', 'assessments', 'created_at', 'grade', 'has_next', 'has_prev', 'id', 'in_progress', 'industry_id', 'industry_name', 'max_score', 'notes', 'options', 'order_index', 'organization_id', 'overall_score', 'page', 'page_size', 'pagination', 'pdf_url', 'percentage', 'question_id', 'question_text', 'question_type', 'questions', 'rating', 'report_url', 'score', 'score_breakdown', 'section', 'section_scores', 'started_by', 'status', 'submitted', 'submitted_at', 'total_items', 'total_pages', 'true', 'weight', 'yes', 'yes_no']

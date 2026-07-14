@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/rfqs.py
+# hypothesis_version: 6.151.6
+
+[100, '/{rfq_id}', '/{rfq_id}/close', '/{rfq_id}/quotes', '/{rfq_id}/send', '^(asc|desc)$', 'created_at', 'desc', 'rfq.create', 'rfq.read', 'rfq.update']

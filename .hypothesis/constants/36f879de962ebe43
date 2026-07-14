@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/database.py
+# hypothesis_version: 6.151.6
+
+['check_same_thread', 'sqlite']

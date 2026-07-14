@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/qr_product_setting.py
+# hypothesis_version: 6.152.8
+
+[100, 150, 'channel', 'destination', 'from_attributes', 'serial_prefix', 'shelf_life']

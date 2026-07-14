@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/stock_reconciliation_wizard_service.py
+# hypothesis_version: 6.152.8
+
+['Nos', 'Stock Count', '_', 'actual_qty', 'completed', 'csv', 'current_qty', 'difference', 'discrepancies', 'field', 'item_code', 'item_id', 'item_name', 'organization_id', 'pending_review', 'qty', 'qty_difference', 'reason', 'reconciliation_id', 'status', 'stock_reconciliation', 'system_qty', 'total_items', 'uom', 'utf-8', 'utf-8-sig', 'warehouse_id', 'wizard_state']

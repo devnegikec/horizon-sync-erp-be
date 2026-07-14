@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/reminder_config.py
+# hypothesis_version: 6.152.8
+
+[100, 120, 255, 500, 'auto', 'configured', 'deactivation_notice', 'failed', 'final_notice', 'first_reminder', 'manual', 'pending', 'reminder_configs', 'reminder_logs', 'second_reminder', 'sent', 'skipped']

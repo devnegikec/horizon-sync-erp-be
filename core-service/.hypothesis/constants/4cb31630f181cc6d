@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/email_service.py
+# hypothesis_version: 6.152.8
+
+[465, 587, ', ', '/', '=', 'Cc', 'From', 'SMTP Configuration:', 'Subject', 'To', 'Using authentication', 'attachment', 'content', 'content_type', 'development', 'disabled', 'filename', 'hostname', 'html', 'message', 'password', 'port', 'sent', 'start_tls', 'status', 'tls_context', 'use_tls', 'username']

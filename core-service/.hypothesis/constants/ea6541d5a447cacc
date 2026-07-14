@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/brands.py
+# hypothesis_version: 6.152.8
+
+[100, '/{brand_id}', 'Create brand', 'Get brand', 'List brands', 'Update brand', 'brand.create', 'brand.read', 'brand.update']

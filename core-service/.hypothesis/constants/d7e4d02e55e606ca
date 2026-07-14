@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/outbound_service.py
+# hypothesis_version: 6.152.8
+
+['DispatchRecord', 'PickList', 'created_at', 'dispatch', 'dispatch_number', 'dispatched_at', 'dispatches', 'driver_name', 'gate_session_id', 'has_next', 'has_prev', 'id', 'invoice_reference', 'organization_id', 'page', 'page_size', 'pagination', 'pick_list_id', 'total_items', 'total_pages', 'updated_at', 'vehicle_number', 'verified']

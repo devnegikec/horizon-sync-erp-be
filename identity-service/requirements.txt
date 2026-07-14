@@ -16,13 +16,21 @@ email-validator==2.1.0
 # Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.1.2
+bcrypt==4.0.1
+passlib[bcrypt]
 
 # Utilities
 python-dotenv==1.0.0
 aiosmtplib==3.0.1
 
+# QR Code generation (warehouse worker login)
+qrcode[pil]==7.4.2
+
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+pytest-cov==4.1.0
 httpx==0.25.2
+pre-commit==3.5.0
+
+debugpy

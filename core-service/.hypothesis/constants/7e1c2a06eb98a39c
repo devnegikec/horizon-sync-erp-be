@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/item_price_service.py
+# hypothesis_version: 6.152.8
+
+['created_at', 'created_by', 'desc', 'error', 'index', 'item_id', 'min_qty', 'organization_id', 'price_list_id', 'updated_by', 'valid_from', 'valid_upto']

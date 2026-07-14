@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/routing_optimizer.py
+# hypothesis_version: 6.152.8
+
+[0.0, '-', 'full_path', 'id', 'position_x', 'position_y', 'sort_order']

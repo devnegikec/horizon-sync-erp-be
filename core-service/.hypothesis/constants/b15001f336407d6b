@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/repositories/audit_log_repository.py
+# hypothesis_version: 6.152.8
+
+[' AND ', ', ', '1=1', 'action', 'al.action = :action', 'changed_field_json', 'changed_fields', 'created_at', 'date_from', 'date_to', 'email', 'id', 'ip_address', 'limit', 'name', 'new_values', 'offset', 'old_values', 'organization_id', 'organization_name', 'record_id', 'table_name', 'user_email', 'user_email_address', 'user_id', 'user_name']

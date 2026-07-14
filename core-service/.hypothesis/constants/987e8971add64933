@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/document_numbering.py
+# hypothesis_version: 6.152.8
+
+['-', 'CUST', 'DN', 'DSP', 'IG', 'INV', 'ITM', 'JE', 'MR', 'PA', 'PL', 'PO', 'PR', 'QT', 'RCP', 'RFQ', 'RS', 'SE', 'SO', 'SREC', 'WH', 'customer', 'delivery_note', 'dispatch', 'document_type', 'invoice', 'item', 'item_group', 'journal_entry', 'material_request', 'organization_id', 'payment', 'pick_list', 'purchase_order', 'purchase_receipt', 'put_away_list', 'quotation', 'receiving_slip', 'rfq', 'sales_order', 'sequence_year', 'stock_entry', 'stock_reconciliation', 'warehouse']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/scan_session.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'CASCADE', 'ItemPackagingUnit', 'ReceivingSlip', 'SET NULL', 'ScanSession', 'ScanSessionItem', 'Warehouse', 'all, delete-orphan', 'items', 'open', 'qr_identifier', 'scan_session_items', 'scan_sessions', 'scan_sessions.id', 'session', 'session_id', 'uq_session_qr']

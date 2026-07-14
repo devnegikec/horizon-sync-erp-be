@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/uom_conversions.py
+# hypothesis_version: 6.152.8
+
+[100, '/{conversion_id}', 'Field to sort by', 'Filter by item ID', 'Get UOM Conversion', 'Items per page', 'List UOM Conversions', 'Page number', 'Sort order', '^(asc|desc)$', 'created_at', 'desc']

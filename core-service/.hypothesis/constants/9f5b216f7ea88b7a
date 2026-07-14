@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/messaging_service.py
+# hypothesis_version: 6.152.8
+
+['1', 'Not Approved', 'Pending', 'created_by', 'deliver_date', 'guid', 'has_next', 'has_prev', 'interactive_type', 'job_id', 'jobs', 'media_link', 'media_type', 'message_type', 'no guid', 'no msg_id', 'organization_id', 'page', 'page_size', 'pagination', 'queued', 'rcs', 'reason', 'reason_code', 'recipient_number', 'scheduled', 'sender_number', 'sent', 'sent_date', 'status', 'template_id', 'template_name', 'template_type', 'templates', 'total_items', 'total_lead', 'total_pages', 'updated', 'updated_by', 'user_id', 'variable', 'whatsapp', 'whatsapp_msg_id']

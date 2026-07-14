@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/bulk_import.py
+# hypothesis_version: 6.152.8
+
+['.', '/bulk-import', '/template/csv', '/template/xlsx', '/upload', '/{job_id}/errors', '/{job_id}/status', 'Access denied', 'Bulk Operations', 'Failed to list jobs', 'Import job not found', 'List import jobs', 'csv', 'download_url', 'file_format', 'file_name', 'json', 'xls', 'xlsx']

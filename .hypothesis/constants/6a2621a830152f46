@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/api/v1/endpoints/stock_reconciliations.py
+# hypothesis_version: 6.151.6
+
+[100, '/{rec_id}', '/{rec_id}/items', '^(asc|desc)$', 'desc', 'posting_date']

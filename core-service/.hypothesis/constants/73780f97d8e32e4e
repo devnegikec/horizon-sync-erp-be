@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/qr_scan_event.py
+# hypothesis_version: 6.152.8
+
+[100, 'ProductItem', 'product_items.id', 'qr_scan_events', 'scan_events']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/tax_templates.py
+# hypothesis_version: 6.152.8
+
+[100, '/applicable', '/{template_id}', 'Customer ID', 'Delete tax template', 'Item ID', 'Items per page', 'List tax templates', 'Page number', 'Supplier ID', 'Update tax template', 'is_active', 'is_default', 'organization_id', 'page', 'page_size', 'pagination', 'source', 'tax_category', 'tax_template.create', 'tax_template.delete', 'tax_template.read', 'tax_template.update', 'template', 'templates']

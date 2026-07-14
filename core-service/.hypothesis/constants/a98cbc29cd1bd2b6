@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/payments.py
+# hypothesis_version: 6.152.8
+
+[1000, '.pdf', '.xlsx', '/{payment_id}', '/{payment_id}/cancel', 'Bank_Transfer', 'Cancel payment entry', 'Content-Disposition', 'Create payment entry', 'Field to sort by', 'Get payment entry', 'List payment entries', 'Organization', 'Sort order', 'Update payment entry', '^(asc|desc)$', '^(excel|pdf)$', 'application/pdf', 'desc', 'excel', 'payment_date', 'status']

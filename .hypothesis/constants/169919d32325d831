@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/schemas/item.py
+# hypothesis_version: 6.151.6
+
+[100, 255, 500, '0.00', 'ACTIVE', 'FIFO', 'Nos', 'stock']

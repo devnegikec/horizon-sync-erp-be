@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/quotation_service.py
+# hypothesis_version: 6.151.6
+
+['%Y%m%d%H%M%S', '0', 'QTN', 'Quotation', 'SO', 'amount', 'created_at', 'created_by', 'currency', 'customer_id', 'delivery_date', 'desc', 'extra_data', 'grand_total', 'has_next', 'has_prev', 'id', 'item_id', 'items', 'order_date', 'organization_id', 'page', 'page_size', 'qty', 'quotation_date', 'quotation_id', 'quotation_no', 'rate', 'reference_id', 'reference_type', 'remarks', 'sales_order_no', 'sort_order', 'status', 'submitted_at', 'total_items', 'total_pages', 'uom', 'updated_at', 'updated_by', 'valid_until']

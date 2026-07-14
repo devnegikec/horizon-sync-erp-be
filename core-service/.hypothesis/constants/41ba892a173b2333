@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/delivery_note_service.py
+# hypothesis_version: 6.152.8
+
+['0', 'Customer', 'INR', 'amount', 'batch_no', 'code', 'created_at', 'created_by', 'currency', 'customer', 'customer_code', 'customer_id', 'customer_name', 'delivery_date', 'delivery_note', 'delivery_note_no', 'desc', 'dn_item', 'email', 'extra_data', 'grand_total', 'has_next', 'has_prev', 'id', 'invoice', 'invoice_id', 'invoice_no', 'invoiced', 'item', 'item_id', 'item_obj', 'items', 'name', 'not_invoiced', 'organization_id', 'page', 'page_size', 'phone', 'pick_list', 'pick_list_id', 'pick_list_no', 'qty', 'qty_to_bill', 'rate', 'reference', 'reference_id', 'reference_type', 'remarks', 'sales_order', 'sales_order_id', 'serial_nos', 'sort_order', 'status', 'submitted', 'submitted_at', 'total_items', 'total_pages', 'uom', 'updated_at', 'updated_by', 'warehouse', 'warehouse_code', 'warehouse_id', 'warehouse_name']

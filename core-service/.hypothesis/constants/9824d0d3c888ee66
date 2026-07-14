@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/payment_entry.py
+# hypothesis_version: 6.152.8
+
+[100, 200, 'BankAccount', 'PaymentAuditLog', 'PaymentReference', 'SET NULL', 'USD', 'all, delete-orphan', 'bank_accounts.id', 'payment_entries', 'payment_entry', 'payment_mode', 'payment_source', 'payment_status', 'payment_type', 'selectin']

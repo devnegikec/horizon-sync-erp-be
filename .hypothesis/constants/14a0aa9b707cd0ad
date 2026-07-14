@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/models/put_away_rule.py
+# hypothesis_version: 6.151.6
+
+[255, 'CASCADE', 'Item', 'ItemGroup', 'Warehouse', 'item_groups.id', 'items.id', 'put_away_rules']

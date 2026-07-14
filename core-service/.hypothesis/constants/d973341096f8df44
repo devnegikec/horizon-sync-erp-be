@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/chart_of_account_service.py
+# hypothesis_version: 6.152.8
+
+[0.0, 200, 1000, 1800, 3600, 9999, '; ', 'Account', 'Account not found', 'OBE', 'Opening Balance', 'Opening balance', 'USD', '^[A-Za-z0-9\\-]+$', 'account_code', 'account_id', 'account_name', 'account_type', 'active', 'asc', 'balance', 'created_at', 'created_by', 'credit', 'currency', 'current_balance', 'debit', 'deleted_ids', 'description', 'error', 'errors', 'extra_data', 'failed_count', 'has_next', 'has_prev', 'id', 'is_active', 'is_group', 'is_posting_account', 'level', 'lines', 'opening_balance', 'organization_id', 'page', 'page_size', 'parent_account_id', 'posting_date', 'reference_id', 'reference_type', 'remarks', 'status', 'success_count', 'system', 'tags', 'total', 'total_pages', 'updated_at', 'updated_by', 'updated_ids', 'voucher_type']

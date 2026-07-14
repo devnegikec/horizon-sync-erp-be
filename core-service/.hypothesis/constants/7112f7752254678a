@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/receiving_slip.py
+# hypothesis_version: 6.152.8
+
+[100, 'CASCADE', 'PutAwayList', 'ReceivingSlip', 'ReceivingSlipItem', 'ScanSession', 'Warehouse', 'all, delete-orphan', 'items', 'ok', 'pending_review', 'receiving_slip', 'receiving_slip_items', 'receiving_slips', 'receiving_slips.id', 'scan_sessions.id', 'slip']

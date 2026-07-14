@@ -1,26 +1,25 @@
 """Database connection and session management"""
 
+from collections.abc import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from typing import Generator
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
 
 # Create database engine
-engine = create_engine(
-    settings.database_url,
-    pool_size=settings.db_pool_size,
-    max_overflow=settings.db_max_overflow,
-    pool_pre_ping=True,  # Verify connections before using
-    echo=settings.debug,  # Log SQL queries in debug mode
-)
+_engine_kwargs: dict = {
+    "pool_pre_ping": True,
+    "echo": settings.debug,
+}
+if not settings.database_url.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = settings.db_pool_size
+    _engine_kwargs["max_overflow"] = settings.db_max_overflow
+
+engine = create_engine(settings.database_url, **_engine_kwargs)
 
 # Create session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for models
 Base = declarative_base()

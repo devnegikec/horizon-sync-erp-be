@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/smart_picking_service.py
+# hypothesis_version: 6.152.8
+
+['0', 'amount', 'created_at', 'current_available', 'customer_id', 'delivery_note', 'delivery_note_no', 'details', 'id', 'item_code', 'item_id', 'item_name', 'items', 'pick_list_id', 'pick_list_no', 'pick_lists_created', 'picked_qty', 'qty', 'quantity_reserved', 'rate', 'sales_order', 'sales_order_id', 'sales_order_no', 'short_qty', 'status', 'suggested_qty', 'suggestions', 'unallocated', 'uom', 'warehouse_code', 'warehouse_id', 'warehouse_name']

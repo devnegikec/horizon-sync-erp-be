@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/item_packaging_unit.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 'Weight in grams', 'Width in millimetres', 'conversion_factor']

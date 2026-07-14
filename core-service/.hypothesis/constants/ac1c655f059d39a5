@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/tax_template_service.py
+# hypothesis_version: 6.152.8
+
+['Both', 'Input', 'Output', '_', 'account_head_id', 'applicability_rules', 'created_at', 'created_by', 'desc', 'description', 'extra_data', 'has_next', 'has_prev', 'id', 'is_active', 'is_compound', 'is_default', 'organization_id', 'page', 'page_size', 'rule_name', 'search', 'sequence', 'sort_by', 'sort_order', 'tax_category', 'tax_rate', 'tax_rules', 'tax_rules_count', 'tax_template_id', 'tax_templates', 'tax_type', 'template_code', 'template_name', 'total_items', 'total_pages', 'updated_at', 'updated_by']

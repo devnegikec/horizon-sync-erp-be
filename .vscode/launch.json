@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python Debugger: identity-service",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/identity-service/app",
+          "remoteRoot": "/app/app"
+        }
+      ]
+    },
+    {
+      "name": "Python Debugger: core-service",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5679
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/core-service/app",
+          "remoteRoot": "/app/app"
+        }
+      ]
+    },
+    {
+      "name": "Python Debugger: search-service",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5680
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/search-service/app",
+          "remoteRoot": "/app/app"
+        }
+      ]
+    }
+  ]
+}

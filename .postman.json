@@ -1,0 +1,98 @@
+{
+  "workspace": {
+    "id": "f7f81791-df5b-4b71-be9f-b45652634b8b",
+    "name": "Horizon Sync ERP API"
+  },
+  "collections": {
+    "core_service": {
+      "id": "e97efa66-c186-4f1f-af59-f1986b201fc9",
+      "name": "Core Service API",
+      "uid": "31923323-e97efa66-c186-4f1f-af59-f1986b201fc9",
+      "port": 8001,
+      "base_url": "http://localhost:8001"
+    },
+    "identity_service": {
+      "id": "fca67977-4f0a-40c4-a2a4-345c48d77b07",
+      "name": "Identity Service API",
+      "uid": "31923323-fca67977-4f0a-40c4-a2a4-345c48d77b07",
+      "port": 8000,
+      "base_url": "http://localhost:8000"
+    }
+  },
+  "environments": {
+    "local": {
+      "id": "4d436648-0355-4337-a34c-66307281dc33",
+      "name": "Local Development",
+      "uid": "31923323-4d436648-0355-4337-a34c-66307281dc33",
+      "variables": {
+        "base_url": "http://localhost:8001",
+        "identity_base_url": "http://localhost:8000"
+      }
+    }
+  },
+  "test_results": {
+    "last_run": "2026-05-15T19:39:00Z",
+    "status": "All outbound endpoints verified and working correctly",
+    "notes": "Tested all 6 outbound endpoints: list, create-from-invoice, get-detail, scan, complete, cancel. All return correct responses with proper validation.",
+    "outbound_endpoints_tested": [
+      {
+        "method": "GET",
+        "path": "/api/v1/outbound",
+        "status": 200,
+        "result": "Returns paginated pick lists with progress"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/outbound/from-invoice",
+        "status": 201,
+        "result": "Creates pick list from SAP invoice payload"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/outbound/{pick_list_id}",
+        "status": 200,
+        "result": "Returns pick list detail with items and progress"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/outbound/{pick_list_id}/scan",
+        "status": 201,
+        "result": "Records pick scan, increments picked_qty, transitions to in_progress"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/outbound/{pick_list_id}/complete",
+        "status": 200,
+        "result": "Marks pick list as completed when all items fully picked"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/outbound/{pick_list_id}/cancel",
+        "status": 200,
+        "result": "Cancels pick list and releases reserved stock"
+      }
+    ],
+    "validation_tests": [
+      {
+        "test": "Missing required fields returns 400 with field-level errors",
+        "passed": true
+      },
+      {
+        "test": "Over-pick rejection returns 400",
+        "passed": true
+      },
+      {
+        "test": "Non-existent pick list returns 404",
+        "passed": true
+      },
+      {
+        "test": "Scan on completed pick list returns 400",
+        "passed": true
+      },
+      {
+        "test": "Status filter on list endpoint works correctly",
+        "passed": true
+      }
+    ]
+  }
+}

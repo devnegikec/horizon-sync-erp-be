@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/middleware/audit_middleware.py
+# hypothesis_version: 6.152.8
+
+[',', 'authorization', 'bearer ', 'organization_id', 'sub', 'user-agent', 'x-forwarded-for']

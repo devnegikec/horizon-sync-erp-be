@@ -3,17 +3,20 @@
 ## 1. Project Setup & Infrastructure
 
 - [ ] 1.1 Initialize project structure
+
   - Create directory structure as per design
   - Initialize Python virtual environment
   - Create .gitignore file
   - Create README.md with setup instructions
 
 - [ ] 1.2 Setup dependencies
+
   - Create requirements.txt with all dependencies
   - Install FastAPI, SQLAlchemy, Alembic, and other packages
   - Verify all packages install correctly
 
 - [ ] 1.3 Configure environment management
+
   - Create .env.example file
   - Implement config.py with Pydantic Settings
   - Add environment variable validation
@@ -27,11 +30,13 @@
 ## 2. Database Setup
 
 - [ ] 2.1 Create database initialization script
+
   - Create scripts/init_db.sql with enum types
   - Add UUID extension setup
   - Test script execution
 
 - [ ] 2.2 Setup SQLAlchemy models
+
   - Create app/models/base.py with Base class
   - Implement User model (app/models/user.py)
   - Implement RefreshToken model (app/models/token.py)
@@ -43,6 +48,7 @@
   - Implement EmailVerification model (app/models/user.py)
 
 - [ ] 2.3 Configure database connection
+
   - Create app/database.py with engine and session
   - Implement get_db dependency
   - Add connection pooling configuration
@@ -58,6 +64,7 @@
 ## 3. Core Security Implementation
 
 - [ ] 3.1 Implement password hashing
+
   - Create app/core/security.py
   - Implement hash_password function
   - Implement verify_password function
@@ -65,6 +72,7 @@
   - Write unit tests for password functions
 
 - [ ] 3.2 Implement JWT token management
+
   - Add create_access_token function
   - Add create_refresh_token function
   - Add decode_token function
@@ -72,6 +80,7 @@
   - Write unit tests for token functions
 
 - [ ] 3.3 Create authentication dependencies
+
   - Implement get_current_user dependency
   - Implement get_current_active_user dependency
   - Add token extraction from headers
@@ -86,6 +95,7 @@
 ## 4. Pydantic Schemas
 
 - [ ] 4.1 Create user schemas
+
   - Create app/schemas/user.py
   - Implement UserBase schema
   - Implement UserCreate schema
@@ -94,6 +104,7 @@
   - Add validation rules
 
 - [ ] 4.2 Create auth schemas
+
   - Create app/schemas/auth.py
   - Implement LoginRequest schema
   - Implement TokenResponse schema
@@ -109,6 +120,7 @@
 ## 5. Repository Layer
 
 - [ ] 5.1 Create user repository
+
   - Create app/repositories/user_repository.py
   - Implement create_user method
   - Implement get_user_by_id method
@@ -127,6 +139,7 @@
 ## 6. Service Layer
 
 - [ ] 6.1 Create authentication service
+
   - Create app/services/auth_service.py
   - Implement register_user method
   - Implement login_user method
@@ -145,12 +158,14 @@
 ## 7. API Endpoints
 
 - [ ] 7.1 Create health check endpoint
+
   - Create app/main.py with FastAPI app
   - Implement GET /health endpoint
   - Add database connectivity check
   - Test health endpoint
 
 - [ ] 7.2 Implement registration endpoint
+
   - Create app/api/v1/endpoints/auth.py
   - Implement POST /api/v1/identity/register
   - Add request validation
@@ -159,6 +174,7 @@
   - Test with valid/invalid data
 
 - [ ] 7.3 Implement login endpoint
+
   - Implement POST /api/v1/identity/login
   - Add credential validation
   - Add account lock checking
@@ -167,6 +183,7 @@
   - Test login flow
 
 - [ ] 7.4 Implement token refresh endpoint
+
   - Implement POST /api/v1/identity/refresh
   - Validate refresh token
   - Check token expiration/revocation
@@ -175,6 +192,7 @@
   - Test refresh flow
 
 - [ ] 7.5 Implement logout endpoint
+
   - Implement POST /api/v1/identity/logout
   - Require authentication
   - Revoke refresh token
@@ -182,6 +200,7 @@
   - Test logout flow
 
 - [ ] 7.6 Implement list users endpoint
+
   - Create app/api/v1/endpoints/users.py
   - Implement GET /api/v1/identity/users
   - Require authentication
@@ -201,6 +220,7 @@
 ## 8. Error Handling
 
 - [ ] 8.1 Create custom exceptions
+
   - Create app/core/exceptions.py
   - Implement AuthenticationError
   - Implement AccountLockedException
@@ -219,33 +239,39 @@
 ## 9. Seed Data
 
 - [ ] 9.1 Create seed data script
+
   - Create scripts/seed_data.py
   - Implement database connection
   - Add check for existing data
 
 - [ ] 9.2 Seed organizations
+
   - Create default organization
   - Verify organization creation
 
 - [ ] 9.3 Seed roles
+
   - Create system_admin role
   - Create org_admin role
   - Create user role
   - Verify role creation
 
 - [ ] 9.4 Seed permissions
+
   - Create user permissions (create, read, update, delete, manage)
   - Create organization permissions
   - Create role permissions
   - Verify permission creation
 
 - [ ] 9.5 Assign permissions to roles
+
   - Assign all permissions to system_admin
   - Assign org permissions to org_admin
   - Assign basic permissions to user role
   - Verify role-permission assignments
 
 - [ ] 9.6 Seed test users
+
   - Create admin user (admin@example.com)
   - Create test user 1 (john.doe@example.com)
   - Create test user 2 (jane.smith@example.com)
@@ -262,18 +288,21 @@
 ## 10. Testing
 
 - [ ] 10.1 Setup test infrastructure
+
   - Create tests/conftest.py
   - Setup test database
   - Create test fixtures
   - Configure pytest
 
 - [ ] 10.2 Write unit tests
+
   - Test password hashing/verification
   - Test password validation
   - Test JWT token creation/validation
   - Test account locking logic
 
 - [ ] 10.3 Write integration tests
+
   - Test registration endpoint
   - Test login endpoint
   - Test refresh endpoint
@@ -289,6 +318,7 @@
 ## 11. Documentation
 
 - [ ] 11.1 Update README.md
+
   - Add project description
   - Add setup instructions
   - Add Docker commands
@@ -297,6 +327,7 @@
   - Add seed data credentials
 
 - [ ] 11.2 Add code comments
+
   - Document complex functions
   - Add docstrings to all public methods
   - Add inline comments where needed
@@ -309,17 +340,20 @@
 ## 12. Final Integration & Testing
 
 - [ ] 12.1 Build and run with Docker Compose
+
   - Run docker-compose build
   - Run docker-compose up
   - Verify both services start
   - Check logs for errors
 
 - [ ] 12.2 Run database migrations
+
   - Verify migrations run automatically
   - Check all tables created
   - Verify enums created
 
 - [ ] 12.3 Verify seed data
+
   - Check organizations table
   - Check roles table
   - Check permissions table
@@ -327,6 +361,7 @@
   - Verify relationships
 
 - [ ] 12.4 Test complete authentication flow
+
   - Test registration with Postman/curl
   - Test login with test users
   - Test token refresh
@@ -335,6 +370,7 @@
   - Verify all responses correct
 
 - [ ] 12.5 Test error scenarios
+
   - Test duplicate email registration
   - Test invalid credentials
   - Test account locking (5 failed attempts)
@@ -350,12 +386,14 @@
 ## 13. Cleanup & Optimization
 
 - [ ] 13.1 Code review
+
   - Review all code for best practices
   - Check for security issues
   - Verify error handling
   - Remove debug code
 
 - [ ] 13.2 Optimize Docker image
+
   - Verify multi-stage build working
   - Check image size
   - Test health check

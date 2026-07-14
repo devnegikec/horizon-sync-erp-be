@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/schemas/charge_template.py
+# hypothesis_version: 6.152.8
+
+[100, 255, 1000, 'ChargeTemplateCreate', 'FIXED', 'Grand_Total', 'Net_Total', 'Optional description', 'Optional extra data', 'PERCENTAGE', 'Template name', 'Unique template code', 'after']

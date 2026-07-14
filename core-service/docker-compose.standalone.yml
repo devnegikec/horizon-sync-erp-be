@@ -1,0 +1,36 @@
+# Standalone Docker Compose for Core Service
+# Use this for developing/testing core-service in isolation
+# NOTE: Requires identity-service to be running for authentication
+# For full stack, use the root docker-compose.yml instead
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: core_api_standalone
+    environment:
+      DATABASE_URL: postgresql://horizon_user:horizon_pass@host.docker.internal:5432/horizon_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-true}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      IDENTITY_SERVICE_URL: http://host.docker.internal:8000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:4200}
+    ports:
+      - "8001:8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    command: >
+      bash -c "
+        sleep 5 &&
+        python scripts/normalize_alembic_version.py &&
+        python -m alembic upgrade head &&
+        python scripts/seed_data.py &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+      "
+    restart: unless-stopped

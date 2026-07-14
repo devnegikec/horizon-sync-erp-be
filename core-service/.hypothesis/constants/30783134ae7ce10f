@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/put_away_rule_service.py
+# hypothesis_version: 6.152.8
+
+[100, 'asc', 'created_by', 'has_next', 'has_prev', 'organization_id', 'page', 'page_size', 'priority', 'total_items', 'total_pages', 'updated_by']

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/campaign_service.py
+# hypothesis_version: 6.152.8
+
+['Campaign not found', 'Coupon has expired', 'Coupon is valid', 'Coupon not found', 'Feedback submitted', 'campaign_id', 'color_rating', 'comment', 'coupon_code', 'coupon_id', 'created_by', 'custom_answer', 'custom_question', 'expiry', 'final_billed_amount', 'has_next', 'has_prev', 'is_expired', 'is_unlocked', 'is_used', 'is_valid', 'location', 'message', 'mobilenumber', 'organization_id', 'page', 'page_size', 'price_rating', 'product_rating', 'rating', 'success', 'timestamp', 'total_items', 'total_pages', 'units', 'unlock', 'unlock_count', 'updated_by', 'used', 'used_timestamp', 'value', 'yes']

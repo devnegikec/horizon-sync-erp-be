@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/api/v1/endpoints/qr_products.py
+# hypothesis_version: 6.152.8
+
+[100, 200, 404, 409, '/activation-params', '/authenticate', '/blocks', '/blocks/{block_id}', '/validate', '/{product_id}', '/{product_id}/blocks', 'Content-Disposition', 'Create QR product', 'Delete QR product', 'Generate QR block', 'Get QR block detail', 'Get QR product', 'List QR products', 'Update QR product', 'blocks', 'completed', 'failed', 'in_progress', 'pagination', 'pending', 'qr_product.create', 'qr_product.delete', 'qr_product.read', 'qr_product.update']

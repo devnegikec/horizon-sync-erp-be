@@ -109,10 +109,12 @@ docker-compose up -d
 ### If email sending fails:
 
 1. **Check Gmail App Password:**
+
    - Make sure you're using an App Password, not your regular Gmail password
    - Generate one at: https://myaccount.google.com/apppasswords
 
 2. **Check Gmail security settings:**
+
    - Enable "Less secure app access" if needed
    - Or use OAuth2 for production
 
@@ -132,15 +134,18 @@ s.quit()
 ## Production Recommendations
 
 1. **Use environment-specific .env files:**
+
    - `.env.development`
    - `.env.production`
 
 2. **Use secrets management:**
+
    - AWS Secrets Manager
    - HashiCorp Vault
    - Docker Secrets
 
 3. **Use a dedicated email service:**
+
    - SendGrid
    - AWS SES
    - Mailgun

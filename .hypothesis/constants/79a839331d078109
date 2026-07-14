@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/main.py
+# hypothesis_version: 6.151.6
+
+['*', '.', '/api/v1', '/docs', '/health', '/openapi.json', '/redoc', 'AUTHORIZATION_FAILED', 'BATCH_NOT_FOUND', 'CANNOT_DELETE', 'CIRCULAR_REFERENCE', 'CUSTOMER_NOT_FOUND', 'DATABASE_ERROR', 'DUPLICATE_BATCH_NO', 'DUPLICATE_ITEM_CODE', 'DUPLICATE_ITEM_PRICE', 'DUPLICATE_SERIAL_NO', 'ITEM_GROUP_NOT_FOUND', 'ITEM_NOT_FOUND', 'ITEM_PRICE_NOT_FOUND', 'Invalid input data', 'RESOURCE_NOT_FOUND', 'SELECT 1', 'SERIAL_NO_NOT_FOUND', 'SUPPLIER_NOT_FOUND', 'System', 'VALIDATION_ERROR', 'VALIDATION_FAILED', 'WAREHOUSE_NOT_FOUND', 'body', 'code', 'connected', 'core-service', 'database', 'detail', 'disconnected', 'environment', 'error', 'field', 'healthy', 'ignore', 'loc', 'message', 'msg', 'passlib', 'service', 'status', 'status_code', 'timestamp', 'unhealthy', 'version']

@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach identity-service (Docker)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "D:\\Code\\CRM_NEW\\horizon-sync-erp-be\\identity-service\\app",
+                    "remoteRoot": "/app/app"
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/payment_reference.py
+# hypothesis_version: 6.152.8
+
+[1.0, 'CASCADE', 'Invoice', 'PaymentEntry', 'invoice_id', 'invoices.id', 'payment_entries.id', 'payment_id', 'payment_references']

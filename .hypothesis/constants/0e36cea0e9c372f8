@@ -1,0 +1,4 @@
+# file: /Users/sonirautela/code/horizon-sync-erp-be/core-service/app/services/delivery_note_service.py
+# hypothesis_version: 6.151.6
+
+['amount', 'batch_no', 'created_at', 'created_by', 'customer', 'customer_code', 'customer_id', 'customer_name', 'delivery_date', 'delivery_note_no', 'desc', 'email', 'extra_data', 'has_next', 'has_prev', 'id', 'item_id', 'items', 'organization_id', 'page', 'page_size', 'phone', 'pick_list_id', 'qty', 'rate', 'reference_id', 'reference_type', 'remarks', 'serial_nos', 'sort_order', 'status', 'submitted_at', 'total_items', 'total_pages', 'uom', 'updated_at', 'updated_by', 'warehouse', 'warehouse_code', 'warehouse_id', 'warehouse_name']

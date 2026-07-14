@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/payment_reminder_service.py
+# hypothesis_version: 6.152.8
+
+[100, 120, 'Final Payment Notice', 'Invoice not found', 'Payment Reminder', 'attempt_number', 'automated', 'batch_id', 'breakdown_by_org', 'breakdown_by_stage', 'completed_at', 'content', 'customer', 'days_overdue', 'details', 'draft', 'due_date', 'email', 'error', 'failed', 'id', 'invoice', 'invoice_id', 'invoice_no', 'invoice_type', 'manual', 'organization_id', 'organizations', 'outstanding_amount', 'overdue_invoices', 'partial', 'party_id', 'party_type', 'pending', 'processed', 'reason', 'recipient', 'reminder_id', 'scheduled_next', 'sent', 'sent_at', 'skipped', 'stage', 'stages', 'started_at', 'status', 'subject', 'success', 'supplier', 'total_amount', 'triggered_by', 'unknown', 'would_process', 'would_send', 'would_skip']

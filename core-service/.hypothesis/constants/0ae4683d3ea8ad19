@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/models/qr_credit.py
+# hypothesis_version: 6.152.8
+
+['QRBlock', 'credit_usage', 'organization_id', 'qr_blocks.id', 'qr_credit_balance', 'qr_credit_ledger', 'qr_credit_usage']

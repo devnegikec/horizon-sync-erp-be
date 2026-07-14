@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create custom enum types
 CREATE TYPE usertype AS ENUM (
     'system_admin',
-    'organization_admin', 
+    'organization_admin',
     'user',
     'guest'
 );
@@ -52,7 +52,17 @@ CREATE TYPE resourcetype AS ENUM (
     'organization',
     'team',
     'role',
-    'permission'
+    'permission',
+    'invitation',
+    'item',
+    'item_group',
+    'warehouse',
+    'stock_entry',
+    'batch',
+    'serial',
+    'report',
+    'setting',
+    'all'
 );
 
 CREATE TYPE actiontype AS ENUM (
@@ -61,5 +71,6 @@ CREATE TYPE actiontype AS ENUM (
     'update',
     'delete',
     'manage',
-    'execute'
+    'execute',
+    'invite'
 );

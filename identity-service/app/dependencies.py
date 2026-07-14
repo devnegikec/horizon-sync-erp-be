@@ -1,41 +1,80 @@
 """Dependency injection for FastAPI"""
 
-from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from dataclasses import dataclass
 from uuid import UUID
 
-from app.database import get_db
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from app.config import settings
 from app.core.security import decode_token
-from app.core.exceptions import UserNotFoundException
+from app.database import get_db
+from app.models.base import UserStatus, UserType
+from app.models.role import Permission, RolePermission, UserOrganizationRole
 from app.repositories.user_repository import UserRepository
-from app.models.user import User
+from app.services.core_service_client import CoreServiceClient
+
+
+@dataclass
+class CurrentUser:
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    display_name: str | None
+    user_type: UserType | None
+    status: UserStatus | None
+    is_active: bool
+    permissions: list[str]
+
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
 
 
+def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
+    """
+    Get user's permission codes from their active roles.
+
+    Handles potential enum issues gracefully by catching exceptions
+    and returning an empty list if there are database errors.
+    """
+    try:
+        permission_codes = (
+            db.query(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(
+                UserOrganizationRole,
+                RolePermission.role_id == UserOrganizationRole.role_id,
+            )
+            .filter(
+                UserOrganizationRole.user_id == user_id,
+                UserOrganizationRole.is_active,
+                Permission.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        )
+        return [code for (code,) in permission_codes if code]
+    except Exception as e:
+        # Log the error but don't fail - return empty permissions
+        # This prevents 500 errors if there are enum issues in permissions table
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(
+            f"Error fetching permissions for user {user_id}: {e}", exc_info=True
+        )
+        return []
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
-) -> User:
-    """
-    Get current authenticated user from JWT token.
-    
-    Args:
-        credentials: HTTP authorization credentials
-        db: Database session
-        
-    Returns:
-        Current User object
-        
-    Raises:
-        HTTPException: If token is invalid or user not found
-    """
+    db: Session = Depends(get_db),
+) -> CurrentUser:
     token = credentials.credentials
-    
-    # Decode token
+
     payload = decode_token(token)
     if not payload:
         raise HTTPException(
@@ -43,16 +82,14 @@ async def get_current_user(
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Verify token type
+
     if payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Get user ID from token
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(
@@ -60,61 +97,117 @@ async def get_current_user(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
         user_id = UUID(user_id_str)
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user ID in token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Get user from database
+        ) from e
+
     user_repo = UserRepository(db)
     user = user_repo.get_user_by_id(user_id)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    return user
+
+    permissions = _get_user_permissions(db, user.id)
+
+    return CurrentUser(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        display_name=user.display_name,
+        user_type=user.user_type,
+        status=user.status,
+        is_active=user.is_active,
+        permissions=permissions,
+    )
 
 
 async def get_current_active_user(
-    current_user: User = Depends(get_current_user)
-) -> User:
-    """
-    Get current active user.
-    
-    Args:
-        current_user: Current authenticated user
-        
-    Returns:
-        Current User object
-        
-    Raises:
-        HTTPException: If user is inactive
-    """
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
     if not current_user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user"
         )
-    
+
     return current_user
 
 
-def get_client_ip(request) -> Optional[str]:
-    """
-    Extract client IP address from request.
+async def require_admin(
+    current_user: CurrentUser = Depends(get_current_active_user),
+) -> CurrentUser:
+    """Require system_admin user_type for admin portal endpoints."""
+    if current_user.user_type != UserType.SYSTEM_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
+def require_permission(permission: str):
+    """Create dependency that requires specific permission for access
     
     Args:
-        request: FastAPI request object
+        permission: Permission code required (e.g., 'system_admin.org_manager')
         
+    Returns:
+        Dependency function that validates user has the required permission
+    """
+    async def _require_permission(
+        current_user: CurrentUser = Depends(get_current_active_user),
+    ) -> CurrentUser:
+        """Check if current user has the required permission"""
+        
+        # Check for exact permission match
+        if permission in current_user.permissions:
+            return current_user
+        
+        # system_admin.master grants all system_admin.* permissions
+        if permission.startswith("system_admin.") and "system_admin.master" in current_user.permissions:
+            return current_user
+        
+        # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
+        if "." in permission:
+            resource, _, action = permission.partition(".")
+            if "_" in action:
+                domain = action.rsplit("_", 1)[0]  # e.g. "users" from "users_read"
+                manage_perm = f"{resource}.{domain}_manage"
+                if manage_perm in current_user.permissions:
+                    return current_user
+        
+        # Check for partial wildcard matches (e.g., 'resource.*' matches 'resource.anything')
+        if "." in permission:
+            resource, _, _ = permission.partition(".")
+            if f"{resource}.*" in current_user.permissions:
+                return current_user
+        
+        # Permission not found
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission '{permission}' required",
+        )
+    
+    return _require_permission
+
+
+def get_client_ip(request) -> str | None:
+    """
+    Extract client IP address from request.
+
+    Args:
+        request: FastAPI request object
+
     Returns:
         IP address string or None
     """
@@ -122,14 +215,33 @@ def get_client_ip(request) -> Optional[str]:
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
-    
+
     # Check for real IP
     real_ip = request.headers.get("X-Real-IP")
     if real_ip:
         return real_ip
-    
+
     # Fall back to client host
     if request.client:
         return request.client.host
-    
+
     return None
+
+
+def get_core_service_client() -> CoreServiceClient | None:
+    """
+    Get CoreServiceClient instance for service-to-service communication.
+
+    Used for organization onboarding (currency seeding, UOMs, tax templates, item groups)
+    and optionally for chart of accounts creation.
+
+    Returns:
+        CoreServiceClient instance or None if core_service_url is not configured
+    """
+    if not settings.core_service_url:
+        return None
+
+    return CoreServiceClient(
+        base_url=settings.core_service_url,
+        timeout=settings.core_service_timeout
+    )

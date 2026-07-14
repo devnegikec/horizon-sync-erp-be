@@ -1,0 +1,4 @@
+# file: /Users/devnegi/Documents/www/horizon-sync-be/core-service/app/services/qr_scan_service.py
+# hypothesis_version: 6.152.8
+
+['WorkerTask', 'avg_elapsed_seconds', 'by_location', 'created_at', 'elapsed_seconds', 'field', 'finish', 'id', 'location_code', 'organization_id', 'reason', 'records', 'scan_count', 'scan_type', 'scanned_at', 'start', 'total_scans', 'worker_task_id']

@@ -1,0 +1,431 @@
+{
+	"info": {
+		"_postman_id": "material-request-api-collection",
+		"name": "Material Request API",
+		"description": "Complete API collection for testing Material Request endpoints with realistic data",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Material Request - Office Supplies",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('material_request_id', response.id);",
+							"    pm.environment.set('organization_id', response.organization_id);",
+							"    console.log('Material Request ID:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}",
+						"description": "JWT token from identity service"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"Office supplies needed for Q1 2024 - Urgent procurement for new office setup\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": 50,\n      \"required_date\": \"2024-03-15\",\n      \"description\": \"Ergonomic office chairs for new employees\"\n    },\n    {\n      \"item_id\": \"{{item_id_2}}\",\n      \"quantity\": 25,\n      \"required_date\": \"2024-03-15\",\n      \"description\": \"Standing desks with adjustable height\"\n    },\n    {\n      \"item_id\": \"{{item_id_3}}\",\n      \"quantity\": 100,\n      \"required_date\": \"2024-03-20\",\n      \"description\": \"Wireless keyboards and mice combo\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"]
+				},
+				"description": "Create a new Material Request for office supplies with multiple line items"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Create Material Request - Manufacturing Raw Materials",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('material_request_id_2', response.id);",
+							"    console.log('Material Request ID 2:', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"Raw materials for production batch #2024-001 - Steel components\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_4}}\",\n      \"quantity\": 500,\n      \"required_date\": \"2024-03-10\",\n      \"description\": \"Cold-rolled steel sheets 2mm thickness\"\n    },\n    {\n      \"item_id\": \"{{item_id_5}}\",\n      \"quantity\": 200,\n      \"required_date\": \"2024-03-10\",\n      \"description\": \"Stainless steel bolts M8x20mm\"\n    },\n    {\n      \"item_id\": \"{{item_id_6}}\",\n      \"quantity\": 150,\n      \"required_date\": \"2024-03-12\",\n      \"description\": \"Industrial grade adhesive - 5L containers\"\n    },\n    {\n      \"item_id\": \"{{item_id_7}}\",\n      \"quantity\": 1000,\n      \"required_date\": \"2024-03-12\",\n      \"description\": \"Rubber gaskets 50mm diameter\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"]
+				},
+				"description": "Create Material Request for manufacturing raw materials"
+			},
+			"response": []
+		},
+		{
+			"name": "3. Get Material Request by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id}}"]
+				},
+				"description": "Retrieve a specific Material Request by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "4. List All Material Requests",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests?page=1&page_size=20&sort_by=created_at&sort_order=desc",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "20"
+						},
+						{
+							"key": "sort_by",
+							"value": "created_at"
+						},
+						{
+							"key": "sort_order",
+							"value": "desc"
+						}
+					]
+				},
+				"description": "List all Material Requests with pagination"
+			},
+			"response": []
+		},
+		{
+			"name": "5. List Material Requests - Filter by Status (DRAFT)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests?status=draft&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"],
+					"query": [
+						{
+							"key": "status",
+							"value": "draft"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Material Requests by DRAFT status"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Update Material Request (DRAFT only)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"UPDATED: Office supplies needed for Q1 2024 - Priority changed to HIGH\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": 60,\n      \"required_date\": \"2024-03-12\",\n      \"description\": \"Ergonomic office chairs - Increased quantity due to new hires\"\n    },\n    {\n      \"item_id\": \"{{item_id_2}}\",\n      \"quantity\": 30,\n      \"required_date\": \"2024-03-12\",\n      \"description\": \"Standing desks with adjustable height - Updated quantity\"\n    },\n    {\n      \"item_id\": \"{{item_id_3}}\",\n      \"quantity\": 100,\n      \"required_date\": \"2024-03-20\",\n      \"description\": \"Wireless keyboards and mice combo\"\n    },\n    {\n      \"item_id\": \"{{item_id_8}}\",\n      \"quantity\": 50,\n      \"required_date\": \"2024-03-20\",\n      \"description\": \"Monitor arms - dual screen setup\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id}}"]
+				},
+				"description": "Update a Material Request (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Submit Material Request",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id}}/submit",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id}}", "submit"]
+				},
+				"description": "Submit Material Request - changes status from DRAFT to SUBMITTED"
+			},
+			"response": []
+		},
+		{
+			"name": "8. List Material Requests - Filter by Status (SUBMITTED)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests?status=submitted&page=1&page_size=10",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"],
+					"query": [
+						{
+							"key": "status",
+							"value": "submitted"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "page_size",
+							"value": "10"
+						}
+					]
+				},
+				"description": "Filter Material Requests by SUBMITTED status"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Cancel Material Request",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id_2}}/cancel",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id_2}}", "cancel"]
+				},
+				"description": "Cancel a Material Request - changes status to CANCELLED"
+			},
+			"response": []
+		},
+		{
+			"name": "10. Delete Material Request (DRAFT only)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id_to_delete}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id_to_delete}}"]
+				},
+				"description": "Delete a Material Request (only works for DRAFT status)"
+			},
+			"response": []
+		},
+		{
+			"name": "11. Create Material Request - IT Equipment",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    const response = pm.response.json();",
+							"    pm.environment.set('material_request_id_3', response.id);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"IT equipment for remote employees - Q1 2024 expansion\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_9}}\",\n      \"quantity\": 30,\n      \"required_date\": \"2024-03-25\",\n      \"description\": \"Laptop computers - Dell Latitude 5540, 16GB RAM, 512GB SSD\"\n    },\n    {\n      \"item_id\": \"{{item_id_10}}\",\n      \"quantity\": 30,\n      \"required_date\": \"2024-03-25\",\n      \"description\": \"27-inch monitors - 4K resolution\"\n    },\n    {\n      \"item_id\": \"{{item_id_11}}\",\n      \"quantity\": 30,\n      \"required_date\": \"2024-03-28\",\n      \"description\": \"Docking stations with USB-C connectivity\"\n    },\n    {\n      \"item_id\": \"{{item_id_12}}\",\n      \"quantity\": 30,\n      \"required_date\": \"2024-03-28\",\n      \"description\": \"Noise-cancelling headsets with microphone\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"]
+				},
+				"description": "Create Material Request for IT equipment"
+			},
+			"response": []
+		},
+		{
+			"name": "12. Error Test - Create with Invalid Data (Negative Quantity)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"This should fail - negative quantity\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id_1}}\",\n      \"quantity\": -10,\n      \"required_date\": \"2024-03-15\",\n      \"description\": \"Invalid negative quantity\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"]
+				},
+				"description": "Test validation error - should return 400 Bad Request"
+			},
+			"response": []
+		},
+		{
+			"name": "13. Error Test - Create with No Line Items",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"This should fail - no line items\",\n  \"line_items\": []\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests"]
+				},
+				"description": "Test validation error - should return 400 Bad Request (at least one line item required)"
+			},
+			"response": []
+		},
+		{
+			"name": "14. Error Test - Update Submitted Material Request",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{access_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"notes\": \"This should fail - cannot update submitted request\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/v1/material-requests/{{material_request_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["api", "v1", "material-requests", "{{material_request_id}}"]
+				},
+				"description": "Test error - should return 409 Conflict (cannot update submitted Material Request)"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8001",
+			"type": "string"
+		}
+	]
+}
