@@ -4,11 +4,11 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from app.core.constants import ANALYTICS_MODULE_ENABLED
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, require_feature_flag
+from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
+from app.dependencies import CurrentUser, get_current_user, require_feature_flag
 from app.schemas.analytics import (
     MetaCampaignCreate,
     MetaCampaignListResponse,
@@ -19,7 +19,9 @@ from app.schemas.analytics import (
 )
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))])
+router = APIRouter(
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))]
+)
 
 
 def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
@@ -27,6 +29,7 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
 
 
 # ── QR Scan Event Ingestion ───────────────────────────────────────────────────
+
 
 @router.post(
     "/scans/ingest",
@@ -36,7 +39,9 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
 )
 def ingest_scan(
     data: QRScanEventIngest,
-    organization_id: UUID = Query(..., description="Organization that owns the QR code"),
+    organization_id: UUID = Query(
+        ..., description="Organization that owns the QR code"
+    ),
     service: AnalyticsService = Depends(get_service),
 ):
     """No auth required — called by the consumer-facing QR landing page."""
@@ -55,9 +60,9 @@ def list_scan_events(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_scan_events(
         org_id, page, page_size, serial_number, product_item_id, date_from, date_to
     )
@@ -73,13 +78,14 @@ def get_scan_analytics(
     date_to: datetime | None = Query(None),
     serial_number: str | None = Query(None, description="Filter to a single serial"),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
+
 
 @router.post(
     "/meta-campaigns",
@@ -90,9 +96,9 @@ def get_scan_analytics(
 def record_meta_snapshot(
     data: MetaCampaignCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.record_meta_snapshot(data, org_id)
 
 
@@ -106,9 +112,9 @@ def list_meta_campaigns(
     page_size: int = Query(20, ge=1, le=100),
     campaign_id: str | None = Query(None, description="Filter by Meta campaign ID"),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_meta_campaigns(org_id, page, page_size, campaign_id)
 
 
@@ -120,9 +126,9 @@ def list_meta_campaigns(
 def get_meta_campaign(
     mc_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     mc = service.get_meta_campaign(mc_id, org_id)
     if not mc:
         raise HTTPException(status_code=404, detail="Meta campaign record not found")
