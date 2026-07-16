@@ -64,6 +64,14 @@ class CampaignUpdate(BaseModel):
     extra_data: dict[str, Any] | None = None
 
 
+class CampaignStatusUpdate(BaseModel):
+    status: str = Field(..., max_length=1, description="A=active, P=paused, E=ended")
+
+
+class CampaignCloneRequest(BaseModel):
+    name: str = Field(..., max_length=256, description="Name for the cloned campaign")
+
+
 class CampaignResponse(BaseModel):
     id: UUID
     organization_id: UUID
@@ -130,6 +138,30 @@ class LeadCreate(BaseModel):
     gst_number: str | None = None
     state_name: str | None = None
     country: str | None = None
+    marital_status: str | None = None
+    lead_owner_id: UUID | None = None
+    rating: str | None = None
+    comment: str | None = None
+    extra_data: dict[str, Any] | None = None
+
+
+class LeadUpdate(BaseModel):
+    name: str | None = None
+    mobilenumber: str | None = None
+    email: str | None = None
+    address: str | None = None
+    location: str | None = None
+    pincode: str | None = None
+    dob: date | None = None
+    gender: str | None = None
+    occupation: str | None = None
+    gst_number: str | None = None
+    state_name: str | None = None
+    country: str | None = None
+    marital_status: str | None = None
+    lead_owner_id: UUID | None = None
+    campaign_id: UUID | None = None
+    status: str | None = None
     rating: str | None = None
     comment: str | None = None
     extra_data: dict[str, Any] | None = None
@@ -138,10 +170,19 @@ class LeadCreate(BaseModel):
 class LeadResponse(LeadCreate):
     id: UUID
     organization_id: UUID
+    coupon: str | None = None
+    value: str | None = None
+    used: str | None = None
+    expiry: datetime | None = None
+    timestamp: datetime | None = None
+    used_timestamp: datetime | None = None
     status: str | None
     redeem_mode: str
     external_lead: bool
+    is_archived: bool
+    is_blocklisted: bool
     created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -149,6 +190,68 @@ class LeadResponse(LeadCreate):
 class LeadListResponse(BaseModel):
     leads: list[LeadResponse]
     pagination: dict[str, Any]
+
+
+# ── Lead Notes ────────────────────────────────────────────────────────────────
+
+
+class LeadNoteCreate(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class LeadNoteUpdate(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class LeadNoteResponse(BaseModel):
+    id: UUID
+    lead_id: UUID
+    content: str
+    created_by: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ── Tags ─────────────────────────────────────────────────────────────────────
+
+
+class TagCreate(BaseModel):
+    segment: str | None = Field(None, max_length=20)
+    tag_type: str | None = Field(None, max_length=10)
+    tag_source: str | None = Field(None, max_length=256)
+    tag_description: str | None = None
+
+
+class TagUpdate(BaseModel):
+    segment: str | None = Field(None, max_length=20)
+    tag_type: str | None = Field(None, max_length=10)
+    tag_source: str | None = Field(None, max_length=256)
+    tag_description: str | None = None
+
+
+class TagResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    segment: str | None
+    tag_type: str | None
+    tag_source: str | None
+    total_lead: int
+    tag_description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TagAssignmentRequest(BaseModel):
+    tag_ids: list[UUID]
+    lead_ids: list[UUID]
+
+
+class LeadBulkDeleteRequest(BaseModel):
+    lead_ids: list[UUID]
 
 
 # ── Coupon ────────────────────────────────────────────────────────────────────

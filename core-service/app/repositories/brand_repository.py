@@ -1,5 +1,6 @@
 """Repository for Brand database operations"""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import or_
@@ -106,3 +107,14 @@ class BrandRepository:
         self.db.commit()
         self.db.refresh(brand)
         return brand
+
+    def soft_delete(self, brand: Brand, user_id: UUID) -> None:
+        """Soft-delete a brand.
+
+        Args:
+            brand: Brand object to delete.
+            user_id: UUID of the user performing the deletion.
+        """
+        brand.deleted_at = datetime.now(UTC)
+        brand.updated_by = user_id
+        self.db.commit()

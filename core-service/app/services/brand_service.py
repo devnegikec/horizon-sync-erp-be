@@ -145,3 +145,19 @@ class BrandService:
 
         raw["updated_by"] = user_id
         return self.repo.update(brand, raw)
+
+    def delete(self, brand_id: UUID, organization_id: UUID, user_id: UUID) -> None:
+        """Soft-delete a brand.
+
+        Args:
+            brand_id: Brand UUID.
+            organization_id: Organization UUID for tenant isolation.
+            user_id: UUID of the user performing the deletion.
+
+        Raises:
+            HTTPException: 404 if brand not found.
+        """
+        brand = self.repo.get_by_id(brand_id, organization_id)
+        if not brand:
+            raise HTTPException(status_code=404, detail="Brand not found")
+        self.repo.soft_delete(brand, user_id)

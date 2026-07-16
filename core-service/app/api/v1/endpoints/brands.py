@@ -87,3 +87,17 @@ async def update_brand(
     svc = BrandService(db)
     brand = svc.update(brand_id, data, current_user.organization_id, current_user.id)
     return BrandResponse.model_validate(brand)
+
+
+@router.delete(
+    "/{brand_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete brand",
+)
+async def delete_brand(
+    brand_id: UUID,
+    current_user: CurrentUser = Depends(require_permission("brand.delete")),
+    db: Session = Depends(get_db),
+):
+    svc = BrandService(db)
+    svc.delete(brand_id, current_user.organization_id, current_user.id)

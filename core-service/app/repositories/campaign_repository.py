@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.campaign import Campaign, WebCampaign
-from app.models.coupon import CampaignLead, CampaignTag, Coupon, CouponUnlockLog
+from app.models.campaign import Campaign
+from app.models.coupon import CampaignLead, Coupon, CouponUnlockLog
 
 
 class CampaignRepository:
@@ -99,8 +99,9 @@ class LeadRepository:
             .first()
         )
 
-    def get_by_mobile(self, mobile: str, organization_id: UUID,
-                      campaign_id: UUID | None = None) -> CampaignLead | None:
+    def get_by_mobile(
+        self, mobile: str, organization_id: UUID, campaign_id: UUID | None = None
+    ) -> CampaignLead | None:
         q = self.db.query(CampaignLead).filter(
             CampaignLead.mobilenumber == mobile,
             CampaignLead.organization_id == organization_id,
@@ -137,6 +138,13 @@ class LeadRepository:
         )
         return items, total
 
+    def update(self, lead: CampaignLead, data: dict) -> CampaignLead:
+        for k, v in data.items():
+            setattr(lead, k, v)
+        self.db.commit()
+        self.db.refresh(lead)
+        return lead
+
 
 class CouponRepository:
     def __init__(self, db: Session):
@@ -149,8 +157,7 @@ class CouponRepository:
         self.db.refresh(coupon)
         return coupon
 
-    def get_by_code(self, coupon_code: str,
-                    organization_id: UUID) -> Coupon | None:
+    def get_by_code(self, coupon_code: str, organization_id: UUID) -> Coupon | None:
         return (
             self.db.query(Coupon)
             .filter(
@@ -201,8 +208,9 @@ class CouponRepository:
         self.db.refresh(coupon)
         return coupon
 
-    def add_unlock_log(self, coupon_id: UUID, organization_id: UUID,
-                       action: str, **kwargs) -> CouponUnlockLog:
+    def add_unlock_log(
+        self, coupon_id: UUID, organization_id: UUID, action: str, **kwargs
+    ) -> CouponUnlockLog:
         log = CouponUnlockLog(
             organization_id=organization_id,
             coupon_id=coupon_id,

@@ -96,6 +96,27 @@ class ResourceType(str, enum.Enum):
     REPORT = "report"
     REPORTING = "reporting"  # Task 1C-1: System admin reporting permissions
 
+    # QReach — Campaigns & Engagement
+    CAMPAIGN = "campaign"
+    LEAD = "lead"
+    COUPON = "coupon"
+    BRAND = "brand"
+    QR_PRODUCT = "qr_product"
+    WARRANTY = "warranty"
+
+    # QReach — Messaging
+    SMS = "sms"
+    WHATSAPP = "whatsapp"
+    RCS = "rcs"
+
+    # QReach — Analytics & Other
+    ANALYTICS = "analytics"
+    SHORT_URL = "short_url"
+    DESTINATION = "destination"
+    STORE = "store"
+    PUBLIC_SUBMISSION = "public_submission"
+    API_KEY = "api_key"
+
     # General
     SETTING = "setting"
     ALL = "all"
@@ -112,3 +133,11 @@ class ActionType(str, enum.Enum):
     EXECUTE = "execute"
     INVITE = "invite"
     SCAN = "scan"
+
+    # QReach actions
+    EXPORT = "export"  # Download reports/data
+    SEND = "send"  # SMS/WhatsApp/RCS send
+    SCHEDULE = "schedule"  # Schedule messages
+    IMPORT = "import"  # Import data (leads, coupons)
+    ARCHIVE = "archive"  # Archive/unarchive
+    ASSIGN = "assign"  # Tag assignment
