@@ -56,8 +56,13 @@ class AnalyticsService:
         date_to: datetime | None = None,
     ):
         items, total = self.scan_repo.list(
-            organization_id, page, page_size,
-            serial_number, product_item_id, date_from, date_to,
+            organization_id,
+            page,
+            page_size,
+            serial_number,
+            product_item_id,
+            date_from,
+            date_to,
         )
         total_pages = (total + page_size - 1) // page_size
         return {
@@ -101,7 +106,9 @@ class AnalyticsService:
         page_size: int = 20,
         campaign_id: str | None = None,
     ):
-        items, total = self.meta_repo.list(organization_id, page, page_size, campaign_id)
+        items, total = self.meta_repo.list(
+            organization_id, page, page_size, campaign_id
+        )
         total_pages = (total + page_size - 1) // page_size
         return {
             "campaigns": items,
@@ -117,3 +124,48 @@ class AnalyticsService:
 
     def get_meta_campaign(self, mc_id: UUID, organization_id: UUID):
         return self.meta_repo.get_by_id(mc_id, organization_id)
+
+    # ── CTA Breakdown ─────────────────────────────────────────────────────────
+
+    def get_cta_breakdown(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_cta_breakdown(organization_id, date_from, date_to)
+
+    # ── Geo Heatmap ───────────────────────────────────────────────────────────
+
+    def get_geo_heatmap(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 500,
+    ):
+        return self.scan_repo.get_geo_heatmap(
+            organization_id, date_from, date_to, limit
+        )
+
+    # ── Device Timeline ───────────────────────────────────────────────────────
+
+    def get_device_timeline(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_device_timeline(organization_id, date_from, date_to)
+
+    # ── Interaction Funnel ────────────────────────────────────────────────────
+
+    def get_interaction_funnel(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ):
+        return self.scan_repo.get_interaction_funnel(
+            organization_id, date_from, date_to
+        )

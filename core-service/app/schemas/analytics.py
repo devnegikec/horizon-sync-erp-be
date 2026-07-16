@@ -101,3 +101,56 @@ class MetaCampaignResponse(BaseModel):
 class MetaCampaignListResponse(BaseModel):
     campaigns: list[MetaCampaignResponse]
     pagination: dict[str, Any]
+
+
+# ── CTA Breakdown ─────────────────────────────────────────────────────────────
+
+
+class CTABreakdownItem(BaseModel):
+    cta_action: str | None
+    count: int
+
+
+class CTABreakdownResponse(BaseModel):
+    breakdown: list[CTABreakdownItem]
+    total_scans_with_cta: int
+
+
+# ── Geo Heatmap ───────────────────────────────────────────────────────────────
+
+
+class GeoHeatmapItem(BaseModel):
+    city: str | None
+    state: str | None
+    country: str | None
+    latitude: float | None
+    longitude: float | None
+    count: int
+
+
+# ── Device Timeline ───────────────────────────────────────────────────────────
+
+
+class DeviceTimelineItem(BaseModel):
+    date: str
+    mobile: int = 0
+    desktop: int = 0
+    tablet: int = 0
+    unknown: int = 0
+
+
+# ── Interaction Funnel ────────────────────────────────────────────────────────
+
+
+class InteractionTypeCount(BaseModel):
+    interaction_type: str | None
+    count: int
+
+
+class InteractionFunnelResponse(BaseModel):
+    total_scans: int
+    scans_with_cta: int
+    scans_with_interactions: int
+    total_interactions: int
+    conversion_rate: float
+    top_interaction_types: list[InteractionTypeCount]

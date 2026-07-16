@@ -10,6 +10,10 @@ from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_feature_flag
 from app.schemas.analytics import (
+    CTABreakdownResponse,
+    DeviceTimelineItem,
+    GeoHeatmapItem,
+    InteractionFunnelResponse,
     MetaCampaignCreate,
     MetaCampaignListResponse,
     MetaCampaignResponse,
@@ -82,6 +86,79 @@ def get_scan_analytics(
 ):
     org_id = current_user.organization_id
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
+
+
+# ── CTA Breakdown ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/cta-breakdown",
+    response_model=CTABreakdownResponse,
+    summary="Get CTA action distribution",
+)
+def get_cta_breakdown(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_cta_breakdown(org_id, date_from, date_to)
+
+
+# ── Geo Heatmap ───────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/geo-heatmap",
+    response_model=list[GeoHeatmapItem],
+    summary="Get scan geographic heatmap data",
+)
+def get_geo_heatmap(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_geo_heatmap(org_id, date_from, date_to, limit)
+
+
+# ── Device Timeline ───────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/device-timeline",
+    response_model=list[DeviceTimelineItem],
+    summary="Get scans over time by device type",
+)
+def get_device_timeline(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_device_timeline(org_id, date_from, date_to)
+
+
+# ── Interaction Funnel ────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/interaction-funnel",
+    response_model=InteractionFunnelResponse,
+    summary="Get scan-to-interaction conversion funnel",
+)
+def get_interaction_funnel(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_interaction_funnel(org_id, date_from, date_to)
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
