@@ -1,0 +1,104 @@
+name: Deploy to Railway (Dev)
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "identity-service/**"
+      - "core-service/**"
+      - "search-service/**"
+      - "nginx-gateway/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-dev.yml"
+
+concurrency:
+  group: railway-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+      - name: Deploy Identity Service
+        if: success()
+        run: |
+          railway up ./identity-service \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_IDENTITY_SERVICE_ID }}" \
+            --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy Core Service
+        if: success()
+        run: |
+          railway up ./core-service \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_CORE_SERVICE_ID }}" \
+            --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy Search Service
+        if: success()
+        run: |
+          railway up ./search-service \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_SEARCH_SERVICE_ID }}" \
+            --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy Nginx Gateway
+        if: success()
+        run: |
+          railway up ./nginx-gateway \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_NGINX_SERVICE_ID }}" \
+            --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Run Database Migrations (Identity)
+        if: success()
+        run: |
+          railway run \
+            --service="identity-service" \
+            --environment="dev" \
+            "python -m alembic upgrade head"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Run Database Migrations (Core)
+        if: success()
+        run: |
+          railway run \
+            --service="core-service" \
+            --environment="dev" \
+            "python -m alembic upgrade head"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "### 🚀 Railway Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Identity Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Core Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Dashboard**: https://railway.com/dashboard" >> $GITHUB_STEP_SUMMARY
