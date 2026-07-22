@@ -6,10 +6,12 @@ Create Date: 2026-03-26 15:00:00.000000
 
 """
 
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
-from datetime import datetime, timezone
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "005"
@@ -22,10 +24,23 @@ def upgrade() -> None:
     """Add master organization support and billing fields"""
 
     # Add new enum values (PG 11+ supports ADD VALUE in transactions)
-    op.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'master'")
-    op.execute("ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'customer'")
-    op.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'overdue'")
-    op.execute("ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'deactivated'")
+    # Guard with DO blocks to handle cases where the type doesn't exist yet
+    op.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationtype') THEN "
+        "CREATE TYPE organizationtype AS ENUM ('enterprise', 'business', 'startup', 'individual', 'master', 'customer'); "
+        "ELSE "
+        "ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'master'; "
+        "ALTER TYPE organizationtype ADD VALUE IF NOT EXISTS 'customer'; "
+        "END IF; END $$;"
+    )
+    op.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationstatus') THEN "
+        "CREATE TYPE organizationstatus AS ENUM ('active', 'inactive', 'suspended', 'trial', 'overdue', 'deactivated'); "
+        "ELSE "
+        "ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'overdue'; "
+        "ALTER TYPE organizationstatus ADD VALUE IF NOT EXISTS 'deactivated'; "
+        "END IF; END $$;"
+    )
 
     # Add billing and subscription fields to organizations table
     op.add_column(
@@ -68,7 +83,8 @@ def upgrade() -> None:
     )
 
     # Create unique constraint for master organization (only one allowed)
-    op.execute("""
+    op.execute(
+        """
         CREATE OR REPLACE FUNCTION check_single_master_org() RETURNS TRIGGER AS $$
         BEGIN
             IF NEW.organization_type = 'master' THEN
@@ -84,13 +100,16 @@ def upgrade() -> None:
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
-    """)
+    """
+    )
 
-    op.execute("""
+    op.execute(
+        """
         CREATE TRIGGER single_master_org_trigger
         BEFORE INSERT OR UPDATE ON organizations
         FOR EACH ROW EXECUTE FUNCTION check_single_master_org();
-    """)
+    """
+    )
 
     # Create the Master Organization
     master_org_id = "00000000-0000-0000-0000-000000000001"  # Fixed UUID for master org
@@ -107,7 +126,8 @@ def upgrade() -> None:
     )
 
     if result[0] == 0:
-        op.execute(f"""
+        op.execute(
+            f"""
             INSERT INTO organizations (
                 id, name, slug, display_name, description,
                 organization_type, status, billing_status, is_active,
@@ -126,10 +146,11 @@ def upgrade() -> None:
                 999999,  -- Unlimited seats for master org
                 999999,  -- Unlimited credits for master org
                 'USD',
-                '{datetime.now(timezone.utc).isoformat()}',
-                '{datetime.now(timezone.utc).isoformat()}'
+                '{datetime.now(UTC).isoformat()}',
+                '{datetime.now(UTC).isoformat()}'
             )
-        """)
+        """
+        )
 
     # Create index for faster queries on organization_type and billing_status
     op.create_index("ix_organizations_type", "organizations", ["organization_type"])
