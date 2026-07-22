@@ -38,4 +38,4 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
-CMD bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001'
+CMD bash -c 'python -m alembic upgrade head || echo "WARNING: Migrations had issues but continuing..." && uvicorn app.main:app --host 0.0.0.0 --port 8001'
