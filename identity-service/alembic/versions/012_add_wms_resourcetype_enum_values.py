@@ -10,7 +10,6 @@ so WMS permissions can be inserted.
 
 from alembic import op
 
-
 revision = "012"
 down_revision = "011"
 branch_labels = None

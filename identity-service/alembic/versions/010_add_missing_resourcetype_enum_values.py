@@ -13,7 +13,6 @@ system_admin permissions.
 
 from alembic import op
 
-
 revision = "010"
 down_revision = "009"
 branch_labels = None
