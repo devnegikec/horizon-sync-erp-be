@@ -1,6 +1,7 @@
 # Root Dockerfile for Railway monorepo - Identity Service
 # Railway GitHub integration looks for Dockerfile at repo root.
 # This delegates to the identity-service directory.
+# Build trigger: 2026-07-22-v2
 
 # Builder stage
 FROM python:3.11-slim AS builder
