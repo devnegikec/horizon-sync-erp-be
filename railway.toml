@@ -15,6 +15,9 @@ watchPatterns = ["**/*"]
 source = "identity-service/"
 startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 
+[services.identity-service.build]
+dockerfilePath = "identity-service/Dockerfile"
+
 [services.identity-service.deploy]
 healthcheckPath = "/health"
 restartPolicyMaxRetries = 3
@@ -25,6 +28,9 @@ restartPolicyMaxRetries = 3
 [services.core-service]
 source = "core-service/"
 startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001'"
+
+[services.core-service.build]
+dockerfilePath = "core-service/Dockerfile"
 
 [services.core-service.deploy]
 healthcheckPath = "/health"
@@ -37,6 +43,9 @@ restartPolicyMaxRetries = 3
 source = "search-service/"
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port 8002"
 
+[services.search-service.build]
+dockerfilePath = "search-service/Dockerfile"
+
 [services.search-service.deploy]
 healthcheckPath = "/health"
 restartPolicyMaxRetries = 3
@@ -47,6 +56,9 @@ restartPolicyMaxRetries = 3
 [services.nginx-gateway]
 source = "nginx-gateway/"
 startCommand = "nginx -g 'daemon off;'"
+
+[services.nginx-gateway.build]
+dockerfilePath = "nginx-gateway/Dockerfile"
 
 [services.nginx-gateway.deploy]
 healthcheckPath = "/health"
