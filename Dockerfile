@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
+ENV BUILD_ID=20260722-v5
 
 COPY core-service/ .
 
