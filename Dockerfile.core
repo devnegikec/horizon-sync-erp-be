@@ -1,5 +1,4 @@
-# Root Dockerfile for Railway monorepo - Core Service
-# Railway GitHub integration looks for Dockerfile at repo root.
+# Build trigger: 2026-07-22-v4
 
 FROM python:3.11-slim AS builder
 
