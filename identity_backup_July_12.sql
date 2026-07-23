@@ -8,14 +8,23 @@
 -- Dumped by pg_dump version 15.15
 
 SET statement_timeout = 0;
+
 SET lock_timeout = 0;
+
 SET idle_in_transaction_session_timeout = 0;
+
 SET client_encoding = 'UTF8';
+
 SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
+
+SELECT pg_catalog.set_config ('search_path', '', false);
+
 SET check_function_bodies = false;
+
 SET xmloption = content;
+
 SET client_min_messages = warning;
+
 SET row_security = off;
 
 --
@@ -24,13 +33,11 @@ SET row_security = off;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
-
 --
 -- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner:
 --
 
 COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
-
 
 --
 -- Name: actiontype; Type: TYPE; Schema: public; Owner: horizon_user
@@ -47,7 +54,6 @@ CREATE TYPE public.actiontype AS ENUM (
     'scan'
 );
 
-
 ALTER TYPE public.actiontype OWNER TO horizon_user;
 
 --
@@ -61,7 +67,6 @@ CREATE TYPE public.auditactiontype AS ENUM (
     'access_grant',
     'access_revoke'
 );
-
 
 ALTER TYPE public.auditactiontype OWNER TO horizon_user;
 
@@ -78,7 +83,6 @@ CREATE TYPE public.organizationstatus AS ENUM (
     'deactivated'
 );
 
-
 ALTER TYPE public.organizationstatus OWNER TO horizon_user;
 
 --
@@ -93,7 +97,6 @@ CREATE TYPE public.organizationtype AS ENUM (
     'master',
     'customer'
 );
-
 
 ALTER TYPE public.organizationtype OWNER TO horizon_user;
 
@@ -131,7 +134,6 @@ CREATE TYPE public.resourcetype AS ENUM (
     'receiving_slip'
 );
 
-
 ALTER TYPE public.resourcetype OWNER TO horizon_user;
 
 --
@@ -144,7 +146,6 @@ CREATE TYPE public.teamrole AS ENUM (
     'member',
     'viewer'
 );
-
 
 ALTER TYPE public.teamrole OWNER TO horizon_user;
 
@@ -159,7 +160,6 @@ CREATE TYPE public.teamtype AS ENUM (
     'cross_functional'
 );
 
-
 ALTER TYPE public.teamtype OWNER TO horizon_user;
 
 --
@@ -172,7 +172,6 @@ CREATE TYPE public.userstatus AS ENUM (
     'suspended',
     'pending'
 );
-
 
 ALTER TYPE public.userstatus OWNER TO horizon_user;
 
@@ -187,7 +186,6 @@ CREATE TYPE public.usertype AS ENUM (
     'guest',
     'warehouse_worker'
 );
-
 
 ALTER TYPE public.usertype OWNER TO horizon_user;
 
@@ -212,7 +210,6 @@ CREATE FUNCTION public.check_single_master_org() RETURNS trigger
             RETURN NEW;
         END;
         $$;
-
 
 ALTER FUNCTION public.check_single_master_org() OWNER TO horizon_user;
 
@@ -246,15 +243,13 @@ CREATE FUNCTION public.validate_system_admin_role_assignment() RETURNS trigger
         END;
         $$;
 
-
 ALTER FUNCTION public.validate_system_admin_role_assignment() OWNER TO horizon_user;
 
 --
 -- Name: FUNCTION validate_system_admin_role_assignment(); Type: COMMENT; Schema: public; Owner: horizon_user
 --
 
-COMMENT ON FUNCTION public.validate_system_admin_role_assignment() IS 'Task 1C-2: Validates system admin role assignments to ensure proper organization membership';
-
+COMMENT ON FUNCTION public.validate_system_admin_role_assignment () IS 'Task 1C-2: Validates system admin role assignments to ensure proper organization membership';
 
 SET default_tablespace = '';
 
@@ -267,7 +262,6 @@ SET default_table_access_method = heap;
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL
 );
-
 
 ALTER TABLE public.alembic_version OWNER TO horizon_user;
 
@@ -284,7 +278,6 @@ CREATE TABLE public.email_verifications (
     verified_at timestamp with time zone,
     created_at timestamp with time zone NOT NULL
 );
-
 
 ALTER TABLE public.email_verifications OWNER TO horizon_user;
 
@@ -307,7 +300,6 @@ CREATE TABLE public.entity_audit_logs (
     created_at timestamp with time zone DEFAULT now()
 );
 
-
 ALTER TABLE public.entity_audit_logs OWNER TO horizon_user;
 
 --
@@ -315,7 +307,7 @@ ALTER TABLE public.entity_audit_logs OWNER TO horizon_user;
 --
 
 CREATE TABLE public.invitations (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT gen_random_uuid () NOT NULL,
     organization_id uuid NOT NULL,
     email character varying(255) NOT NULL,
     first_name character varying(100),
@@ -333,7 +325,6 @@ CREATE TABLE public.invitations (
     extra_data jsonb DEFAULT '{}'::jsonb
 );
 
-
 ALTER TABLE public.invitations OWNER TO horizon_user;
 
 --
@@ -342,13 +333,11 @@ ALTER TABLE public.invitations OWNER TO horizon_user;
 
 COMMENT ON TABLE public.invitations IS 'User invitations to organizations; used by Invitations API.';
 
-
 --
 -- Name: COLUMN invitations.team_ids; Type: COMMENT; Schema: public; Owner: horizon_user
 --
 
 COMMENT ON COLUMN public.invitations.team_ids IS 'JSON array of team UUIDs';
-
 
 --
 -- Name: COLUMN invitations.token_hash; Type: COMMENT; Schema: public; Owner: horizon_user
@@ -356,13 +345,11 @@ COMMENT ON COLUMN public.invitations.team_ids IS 'JSON array of team UUIDs';
 
 COMMENT ON COLUMN public.invitations.token_hash IS 'Hashed token for /invitations/validate/{token} and /invitations/accept';
 
-
 --
 -- Name: COLUMN invitations.status; Type: COMMENT; Schema: public; Owner: horizon_user
 --
 
 COMMENT ON COLUMN public.invitations.status IS 'pending | accepted | expired | cancelled';
-
 
 --
 -- Name: organizations; Type: TABLE; Schema: public; Owner: horizon_user
@@ -417,7 +404,6 @@ CREATE TABLE public.organizations (
     parent_organization_id uuid
 );
 
-
 ALTER TABLE public.organizations OWNER TO horizon_user;
 
 --
@@ -438,7 +424,6 @@ CREATE TABLE public.otp_verifications (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
 ALTER TABLE public.otp_verifications OWNER TO horizon_user;
 
 --
@@ -455,7 +440,6 @@ CREATE TABLE public.password_resets (
     user_agent character varying(500),
     created_at timestamp with time zone NOT NULL
 );
-
 
 ALTER TABLE public.password_resets OWNER TO horizon_user;
 
@@ -477,7 +461,6 @@ CREATE TABLE public.permissions (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone
 );
-
 
 ALTER TABLE public.permissions OWNER TO horizon_user;
 
@@ -504,7 +487,6 @@ CREATE TABLE public.refresh_tokens (
     last_used_at timestamp with time zone
 );
 
-
 ALTER TABLE public.refresh_tokens OWNER TO horizon_user;
 
 --
@@ -517,7 +499,6 @@ CREATE TABLE public.role_permissions (
     permission_id uuid NOT NULL,
     conditions jsonb
 );
-
 
 ALTER TABLE public.role_permissions OWNER TO horizon_user;
 
@@ -540,7 +521,6 @@ CREATE TABLE public.roles (
     updated_at timestamp with time zone
 );
 
-
 ALTER TABLE public.roles OWNER TO horizon_user;
 
 --
@@ -560,7 +540,6 @@ CREATE TABLE public.service_credentials (
     last_used_at timestamp with time zone
 );
 
-
 ALTER TABLE public.service_credentials OWNER TO horizon_user;
 
 --
@@ -568,7 +547,7 @@ ALTER TABLE public.service_credentials OWNER TO horizon_user;
 --
 
 CREATE TABLE public.system_admin_audit_logs (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT gen_random_uuid () NOT NULL,
     action_id character varying(255) NOT NULL,
     action_type public.auditactiontype NOT NULL,
     admin_user_id uuid NOT NULL,
@@ -585,7 +564,6 @@ CREATE TABLE public.system_admin_audit_logs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-
 ALTER TABLE public.system_admin_audit_logs OWNER TO horizon_user;
 
 --
@@ -593,7 +571,6 @@ ALTER TABLE public.system_admin_audit_logs OWNER TO horizon_user;
 --
 
 COMMENT ON TABLE public.system_admin_audit_logs IS 'Audit log for tracking all system admin actions and administrative activities';
-
 
 --
 -- Name: user_organization_roles; Type: TABLE; Schema: public; Owner: horizon_user
@@ -614,7 +591,6 @@ CREATE TABLE public.user_organization_roles (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone
 );
-
 
 ALTER TABLE public.user_organization_roles OWNER TO horizon_user;
 
@@ -653,34 +629,32 @@ CREATE TABLE public.users (
     qr_code character varying(100)
 );
 
-
 ALTER TABLE public.users OWNER TO horizon_user;
 
 --
 -- Data for Name: alembic_version; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
-COPY public.alembic_version (version_num) FROM stdin;
-013
-\.
-
+COPY public.alembic_version (version_num) FROM stdin; 013 \.
 
 --
 -- Data for Name: email_verifications; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.email_verifications (id, user_id, email, token_hash, expires_at, verified_at, created_at) FROM stdin;
 \.
-
 
 --
 -- Data for Name: entity_audit_logs; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.entity_audit_logs (id, user_id, organization_id, action, table_name, record_id, old_values, new_values, changed_fields, ip_address, user_agent, created_at) FROM stdin;
 8806e9bd-c02d-407c-bfc8-a37d82d7123e	\N	\N	CREATE	users	20c0587a-7145-48e0-9471-caae8de8fe4d	null	{"id": "20c0587a-7145-48e0-9471-caae8de8fe4d", "email": "negi.yaten+Raj0078@gmail.com", "first_name": "Raj", "last_name": "SN", "display_name": "Raj SN", "phone": "+916565432562", "avatar_url": null, "user_type": "user", "status": "pending", "is_active": "True", "email_verified": "False", "email_verified_at": null, "mfa_enabled": "False", "mfa_secret": null, "mfa_backup_codes": null, "last_login_at": null, "last_login_ip": null, "failed_login_attempts": "0", "locked_until": null, "preferences": "{}", "timezone": "UTC", "language": "en", "extra_data": "{}", "deleted_at": null, "created_at": "2026-06-04T13:08:49.067324", "updated_at": "2026-06-04T13:08:49.067328"}	null	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-04 13:08:49.086405+00
 b6918fae-a6e8-4a77-838e-95de46fcab7f	\N	\N	UPDATE	users	20c0587a-7145-48e0-9471-caae8de8fe4d	{"last_login_at": null, "last_login_ip": null}	{"last_login_at": "2026-06-07T05:03:29.650341+00:00", "last_login_ip": "172.18.0.1"}	["last_login_at", "last_login_ip"]	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 05:03:29.982609+00
-19efc771-2680-4ff5-8c8e-9ce800333dff	20c0587a-7145-48e0-9471-caae8de8fe4d	\N	CREATE	organizations	05397b7b-95bb-4560-b3d0-dff21b3db1ee	null	{"id": "05397b7b-95bb-4560-b3d0-dff21b3db1ee", "name": "system Org", "slug": "system-org", "display_name": "system Org", "description": "asdfasdfasdfasdfasdfasdf", "email": "negi.yaten+Raj0078@gmail.com", "phone": "+916565432562", "website": "https://www.tatasoft.com", "address_line1": null, "address_line2": null, "city": null, "state": null, "postal_code": null, "country": "IN", "organization_type": "business", "industry": "Healthcare", "tax_id": null, "base_currency": "INR", "logo_url": null, "primary_color": null, "domain": null, "sso_enabled": "False", "sso_provider": null, "sso_config": null, "status": "active", "is_active": "True", "billing_status": "trial", "subscription_start_date": "2026-06-07", "subscription_end_date": null, "trial_end_date": "2026-07-07", "max_users": "10", "max_credits": "1000", "billing_contact_email": null, "billing_cycle": "monthly", "customer_since": "2026-06-07T05:20:15.617769+00:00", "last_billed_date": null, "next_billing_date": "2026-08-06", "parent_organization_id": null, "owner_id": "20c0587a-7145-48e0-9471-caae8de8fe4d", "settings": "{}", "extra_data": "{}", "deleted_at": null, "created_at": "2026-06-07T05:20:15.623135", "updated_at": "2026-06-07T05:20:15.623140"}	null	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 05:20:15.644872+00
+19efc771-2680-4ff5-8c8e-9ce800333dff	20c0587a-7145-48e0-9471-caae8de8fe4d	\N	CREATE	organizations	05397b7b-95bb-4560-b3d0-dff21b3db1ee	null	{"id": "05397b7b-95bb-4560-b3d0-dff21b3db1ee", "name": "system Org", "slug": "system-org", "display_name": "system Org", "description": "asdfasdfasdfasdfasdfasdf", "email": "negi.yaten+Raj0078@gmail.com", "phone": "+916565432562", "website": "https://www.tatasoft.com", "address_line1": null, "address_line2": null, "city": null, "state": null, "postal_code": null, "country": "IN", "organization_type": "business", "industry": "Healthcare", "tax_id": null, "base_
+": "INR", "logo_url": null, "primary_color": null, "domain": null, "sso_enabled": "False", "sso_provider": null, "sso_config": null, "status": "active", "is_active": "True", "billing_status": "trial", "subscription_start_date": "2026-06-07", "subscription_end_date": null, "trial_end_date": "2026-07-07", "max_users": "10", "max_credits": "1000", "billing_contact_email": null, "billing_cycle": "monthly", "customer_since": "2026-06-07T05:20:15.617769+00:00", "last_billed_date": null, "next_billing_date": "2026-08-06", "parent_organization_id": null, "owner_id": "20c0587a-7145-48e0-9471-caae8de8fe4d", "settings": "{}", "extra_data": "{}", "deleted_at": null, "created_at": "2026-06-07T05:20:15.623135", "updated_at": "2026-06-07T05:20:15.623140"}	null	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 05:20:15.644872+00
 e721e724-bd94-4531-9a4a-d4487266cd81	\N	\N	UPDATE	users	ba121f89-c767-4fdd-ab43-fd658c42a9d4	{"last_login_at": null, "last_login_ip": null}	{"last_login_at": "2026-06-07T06:09:36.155702+00:00", "last_login_ip": "172.18.0.1"}	["last_login_at", "last_login_ip"]	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 06:09:36.179769+00
 10373e9a-713e-4681-a935-46a9c4dbddee	\N	\N	UPDATE	users	ba121f89-c767-4fdd-ab43-fd658c42a9d4	{"last_login_at": "2026-06-07T06:09:36.155702+00:00"}	{"last_login_at": "2026-06-07T06:10:42.407779+00:00"}	["last_login_at"]	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 06:10:42.414269+00
 f61fcf67-b2b6-4c4c-8b3b-3cb7ec9de305	\N	\N	UPDATE	users	ba121f89-c767-4fdd-ab43-fd658c42a9d4	{"last_login_at": "2026-06-07T06:10:42.407779+00:00"}	{"last_login_at": "2026-06-07T06:16:39.191040+00:00"}	["last_login_at"]	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-07 06:16:39.218935+00
@@ -774,10 +748,10 @@ c9e26766-e208-4c4b-846c-6e583c9a3713	\N	\N	CREATE	users	ca0eabd2-f796-4bd9-935a-
 58823d62-9e4c-4b1e-8a22-9da33a8c1e57	\N	\N	UPDATE	users	32440aa3-3413-4906-8282-bb860a838f64	{"last_login_at": null, "last_login_ip": null}	{"last_login_at": "2026-06-25T18:17:09.947360+00:00", "last_login_ip": "49.207.59.41"}	["last_login_at", "last_login_ip"]	49.207.59.41	okhttp/4.12.0	2026-06-25 18:17:09.951721+00
 \.
 
-
 --
 -- Data for Name: invitations; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.invitations (id, organization_id, email, first_name, last_name, role_id, team_ids, invited_by_id, token_hash, status, expires_at, accepted_at, accepted_user_id, created_at, message, extra_data) FROM stdin;
 b71f5a3d-92ab-48ea-863c-689b68c877a8	ddfad734-9afb-497b-81a3-ffc85caec590	negi.yaten+wms_manager_01@gmail.com	Prestige	Manager	42146f28-9b13-4af1-acd7-9d3da69b15d0	[]	fbfd7719-159d-4751-ba13-5fc9e35fa470	c971ade5b62c784924915a9d1ed11245ef72084c0f54f92dd6acc6d12d2d30c6	accepted	2026-06-18 19:19:57.377761+00	2026-06-11 19:21:37.77302+00	6b5f5d1c-28e8-4253-ae1c-acdded9e88c1	2026-06-11 19:11:50.031541+00	\N	{"warehouse_ids": ["357db81b-3b90-47de-912b-ac7af96b50e2"], "warehouse_role": "manager"}
@@ -792,10 +766,10 @@ aab2e7f8-a88c-4e1b-b441-88b6d4273684	ddfad734-9afb-497b-81a3-ffc85caec590	negi.y
 573de646-c17f-4897-834d-295ed2ba46be	4acc19e3-fa77-463e-86e5-6838912edbf8	devnegikec+ecity_ttk_manager@gmail.com	Ecity TTK Manager	SN	22817e25-becd-4837-90cf-7e0802b5446c	[]	ca0eabd2-f796-4bd9-935a-47562d0880a4	6a57a5c9e95049f1f875e63c92936164a341cb4b12b035806a882b8ef148bf71	accepted	2026-07-02 18:07:22.194208+00	2026-06-25 18:09:12.393018+00	b9f2eb20-2fd2-4318-a67e-f8796fe1b128	2026-06-25 18:07:22.203052+00	\N	{"warehouse_ids": ["173fcf5b-f277-485c-bfa3-de4a1240ca5b"], "warehouse_role": "manager"}
 \.
 
-
 --
 -- Data for Name: organizations; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.organizations (id, name, slug, display_name, description, email, phone, website, address_line1, address_line2, city, state, postal_code, country, organization_type, industry, tax_id, logo_url, primary_color, domain, sso_enabled, sso_provider, sso_config, status, is_active, owner_id, settings, extra_data, deleted_at, created_at, updated_at, base_currency, billing_status, subscription_start_date, subscription_end_date, seat_limit, credit_limit, trial_end_date, max_users, max_credits, billing_contact_email, billing_cycle, customer_since, last_billed_date, next_billing_date, parent_organization_id) FROM stdin;
 05397b7b-95bb-4560-b3d0-dff21b3db1ee	system Org	system-org	system Org	asdfasdfasdfasdfasdfasdf	negi.yaten+Raj0078@gmail.com	+916565432562	https://www.tatasoft.com	\N	\N	\N	\N	\N	IN	business	Healthcare	\N	\N	\N	\N	f	\N	\N	active	t	20c0587a-7145-48e0-9471-caae8de8fe4d	{}	{}	\N	2026-06-07 05:20:15.623135+00	2026-06-07 05:48:43.350231+00	INR	trial	2026-06-07 00:00:00+00	\N	10	1000	2026-07-07 00:00:00	10	1000	\N	monthly	2026-06-07 05:20:15.617769+00	\N	2026-08-06 00:00:00	00000000-0000-0000-0000-000000000001
@@ -805,26 +779,26 @@ b5863590-fb53-4d22-a956-956aafc1c13e	Prestige TTK	prestige-ttk	Prestige TTK	This
 ddfad734-9afb-497b-81a3-ffc85caec590	WMS manager 	wms-manager	WMS manager 	asdfasdfasdfasdf	wmsTesting@gmail.com	+916622334423	https://www.flipsalt12.com	\N	\N	\N	\N	\N	IN	individual	Healthcare	\N	\N	\N	\N	f	\N	\N	active	t	fbfd7719-159d-4751-ba13-5fc9e35fa470	{}	{}	\N	2026-06-11 17:54:13.801057+00	2026-06-11 18:26:11.138011+00	INR	trial	2026-06-11 00:00:00+00	\N	10	1000	2026-07-11 00:00:00	10	1000	\N	monthly	2026-06-11 17:54:13.797086+00	\N	2026-08-10 00:00:00	00000000-0000-0000-0000-000000000001
 \.
 
-
 --
 -- Data for Name: otp_verifications; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.otp_verifications (id, organization_id, otp_type, target, otp_code, is_verified, verified_at, expires_at, attempts, ip_address, created_at) FROM stdin;
 \.
-
 
 --
 -- Data for Name: password_resets; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.password_resets (id, user_id, token_hash, expires_at, used_at, ip_address, user_agent, created_at) FROM stdin;
 \.
-
 
 --
 -- Data for Name: permissions; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.permissions (id, code, name, description, resource, action, module, category, is_active, extra_data, created_at, updated_at) FROM stdin;
 eae0a88d-d74e-4c34-b4e4-0086a02b9ea6	system_admin.master	Master System Administrator	Full system access with all permissions (*.*)	all	manage	admin	system_admin	t	{}	2026-06-03 09:46:16.594465+00	2026-06-03 09:46:16.594465+00
@@ -957,10 +931,10 @@ a773d9ec-9cb7-44d7-b037-ee429787e8b4	setting.manage	Setting Manage	\N	setting	ma
 be4c8197-9291-4b55-8214-d33662ddc7ea	*.*	Full Access (Wildcard)	Grants access to all resources and actions	all	manage	identity	\N	t	{}	2026-06-07 05:18:25.079987+00	2026-06-07 05:18:25.079989+00
 \.
 
-
 --
 -- Data for Name: refresh_tokens; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.refresh_tokens (id, user_id, token_hash, token_family, device_id, device_name, device_type, os_info, browser_info, ip_address, user_agent, expires_at, revoked_at, revoked_reason, created_at, last_used_at) FROM stdin;
 a822c99e-6370-4572-89f3-2e9cbe04711c	20c0587a-7145-48e0-9471-caae8de8fe4d	b3880b561a94465d58a875d4f7a73f5d61a540593cf19d0b26051a29bf9a589e	942cdd5d-7f74-4f03-a50b-cc79579d9eef	\N	\N	\N	\N	\N	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	2026-06-11 13:08:49+00	\N	\N	2026-06-04 13:08:49.109019+00	\N
@@ -1037,10 +1011,10 @@ d8dd5443-f08d-4f13-858e-908bd0d87086	b9f2eb20-2fd2-4318-a67e-f8796fe1b128	1ca999
 b90fde95-acc7-423a-ae9a-4fde73e9ab75	ca0eabd2-f796-4bd9-935a-47562d0880a4	58fe3b284fae4e93712697cd3615798159755422c231fb540f8b49ede3cf5fc8	4acaea1e-7fc2-4b92-98f1-9943c39232c1	\N	\N	\N	\N	\N	172.18.0.1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	2026-07-02 18:15:36+00	2026-06-26 03:24:40.357867+00	user_logout	2026-06-25 18:15:36.137403+00	\N
 \.
 
-
 --
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.role_permissions (id, role_id, permission_id, conditions) FROM stdin;
 871f92b2-e0bb-4edd-a9d5-9a379a8088e7	b0a6410b-fee0-410c-ab0e-ae4c9bb39dd3	eae0a88d-d74e-4c34-b4e4-0086a02b9ea6	{}
@@ -1860,10 +1834,10 @@ b6fa1074-436e-44a9-85e6-458fff3f3581	65b8d6b5-9a80-42ef-abd8-5cff70edea44	801c3f
 2c891377-ae85-4665-8c07-5c696962685a	07ffcc1b-16d7-464e-b6da-83cb93474d84	be4c8197-9291-4b55-8214-d33662ddc7ea	{}
 \.
 
-
 --
 -- Data for Name: roles; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.roles (id, organization_id, name, code, description, is_system, is_default, hierarchy_level, is_active, extra_data, created_at, updated_at) FROM stdin;
 b0a6410b-fee0-410c-ab0e-ae4c9bb39dd3	00000000-0000-0000-0000-000000000001	Super Admin	super_admin	Full system admin access — grants all system_admin permissions	t	f	100	t	{}	2026-06-07 05:18:24.863495+00	2026-06-07 05:18:24.863499+00
@@ -1923,26 +1897,26 @@ e6fd493a-17f2-4b99-93c0-1dfb2bb41f3e	4acc19e3-fa77-463e-86e5-6838912edbf8	Wareho
 07ffcc1b-16d7-464e-b6da-83cb93474d84	4acc19e3-fa77-463e-86e5-6838912edbf8	Organization Admin	organization_admin	Full access to all resources within this organization	t	f	90	t	{}	2026-07-12 12:28:03.742142+00	2026-07-12 12:28:03.742145+00
 \.
 
-
 --
 -- Data for Name: service_credentials; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.service_credentials (id, client_id, client_secret_hash, service_name, permissions, scopes, is_active, created_at, updated_at, last_used_at) FROM stdin;
 \.
-
 
 --
 -- Data for Name: system_admin_audit_logs; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
 
+
 COPY public.system_admin_audit_logs (id, action_id, action_type, admin_user_id, admin_username, target_user_id, target_username, target_organization_id, target_organization_name, changes_made, performed_by, notes, performed_date, created_at, updated_at) FROM stdin;
 \.
-
 
 --
 -- Data for Name: user_organization_roles; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.user_organization_roles (id, user_id, organization_id, role_id, is_primary, is_active, status, invited_by_id, invited_at, joined_at, extra_data, created_at, updated_at) FROM stdin;
 427e6a8b-ac2b-4708-b378-14652ff94b39	20c0587a-7145-48e0-9471-caae8de8fe4d	05397b7b-95bb-4560-b3d0-dff21b3db1ee	8c372bb6-92de-4182-a77f-10604e8ab30b	t	t	active	\N	\N	2026-06-07 05:20:16.457128+00	{}	2026-06-07 05:20:16.470624+00	2026-06-07 05:20:16.470633+00
@@ -1965,10 +1939,10 @@ afcca97b-7052-44fa-90a9-b0bb7714d793	82b119e8-6a0d-41f9-9b01-0f34c3cc29b9	b58635
 afd1d1c2-81f3-4cbc-92b6-c18958c8abb3	32440aa3-3413-4906-8282-bb860a838f64	4acc19e3-fa77-463e-86e5-6838912edbf8	ebf3aa07-026e-4cf4-a433-2a0f7f31e21f	t	t	active	\N	\N	\N	{}	2026-06-25 18:16:55.757728+00	2026-06-25 18:16:55.757731+00
 \.
 
-
 --
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: horizon_user
 --
+
 
 COPY public.users (id, email, password_hash, first_name, last_name, display_name, phone, avatar_url, user_type, status, is_active, email_verified, email_verified_at, mfa_enabled, mfa_secret, mfa_backup_codes, last_login_at, last_login_ip, failed_login_attempts, locked_until, preferences, timezone, language, extra_data, deleted_at, created_at, updated_at, qr_code) FROM stdin;
 ffae90be-8ac1-447d-bca1-90cace2ff429	PrestigeTTK@gmail.com	$2b$12$runKiXlgQFKRmFU1da8FQeFqdE.pRsCfeVKgz9URA1EBRIk0VYj52	Prestige	TTK	Prestige TTK	+919988776633	\N	user	active	t	f	\N	f	\N	\N	2026-06-25 18:10:19.90248+00	172.18.0.1	0	\N	{}	UTC	en	{}	\N	2026-06-19 04:07:17.543297+00	2026-06-25 18:10:19.906849+00	\N
@@ -1991,142 +1965,124 @@ bd097e86-1759-4be1-9312-94e60346dbfd	Ram.singh@gmail.com	$2b$12$MApxOg/So1K8jsLR
 82b119e8-6a0d-41f9-9b01-0f34c3cc29b9	negi.yaten+ecity_manager@gmail.com	$2b$12$j1kRSyCW7VeeS9GaBurKfuyLAdue5q9fKnQdNSbQSVYNRGz29.Hhu	manger	eCity	\N	\N	\N	user	active	t	t	2026-06-19 04:19:17.489847+00	f	\N	\N	2026-06-25 17:56:07.340831+00	172.18.0.1	0	\N	{}	UTC	en	{}	\N	2026-06-19 04:19:17.494072+00	2026-06-25 17:56:07.344027+00	\N
 \.
 
-
 --
 -- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.alembic_version
-    ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
-
+ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
 --
 -- Name: email_verifications email_verifications_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.email_verifications
-    ADD CONSTRAINT email_verifications_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT email_verifications_pkey PRIMARY KEY (id);
 
 --
 -- Name: entity_audit_logs entity_audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.entity_audit_logs
-    ADD CONSTRAINT entity_audit_logs_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT entity_audit_logs_pkey PRIMARY KEY (id);
 
 --
 -- Name: invitations invitations_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT invitations_pkey PRIMARY KEY (id);
 
 --
 -- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.organizations
-    ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
 
 --
 -- Name: otp_verifications otp_verifications_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.otp_verifications
-    ADD CONSTRAINT otp_verifications_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT otp_verifications_pkey PRIMARY KEY (id);
 
 --
 -- Name: password_resets password_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.password_resets
-    ADD CONSTRAINT password_resets_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT password_resets_pkey PRIMARY KEY (id);
 
 --
 -- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.permissions
-    ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
 
 --
 -- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.refresh_tokens
-    ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
 
 --
 -- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (id);
 
 --
 -- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.roles
-    ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
 
 --
 -- Name: service_credentials service_credentials_client_id_key; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.service_credentials
-    ADD CONSTRAINT service_credentials_client_id_key UNIQUE (client_id);
-
+ADD CONSTRAINT service_credentials_client_id_key UNIQUE (client_id);
 
 --
 -- Name: service_credentials service_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.service_credentials
-    ADD CONSTRAINT service_credentials_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT service_credentials_pkey PRIMARY KEY (id);
 
 --
 -- Name: system_admin_audit_logs system_admin_audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.system_admin_audit_logs
-    ADD CONSTRAINT system_admin_audit_logs_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT system_admin_audit_logs_pkey PRIMARY KEY (id);
 
 --
 -- Name: invitations uq_invitations_token_hash; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT uq_invitations_token_hash UNIQUE (token_hash);
-
+ADD CONSTRAINT uq_invitations_token_hash UNIQUE (token_hash);
 
 --
 -- Name: user_organization_roles user_organization_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.user_organization_roles
-    ADD CONSTRAINT user_organization_roles_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT user_organization_roles_pkey PRIMARY KEY (id);
 
 --
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
+ADD CONSTRAINT users_pkey PRIMARY KEY (id);
 
 --
 -- Name: idx_audit_logs_action_type; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2134,13 +2090,11 @@ ALTER TABLE ONLY public.users
 
 CREATE INDEX idx_audit_logs_action_type ON public.system_admin_audit_logs USING btree (action_type, performed_date);
 
-
 --
 -- Name: idx_audit_logs_admin_user; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX idx_audit_logs_admin_user ON public.system_admin_audit_logs USING btree (admin_user_id, performed_date);
-
 
 --
 -- Name: idx_audit_logs_performed_date; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2148,13 +2102,14 @@ CREATE INDEX idx_audit_logs_admin_user ON public.system_admin_audit_logs USING b
 
 CREATE INDEX idx_audit_logs_performed_date ON public.system_admin_audit_logs USING btree (performed_date);
 
-
 --
 -- Name: idx_audit_logs_target_org; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
-CREATE INDEX idx_audit_logs_target_org ON public.system_admin_audit_logs USING btree (target_organization_id, performed_date);
-
+CREATE INDEX idx_audit_logs_target_org ON public.system_admin_audit_logs USING btree (
+    target_organization_id,
+    performed_date
+);
 
 --
 -- Name: idx_entity_audit_action; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2162,13 +2117,11 @@ CREATE INDEX idx_audit_logs_target_org ON public.system_admin_audit_logs USING b
 
 CREATE INDEX idx_entity_audit_action ON public.entity_audit_logs USING btree (action);
 
-
 --
 -- Name: idx_entity_audit_created_at; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX idx_entity_audit_created_at ON public.entity_audit_logs USING btree (created_at);
-
 
 --
 -- Name: idx_entity_audit_table_record; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2176,13 +2129,11 @@ CREATE INDEX idx_entity_audit_created_at ON public.entity_audit_logs USING btree
 
 CREATE INDEX idx_entity_audit_table_record ON public.entity_audit_logs USING btree (table_name, record_id);
 
-
 --
 -- Name: idx_invitations_email; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX idx_invitations_email ON public.invitations USING btree (email);
-
 
 --
 -- Name: idx_invitations_expires_at; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2190,13 +2141,14 @@ CREATE INDEX idx_invitations_email ON public.invitations USING btree (email);
 
 CREATE INDEX idx_invitations_expires_at ON public.invitations USING btree (expires_at);
 
-
 --
 -- Name: idx_invitations_org_created; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
-CREATE INDEX idx_invitations_org_created ON public.invitations USING btree (organization_id, created_at DESC);
-
+CREATE INDEX idx_invitations_org_created ON public.invitations USING btree (
+    organization_id,
+    created_at DESC
+);
 
 --
 -- Name: idx_invitations_org_status; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2204,13 +2156,11 @@ CREATE INDEX idx_invitations_org_created ON public.invitations USING btree (orga
 
 CREATE INDEX idx_invitations_org_status ON public.invitations USING btree (organization_id, status);
 
-
 --
 -- Name: idx_invitations_organization_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX idx_invitations_organization_id ON public.invitations USING btree (organization_id);
-
 
 --
 -- Name: idx_invitations_status; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2218,13 +2168,20 @@ CREATE INDEX idx_invitations_organization_id ON public.invitations USING btree (
 
 CREATE INDEX idx_invitations_status ON public.invitations USING btree (status);
 
-
 --
 -- Name: idx_permissions_system_admin; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
-CREATE INDEX idx_permissions_system_admin ON public.permissions USING btree (code) WHERE (((code)::text ~~ 'system_admin.%'::text) OR ((code)::text = '*.*'::text) OR ((code)::text = 'system.admin'::text));
-
+CREATE INDEX idx_permissions_system_admin ON public.permissions USING btree (code)
+WHERE (
+        (
+            (code)::text ~~ 'system_admin.%'::text
+        )
+        OR ((code)::text = '*.*'::text)
+        OR (
+            (code)::text = 'system.admin'::text
+        )
+    );
 
 --
 -- Name: idx_role_permissions_role_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2232,20 +2189,23 @@ CREATE INDEX idx_permissions_system_admin ON public.permissions USING btree (cod
 
 CREATE INDEX idx_role_permissions_role_id ON public.role_permissions USING btree (role_id);
 
-
 --
 -- Name: idx_unique_master_org_name; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
-CREATE UNIQUE INDEX idx_unique_master_org_name ON public.organizations USING btree (name) WHERE ((name)::text = 'Master Organization'::text);
-
+CREATE UNIQUE INDEX idx_unique_master_org_name ON public.organizations USING btree (name)
+WHERE (
+        (name)::text = 'Master Organization'::text
+    );
 
 --
 -- Name: idx_unique_master_org_type; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
-CREATE UNIQUE INDEX idx_unique_master_org_type ON public.organizations USING btree (organization_type) WHERE (organization_type = 'master'::public.organizationtype);
-
+CREATE UNIQUE INDEX idx_unique_master_org_type ON public.organizations USING btree (organization_type)
+WHERE (
+        organization_type = 'master'::public.organizationtype
+    );
 
 --
 -- Name: ix_email_verifications_token_hash; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2253,13 +2213,11 @@ CREATE UNIQUE INDEX idx_unique_master_org_type ON public.organizations USING btr
 
 CREATE UNIQUE INDEX ix_email_verifications_token_hash ON public.email_verifications USING btree (token_hash);
 
-
 --
 -- Name: ix_entity_audit_logs_organization_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_entity_audit_logs_organization_id ON public.entity_audit_logs USING btree (organization_id);
-
 
 --
 -- Name: ix_entity_audit_logs_user_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2267,13 +2225,11 @@ CREATE INDEX ix_entity_audit_logs_organization_id ON public.entity_audit_logs US
 
 CREATE INDEX ix_entity_audit_logs_user_id ON public.entity_audit_logs USING btree (user_id);
 
-
 --
 -- Name: ix_organizations_billing_status; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_organizations_billing_status ON public.organizations USING btree (billing_status);
-
 
 --
 -- Name: ix_organizations_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2281,13 +2237,11 @@ CREATE INDEX ix_organizations_billing_status ON public.organizations USING btree
 
 CREATE INDEX ix_organizations_id ON public.organizations USING btree (id);
 
-
 --
 -- Name: ix_organizations_slug; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE UNIQUE INDEX ix_organizations_slug ON public.organizations USING btree (slug);
-
 
 --
 -- Name: ix_organizations_type; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2295,13 +2249,11 @@ CREATE UNIQUE INDEX ix_organizations_slug ON public.organizations USING btree (s
 
 CREATE INDEX ix_organizations_type ON public.organizations USING btree (organization_type);
 
-
 --
 -- Name: ix_otp_verifications_otp_type; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_otp_verifications_otp_type ON public.otp_verifications USING btree (otp_type);
-
 
 --
 -- Name: ix_otp_verifications_target; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2309,13 +2261,11 @@ CREATE INDEX ix_otp_verifications_otp_type ON public.otp_verifications USING btr
 
 CREATE INDEX ix_otp_verifications_target ON public.otp_verifications USING btree (target);
 
-
 --
 -- Name: ix_password_resets_expires_at; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_password_resets_expires_at ON public.password_resets USING btree (expires_at);
-
 
 --
 -- Name: ix_password_resets_token_hash; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2323,13 +2273,11 @@ CREATE INDEX ix_password_resets_expires_at ON public.password_resets USING btree
 
 CREATE UNIQUE INDEX ix_password_resets_token_hash ON public.password_resets USING btree (token_hash);
 
-
 --
 -- Name: ix_password_resets_user_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_password_resets_user_id ON public.password_resets USING btree (user_id);
-
 
 --
 -- Name: ix_permissions_code; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2337,13 +2285,11 @@ CREATE INDEX ix_password_resets_user_id ON public.password_resets USING btree (u
 
 CREATE UNIQUE INDEX ix_permissions_code ON public.permissions USING btree (code);
 
-
 --
 -- Name: ix_permissions_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_permissions_id ON public.permissions USING btree (id);
-
 
 --
 -- Name: ix_refresh_tokens_expires_at; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2351,13 +2297,11 @@ CREATE INDEX ix_permissions_id ON public.permissions USING btree (id);
 
 CREATE INDEX ix_refresh_tokens_expires_at ON public.refresh_tokens USING btree (expires_at);
 
-
 --
 -- Name: ix_refresh_tokens_token_family; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_refresh_tokens_token_family ON public.refresh_tokens USING btree (token_family);
-
 
 --
 -- Name: ix_refresh_tokens_token_hash; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2365,13 +2309,11 @@ CREATE INDEX ix_refresh_tokens_token_family ON public.refresh_tokens USING btree
 
 CREATE UNIQUE INDEX ix_refresh_tokens_token_hash ON public.refresh_tokens USING btree (token_hash);
 
-
 --
 -- Name: ix_refresh_tokens_user_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_refresh_tokens_user_id ON public.refresh_tokens USING btree (user_id);
-
 
 --
 -- Name: ix_role_permissions_permission_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2379,13 +2321,11 @@ CREATE INDEX ix_refresh_tokens_user_id ON public.refresh_tokens USING btree (use
 
 CREATE INDEX ix_role_permissions_permission_id ON public.role_permissions USING btree (permission_id);
 
-
 --
 -- Name: ix_role_permissions_role_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_role_permissions_role_id ON public.role_permissions USING btree (role_id);
-
 
 --
 -- Name: ix_roles_code; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2393,13 +2333,11 @@ CREATE INDEX ix_role_permissions_role_id ON public.role_permissions USING btree 
 
 CREATE INDEX ix_roles_code ON public.roles USING btree (code);
 
-
 --
 -- Name: ix_roles_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_roles_id ON public.roles USING btree (id);
-
 
 --
 -- Name: ix_roles_organization_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2407,13 +2345,11 @@ CREATE INDEX ix_roles_id ON public.roles USING btree (id);
 
 CREATE INDEX ix_roles_organization_id ON public.roles USING btree (organization_id);
 
-
 --
 -- Name: ix_service_credentials_active; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_service_credentials_active ON public.service_credentials USING btree (is_active, client_id);
-
 
 --
 -- Name: ix_service_credentials_client_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2421,13 +2357,11 @@ CREATE INDEX ix_service_credentials_active ON public.service_credentials USING b
 
 CREATE INDEX ix_service_credentials_client_id ON public.service_credentials USING btree (client_id);
 
-
 --
 -- Name: ix_user_organization_roles_organization_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_user_organization_roles_organization_id ON public.user_organization_roles USING btree (organization_id);
-
 
 --
 -- Name: ix_user_organization_roles_role_id; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2435,13 +2369,11 @@ CREATE INDEX ix_user_organization_roles_organization_id ON public.user_organizat
 
 CREATE INDEX ix_user_organization_roles_role_id ON public.user_organization_roles USING btree (role_id);
 
-
 --
 -- Name: ix_user_organization_roles_user_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_user_organization_roles_user_id ON public.user_organization_roles USING btree (user_id);
-
 
 --
 -- Name: ix_users_email; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2449,13 +2381,11 @@ CREATE INDEX ix_user_organization_roles_user_id ON public.user_organization_role
 
 CREATE UNIQUE INDEX ix_users_email ON public.users USING btree (email);
 
-
 --
 -- Name: ix_users_id; Type: INDEX; Schema: public; Owner: horizon_user
 --
 
 CREATE INDEX ix_users_id ON public.users USING btree (id);
-
 
 --
 -- Name: ix_users_qr_code; Type: INDEX; Schema: public; Owner: horizon_user
@@ -2463,13 +2393,11 @@ CREATE INDEX ix_users_id ON public.users USING btree (id);
 
 CREATE UNIQUE INDEX ix_users_qr_code ON public.users USING btree (qr_code);
 
-
 --
 -- Name: organizations single_master_org_trigger; Type: TRIGGER; Schema: public; Owner: horizon_user
 --
 
 CREATE TRIGGER single_master_org_trigger BEFORE INSERT OR UPDATE ON public.organizations FOR EACH ROW EXECUTE FUNCTION public.check_single_master_org();
-
 
 --
 -- Name: user_organization_roles trigger_validate_system_admin_role_assignment; Type: TRIGGER; Schema: public; Owner: horizon_user
@@ -2477,126 +2405,110 @@ CREATE TRIGGER single_master_org_trigger BEFORE INSERT OR UPDATE ON public.organ
 
 CREATE TRIGGER trigger_validate_system_admin_role_assignment BEFORE INSERT OR UPDATE ON public.user_organization_roles FOR EACH ROW EXECUTE FUNCTION public.validate_system_admin_role_assignment();
 
-
 --
 -- Name: email_verifications email_verifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.email_verifications
-    ADD CONSTRAINT email_verifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT email_verifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 --
 -- Name: organizations fk_organizations_parent_organization_id; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.organizations
-    ADD CONSTRAINT fk_organizations_parent_organization_id FOREIGN KEY (parent_organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
-
+ADD CONSTRAINT fk_organizations_parent_organization_id FOREIGN KEY (parent_organization_id) REFERENCES public.organizations (id) ON DELETE SET NULL;
 
 --
 -- Name: invitations invitations_accepted_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_accepted_user_id_fkey FOREIGN KEY (accepted_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
-
+ADD CONSTRAINT invitations_accepted_user_id_fkey FOREIGN KEY (accepted_user_id) REFERENCES public.users (id) ON DELETE SET NULL;
 
 --
 -- Name: invitations invitations_invited_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_invited_by_id_fkey FOREIGN KEY (invited_by_id) REFERENCES public.users(id) ON DELETE SET NULL;
-
+ADD CONSTRAINT invitations_invited_by_id_fkey FOREIGN KEY (invited_by_id) REFERENCES public.users (id) ON DELETE SET NULL;
 
 --
 -- Name: invitations invitations_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT invitations_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations (id) ON DELETE CASCADE;
 
 --
 -- Name: invitations invitations_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE SET NULL;
-
+ADD CONSTRAINT invitations_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles (id) ON DELETE SET NULL;
 
 --
 -- Name: password_resets password_resets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.password_resets
-    ADD CONSTRAINT password_resets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT password_resets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 --
 -- Name: refresh_tokens refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.refresh_tokens
-    ADD CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 --
 -- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id) REFERENCES public.permissions (id) ON DELETE CASCADE;
 
 --
 -- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles (id) ON DELETE CASCADE;
 
 --
 -- Name: roles roles_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.roles
-    ADD CONSTRAINT roles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT roles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations (id) ON DELETE CASCADE;
 
 --
 -- Name: user_organization_roles user_organization_roles_invited_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.user_organization_roles
-    ADD CONSTRAINT user_organization_roles_invited_by_id_fkey FOREIGN KEY (invited_by_id) REFERENCES public.users(id);
-
+ADD CONSTRAINT user_organization_roles_invited_by_id_fkey FOREIGN KEY (invited_by_id) REFERENCES public.users (id);
 
 --
 -- Name: user_organization_roles user_organization_roles_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.user_organization_roles
-    ADD CONSTRAINT user_organization_roles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT user_organization_roles_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations (id) ON DELETE CASCADE;
 
 --
 -- Name: user_organization_roles user_organization_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.user_organization_roles
-    ADD CONSTRAINT user_organization_roles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT user_organization_roles_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles (id) ON DELETE CASCADE;
 
 --
 -- Name: user_organization_roles user_organization_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: horizon_user
 --
 
 ALTER TABLE ONLY public.user_organization_roles
-    ADD CONSTRAINT user_organization_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
+ADD CONSTRAINT user_organization_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users (id) ON DELETE CASCADE;
 
 --
 -- PostgreSQL database dump complete
