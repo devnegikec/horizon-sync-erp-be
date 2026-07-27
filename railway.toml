@@ -27,7 +27,7 @@ restartPolicyMaxRetries = 3
 # ============================================
 [services.core-service]
 source = "core-service/"
-startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001'"
+startCommand = "bash -c 'python -m alembic upgrade 063_add_landing_page_configs || true && uvicorn app.main:app --host 0.0.0.0 --port 8001'"
 
 [services.core-service.build]
 dockerfilePath = "Dockerfile.core"

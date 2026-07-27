@@ -74,6 +74,7 @@ class Settings(BaseSettings):
 
     # QR Domain & GCS
     qr_domain: str = "verify.example.com"
+    qr_base_url: str = ""  # Override full base URL (scheme+host). If set, used instead of https://{org_short_code}.{qr_domain}
     gcs_bucket: str = ""
     gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
 

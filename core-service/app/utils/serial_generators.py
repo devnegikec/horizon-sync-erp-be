@@ -87,13 +87,28 @@ def build_qr_url(
     serial_number: str,
     timestamp: int,
     signature: str,
+    base_url: str = "",
 ) -> str:
     """Build a QR verification URL.
 
+    Args:
+        org_short_code: Brand short code (e.g. "amc").
+        domain: QR domain (e.g. "verify.example.com"). Only used when base_url is empty.
+        gtin: Product GTIN.
+        serial_number: Unique serial number.
+        timestamp: Unix timestamp in milliseconds.
+        signature: ECDSA signature (base64).
+        base_url: Optional full base URL override (scheme+host, no trailing slash).
+                   When provided, used directly instead of ``https://{org_short_code}.{domain}``.
+
     Returns:
         URL in the format:
+        ``{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+        or when base_url is empty:
         ``https://{org_short_code}.{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
     """
+    if base_url:
+        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}"
     return (
         f"https://{org_short_code}.{domain}"
         f"/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}"

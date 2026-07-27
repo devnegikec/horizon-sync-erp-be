@@ -1,10 +1,9 @@
 """Add is_tax_exempt column to customers table
 
 Revision ID: 062
-Revises: 048_merge_multiple_heads
+Revises: 061_add_bin_location_and_putaway_to_receiving_slip_items
 Create Date: 2026-07-22
 """
-
 
 from alembic import op
 

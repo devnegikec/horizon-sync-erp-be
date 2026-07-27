@@ -40,6 +40,7 @@ from app.api.v1.endpoints import (
     items_picker,
     journal_entries,
     landed_cost,
+    landing_pages,
     location_allocations,
     location_scans,
     material_requests,
@@ -372,6 +373,20 @@ api_router.include_router(
     qr_products.router,
     prefix="/qr-products",
     tags=["QR Products"],
+)
+
+# Landing Page Config (nested under /products/{productId}/landing-page)
+api_router.include_router(
+    landing_pages.router,
+    prefix="/products",
+    tags=["Landing Pages"],
+)
+
+# Public Landing Page Config (no auth — for consumer QR verification pages)
+api_router.include_router(
+    landing_pages.public_router,
+    prefix="/public/products",
+    tags=["Landing Pages (Public)"],
 )
 
 # QR Product Settings (serial prefix, channel, destination, shelf life)

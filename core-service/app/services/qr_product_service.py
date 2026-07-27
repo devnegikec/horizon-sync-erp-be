@@ -492,7 +492,13 @@ class QRProductService:
             if private_key is not None:
                 sig, ts = sign_qr_item(self.key_service, private_key, serial)
                 url = build_qr_url(
-                    org_short_code, settings.qr_domain, gtin, serial, ts, sig
+                    org_short_code,
+                    settings.qr_domain,
+                    gtin,
+                    serial,
+                    ts,
+                    sig,
+                    base_url=settings.qr_base_url,
                 )
                 item_dict["token_id"] = url
 
@@ -500,7 +506,13 @@ class QRProductService:
                 if qr_type == "B":
                     sig2, ts2 = sign_qr_item(self.key_service, private_key, serial)
                     covert_url = build_qr_url(
-                        org_short_code, settings.qr_domain, gtin, serial, ts2, sig2
+                        org_short_code,
+                        settings.qr_domain,
+                        gtin,
+                        serial,
+                        ts2,
+                        sig2,
+                        base_url=settings.qr_base_url,
                     )
                     item_dict.setdefault("extra_data", {})
                     item_dict["extra_data"]["covert_url"] = covert_url
