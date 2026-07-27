@@ -16,6 +16,7 @@ import secrets
 import string
 import time
 from collections.abc import Generator
+from urllib.parse import quote
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -108,8 +109,8 @@ def build_qr_url(
         ``https://{org_short_code}.{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
     """
     if base_url:
-        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}"
+        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
     return (
         f"https://{org_short_code}.{domain}"
-        f"/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}"
+        f"/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
     )
