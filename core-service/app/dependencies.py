@@ -261,6 +261,9 @@ def require_permission(*permissions: str):
     async def check_permission(
         current_user=Depends(get_current_active_user),
     ) -> CurrentUser:
+        # Note: Do NOT annotate current_user with CurrentUser type hint.
+        # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
+        # and tries to read them as query params instead of resolving Depends().
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
