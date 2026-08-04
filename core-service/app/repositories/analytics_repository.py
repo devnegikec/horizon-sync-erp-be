@@ -131,39 +131,49 @@ class QRScanEventRepository:
     ) -> dict:
         q = self._base_query(organization_id, date_from, date_to)
         total_scans = q.count()
-        scans_with_cta = q.filter(QRScanEvent.cta_action.is_not(None)).count()
+
+        # cta_action column may not exist yet in DB — default to 0
+        try:
+            scans_with_cta = q.filter(QRScanEvent.cta_action.is_not(None)).count()
+        except Exception:
+            scans_with_cta = 0
 
         from app.models.analytics import ScanInteraction
 
-        si_q = self.db.query(ScanInteraction).filter(
-            ScanInteraction.organization_id == organization_id
-        )
-        if date_from:
-            si_q = si_q.filter(ScanInteraction.created_at >= date_from)
-        if date_to:
-            si_q = si_q.filter(ScanInteraction.created_at <= date_to)
-        total_interactions = si_q.count()
-        scans_with_interactions = scans_with_cta
-
-        conversion_rate = (
-            round(scans_with_interactions / total_scans * 100, 1)
-            if total_scans
-            else 0.0
-        )
-
-        top_types = (
-            si_q.with_entities(
-                ScanInteraction.interaction_type,
-                func.count().label("count"),
+        total_interactions = 0
+        conversion_rate = 0.0
+        top_interaction_types = []
+        try:
+            si_q = self.db.query(ScanInteraction).filter(
+                ScanInteraction.organization_id == organization_id
             )
-            .group_by(ScanInteraction.interaction_type)
-            .order_by(func.count().desc())
-            .limit(5)
-            .all()
-        )
-        top_interaction_types = [
-            {"type": r.interaction_type, "count": r.count} for r in top_types
-        ]
+            if date_from:
+                si_q = si_q.filter(ScanInteraction.created_at >= date_from)
+            if date_to:
+                si_q = si_q.filter(ScanInteraction.created_at <= date_to)
+            total_interactions = si_q.count()
+
+            conversion_rate = (
+                round(scans_with_cta / total_scans * 100, 1) if total_scans else 0.0
+            )
+
+            top_types = (
+                si_q.with_entities(
+                    ScanInteraction.interaction_type,
+                    func.count().label("count"),
+                )
+                .group_by(ScanInteraction.interaction_type)
+                .order_by(func.count().desc())
+                .limit(5)
+                .all()
+            )
+            top_interaction_types = [
+                {"type": r.interaction_type, "count": r.count} for r in top_types
+            ]
+        except Exception:
+            pass
+
+        scans_with_interactions = scans_with_cta
 
         return {
             "total_scans": total_scans,
@@ -180,23 +190,29 @@ class QRScanEventRepository:
         date_from: datetime | None = None,
         date_to: datetime | None = None,
     ) -> dict:
-        q = self._base_query(organization_id, date_from, date_to)
-        cta_rows = (
-            q.with_entities(
-                QRScanEvent.cta_action,
-                func.count().label("count"),
+        try:
+            q = self._base_query(organization_id, date_from, date_to)
+            cta_rows = (
+                q.with_entities(
+                    QRScanEvent.cta_action,
+                    func.count().label("count"),
+                )
+                .filter(QRScanEvent.cta_action.is_not(None))
+                .group_by(QRScanEvent.cta_action)
+                .order_by(func.count().desc())
+                .all()
             )
-            .filter(QRScanEvent.cta_action.is_not(None))
-            .group_by(QRScanEvent.cta_action)
-            .order_by(func.count().desc())
-            .all()
-        )
-        breakdown = [
-            {"cta_action": r.cta_action or "Unknown", "count": r.count}
-            for r in cta_rows
-        ]
-        total_scans_with_cta = sum(r.count for r in cta_rows)
-        return {"breakdown": breakdown, "total_scans_with_cta": total_scans_with_cta}
+            breakdown = [
+                {"cta_action": r.cta_action or "Unknown", "count": r.count}
+                for r in cta_rows
+            ]
+            total_scans_with_cta = sum(r.count for r in cta_rows)
+            return {
+                "breakdown": breakdown,
+                "total_scans_with_cta": total_scans_with_cta,
+            }
+        except Exception:
+            return {"breakdown": [], "total_scans_with_cta": 0}
 
     def get_geo_heatmap(
         self,
