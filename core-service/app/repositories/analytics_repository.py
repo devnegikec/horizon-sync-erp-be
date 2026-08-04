@@ -1,13 +1,17 @@
 """Repository for Analytics module"""
 
+from __future__ import annotations
+
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, cast, Date
+from sqlalchemy import Date, cast, func
 from sqlalchemy.orm import Session
 
 from app.models.analytics import MetaCampaign
+from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_scan_interaction import QRScanInteraction
 
 
 class QRScanEventRepository:
@@ -70,8 +74,9 @@ class QRScanEventRepository:
 
         total_scans = q.count()
         unique_serials = (
-            q.with_entities(func.count(func.distinct(QRScanEvent.serial_number)))
-            .scalar()
+            q.with_entities(
+                func.count(func.distinct(QRScanEvent.serial_number))
+            ).scalar()
         ) or 0
 
         # Scans by date
@@ -109,7 +114,9 @@ class QRScanEventRepository:
             .order_by(func.count().desc())
             .all()
         )
-        by_device = [{"device_type": r.device_type, "count": r.count} for r in by_device_rows]
+        by_device = [
+            {"device_type": r.device_type, "count": r.count} for r in by_device_rows
+        ]
 
         return {
             "total_scans": total_scans,
@@ -118,6 +125,292 @@ class QRScanEventRepository:
             "by_country": by_country,
             "by_device": by_device,
         }
+
+    # ── Phase 4: Enhanced Analytics ───────────────────────────────────────
+
+    def get_cta_breakdown(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> dict:
+        q = self.db.query(
+            QRScanEvent.cta_action,
+            func.count().label("count"),
+        ).filter(
+            QRScanEvent.organization_id == organization_id,
+            QRScanEvent.cta_action.isnot(None),
+        )
+        if date_from:
+            q = q.filter(QRScanEvent.scan_timestamp >= date_from)
+        if date_to:
+            q = q.filter(QRScanEvent.scan_timestamp <= date_to)
+        rows = q.group_by(QRScanEvent.cta_action).order_by(func.count().desc()).all()
+        breakdown = [
+            {"cta_action": r.cta_action or "unknown", "count": r.count} for r in rows
+        ]
+        total_with_cta = sum(r.count for r in rows)
+        return {"breakdown": breakdown, "total_scans_with_cta": total_with_cta}
+
+    def get_geo_heatmap(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        q = self.db.query(
+            QRScanEvent.city,
+            QRScanEvent.state,
+            QRScanEvent.country,
+            QRScanEvent.latitude,
+            QRScanEvent.longitude,
+            func.count().label("count"),
+        ).filter(
+            QRScanEvent.organization_id == organization_id,
+            QRScanEvent.latitude.isnot(None),
+        )
+        if date_from:
+            q = q.filter(QRScanEvent.scan_timestamp >= date_from)
+        if date_to:
+            q = q.filter(QRScanEvent.scan_timestamp <= date_to)
+        rows = (
+            q.group_by(
+                QRScanEvent.city,
+                QRScanEvent.state,
+                QRScanEvent.country,
+                QRScanEvent.latitude,
+                QRScanEvent.longitude,
+            )
+            .order_by(func.count().desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "city": r.city,
+                "state": r.state,
+                "country": r.country,
+                "latitude": float(r.latitude),
+                "longitude": float(r.longitude),
+                "count": r.count,
+            }
+            for r in rows
+        ]
+
+    def get_device_timeline(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> list[dict]:
+        """Scans grouped by date + device_type (mobile/desktop/tablet/unknown)."""
+        q = self.db.query(
+            cast(QRScanEvent.scan_timestamp, Date).label("date"),
+            QRScanEvent.device_type,
+            func.count().label("count"),
+        ).filter(QRScanEvent.organization_id == organization_id)
+        if date_from:
+            q = q.filter(QRScanEvent.scan_timestamp >= date_from)
+        if date_to:
+            q = q.filter(QRScanEvent.scan_timestamp <= date_to)
+        rows = (
+            q.group_by(
+                cast(QRScanEvent.scan_timestamp, Date),
+                QRScanEvent.device_type,
+            )
+            .order_by(cast(QRScanEvent.scan_timestamp, Date))
+            .all()
+        )
+        # Pivot: date -> {mobile, desktop, tablet, unknown}
+        date_map: dict[str, dict] = {}
+        for r in rows:
+            date_str = str(r.date)
+            if date_str not in date_map:
+                date_map[date_str] = {
+                    "date": date_str,
+                    "mobile": 0,
+                    "desktop": 0,
+                    "tablet": 0,
+                    "unknown": 0,
+                }
+            dt = r.device_type or "unknown"
+            if dt not in ("mobile", "desktop", "tablet"):
+                dt = "unknown"
+            date_map[date_str][dt] += r.count
+        return list(date_map.values())
+
+    def get_interaction_funnel(
+        self,
+        organization_id: UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> dict:
+        """Funnel: total scans -> with CTA -> with interactions."""
+        scan_q = self.db.query(QRScanEvent).filter(
+            QRScanEvent.organization_id == organization_id
+        )
+        if date_from:
+            scan_q = scan_q.filter(QRScanEvent.scan_timestamp >= date_from)
+        if date_to:
+            scan_q = scan_q.filter(QRScanEvent.scan_timestamp <= date_to)
+
+        total_scans = scan_q.count()
+        scans_with_cta = scan_q.filter(QRScanEvent.cta_action.isnot(None)).count()
+
+        # Scans that have at least one interaction
+        scans_with_interactions = (
+            self.db.query(func.count(func.distinct(QRScanInteraction.scan_event_id)))
+            .join(
+                QRScanEvent,
+                QRScanEvent.id == QRScanInteraction.scan_event_id,
+            )
+            .filter(QRScanEvent.organization_id == organization_id)
+        )
+        if date_from:
+            scans_with_interactions = scans_with_interactions.filter(
+                QRScanEvent.scan_timestamp >= date_from
+            )
+        if date_to:
+            scans_with_interactions = scans_with_interactions.filter(
+                QRScanEvent.scan_timestamp <= date_to
+            )
+        scans_with_interactions = scans_with_interactions.scalar() or 0
+
+        total_interactions = (
+            self.db.query(func.count(QRScanInteraction.id))
+            .join(
+                QRScanEvent,
+                QRScanEvent.id == QRScanInteraction.scan_event_id,
+            )
+            .filter(QRScanEvent.organization_id == organization_id)
+        )
+        if date_from:
+            total_interactions = total_interactions.filter(
+                QRScanEvent.scan_timestamp >= date_from
+            )
+        if date_to:
+            total_interactions = total_interactions.filter(
+                QRScanEvent.scan_timestamp <= date_to
+            )
+        total_interactions = total_interactions.scalar() or 0
+
+        # Top interaction types
+        top_types = (
+            self.db.query(
+                QRScanInteraction.interaction_type,
+                func.count().label("count"),
+            )
+            .join(
+                QRScanEvent,
+                QRScanEvent.id == QRScanInteraction.scan_event_id,
+            )
+            .filter(QRScanEvent.organization_id == organization_id)
+        )
+        if date_from:
+            top_types = top_types.filter(QRScanEvent.scan_timestamp >= date_from)
+        if date_to:
+            top_types = top_types.filter(QRScanEvent.scan_timestamp <= date_to)
+        top_types = (
+            top_types.group_by(QRScanInteraction.interaction_type)
+            .order_by(func.count().desc())
+            .limit(10)
+            .all()
+        )
+
+        conversion_rate = (
+            round(scans_with_interactions / total_scans, 4) if total_scans > 0 else 0.0
+        )
+
+        return {
+            "total_scans": total_scans,
+            "scans_with_cta": scans_with_cta,
+            "scans_with_interactions": scans_with_interactions,
+            "total_interactions": total_interactions,
+            "conversion_rate": conversion_rate,
+            "top_interaction_types": [
+                {"interaction_type": r.interaction_type, "count": r.count}
+                for r in top_types
+            ],
+        }
+
+
+# ── QR Scan Interactions ──────────────────────────────────────────────────────
+
+
+class ScanInteractionRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict) -> QRScanInteraction:
+        interaction = QRScanInteraction(**data)
+        self.db.add(interaction)
+        self.db.commit()
+        self.db.refresh(interaction)
+        return interaction
+
+    def list_by_scan(
+        self, scan_event_id: UUID, organization_id: UUID
+    ) -> list[QRScanInteraction]:
+        return (
+            self.db.query(QRScanInteraction)
+            .filter(
+                QRScanInteraction.scan_event_id == scan_event_id,
+                QRScanInteraction.organization_id == organization_id,
+            )
+            .order_by(QRScanInteraction.created_at.asc())
+            .all()
+        )
+
+
+# ── CTA Config Repository ─────────────────────────────────────────────────────
+
+
+class CTAConfigRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict) -> QRCTAConfig:
+        config = QRCTAConfig(**data)
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def list_by_product(
+        self, organization_id: UUID, product_id: UUID
+    ) -> list[QRCTAConfig]:
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.organization_id == organization_id,
+                QRCTAConfig.product_id == product_id,
+            )
+            .order_by(QRCTAConfig.display_order.asc())
+            .all()
+        )
+
+    def get_by_id(self, config_id: UUID, organization_id: UUID) -> QRCTAConfig | None:
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.id == config_id,
+                QRCTAConfig.organization_id == organization_id,
+            )
+            .first()
+        )
+
+    def update(self, config: QRCTAConfig, data: dict) -> QRCTAConfig:
+        for key, value in data.items():
+            if value is not None:
+                setattr(config, key, value)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def delete(self, config: QRCTAConfig) -> None:
+        self.db.delete(config)
+        self.db.commit()
 
 
 class MetaCampaignRepository:
