@@ -34,7 +34,6 @@ SAP will continue to maintain enterprise stock records, while WMS will maintain 
 
 Inventory Management Cycle Counting :-
 
-
 WMS supports scheduled, ABC-based, location-based, SKU-based and ad hoc cycle counting using compatible Android handheld devices.
 
 The system can generate count tasks, support blind or visible counting, record recounts and route variances through a configured approval workflow. Approved inventory adjustments will be communicated to SAP through the agreed integration.

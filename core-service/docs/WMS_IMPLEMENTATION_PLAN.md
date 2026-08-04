@@ -1,10 +1,8 @@
 # WMS Implementation Plan — Gap Analysis & Roadmap
 
 > **Date**: 2026-08-04
-> **Requirements Source**: `WMS_Client_requriement.md`
-> **Project**: Horizon Sync WMS (Prestige Warehouse)
-> **Backend**: `/Users/devnegi/Documents/www/horizon-sync-be/core-service`
-> **Frontend**: `/Users/devnegi/Documents/www/common/horizon-sync`
+> **Requirements Source**: `WMS_Client_requriement.md` > **Project**: Horizon Sync WMS (Prestige Warehouse)
+> **Backend**: `/Users/devnegi/Documents/www/horizon-sync-be/core-service` > **Frontend**: `/Users/devnegi/Documents/www/common/horizon-sync`
 
 ---
 
@@ -20,16 +18,16 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.1 INBOUND ASN MANAGEMENT
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| ASN order reception from SAP | ⚠️ PARTIAL | ✅ `asn_orders` CRUD exists | ✅ ASN API client exists |
-| SAP connector for ASN | ❌ MISSING | Need SAP connector service | — |
-| CSV upload fallback for pilot | ❌ MISSING | Need CSV import endpoint | Need CSV upload UI |
-| Scan-based receiving against ASN | ✅ DONE | ✅ `ScanSession` → `ReceivingSlip` | ✅ `InboundScanPanel` |
-| Item classification (matched/short/excess/damaged/rejected) | ✅ DONE | ✅ Flag items in receiving slips | ✅ Status badges exist |
-| Rejection/quarantine location management | ⚠️ PARTIAL | Location tree exists, but no dedicated "quarantine zone" logic | Need quarantine view |
-| Receiving record generation | ✅ DONE | ✅ `ReceivingSlip` with approval flow | ✅ `ReceivingSlipList` |
-| Approved quantities → SAP sync | ❌ MISSING | Need SAP sync on approval | — |
+| Requirement                                                 | Status     | Backend                                                        | Frontend                 |
+| ----------------------------------------------------------- | ---------- | -------------------------------------------------------------- | ------------------------ |
+| ASN order reception from SAP                                | ⚠️ PARTIAL | ✅ `asn_orders` CRUD exists                                    | ✅ ASN API client exists |
+| SAP connector for ASN                                       | ❌ MISSING | Need SAP connector service                                     | —                        |
+| CSV upload fallback for pilot                               | ❌ MISSING | Need CSV import endpoint                                       | Need CSV upload UI       |
+| Scan-based receiving against ASN                            | ✅ DONE    | ✅ `ScanSession` → `ReceivingSlip`                             | ✅ `InboundScanPanel`    |
+| Item classification (matched/short/excess/damaged/rejected) | ✅ DONE    | ✅ Flag items in receiving slips                               | ✅ Status badges exist   |
+| Rejection/quarantine location management                    | ⚠️ PARTIAL | Location tree exists, but no dedicated "quarantine zone" logic | Need quarantine view     |
+| Receiving record generation                                 | ✅ DONE    | ✅ `ReceivingSlip` with approval flow                          | ✅ `ReceivingSlipList`   |
+| Approved quantities → SAP sync                              | ❌ MISSING | Need SAP sync on approval                                      | —                        |
 
 **Gap Action Items**:
 | # | Task | Priority | Effort | Story Points |
@@ -44,14 +42,14 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.2 INBOUND GOODS RECEIPT
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| ASN details available before physical receipt | ✅ DONE | ✅ `asn_orders` with item details | — |
-| QR scanning per box/package | ✅ DONE | ✅ `ScanSession` per item QR | ✅ `InboundScanPanel` |
-| Item classification (accepted/damaged/rejected/excess/pending) | ✅ DONE | ✅ Flag types on receiving items | ✅ Status badges |
-| Rejected/damaged → quarantine location | ⚠️ PARTIAL | Need quarantine movement automation | Need quarantine UI |
-| In-transit/shortage tracking | ❌ MISSING | Need shortage tracking on ASN | Need shortage view |
-| SAP sync of receipt status | ❌ MISSING | Need SAP sync | — |
+| Requirement                                                    | Status     | Backend                             | Frontend              |
+| -------------------------------------------------------------- | ---------- | ----------------------------------- | --------------------- |
+| ASN details available before physical receipt                  | ✅ DONE    | ✅ `asn_orders` with item details   | —                     |
+| QR scanning per box/package                                    | ✅ DONE    | ✅ `ScanSession` per item QR        | ✅ `InboundScanPanel` |
+| Item classification (accepted/damaged/rejected/excess/pending) | ✅ DONE    | ✅ Flag types on receiving items    | ✅ Status badges      |
+| Rejected/damaged → quarantine location                         | ⚠️ PARTIAL | Need quarantine movement automation | Need quarantine UI    |
+| In-transit/shortage tracking                                   | ❌ MISSING | Need shortage tracking on ASN       | Need shortage view    |
+| SAP sync of receipt status                                     | ❌ MISSING | Need SAP sync                       | —                     |
 
 **Gap Action Items**:
 | # | Task | Priority | Effort | Story Points |
@@ -64,13 +62,13 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.3 PUTAWAY
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| Directed putaway via Android handheld | ✅ DONE | ✅ `PutAwayList` + QR scan flow | ✅ `PutAwayView` + `PutAwayDetailDialog` |
-| Item-to-location QR association | ✅ DONE | ✅ Scan item QR + location QR | ✅ QR scanning |
-| Rule-based location recommendations | ✅ DONE | ✅ `PutAwayRule` + `LocationAllocation` | ✅ Bin suggestions in 3D view |
-| Alternate location override | ✅ DONE | ✅ Authorized user can pick alternate bin | — |
-| Warehouse layout, location master, capacity rules | ✅ DONE | ✅ `WarehouseLocation` tree + capacity | ✅ `LocationTreeView` + `WarehouseLayoutDesigner` |
+| Requirement                                       | Status  | Backend                                   | Frontend                                          |
+| ------------------------------------------------- | ------- | ----------------------------------------- | ------------------------------------------------- |
+| Directed putaway via Android handheld             | ✅ DONE | ✅ `PutAwayList` + QR scan flow           | ✅ `PutAwayView` + `PutAwayDetailDialog`          |
+| Item-to-location QR association                   | ✅ DONE | ✅ Scan item QR + location QR             | ✅ QR scanning                                    |
+| Rule-based location recommendations               | ✅ DONE | ✅ `PutAwayRule` + `LocationAllocation`   | ✅ Bin suggestions in 3D view                     |
+| Alternate location override                       | ✅ DONE | ✅ Authorized user can pick alternate bin | —                                                 |
+| Warehouse layout, location master, capacity rules | ✅ DONE | ✅ `WarehouseLocation` tree + capacity    | ✅ `LocationTreeView` + `WarehouseLayoutDesigner` |
 
 **Status: ✅ FULLY IMPLEMENTED — No gaps.**
 
@@ -78,14 +76,14 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.4 INVENTORY MANAGEMENT & VISIBILITY
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| Real-time visibility by warehouse/zone/aisle/rack/bin/SKU | ✅ DONE | ✅ `BinStockLevel` + `StockLevel` + `StockMovement` | ✅ Stock components |
-| Stock statuses (available/allocated/picked/packed/in-transit/rejected/damaged/quarantine) | ⚠️ PARTIAL | Most statuses covered; `in-transit` & `quarantine` need work | Need status filter |
-| Movement history per unique product | ✅ DONE | ✅ `StockMovement` append-only audit | ✅ Movement history view |
-| Dashboard visualization | ⚠️ PARTIAL | ✅ `wms-dashboard` endpoints | ✅ `DashboardPanel` but needs enhancement |
-| Warehouse layout visualization | ✅ DONE | ✅ `Warehouse3DView` + WebSocket | ✅ Three.js 3D view |
-| SAP enterprise stock sync | ❌ MISSING | Need SAP sync | — |
+| Requirement                                                                               | Status     | Backend                                                      | Frontend                                  |
+| ----------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------ | ----------------------------------------- |
+| Real-time visibility by warehouse/zone/aisle/rack/bin/SKU                                 | ✅ DONE    | ✅ `BinStockLevel` + `StockLevel` + `StockMovement`          | ✅ Stock components                       |
+| Stock statuses (available/allocated/picked/packed/in-transit/rejected/damaged/quarantine) | ⚠️ PARTIAL | Most statuses covered; `in-transit` & `quarantine` need work | Need status filter                        |
+| Movement history per unique product                                                       | ✅ DONE    | ✅ `StockMovement` append-only audit                         | ✅ Movement history view                  |
+| Dashboard visualization                                                                   | ⚠️ PARTIAL | ✅ `wms-dashboard` endpoints                                 | ✅ `DashboardPanel` but needs enhancement |
+| Warehouse layout visualization                                                            | ✅ DONE    | ✅ `Warehouse3DView` + WebSocket                             | ✅ Three.js 3D view                       |
+| SAP enterprise stock sync                                                                 | ❌ MISSING | Need SAP sync                                                | —                                         |
 
 **Gap Action Items**:
 | # | Task | Priority | Effort | Story Points |
@@ -99,18 +97,18 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.5 CYCLE COUNTING
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| Scheduled counting | ❌ MISSING | Need count schedule engine | Need schedule UI |
-| ABC-based counting | ❌ MISSING | Need ABC classification engine | Need ABC config |
-| Location-based counting | ❌ MISSING | Need location-based count generation | Need location selector |
-| SKU-based counting | ❌ MISSING | Need SKU-based count generation | Need SKU selector |
-| Blind counting | ❌ MISSING | Need blind count mode | Need blind count UI |
-| Visible counting | ❌ MISSING | Need visible count mode | Need visible count UI |
-| Recount support | ❌ MISSING | Need recount workflow | Need recount UI |
-| Variance approval workflow | ❌ MISSING | Need variance tolerance + approval | Need approval UI |
-| SAP adjustment sync | ❌ MISSING | Need SAP sync | — |
-| QR/handheld scanning | ✅ DONE | Existing scan infrastructure | Existing scan components |
+| Requirement                | Status     | Backend                              | Frontend                 |
+| -------------------------- | ---------- | ------------------------------------ | ------------------------ |
+| Scheduled counting         | ❌ MISSING | Need count schedule engine           | Need schedule UI         |
+| ABC-based counting         | ❌ MISSING | Need ABC classification engine       | Need ABC config          |
+| Location-based counting    | ❌ MISSING | Need location-based count generation | Need location selector   |
+| SKU-based counting         | ❌ MISSING | Need SKU-based count generation      | Need SKU selector        |
+| Blind counting             | ❌ MISSING | Need blind count mode                | Need blind count UI      |
+| Visible counting           | ❌ MISSING | Need visible count mode              | Need visible count UI    |
+| Recount support            | ❌ MISSING | Need recount workflow                | Need recount UI          |
+| Variance approval workflow | ❌ MISSING | Need variance tolerance + approval   | Need approval UI         |
+| SAP adjustment sync        | ❌ MISSING | Need SAP sync                        | —                        |
+| QR/handheld scanning       | ✅ DONE    | Existing scan infrastructure         | Existing scan components |
 
 **Gap Action Items** (Entire module to build):
 | # | Task | Priority | Effort | Story Points |
@@ -133,13 +131,13 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.6 OUTBOUND PICKING
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| Order allocation for picking | ✅ DONE | ✅ `smart_picking.py` with allocation | ✅ `PickListView` |
-| Wave/zone picking | ❌ NOT APPLICABLE | Per requirements: "not applicable to Prestige warehouse scenario" | — |
-| Basic packing verification | ❌ MISSING | Need packing verification API | Need packing UI |
-| Scan-based packing validation | ❌ MISSING | Need scan-picked-items-against-order API | Need packing scan UI |
-| Product-carton association | ❌ MISSING | Need carton/handling-unit model | Need carton association UI |
+| Requirement                   | Status            | Backend                                                           | Frontend                   |
+| ----------------------------- | ----------------- | ----------------------------------------------------------------- | -------------------------- |
+| Order allocation for picking  | ✅ DONE           | ✅ `smart_picking.py` with allocation                             | ✅ `PickListView`          |
+| Wave/zone picking             | ❌ NOT APPLICABLE | Per requirements: "not applicable to Prestige warehouse scenario" | —                          |
+| Basic packing verification    | ❌ MISSING        | Need packing verification API                                     | Need packing UI            |
+| Scan-based packing validation | ❌ MISSING        | Need scan-picked-items-against-order API                          | Need packing scan UI       |
+| Product-carton association    | ❌ MISSING        | Need carton/handling-unit model                                   | Need carton association UI |
 
 **Gap Action Items**:
 | # | Task | Priority | Effort | Story Points |
@@ -155,14 +153,14 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.7 OUTBOUND SHIPPING
 
-| Requirement | Status | Backend | Frontend |
-|---|---|---|---|
-| Shipment staging | ❌ MISSING | Need staging area management | Need staging UI |
-| Final scan verification | ✅ DONE | ✅ `GateVerificationSession` | ✅ `GateVerificationPanel` |
-| Dispatch confirmation | ✅ DONE | ✅ `DispatchRecord` | ✅ `DispatchList` |
-| Shipment status update | ⚠️ PARTIAL | Dispatch exists; need status lifecycle | Need status tracking |
-| SAP shipment sync | ❌ MISSING | Need SAP sync | — |
-| TMS/carrier integration | ❌ OUT OF SCOPE | Separate assessment required | — |
+| Requirement             | Status          | Backend                                | Frontend                   |
+| ----------------------- | --------------- | -------------------------------------- | -------------------------- |
+| Shipment staging        | ❌ MISSING      | Need staging area management           | Need staging UI            |
+| Final scan verification | ✅ DONE         | ✅ `GateVerificationSession`           | ✅ `GateVerificationPanel` |
+| Dispatch confirmation   | ✅ DONE         | ✅ `DispatchRecord`                    | ✅ `DispatchList`          |
+| Shipment status update  | ⚠️ PARTIAL      | Dispatch exists; need status lifecycle | Need status tracking       |
+| SAP shipment sync       | ❌ MISSING      | Need SAP sync                          | —                          |
+| TMS/carrier integration | ❌ OUT OF SCOPE | Separate assessment required           | —                          |
 
 **Gap Action Items**:
 | # | Task | Priority | Effort | Story Points |
@@ -177,16 +175,16 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 2.8 CROSS-CUTTING: SAP INTEGRATION
 
-| # | Task | Priority | Effort | Story Points |
-|---|---|---|---|---|
-| SAP-01 | SAP connector service architecture (message queue / webhook based) | P0 - Critical | XL | 21 |
-| SAP-02 | ASN ingestion from SAP | P0 - Critical | L | 13 |
-| SAP-03 | Stock-transfer/outbound document ingestion | P0 - Critical | L | 13 |
-| SAP-04 | Goods receipt sync to SAP | P0 - Critical | M | 8 |
-| SAP-05 | Inventory movement sync to SAP | P0 - Critical | L | 13 |
-| SAP-06 | Cycle count adjustment sync to SAP | P0 - Critical | M | 8 |
-| SAP-07 | Dispatch/shipment confirmation sync to SAP | P0 - Critical | M | 8 |
-| SAP-08 | CSV upload fallback for pilot (all document types) | P0 - Critical | M | 8 |
+| #      | Task                                                               | Priority      | Effort | Story Points |
+| ------ | ------------------------------------------------------------------ | ------------- | ------ | ------------ |
+| SAP-01 | SAP connector service architecture (message queue / webhook based) | P0 - Critical | XL     | 21           |
+| SAP-02 | ASN ingestion from SAP                                             | P0 - Critical | L      | 13           |
+| SAP-03 | Stock-transfer/outbound document ingestion                         | P0 - Critical | L      | 13           |
+| SAP-04 | Goods receipt sync to SAP                                          | P0 - Critical | M      | 8            |
+| SAP-05 | Inventory movement sync to SAP                                     | P0 - Critical | L      | 13           |
+| SAP-06 | Cycle count adjustment sync to SAP                                 | P0 - Critical | M      | 8            |
+| SAP-07 | Dispatch/shipment confirmation sync to SAP                         | P0 - Critical | M      | 8            |
+| SAP-08 | CSV upload fallback for pilot (all document types)                 | P0 - Critical | M      | 8            |
 
 ---
 
@@ -194,43 +192,43 @@ This document provides a feature-by-feature gap analysis, implementation plan, r
 
 ### 3.1 Proposed WMS Roles
 
-| Role | Description | Inheritance |
-|---|---|---|
-| **WMS Super Admin** | Full system access across all orgs | — |
-| **WMS Manager** | Full warehouse operations access within org | — |
-| **WMS Supervisor** | Oversee inbound/outbound, approve exceptions | — |
-| **WMS Operator** | Execute daily warehouse tasks (scanning, putaway, picking) | — |
-| **ASN Coordinator** | Manage ASN intake and reconciliation | — |
-| **Inventory Controller** | Stock management, cycle counts, reconciliations | — |
-| **Quality Inspector** | QC inspections and approvals | — |
-| **Viewer** | Read-only access to warehouse data | — |
+| Role                     | Description                                                | Inheritance |
+| ------------------------ | ---------------------------------------------------------- | ----------- |
+| **WMS Super Admin**      | Full system access across all orgs                         | —           |
+| **WMS Manager**          | Full warehouse operations access within org                | —           |
+| **WMS Supervisor**       | Oversee inbound/outbound, approve exceptions               | —           |
+| **WMS Operator**         | Execute daily warehouse tasks (scanning, putaway, picking) | —           |
+| **ASN Coordinator**      | Manage ASN intake and reconciliation                       | —           |
+| **Inventory Controller** | Stock management, cycle counts, reconciliations            | —           |
+| **Quality Inspector**    | QC inspections and approvals                               | —           |
+| **Viewer**               | Read-only access to warehouse data                         | —           |
 
 ### 3.2 Permission Matrix
 
-| Resource | Super Admin | Manager | Supervisor | Operator | ASN Coord. | Inv. Controller | QC Inspector | Viewer |
-|---|---|---|---|---|---|---|---|---|
-| **ASN Orders** | CRUD+M | CRUD+M | CRUD | R | CRUD+M | R | — | R |
-| **Receiving Slips** | CRUD+M | CRUD+M | CRUD+A | CRUD | R | R | — | R |
-| **Putaway** | CRUD+M | CRUD+M | CRUD | CRUD | — | R | — | R |
-| **Pick Lists** | CRUD+M | CRUD+M | CRUD | CRUD | — | R | — | R |
-| **Packing** | CRUD+M | CRUD+M | CRUD | CRUD | — | — | — | R |
-| **Gate/Dispatch** | CRUD+M | CRUD+M | CRUD | CRUD | — | — | — | R |
-| **Staging** | CRUD+M | CRUD+M | CRUD | CRUD | — | — | — | R |
-| **Warehouse/Locations** | CRUD+M | CRUD+M | R | R | R | R | — | R |
-| **Bin Stock** | CRUD+M | CRUD+M | R | R | R | CRUD | — | R |
-| **Stock Levels** | CRUD+M | CRUD+M | R | R | R | CRUD+M | — | R |
-| **Stock Movements** | R | R | R | R | R | R | — | R |
-| **Stock Reconciliation** | CRUD+A | CRUD+A | R | — | — | CRUD+A | — | R |
-| **Cycle Count** | CRUD+A | CRUD+M | CRUD | CRUD (exec) | — | CRUD+A | — | R |
-| **Batch/Serial** | CRUD+M | CRUD+M | CRUD | CRUD | — | CRUD | — | R |
-| **Quality Inspection** | CRUD+A | CRUD+A | CRUD | — | — | — | CRUD+A | R |
-| **Putaway Rules** | CRUD | CRUD | R | — | — | R | — | R |
-| **WMS Workers** | CRUD+M | CRUD+M | CRUD | — | — | — | — | R |
-| **WMS Devices** | CRUD+M | CRUD+M | CRUD | — | — | — | — | R |
-| **WMS Dashboard** | Full | Full | Full | Limited | Limited | Full | Limited | R |
-| **3D Warehouse View** | Full | Full | Full | R | — | Full | — | R |
-| **Floor Plan** | CRUD | CRUD | R | — | — | R | — | R |
-| **Reports** | Full | Full | Full | — | Full | Full | — | R |
+| Resource                 | Super Admin | Manager | Supervisor | Operator    | ASN Coord. | Inv. Controller | QC Inspector | Viewer |
+| ------------------------ | ----------- | ------- | ---------- | ----------- | ---------- | --------------- | ------------ | ------ |
+| **ASN Orders**           | CRUD+M      | CRUD+M  | CRUD       | R           | CRUD+M     | R               | —            | R      |
+| **Receiving Slips**      | CRUD+M      | CRUD+M  | CRUD+A     | CRUD        | R          | R               | —            | R      |
+| **Putaway**              | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | R               | —            | R      |
+| **Pick Lists**           | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | R               | —            | R      |
+| **Packing**              | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | —               | —            | R      |
+| **Gate/Dispatch**        | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | —               | —            | R      |
+| **Staging**              | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | —               | —            | R      |
+| **Warehouse/Locations**  | CRUD+M      | CRUD+M  | R          | R           | R          | R               | —            | R      |
+| **Bin Stock**            | CRUD+M      | CRUD+M  | R          | R           | R          | CRUD            | —            | R      |
+| **Stock Levels**         | CRUD+M      | CRUD+M  | R          | R           | R          | CRUD+M          | —            | R      |
+| **Stock Movements**      | R           | R       | R          | R           | R          | R               | —            | R      |
+| **Stock Reconciliation** | CRUD+A      | CRUD+A  | R          | —           | —          | CRUD+A          | —            | R      |
+| **Cycle Count**          | CRUD+A      | CRUD+M  | CRUD       | CRUD (exec) | —          | CRUD+A          | —            | R      |
+| **Batch/Serial**         | CRUD+M      | CRUD+M  | CRUD       | CRUD        | —          | CRUD            | —            | R      |
+| **Quality Inspection**   | CRUD+A      | CRUD+A  | CRUD       | —           | —          | —               | CRUD+A       | R      |
+| **Putaway Rules**        | CRUD        | CRUD    | R          | —           | —          | R               | —            | R      |
+| **WMS Workers**          | CRUD+M      | CRUD+M  | CRUD       | —           | —          | —               | —            | R      |
+| **WMS Devices**          | CRUD+M      | CRUD+M  | CRUD       | —           | —          | —               | —            | R      |
+| **WMS Dashboard**        | Full        | Full    | Full       | Limited     | Limited    | Full            | Limited      | R      |
+| **3D Warehouse View**    | Full        | Full    | Full       | R           | —          | Full            | —            | R      |
+| **Floor Plan**           | CRUD        | CRUD    | R          | —           | —          | R               | —            | R      |
+| **Reports**              | Full        | Full    | Full       | —           | Full       | Full            | —            | R      |
 
 **Legend**: C=Create, R=Read, U=Update, D=Delete, M=Manage, A=Approve, exec=Execute Only
 
@@ -286,19 +284,19 @@ staging: {
 
 ### 4.1 New Pages to Build
 
-| Page | Route | Module | Priority |
-|---|---|---|---|
-| **Cycle Count Dashboard** | `/wms/cycle-count` | inventory | P0 |
-| **Cycle Count Schedule** | `/wms/cycle-count/schedules` | inventory | P0 |
-| **Count Execution** | `/wms/cycle-count/execute/:taskId` | inventory | P0 |
-| **Variance Review** | `/wms/cycle-count/variances/:taskId` | inventory | P0 |
-| **ABC Classification Config** | `/wms/cycle-count/abc-config` | inventory | P1 |
-| **Packing Verification** | `/wms/packing` | inventory | P0 |
-| **Carton Management** | `/wms/packing/cartons` | inventory | P2 |
-| **Staging Management** | `/wms/staging` | inventory | P1 |
-| **Shipment Tracking** | `/wms/shipments` | inventory | P1 |
-| **Quarantine View** | `/wms/quarantine` | inventory | P1 |
-| **CSV Import (ASN)** | `/wms/inbound/import` | inventory | P0 |
+| Page                          | Route                                | Module    | Priority |
+| ----------------------------- | ------------------------------------ | --------- | -------- |
+| **Cycle Count Dashboard**     | `/wms/cycle-count`                   | inventory | P0       |
+| **Cycle Count Schedule**      | `/wms/cycle-count/schedules`         | inventory | P0       |
+| **Count Execution**           | `/wms/cycle-count/execute/:taskId`   | inventory | P0       |
+| **Variance Review**           | `/wms/cycle-count/variances/:taskId` | inventory | P0       |
+| **ABC Classification Config** | `/wms/cycle-count/abc-config`        | inventory | P1       |
+| **Packing Verification**      | `/wms/packing`                       | inventory | P0       |
+| **Carton Management**         | `/wms/packing/cartons`               | inventory | P2       |
+| **Staging Management**        | `/wms/staging`                       | inventory | P1       |
+| **Shipment Tracking**         | `/wms/shipments`                     | inventory | P1       |
+| **Quarantine View**           | `/wms/quarantine`                    | inventory | P1       |
+| **CSV Import (ASN)**          | `/wms/inbound/import`                | inventory | P0       |
 
 ### 4.2 Components to Build
 
@@ -480,79 +478,79 @@ class QuarantineMovement(Base):
 
 ### Phase 1: Foundation (Weeks 1-2) — 26 SP
 
-| # | Task | SP |
-|---|---|---|
-| I-02 | CSV upload endpoint for ASN (pilot fallback) | 5 |
-| SAP-08 | CSV upload fallback for all document types | 8 |
-| I-03 | Quarantine zone designation | 3 |
-| I-06 | Auto-move rejected items to quarantine | 5 |
-| IV-01 | In-transit & quarantine stock status | 5 |
+| #      | Task                                         | SP  |
+| ------ | -------------------------------------------- | --- |
+| I-02   | CSV upload endpoint for ASN (pilot fallback) | 5   |
+| SAP-08 | CSV upload fallback for all document types   | 8   |
+| I-03   | Quarantine zone designation                  | 3   |
+| I-06   | Auto-move rejected items to quarantine       | 5   |
+| IV-01  | In-transit & quarantine stock status         | 5   |
 
 > **Deliverable**: Pilot-ready CSV-based ASN import + quarantine management
 
 ### Phase 2: Core Gaps (Weeks 3-5) — 55 SP
 
-| # | Task | SP |
-|---|---|---|
-| CC-01 | Cycle count database models | 5 |
-| CC-02 | ABC classification engine | 8 |
-| CC-04 | Count task generation API | 13 |
-| CC-05 | Blind/visible count execution API | 8 |
-| CC-06 | Variance calculation + tolerance check | 5 |
-| CC-08 | Variance approval workflow API | 8 |
-| CC-03 | Count schedule engine | 8 |
+| #     | Task                                   | SP  |
+| ----- | -------------------------------------- | --- |
+| CC-01 | Cycle count database models            | 5   |
+| CC-02 | ABC classification engine              | 8   |
+| CC-04 | Count task generation API              | 13  |
+| CC-05 | Blind/visible count execution API      | 8   |
+| CC-06 | Variance calculation + tolerance check | 5   |
+| CC-08 | Variance approval workflow API         | 8   |
+| CC-03 | Count schedule engine                  | 8   |
 
 > **Deliverable**: Complete cycle count backend
 
 ### Phase 3: Outbound Enhancement (Weeks 6-7) — 34 SP
 
-| # | Task | SP |
-|---|---|---|
-| OP-01 | Packing verification API | 8 |
-| OP-02 | Carton/Handling Unit model | 8 |
-| OS-01 | Staging area API | 8 |
-| OS-02 | Shipment status lifecycle | 5 |
-| IV-02 | Enhanced WMS dashboard | 5 (partial) |
+| #     | Task                       | SP          |
+| ----- | -------------------------- | ----------- |
+| OP-01 | Packing verification API   | 8           |
+| OP-02 | Carton/Handling Unit model | 8           |
+| OS-01 | Staging area API           | 8           |
+| OS-02 | Shipment status lifecycle  | 5           |
+| IV-02 | Enhanced WMS dashboard     | 5 (partial) |
 
 > **Deliverable**: Packing verification + staging + shipment tracking backend
 
 ### Phase 4: SAP Integration (Weeks 8-10) — 63 SP
 
-| # | Task | SP |
-|---|---|---|
-| SAP-01 | SAP connector architecture | 21 |
-| SAP-02 | ASN ingestion from SAP | 13 |
-| SAP-03 | Stock-transfer document ingestion | 13 |
-| SAP-04 | Goods receipt sync | 8 |
-| SAP-07 | Dispatch/shipment sync | 8 |
+| #      | Task                              | SP  |
+| ------ | --------------------------------- | --- |
+| SAP-01 | SAP connector architecture        | 21  |
+| SAP-02 | ASN ingestion from SAP            | 13  |
+| SAP-03 | Stock-transfer document ingestion | 13  |
+| SAP-04 | Goods receipt sync                | 8   |
+| SAP-07 | Dispatch/shipment sync            | 8   |
 
 > **Deliverable**: SAP connector MVP
 
 ### Phase 5: Frontend (Weeks 4-12, parallel with backend)
 
-| # | Task | SP |
-|---|---|---|
-| CC-10 | Cycle count schedule management page | 13 |
-| CC-11 | Count execution page (scan-based) | 13 |
-| CC-12 | Variance review & approval page | 8 |
-| CC-13 | ABC classification config page | 5 |
-| OP-04 | Packing verification page | 13 |
-| OP-05 | Carton management UI | 8 |
-| OS-04 | Staging management page | 8 |
-| OS-05 | Shipment tracking page | 5 |
-| I-05 frontend | Quarantine view | 5 |
-| CSV frontend | CSV import UI | 5 |
+| #             | Task                                 | SP  |
+| ------------- | ------------------------------------ | --- |
+| CC-10         | Cycle count schedule management page | 13  |
+| CC-11         | Count execution page (scan-based)    | 13  |
+| CC-12         | Variance review & approval page      | 8   |
+| CC-13         | ABC classification config page       | 5   |
+| OP-04         | Packing verification page            | 13  |
+| OP-05         | Carton management UI                 | 8   |
+| OS-04         | Staging management page              | 8   |
+| OS-05         | Shipment tracking page               | 5   |
+| I-05 frontend | Quarantine view                      | 5   |
+| CSV frontend  | CSV import UI                        | 5   |
 
 > **Deliverable**: Complete frontend for all new features
 
 ### Phase 6: SAP Sync Completion (Weeks 11-12) — 37 SP
 
-| # | Task | SP |
-|---|---|---|
-| SAP-05 | Inventory movement sync | 13 |
-| SAP-06 | Cycle count adjustment sync | 8 |
-| CC-09 | Cycle count SAP adjustment sync | 8 |
-| I-04 | Receiving slip SAP sync | 8 |
+| #      | Task                            | SP  |
+| ------ | ------------------------------- | --- |
+| SAP-05 | Inventory movement sync         | 13  |
+| SAP-06 | Cycle count adjustment sync     | 8   |
+| CC-09  | Cycle count SAP adjustment sync | 8   |
+| I-04   | Receiving slip SAP sync         | 8   |
 
 > **Deliverable**: End-to-end SAP integration complete
 
@@ -560,15 +558,15 @@ class QuarantineMovement(Base):
 
 ## 7. Total Effort Summary
 
-| Phase | Description | Story Points | Timeline |
-|---|---|---|---|
-| Phase 1 | Foundation (CSV Import + Quarantine) | 26 SP | Weeks 1-2 |
-| Phase 2 | Cycle Count Backend | 55 SP | Weeks 3-5 |
-| Phase 3 | Outbound Enhancement Backend | 34 SP | Weeks 6-7 |
-| Phase 4 | SAP Integration Core | 63 SP | Weeks 8-10 |
-| Phase 5 | Frontend (parallel) | 78 SP | Weeks 4-12 |
-| Phase 6 | SAP Sync Completion | 37 SP | Weeks 11-12 |
-| **TOTAL** | | **~293 SP** | **12 Weeks** |
+| Phase     | Description                          | Story Points | Timeline     |
+| --------- | ------------------------------------ | ------------ | ------------ |
+| Phase 1   | Foundation (CSV Import + Quarantine) | 26 SP        | Weeks 1-2    |
+| Phase 2   | Cycle Count Backend                  | 55 SP        | Weeks 3-5    |
+| Phase 3   | Outbound Enhancement Backend         | 34 SP        | Weeks 6-7    |
+| Phase 4   | SAP Integration Core                 | 63 SP        | Weeks 8-10   |
+| Phase 5   | Frontend (parallel)                  | 78 SP        | Weeks 4-12   |
+| Phase 6   | SAP Sync Completion                  | 37 SP        | Weeks 11-12  |
+| **TOTAL** |                                      | **~293 SP**  | **12 Weeks** |
 
 > **Note**: Phases 2-3 & Phase 5 can run in parallel with a team of 2-3 developers.
 > With 2 backend + 1 frontend developer: estimated **10-12 weeks**.
@@ -577,14 +575,14 @@ class QuarantineMovement(Base):
 
 ## 8. Risk Register
 
-| Risk | Impact | Likelihood | Mitigation |
-|---|---|---|---|
-| SAP API not available during pilot | High | Medium | CSV upload fallback (Phase 1) |
-| SAP document format mismatch | High | High | Schema mapping layer in connector |
-| Android handheld device compatibility | Medium | Low | Use PWA/WebView; test on Zebra/Honeywell |
-| QR code standard mismatch with SAP | Medium | Medium | Agree on QR format during process design |
-| Performance with real-time inventory sync | Medium | Low | Redis queue for async processing |
-| Cycle count disrupting live operations | Medium | Low | Count during off-hours; freeze bin during count |
+| Risk                                      | Impact | Likelihood | Mitigation                                      |
+| ----------------------------------------- | ------ | ---------- | ----------------------------------------------- |
+| SAP API not available during pilot        | High   | Medium     | CSV upload fallback (Phase 1)                   |
+| SAP document format mismatch              | High   | High       | Schema mapping layer in connector               |
+| Android handheld device compatibility     | Medium | Low        | Use PWA/WebView; test on Zebra/Honeywell        |
+| QR code standard mismatch with SAP        | Medium | Medium     | Agree on QR format during process design        |
+| Performance with real-time inventory sync | Medium | Low        | Redis queue for async processing                |
+| Cycle count disrupting live operations    | Medium | Low        | Count during off-hours; freeze bin during count |
 
 ---
 
