@@ -310,14 +310,26 @@ class LandingPageService:
         image_type: str,
         ext: str,
     ) -> str:
-        """Save image to local filesystem (dev fallback when GCS not configured)."""
-        upload_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "uploads",
-            "landing-pages",
-            str(organization_id),
-            str(product_id),
-        )
+        """Save image to local filesystem (dev fallback when GCS not configured).
+
+        Uses settings.upload_dir when set (e.g. Railway volume mount at /uploads).
+        Otherwise falls back to <project_root>/uploads/landing-pages.
+        """
+        if settings.upload_dir:
+            upload_dir = os.path.join(
+                settings.upload_dir,
+                "landing-pages",
+                str(organization_id),
+                str(product_id),
+            )
+        else:
+            upload_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "uploads",
+                "landing-pages",
+                str(organization_id),
+                str(product_id),
+            )
         os.makedirs(upload_dir, exist_ok=True)
 
         filename = f"{image_type}_{uuid.uuid4().hex[:8]}.{ext}"

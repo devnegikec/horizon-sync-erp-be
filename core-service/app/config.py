@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     gcs_bucket: str = ""
     gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
 
+    # Upload directory for local file storage (e.g. Railway volume mount)
+    # Defaults to <project_root>/uploads/landing-pages when empty
+    upload_dir: str = ""
+
     # Email/SMTP Configuration
     email_enabled: bool = True
     smtp_host: str = "localhost"
