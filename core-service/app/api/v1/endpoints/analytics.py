@@ -10,6 +10,8 @@ from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_feature_flag
 from app.schemas.analytics import (
+    CTABreakdownResponse,
+    InteractionFunnelResponse,
     MetaCampaignCreate,
     MetaCampaignListResponse,
     MetaCampaignResponse,
@@ -82,6 +84,68 @@ def get_scan_analytics(
 ):
     org_id = current_user.organization_id
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
+
+
+# ── Enhanced Analytics ────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/interaction-funnel",
+    response_model=InteractionFunnelResponse,
+    summary="Get interaction funnel (scans → unique products → CTA clicks)",
+)
+def get_interaction_funnel(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_interaction_funnel(org_id, date_from, date_to)
+
+
+@router.get(
+    "/scans/cta-breakdown",
+    response_model=CTABreakdownResponse,
+    summary="Get CTA button click breakdown",
+)
+def get_cta_breakdown(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_cta_breakdown(org_id, date_from, date_to)
+
+
+@router.get(
+    "/scans/geo-heatmap",
+    summary="Get geographic heatmap data for scans",
+)
+def get_geo_heatmap(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_geo_heatmap(org_id, date_from, date_to, limit)
+
+
+@router.get(
+    "/scans/device-timeline",
+    summary="Get scan counts over time grouped by device type",
+)
+def get_device_timeline(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_device_timeline(org_id, date_from, date_to)
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
