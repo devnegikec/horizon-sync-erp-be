@@ -39,7 +39,7 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
     status_code=status.HTTP_201_CREATED,
     summary="Ingest a QR scan event (public — called by QR landing page)",
 )
-def ingest_scan(
+async def ingest_scan(
     data: QRScanEventIngest,
     organization_id: UUID = Query(
         ..., description="Organization that owns the QR code"
@@ -47,7 +47,7 @@ def ingest_scan(
     service: AnalyticsService = Depends(get_service),
 ):
     """No auth required — called by the consumer-facing QR landing page."""
-    return service.ingest_scan(data, organization_id)
+    return await service.ingest_scan(data, organization_id)
 
 
 @router.get(
