@@ -26,10 +26,10 @@ def upgrade() -> None:
 
     # Create enum types if they don't exist
     op.execute(
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationtype') THEN CREATE TYPE organizationtype AS ENUM ('enterprise', 'business', 'startup', 'individual', 'master', 'customer'); END IF; END$$;"
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationtype') THEN CREATE TYPE organizationtype AS ENUM ('enterprise', 'business', 'startup', 'individual'); END IF; END$$;"
     )
     op.execute(
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationstatus') THEN CREATE TYPE organizationstatus AS ENUM ('active', 'inactive', 'suspended', 'trial', 'overdue', 'deactivated'); END IF; END$$;"
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organizationstatus') THEN CREATE TYPE organizationstatus AS ENUM ('active', 'inactive', 'suspended', 'trial'); END IF; END$$;"
     )
     op.execute(
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'usertype') THEN CREATE TYPE usertype AS ENUM ('system_admin', 'organization_admin', 'user', 'guest'); END IF; END$$;"
