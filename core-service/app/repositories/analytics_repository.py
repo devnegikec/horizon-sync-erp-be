@@ -1,5 +1,6 @@
 """Repository for Analytics module"""
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -331,3 +332,35 @@ class MetaCampaignRepository:
         """Always inserts a new snapshot row (time-series approach)."""
         data["organization_id"] = organization_id
         return self.create(data)
+
+
+class ScanInteractionRepository:
+    """Placeholder for scan interaction tracking (Phase 4)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict):
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "ScanInteractionRepository.create called but model not yet available"
+        )
+        return None
+
+    def list_by_scan(self, scan_event_id: UUID, organization_id: UUID):
+        return []
+
+
+class CTAConfigRepository:
+    """Placeholder for CTA configuration (Phase 4)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, data: dict):
+        logger = logging.getLogger(__name__)
+        logger.warning("CTAConfigRepository.create called but model not yet available")
+        return None
+
+    def list_by_product(self, organization_id: UUID, product_id: UUID):
+        return []
