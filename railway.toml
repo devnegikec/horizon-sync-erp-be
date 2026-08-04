@@ -1,0 +1,59 @@
+# Railway Monorepo Configuration
+# This config defines how Railway should build and deploy each service
+# Docs: https://docs.railway.com/reference/config-as-code
+
+[build]
+# Global build settings (used as defaults for all services)
+# Use dockerfile since each service has its own Dockerfile
+builder = "dockerfile"
+watchPatterns = ["**/*"]
+
+# ============================================
+# Identity Service
+# ============================================
+[services.identity-service]
+source = "identity-service/"
+startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+
+[services.identity-service.build]
+dockerfilePath = "Dockerfile.identity"
+
+[services.identity-service.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+
+# ============================================
+# Core Service
+# ============================================
+[services.core-service]
+source = "core-service/"
+startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8001'"
+
+[services.core-service.build]
+dockerfilePath = "Dockerfile.core"
+
+[services.core-service.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+
+# ============================================
+# Search Service
+# ============================================
+[services.search-service]
+source = "search-service/"
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port 8002"
+
+[services.search-service.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+
+# ============================================
+# Nginx Gateway
+# ============================================
+[services.nginx-gateway]
+source = "nginx-gateway/"
+startCommand = "nginx -g 'daemon off;'"
+
+[services.nginx-gateway.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3

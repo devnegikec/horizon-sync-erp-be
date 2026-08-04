@@ -24,6 +24,7 @@ from app.models.bank_transaction import BankTransaction
 from app.models.base import (
     AccountStatus,
     AccountType,
+    AsnOrderStatus,
     BankAccountHistoryAction,
     BatchStatus,
     CustomerStatus,
@@ -79,6 +80,10 @@ from app.models.brand_trust import (
     BrandTrustAssessment,
     BrandTrustQuestion,
 )
+
+# Bulk Import/Export module
+from app.models.bulk_export_job import BulkExportJob
+from app.models.bulk_import_job import BulkImportJob
 
 # Campaigns & Coupons module
 from app.models.campaign import Campaign, Play2WinPrize, WebCampaign
@@ -144,6 +149,8 @@ from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
+from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
+from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 
 # Public Marketing module
@@ -160,6 +167,8 @@ from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_scan_interaction import QRScanInteraction
+from app.models.qr_product_setting import QRProductSetting
+from app.models.qr_scan_event import QRScanEvent
 from app.models.quality_inspection import (
     QualityInspection,
     QualityInspectionParameter,
@@ -191,6 +200,7 @@ from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.stock_settings import StockSettings
+from app.models.supplier import Supplier
 from app.models.system_config import SystemConfig
 from app.models.tax_template import TaxRule, TaxTemplate
 from app.models.transaction_breakdown import (

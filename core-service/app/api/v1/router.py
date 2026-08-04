@@ -54,6 +54,7 @@ from app.api.v1.endpoints import (
     purchase_receipts,
     put_away,
     put_away_rules,
+    qr_credits,
     qr_product_settings,
     qr_products,
     quality_inspections,
@@ -357,6 +358,13 @@ api_router.include_router(
     document_numbering.router,
     prefix="/settings/document-numbering",
     tags=["Settings - Document Numbering"],
+)
+
+# QR Credits module (balance & usage)
+api_router.include_router(
+    qr_credits.router,
+    prefix="/qr-credits",
+    tags=["QR Credits"],
 )
 
 # QR Products module
