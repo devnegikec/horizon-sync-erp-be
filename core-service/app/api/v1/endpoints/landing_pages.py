@@ -59,6 +59,24 @@ def get_landing_page_public(
     return {"config": config}
 
 
+@public_router.get(
+    "/sku/{sku}/landing-page",
+    response_model=LandingPageConfigResponse,
+    summary="[Public] Fetch landing page config by product SKU",
+)
+def get_landing_page_by_sku(
+    sku: str,
+    service: LandingPageService = Depends(get_service),
+):
+    """Public endpoint — no auth required.
+
+    Looks up the product by its SKU (via Item.sku or QRProduct.gtin)
+    and returns the landing page configuration.
+    """
+    config = service.get_config_by_sku(sku)
+    return {"config": config}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Authenticated router — for dashboard/admin management
 # ─────────────────────────────────────────────────────────────────────────────

@@ -133,6 +133,46 @@ class LandingPageService:
             )
         return LandingPageConfigOut.model_validate(self._config_to_dict(config))
 
+    def get_config_by_sku(self, sku: str) -> LandingPageConfigOut:
+        """Fetch landing page config by product SKU (public, no auth).
+
+        Looks up the QR product via Item.sku, then resolves the config.
+        Also tries direct GTIN match on QRProduct as fallback.
+        """
+        from app.models.item import Item
+        from app.models.qr_product import QRProduct
+
+        # Try Item.sku → QRProduct
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.sku == sku,
+                Item.qr_product_id.is_not(None),
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if item and item.qr_product_id:
+            product_id = item.qr_product_id
+        else:
+            # Fallback: try GTIN match directly on QRProduct
+            product = (
+                self.db.query(QRProduct)
+                .filter(
+                    QRProduct.gtin == sku,
+                    QRProduct.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if not product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No product found for this SKU",
+                )
+            product_id = product.id
+
+        return self.get_config_public(product_id)
+
     def create_config(
         self,
         product_id: uuid.UUID,
