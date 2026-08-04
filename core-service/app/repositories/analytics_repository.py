@@ -138,19 +138,19 @@ class QRScanEventRepository:
         except Exception:
             scans_with_cta = 0
 
-        from app.models.analytics import ScanInteraction
+        from app.models.qr_scan_interaction import QRScanInteraction
 
         total_interactions = 0
         conversion_rate = 0.0
         top_interaction_types = []
         try:
-            si_q = self.db.query(ScanInteraction).filter(
-                ScanInteraction.organization_id == organization_id
+            si_q = self.db.query(QRScanInteraction).filter(
+                QRScanInteraction.organization_id == organization_id
             )
             if date_from:
-                si_q = si_q.filter(ScanInteraction.created_at >= date_from)
+                si_q = si_q.filter(QRScanInteraction.created_at >= date_from)
             if date_to:
-                si_q = si_q.filter(ScanInteraction.created_at <= date_to)
+                si_q = si_q.filter(QRScanInteraction.created_at <= date_to)
             total_interactions = si_q.count()
 
             conversion_rate = (
@@ -159,10 +159,10 @@ class QRScanEventRepository:
 
             top_types = (
                 si_q.with_entities(
-                    ScanInteraction.interaction_type,
+                    QRScanInteraction.interaction_type,
                     func.count().label("count"),
                 )
-                .group_by(ScanInteraction.interaction_type)
+                .group_by(QRScanInteraction.interaction_type)
                 .order_by(func.count().desc())
                 .limit(5)
                 .all()
