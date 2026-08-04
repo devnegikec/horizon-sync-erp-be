@@ -103,6 +103,36 @@ class LandingPageService:
             )
         return LandingPageConfigOut.model_validate(self._config_to_dict(config))
 
+    def get_config_public(self, product_id: uuid.UUID) -> LandingPageConfigOut:
+        """Fetch landing page config by product ID only (public, no auth).
+
+        Resolves the organization_id from the product itself.
+        """
+        from app.models.qr_product import QRProduct
+
+        product = (
+            self.db.query(QRProduct)
+            .filter(
+                QRProduct.id == product_id,
+                QRProduct.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if not product:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR product not found",
+            )
+
+        organization_id = product.organization_id
+        config = self.repo.get_by_product(product_id, organization_id)
+        if not config:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No landing page config exists for this product",
+            )
+        return LandingPageConfigOut.model_validate(self._config_to_dict(config))
+
     def create_config(
         self,
         product_id: uuid.UUID,

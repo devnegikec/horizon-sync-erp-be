@@ -11,7 +11,6 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Query,
     UploadFile,
     status,
 )
@@ -48,17 +47,15 @@ public_router = APIRouter()
 )
 def get_landing_page_public(
     product_id: UUID,
-    organization_id: UUID = Query(
-        ..., description="Organization that owns the QR product"
-    ),
     service: LandingPageService = Depends(get_service),
 ):
-    """Public endpoint — no auth required.
+    """Public endpoint — no auth required, no org needed.
 
+    The organization is resolved automatically from the product.
     Called by the consumer-facing QR verification page to render
     the custom landing page for a scanned product.
     """
-    config = service.get_config(product_id, organization_id)
+    config = service.get_config_public(product_id)
     return {"config": config}
 
 
