@@ -17,6 +17,7 @@ from app.schemas.qseal import (
     QSealMapRequest,
     QSealMapResponse,
     QSealParentCreate,
+    QSealParentDetailResponse,
     QSealParentListResponse,
     QSealParentResponse,
     QSealScanRequest,
@@ -188,6 +189,28 @@ def get_labels(
 ):
     org_id = current_user.organization_id
     return service.get_labels(parent_id, org_id)
+
+
+# ── Parent with Linked Units (for inbound/receiving) ─────────────────────────
+
+
+@router.get(
+    "/parents/{parent_id}/linked-units",
+    response_model=QSealParentDetailResponse,
+    summary="Get parent QSeal with all linked child units (for inbound scanning)",
+)
+def get_parent_linked_units(
+    parent_id: UUID,
+    service: QSealService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """Returns parent node + all QSealParameters children linked to it.
+
+    Mobile app flow: scan parent QR → get serial → resolve node ID →
+    call this endpoint → show all linked units → create receiving slip.
+    """
+    org_id = current_user.organization_id
+    return service.get_parent_with_linked_units(parent_id, org_id)
 
 
 # ── Block-based Parent QSeal ──────────────────────────────────────────────────

@@ -341,6 +341,76 @@ class QSealService:
             "total": total,
         }
 
+    # ── Parent with Linked Units (for inbound/receiving) ──────────────────────
+
+    def get_parent_with_linked_units(
+        self, parent_id: UUID, organization_id: UUID
+    ) -> dict:
+        """Return a parent QSeal node with all its linked QSealParameters children.
+
+        Used by mobile app for inbound: scan parent QR → see all linked units
+        → create receiving slip.
+        """
+        from app.models.product_item import ProductItem
+        from app.models.qseal import QSealParameters
+
+        parent = self.repo.get_by_id(parent_id, organization_id)
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent QSeal node not found",
+            )
+
+        # Fetch linked QSealParameters with ProductItem join for URL/scan count
+        linked = (
+            self.db.query(QSealParameters, ProductItem)
+            .outerjoin(
+                ProductItem,
+                (ProductItem.serial_number == QSealParameters.serial_number)
+                & (ProductItem.organization_id == organization_id),
+            )
+            .filter(
+                QSealParameters.parent_id == parent_id,
+                QSealParameters.organization_id == organization_id,
+            )
+            .order_by(QSealParameters.created_at.asc())
+            .all()
+        )
+
+        units = []
+        for param, item in linked:
+            units.append(
+                {
+                    "id": param.id,
+                    "serial_number": param.serial_number,
+                    "manufacturing_date": str(param.manufacturing_date)
+                    if param.manufacturing_date
+                    else None,
+                    "expiry_date": str(param.expiry_date)
+                    if param.expiry_date
+                    else None,
+                    "manufacturing_unit": param.manufacturing_unit,
+                    "dispatch_batch": param.dispatch_batch,
+                    "destination_market": param.destination_market,
+                    "mrp": float(param.mrp) if param.mrp else None,
+                    "currency": param.currency,
+                    "batch_size": param.batch_size,
+                    "qseal_cascade": param.qseal_cascade or False,
+                    "product_item_url": item.token_id if item else None,
+                    "product_item_scan_count": item.scan_count if item else 0,
+                    "extra_data": param.extra_data,
+                }
+            )
+
+        result = self._to_response_dict(parent)
+        result["linked_units"] = units
+        logger.info(
+            "[QSEAL] parent detail with linked units parent=%s units=%d",
+            parent_id,
+            len(units),
+        )
+        return result
+
     # ── Block-based Parent QSeal ──────────────────────────────────────────────
 
     def get_parents_by_block(
