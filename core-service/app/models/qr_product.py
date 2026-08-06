@@ -50,6 +50,12 @@ class QRProduct(Base):
 
     # Relationships
     brand = relationship("Brand", back_populates="qr_products")
+    landing_page_config = relationship(
+        "LandingPageConfig",
+        back_populates="product",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     qr_blocks = relationship(
         "QRBlock", back_populates="product", cascade="all, delete-orphan"
     )

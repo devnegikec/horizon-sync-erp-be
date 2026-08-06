@@ -115,6 +115,8 @@ class QRBlockCreate(BaseModel):
     qr_image: bool = False
     manufacture_date: date | None = None
     expiry_date: date | None = None
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
     extra_data: dict[str, Any] | None = None
 
 
@@ -132,6 +134,8 @@ class QRBlockResponse(BaseModel):
     qr_image: bool
     manufacture_date: date | None
     expiry_date: date | None
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
     gcs_url: str | None
     download_url: str | None
     completed_at: datetime | None

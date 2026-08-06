@@ -74,8 +74,13 @@ class Settings(BaseSettings):
 
     # QR Domain & GCS
     qr_domain: str = "verify.example.com"
+    qr_base_url: str = ""  # Override full base URL (scheme+host). If set, used instead of https://{org_short_code}.{qr_domain}
     gcs_bucket: str = ""
     gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
+
+    # Upload directory for local file storage (e.g. Railway volume mount)
+    # Defaults to <project_root>/uploads/landing-pages when empty
+    upload_dir: str = ""
 
     # Email/SMTP Configuration
     email_enabled: bool = True

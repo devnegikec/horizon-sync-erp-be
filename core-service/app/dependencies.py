@@ -170,6 +170,7 @@ async def get_current_active_user(
     # Basic validation - user_type check can be extended
     return current_user
 
+
 async def require_admin(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> CurrentUser:
@@ -180,7 +181,6 @@ async def require_admin(
             detail="Admin access required",
         )
     return current_user
-
 
 
 def has_permission(permissions: list[str], required_permission: str) -> bool:
@@ -203,7 +203,10 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     if "*.*" in permissions:
         return True
     # system_admin.master grants all system_admin.* permissions
-    if required_permission.startswith("system_admin.") and "system_admin.master" in permissions:
+    if (
+        required_permission.startswith("system_admin.")
+        and "system_admin.master" in permissions
+    ):
         return True
     # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
     if "." in required_permission:
@@ -223,10 +226,16 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     if "." in required_permission:
         resource, _, action = required_permission.partition(".")
         _SA_RESOURCE_TO_DOMAIN = {
-            "user": "users", "organization": "organizations",
-            "role": "users", "permission": "users", "invitation": "users",
-            "billing": "billing", "invoice": "billing", "subscription": "billing",
-            "reporting": "reporting", "report": "reporting",
+            "user": "users",
+            "organization": "organizations",
+            "role": "users",
+            "permission": "users",
+            "invitation": "users",
+            "billing": "billing",
+            "invoice": "billing",
+            "subscription": "billing",
+            "reporting": "reporting",
+            "report": "reporting",
         }
         domain = _SA_RESOURCE_TO_DOMAIN.get(resource)
         if domain:
@@ -250,8 +259,11 @@ def require_permission(*permissions: str):
     """
 
     async def check_permission(
-        current_user: CurrentUser = Depends(get_current_active_user),
+        current_user=Depends(get_current_active_user),
     ) -> CurrentUser:
+        # Note: Do NOT annotate current_user with CurrentUser type hint.
+        # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
+        # and tries to read them as query params instead of resolving Depends().
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -274,8 +286,8 @@ def require_feature_flag(flag_name: str):
     Usage:
         router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
     """
-    from app.services.feature_flag_service import is_feature_enabled
     from app.core.constants import FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
+    from app.services.feature_flag_service import is_feature_enabled
 
     async def _check_flag(db: Session = Depends(get_db)) -> None:
         if not is_feature_enabled(flag_name, db):
