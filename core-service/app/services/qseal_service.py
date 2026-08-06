@@ -352,6 +352,7 @@ class QSealService:
         → create receiving slip.
         """
         from app.models.product_item import ProductItem
+        from app.models.qr_product import QRProduct
         from app.models.qseal import QSealParameters
 
         parent = self.repo.get_by_id(parent_id, organization_id)
@@ -361,13 +362,17 @@ class QSealService:
                 detail="Parent QSeal node not found",
             )
 
-        # Fetch linked QSealParameters with ProductItem join for URL/scan count
+        # Fetch linked QSealParameters with ProductItem + QRProduct joins
         linked = (
-            self.db.query(QSealParameters, ProductItem)
+            self.db.query(QSealParameters, ProductItem, QRProduct)
             .outerjoin(
                 ProductItem,
                 (ProductItem.serial_number == QSealParameters.serial_number)
                 & (ProductItem.organization_id == organization_id),
+            )
+            .outerjoin(
+                QRProduct,
+                QRProduct.id == QSealParameters.product_id,
             )
             .filter(
                 QSealParameters.parent_id == parent_id,
@@ -378,11 +383,13 @@ class QSealService:
         )
 
         units = []
-        for param, item in linked:
+        for param, item, product in linked:
             units.append(
                 {
                     "id": param.id,
                     "serial_number": param.serial_number,
+                    "product_name": product.name if product else None,
+                    "product_sku": product.sku if product else None,
                     "manufacturing_date": str(param.manufacturing_date)
                     if param.manufacturing_date
                     else None,

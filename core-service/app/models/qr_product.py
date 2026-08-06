@@ -20,6 +20,7 @@ class QRProduct(Base):
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
 
     name = Column(String(100), nullable=False)
+    sku = Column(String(100), nullable=True)
     generic_name = Column(String(100), nullable=True)
     gtin = Column(String(20), nullable=True)
     industry = Column(String(100), nullable=True)

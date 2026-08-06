@@ -136,6 +136,8 @@ class QSealLinkedUnit(BaseModel):
 
     id: UUID
     serial_number: str | None
+    product_name: str | None = None
+    product_sku: str | None = None
     manufacturing_date: str | None = None
     expiry_date: str | None = None
     manufacturing_unit: str | None = None
