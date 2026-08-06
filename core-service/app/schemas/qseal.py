@@ -101,6 +101,7 @@ class QSealScanResponse(BaseModel):
     qseal_type: str | None
     name: str | None
     parent_id: UUID | None
+    parent_serial: str | None = None
     children_count: int
     message: str
 
@@ -125,6 +126,49 @@ class QSealHistoryItem(BaseModel):
 class QSealHistoryResponse(BaseModel):
     events: list[QSealHistoryItem]
     pagination: dict[str, Any]
+
+
+# ── Parent with Linked Units (for inbound/receiving) ──────────────────────────
+
+
+class QSealLinkedUnit(BaseModel):
+    """A single child unit linked to a parent QSeal."""
+
+    id: UUID
+    serial_number: str | None
+    product_name: str | None = None
+    product_sku: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    manufacturing_unit: str | None = None
+    dispatch_batch: str | None = None
+    destination_market: str | None = None
+    mrp: float | None = None
+    currency: str | None = None
+    batch_size: int | None = None
+    qseal_cascade: bool = False
+    product_item_url: str | None = None  # token_id / QR URL from ProductItem
+    product_item_scan_count: int = 0
+    extra_data: dict[str, Any] | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class QSealParentDetailResponse(BaseModel):
+    """Parent QSeal node with all linked child units."""
+
+    id: UUID
+    organization_id: UUID
+    qseal_type: str | None
+    name: str | None
+    capacity: int | None
+    serial_number: str | None
+    qseal_code_link: str | None
+    app_cascade_map: bool
+    parent_id: UUID | None
+    children_count: int
+    linked_units: list[QSealLinkedUnit]
+    created_at: datetime
 
 
 # ── Label Download ────────────────────────────────────────────────────────────
