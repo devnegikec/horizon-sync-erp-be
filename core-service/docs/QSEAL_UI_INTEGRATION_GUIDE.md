@@ -1,7 +1,6 @@
 # QSeal — Dashboard/UI Integration Guide
 
-> **Base URL:** `{API_BASE}/qseal`
-> **Auth:** All endpoints (except `/scan`) require a valid Bearer token.
+> **Base URL:** `{API_BASE}/qseal` > **Auth:** All endpoints (except `/scan`) require a valid Bearer token.
 
 ---
 
@@ -22,15 +21,15 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 
 ## 2. UI Pages Required
 
-| Page | Purpose | Key API Calls |
-|------|---------|---------------|
-| **QSeal Dashboard** | Overview of all parent QSeal nodes | `GET /qseal/parents` |
-| **Create Parent QSeal** | Form to create a container/pallet/shipper | `POST /qseal/parents` |
-| **Parent Detail** | View parent details + children list | `GET /qseal/parents/{id}` + `GET /qseal/parents/{id}/children` |
-| **Create Child QSeal** | Form to create a child under a parent | `POST /qseal/parents/{id}/children` |
-| **Map Children (Bulk)** | Bulk-attach existing unattached children to a parent | `POST /qseal/parents/{id}/map` |
-| **Scan History** | View scan audit trail for QSeal codes | `GET /qseal/history` |
-| **Label Download** | Download/print labels for all children | `GET /qseal/parents/{id}/labels` |
+| Page                    | Purpose                                              | Key API Calls                                                  |
+| ----------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
+| **QSeal Dashboard**     | Overview of all parent QSeal nodes                   | `GET /qseal/parents`                                           |
+| **Create Parent QSeal** | Form to create a container/pallet/shipper            | `POST /qseal/parents`                                          |
+| **Parent Detail**       | View parent details + children list                  | `GET /qseal/parents/{id}` + `GET /qseal/parents/{id}/children` |
+| **Create Child QSeal**  | Form to create a child under a parent                | `POST /qseal/parents/{id}/children`                            |
+| **Map Children (Bulk)** | Bulk-attach existing unattached children to a parent | `POST /qseal/parents/{id}/map`                                 |
+| **Scan History**        | View scan audit trail for QSeal codes                | `GET /qseal/history`                                           |
+| **Label Download**      | Download/print labels for all children               | `GET /qseal/parents/{id}/labels`                               |
 
 ---
 
@@ -41,6 +40,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Endpoint:** `GET /qseal/parents?page=1&page_size=20&qseal_type=pallet`
 
 **Response:**
+
 ```json
 {
   "nodes": [
@@ -82,6 +82,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 | Actions | — | View, Add Child, Labels, Map |
 
 **Filter Controls:**
+
 - Dropdown for `qseal_type`: All / Shipper / Pallet / Container
 
 ---
@@ -91,6 +92,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Endpoint:** `POST /qseal/parents`
 
 **Request Body:**
+
 ```json
 {
   "name": "Pallet-001",
@@ -120,6 +122,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Response:** Same as list item above plus `children_count`.
 
 **UI Layout:**
+
 ```
 ┌─────────────────────────────────────────────┐
 │ ← Back to QSeal Dashboard                    │
@@ -150,6 +153,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Endpoint:** `POST /qseal/parents/{parent_id}/children`
 
 **Request Body:**
+
 ```json
 {
   "name": "Box-001",
@@ -160,6 +164,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 ```
 
 **Capacity Validation (Frontend):**
+
 - Before showing the "Add Child" form, check `children_count < capacity`
 - If at capacity, disable the button and show: `"Parent is full (50/50)"`
 - The API also enforces this and returns 422 if violated
@@ -175,17 +180,15 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Use Case:** When you have existing unattached QSeal nodes and want to bulk-attach them to a parent.
 
 **Request Body:**
+
 ```json
 {
-  "child_ids": [
-    "uuid-1",
-    "uuid-2",
-    "uuid-3"
-  ]
+  "child_ids": ["uuid-1", "uuid-2", "uuid-3"]
 }
 ```
 
 **UI Flow:**
+
 1. Show a multi-select list of **unattached** nodes (call `GET /qseal/parents` and filter for nodes where `parent_id` is not shown but they aren't root nodes — or provide a dedicated endpoint)
 2. User selects checkboxes
 3. On submit, send `child_ids` array
@@ -200,6 +203,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Endpoint:** `GET /qseal/history?serial_number=QSL7A3B2C1D&page=1&page_size=50`
 
 **Response:**
+
 ```json
 {
   "events": [
@@ -215,7 +219,14 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
       "country": "IN"
     }
   ],
-  "pagination": { "page": 1, "page_size": 50, "total_items": 120, "total_pages": 3, "has_next": true, "has_prev": false }
+  "pagination": {
+    "page": 1,
+    "page_size": 50,
+    "total_items": 120,
+    "total_pages": 3,
+    "has_next": true,
+    "has_prev": false
+  }
 }
 ```
 
@@ -234,6 +245,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 **Endpoint:** `GET /qseal/parents/{parent_id}/labels`
 
 **Response:**
+
 ```json
 {
   "parent_id": "uuid",
@@ -252,6 +264,7 @@ This guide covers the **Dashboard UI** flows for managing QSeal nodes.
 ```
 
 **UI Action:**
+
 - "Download Labels" button on the Parent Detail page
 - Returns all children (up to 10,000) without pagination
 - Frontend can render as a printable label sheet or export to CSV/PDF
@@ -275,11 +288,11 @@ flowchart TD
 
 ## 5. Error Handling
 
-| HTTP Status | Scenario | UI Action |
-|-------------|----------|-----------|
-| 404 | Node not found | Show "QSeal node not found" toast |
-| 422 | Capacity exceeded | Show inline error: "Parent is at full capacity (50)" |
-| 422 | Mapping exceeds capacity | Show: "Cannot map X children. Only Y slots remaining." |
+| HTTP Status | Scenario                 | UI Action                                              |
+| ----------- | ------------------------ | ------------------------------------------------------ |
+| 404         | Node not found           | Show "QSeal node not found" toast                      |
+| 422         | Capacity exceeded        | Show inline error: "Parent is at full capacity (50)"   |
+| 422         | Mapping exceeds capacity | Show: "Cannot map X children. Only Y slots remaining." |
 
 ---
 
@@ -289,7 +302,9 @@ The QSeal module can be gated behind a feature flag. Check `GET /feature-flags/e
 
 ```typescript
 // Example frontend guard
-const { data } = await api.get('/feature-flags/evaluate', { params: { flag: 'qseal_module_enabled' } });
+const { data } = await api.get("/feature-flags/evaluate", {
+  params: { flag: "qseal_module_enabled" },
+});
 if (data.enabled) {
   // Show QSeal in sidebar
 }

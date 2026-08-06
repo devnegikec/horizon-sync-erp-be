@@ -40,6 +40,10 @@ class QSealParameters(Base):
     batch_size = Column(Integer, nullable=True)
     qseal_settings = Column(Boolean, default=False)
     qseal_cascade = Column(Boolean, default=False)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("qseal_tracks.id"), nullable=True)
+    parent_app_id = Column(
+        UUID(as_uuid=True), ForeignKey("qseal_tracks.id"), nullable=True
+    )
     extra_data = Column(JSONB, nullable=True)
     created_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

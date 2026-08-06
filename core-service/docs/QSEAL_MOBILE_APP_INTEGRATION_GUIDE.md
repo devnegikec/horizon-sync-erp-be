@@ -1,7 +1,6 @@
 # QSeal — Mobile App Integration Guide
 
-> **Base URL:** `{API_BASE}/qseal`
-> **Auth:** The `/scan` endpoint is public (no auth). All other endpoints require Bearer token.
+> **Base URL:** `{API_BASE}/qseal` > **Auth:** The `/scan` endpoint is public (no auth). All other endpoints require Bearer token.
 
 ---
 
@@ -14,25 +13,28 @@ The QSeal module allows mobile app users to **scan QSeal codes** and **cascade (
 ## 2. Three Mobile Flows
 
 ### Flow 1: Scan a QSeal Code (Verification)
+
 Scan a QSeal QR → validate it → view its details and hierarchy.
 
 ### Flow 2: Cascade (Link) Child to Parent
+
 Scan a parent QSeal → scan child QSeals → link them together.
 
 ### Flow 3: View Cascade History
+
 View all QSeal codes that have been cascaded.
 
 ---
 
 ## 3. API Endpoints Used by Mobile App
 
-| Endpoint | Method | Auth | Purpose |
-|----------|--------|------|---------|
-| `/qseal/scan` | `POST` | ❌ Public | Record a QSeal scan + get node details |
-| `/qseal/parents/{id}/children` | `GET` | ✅ | List children already linked to a parent |
-| `/qseal/parents/{id}/map` | `POST` | ✅ | Link child QSeals to a parent (cascade) |
-| `/qseal/parents/{id}` | `GET` | ✅ | Get details of a specific QSeal node |
-| `/qseal/history` | `GET` | ✅ | View cascade history |
+| Endpoint                       | Method | Auth      | Purpose                                  |
+| ------------------------------ | ------ | --------- | ---------------------------------------- |
+| `/qseal/scan`                  | `POST` | ❌ Public | Record a QSeal scan + get node details   |
+| `/qseal/parents/{id}/children` | `GET`  | ✅        | List children already linked to a parent |
+| `/qseal/parents/{id}/map`      | `POST` | ✅        | Link child QSeals to a parent (cascade)  |
+| `/qseal/parents/{id}`          | `GET`  | ✅        | Get details of a specific QSeal node     |
+| `/qseal/history`               | `GET`  | ✅        | View cascade history                     |
 
 ---
 
@@ -96,6 +98,7 @@ Content-Type: application/json
 ```
 
 **Key fields to display:**
+
 - `name` — Human-readable label
 - `qseal_type` — Badge (Shipper/Pallet/Container)
 - `serial_number` — Unique ID
@@ -113,6 +116,7 @@ This is the core mobile workflow. A warehouse worker scans a **parent QSeal** (e
 Scan the parent QR → call `POST /qseal/scan` → get parent details.
 
 **Pre-checks before allowing cascade:**
+
 - `parent.capacity` must be available: `children_count < capacity`
 - `parent.app_cascade_map` must be `false` (already cascaded parents cannot be re-cascaded)
 
@@ -179,6 +183,7 @@ Authorization: Bearer {token}
 ```
 
 **Response:**
+
 ```json
 {
   "parent_id": "uuid-parent",
@@ -188,6 +193,7 @@ Authorization: Bearer {token}
 ```
 
 **Success UI:**
+
 ```
 ┌──────────────────────────┐
 │   ✅ Cascade Complete     │
@@ -209,6 +215,7 @@ Authorization: Bearer {token}
 ```
 
 **Response:**
+
 ```json
 {
   "events": [
@@ -222,11 +229,19 @@ Authorization: Bearer {token}
       "country": "IN"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total_items": 150, "total_pages": 8, "has_next": true, "has_prev": false }
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 150,
+    "total_pages": 8,
+    "has_next": true,
+    "has_prev": false
+  }
 }
 ```
 
 **Mobile UI:**
+
 ```
 ┌──────────────────────────────────┐
 │  Cascade History                 │
@@ -274,15 +289,15 @@ stateDiagram-v2
 
 ## 8. Error Handling for Mobile
 
-| Scenario | API Response | Mobile Action |
-|----------|-------------|---------------|
-| Invalid serial number | 404 | Show "QSeal not found" + retry option |
-| Parent at full capacity | 422 | Show "Parent is full (50/50)" + disable cascade button |
-| Already cascaded | 422 (via app_cascade_map check) | Show "Already cascaded" message |
-| Child already attached to another parent | Child has `parent_id` | Show "This QSeal is already linked to another parent" |
-| Wrong child type for parent | Business logic check | Show "Box cannot be linked to a Container. Use a Pallet." |
-| Map exceeds capacity | 422 | Show "Cannot add X children. Only Y slots remaining." |
-| Network error | — | Show "Connection error. Retry?" with retry button |
+| Scenario                                 | API Response                    | Mobile Action                                             |
+| ---------------------------------------- | ------------------------------- | --------------------------------------------------------- |
+| Invalid serial number                    | 404                             | Show "QSeal not found" + retry option                     |
+| Parent at full capacity                  | 422                             | Show "Parent is full (50/50)" + disable cascade button    |
+| Already cascaded                         | 422 (via app_cascade_map check) | Show "Already cascaded" message                           |
+| Child already attached to another parent | Child has `parent_id`           | Show "This QSeal is already linked to another parent"     |
+| Wrong child type for parent              | Business logic check            | Show "Box cannot be linked to a Container. Use a Pallet." |
+| Map exceeds capacity                     | 422                             | Show "Cannot add X children. Only Y slots remaining."     |
+| Network error                            | —                               | Show "Connection error. Retry?" with retry button         |
 
 ---
 
@@ -299,11 +314,11 @@ For warehouse environments with poor connectivity:
 
 ## 10. Required App Permissions
 
-| Permission | Purpose |
-|-----------|---------|
-| Camera | Scan QSeal QR codes |
+| Permission          | Purpose                              |
+| ------------------- | ------------------------------------ |
+| Camera              | Scan QSeal QR codes                  |
 | Location (optional) | Send lat/lng with scan for analytics |
-| Internet | API calls |
+| Internet            | API calls                            |
 
 ---
 
