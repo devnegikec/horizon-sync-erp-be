@@ -45,7 +45,7 @@ def create_parent(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.create_parent(data, org_id)
 
 
@@ -63,7 +63,7 @@ def list_parents(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_parents(org_id, page, page_size, qseal_type)
 
 
@@ -77,7 +77,7 @@ def get_parent(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_parent(node_id, org_id)
 
 
@@ -96,7 +96,7 @@ def create_child(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.create_child(parent_id, data, org_id)
 
 
@@ -112,7 +112,7 @@ def list_children(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_children(parent_id, org_id, page, page_size)
 
 
@@ -130,7 +130,7 @@ def map_children(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.map_children(parent_id, req, org_id)
 
 
@@ -169,7 +169,7 @@ def get_scan_history(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_scan_history(org_id, serial_number, page, page_size)
 
 
@@ -186,7 +186,7 @@ def get_labels(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_labels(parent_id, org_id)
 
 
@@ -204,7 +204,7 @@ def get_block_parents(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_parents_by_block(block_id, org_id, page, page_size)
 
 
@@ -217,7 +217,7 @@ def download_block_parents(
     service: QSealService = Depends(get_service),
     current_user: dict = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     excel_bytes, filename = service.get_parents_excel(block_id, org_id)
     return StreamingResponse(
         BytesIO(excel_bytes),

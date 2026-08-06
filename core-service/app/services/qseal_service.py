@@ -343,16 +343,41 @@ class QSealService:
     ) -> tuple[bytes, str]:
         """Generate an Excel file with parent QSeal QR codes for a block.
 
+        Includes embedded QR code images for mobile app scanning.
         Returns (excel_bytes, filename).
         """
         from io import BytesIO
 
+        import qrcode
         from openpyxl import Workbook
+        from openpyxl.drawing.image import Image as XLImage
         from openpyxl.styles import Alignment, Font
         from openpyxl.utils import get_column_letter
 
+        from app.config import settings
         from app.models.qr_block import QRBlock
         from app.models.qseal import QSealParameters, QSealTrack
+
+        def _embed_qr(ws, url: str, row: int, col: int, size: int = 150) -> None:
+            if not url:
+                return
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=10,
+                border=2,
+            )
+            qr.add_data(url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            xl_img = XLImage(buf)
+            xl_img.width = size
+            xl_img.height = size
+            cell_ref = f"{get_column_letter(col)}{row}"
+            ws.add_image(xl_img, cell_ref)
 
         # Validate block
         block = (
@@ -398,51 +423,50 @@ class QSealService:
             .all()
         )
 
-        # Build Excel
+        # Build Excel with embedded QR codes
         wb = Workbook()
         ws = wb.active
         ws.title = "QSeal Parent QR Codes"
 
-        # Headers
-        headers = [
-            "Parent Serial",
-            "Name",
-            "Type",
-            "Capacity",
-            "QR Code Link",
-            "Children Count",
-        ]
+        # Headers: QR URL, QR Code image, Serial, Name, Capacity
+        headers = ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
         bold_font = Font(bold=True)
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
             cell.font = bold_font
             cell.alignment = Alignment(horizontal="center")
 
+        # Column widths
+        ws.column_dimensions[get_column_letter(1)].width = 55  # QR URL
+        ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
+        ws.column_dimensions[get_column_letter(3)].width = 18  # Serial
+        ws.column_dimensions[get_column_letter(4)].width = 25  # Name
+        ws.column_dimensions[get_column_letter(5)].width = 15  # Capacity
+
+        qr_size = 150
+        base_url = settings.qr_base_url or f"https://{settings.qr_domain}"
+
         for row_idx, parent in enumerate(parents, 2):
-            children_count = self.repo.count_children(parent.id)
-            row_data = [
-                parent.serial_number or "",
-                parent.name or "",
-                parent.qseal_type or "",
-                parent.capacity or 0,
-                parent.qseal_code_link or "",
-                children_count,
-            ]
-            for col_idx, value in enumerate(row_data, 1):
-                ws.cell(row=row_idx, column=col_idx, value=value)
+            serial = parent.serial_number or ""
+            qr_url = f"{base_url}/qseal/{serial}" if serial else ""
 
-        # Auto-adjust column widths
-        for col_idx in range(1, len(headers) + 1):
-            ws.column_dimensions[get_column_letter(col_idx)].width = 25
+            # Row height for QR image
+            ws.row_dimensions[row_idx].height = 115
 
-        # Save to bytes
+            ws.cell(row=row_idx, column=1, value=qr_url)  # QR URL
+            _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
+            ws.cell(row=row_idx, column=3, value=serial)  # Serial Number
+            ws.cell(row=row_idx, column=4, value=parent.name or "")
+            ws.cell(row=row_idx, column=5, value=parent.capacity or 0)
+
+        # Save
         buf = BytesIO()
         wb.save(buf)
         buf.seek(0)
 
         filename = f"qseal_parents_{block.batch}.xlsx"
         logger.info(
-            "[QSEAL] parent excel generated block=%s parents=%d",
+            "[QSEAL] parent excel with QR images generated block=%s parents=%d",
             block_id,
             len(parents),
         )
