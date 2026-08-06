@@ -107,4 +107,12 @@ class QRProductSettingService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="QR product setting not found.",
             )
+        if self.repo.is_referenced_by_product(setting_id, organization_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Setting is referenced by a product and cannot be deleted. "
+                    "Reassign the product before deleting this setting."
+                ),
+            )
         self.repo.soft_delete(setting, user_id)

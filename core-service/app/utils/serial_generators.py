@@ -2,6 +2,7 @@
 Serial number generation utilities and QR signing/URL helpers.
 
 Provides:
+- R8DAN: 8-char random alphanumeric (uppercase + digits)
 - R6DAN: 6-char random alphanumeric (uppercase + digits)
 - R4DAN: 4-char random alphanumeric (uppercase + digits)
 - S8DN: zero-padded 8-digit sequential
@@ -12,22 +13,21 @@ Provides:
 Requirements: 7.1, 7.2, 7.3, 7.4
 """
 
+import logging
+import re
 import secrets
 import string
 import time
 from collections.abc import Generator
-import logging
-import re
 from urllib.parse import quote
 
 import httpx
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException, status
 
+logger = logging.getLogger(__name__)
 SERIAL_PATTERN = re.compile(r"/s/([^/?]+)")
 
-from cryptography.hazmat.primitives.asymmetric import ec
-
-logger = logging.getLogger(__name__)
 # Character set for random alphanumeric generators
 _ALPHANUMERIC = string.ascii_uppercase + string.digits
 
@@ -35,6 +35,11 @@ _ALPHANUMERIC = string.ascii_uppercase + string.digits
 def generate_r6dan() -> str:
     """Generate a 6-character random alphanumeric serial (uppercase letters + digits)."""
     return "".join(secrets.choice(_ALPHANUMERIC) for _ in range(6))
+
+
+def generate_r8dan() -> str:
+    """Generate an 8-character random alphanumeric serial."""
+    return "".join(secrets.choice(_ALPHANUMERIC) for _ in range(8))
 
 
 def generate_r4dan() -> str:
@@ -90,7 +95,6 @@ def sign_qr_item(
 
 
 def build_qr_url(
-    org_short_code: str,
     domain: str,
     gtin: str,
     serial_number: str,
@@ -114,16 +118,14 @@ def build_qr_url(
         URL in the format:
         ``{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
         or when base_url is empty:
-        ``https://{org_short_code}.{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+        ``https://{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
     """
     if base_url:
         return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
     return (
-        f"https://{org_short_code}.{domain}"
+        f"https://{domain}"
         f"/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
     )
-
-
 
 
 def build_long_qr_url(
@@ -156,7 +158,7 @@ async def resolve_serial_from_short_url(short_url: str) -> str:
     """
     try:
         async with httpx.AsyncClient(
-            follow_redirects=False,   
+            follow_redirects=False,
             timeout=10.0,
         ) as client:
             response = await client.get(short_url)

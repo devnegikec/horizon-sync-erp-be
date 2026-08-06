@@ -299,6 +299,7 @@ class QRActivationService:
                 product_counter[item.product_id] = product_counter.get(item.product_id, 0) + 1
                 item.qr_deactive = False
                 item.qr_deactive_unit = False
+                item.qr_active = True
 
         # 6. VALIDATION COMPLETE - RAISE BEFORE COMMIT
         if invalid_serials:

@@ -122,6 +122,9 @@ services:
       IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM_NAME: search:events
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_QR_QUEUE_NAME: qr-generation
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -132,6 +135,13 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
       BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_REGION: ${AWS_S3_REGION:-ap-south-1}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       - "8001:8001"
       - "5679:5679"
@@ -159,6 +169,46 @@ services:
         echo 'Starting Core Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m uvicorn app.main:app --host 0.0.0.0 --port 8001
       "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  qr-worker:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_qr_worker
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_QR_QUEUE_NAME: qr-generation
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_REGION: ${AWS_S3_REGION:-ap-south-1}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_started
+    volumes:
+      - ./core-service/app:/app/app
+    command: >
+      celery -A app.celery_app:celery_app worker
+      --loglevel=${LOG_LEVEL:-INFO}
+      --queues=qr-generation
+      --concurrency=${QR_WORKER_CONCURRENCY:-2}
     networks:
       - horizon_network
     restart: unless-stopped

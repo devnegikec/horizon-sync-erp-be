@@ -224,4 +224,5 @@ class ProductItemRepository:
         """Mark item as activated"""
         item.qr_deactive = False
         item.qr_deactive_unit = False
+        item.qr_active = True
         self.db.flush()

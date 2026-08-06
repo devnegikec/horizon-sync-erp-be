@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Redis (for event publishing to search-service)
-    redis_url: str = "redis://redis:6379/0"
+    redis_url: str = "redis://localhost:6379/0"
     redis_stream_name: str = "search:events"
 
     # Redis — 3D Warehouse real-time events (separate DB index for isolation)
@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # Bin reservation global TTL (seconds); configurable via env var
     bin_reservation_ttl_seconds: int = 300  # 5 minutes default (FR-CW-02)
 
+    # Durable QR Block generation worker
+    celery_broker_url: str = ""
+    celery_qr_queue_name: str = "qr-generation"
+    celery_visibility_timeout_seconds: int = 7200
+
     # Audit Trail
     audit_async_enabled: bool = False
     audit_flush_interval: float = 1.0
@@ -72,11 +77,27 @@ class Settings(BaseSettings):
     # Brand Key Encryption (ECDSA private key encryption at rest)
     brand_key_encryption_secret: str = ""
 
-    # QR Domain & GCS
-    qr_domain: str = "verify.example.com"
-    qr_base_url: str = ""  # Override full base URL (scheme+host). If set, used instead of https://{org_short_code}.{qr_domain}
+    # QR Domain & object storage
+    qr_domain: str = "horizon.ciphercode.ai"
+    qr_base_url: str = ""
+    qr_shortener_enabled: bool = True
+    qr_shortener_url: str = "https://de5be4rdmboho.cloudfront.net/prod/"
+    qr_shortener_cdn_prefix: str = "bwqr.me"
+    qr_shortener_timeout_seconds: float = 10.0
+    qr_shortener_max_retries: int = 3
+    aws_s3_bucket: str = ""
+    aws_s3_region: str = "ap-south-1"
+    aws_s3_endpoint_url: str = ""
+    aws_s3_presigned_expiry_seconds: int = 300
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_session_token: str = ""
     gcs_bucket: str = ""
     gcs_credentials_path: str = ""  # Path to service account JSON; empty = ADC
+    product_image_upload_dir: str = os.path.join(
+        BASE_DIR, "uploads", "product-images"
+    )
+    product_image_max_bytes: int = 5 * 1024 * 1024
 
     # Upload directory for local file storage (e.g. Railway volume mount)
     # Defaults to <project_root>/uploads/landing-pages when empty

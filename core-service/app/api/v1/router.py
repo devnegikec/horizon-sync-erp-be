@@ -51,6 +51,7 @@ from app.api.v1.endpoints import (
     payments,
     pick_lists,
     public_marketing,
+    public_qr,
     purchase_orders,
     purchase_receipts,
     put_away,
@@ -67,6 +68,7 @@ from app.api.v1.endpoints import (
     scan_events,
     serial_numbers,
     short_urls,
+    sku_endpoint,
     smart_picking,
     stock_entries,
     stock_entry_bulk_import,
@@ -376,6 +378,13 @@ api_router.include_router(
     tags=["QR Products"],
 )
 
+# SKU Management module
+api_router.include_router(
+    sku_endpoint.router,
+    prefix="/sku",
+    tags=["SKU Management"],
+)
+
 # Landing Page Config (nested under /products/{productId}/landing-page)
 api_router.include_router(
     landing_pages.router,
@@ -465,6 +474,12 @@ api_router.include_router(
     public_marketing.router,
     prefix="/public",
     tags=["Public"],
+)
+
+api_router.include_router(
+    public_qr.router,
+    prefix="/public/qr",
+    tags=["Public QR Verification"],
 )
 
 
