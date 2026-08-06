@@ -46,6 +46,8 @@ class QRBlock(Base):
     qr_image = Column(Boolean, default=False)
     manufacture_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
+    master_pack_enabled = Column(Boolean, default=False)
+    master_pack_size = Column(Integer, nullable=True)
     gcs_url = Column(Text, nullable=True)
     download_url = Column(Text, nullable=True)
     extra_data = Column(JSONB, nullable=True)
