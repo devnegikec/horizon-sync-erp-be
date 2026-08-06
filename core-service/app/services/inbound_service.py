@@ -722,10 +722,56 @@ class InboundService:
         items: list,
         organization_id: UUID,
     ):
-        """Generate a receiving slip from session items grouped by SKU+batch."""
+        """Generate a receiving slip from session items grouped by SKU+batch.
+
+        Enforces QSeal parent capacity — rejects if scanned items exceed capacity.
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
         from app.services.document_numbering_service import DocumentNumberingService
 
-        # Generate unique slip number
+        # ── QSeal capacity enforcement ────────────────────────────────────────
+        all_batches = [item.batch_number for item in items if item.batch_number]
+        if all_batches:
+            params = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.serial_number.in_(all_batches),
+                    QSealParameters.organization_id == organization_id,
+                )
+                .all()
+            )
+            param_by_serial = {p.serial_number: p for p in params if p.parent_id}
+
+            if param_by_serial:
+                parent_ids = list({p.parent_id for p in param_by_serial.values()})
+                tracks = (
+                    self.db.query(QSealTrack)
+                    .filter(QSealTrack.id.in_(parent_ids))
+                    .all()
+                )
+                track_by_id = {t.id: t for t in tracks}
+
+                # Count items per parent
+                parent_counts: dict = {}
+                for item in items:
+                    qsp = param_by_serial.get(item.batch_number)
+                    if qsp and qsp.parent_id:
+                        parent_counts[qsp.parent_id] = (
+                            parent_counts.get(qsp.parent_id, 0) + 1
+                        )
+
+                for parent_id, count in parent_counts.items():
+                    track = track_by_id.get(parent_id)
+                    if track and track.capacity and count > track.capacity:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                f"QSeal parent '{track.name}' ({track.serial_number}) "
+                                f"capacity exceeded: {count} items scanned, max {track.capacity}"
+                            ),
+                        )
+
+        # ── Generate unique slip number ───────────────────────────────────────
         slip_number = DocumentNumberingService(self.db).get_next_number(
             organization_id, "receiving_slip"
         )
@@ -791,21 +837,108 @@ class InboundService:
         }
 
     def _slip_to_dict(self, slip) -> dict:
-        """Convert a ReceivingSlip model to a dictionary."""
-        slip_items = []
-        if slip.items:
-            for item in slip.items:
-                slip_items.append(
-                    {
-                        "id": str(item.id),
-                        "sku": item.sku,
-                        "batch_number": item.batch_number,
-                        "quantity": item.quantity,
-                        "box_count": item.box_count,
-                        "flag": item.flag,
-                        "notes": item.notes,
-                    }
+        """Convert a ReceivingSlip model to a dictionary, enriched with QSeal parent/child data.
+
+        Items sharing the same QSeal parent are grouped together.
+        Children are shown once per parent group (not duplicated per item).
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        if not slip.items:
+            return self._slip_base_dict(slip, [])
+
+        # Pre-load all QSeal data for performance
+        all_batches = [item.batch_number for item in slip.items if item.batch_number]
+
+        qseal_params_map = {}
+        if all_batches:
+            params = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.serial_number.in_(all_batches),
+                    QSealParameters.organization_id == slip.organization_id,
                 )
+                .all()
+            )
+            for p in params:
+                qseal_params_map[p.serial_number] = p
+
+        # Pre-load parent QSealTracks
+        parent_ids = list(
+            {p.parent_id for p in qseal_params_map.values() if p.parent_id}
+        )
+        qseal_track_map = {}
+        if parent_ids:
+            tracks = (
+                self.db.query(QSealTrack).filter(QSealTrack.id.in_(parent_ids)).all()
+            )
+            for t in tracks:
+                qseal_track_map[t.id] = t
+
+        # Pre-load children per parent
+        parent_children_map: dict = {}
+        for pid in parent_ids:
+            children = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.parent_id == pid,
+                    QSealParameters.organization_id == slip.organization_id,
+                )
+                .all()
+            )
+            parent_children_map[pid] = [
+                {
+                    "id": str(c.id),
+                    "serial_number": c.serial_number,
+                    "dispatch_batch": c.dispatch_batch,
+                    "manufacturing_date": str(c.manufacturing_date)
+                    if c.manufacturing_date
+                    else None,
+                    "expiry_date": str(c.expiry_date) if c.expiry_date else None,
+                }
+                for c in children
+            ]
+
+        # Group items by QSeal parent (items without parent go under None key)
+        groups: dict = {}
+        for item in slip.items:
+            qsp = qseal_params_map.get(item.batch_number)
+            parent_key = str(qsp.parent_id) if (qsp and qsp.parent_id) else "__none__"
+
+            if parent_key not in groups:
+                parent_info = None
+                children_list = []
+                if qsp and qsp.parent_id and qsp.parent_id in qseal_track_map:
+                    parent = qseal_track_map[qsp.parent_id]
+                    parent_info = {
+                        "id": str(parent.id),
+                        "serial_number": parent.serial_number,
+                        "name": parent.name,
+                        "qseal_type": parent.qseal_type,
+                        "capacity": parent.capacity,
+                    }
+                    children_list = parent_children_map.get(qsp.parent_id, [])
+
+                groups[parent_key] = {
+                    "parent_qseal": parent_info,
+                    "children": children_list,
+                    "items": [],
+                }
+
+            groups[parent_key]["items"].append(
+                {
+                    "id": str(item.id),
+                    "sku": item.sku,
+                    "batch_number": item.batch_number,
+                    "quantity": item.quantity,
+                    "box_count": item.box_count,
+                    "flag": item.flag,
+                    "notes": item.notes,
+                }
+            )
+
+        # Build grouped slip items for response
+        grouped_items = list(groups.values())
 
         return {
             "id": str(slip.id),
@@ -818,7 +951,7 @@ class InboundService:
             "total_items": slip.total_items,
             "rejection_reason": slip.rejection_reason,
             "notes": slip.notes,
-            "items": slip_items,
+            "groups": grouped_items,
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }

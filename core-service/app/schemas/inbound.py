@@ -128,8 +128,28 @@ class SessionSummary(BaseModel):
     items: list[SKUBreakdown]
 
 
-class ReceivingSlipItemResponse(BaseModel):
-    """Response schema for a receiving slip line item."""
+class QSealChildItem(BaseModel):
+    """A single child unit under a QSeal parent."""
+
+    id: str
+    serial_number: str | None = None
+    dispatch_batch: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+
+
+class QSealParentInfo(BaseModel):
+    """QSeal parent info attached to a receiving slip item."""
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class ReceivingSlipItemData(BaseModel):
+    """Individual line item inside a QSeal group."""
 
     id: str
     sku: str
@@ -138,6 +158,14 @@ class ReceivingSlipItemResponse(BaseModel):
     box_count: int
     flag: str
     notes: str | None = None
+
+
+class ReceivingSlipItemGroup(BaseModel):
+    """A group of receiving slip items under the same QSeal parent."""
+
+    parent_qseal: QSealParentInfo | None = None
+    children: list[QSealChildItem] = []
+    items: list[ReceivingSlipItemData] = []
 
 
 class ReceivingSlipResponse(BaseModel):
@@ -153,7 +181,7 @@ class ReceivingSlipResponse(BaseModel):
     total_items: int
     rejection_reason: str | None = None
     notes: str | None = None
-    items: list[ReceivingSlipItemResponse]
+    groups: list[ReceivingSlipItemGroup] = []
     created_at: str | None = None
     updated_at: str | None = None
 
