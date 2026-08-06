@@ -842,6 +842,7 @@ class InboundService:
         Items sharing the same QSeal parent are grouped together.
         Children are shown once per parent group (not duplicated per item).
         """
+        from app.models.qr_product import QRProduct
         from app.models.qseal import QSealParameters, QSealTrack
 
         if not slip.items:
@@ -851,6 +852,7 @@ class InboundService:
         all_batches = [item.batch_number for item in slip.items if item.batch_number]
 
         qseal_params_map = {}
+        product_ids = set()
         if all_batches:
             params = (
                 self.db.query(QSealParameters)
@@ -862,6 +864,17 @@ class InboundService:
             )
             for p in params:
                 qseal_params_map[p.serial_number] = p
+                if p.product_id:
+                    product_ids.add(p.product_id)
+
+        # Pre-load products for names
+        product_map = {}
+        if product_ids:
+            products = (
+                self.db.query(QRProduct).filter(QRProduct.id.in_(product_ids)).all()
+            )
+            for prod in products:
+                product_map[prod.id] = prod.name
 
         # Pre-load parent QSealTracks
         parent_ids = list(
@@ -899,7 +912,16 @@ class InboundService:
                 for c in children
             ]
 
-        # Group items by QSeal parent (items without parent go under None key)
+        # Build lookup: serial_number → child detail (for merging into items)
+        child_detail_map = {}
+        for pid, children in parent_children_map.items():
+            for c in children:
+                child_detail_map[c["serial_number"]] = {
+                    "manufacturing_date": c.get("manufacturing_date"),
+                    "expiry_date": c.get("expiry_date"),
+                }
+
+        # Group items by QSeal parent
         groups: dict = {}
         for item in slip.items:
             qsp = qseal_params_map.get(item.batch_number)
@@ -907,7 +929,6 @@ class InboundService:
 
             if parent_key not in groups:
                 parent_info = None
-                children_list = []
                 if qsp and qsp.parent_id and qsp.parent_id in qseal_track_map:
                     parent = qseal_track_map[qsp.parent_id]
                     parent_info = {
@@ -917,19 +938,25 @@ class InboundService:
                         "qseal_type": parent.qseal_type,
                         "capacity": parent.capacity,
                     }
-                    children_list = parent_children_map.get(qsp.parent_id, [])
 
                 groups[parent_key] = {
                     "parent_qseal": parent_info,
-                    "children": children_list,
+                    "product_name": product_map.get(qsp.product_id)
+                    if qsp and qsp.product_id
+                    else None,
                     "items": [],
                 }
 
+            # Merge ReceivingSlipItem + QSeal child detail into single item
+            child_detail = child_detail_map.get(item.batch_number, {})
             groups[parent_key]["items"].append(
                 {
                     "id": str(item.id),
+                    "serial_number": item.batch_number,
                     "sku": item.sku,
                     "batch_number": item.batch_number,
+                    "manufacturing_date": child_detail.get("manufacturing_date"),
+                    "expiry_date": child_detail.get("expiry_date"),
                     "quantity": item.quantity,
                     "box_count": item.box_count,
                     "flag": item.flag,

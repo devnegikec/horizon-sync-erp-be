@@ -128,16 +128,6 @@ class SessionSummary(BaseModel):
     items: list[SKUBreakdown]
 
 
-class QSealChildItem(BaseModel):
-    """A single child unit under a QSeal parent."""
-
-    id: str
-    serial_number: str | None = None
-    dispatch_batch: str | None = None
-    manufacturing_date: str | None = None
-    expiry_date: str | None = None
-
-
 class QSealParentInfo(BaseModel):
     """QSeal parent info attached to a receiving slip item."""
 
@@ -149,11 +139,14 @@ class QSealParentInfo(BaseModel):
 
 
 class ReceivingSlipItemData(BaseModel):
-    """Individual line item inside a QSeal group."""
+    """Individual line item inside a QSeal group — merged child detail + slip item."""
 
     id: str
+    serial_number: str | None = None
     sku: str
     batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
     quantity: int
     box_count: int
     flag: str
@@ -164,7 +157,7 @@ class ReceivingSlipItemGroup(BaseModel):
     """A group of receiving slip items under the same QSeal parent."""
 
     parent_qseal: QSealParentInfo | None = None
-    children: list[QSealChildItem] = []
+    product_name: str | None = None
     items: list[ReceivingSlipItemData] = []
 
 
