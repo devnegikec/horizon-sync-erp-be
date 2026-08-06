@@ -101,6 +101,7 @@ class QSealScanResponse(BaseModel):
     qseal_type: str | None
     name: str | None
     parent_id: UUID | None
+    parent_serial: str | None = None
     children_count: int
     message: str
 

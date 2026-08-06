@@ -98,14 +98,73 @@ class QSealRepository:
     def map_children(
         self, parent_id: UUID, child_ids: list[UUID], organization_id: UUID
     ) -> int:
-        """Attach child nodes to a parent. Returns count of successfully mapped nodes."""
+        """Attach child nodes (QSealTrack or QSealParameters) to a parent.
+
+        Handles both:
+        - QSealTrack children (other cascade nodes): updates parent_id
+        - QSealParameters children (ProductItem units): updates parent_id
+
+        Allows re-assigning already-mapped children to a new parent.
+        Returns count of successfully mapped children.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        from app.models.qseal import QSealParameters
+
         mapped = 0
         for child_id in child_ids:
+            # Try QSealTrack first
             child = self.get_by_id(child_id, organization_id)
-            if child and child.parent_id is None:  # only unattached children
+            if child:
+                if child.parent_id and child.parent_id != parent_id:
+                    logger.info(
+                        "[QSEAL] map_children re-assigning track id=%s from parent=%s to parent=%s",
+                        child_id,
+                        child.parent_id,
+                        parent_id,
+                    )
                 child.parent_id = parent_id
                 mapped += 1
+                continue
+
+            # Try QSealParameters (individual units from ProductItems)
+            child_param = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.id == child_id,
+                    QSealParameters.organization_id == organization_id,
+                )
+                .first()
+            )
+            if child_param:
+                old_parent = child_param.parent_id
+                if old_parent and old_parent != parent_id:
+                    logger.info(
+                        "[QSEAL] map_children re-assigning param id=%s serial=%s from parent=%s to parent=%s",
+                        child_id,
+                        child_param.serial_number,
+                        old_parent,
+                        parent_id,
+                    )
+                child_param.parent_id = parent_id
+                mapped += 1
+                continue
+
+            logger.warning(
+                "[QSEAL] map_children child not found id=%s org=%s",
+                child_id,
+                organization_id,
+            )
+
         self.db.commit()
+        logger.info(
+            "[QSEAL] map_children parent=%s total_requested=%d mapped=%d",
+            parent_id,
+            len(child_ids),
+            mapped,
+        )
         return mapped
 
     def generate_serial(self, prefix: str = "QSL") -> str:

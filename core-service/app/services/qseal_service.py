@@ -173,6 +173,13 @@ class QSealService:
             )
 
         mapped = self.repo.map_children(parent_id, req.child_ids, organization_id)
+        logger.info(
+            "[QSEAL] map_children parent=%s requested=%d mapped=%d ids=%s",
+            parent_id,
+            len(req.child_ids),
+            mapped,
+            req.child_ids,
+        )
         return {
             "parent_id": parent_id,
             "mapped_count": mapped,
@@ -182,14 +189,74 @@ class QSealService:
     # ── QSeal Scan ────────────────────────────────────────────────────────────
 
     def record_scan(self, req: QSealScanRequest, organization_id: UUID):
+        # 1. Try QSealTrack (parent nodes)
         node = self.repo.get_by_serial(req.serial_number, organization_id)
+        is_parent = True
+
+        # 2. Fallback: try QSealParameters (child units from ProductItems)
+        if not node:
+            from app.models.qseal import QSealParameters
+
+            child = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.serial_number == req.serial_number,
+                    QSealParameters.organization_id == organization_id,
+                )
+                .first()
+            )
+            if child:
+                is_parent = False
+                # Build a pseudo-node response with parent info
+                parent_node = None
+                parent_serial = None
+                if child.parent_id:
+                    parent_node = self.repo.get_by_id(child.parent_id, organization_id)
+                    parent_serial = parent_node.serial_number if parent_node else None
+
+                # Record scan event
+                scan_payload = {
+                    "organization_id": organization_id,
+                    "serial_number": req.serial_number,
+                    "scan_timestamp": datetime.now(UTC),
+                    "device_type": req.device_type,
+                    "os": req.os,
+                    "browser": req.browser,
+                    "ip_address": req.ip_address,
+                    "latitude": req.latitude,
+                    "longitude": req.longitude,
+                    "city": req.city,
+                    "state": req.state,
+                    "country": req.country,
+                    "extra_data": req.extra_data,
+                }
+                self.repo.record_scan(scan_payload)
+
+                logger.info(
+                    "[QSEAL] child scan recorded serial=%s org=%s parent=%s",
+                    req.serial_number,
+                    organization_id,
+                    parent_serial,
+                )
+                return {
+                    "node_id": child.id,
+                    "serial_number": child.serial_number,
+                    "qseal_type": "child_unit",
+                    "name": f"Unit {child.serial_number or ''}",
+                    "parent_id": child.parent_id,
+                    "parent_serial": parent_serial,
+                    "children_count": 0,
+                    "message": f"Child QSeal unit scanned. Parent: {parent_serial or 'none'}.",
+                }
+
+        # 3. Not found in either table
         if not node:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No QSeal node found for serial '{req.serial_number}'",
             )
 
-        # Record in qr_scan_events for unified analytics
+        # Record scan for parent node
         scan_payload = {
             "organization_id": organization_id,
             "serial_number": req.serial_number,
