@@ -836,6 +836,24 @@ class InboundService:
             else None,
         }
 
+    def _slip_base_dict(self, slip, groups: list) -> dict:
+        """Convert a ReceivingSlip to a plain dict without QSeal enrichment."""
+        return {
+            "id": str(slip.id),
+            "organization_id": str(slip.organization_id),
+            "slip_number": slip.slip_number,
+            "session_id": str(slip.session_id),
+            "warehouse_id": str(slip.warehouse_id),
+            "status": slip.status,
+            "total_boxes": slip.total_boxes,
+            "total_items": slip.total_items,
+            "rejection_reason": slip.rejection_reason,
+            "notes": slip.notes,
+            "groups": groups,
+            "created_at": slip.created_at.isoformat() if slip.created_at else None,
+            "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
+        }
+
     def _slip_to_dict(self, slip) -> dict:
         """Convert a ReceivingSlip model to a dictionary, enriched with QSeal parent/child data.
 
