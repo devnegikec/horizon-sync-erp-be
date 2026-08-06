@@ -17,13 +17,24 @@ import os
 import sys
 import uuid
 from datetime import datetime
+from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-# Database connection settings
-IDENTITY_DATABASE_URL = os.getenv("IDENTITY_DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/identity_db")
-CORE_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://horizon_user:horizon_pass@localhost:5432/core_db")
+# Load .env from core-service directory
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(_env_path)
+
+# Database connection settings from .env
+IDENTITY_DATABASE_URL = os.getenv("IDENTITY_DATABASE_URL")
+CORE_DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not IDENTITY_DATABASE_URL:
+    raise RuntimeError("IDENTITY_DATABASE_URL is not set in .env")
+if not CORE_DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set in .env")
 
 # Master Organization Configuration
 MASTER_ORG_CONFIG = {
