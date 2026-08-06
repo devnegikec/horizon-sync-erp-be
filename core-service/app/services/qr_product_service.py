@@ -516,6 +516,10 @@ class QRProductService:
                     )
                     item_dict.setdefault("extra_data", {})
                     item_dict["extra_data"]["covert_url"] = covert_url
+            else:
+                # No brand/key — still generate a URL for Excel download
+                base = settings.qr_base_url or f"https://{settings.qr_domain}"
+                item_dict["token_id"] = f"{base}/g/{gtin}/s/{serial}"
 
             items.append(item_dict)
 
@@ -697,7 +701,12 @@ class QRProductService:
         rows = [
             {
                 "serial": item.serial_number,
-                "short_url": item.token_id or "",
+                "short_url": item.token_id
+                or (
+                    f"{settings.qr_base_url or 'https://' + settings.qr_domain}/g/{product.gtin or ''}/s/{item.serial_number}"
+                    if product and item.serial_number
+                    else ""
+                ),
                 "secret_code": item.secrete_code or "",
                 "overt_url": (item.extra_data or {}).get("covert_url", ""),
             }
