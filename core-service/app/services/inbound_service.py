@@ -45,6 +45,7 @@ class InboundService:
         organization_id: UUID,
         warehouse_id: UUID,
         dock_location: str | None = None,
+        asn_order_id: UUID | None = None,
     ) -> dict:
         """
         Create a new inbound scan session with status OPEN.
@@ -54,6 +55,7 @@ class InboundService:
             organization_id: Organization UUID for tenant isolation.
             warehouse_id: UUID of the warehouse where receiving occurs.
             dock_location: Optional dock location identifier.
+            asn_order_id: Optional ASN order UUID to link the session to.
 
         Returns:
             Dictionary representation of the created ScanSession.
@@ -66,6 +68,7 @@ class InboundService:
             "worker_id": worker_id,
             "warehouse_id": warehouse_id,
             "dock_location": dock_location,
+            "asn_order_id": asn_order_id,
             "status": "open",
             "total_boxes_scanned": 0,
             "started_at": datetime.now(UTC),
@@ -442,8 +445,11 @@ class InboundService:
         transitioning. Converts raw_quantity on each ScanSessionItem to
         Eaches using the associated ItemPackagingUnit.conversion_factor,
         then re-aggregates receiving_slip_items by (sku, batch_number)
-        with the converted Eaches quantities. After transitioning, triggers
-        put-away list generation via PutAwayService.
+        with the converted Eaches quantities. Rejected items are preserved
+        and excluded from put-away and ASN delivered_qty updates.
+
+        After transitioning, triggers put-away list generation via
+        PutAwayService for accepted items only.
 
         Args:
             slip_id: UUID of the receiving slip to approve.
@@ -475,6 +481,26 @@ class InboundService:
                 current_state=slip.status,
                 required_state=["pending_review"],
             )
+
+        # ------------------------------------------------------------------
+        # Step 0: Save rejected items before regeneration
+        # ------------------------------------------------------------------
+        rejected_items = []
+        for existing_item in slip.items:
+            if existing_item.flag == "rejected":
+                rejected_items.append(
+                    {
+                        "sku": existing_item.sku,
+                        "batch_number": existing_item.batch_number,
+                        "quantity": existing_item.quantity,
+                        "box_count": existing_item.box_count,
+                        "flag": "rejected",
+                        "rejection_reason": existing_item.rejection_reason,
+                        "rejected_by": existing_item.rejected_by,
+                        "rejected_at": existing_item.rejected_at,
+                        "notes": existing_item.notes,
+                    }
+                )
 
         # ------------------------------------------------------------------
         # Step 1: Fetch all ScanSessionItems for this slip's session
@@ -514,7 +540,7 @@ class InboundService:
 
         # ------------------------------------------------------------------
         # Step 3: Delete existing receiving_slip_items and recreate with
-        #         converted Eaches quantities
+        #         converted Eaches quantities (accepted) + rejected items
         # ------------------------------------------------------------------
         self.db.query(ReceivingSlipItem).filter(
             ReceivingSlipItem.slip_id == slip_id
@@ -533,6 +559,16 @@ class InboundService:
             self.slip_repo.add_item(slip_id, item_data)
             total_eaches += agg["eaches_qty"]
 
+        # Re-add rejected items (they stay in floating mode)
+        for rejected in rejected_items:
+            self.slip_repo.add_item(
+                slip_id,
+                {
+                    "organization_id": organization_id,
+                    **rejected,
+                },
+            )
+
         # Update total_items on the slip to reflect converted Eaches total
         slip.total_items = total_eaches
         self.db.flush()
@@ -544,6 +580,7 @@ class InboundService:
         self.db.refresh(updated_slip)
 
         # Trigger put-away list generation (with optional worker assignment)
+        # Only accepted items (flag='ok') are included in put-away
         from app.services.put_away_service import PutAwayService
 
         put_away_service = PutAwayService(self.db)
@@ -551,8 +588,89 @@ class InboundService:
             slip_id, organization_id, worker_id=worker_id
         )
 
+        # ------------------------------------------------------------------
+        # Step 5: Update ASN delivered_qty for accepted items
+        # ------------------------------------------------------------------
+        if slip.asn_order_id:
+            self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
+
+    # ------------------------------------------------------------------
+    # SYNC ASN DELIVERED QTY
+    # ------------------------------------------------------------------
+
+    def _sync_asn_delivered_qty(
+        self, asn_order_id: UUID, organization_id: UUID
+    ) -> None:
+        """Update delivered_qty on ASN items based on accepted receiving slips."""
+        from sqlalchemy import func
+
+        from app.models.asn_order import AsnOrder
+        from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id, AsnOrder.organization_id == organization_id
+            )
+            .first()
+        )
+        if not asn_order:
+            return
+
+        # Get all receiving slip IDs linked to this ASN
+        slip_ids_query = (
+            self.db.query(ReceivingSlip.id)
+            .filter(
+                ReceivingSlip.asn_order_id == asn_order_id,
+                ReceivingSlip.organization_id == organization_id,
+                ReceivingSlip.status.in_(["pending_putaway", "putaway_complete"]),
+            )
+            .all()
+        )
+        slip_ids = [s[0] for s in slip_ids_query]
+
+        if not slip_ids:
+            return
+
+        # Aggregate accepted qty per SKU across all slips
+        accepted_by_sku = {}
+        rows = (
+            self.db.query(
+                ReceivingSlipItem.sku,
+                func.sum(ReceivingSlipItem.quantity).label("total"),
+            )
+            .filter(
+                ReceivingSlipItem.slip_id.in_(slip_ids),
+                ReceivingSlipItem.flag == "ok",
+            )
+            .group_by(ReceivingSlipItem.sku)
+            .all()
+        )
+        for sku, total in rows:
+            accepted_by_sku[sku] = int(total) if total else 0
+
+        # Update each ASN item's delivered_qty
+        all_delivered = True
+        any_delivered = False
+        for asn_item in asn_order.items:
+            sku = asn_item.item.sku if asn_item.item else None
+            delivered = accepted_by_sku.get(sku, 0)
+            asn_item.delivered_qty = delivered
+            if delivered > 0:
+                any_delivered = True
+            if delivered < int(asn_item.qty):
+                all_delivered = False
+
+        # Update ASN status based on delivery progress
+        if all_delivered and any_delivered:
+            asn_order.status = "delivered"
+        elif any_delivered and not all_delivered:
+            asn_order.status = "partially_delivered"
+
+        self.db.commit()
 
     # ------------------------------------------------------------------
     # REJECT SLIP
@@ -713,6 +831,104 @@ class InboundService:
         }
 
     # ------------------------------------------------------------------
+    # REJECT SLIP ITEM (Item-Level)
+    # ------------------------------------------------------------------
+
+    def reject_slip_item(
+        self,
+        slip_id: UUID,
+        item_id: UUID,
+        reason: str,
+        organization_id: UUID,
+        rejected_by: UUID | None = None,
+        notes: str | None = None,
+    ) -> dict:
+        """
+        Reject an individual receiving slip line item.
+
+        The item enters "floating mode" — it is recorded on the slip but:
+        - Does NOT update stock levels
+        - Does NOT generate put-away tasks
+        - Does NOT count toward ASN delivered_qty
+
+        Args:
+            slip_id: UUID of the receiving slip.
+            item_id: UUID of the receiving slip item to reject.
+            reason: Reason for rejection.
+            organization_id: Organization UUID for tenant isolation.
+            rejected_by: UUID of the user performing the rejection.
+            notes: Optional additional notes.
+
+        Returns:
+            Dictionary representation of the rejected item.
+
+        Raises:
+            NotFoundError: If slip or item not found.
+            StateError: If slip is not in pending_review status.
+            ValidationError: If item doesn't belong to slip.
+        """
+        if not reason or not reason.strip():
+            raise ValidationError(
+                message="Rejection reason is required",
+                details=[
+                    {"field": "reason", "reason": "Rejection reason must be non-empty"}
+                ],
+            )
+
+        slip = self.slip_repo.get_by_id(slip_id, organization_id)
+        if slip is None:
+            raise NotFoundError(
+                message="Receiving slip not found",
+                entity_type="ReceivingSlip",
+                entity_id=str(slip_id),
+            )
+
+        if slip.status != "pending_review":
+            raise StateError(
+                message="Receiving slip must be in pending_review status to reject items",
+                current_state=slip.status,
+                required_state=["pending_review"],
+            )
+
+        item = self.slip_repo.get_item_by_id(item_id, organization_id)
+        if item is None:
+            raise NotFoundError(
+                message="Receiving slip item not found",
+                entity_type="ReceivingSlipItem",
+                entity_id=str(item_id),
+            )
+
+        if item.slip_id != slip_id:
+            raise ValidationError(
+                message="Item does not belong to the specified receiving slip",
+                details=[
+                    {
+                        "field": "item_id",
+                        "reason": f"Item {item_id} does not belong to slip {slip_id}",
+                    }
+                ],
+            )
+
+        updated_item = self.slip_repo.reject_item(
+            item_id, reason.strip(), rejected_by=rejected_by, notes=notes
+        )
+
+        return {
+            "id": str(updated_item.id),
+            "slip_id": str(updated_item.slip_id),
+            "sku": updated_item.sku,
+            "batch_number": updated_item.batch_number,
+            "quantity": updated_item.quantity,
+            "box_count": updated_item.box_count,
+            "flag": updated_item.flag,
+            "rejection_reason": updated_item.rejection_reason,
+            "notes": updated_item.notes,
+            "rejected_at": updated_item.rejected_at.isoformat()
+            if updated_item.rejected_at
+            else None,
+        }
+
+    # ------------------------------------------------------------------
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
 
@@ -794,6 +1010,7 @@ class InboundService:
             "slip_number": slip_number,
             "session_id": session.id,
             "warehouse_id": session.warehouse_id,
+            "asn_order_id": session.asn_order_id,
             "status": "pending_review",
             "total_boxes": total_boxes,
             "total_items": total_items,
@@ -818,6 +1035,10 @@ class InboundService:
 
     def _session_to_dict(self, session) -> dict:
         """Convert a ScanSession model to a dictionary."""
+        asn_order_no = None
+        if session.asn_order_id and hasattr(session, "asn_order") and session.asn_order:
+            asn_order_no = session.asn_order.asn_order_no
+
         return {
             "id": str(session.id),
             "organization_id": str(session.organization_id),
@@ -825,6 +1046,8 @@ class InboundService:
             "worker_id": str(session.worker_id),
             "warehouse_id": str(session.warehouse_id),
             "dock_location": session.dock_location,
+            "asn_order_id": str(session.asn_order_id) if session.asn_order_id else None,
+            "asn_order_no": asn_order_no,
             "status": session.status,
             "total_boxes_scanned": session.total_boxes_scanned or 0,
             "started_at": session.started_at.isoformat()
@@ -838,12 +1061,18 @@ class InboundService:
 
     def _slip_base_dict(self, slip, groups: list) -> dict:
         """Convert a ReceivingSlip to a plain dict without QSeal enrichment."""
+        asn_order_no = None
+        if slip.asn_order_id and hasattr(slip, "asn_order") and slip.asn_order:
+            asn_order_no = slip.asn_order.asn_order_no
+
         return {
             "id": str(slip.id),
             "organization_id": str(slip.organization_id),
             "slip_number": slip.slip_number,
             "session_id": str(slip.session_id),
             "warehouse_id": str(slip.warehouse_id),
+            "asn_order_id": str(slip.asn_order_id) if slip.asn_order_id else None,
+            "asn_order_no": asn_order_no,
             "status": slip.status,
             "total_boxes": slip.total_boxes,
             "total_items": slip.total_items,
