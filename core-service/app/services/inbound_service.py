@@ -344,6 +344,10 @@ class InboundService:
         total_boxes = len(items)
         total_quantity = sum(item.raw_quantity for item in items)
 
+        # Count distinct QSeal parent containers for true box count
+        parent_boxes = self._count_distinct_qseal_parents(items, organization_id)
+        total_boxes = parent_boxes if parent_boxes > 0 else total_boxes
+
         return {
             "session_id": str(session.id),
             "status": session.status,
@@ -571,6 +575,21 @@ class InboundService:
 
         # Update total_items on the slip to reflect converted Eaches total
         slip.total_items = total_eaches
+
+        # Recalculate total_boxes from session's scan items based on QSeal parents
+        from app.models.scan_session import ScanSessionItem
+
+        scan_items_for_boxes = (
+            self.db.query(ScanSessionItem)
+            .filter(ScanSessionItem.session_id == slip.session_id)
+            .all()
+        )
+        parent_box_count = self._count_distinct_qseal_parents(
+            scan_items_for_boxes, organization_id
+        )
+        if parent_box_count > 0:
+            slip.total_boxes = parent_box_count
+
         self.db.flush()
 
         # ------------------------------------------------------------------
@@ -1004,6 +1023,13 @@ class InboundService:
         total_boxes = len(items)
         total_items = sum(agg["quantity"] for agg in sku_batch_agg.values())
 
+        # Override total_boxes with distinct QSeal parent count
+        # Each unique master carton = 1 box, individual child items = items
+        parent_boxes = self._count_distinct_qseal_parents(items, organization_id)
+        if parent_boxes > 0:
+            total_boxes = parent_boxes
+            # total_items stays as the count of individual child items scanned
+
         # Create the receiving slip
         slip_data = {
             "organization_id": organization_id,
@@ -1082,6 +1108,57 @@ class InboundService:
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }
+
+    # ------------------------------------------------------------------
+    # COUNT DISTINCT QSEAL PARENT CONTAINERS
+    # ------------------------------------------------------------------
+
+    def _count_distinct_qseal_parents(self, items: list, organization_id: UUID) -> int:
+        """Count unique QSeal parent containers from scanned items.
+
+        Each master carton (QSeal parent) = 1 box.
+        Items without a QSeal parent are each counted as 1 box (standalone).
+        Items that share the same parent_id are grouped into 1 box.
+
+        Args:
+            items: List of ScanSessionItem objects.
+            organization_id: Organization UUID.
+
+        Returns:
+            Number of distinct QSeal parent containers.
+        """
+        from app.models.qseal import QSealParameters
+
+        batch_numbers = [item.batch_number for item in items if item.batch_number]
+        if not batch_numbers:
+            return len(items)
+
+        # Fetch QSeal parent info for all batch numbers
+        params = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.serial_number.in_(batch_numbers),
+                QSealParameters.organization_id == organization_id,
+            )
+            .all()
+        )
+        param_by_serial = {p.serial_number: p for p in params}
+
+        parent_ids: set = set()
+        standalone_count = 0
+
+        for item in items:
+            qsp = param_by_serial.get(item.batch_number)
+            if qsp and qsp.parent_id:
+                parent_ids.add(str(qsp.parent_id))
+            else:
+                standalone_count += 1
+
+        return len(parent_ids) + standalone_count
+
+    # ------------------------------------------------------------------
+    # SLIP TO DICT
+    # ------------------------------------------------------------------
 
     def _slip_to_dict(self, slip) -> dict:
         """Convert a ReceivingSlip model to a dictionary, enriched with QSeal parent/child data.
