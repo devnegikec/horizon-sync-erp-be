@@ -5,11 +5,13 @@ Revises: 065_add_stock_tables
 Create Date: 2026-08-08
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "066_link_asn_to_scan_sessions_and_receiving_slips"
 down_revision: Union[str, None] = "065_add_stock_tables"
@@ -45,10 +47,12 @@ def upgrade() -> None:
     # ── 3. Drop old flag check constraint on receiving_slip_items ───────
     # Replace the old constraint that only allows ('ok','short','damaged')
     # with one that also allows 'rejected'.
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE receiving_slip_items
         DROP CONSTRAINT IF EXISTS receiving_slip_items_flag_check
-    """)
+    """
+    )
 
     # ── 4. Add rejection_reason column to receiving_slip_items ──────────
     op.add_column(
@@ -77,11 +81,13 @@ def upgrade() -> None:
     )
 
     # ── 7. Re-create flag check constraint with extended values ─────────
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE receiving_slip_items
         ADD CONSTRAINT receiving_slip_items_flag_check
         CHECK (flag IN ('ok', 'short', 'damaged', 'rejected'))
-    """)
+    """
+    )
 
     # ── 8. Add index on asn_order_id in receiving_slip_items (for mismatch queries) ──
     # Already covered by FK index on receiving_slips.asn_order_id;
@@ -90,16 +96,20 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Drop flag constraint, revert columns
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE receiving_slip_items
         DROP CONSTRAINT IF EXISTS receiving_slip_items_flag_check
-    """)
+    """
+    )
 
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE receiving_slip_items
         ADD CONSTRAINT receiving_slip_items_flag_check
         CHECK (flag IN ('ok', 'short', 'damaged'))
-    """)
+    """
+    )
 
     op.drop_column("receiving_slip_items", "rejected_at")
     op.drop_column("receiving_slip_items", "rejected_by")

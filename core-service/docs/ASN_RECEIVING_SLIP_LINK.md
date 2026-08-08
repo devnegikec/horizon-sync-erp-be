@@ -2,10 +2,10 @@
 
 Your system currently has these independent entities:
 
-| Entity | Table | Purpose |
-|--------|-------|---------|
-| `AsnOrder` / `AsnOrderItem` | `asn_orders`, `asn_order_items` | Pre-notification of inter-warehouse transfers. Items already have `delivered_qty`. |
-| `ScanSession` / `ScanSessionItem` | `scan_sessions`, `scan_session_items` | QR-based dock scanning sessions |
+| Entity                                | Table                                     | Purpose                                                                                      |
+| ------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `AsnOrder` / `AsnOrderItem`           | `asn_orders`, `asn_order_items`           | Pre-notification of inter-warehouse transfers. Items already have `delivered_qty`.           |
+| `ScanSession` / `ScanSessionItem`     | `scan_sessions`, `scan_session_items`     | QR-based dock scanning sessions                                                              |
 | `ReceivingSlip` / `ReceivingSlipItem` | `receiving_slips`, `receiving_slip_items` | Generated from closed scan sessions. Items have a `flag` field (default `"ok"`) and `notes`. |
 
 **Key gap**: There is NO foreign key link between `receiving_slips` and `asn_orders`. These are two independent workflows.
@@ -43,6 +43,7 @@ There are two options for WHEN the ASN gets linked:
 **Recommendation**: **Option A** (link at `scan_sessions`), because it lets the mobile app show expected vs actual during scanning. But you can add the FK on both tables — `scan_sessions` for context during scanning, and cascade it to `receiving_slips` for reporting.
 
 **Key considerations:**
+
 - The ASN status should update when receiving starts — e.g., `confirmed` → `partially_delivered`.
 - `AsnOrderItem.delivered_qty` (already exists!) should be incremented as receiving slips are finalized.
 - If a scan session is abandoned (no slip created), the ASN link is harmless since it's optional.
@@ -53,6 +54,7 @@ There are two options for WHEN the ASN gets linked:
 
 **Concept of "Floating Mode":**
 Rejected items are recorded on the receiving slip but:
+
 - Do **NOT** update stock levels (`StockLevel`)
 - Do **NOT** generate put-away tasks (`PutAwayList`)
 - Do **NOT** count toward `AsnOrderItem.delivered_qty`
@@ -77,10 +79,12 @@ flowchart TD
 **Schema Changes (minimal):**
 
 You already have the right fields on `ReceivingSlipItem`:
+
 - `flag` (String, default `"ok"`) — extend to support `"rejected"`, `"damaged"`, `"excess"`, `"short"`, etc.
 - `notes` (Text) — use for rejection reason
 
 You may also want:
+
 - A `rejection_reason` on `receiving_slips` (already exists!) for a summary/header-level rejection note.
 - A `rejected_by` and `rejected_at` timestamp if you need audit trail on rejections.
 
@@ -99,6 +103,7 @@ When a `ScanSession` is closed, currently the system likely auto-generates a `Re
 **Floating Items Lifecycle:**
 
 Rejected items need a resolution workflow:
+
 - A new status or dashboard view showing all "floating" (rejected) items across receiving slips
 - Actions: `accept_later` (after inspection), `return_to_sender`, `dispose`, `adjust_to_damage`
 - When resolved, the appropriate stock movements are recorded
@@ -113,23 +118,23 @@ Since **one ASN can have multiple receiving slips**, the mismatch view needs to 
 
 For each line item in the ASN, compute:
 
-| Metric | Source | Formula |
-|--------|--------|---------|
-| **Expected Qty** | `AsnOrderItem.qty` | Original ASN quantity |
-| **Accepted Qty** | `SUM(ReceivingSlipItem.quantity)` across all linked slips WHERE `flag = 'ok'` | What actually entered stock |
-| **Rejected Qty** | `SUM(ReceivingSlipItem.quantity)` across all linked slips WHERE `flag = 'rejected'` | Scanned but rejected |
-| **Pending Qty** | Expected - (Accepted + Rejected) | Still to be received (or short) |
-| **Over Qty** | (Accepted + Rejected) - Expected | Over-delivery (if positive) |
+| Metric           | Source                                                                              | Formula                         |
+| ---------------- | ----------------------------------------------------------------------------------- | ------------------------------- |
+| **Expected Qty** | `AsnOrderItem.qty`                                                                  | Original ASN quantity           |
+| **Accepted Qty** | `SUM(ReceivingSlipItem.quantity)` across all linked slips WHERE `flag = 'ok'`       | What actually entered stock     |
+| **Rejected Qty** | `SUM(ReceivingSlipItem.quantity)` across all linked slips WHERE `flag = 'rejected'` | Scanned but rejected            |
+| **Pending Qty**  | Expected - (Accepted + Rejected)                                                    | Still to be received (or short) |
+| **Over Qty**     | (Accepted + Rejected) - Expected                                                    | Over-delivery (if positive)     |
 
 **Types of Mismatches the system would flag:**
 
-| Mismatch Type | Condition | Meaning |
-|---------------|-----------|---------|
-| **Shortage** | Accepted + Rejected < Expected | Some items not yet received or missing |
-| **Over-delivery** | Accepted + Rejected > Expected | More received than ASN stated |
-| **Rejected** | Rejected > 0 | Items received but not accepted into stock |
-| **Not Received** | Accepted + Rejected = 0, Expected > 0 | Item on ASN but never appeared in any slip |
-| **Matched** | Accepted = Expected, Rejected = 0 | Perfect match |
+| Mismatch Type     | Condition                             | Meaning                                    |
+| ----------------- | ------------------------------------- | ------------------------------------------ |
+| **Shortage**      | Accepted + Rejected < Expected        | Some items not yet received or missing     |
+| **Over-delivery** | Accepted + Rejected > Expected        | More received than ASN stated              |
+| **Rejected**      | Rejected > 0                          | Items received but not accepted into stock |
+| **Not Received**  | Accepted + Rejected = 0, Expected > 0 | Item on ASN but never appeared in any slip |
+| **Matched**       | Accepted = Expected, Rejected = 0     | Perfect match                              |
 
 **How to Present the View:**
 
@@ -177,24 +182,24 @@ This would return:
 
 Based on aggregated receiving data:
 
-| Condition | ASN Status |
-|-----------|------------|
-| No receiving slips linked | `confirmed` |
-| Some items received, some pending | `partially_delivered` |
-| All items fully received (accepted + rejected >= expected, no pending) | `delivered` |
-| Manually closed | `closed` |
+| Condition                                                              | ASN Status            |
+| ---------------------------------------------------------------------- | --------------------- |
+| No receiving slips linked                                              | `confirmed`           |
+| Some items received, some pending                                      | `partially_delivered` |
+| All items fully received (accepted + rejected >= expected, no pending) | `delivered`           |
+| Manually closed                                                        | `closed`              |
 
 ---
 
 ## Summary of Database Changes Needed
 
-| Table | New/Modified Column | Purpose |
-|-------|---------------------|---------|
-| `scan_sessions` | `asn_order_id` (FK, nullable) | Link scan session to ASN |
-| `receiving_slips` | `asn_order_id` (FK, nullable) | Direct ASN link on slip |
-| `receiving_slip_items` | Extend `flag` enum values | Support `"rejected"`, `"damaged"`, `"excess"` |
-| `receiving_slip_items` | `rejection_reason` (Text, nullable) | Reason for rejection |
-| `asn_orders` | Existing `status` field | Use existing statuses (partially_delivered, delivered) |
+| Table                  | New/Modified Column                 | Purpose                                                |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------ |
+| `scan_sessions`        | `asn_order_id` (FK, nullable)       | Link scan session to ASN                               |
+| `receiving_slips`      | `asn_order_id` (FK, nullable)       | Direct ASN link on slip                                |
+| `receiving_slip_items` | Extend `flag` enum values           | Support `"rejected"`, `"damaged"`, `"excess"`          |
+| `receiving_slip_items` | `rejection_reason` (Text, nullable) | Reason for rejection                                   |
+| `asn_orders`           | Existing `status` field             | Use existing statuses (partially_delivered, delivered) |
 
 ---
 

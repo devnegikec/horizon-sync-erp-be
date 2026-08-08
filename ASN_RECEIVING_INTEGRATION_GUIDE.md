@@ -23,11 +23,11 @@
 
 Three major features have been added:
 
-| # | Feature | Description |
-|---|---------|-------------|
-| 1 | **ASN Linking** | Every scan session and receiving slip can optionally link to an ASN order |
-| 2 | **Item Rejection** | Individual items on a receiving slip can be rejected (floating mode) |
-| 3 | **Mismatch View** | Compare ASN expected vs actual receipts across all linked receiving slips |
+| #   | Feature            | Description                                                               |
+| --- | ------------------ | ------------------------------------------------------------------------- |
+| 1   | **ASN Linking**    | Every scan session and receiving slip can optionally link to an ASN order |
+| 2   | **Item Rejection** | Individual items on a receiving slip can be rejected (floating mode)      |
+| 3   | **Mismatch View**  | Compare ASN expected vs actual receipts across all linked receiving slips |
 
 ---
 
@@ -35,19 +35,19 @@ Three major features have been added:
 
 ### ASN Orders (`/api/v1/asn_orders`)
 
-| Method | Path | Change | Purpose |
-|--------|------|--------|---------|
-| `GET` | `/{asn_order_id}/receiving-summary` | **NEW** | Mismatch view: ASN vs all linked receiving slips |
+| Method | Path                                | Change  | Purpose                                          |
+| ------ | ----------------------------------- | ------- | ------------------------------------------------ |
+| `GET`  | `/{asn_order_id}/receiving-summary` | **NEW** | Mismatch view: ASN vs all linked receiving slips |
 
 ### Inbound (`/api/v1/inbound`)
 
-| Method | Path | Change | Purpose |
-|--------|------|--------|---------|
-| `POST` | `/sessions` | **MODIFIED** | Now accepts optional `asn_order_id` |
-| `POST` | `/sessions/{session_id}/link-asn` | **NEW** | Link an existing session to an ASN |
-| `POST` | `/receiving-slips/{slip_id}/items/{item_id}/reject` | **NEW** | Reject individual slip item |
-| `GET` | `/floating-items` | **NEW** | List all rejected items across slips |
-| `POST` | `/floating-items/{item_id}/resolve` | **NEW** | Resolve a floating item |
+| Method | Path                                                | Change       | Purpose                              |
+| ------ | --------------------------------------------------- | ------------ | ------------------------------------ |
+| `POST` | `/sessions`                                         | **MODIFIED** | Now accepts optional `asn_order_id`  |
+| `POST` | `/sessions/{session_id}/link-asn`                   | **NEW**      | Link an existing session to an ASN   |
+| `POST` | `/receiving-slips/{slip_id}/items/{item_id}/reject` | **NEW**      | Reject individual slip item          |
+| `GET`  | `/floating-items`                                   | **NEW**      | List all rejected items across slips |
+| `POST` | `/floating-items/{item_id}/resolve`                 | **NEW**      | Resolve a floating item              |
 
 ### Response Changes
 
@@ -168,6 +168,7 @@ Content-Type: application/json
 ### What "Floating Mode" Means
 
 Rejected items:
+
 - ✅ Appear on the receiving slip (with `flag: "rejected"`)
 - ❌ Do NOT update stock levels
 - ❌ Do NOT generate put-away tasks
@@ -177,6 +178,7 @@ Rejected items:
 ### Mobile App UI Flow
 
 1. **Review Screen** (after session ends, before approving slip):
+
    - Show all scanned items grouped by SKU+batch
    - Each item row has: SKU, batch, quantity, action buttons
    - **"Reject" button** on each item row → opens reason popup
@@ -290,12 +292,12 @@ Authorization: Bearer <token>
 
 ### Line Item Status Values
 
-| Status | Meaning | Color |
-|--------|---------|-------|
-| `matched` | Accepted = Expected, no rejections | 🟢 Green |
-| `partial` | Accepted+Rejected < Expected (still pending) | 🟡 Yellow |
-| `not_received` | Nothing received yet for this line | 🔴 Red |
-| `over` | Accepted+Rejected > Expected (over-delivery) | 🟠 Orange |
+| Status         | Meaning                                      | Color     |
+| -------------- | -------------------------------------------- | --------- |
+| `matched`      | Accepted = Expected, no rejections           | 🟢 Green  |
+| `partial`      | Accepted+Rejected < Expected (still pending) | 🟡 Yellow |
+| `not_received` | Nothing received yet for this line           | 🔴 Red    |
+| `over`         | Accepted+Rejected > Expected (over-delivery) | 🟠 Orange |
 
 ### Web App UI Suggestions
 
@@ -377,11 +379,11 @@ Content-Type: application/json
 
 ### Resolution Actions
 
-| Action | Description | Effect |
-|--------|-------------|--------|
-| `accept` | Accept item after inspection | `flag` → `"ok"`, ready for put-away |
-| `return_to_sender` | Return to source warehouse/supplier | `put_away_status` → `"returned"` |
-| `dispose` | Dispose/discard the item | `put_away_status` → `"disposed"` |
+| Action             | Description                         | Effect                              |
+| ------------------ | ----------------------------------- | ----------------------------------- |
+| `accept`           | Accept item after inspection        | `flag` → `"ok"`, ready for put-away |
+| `return_to_sender` | Return to source warehouse/supplier | `put_away_status` → `"returned"`    |
+| `dispose`          | Dispose/discard the item            | `put_away_status` → `"disposed"`    |
 
 ### Web App UI Suggestions
 
