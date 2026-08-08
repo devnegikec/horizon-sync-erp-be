@@ -169,6 +169,8 @@ class ReceivingSlipResponse(BaseModel):
     slip_number: str
     session_id: str
     warehouse_id: str
+    asn_order_id: str | None = None
+    asn_order_no: str | None = None
     status: str
     total_boxes: int
     total_items: int

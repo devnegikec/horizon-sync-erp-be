@@ -577,8 +577,6 @@ class InboundService:
         slip.total_items = total_eaches
 
         # Recalculate total_boxes from session's scan items based on QSeal parents
-        from app.models.scan_session import ScanSessionItem
-
         scan_items_for_boxes = (
             self.db.query(ScanSessionItem)
             .filter(ScanSessionItem.session_id == slip.session_id)
