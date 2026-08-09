@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
 
@@ -264,6 +264,7 @@ class ReceivingSlipRepository:
         """
         return (
             self.db.query(ReceivingSlip)
+            .options(joinedload(ReceivingSlip.asn_order))
             .filter(
                 ReceivingSlip.asn_order_id == asn_order_id,
                 ReceivingSlip.organization_id == org_id,
@@ -326,8 +327,14 @@ class ReceivingSlipRepository:
         Returns:
             Tuple of (list of slips, total count).
         """
-        query = self.db.query(ReceivingSlip).filter(
-            ReceivingSlip.organization_id == org_id,
+        query = (
+            self.db.query(ReceivingSlip)
+            .options(
+                joinedload(ReceivingSlip.asn_order),
+            )
+            .filter(
+                ReceivingSlip.organization_id == org_id,
+            )
         )
 
         if filters:

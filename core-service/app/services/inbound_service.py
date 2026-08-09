@@ -1085,9 +1085,17 @@ class InboundService:
 
     def _slip_base_dict(self, slip, groups: list) -> dict:
         """Convert a ReceivingSlip to a plain dict without QSeal enrichment."""
+        # Fetch ASN info directly from DB — more reliable than lazy/eager-loaded relationships
+        asn_order_id = str(slip.asn_order_id) if slip.asn_order_id else None
         asn_order_no = None
-        if slip.asn_order_id and hasattr(slip, "asn_order") and slip.asn_order:
-            asn_order_no = slip.asn_order.asn_order_no
+        if slip.asn_order_id:
+            from app.models.asn_order import AsnOrder
+
+            asn = (
+                self.db.query(AsnOrder).filter(AsnOrder.id == slip.asn_order_id).first()
+            )
+            if asn:
+                asn_order_no = asn.asn_order_no
 
         return {
             "id": str(slip.id),
