@@ -20,8 +20,17 @@ else:
         settings.database_url,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
-        pool_pre_ping=True,  # Verify connections before using
-        echo=settings.debug,  # Log SQL queries in debug mode
+        pool_recycle=settings.db_pool_recycle,
+        pool_timeout=settings.db_pool_timeout,
+        pool_pre_ping=True,  # Verify connections before using (like Hikari connectionTestQuery)
+        echo=settings.debug,
+        # TCP keepalive for cloud databases (Railway, RDS, etc.)
+        connect_args={
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
+        },
     )
 
 # Create session factory
