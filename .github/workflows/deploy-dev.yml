@@ -1,0 +1,61 @@
+name: Deploy to Railway (Dev)
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch: # allow manual trigger for testing
+
+jobs:
+  deploy-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy Identity Service
+        run: |
+          cd identity-service
+          railway up --service=identity-service --environment=dev --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  deploy-core:
+    needs: deploy-identity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy Core Service
+        run: |
+          cd core-service
+          railway up --service=core-service --environment=dev --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  deploy-search:
+    needs: deploy-core
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+
+      - name: Deploy Search Service
+        run: |
+          cd search-service
+          railway up --service=search-service --environment=dev --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
