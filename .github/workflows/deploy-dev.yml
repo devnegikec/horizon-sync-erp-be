@@ -7,8 +7,8 @@ on:
     paths:
       - "identity-service/**"
       - "core-service/**"
-      - "search-service/**"
-      - "nginx-gateway/**"
+      # - "search-service/**"
+      # - "nginx-gateway/**"
       - "docker-compose.yml"
       - ".github/workflows/deploy-dev.yml"
 
@@ -51,25 +51,25 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      - name: Deploy Search Service
-        if: success()
-        run: |
-          railway up ./search-service \
-            --path-as-root \
-            --service="${{ secrets.RAILWAY_SEARCH_SERVICE_ID }}" \
-            --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # - name: Deploy Search Service
+      #   if: success()
+      #   run: |
+      #     railway up ./search-service \
+      #       --path-as-root \
+      #       --service="${{ secrets.RAILWAY_SEARCH_SERVICE_ID }}" \
+      #       --detach
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      - name: Deploy Nginx Gateway
-        if: success()
-        run: |
-          railway up ./nginx-gateway \
-            --path-as-root \
-            --service="${{ secrets.RAILWAY_NGINX_SERVICE_ID }}" \
-            --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # - name: Deploy Nginx Gateway
+      #   if: success()
+      #   run: |
+      #     railway up ./nginx-gateway \
+      #       --path-as-root \
+      #       --service="${{ secrets.RAILWAY_NGINX_SERVICE_ID }}" \
+      #       --detach
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Run Database Migrations (Identity)
         if: success()
