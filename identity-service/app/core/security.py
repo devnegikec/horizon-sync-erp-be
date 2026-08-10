@@ -145,6 +145,45 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
+def create_service_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Create a JWT service token for machine-to-machine auth.
+
+    Service tokens have ``type: "service"`` in the payload so that
+    consumers (core-service) can distinguish them from human access tokens.
+
+    Args:
+        data: Data to encode (should include ``sub``, ``permissions``, ``scopes``)
+        expires_delta: Optional custom expiration (default: 60 minutes)
+
+    Returns:
+        Encoded JWT token string
+    """
+    to_encode = data.copy()
+    expire = datetime.now(UTC) + (
+        expires_delta or timedelta(minutes=settings.service_token_expire_minutes)
+    )
+    to_encode.update({"exp": expire, "iat": datetime.now(UTC), "type": "service"})
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+
+def verify_client_secret(plain_secret: str, hashed_secret: str) -> bool:
+    """Verify a client secret against its bcrypt hash.
+
+    Args:
+        plain_secret: The secret presented by the calling service.
+        hashed_secret: The hash stored in ServiceCredential.client_secret_hash.
+
+    Returns:
+        True if the secret matches.
+    """
+    try:
+        return bcrypt.checkpw(
+            plain_secret.encode("utf-8"), hashed_secret.encode("utf-8")
+        )
+    except Exception:
+        return False
+
+
 def hash_token(token: str) -> str:
     """
     Create a SHA-256 hash of a token for storage.

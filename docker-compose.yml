@@ -20,8 +20,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
     healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,7 +35,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -216,6 +215,60 @@ services:
     restart: unless-stopped
 
   # ===========================================
+  # AI SERVICE (MCP, LLM, RAG, Ingestion)
+  # ===========================================
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: horizon_ai
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/ai_db
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORE_SERVICE_URL: http://core-service:8001
+      CORE_SERVICE_TIMEOUT: 10
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+      IDENTITY_SERVICE_TIMEOUT: 10
+      SERVICE_CLIENT_ID: ${SERVICE_CLIENT_ID:-ai-service}
+      SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
+      MCP_SERVER_NAME: ${MCP_SERVER_NAME:-horizon-wms-mcp}
+      MCP_SERVER_VERSION: ${MCP_SERVER_VERSION:-1.0.0}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.3}
+    ports:
+      - "8003:8003"
+      - "5681:5681"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+      core-service:
+        condition: service_started
+    volumes:
+      - ./ai-service/app:/app/app
+      - ./ai-service/scripts:/app/scripts
+    command: >
+      bash -c "
+        echo 'Waiting for Core and Identity services...' &&
+        sleep 20 &&
+        echo 'Starting AI Service with Debugger...' &&
+        python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5681 -m uvicorn app.main:app --host 0.0.0.0 --port 8003
+      "
+    networks:
+      - horizon_network
+    restart: unless-stopped
+
+  # ===========================================
   # API GATEWAY (Nginx — single port for ngrok)
   # ===========================================
   api-gateway:
@@ -229,6 +282,7 @@ services:
       - identity-service
       - core-service
       - search-service
+      - ai-service
     networks:
       - horizon_network
     restart: unless-stopped
