@@ -140,6 +140,32 @@ class ScanSessionRepository:
         return session
 
     # ------------------------------------------------------------------
+    # SET ASN ORDER
+    # ------------------------------------------------------------------
+
+    def set_asn_order(self, session_id: UUID, asn_order_id: UUID) -> ScanSession | None:
+        """
+        Link a scan session to an ASN order.
+
+        Args:
+            session_id: The scan session UUID.
+            asn_order_id: The ASN order UUID to link.
+
+        Returns:
+            Updated ScanSession or None if not found.
+        """
+        session = (
+            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
+        )
+        if session is None:
+            return None
+
+        session.asn_order_id = asn_order_id
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    # ------------------------------------------------------------------
     # LIST SESSIONS (filtered + paginated)
     # ------------------------------------------------------------------
 

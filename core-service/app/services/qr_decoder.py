@@ -32,10 +32,11 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-# Matches: https://<anything>/g/<gtin>/s/<serial>/<timestamp>?c=<sig>
-# Also matches without the ?c= part (static QR codes)
+# Matches:
+#   https://<anything>/g/<gtin>/s/<serial>/<timestamp>?c=<sig>
+#   https://<anything>/g/<gtin>/s/<serial>           (unsigned, no nonce)
 _QR_URL_PATTERN = re.compile(
-    r"https?://[^/]+/g/[^/]+/s/(?P<serial>[^/]+)/(?P<nonce>[^?]+)"
+    r"https?://[^/]+/g/[^/]+/s/(?P<serial>[^/?]+)(?:/(?P<nonce>[^?]+))?"  # unsigned also
 )
 
 # Bare serial number — alphanumeric plus dashes/underscores, 4–75 chars.
@@ -128,7 +129,7 @@ def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
                     "field": "qr_data",
                     "reason": (
                         "Expected URL format: "
-                        "https://<domain>/g/<gtin>/s/<serial>/<nonce>"
+                        "https://<domain>/g/<gtin>/s/<serial>[/<nonce>]"
                     ),
                 }
             ],

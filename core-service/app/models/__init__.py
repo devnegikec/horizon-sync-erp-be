@@ -161,6 +161,7 @@ from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_scan_interaction import QRScanInteraction
+from app.models.qseal import QSealParameters, QSealTrack
 from app.models.quality_inspection import (
     QualityInspection,
     QualityInspectionParameter,
@@ -328,6 +329,8 @@ __all__ = [
     "ProductItem",
     "QRActivationParameters",
     "QRActivationTrack",
+    "QSealParameters",
+    "QSealTrack",
     "QRCreditUsage",
     "QRCreditBalance",
     "QRCreditLedger",

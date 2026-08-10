@@ -30,6 +30,12 @@ class ReceivingSlip(Base):
         nullable=False,
         index=True,
     )
+    asn_order_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("asn_orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status = Column(String(30), nullable=False, default="pending_review")
     total_boxes = Column(Integer, default=0)
     total_items = Column(Integer, default=0)
@@ -47,6 +53,7 @@ class ReceivingSlip(Base):
     # Relationships
     session = relationship("ScanSession", back_populates="receiving_slips")
     warehouse = relationship("Warehouse")
+    asn_order = relationship("AsnOrder", foreign_keys=[asn_order_id])
     items = relationship(
         "ReceivingSlipItem", back_populates="slip", cascade="all, delete-orphan"
     )
@@ -78,6 +85,9 @@ class ReceivingSlipItem(Base):
     box_count = Column(Integer, default=0)
     flag = Column(String(20), default="ok")
     notes = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    rejected_by = Column(UUID(as_uuid=True), nullable=True)
+    rejected_at = Column(DateTime(timezone=True), nullable=True)
 
     # Put-away tracking (two-step inbound: receive → assign bin)
     bin_location_id = Column(
