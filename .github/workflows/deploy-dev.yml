@@ -76,7 +76,7 @@ jobs:
         run: |
           railway run \
             --service="identity-service" \
-            --environment="production" \
+            --environment="dev" \
             "python -m alembic upgrade head"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -86,7 +86,7 @@ jobs:
         run: |
           railway run \
             --service="core-service" \
-            --environment="production" \
+            --environment="dev" \
             "python -m alembic upgrade head"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
