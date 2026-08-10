@@ -1297,12 +1297,26 @@ class InboundService:
         # Build grouped slip items for response
         grouped_items = list(groups.values())
 
+        # Fetch ASN info directly from DB — more reliable than lazy/eager-loaded relationships
+        asn_order_id = str(slip.asn_order_id) if slip.asn_order_id else None
+        asn_order_no = None
+        if slip.asn_order_id:
+            from app.models.asn_order import AsnOrder
+
+            asn = (
+                self.db.query(AsnOrder).filter(AsnOrder.id == slip.asn_order_id).first()
+            )
+            if asn:
+                asn_order_no = asn.asn_order_no
+
         return {
             "id": str(slip.id),
             "organization_id": str(slip.organization_id),
             "slip_number": slip.slip_number,
             "session_id": str(slip.session_id),
             "warehouse_id": str(slip.warehouse_id),
+            "asn_order_id": asn_order_id,
+            "asn_order_no": asn_order_no,
             "status": slip.status,
             "total_boxes": slip.total_boxes,
             "total_items": slip.total_items,
