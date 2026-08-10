@@ -71,26 +71,6 @@ jobs:
       #   env:
       #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      - name: Run Database Migrations (Identity)
-        if: success()
-        run: |
-          railway run \
-            --service="identity-service" \
-            --environment="dev" \
-            "python -m alembic upgrade head"
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      - name: Run Database Migrations (Core)
-        if: success()
-        run: |
-          railway run \
-            --service="core-service" \
-            --environment="dev" \
-            "python -m alembic upgrade head"
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
       - name: Deployment Summary
         if: always()
         run: |
