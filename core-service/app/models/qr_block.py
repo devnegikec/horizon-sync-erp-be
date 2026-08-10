@@ -4,15 +4,15 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     Date,
     DateTime,
     ForeignKey,
-    Integer,
     Index,
+    Integer,
     String,
     Text,
     func,

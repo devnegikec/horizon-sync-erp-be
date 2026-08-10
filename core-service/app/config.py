@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Redis (for event publishing to search-service)
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://redis:6379/0"
     redis_stream_name: str = "search:events"
 
     # Redis — 3D Warehouse real-time events (separate DB index for isolation)

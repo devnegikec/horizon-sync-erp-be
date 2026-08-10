@@ -1,11 +1,10 @@
 """Pydantic schemas for Landing / Public API module"""
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # ── Destination Market ────────────────────────────────────────────────────────
 

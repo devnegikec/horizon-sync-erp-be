@@ -1,28 +1,19 @@
 """Service layer for Cascade module"""
 
 import logging
+from io import BytesIO
 from uuid import UUID
 
-
-import logging
-
-
-
-
-
-from openpyxl import Workbook
-from openpyxl.drawing.image import Image
-from io import BytesIO
 import qrcode
 
 #import validators
-import requests
 from fastapi import HTTPException, status
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image
 from sqlalchemy.orm import Session
-from urllib.parse import urlparse
-from app.models.qr_activation import QRTypeEnum
 
 from app.config import settings
+from app.models.qr_activation import QRTypeEnum
 from app.repositories.cascade_repository import (
     CascadeActivationRepository,
     ProductItemCascadeRepository,
@@ -30,14 +21,16 @@ from app.repositories.cascade_repository import (
 )
 from app.schemas.cascade import (
     ChildQRRequest,
-    QRScanCascadeRequest,
-    QRTrackCreate,
-    QRTrackUpdate,
     ParentQRCreate,
+    QRScanCascadeRequest,
+    QRTrackUpdate,
 )
-from app.utils.serial_generators import build_qr_url, sign_qr_item,build_long_qr_url,resolve_serial_from_short_url
 from app.services.key_service import KeyService
-from app.config import settings
+from app.utils.serial_generators import (
+    build_long_qr_url,
+    resolve_serial_from_short_url,
+    sign_qr_item,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,29 +72,28 @@ class CascadeService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-    
+
 
      # ── Parent QR ─────────────────────────────────────────────────────────────
 
     def create_parent(
         self, data: ParentQRCreate, organization_id: UUID, user_id: UUID
-    ): 
-        print("Creating parent QR track with data:", data)
+    ):
         serial = self.track_repo.generate_serial(prefix="PAR")[:10]
         payload = data.model_dump(exclude={"extra_data"})
-      
-        
+
+
         payload["organization_id"] = organization_id
         payload["serial_number"] = serial
-     
+
         payload["qr_code_link"] = self.generate_qr_url(serial,organization_id,data.qr_type)
-    
+
         payload["created_by"] = user_id
         node = self.track_repo.create_node(payload)
         logger.info("[CASCADE] parent created id=%s serial=%s org=%s", node.id, serial, organization_id)
         return node
-    
-    
+
+
     def list_parents(
         self,
         organization_id: UUID,
@@ -116,7 +108,7 @@ class CascadeService:
         }
 
 
-    
+
 
     def list_history(
         self,
@@ -156,7 +148,7 @@ class CascadeService:
         organization_id: UUID,
     ) -> str:
         sr_number = await resolve_serial_from_short_url(req.url)
-     
+
         # Check product item activation status
         item = self.item_repo.get_by_serial(sr_number, organization_id)
         if item and item.qr_deactive and item.qr_deactive_unit:
@@ -209,7 +201,7 @@ class CascadeService:
                 )
         elif req.url:
             sr_number = await resolve_serial_from_short_url(req.url)
-            print("Resolved serial from URL:", sr_number)
+            logger.debug("Resolved cascade parent serial from URL")
             parent = self.track_repo.get_by_serial(sr_number, organization_id)
             if not parent:
                 raise HTTPException(
@@ -226,13 +218,11 @@ class CascadeService:
         # shipper → uses QRActivationParameters
         # pallet  → uses QRActivationTrack with type=shipper
         # default → uses QRActivationTrack with type=pallet
-        print("Parent QR type:", parent.qr_type)
         if parent.qr_type == QRTypeEnum.shipper:
             filtered = self.activation_repo.get_children_by_serials(
                 serial_list, organization_id
             )
         elif parent.qr_type == QRTypeEnum.pallet:
-            print("Filtering children for pallet type parent...")
             filtered = self.track_repo.get_children_by_serials_and_type(
                 serial_list, "shipper", organization_id
             )
@@ -240,8 +230,6 @@ class CascadeService:
             filtered = self.track_repo.get_children_by_serials_and_type(
                 serial_list, "pallet", organization_id
             )
-        print("Filtered children:", filtered)
-
         return {"total_capacity": parent.capacity, "children": filtered}
 
     # ── Mapping ───────────────────────────────────────────────────────────────
@@ -317,7 +305,7 @@ class CascadeService:
                 detail="QR code link not found for the given serial number.",
             )
         return track.qr_code_link
-    
+
 
     def get_label_stream(
         self, serial: str, organization_id: UUID
@@ -336,7 +324,7 @@ class CascadeService:
         filename = f"qr_labels_{serial}.xlsx"
 
         return label_bytes, filename
-    
+
 
     def _build_label_excel(self, qr_url: str, serial: str) -> bytes:
         output = BytesIO()
@@ -383,9 +371,9 @@ class CascadeService:
         output.seek(0)
 
         return output.read()
-    
-    
-    
+
+
+
 
     def generate_qr_url(
         self,
@@ -411,7 +399,7 @@ class CascadeService:
             )
 
             org_short_code = brand.short_code or ""
-           
+
 
             sig, ts = sign_qr_item(self.key_service, private_key, serial)
 

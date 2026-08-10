@@ -5,17 +5,17 @@ Revises: 540a6ccc80c0
 Create Date: 2026-04-21 05:38:06.234844
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'e18bb13c20f4'
-down_revision: Union[str, None] = '540a6ccc80c0'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '540a6ccc80c0'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -45,7 +45,7 @@ def upgrade() -> None:
         ['id']
     )
 
-    
+
 
 
 def downgrade() -> None:

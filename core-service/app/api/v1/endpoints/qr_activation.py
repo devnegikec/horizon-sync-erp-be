@@ -134,7 +134,7 @@ async def create_or_update_qr_settings(
     svc = QRActivationService(db)
     svc.create_or_update_qr_settings(req, current_user.organization_id)
     return {"message": "QR activation settings saved successfully"}
-   
+
 
 
 @router.get(

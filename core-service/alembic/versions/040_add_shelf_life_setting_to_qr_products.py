@@ -5,10 +5,10 @@ Revises: 0167307b0bd5
 Create Date: 2026-07-25
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 revision = "040_add_product_shelf_life"
 down_revision = "0167307b0bd5"

@@ -2,31 +2,29 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from app.models.qr_activation import QRTypeEnum
 
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.qr_activation import QRTypeEnum
 from app.schemas.cascade import (
     ChildQRRequest,
     ChildQRResponse,
     MappingChildRequest,
     MappingChildResponse,
+    ParentQRCreate,
+    ParentQRListResponse,
+    ParentQRResponse,
     QRLabelDownloadRequest,
-    QRLabelDownloadResponse,
     QRScanCascadeRequest,
     QRScanCascadeResponse,
-    QRTrackCreate,
     QRTrackListResponse,
     QRTrackResponse,
     QRTrackUpdate,
-    ParentQRCreate,ParentQRListResponse, ParentQRResponse
-
-    
 )
 from app.services.cascade_service import CascadeService
-from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
@@ -116,7 +114,7 @@ async def get_label_download(
             req.parent_srnumber,
             current_user.organization_id,
         )
-    
+
     return StreamingResponse(
             iter([content]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -177,11 +175,10 @@ def list_parent(
     db: Session = Depends(get_db),
 ):
     svc = CascadeService(db)
-    print("list_parent_tracks called with qr_type:", qr_type.value if qr_type else None)
     qr_type_value = qr_type.value if qr_type else None
     return svc.list_parents(current_user.organization_id, page, page_size, qr_type_value)
 
-    
+
 
 
 
@@ -200,7 +197,7 @@ async def list_history_tracks(
 ):
     svc = CascadeService(db)
     return svc.list_history(current_user.organization_id, page, page_size, qr_type.value)
-   
+
 @router.patch(
     "/tracks/{track_id}",
     response_model=QRTrackResponse,

@@ -1,14 +1,24 @@
 """QR Activation Parameters and Tracks models"""
 
+import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text,Enum
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.types import JSONB, UUID
-import enum
 
 
 class QRActivationParameters(Base):
@@ -46,7 +56,7 @@ class QRActivationParameters(Base):
     )
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    
+
     parent = relationship("QRActivationTrack", foreign_keys=[parent_id])
     parent_app = relationship("QRActivationTrack", foreign_keys=[parent_app_id])
 
@@ -93,7 +103,7 @@ class QRActivationTrack(Base):
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-   
+
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
@@ -145,5 +155,5 @@ class QRActivationTrack(Base):
 
 #     def __repr__(self):
 
-        
+
 #         return f"<QRActivationTrack(id={self.id}, name='{self.name}')>"

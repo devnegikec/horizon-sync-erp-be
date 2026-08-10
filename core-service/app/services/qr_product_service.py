@@ -51,7 +51,7 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
-def _build_excel(
+def _build_excel(  # noqa: C901
     rows: list[dict],
     qr_type: str,
     include_qr_images: bool = False,
@@ -866,7 +866,7 @@ class QRProductService:
 
     # ── Item generation ───────────────────────────────────────────────────────
 
-    def _generate_product_items(
+    def _generate_product_items(  # noqa: C901
         self,
         block: QRBlock,
         product: QRProduct,

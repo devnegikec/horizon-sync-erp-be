@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.models.qr_product import QRProduct
 from app.models.qr_block import QRBlock
+from app.models.qr_product import QRProduct
 from app.models.qr_product_setting import QRProductSetting
 
 

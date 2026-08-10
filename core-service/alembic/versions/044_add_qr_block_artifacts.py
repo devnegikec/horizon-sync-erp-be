@@ -5,9 +5,9 @@ Revises: 043_qr_credit_management
 Create Date: 2026-08-04
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "044_qr_block_artifacts"
 down_revision = "043_qr_credit_management"

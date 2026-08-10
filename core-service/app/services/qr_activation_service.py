@@ -2,17 +2,19 @@
 
 import logging
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import UUID
-from sqlalchemy import update
+
 #import validators
 import requests
 from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
+from sqlalchemy import update
 from sqlalchemy.orm import Session
-from urllib.parse import urlparse
-from app.models.qr_product import QRProduct
-from app.models.qr_activation import QRActivationParameters
+
 from app.config import settings
+from app.models.qr_activation import QRActivationParameters
+from app.models.qr_product import QRProduct
 from app.repositories.qr_activation_repository import (
     DestinationMarketRepository,
     ProductItemRepository,
@@ -224,8 +226,10 @@ class QRActivationService:
 
     # ── Product Activation ────────────────────────────────────────────────────
 
-    def activate_products(self, srnumber: str, organization_id: UUID) -> None:
-        serial_list = list(set([s.strip() for s in srnumber.split(",") if s.strip()]))
+    def activate_products(  # noqa: C901
+        self, srnumber: str, organization_id: UUID
+    ) -> None:
+        serial_list = list({s.strip() for s in srnumber.split(",") if s.strip()})
 
         invalid_serials = []
 

@@ -1,22 +1,21 @@
 """Pydantic schemas for Cascade module"""
 
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
-from app.models.qr_activation import QRTypeEnum
+
 from pydantic import BaseModel, Field, field_validator
-import re
 
-
-
+from app.models.qr_activation import QRTypeEnum
 
 # ── Parent QR ─────────────────────────────────────────────────────────────────
 
 class ParentQRCreate(BaseModel):
     name: str = Field(..., max_length=20, description="Label for this parent node")
-    qr_type: QRTypeEnum  = Field(..., description="Type of parent node: shipper,pallet, container etc.") 
+    qr_type: QRTypeEnum  = Field(..., description="Type of parent node: shipper,pallet, container etc.")
     capacity: int = Field(..., gt=0, description="Max number of child QRs this node can hold")
-   
+
 
     @field_validator("name")
     @classmethod

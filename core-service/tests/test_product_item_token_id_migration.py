@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import sqlalchemy as sa
 
-
 migration_path = (
     Path(__file__).parents[1]
     / "alembic"

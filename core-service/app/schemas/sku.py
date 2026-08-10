@@ -7,7 +7,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Variant Attribute ─────────────────────────────────────────────────────────
 
 class VariantAttributeCreateRequest(BaseModel):

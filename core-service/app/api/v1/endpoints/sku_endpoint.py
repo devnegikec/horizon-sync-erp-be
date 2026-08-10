@@ -12,7 +12,6 @@ from app.schemas.sku import (
     ProductSKUListResponse,
     ProductSKUResponse,
     ProductSKUUpdateRequest,
-    SKUAttributeValueResponse,
     VariantAttributeCreateRequest,
     VariantAttributeListResponse,
     VariantAttributeResponse,

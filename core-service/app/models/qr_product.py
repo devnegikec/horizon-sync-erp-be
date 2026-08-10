@@ -10,9 +10,6 @@ from app.database import Base
 from app.models.types import JSONB, UUID
 
 
-
-
-
 class QRProduct(Base):
     """QR Product — maps from old integration_product"""
 

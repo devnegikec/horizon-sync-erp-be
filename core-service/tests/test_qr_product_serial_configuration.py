@@ -133,12 +133,10 @@ def test_block_uses_product_serial_configuration_not_request_overrides():
     )
     service.product_repo.get_by_id.return_value = product
     service.block_repo.batch_exists.return_value = False
-    service.block_repo.create.side_effect = lambda payload: SimpleNamespace(
+    service.block_repo.create.side_effect = lambda payload, commit=False: SimpleNamespace(
         id=uuid4(), **payload
     )
-    service._generate_product_items = Mock()
-
-    block = service.generate_block(
+    block = service.create_block_job(
         product.id,
         QRBlockCreate(
             batch="BATCH-001",
@@ -152,7 +150,6 @@ def test_block_uses_product_serial_configuration_not_request_overrides():
 
     assert block.serial_prefix == "PH"
     assert block.sr_number_type == "R8DAN"
-    service._generate_product_items.assert_called_once()
 
 
 def test_block_rejects_product_without_serial_prefix():

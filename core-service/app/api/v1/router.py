@@ -15,8 +15,8 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     campaigns,
-    charge_templates,
     cascade,
+    charge_templates,
     chart_of_accounts,
     chart_of_accounts_setup,
     communications,
@@ -56,8 +56,8 @@ from app.api.v1.endpoints import (
     purchase_receipts,
     put_away,
     put_away_rules,
-    qr_credits,
     qr_activation,
+    qr_credits,
     qr_product_settings,
     qr_products,
     quality_inspections,
@@ -483,7 +483,7 @@ api_router.include_router(
 )
 
 
-# QR Activation module 
+# QR Activation module
 api_router.include_router(
     qr_activation.router,
     prefix="/qr-activation",

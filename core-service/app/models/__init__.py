@@ -152,6 +152,7 @@ from app.models.payment_reference import PaymentReference
 from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
 from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
+from app.models.product_sku import ProductSKU
 
 # Public Marketing module
 # Public Marketing module
@@ -162,13 +163,17 @@ from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.put_away_rule import PutAwayRule
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
-from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
+from app.models.qr_credit import (
+    QRCreditBalance,
+    QRCreditLedger,
+    QRCreditReservation,
+    QRCreditUsage,
+)
 from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_product import QRProduct
-from app.models.qr_scan_event import QRScanEvent
-from app.models.qr_scan_interaction import QRScanInteraction
 from app.models.qr_product_setting import QRProductSetting
 from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_scan_interaction import QRScanInteraction
 from app.models.quality_inspection import (
     QualityInspection,
     QualityInspectionParameter,
@@ -194,6 +199,11 @@ from app.models.serial_no import SerialNo
 # URL Management module
 # URL Management module
 from app.models.short_url import ShortURL
+from app.models.sku_variant_attribute import (
+    ProductSKUAttributeValue,
+    VariantAttribute,
+    VariantAttributeValue,
+)
 from app.models.status_transition import StatusTransition
 from app.models.stock_entry import StockEntry, StockEntryItem
 from app.models.stock_level import StockLevel
@@ -251,6 +261,7 @@ __all__ = [
     "InspectionType",
     "InspectionStatus",
     "ReadingType",
+    "AsnOrderStatus",
     # Customer/Supplier Enums
     "CustomerStatus",
     "SupplierStatus",
@@ -305,6 +316,11 @@ __all__ = [
     "PaymentEntry",
     "PaymentReference",
     "PaymentAuditLog",
+    "BulkExportJob",
+    "BulkImportJob",
+    "PendingWarehouseAssignment",
+    "PickList",
+    "PickListItem",
     "AsnOrder",
     "AsnOrderItem",
     "Quotation",
@@ -314,6 +330,7 @@ __all__ = [
     "SystemConfig",
     "Warehouse",
     "Customer",
+    "Supplier",
     "Batch",
     "SerialNo",
     "StockEntry",
@@ -333,12 +350,18 @@ __all__ = [
     # QR Products module
     "Brand",
     "QRProduct",
+    "QRProductSetting",
     "QRBlock",
     "ProductItem",
+    "ProductSKU",
+    "VariantAttribute",
+    "VariantAttributeValue",
+    "ProductSKUAttributeValue",
     "QRActivationParameters",
     "QRActivationTrack",
     "QRCreditUsage",
     "QRCreditBalance",
+    "QRCreditReservation",
     "QRCreditLedger",
     "QRCTAConfig",
     "QRCTAConfig",

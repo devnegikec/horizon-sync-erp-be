@@ -1,15 +1,14 @@
 """Repository for Landing / Public API module"""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.destination_market import DestinationMarket
 from app.models.product_item import ProductItem
 from app.models.qr_activation import QRActivationParameters
-from app.models.qr_product import QRProduct
-from app.models.destination_market import DestinationMarket
 
 
 class DestinationMarketRepository:
@@ -60,7 +59,7 @@ class QRActivationRepository:
         self.db = db
 
 
-   
+
 
     def get_active_settings(self, product_id: UUID,organization_id: UUID) -> QRActivationParameters | None:
         """Get latest active (non-history) QR settings for a product"""
@@ -75,7 +74,7 @@ class QRActivationRepository:
             .order_by(QRActivationParameters.created_at.desc())
             .first()
         )
-    
+
     def get_active_settings_by_products(self, product_ids: list[UUID], organization_id: UUID):
         return (
             self.db.query(QRActivationParameters)
@@ -153,14 +152,14 @@ class QRActivationRepository:
             .all()
         )
 
-    
-    
+
+
     def create_settings(self, data: dict) -> QRActivationParameters:
         instance = QRActivationParameters(**data)
         self.db.add(instance)
         self.db.commit()
         self.db.refresh(instance)
-        
+
         return instance
 
     def archive_and_create(
@@ -191,7 +190,7 @@ class ProductItemRepository:
             )
             .first()
         )
-    
+
     def get_by_serials(self, serials: list[str], organization_id: UUID):
         return (
             self.db.query(ProductItem)

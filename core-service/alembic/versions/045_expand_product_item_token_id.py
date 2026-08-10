@@ -5,9 +5,9 @@ Revises: 044_qr_block_artifacts
 Create Date: 2026-08-04
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "045_expand_item_token_id"
 down_revision = "044_qr_block_artifacts"

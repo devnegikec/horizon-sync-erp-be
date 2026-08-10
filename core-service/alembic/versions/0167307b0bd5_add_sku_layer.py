@@ -1,21 +1,21 @@
 """add_sku_layer
 
 Revision ID: 0167307b0bd5
-Revises: 1381b1d35267
+Revises: a62c68164442
 Create Date: 2026-06-24 01:52:23.513451
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+
 import app.models.types
+from alembic import op
 
 revision: str = '0167307b0bd5'
-down_revision: Union[str, None] = '1381b1d35267'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = 'a62c68164442'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -6,7 +6,10 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories.qr_product_setting_repository import QRProductSettingRepository
-from app.schemas.qr_product_setting import QRProductSettingCreate, QRProductSettingUpdate
+from app.schemas.qr_product_setting import (
+    QRProductSettingCreate,
+    QRProductSettingUpdate,
+)
 
 
 class QRProductSettingService:

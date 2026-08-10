@@ -5,10 +5,10 @@ Revises: 045_expand_item_token_id
 Create Date: 2026-08-05
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 revision = "046_qr_credit_reservations"
 down_revision = "045_expand_item_token_id"

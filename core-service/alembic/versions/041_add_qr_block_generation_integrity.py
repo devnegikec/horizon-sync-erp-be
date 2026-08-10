@@ -5,9 +5,9 @@ Revises: 040_add_product_shelf_life
 Create Date: 2026-07-29
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "041_qr_block_integrity"
 down_revision = "040_add_product_shelf_life"

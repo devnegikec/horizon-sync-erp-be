@@ -4,15 +4,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
-from app.dependencies import CurrentUser, require_permission
 
 from app.database import get_db
+from app.dependencies import CurrentUser, require_permission
 from app.schemas.destination_market import (
-    DestinationCurrencyResponse,
     DestinationMarketCreate,
     DestinationMarketListResponse,
     DestinationMarketResponse,
-    DestinationMarketUpdate,
 )
 from app.services.destination_market_service import DestinationMarketService
 
@@ -54,7 +52,7 @@ def list_markets(
     search: str | None = Query(None, description="Search by name or code"),
     service: DestinationMarketService = Depends(get_service),
     current_user: CurrentUser = Depends(require_permission("landing.read")),
-    
+
 ):
     org_id = current_user.organization_id
     return service.list_markets(org_id, page, page_size, is_active, country, search)

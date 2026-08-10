@@ -1,15 +1,19 @@
 """Repository for Cascade module"""
 
-from uuid import UUID
 import uuid
+from uuid import UUID
 
-from sqlalchemy.orm import Session
-from app.models.qr_activation import QRTypeEnum
-from app.models.qr_activation import QRActivationParameters, QRActivationTrack
-
-from app.models.product_item import ProductItem
-from app.models.brand import Brand
 from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.models.brand import Brand
+from app.models.product_item import ProductItem
+from app.models.qr_activation import (
+    QRActivationParameters,
+    QRActivationTrack,
+    QRTypeEnum,
+)
+
 
 class QRActivationTrackRepository:
     def __init__(self, db: Session):
@@ -79,9 +83,8 @@ class QRActivationTrackRepository:
             .limit(page_size)
             .all()
         )
-        print(f"list_roots: total={total} returned={len(items)}")
         return items, total
-    
+
     def count_children(self, parent_app_id: UUID) -> int:
         track_count = (
             self.db.query(func.count(QRActivationTrack.id))
@@ -99,7 +102,7 @@ class QRActivationTrackRepository:
         ) or 0
 
         return param_count
-    
+
     def list_history(
         self,
         organization_id: UUID,
@@ -174,7 +177,7 @@ class QRActivationTrackRepository:
     def generate_serial(self, prefix: str = "QR") -> str:
         """Generate a short unique serial for a cascade node."""
         return f"{prefix}{str(uuid.uuid4()).replace('-', '')[:8].upper()}"
-    
+
     def get_brand(self, organization_id: UUID):
         return (
             self.db.query(Brand)
