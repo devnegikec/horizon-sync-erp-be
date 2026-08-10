@@ -21,10 +21,32 @@ depends_on = None
 
 
 def upgrade():
-    # 1. Add new enum values
-    op.execute("ALTER TYPE usertype ADD VALUE IF NOT EXISTS 'warehouse_worker'")
-    op.execute("ALTER TYPE resourcetype ADD VALUE IF NOT EXISTS 'receiving_slip'")
-    op.execute("ALTER TYPE actiontype ADD VALUE IF NOT EXISTS 'scan'")
+    # 1. Add new enum values, guarding against missing types
+    op.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'usertype') THEN "
+        "CREATE TYPE usertype AS ENUM ('system_admin', 'organization_admin', 'user', 'guest', 'warehouse_worker'); "
+        "ELSE "
+        "ALTER TYPE usertype ADD VALUE IF NOT EXISTS 'warehouse_worker'; "
+        "END IF; END $$;"
+    )
+    op.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'resourcetype') THEN "
+        "CREATE TYPE resourcetype AS ENUM ('user', 'organization', 'team', 'role', 'permission', "
+        "'customer', 'sales_order', 'invoice', 'supplier', 'purchase_order', 'item', 'item_group', "
+        "'warehouse', 'stock_entry', 'batch', 'serial', 'chart_of_account', 'payment', "
+        "'billing', 'report', 'reporting', 'setting', 'all', 'invitation', 'asn_order', 'pick_list', "
+        "'receiving_slip'); "
+        "ELSE "
+        "ALTER TYPE resourcetype ADD VALUE IF NOT EXISTS 'receiving_slip'; "
+        "END IF; END $$;"
+    )
+    op.execute(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'actiontype') THEN "
+        "CREATE TYPE actiontype AS ENUM ('create', 'read', 'update', 'delete', 'manage', 'execute', 'invite', 'scan'); "
+        "ELSE "
+        "ALTER TYPE actiontype ADD VALUE IF NOT EXISTS 'scan'; "
+        "END IF; END $$;"
+    )
 
     # 2. Add qr_code column to users table
     op.add_column(

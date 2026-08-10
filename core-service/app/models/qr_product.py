@@ -20,6 +20,7 @@ class QRProduct(Base):
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
 
     name = Column(String(100), nullable=False)
+    sku = Column(String(100), nullable=True)
     generic_name = Column(String(100), nullable=True)
     gtin = Column(String(20), nullable=True)
     industry = Column(String(100), nullable=True)
@@ -50,6 +51,12 @@ class QRProduct(Base):
 
     # Relationships
     brand = relationship("Brand", back_populates="qr_products")
+    landing_page_config = relationship(
+        "LandingPageConfig",
+        back_populates="product",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     qr_blocks = relationship(
         "QRBlock", back_populates="product", cascade="all, delete-orphan"
     )

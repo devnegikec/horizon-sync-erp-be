@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -17,11 +17,13 @@ class QRScanEvent(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    product_item_id = Column(UUID(as_uuid=True),
-                             ForeignKey("product_items.id"), nullable=True)
+    product_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("product_items.id"), nullable=True
+    )
     serial_number = Column(String(75), nullable=True, index=True)
-    scan_timestamp = Column(DateTime(timezone=True),
-                            default=lambda: datetime.now(UTC), index=True)
+    scan_timestamp = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
     device_type = Column(String(50), nullable=True)
     os = Column(String(50), nullable=True)
     browser = Column(String(50), nullable=True)
@@ -32,6 +34,14 @@ class QRScanEvent(Base):
     state = Column(String(100), nullable=True)
     country = Column(String(100), nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # ── Phase 1 enhancements ────────────────────────────────────────────
+    user_agent_raw = Column(Text, nullable=True)
+    user_agent_parsed = Column(JSONB, nullable=True)
+    qr_type = Column(String(30), nullable=True)
+    cta_action = Column(String(50), nullable=True)
+    referrer_url = Column(Text, nullable=True)
+    language = Column(String(10), nullable=True)
 
     # Relationships
     product_item = relationship("ProductItem", back_populates="scan_events")

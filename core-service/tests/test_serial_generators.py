@@ -172,3 +172,33 @@ class TestBuildQrUrl:
         assert "/s/XY99/" in url
         assert "/999?" in url
         assert "c=abc123" in url
+
+    def test_url_with_custom_base_url(self):
+        url = build_qr_url(
+            org_short_code="acme",
+            domain="verify.example.com",
+            gtin="1234567890123",
+            serial_number="ABC123",
+            timestamp=1718000000000,
+            signature="c2lnbmF0dXJl",
+            base_url="https://app.horizonsync.com/verify",
+        )
+        assert url == (
+            "https://app.horizonsync.com/verify"
+            "/g/1234567890123/s/ABC123/1718000000000?c=c2lnbmF0dXJl"
+        )
+
+    def test_custom_base_url_ignores_domain(self):
+        url = build_qr_url(
+            org_short_code="acme",
+            domain="verify.example.com",
+            gtin="gtin",
+            serial_number="SN",
+            timestamp=1,
+            signature="sig",
+            base_url="https://myfrontend.com",
+        )
+        # Should NOT contain the domain or org_short_code
+        assert "verify.example.com" not in url
+        assert "acme" not in url.split("/")[2]  # not in host
+        assert url == "https://myfrontend.com/g/gtin/s/SN/1?c=sig"

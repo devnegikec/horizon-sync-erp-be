@@ -43,9 +43,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
 # Startup: run migrations then start the server
-CMD ["bash", "-c", "\
-    echo 'Running Search Service migrations...' && \
+CMD echo 'Running Search Service migrations...' && \
     python -m alembic upgrade head && \
     echo 'Starting Search Service...' && \
-    uvicorn app.main:app --host 0.0.0.0 --port 8002 \
-    "]
+    uvicorn app.main:app --host 0.0.0.0 --port 8002

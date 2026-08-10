@@ -26,9 +26,9 @@ class AsnOrderService:
         if not payload.get("asn_order_no"):
             from app.services.document_numbering_service import DocumentNumberingService
 
-            payload["asn_order_no"] = DocumentNumberingService(
-                self.db
-            ).get_next_number(organization_id, "asn_order")
+            payload["asn_order_no"] = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "asn_order"
+            )
 
         # Handle status enum conversion
         if payload.get("status"):
@@ -89,9 +89,7 @@ class AsnOrderService:
     def get_by_id(self, asn_order_id: UUID, organization_id: UUID) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
         return self._to_response(asn_order)
 
     def get_list(
@@ -131,9 +129,7 @@ class AsnOrderService:
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         payload = {k: v for k, v in data.items() if v is not None and k != "items"}
 
@@ -234,9 +230,7 @@ class AsnOrderService:
     def delete(self, asn_order_id: UUID, organization_id: UUID) -> None:
         asn_order = self.repo.get_by_id(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
         self.repo.delete(asn_order)
 
     def update_status(
@@ -248,9 +242,7 @@ class AsnOrderService:
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         new_status_enum = AsnOrderStatus(new_status)
         self._validate_status_transition(asn_order.status, new_status_enum)
@@ -404,9 +396,7 @@ class AsnOrderService:
                 f"Warehouse {warehouse_id} not found in organization"
             )
 
-    def _validate_item_organization(
-        self, item_id: UUID, organization_id: UUID
-    ) -> None:
+    def _validate_item_organization(self, item_id: UUID, organization_id: UUID) -> None:
         from app.models.item import Item
 
         item = (
@@ -418,9 +408,7 @@ class AsnOrderService:
             .first()
         )
         if not item:
-            raise ResourceNotFoundException(
-                f"Item {item_id} not found in organization"
-            )
+            raise ResourceNotFoundException(f"Item {item_id} not found in organization")
 
     def _validate_status_transition(
         self,

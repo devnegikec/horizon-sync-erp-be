@@ -47,6 +47,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table="core_alembic_version",
         version_table_pk_length=255,
     )
 
@@ -68,16 +69,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        # The alembic_version table is created with VARCHAR(32) by default, which is
-        # too narrow for revision IDs like '035_add_subscription_billing_fields' (35 chars).
-        # We must widen it OUTSIDE of any transaction (AUTOCOMMIT) so the change persists.
-        connection.execute(
-            __import__('sqlalchemy').text("COMMIT")
-        )
+        # Use a separate version table to avoid conflicts with identity-service
+        connection.execute(__import__("sqlalchemy").text("COMMIT"))
         try:
             connection.execute(
-                __import__('sqlalchemy').text(
-                    "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE core_alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
                 )
             )
         except Exception:
@@ -86,6 +83,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            version_table="core_alembic_version",
             version_table_pk_length=255,
         )
 

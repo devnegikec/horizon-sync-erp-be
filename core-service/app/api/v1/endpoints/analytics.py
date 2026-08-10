@@ -4,12 +4,14 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from app.core.constants import ANALYTICS_MODULE_ENABLED
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, require_feature_flag
+from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
+from app.dependencies import CurrentUser, get_current_user, require_feature_flag
 from app.schemas.analytics import (
+    CTABreakdownResponse,
+    InteractionFunnelResponse,
     MetaCampaignCreate,
     MetaCampaignListResponse,
     MetaCampaignResponse,
@@ -19,7 +21,9 @@ from app.schemas.analytics import (
 )
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))])
+router = APIRouter(
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))]
+)
 
 
 def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
@@ -28,19 +32,22 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
 
 # ── QR Scan Event Ingestion ───────────────────────────────────────────────────
 
+
 @router.post(
     "/scans/ingest",
     response_model=QRScanEventResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Ingest a QR scan event (public — called by QR landing page)",
 )
-def ingest_scan(
+async def ingest_scan(
     data: QRScanEventIngest,
-    organization_id: UUID = Query(..., description="Organization that owns the QR code"),
+    organization_id: UUID = Query(
+        ..., description="Organization that owns the QR code"
+    ),
     service: AnalyticsService = Depends(get_service),
 ):
     """No auth required — called by the consumer-facing QR landing page."""
-    return service.ingest_scan(data, organization_id)
+    return await service.ingest_scan(data, organization_id)
 
 
 @router.get(
@@ -55,9 +62,9 @@ def list_scan_events(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_scan_events(
         org_id, page, page_size, serial_number, product_item_id, date_from, date_to
     )
@@ -73,13 +80,76 @@ def get_scan_analytics(
     date_to: datetime | None = Query(None),
     serial_number: str | None = Query(None, description="Filter to a single serial"),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
 
 
+# ── Enhanced Analytics ────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/scans/interaction-funnel",
+    response_model=InteractionFunnelResponse,
+    summary="Get interaction funnel (scans → unique products → CTA clicks)",
+)
+def get_interaction_funnel(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_interaction_funnel(org_id, date_from, date_to)
+
+
+@router.get(
+    "/scans/cta-breakdown",
+    response_model=CTABreakdownResponse,
+    summary="Get CTA button click breakdown",
+)
+def get_cta_breakdown(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_cta_breakdown(org_id, date_from, date_to)
+
+
+@router.get(
+    "/scans/geo-heatmap",
+    summary="Get geographic heatmap data for scans",
+)
+def get_geo_heatmap(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_geo_heatmap(org_id, date_from, date_to, limit)
+
+
+@router.get(
+    "/scans/device-timeline",
+    summary="Get scan counts over time grouped by device type",
+)
+def get_device_timeline(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    org_id = current_user.organization_id
+    return service.get_device_timeline(org_id, date_from, date_to)
+
+
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────
+
 
 @router.post(
     "/meta-campaigns",
@@ -90,9 +160,9 @@ def get_scan_analytics(
 def record_meta_snapshot(
     data: MetaCampaignCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.record_meta_snapshot(data, org_id)
 
 
@@ -106,9 +176,9 @@ def list_meta_campaigns(
     page_size: int = Query(20, ge=1, le=100),
     campaign_id: str | None = Query(None, description="Filter by Meta campaign ID"),
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.list_meta_campaigns(org_id, page, page_size, campaign_id)
 
 
@@ -120,9 +190,9 @@ def list_meta_campaigns(
 def get_meta_campaign(
     mc_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     mc = service.get_meta_campaign(mc_id, org_id)
     if not mc:
         raise HTTPException(status_code=404, detail="Meta campaign record not found")
