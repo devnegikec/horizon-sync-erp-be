@@ -543,3 +543,62 @@ if tracking.putaway_status == 'completed' and tracking.receiving_status == 'reje
 ### Q9: Is there a scenario where stock_entered could be set to TRUE incorrectly?
 
 No. `try_enter_stock()` is the ONLY function that sets `stock_entered = True`, and it requires both `receiving_status='approved'` AND `putaway_status='completed'`. Additionally, `FOR UPDATE` locking ensures no two transactions can enter stock for the same tracking row simultaneously.
+
+### Q10: What's the difference between `damaged` and `rejected` flags on receiving slip items?
+
+They serve different purposes in the warehouse workflow:
+
+| | `damaged` | `rejected` |
+|---|---|---|
+| **Nature** | Observation — physical fact | Decision — explicit action |
+| **Set by** | Dock worker via `POST .../flag` endpoint | Dock worker/supervisor via `reject_item()` |
+| **When** | During receiving review — item arrived physically damaged (broken, crushed, wet, etc.) | Any time during receiving — wrong product, quality issue, expired, any reason |
+| **Has reason?** | Optional `notes` field | `rejection_reason`, `rejected_by`, `rejected_at` — full audit trail |
+| **Resolution** | Terminal state — handled outside system (insurance, supplier claim) | **Floating items workflow**: can be `accept`ed (back to `ok`), `return_to_sender`, or `dispose`d |
+| **Put-away** | Excluded | Excluded |
+| **ASN counting** | Counts as delivered (goods arrived, just damaged) | Counts as delivered (goods arrived, rejected by receiver) |
+
+**Think of it as:** `damaged` = "the box is crushed, nothing we can do" — an observation. `rejected` = "I'm quarantining this item for reason X" — a decision that triggers the floating-items resolution flow.
+
+**API endpoints involved:**
+
+| Flag | Endpoint | Action |
+|---|---|---|
+| `damaged` | `POST /inbound/slips/{id}/items/{id}/flag` with `{"flag": "damaged"}` | Dock worker flags physical damage |
+| `rejected` | `POST /inbound/slips/{id}/items/{id}/reject` with `{"reason": "..."}` | Worker/supervisor rejects with reason |
+| Floating resolution | `POST /inbound/floating-items/{id}/resolve` with `{"action": "accept|return_to_sender|dispose"}` | Resolve rejected (floating) item |
+
+### Q11: How are `damaged` and `rejected` items handled during put-away generation?
+
+Both are excluded from put-away lists by `PutAwayService.generate_from_slip()`:
+
+```python
+# In put_away_service.py — generate_from_slip()
+skipped_damaged: list[str] = []
+skipped_rejected: list[str] = []   # separate tracking
+skipped_unresolved: list[str] = []
+
+for slip_item in slip.items:
+    if slip_item.flag in ("damaged", "rejected"):
+        skipped = (
+            skipped_damaged if slip_item.flag == "damaged"
+            else skipped_rejected
+        )
+        skipped.append(
+            f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
+        )
+        continue
+```
+
+Each category is tracked separately and written to `put_away_list.remarks` as JSON warnings:
+
+```json
+{
+  "warnings": [
+    "Skipped 2 damaged item(s): SKU123 (batch: B1, qty: 5); SKU456 (batch: B2, qty: 3)",
+    "Skipped 1 rejected item(s): SKU789 (batch: B3, qty: 1)"
+  ]
+}
+```
+
+This gives full visibility into what was excluded and why — no items silently disappear.

@@ -116,11 +116,16 @@ class PutAwayService:
         # Process each receiving slip item and assign bins
         put_away_items = []
         skipped_damaged: list[str] = []
+        skipped_rejected: list[str] = []
         skipped_unresolved: list[str] = []
         for slip_item in slip.items:
-            # Skip items flagged as damaged
-            if slip_item.flag == "damaged":
-                skipped_damaged.append(
+            # Skip items flagged as damaged or rejected
+            if slip_item.flag in ("damaged", "rejected"):
+                skipped = (
+                    skipped_damaged if slip_item.flag == "damaged"
+                    else skipped_rejected
+                )
+                skipped.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
                 )
                 continue
@@ -178,6 +183,11 @@ class PutAwayService:
             warnings_parts.append(
                 f"Skipped {len(skipped_damaged)} damaged item(s): "
                 + "; ".join(skipped_damaged)
+            )
+        if skipped_rejected:
+            warnings_parts.append(
+                f"Skipped {len(skipped_rejected)} rejected item(s): "
+                + "; ".join(skipped_rejected)
             )
         if skipped_unresolved:
             warnings_parts.append(
