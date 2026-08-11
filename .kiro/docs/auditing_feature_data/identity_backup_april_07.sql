@@ -26,7 +26,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner:
 --
 
 COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
@@ -210,13 +210,13 @@ CREATE FUNCTION public.validate_single_master_admin() RETURNS trigger
                 WHERE p.code = 'system_admin.master'
                 AND uor.is_active = true
                 AND (TG_OP = 'INSERT' OR uor.id != NEW.id); -- Exclude current record if updating
-                
+
                 -- If this is an INSERT and we're adding a role with master permission
                 IF TG_OP = 'INSERT' AND NEW.is_active = true THEN
                     -- Check if the new role has master permission
                     IF EXISTS (
                         SELECT 1 FROM role_permissions rp
-                        JOIN permissions p ON rp.permission_id = p.id  
+                        JOIN permissions p ON rp.permission_id = p.id
                         WHERE rp.role_id = NEW.role_id
                         AND p.code = 'system_admin.master'
                     ) THEN
@@ -226,7 +226,7 @@ CREATE FUNCTION public.validate_single_master_admin() RETURNS trigger
                         END IF;
                     END IF;
                 END IF;
-                
+
                 RETURN COALESCE(NEW, OLD);
             END;
             $$;
@@ -246,9 +246,9 @@ CREATE FUNCTION public.validate_system_admin_role_assignment() RETURNS trigger
             IF EXISTS (
                 SELECT 1 FROM role_permissions rp
                 JOIN permissions p ON rp.permission_id = p.id
-                WHERE rp.role_id = NEW.role_id 
+                WHERE rp.role_id = NEW.role_id
                 AND (
-                    p.code LIKE 'system_admin.%' 
+                    p.code LIKE 'system_admin.%'
                     OR p.code = '*.*'
                     OR p.code = 'system.admin'
                 )
@@ -256,10 +256,10 @@ CREATE FUNCTION public.validate_system_admin_role_assignment() RETURNS trigger
                 -- Ensure the user being assigned belongs to master organization
                 -- (We'll validate this in application code since we need to identify master org)
                 -- For now, just log the system admin role assignment
-                RAISE NOTICE 'System admin role assignment for user % in organization %', 
+                RAISE NOTICE 'System admin role assignment for user % in organization %',
                     NEW.user_id, NEW.organization_id;
             END IF;
-            
+
             RETURN NEW;
         END;
         $$;
@@ -2872,4 +2872,3 @@ ALTER TABLE ONLY public.user_organization_roles
 --
 
 \unrestrict El8gk3IHoAW0tzbdXbRhSV6WWCXMIb08oMCbBJwS69Mz6YTGPgGUyRIyIdjhl8M
-

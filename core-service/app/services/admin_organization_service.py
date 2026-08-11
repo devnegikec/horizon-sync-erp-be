@@ -5,7 +5,6 @@ Enriches responses with core-service data (invoices, payments) where needed.
 """
 
 import logging
-import math
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -53,7 +52,12 @@ class AdminOrganizationService:
         page: int = 1,
         page_size: int = 20,
     ) -> AdminOrgListResponse:
-        params: dict = {"page": page, "page_size": page_size, "sort_by": "created_at", "sort_order": "desc"}
+        params: dict = {
+            "page": page,
+            "page_size": page_size,
+            "sort_by": "created_at",
+            "sort_order": "desc",
+        }
         if search:
             params["search"] = search
         if status_filter:
@@ -68,15 +72,22 @@ class AdminOrganizationService:
 
         # Handle authentication/authorization errors by passing them through
         if resp.status_code in [401, 403]:
-            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            logger.warning(
+                f"Identity-service authentication error: {resp.status_code} - {resp.text}"
+            )
             raise HTTPException(
                 status_code=resp.status_code,
-                detail=resp.json().get("detail", "Authentication required")
+                detail=resp.json().get("detail", "Authentication required"),
             )
-        
+
         if resp.status_code != 200:
-            logger.error(f"Identity-service /organizations returned {resp.status_code}: {resp.text}")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organizations")
+            logger.error(
+                f"Identity-service /organizations returned {resp.status_code}: {resp.text}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch organizations",
+            )
 
         data = resp.json()
         orgs_raw = data.get("organizations", [])
@@ -84,27 +95,29 @@ class AdminOrganizationService:
 
         orgs = []
         for o in orgs_raw:
-            orgs.append(AdminOrgListItem(
-                id=o["id"],
-                name=o["name"],
-                slug=o["slug"],
-                display_name=o.get("display_name"),
-                status=o["status"],
-                organization_type=o["organization_type"],
-                is_active=o.get("is_active", True),
-                created_at=o["created_at"],
-                billing_status=o.get("billing_status"),
-                subscription_start_date=o.get("subscription_start_date"),
-                subscription_end_date=o.get("subscription_end_date"),
-                trial_end_date=o.get("trial_end_date"),
-                max_users=o.get("max_users"),
-                max_credits=o.get("max_credits"),
-                billing_contact_email=o.get("billing_contact_email"),
-                billing_cycle=o.get("billing_cycle"),
-                customer_since=o.get("customer_since"),
-                last_billed_date=o.get("last_billed_date"),
-                next_billing_date=o.get("next_billing_date"),
-            ))
+            orgs.append(
+                AdminOrgListItem(
+                    id=o["id"],
+                    name=o["name"],
+                    slug=o["slug"],
+                    display_name=o.get("display_name"),
+                    status=o["status"],
+                    organization_type=o["organization_type"],
+                    is_active=o.get("is_active", True),
+                    created_at=o["created_at"],
+                    billing_status=o.get("billing_status"),
+                    subscription_start_date=o.get("subscription_start_date"),
+                    subscription_end_date=o.get("subscription_end_date"),
+                    trial_end_date=o.get("trial_end_date"),
+                    max_users=o.get("max_users"),
+                    max_credits=o.get("max_credits"),
+                    billing_contact_email=o.get("billing_contact_email"),
+                    billing_cycle=o.get("billing_cycle"),
+                    customer_since=o.get("customer_since"),
+                    last_billed_date=o.get("last_billed_date"),
+                    next_billing_date=o.get("next_billing_date"),
+                )
+            )
 
         return AdminOrgListResponse(
             organizations=orgs,
@@ -128,40 +141,63 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 404:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")        # Handle authentication/authorization errors by passing them through
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+            )  # Handle authentication/authorization errors by passing them through
         if resp.status_code in [401, 403]:
-            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            logger.warning(
+                f"Identity-service authentication error: {resp.status_code} - {resp.text}"
+            )
             raise HTTPException(
                 status_code=resp.status_code,
-                detail=resp.json().get("detail", "Authentication required")
-            )        # Handle authentication/authorization errors by passing them through
+                detail=resp.json().get("detail", "Authentication required"),
+            )  # Handle authentication/authorization errors by passing them through
         if resp.status_code in [401, 403]:
-            logger.warning(f"Identity-service authentication error: {resp.status_code} - {resp.text}")
+            logger.warning(
+                f"Identity-service authentication error: {resp.status_code} - {resp.text}"
+            )
             raise HTTPException(
                 status_code=resp.status_code,
-                detail=resp.json().get("detail", "Authentication required")
+                detail=resp.json().get("detail", "Authentication required"),
             )
         if resp.status_code != 200:
-            logger.error(f"Identity-service /organizations/{org_id} returned {resp.status_code}")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organization")
+            logger.error(
+                f"Identity-service /organizations/{org_id} returned {resp.status_code}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch organization",
+            )
 
         o = resp.json()
         counts = self._get_core_counts(org_id)
 
         return AdminOrgDetailResponse(
-            id=o["id"], name=o["name"], slug=o["slug"],
-            display_name=o.get("display_name"), description=o.get("description"),
-            email=o.get("email"), phone=o.get("phone"), website=o.get("website"),
-            address_line1=o.get("address_line1"), address_line2=o.get("address_line2"),
-            city=o.get("city"), state=o.get("state"),
-            postal_code=o.get("postal_code"), country=o.get("country"),
+            id=o["id"],
+            name=o["name"],
+            slug=o["slug"],
+            display_name=o.get("display_name"),
+            description=o.get("description"),
+            email=o.get("email"),
+            phone=o.get("phone"),
+            website=o.get("website"),
+            address_line1=o.get("address_line1"),
+            address_line2=o.get("address_line2"),
+            city=o.get("city"),
+            state=o.get("state"),
+            postal_code=o.get("postal_code"),
+            country=o.get("country"),
             organization_type=o["organization_type"],
-            industry=o.get("industry"), base_currency=o.get("base_currency"),
-            logo_url=o.get("logo_url"), status=o["status"],
+            industry=o.get("industry"),
+            base_currency=o.get("base_currency"),
+            logo_url=o.get("logo_url"),
+            status=o["status"],
             is_active=o.get("is_active", True),
             owner_id=o.get("owner_id"),
-            settings=o.get("settings"), extra_data=o.get("extra_data"),
-            created_at=o["created_at"], updated_at=o.get("updated_at"),
+            settings=o.get("settings"),
+            extra_data=o.get("extra_data"),
+            created_at=o["created_at"],
+            updated_at=o.get("updated_at"),
             user_count=counts["user_count"],
             invoice_count=counts["invoice_count"],
             payment_total=counts["payment_total"],
@@ -178,29 +214,49 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 409:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organization with this slug already exists")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Organization with this slug already exists",
+            )
         if resp.status_code not in (200, 201):
-            logger.error(f"Identity-service POST /organizations returned {resp.status_code}: {resp.text}")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to create organization")
+            logger.error(
+                f"Identity-service POST /organizations returned {resp.status_code}: {resp.text}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to create organization",
+            )
 
         o = resp.json()
         org_id = o["id"]
         counts = self._get_core_counts(org_id)
 
         return AdminOrgDetailResponse(
-            id=o["id"], name=o["name"], slug=o["slug"],
-            display_name=o.get("display_name"), description=o.get("description"),
-            email=o.get("email"), phone=o.get("phone"), website=o.get("website"),
-            address_line1=o.get("address_line1"), address_line2=o.get("address_line2"),
-            city=o.get("city"), state=o.get("state"),
-            postal_code=o.get("postal_code"), country=o.get("country"),
+            id=o["id"],
+            name=o["name"],
+            slug=o["slug"],
+            display_name=o.get("display_name"),
+            description=o.get("description"),
+            email=o.get("email"),
+            phone=o.get("phone"),
+            website=o.get("website"),
+            address_line1=o.get("address_line1"),
+            address_line2=o.get("address_line2"),
+            city=o.get("city"),
+            state=o.get("state"),
+            postal_code=o.get("postal_code"),
+            country=o.get("country"),
             organization_type=o["organization_type"],
-            industry=o.get("industry"), base_currency=o.get("base_currency"),
-            logo_url=o.get("logo_url"), status=o["status"],
+            industry=o.get("industry"),
+            base_currency=o.get("base_currency"),
+            logo_url=o.get("logo_url"),
+            status=o["status"],
             is_active=o.get("is_active", True),
             owner_id=o.get("owner_id"),
-            settings=o.get("settings"), extra_data=o.get("extra_data"),
-            created_at=o["created_at"], updated_at=o.get("updated_at"),
+            settings=o.get("settings"),
+            extra_data=o.get("extra_data"),
+            created_at=o["created_at"],
+            updated_at=o.get("updated_at"),
             user_count=counts["user_count"],
             invoice_count=counts["invoice_count"],
             payment_total=counts["payment_total"],
@@ -208,7 +264,9 @@ class AdminOrganizationService:
 
     # ── Update ───────────────────────────────────────────────────────
 
-    async def update_organization(self, org_id: UUID, data: AdminOrgUpdate) -> AdminOrgDetailResponse:
+    async def update_organization(
+        self, org_id: UUID, data: AdminOrgUpdate
+    ) -> AdminOrgDetailResponse:
         payload = data.model_dump(exclude_unset=True)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -219,10 +277,17 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 404:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+            )
         if resp.status_code != 200:
-            logger.error(f"Identity-service PATCH /organizations/{org_id} returned {resp.status_code}: {resp.text}")
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to update organization")
+            logger.error(
+                f"Identity-service PATCH /organizations/{org_id} returned {resp.status_code}: {resp.text}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to update organization",
+            )
 
         # Re-fetch full detail
         return await self.get_organization(org_id)
@@ -237,9 +302,14 @@ class AdminOrganizationService:
             )
 
         if resp.status_code == 404:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
+            )
         if resp.status_code != 200:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to fetch organization")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch organization",
+            )
 
         o = resp.json()
 
@@ -259,7 +329,9 @@ class AdminOrganizationService:
         return AdminOrgBillingResponse(
             organization_id=o["id"],
             organization_name=o["name"],
-            on_trial=o.get("on_trial", False) if "on_trial" in o else (o.get("status") == "trial"),
+            on_trial=o.get("on_trial", False)
+            if "on_trial" in o
+            else (o.get("status") == "trial"),
             trial_expiry=o.get("trial_expiry"),
             paid_until=o.get("paid_until"),
             total_invoiced=total_invoiced,
@@ -283,7 +355,11 @@ class AdminOrganizationService:
             .scalar()
         ) or Decimal("0")
 
-        return {"user_count": 0, "invoice_count": invoice_count, "payment_total": payment_total}
+        return {
+            "user_count": 0,
+            "invoice_count": invoice_count,
+            "payment_total": payment_total,
+        }
 
     # ── System Administration Methods ──────────────────────────────────
 
@@ -297,13 +373,13 @@ class AdminOrganizationService:
                     headers=self._headers(),
                     timeout=30.0,
                 )
-                
+
                 if response.status_code == 404:
                     return None
-                    
-                response.raise_for_status() 
+
+                response.raise_for_status()
                 org_data = response.json()
-                
+
                 # Map to AdminOrgDetailResponse format
                 return AdminOrgDetailResponse(
                     id=UUID(org_data["id"]),
@@ -326,14 +402,16 @@ class AdminOrganizationService:
                     logo_url=org_data.get("logo_url"),
                     status=org_data.get("status", "active"),
                     is_active=org_data.get("is_active", True),
-                    owner_id=UUID(org_data["owner_id"]) if org_data.get("owner_id") else None,
+                    owner_id=UUID(org_data["owner_id"])
+                    if org_data.get("owner_id")
+                    else None,
                     settings=org_data.get("settings"),
                     extra_data=org_data.get("extra_data"),
                     created_at=org_data["created_at"],
                     updated_at=org_data.get("updated_at"),
-                    **self._get_core_counts(UUID(org_data["id"]))
+                    **self._get_core_counts(UUID(org_data["id"])),
                 )
-                
+
         except httpx.RequestError as e:
             logger.error(f"Network error getting master organization: {e}")
             return None
@@ -341,14 +419,18 @@ class AdminOrganizationService:
             logger.error(f"Error getting master organization: {e}")
             return None
 
-    async def update_master_organization(self, updates: dict) -> Optional[AdminOrgDetailResponse]:
+    async def update_master_organization(
+        self, updates: dict
+    ) -> Optional[AdminOrgDetailResponse]:
         """Update master organization details"""
         try:
             # First get master organization to get its ID
             master_org = await self.get_master_organization()
             if not master_org:
-                raise HTTPException(status_code=404, detail="Master organization not found")
-            
+                raise HTTPException(
+                    status_code=404, detail="Master organization not found"
+                )
+
             # Update via identity service
             async with httpx.AsyncClient() as client:
                 response = await client.patch(
@@ -357,15 +439,20 @@ class AdminOrganizationService:
                     json=updates,
                     timeout=30.0,
                 )
-                
+
                 response.raise_for_status()
-                
+
                 # Return updated organization
                 return await self.get_master_organization()
-                
+
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error updating master organization: {e}")
-            raise HTTPException(status_code=e.response.status_code, detail="Failed to update master organization")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail="Failed to update master organization",
+            )
         except Exception as e:
             logger.error(f"Error updating master organization: {e}")
-            raise HTTPException(status_code=500, detail="Failed to update master organization")
+            raise HTTPException(
+                status_code=500, detail="Failed to update master organization"
+            )

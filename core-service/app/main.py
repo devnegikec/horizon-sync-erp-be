@@ -163,10 +163,6 @@ async def lifespan(app: FastAPI):
 
     register_audit_listeners()
 
-    # Background task: clean up expired bin reservations every 60 s
-    cleanup_task = asyncio.create_task(_bin_reservation_cleanup_loop())
-    logger.info("Started bin-reservation cleanup background task (interval: 60s)")
-
     yield
     # Shutdown
     cleanup_task.cancel()
