@@ -311,6 +311,14 @@ class PutAwayService:
         put_away_item.completed_at = datetime.now(UTC)
         self.db.flush()
 
+        # ── NEW: Update tracking records for this put-away ──
+        self._update_tracking_on_putaway(
+            put_away_item=put_away_item,
+            target_bin_id=target_bin_id,
+            worker_id=worker_id,
+            org_id=org_id,
+        )
+
         # Release any reservation the worker held on the destination bin so it
         # becomes immediately available to others (FR-CW lifecycle).
         self.reservation_service.release(
@@ -707,6 +715,66 @@ class PutAwayService:
                 item_map[opt_loc.id].sort_order = opt_loc.sort_order
 
         self.db.flush()
+
+    def _update_tracking_on_putaway(
+        self,
+        put_away_item,
+        target_bin_id: UUID,
+        worker_id: UUID,
+        org_id: UUID,
+    ) -> None:
+        """Update scanned_item_tracking records when put-away completes."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        put_away_list = put_away_item.put_away_list
+        if not put_away_list or not put_away_list.receiving_slip_id:
+            return
+
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.receiving_slip_id == put_away_list.receiving_slip_id,
+                ScannedItemTracking.item_id == put_away_item.item_id,
+                ScannedItemTracking.batch_number == put_away_item.batch_number,
+                ScannedItemTracking.putaway_status == "pending",
+            )
+            .all()
+        )
+
+        if not trackings:
+            return
+
+        now = datetime.now(UTC)
+        for t in trackings:
+            t.putaway_status = "completed"
+            t.bin_location_id = target_bin_id
+            t.putaway_at = now
+            t.putaway_by = worker_id
+
+            # Enter stock if receiving is also approved (no double entry — stock_entered flag guards)
+            if (
+                t.receiving_status == "approved"
+                and not t.stock_entered
+            ):
+                from app.services.bin_stock_service import BinStockService
+
+                BinStockService.add_stock(
+                    bin_location_id=t.bin_location_id,
+                    item_id=t.item_id,
+                    quantity=t.quantity,
+                    batch_number=t.batch_number,
+                )
+                t.stock_entered = True
+                t.stock_entered_at = now
+
+        self.db.flush()
+        logger.info(
+            "Tracking: %d records updated for put-away item %s",
+            len(trackings), put_away_item.id,
+        )
 
     def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:
         """Check if all items in a put-away list are done and update statuses.
