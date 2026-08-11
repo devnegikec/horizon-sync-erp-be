@@ -181,10 +181,15 @@ class InboundService:
 
         # Resolve item from SKU
         from app.models.item import Item
-        item = self.db.query(Item).filter(
-            Item.sku == payload.sku,
-            Item.organization_id == organization_id,
-        ).first()
+
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.sku == payload.sku,
+                Item.organization_id == organization_id,
+            )
+            .first()
+        )
 
         if item is not None:
             tracking_svc = ScannedItemTrackingService(self.db)
@@ -203,7 +208,8 @@ class InboundService:
         else:
             logger.warning(
                 "No item found for SKU='%s' in org=%s — tracking record skipped",
-                payload.sku, organization_id,
+                payload.sku,
+                organization_id,
             )
 
         # Record scan event in qr_scan_events table
@@ -636,6 +642,7 @@ class InboundService:
         from app.services.scanned_item_tracking_service import (
             ScannedItemTrackingService,
         )
+
         tracking_svc = ScannedItemTrackingService(self.db)
         # Link tracking records to this slip
         trackings_updated = (
@@ -653,7 +660,9 @@ class InboundService:
         stock_entered = tracking_svc.approve_items(slip_id, approved_by=worker_id)
         logger.info(
             "Tracking: %d records linked to slip %s, %d entered stock",
-            trackings_updated, slip_id, stock_entered,
+            trackings_updated,
+            slip_id,
+            stock_entered,
         )
 
         # Trigger put-away list generation (with optional worker assignment)
@@ -749,9 +758,7 @@ class InboundService:
 
         self.db.commit()
 
-    def _update_asn_status(
-        self, asn_order_id: UUID, organization_id: UUID
-    ) -> None:
+    def _update_asn_status(self, asn_order_id: UUID, organization_id: UUID) -> None:
         """Update ASN status based on receiving slip approval progress.
 
         - First slip approved → partially_delivered
@@ -858,6 +865,19 @@ class InboundService:
 
         updated_slip = self.slip_repo.update_rejection_reason(slip_id, reason.strip())
         self.db.refresh(updated_slip)
+
+        # ── Update dual-axis tracking rows ──
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        tracking_service = ScannedItemTrackingService(self.db)
+        tracking_service.reject_items(
+            slip_id=slip_id,
+            reason=reason.strip(),
+            rejected_by=None,  # slip-level reject doesn't have rejected_by
+        )
+
         return self._slip_to_dict(updated_slip)
 
     # ------------------------------------------------------------------
@@ -1039,6 +1059,35 @@ class InboundService:
         updated_item = self.slip_repo.reject_item(
             item_id, reason.strip(), rejected_by=rejected_by, notes=notes
         )
+
+        # ── Update dual-axis tracking row ──
+        # batch_number in receiving_slip_items stores the serial number (qr_identifier)
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        tracking = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.qr_identifier == updated_item.batch_number,
+                ScannedItemTracking.receiving_slip_id == slip_id,
+            )
+            .first()
+        )
+        if tracking:
+            tracking.receiving_status = "rejected"
+            tracking.rejection_reason = reason.strip()
+            self.db.commit()
+            logger.info(
+                "Tracking rejected: qr=%s slip=%s item=%s",
+                updated_item.batch_number,
+                slip_id,
+                item_id,
+            )
+        else:
+            logger.warning(
+                "No tracking row found for rejected item: qr=%s slip=%s",
+                updated_item.batch_number,
+                slip_id,
+            )
 
         return {
             "id": str(updated_item.id),
@@ -1359,6 +1408,7 @@ class InboundService:
                 child_detail_map[c["serial_number"]] = {
                     "manufacturing_date": c.get("manufacturing_date"),
                     "expiry_date": c.get("expiry_date"),
+                    "dispatch_batch": c.get("dispatch_batch"),  # real batch number
                 }
 
         # Group items by QSeal parent
@@ -1369,12 +1419,15 @@ class InboundService:
 
             if parent_key not in groups:
                 parent_info = None
+                parent_batch = None
                 if qsp and qsp.parent_id and qsp.parent_id in qseal_track_map:
                     parent = qseal_track_map[qsp.parent_id]
+                    parent_batch = parent.name  # QSealTrack.name = batch name
                     parent_info = {
                         "id": str(parent.id),
                         "serial_number": parent.serial_number,
                         "name": parent.name,
+                        "batch": parent_batch,
                         "qseal_type": parent.qseal_type,
                         "capacity": parent.capacity,
                     }
@@ -1389,12 +1442,13 @@ class InboundService:
 
             # Merge ReceivingSlipItem + QSeal child detail into single item
             child_detail = child_detail_map.get(item.batch_number, {})
+            real_batch = child_detail.get("dispatch_batch") or item.batch_number
             groups[parent_key]["items"].append(
                 {
                     "id": str(item.id),
                     "serial_number": item.batch_number,
                     "sku": item.sku,
-                    "batch_number": item.batch_number,
+                    "batch_number": real_batch,  # actual dispatch_batch, not serial
                     "manufacturing_date": child_detail.get("manufacturing_date"),
                     "expiry_date": child_detail.get("expiry_date"),
                     "quantity": item.quantity,
