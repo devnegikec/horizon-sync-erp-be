@@ -666,10 +666,11 @@ class InboundService:
         )
 
         # ------------------------------------------------------------------
-        # Step 5: Update ASN delivered_qty for accepted items
+        # Step 5: Update ASN delivered_qty (includes rejected — shipper sent them)
         # ------------------------------------------------------------------
         if slip.asn_order_id:
             self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+            self._update_asn_status(slip.asn_order_id, organization_id)
 
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
@@ -712,8 +713,8 @@ class InboundService:
         if not slip_ids:
             return
 
-        # Aggregate accepted qty per SKU across all slips
-        accepted_by_sku = {}
+        # Aggregate ALL qty per SKU across all slips (rejected items still count as delivered)
+        delivered_by_sku = {}
         rows = (
             self.db.query(
                 ReceivingSlipItem.sku,
@@ -721,20 +722,19 @@ class InboundService:
             )
             .filter(
                 ReceivingSlipItem.slip_id.in_(slip_ids),
-                ReceivingSlipItem.flag == "ok",
             )
             .group_by(ReceivingSlipItem.sku)
             .all()
         )
         for sku, total in rows:
-            accepted_by_sku[sku] = int(total) if total else 0
+            delivered_by_sku[sku] = int(total) if total else 0
 
         # Update each ASN item's delivered_qty
         all_delivered = True
         any_delivered = False
         for asn_item in asn_order.items:
             sku = asn_item.item.sku if asn_item.item else None
-            delivered = accepted_by_sku.get(sku, 0)
+            delivered = delivered_by_sku.get(sku, 0)
             asn_item.delivered_qty = delivered
             if delivered > 0:
                 any_delivered = True
@@ -746,6 +746,56 @@ class InboundService:
             asn_order.status = "delivered"
         elif any_delivered and not all_delivered:
             asn_order.status = "partially_delivered"
+
+        self.db.commit()
+
+    def _update_asn_status(
+        self, asn_order_id: UUID, organization_id: UUID
+    ) -> None:
+        """Update ASN status based on receiving slip approval progress.
+
+        - First slip approved → partially_delivered
+        - All expected items delivered → delivered
+        - Otherwise → no change (already partially_delivered)
+        """
+        from app.models.asn_order import AsnOrder
+        from app.models.receiving_slip import ReceivingSlip
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            return
+
+        # Count approved slips for this ASN
+        approved_slips = (
+            self.db.query(ReceivingSlip)
+            .filter(
+                ReceivingSlip.asn_order_id == asn_order_id,
+                ReceivingSlip.organization_id == organization_id,
+                ReceivingSlip.status.in_(["pending_putaway", "putaway_complete"]),
+            )
+            .count()
+        )
+
+        total_slips = (
+            self.db.query(ReceivingSlip)
+            .filter(
+                ReceivingSlip.asn_order_id == asn_order_id,
+                ReceivingSlip.organization_id == organization_id,
+            )
+            .count()
+        )
+
+        if approved_slips > 0 and asn_order.status == "confirmed":
+            asn_order.status = "partially_delivered"
+        elif approved_slips >= total_slips and total_slips > 0:
+            asn_order.status = "delivered"
 
         self.db.commit()
 

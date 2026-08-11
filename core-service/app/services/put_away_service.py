@@ -118,11 +118,12 @@ class PutAwayService:
         skipped_damaged: list[str] = []
         skipped_unresolved: list[str] = []
         for slip_item in slip.items:
-            # Skip items flagged as damaged
-            if slip_item.flag == "damaged":
-                skipped_damaged.append(
-                    f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
-                )
+            # Skip items flagged as damaged or rejected
+            if slip_item.flag in ("damaged", "rejected"):
+                if slip_item.flag == "damaged":
+                    skipped_damaged.append(
+                        f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
+                    )
                 continue
 
             # Resolve item from SKU — match by item_code or sku field.
