@@ -32,6 +32,7 @@ class QRProduct(Base):
     )
 
     name = Column(String(100), nullable=False)
+    sku = Column(String(100), nullable=True)
     generic_name = Column(String(100), nullable=True)
      # DEPRECATED — kept nullable for backward compatibility during migration.
     # GTIN now lives on ProductSKU (each variant has its own barcode).

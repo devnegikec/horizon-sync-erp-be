@@ -1012,10 +1012,23 @@ class QRProductService:
                         "long_url": url,
                         "short_url": short_url,
                     }
+            else:
+                # No brand/key — still generate a URL for Excel download
+                base = settings.qr_base_url or f"https://{settings.qr_domain}"
+                item_dict["token_id"] = f"{base}/g/{gtin}/s/{serial}"
 
             items.append(item_dict)
 
         self.item_repo.bulk_create(items)
+
+        # Create QSeal parent nodes after the child items are persisted.
+        master_pack_enabled = getattr(block, "master_pack_enabled", False)
+        master_pack_size = getattr(block, "master_pack_size", None)
+        if master_pack_enabled and master_pack_size and master_pack_size > 0:
+            self._create_qseal_parents(
+                block, items, organization_id, user_id, now
+            )
+
         return items
 
     @staticmethod
@@ -1070,6 +1083,99 @@ class QRProductService:
         block.artifact_checksum_sha256 = hashlib.sha256(excel_bytes).hexdigest()
         block.artifact_generated_at = datetime.now(UTC)
         return object_key
+
+    def _create_qseal_parents(
+        self,
+        block: QRBlock,
+        items: list[dict],
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+    ) -> None:
+        """Create QSealTrack parent nodes for master packs.
+
+        Groups ProductItems into chunks of master_pack_size.
+        For each chunk, creates a QSealTrack (shipper) parent and
+        QSealParameters entries linking items to their parent.
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
+        from app.repositories.qseal_repository import QSealRepository
+
+        qseal_repo = QSealRepository(self.db)
+        pack_size = block.master_pack_size
+        parent_count = 0
+
+        for chunk_start in range(0, len(items), pack_size):
+            chunk = items[chunk_start : chunk_start + pack_size]
+            if not chunk:
+                continue
+
+            # Create QSealTrack parent (shipper level)
+            parent_serial = qseal_repo.generate_serial(prefix="QSL")
+            # Truncate name to fit VARCHAR(20)
+            parent_name = f"MP-{block.batch[:10]}-{parent_count + 1}"[:20]
+            parent_node = QSealTrack(
+                id=uuid.uuid4(),
+                organization_id=organization_id,
+                qseal_type="shipper",
+                name=parent_name,
+                capacity=pack_size,
+                serial_number=parent_serial,
+                qseal_code_link=f"/qseal/{parent_serial}",
+                app_cascade_map=False,
+                created_at=now,
+            )
+            self.db.add(parent_node)
+            self.db.flush()  # Get the parent ID
+
+            # Create QSealParameters for each item in the chunk
+            for item in chunk:
+                qsp = QSealParameters(
+                    id=uuid.uuid4(),
+                    organization_id=organization_id,
+                    product_id=block.product_id,
+                    block_id=block.id,
+                    serial_number=item["serial_number"],
+                    manufacturing_date=block.manufacture_date or now.date(),
+                    expiry_date=block.expiry_date or now.date(),
+                    manufacturing_unit="",
+                    dispatch_batch=block.batch,
+                    batch_size=pack_size,
+                    qseal_settings=False,
+                    qseal_cascade=False,
+                    parent_id=parent_node.id,
+                    extra_data={
+                        "item_id": str(item["id"]),
+                        "master_pack_index": parent_count + 1,
+                    },
+                    created_by=user_id,
+                    created_at=now,
+                )
+                self.db.add(qsp)
+
+            parent_count += 1
+            logger.info(
+                "[QSEAL] master-pack parent created serial=%s block=%s org=%s items=%d",
+                parent_serial,
+                block.id,
+                organization_id,
+                len(chunk),
+            )
+
+        self.db.commit()
+
+        # Store parent count on block for reference
+        block.extra_data = (block.extra_data or {}) | {
+            "qseal_parent_count": parent_count
+        }
+        self.db.commit()
+
+        logger.info(
+            "[QSEAL] master-pack complete block=%s parents=%d total_items=%d",
+            block.id,
+            parent_count,
+            len(items),
+        )
 
     def get_block(self, block_id: UUID, organization_id: UUID) -> QRBlock:
         block = self.block_repo.get_by_id(block_id, organization_id)

@@ -205,6 +205,8 @@ class QRBlockCreate(BaseModel):
     qr_image: bool = False
     manufacture_date: date | None = None
     expiry_date: date | None = None
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
     extra_data: dict[str, Any] | None = None
 
     @field_validator("batch")
@@ -292,6 +294,8 @@ class QRBlockResponse(BaseModel):
     error_message: str | None = None
     manufacture_date: date | None
     expiry_date: date | None
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
     gcs_url: str | None
     download_url: str | None
     download_available: bool = False
