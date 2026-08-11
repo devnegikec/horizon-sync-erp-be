@@ -13,7 +13,7 @@ Requirements: 8.1, 8.5, 8.6
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -202,32 +202,28 @@ async def list_put_away_lists(
         .all()
     )
 
-    # Build summary responses with item counts
+    # Build summary responses — single aggregation query instead of N+1
+    pal_ids = [pal.id for pal in put_away_lists]
+    item_counts = {}
+    if pal_ids:
+        rows = (
+            db.query(
+                PutAwayListItem.put_away_list_id,
+                PutAwayListItem.status,
+                func.count(PutAwayListItem.id),
+            )
+            .filter(PutAwayListItem.put_away_list_id.in_(pal_ids))
+            .group_by(PutAwayListItem.put_away_list_id, PutAwayListItem.status)
+            .all()
+        )
+        for list_id, status, cnt in rows:
+            item_counts.setdefault(list_id, {"total": 0, "completed": 0, "pending": 0})
+            item_counts[list_id][status] = cnt
+            item_counts[list_id]["total"] += cnt
+
     summaries = []
     for pal in put_away_lists:
-        total_items = (
-            db.query(func.count(PutAwayListItem.id))
-            .filter(PutAwayListItem.put_away_list_id == pal.id)
-            .scalar()
-        ) or 0
-
-        completed_items = (
-            db.query(func.count(PutAwayListItem.id))
-            .filter(
-                PutAwayListItem.put_away_list_id == pal.id,
-                PutAwayListItem.status == "completed",
-            )
-            .scalar()
-        ) or 0
-
-        pending_items = (
-            db.query(func.count(PutAwayListItem.id))
-            .filter(
-                PutAwayListItem.put_away_list_id == pal.id,
-                PutAwayListItem.status == "pending",
-            )
-            .scalar()
-        ) or 0
+        counts = item_counts.get(pal.id, {"total": 0, "completed": 0, "pending": 0})
 
         summaries.append(
             PutAwayListSummaryResponse(
@@ -243,9 +239,9 @@ async def list_put_away_lists(
                 else None,
                 remarks=pal.remarks,
                 assigned_to=str(pal.assigned_to) if pal.assigned_to else None,
-                total_items=total_items,
-                completed_items=completed_items,
-                pending_items=pending_items,
+                total_items=counts["total"],
+                completed_items=counts["completed"],
+                pending_items=counts["pending"],
                 completed_at=pal.completed_at.isoformat() if pal.completed_at else None,
                 created_at=pal.created_at.isoformat() if pal.created_at else None,
                 updated_at=pal.updated_at.isoformat() if pal.updated_at else None,
@@ -265,6 +261,101 @@ async def list_put_away_lists(
         put_away_lists=summaries,
         pagination=pagination,
     )
+
+
+@router.get(
+    "/available",
+    summary="List items available for put-away",
+    description="Returns scanned items that are pending put-away (not yet binned, not rejected)",
+)
+async def list_available_for_putaway(
+    warehouse_id: UUID = Query(..., description="Warehouse ID"),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Items scanned on the dock, ready for put-away."""
+    from app.services.scanned_item_tracking_service import (
+        ScannedItemTrackingService,
+    )
+
+    svc = ScannedItemTrackingService(db)
+    items = svc.get_available_for_putaway(warehouse_id)
+
+    return {
+        "items": [
+            {
+                "qr_identifier": i.qr_identifier,
+                "sku": i.sku,
+                "item_id": str(i.item_id),
+                "batch_number": i.batch_number,
+                "quantity": i.quantity,
+                "receiving_status": i.receiving_status,
+                "scanned_at": i.created_at.isoformat() if i.created_at else None,
+            }
+            for i in items
+        ],
+        "total": len(items),
+    }
+
+
+@router.post(
+    "/direct",
+    status_code=status.HTTP_200_OK,
+    summary="Direct put-away by QR scan",
+    description="Worker scans a QR and puts item directly in a bin — no put-away list needed.",
+)
+async def direct_putaway(
+    body: dict,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Direct put-away: Worker B scans a QR code and puts the item directly in a bin.
+    This enables the parallel receiving/put-away workflow.
+
+    Request body:
+        qr_identifier: The scanned QR code (required)
+        bin_location_id: Target bin UUID (required)
+
+    Returns the updated tracking record.
+    """
+    from app.services.scanned_item_tracking_service import (
+        ScannedItemTrackingService,
+    )
+
+    qr = body.get("qr_identifier")
+    bin_id = body.get("bin_location_id")
+
+    if not qr:
+        raise HTTPException(status_code=400, detail="qr_identifier is required")
+    if not bin_id:
+        raise HTTPException(status_code=400, detail="bin_location_id is required")
+
+    svc = ScannedItemTrackingService(db)
+
+    # Gate: is this item ready for put-away?
+    ok, err = svc.can_put_away(qr)
+    if not ok:
+        raise HTTPException(status_code=409, detail=err)
+
+    try:
+        tracking = svc.complete_putaway(
+            qr_identifier=qr,
+            bin_location_id=UUID(bin_id),
+            putaway_by=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return {
+        "qr_identifier": tracking.qr_identifier,
+        "sku": tracking.sku,
+        "bin_location_id": str(tracking.bin_location_id),
+        "putaway_status": tracking.putaway_status,
+        "receiving_status": tracking.receiving_status,
+        "stock_entered": tracking.stock_entered,
+        "putaway_at": tracking.putaway_at.isoformat() if tracking.putaway_at else None,
+    }
 
 
 @router.get(

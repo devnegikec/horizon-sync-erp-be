@@ -9,6 +9,7 @@ Handles the inbound receiving workflow:
 Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 14.1
 """
 
+import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
@@ -21,10 +22,13 @@ from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.qr_scan_event import QRScanEvent
 from app.models.receiving_slip import ReceivingSlipItem
 from app.models.scan_session import ScanSessionItem
+from app.models.scanned_item_tracking import ScannedItemTracking
 from app.repositories.receiving_slip_repository import ReceivingSlipRepository
 from app.repositories.scan_session_repository import ScanSessionRepository
 from app.services.item_packaging_unit_service import ItemPackagingUnitService
 from app.services.qr_decoder import decode_qr_payload
+
+logger = logging.getLogger(__name__)
 
 
 class InboundService:
@@ -169,6 +173,38 @@ class InboundService:
             "packaging_unit_id": packaging_unit_id,
         }
         scan_item = self.session_repo.add_item(session_id, item_data)
+
+        # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        # Resolve item from SKU
+        from app.models.item import Item
+        item = self.db.query(Item).filter(
+            Item.sku == payload.sku,
+            Item.organization_id == organization_id,
+        ).first()
+
+        if item is not None:
+            tracking_svc = ScannedItemTrackingService(self.db)
+            tracking_svc.create_from_scan(
+                organization_id=organization_id,
+                warehouse_id=session.warehouse_id,
+                session_id=session_id,
+                scan_item_id=scan_item.id,
+                qr_identifier=payload.id,
+                item_id=item.id,
+                sku=payload.sku,
+                quantity=payload.qty or 1,
+                batch_number=payload.batch,
+                scanned_by=worker_id,
+            )
+        else:
+            logger.warning(
+                "No item found for SKU='%s' in org=%s — tracking record skipped",
+                payload.sku, organization_id,
+            )
 
         # Record scan event in qr_scan_events table
         scan_event = QRScanEvent(
@@ -595,6 +631,30 @@ class InboundService:
         # ------------------------------------------------------------------
         updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
         self.db.refresh(updated_slip)
+
+        # ── NEW: Approve tracking records for this slip ──
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+        tracking_svc = ScannedItemTrackingService(self.db)
+        # Link tracking records to this slip
+        trackings_updated = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.scan_session_id == slip.session_id,
+                ScannedItemTracking.receiving_status == "scanned",
+            )
+            .update(
+                {"receiving_slip_id": slip_id},
+                synchronize_session="fetch",
+            )
+        )
+        # Approve them — stock enters for items already binned
+        stock_entered = tracking_svc.approve_items(slip_id, approved_by=worker_id)
+        logger.info(
+            "Tracking: %d records linked to slip %s, %d entered stock",
+            trackings_updated, slip_id, stock_entered,
+        )
 
         # Trigger put-away list generation (with optional worker assignment)
         # Only accepted items (flag='ok') are included in put-away
