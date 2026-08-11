@@ -121,12 +121,6 @@ class PutAwayService:
         for slip_item in slip.items:
             # Skip items flagged as damaged or rejected
             if slip_item.flag in ("damaged", "rejected"):
-<<<<<<< Updated upstream
-                if slip_item.flag == "damaged":
-                    skipped_damaged.append(
-                        f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
-                    )
-=======
                 skipped = (
                     skipped_damaged if slip_item.flag == "damaged"
                     else skipped_rejected
@@ -134,7 +128,6 @@ class PutAwayService:
                 skipped.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
                 )
->>>>>>> Stashed changes
                 continue
 
             # Resolve item from SKU — match by item_code or sku field.
