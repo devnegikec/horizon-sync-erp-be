@@ -176,10 +176,6 @@ class InboundService:
         scan_item = self.session_repo.add_item(session_id, item_data)
 
         # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
-        from app.services.scanned_item_tracking_service import (
-            ScannedItemTrackingService,
-        )
-
         # Resolve the inventory Item for tracking.
         # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
         #   the Item via ProductItem → QRProduct → Item.qr_product_id.
@@ -187,6 +183,9 @@ class InboundService:
         #   SKU / GTIN / item_code matching.
         from app.models.item import Item
         from app.models.product_item import ProductItem
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
 
         item = None
 
