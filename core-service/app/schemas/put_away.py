@@ -63,10 +63,12 @@ class PutAwayListItemResponse(BaseModel):
     id: str
     item_id: str
     sku: str | None = None
+    item_name: str | None = None
     batch_number: str | None = None
     quantity: float
     bin_location_id: str | None = None
     bin_location_code: str | None = None
+    suggested_bin_code: str | None = None
     sort_order: int = 0
     status: str
     notes: str | None = None
@@ -85,9 +87,14 @@ class PutAwayListResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     receiving_slip_id: str | None = None
+    receiving_slip_no: str | None = None
     remarks: str | None = None
     warnings: list[str] | None = None
     assigned_to: str | None = None
+    worker_name: str | None = None
+    total_items: int = 0
+    completed_items: int = 0
+    pending_items: int = 0
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -105,8 +112,10 @@ class PutAwayListSummaryResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     receiving_slip_id: str | None = None
+    receiving_slip_no: str | None = None
     remarks: str | None = None
     assigned_to: str | None = None
+    worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0
     pending_items: int = 0
