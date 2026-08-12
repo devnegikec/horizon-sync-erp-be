@@ -65,6 +65,7 @@ class LocationResponse(BaseModel):
     position_y: Decimal = Decimal("0")
     is_active: bool = True
     version: int = 1
+    qr_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -88,6 +89,7 @@ class LocationTree(BaseModel):
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
     is_active: bool = True
+    qr_code: str | None = None
     children: list[LocationTree] = []
 
     model_config = ConfigDict(from_attributes=True)
