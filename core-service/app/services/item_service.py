@@ -157,6 +157,7 @@ class ItemService:
                     ProductItemSyncService,
                 )
                 ProductItemSyncService(self.db).sync_item_to_product(item)
+                self.db.commit()
             except Exception as e:
                 logger.error(f"Failed to sync item→product: {e}")
 
@@ -302,6 +303,7 @@ class ItemService:
                     ProductItemSyncService,
                 )
                 ProductItemSyncService(self.db).sync_item_to_product(updated_item)
+                self.db.commit()
             except Exception as e:
                 logger.error(f"Failed to sync item→product: {e}")
 
