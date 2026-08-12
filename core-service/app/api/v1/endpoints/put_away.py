@@ -49,6 +49,119 @@ def _extract_warnings(remarks: str | None) -> list[str] | None:
         return None
 
 
+def _resolve_references(
+    db: Session, pal_ids: list[UUID]
+) -> tuple[dict[UUID, str], dict[UUID, str]]:
+    """Batch-resolve receiving_slip numbers and worker names.
+
+    Returns (slip_no_map, worker_name_map) keyed by put_away_list id.
+    """
+    from app.models.receiving_slip import ReceivingSlip
+
+    slip_no_map: dict[UUID, str] = {}
+    worker_name_map: dict[UUID, str] = {}
+
+    if not pal_ids:
+        return slip_no_map, worker_name_map
+
+    # Batch-fetch slip numbers via outerjoin
+    rows = (
+        db.query(
+            PutAwayList.id,
+            PutAwayList.receiving_slip_id,
+            PutAwayList.assigned_to,
+            ReceivingSlip.slip_number,
+        )
+        .outerjoin(ReceivingSlip, ReceivingSlip.id == PutAwayList.receiving_slip_id)
+        .filter(PutAwayList.id.in_(pal_ids))
+        .all()
+    )
+
+    worker_ids: set[UUID] = set()
+    for pal_id, _slip_id, assigned_to, slip_no in rows:
+        if slip_no:
+            slip_no_map[pal_id] = slip_no
+        if assigned_to:
+            worker_ids.add(assigned_to)
+            worker_name_map[pal_id] = str(assigned_to)  # fallback
+
+    # Try resolving worker UUIDs to names from warehouse_users
+    if worker_ids:
+        try:
+            from app.models.warehouse_user import WarehouseUser
+
+            wu_rows = (
+                db.query(WarehouseUser.user_id, WarehouseUser.user_id)
+                .filter(
+                    WarehouseUser.user_id.in_(worker_ids),
+                    WarehouseUser.is_active == True,
+                )
+                .all()
+            )
+            # warehouse_users just confirms they exist; names are in identity service
+            # For now, keep UUID as identifier
+        except Exception:
+            pass
+
+    return slip_no_map, worker_name_map
+
+
+def _build_item_response(item: PutAwayListItem) -> PutAwayListItemResponse:
+    """Build a PutAwayListItemResponse from a PutAwayListItem model."""
+    bin_location_code = None
+    if item.bin_location:
+        bin_location_code = item.bin_location.full_path or item.bin_location.code
+
+    # Resolve item name from the Item relationship
+    item_name = None
+    if item.item:
+        item_name = item.item.item_name
+
+    return PutAwayListItemResponse(
+        id=str(item.id),
+        item_id=str(item.item_id),
+        sku=item.sku,
+        item_name=item_name,
+        batch_number=item.batch_number,
+        quantity=float(item.quantity),
+        bin_location_id=str(item.bin_location_id) if item.bin_location_id else None,
+        bin_location_code=bin_location_code,
+        suggested_bin_code=bin_location_code,
+        sort_order=item.sort_order or 0,
+        status=item.status,
+        notes=item.notes,
+        completed_at=item.completed_at.isoformat() if item.completed_at else None,
+        created_at=item.created_at.isoformat() if item.created_at else None,
+    )
+
+
+def _build_list_response(
+    pal: PutAwayList, counts: dict, slip_no_map: dict, worker_name_map: dict
+) -> PutAwayListSummaryResponse:
+    """Build a PutAwayListSummaryResponse with resolved references."""
+    c = counts.get(pal.id, {"total": 0, "completed": 0, "pending": 0})
+    return PutAwayListSummaryResponse(
+        id=str(pal.id),
+        organization_id=str(pal.organization_id),
+        warehouse_id=str(pal.warehouse_id),
+        put_away_list_no=pal.put_away_list_no,
+        status=pal.status,
+        reference_type=pal.reference_type,
+        reference_id=str(pal.reference_id) if pal.reference_id else None,
+        receiving_slip_id=str(pal.receiving_slip_id) if pal.receiving_slip_id else None,
+        receiving_slip_no=slip_no_map.get(pal.id),
+        remarks=pal.remarks,
+        assigned_to=str(pal.assigned_to) if pal.assigned_to else None,
+        worker_name=worker_name_map.get(pal.id),
+        total_items=c["total"],
+        completed_items=c["completed"],
+        pending_items=c["pending"],
+        completed_at=pal.completed_at.isoformat() if pal.completed_at else None,
+        created_at=pal.created_at.isoformat() if pal.created_at else None,
+        updated_at=pal.updated_at.isoformat() if pal.updated_at else None,
+    )
+
+
 @router.post(
     "/generate-from-slip/{slip_id}",
     response_model=PutAwayListResponse,
@@ -90,34 +203,18 @@ async def generate_put_away_from_slip(
     )
 
     # Build item responses with bin location codes
-    item_responses = []
-    for item in put_away_list.items:
-        bin_location_code = None
-        if item.bin_location:
-            bin_location_code = item.bin_location.full_path or item.bin_location.code
-
-        item_responses.append(
-            PutAwayListItemResponse(
-                id=str(item.id),
-                item_id=str(item.item_id),
-                sku=item.sku,
-                batch_number=item.batch_number,
-                quantity=float(item.quantity),
-                bin_location_id=str(item.bin_location_id)
-                if item.bin_location_id
-                else None,
-                bin_location_code=bin_location_code,
-                sort_order=item.sort_order or 0,
-                status=item.status,
-                notes=item.notes,
-                completed_at=item.completed_at.isoformat()
-                if item.completed_at
-                else None,
-                created_at=item.created_at.isoformat() if item.created_at else None,
-            )
-        )
-
+    item_responses = [_build_item_response(item) for item in put_away_list.items]
     item_responses.sort(key=lambda x: x.sort_order)
+
+    # Compute counts
+    total_qty = sum(int(it.quantity) for it in put_away_list.items)
+    completed_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "completed")
+    pending_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "pending")
+
+    # Resolve receiving slip number
+    slip_no = None
+    if put_away_list.receiving_slip and put_away_list.receiving_slip.slip_number:
+        slip_no = put_away_list.receiving_slip.slip_number
 
     return PutAwayListResponse(
         id=str(put_away_list.id),
@@ -132,11 +229,16 @@ async def generate_put_away_from_slip(
         receiving_slip_id=str(put_away_list.receiving_slip_id)
         if put_away_list.receiving_slip_id
         else None,
+        receiving_slip_no=slip_no,
+        total_items=total_qty,
+        completed_items=completed_qty,
+        pending_items=pending_qty,
         remarks=put_away_list.remarks,
         warnings=_extract_warnings(put_away_list.remarks),
         assigned_to=str(put_away_list.assigned_to)
         if put_away_list.assigned_to
         else None,
+        worker_name=None,
         completed_at=put_away_list.completed_at.isoformat()
         if put_away_list.completed_at
         else None,
@@ -202,11 +304,12 @@ async def list_put_away_lists(
         .all()
     )
 
-    # Build summary responses — single aggregation query instead of N+1
+    # Build summary responses — aggregate item quantities and counts
     pal_ids = [pal.id for pal in put_away_lists]
     item_counts = {}
     if pal_ids:
-        rows = (
+        # Per-status row counts (completed_items, pending_items)
+        status_rows = (
             db.query(
                 PutAwayListItem.put_away_list_id,
                 PutAwayListItem.status,
@@ -216,37 +319,29 @@ async def list_put_away_lists(
             .group_by(PutAwayListItem.put_away_list_id, PutAwayListItem.status)
             .all()
         )
-        for list_id, status, cnt in rows:
+        for list_id, status, cnt in status_rows:
             item_counts.setdefault(list_id, {"total": 0, "completed": 0, "pending": 0})
             item_counts[list_id][status] = cnt
-            item_counts[list_id]["total"] += cnt
 
-    summaries = []
-    for pal in put_away_lists:
-        counts = item_counts.get(pal.id, {"total": 0, "completed": 0, "pending": 0})
-
-        summaries.append(
-            PutAwayListSummaryResponse(
-                id=str(pal.id),
-                organization_id=str(pal.organization_id),
-                warehouse_id=str(pal.warehouse_id),
-                put_away_list_no=pal.put_away_list_no,
-                status=pal.status,
-                reference_type=pal.reference_type,
-                reference_id=str(pal.reference_id) if pal.reference_id else None,
-                receiving_slip_id=str(pal.receiving_slip_id)
-                if pal.receiving_slip_id
-                else None,
-                remarks=pal.remarks,
-                assigned_to=str(pal.assigned_to) if pal.assigned_to else None,
-                total_items=counts["total"],
-                completed_items=counts["completed"],
-                pending_items=counts["pending"],
-                completed_at=pal.completed_at.isoformat() if pal.completed_at else None,
-                created_at=pal.created_at.isoformat() if pal.created_at else None,
-                updated_at=pal.updated_at.isoformat() if pal.updated_at else None,
+        # Total quantity (sum of all item quantities)
+        qty_rows = (
+            db.query(
+                PutAwayListItem.put_away_list_id,
+                func.sum(PutAwayListItem.quantity),
             )
+            .filter(PutAwayListItem.put_away_list_id.in_(pal_ids))
+            .group_by(PutAwayListItem.put_away_list_id)
+            .all()
         )
+        for list_id, total_qty in qty_rows:
+            if list_id not in item_counts:
+                item_counts[list_id] = {"total": 0, "completed": 0, "pending": 0}
+            item_counts[list_id]["total"] = int(total_qty) if total_qty else 0
+
+    # Resolve receiving slip numbers and worker names
+    slip_no_map, worker_name_map = _resolve_references(db, pal_ids)
+
+    summaries = [_build_list_response(pal, item_counts, slip_no_map, worker_name_map) for pal in put_away_lists]
 
     pagination = PaginationMeta(
         page=page,
@@ -396,35 +491,18 @@ async def get_put_away_list(
         )
 
     # Build item responses with bin location codes
-    item_responses = []
-    for item in put_away_list.items:
-        bin_location_code = None
-        if item.bin_location:
-            bin_location_code = item.bin_location.full_path or item.bin_location.code
-
-        item_responses.append(
-            PutAwayListItemResponse(
-                id=str(item.id),
-                item_id=str(item.item_id),
-                sku=item.sku,
-                batch_number=item.batch_number,
-                quantity=float(item.quantity),
-                bin_location_id=str(item.bin_location_id)
-                if item.bin_location_id
-                else None,
-                bin_location_code=bin_location_code,
-                sort_order=item.sort_order or 0,
-                status=item.status,
-                notes=item.notes,
-                completed_at=item.completed_at.isoformat()
-                if item.completed_at
-                else None,
-                created_at=item.created_at.isoformat() if item.created_at else None,
-            )
-        )
-
-    # Sort items by sort_order
+    item_responses = [_build_item_response(item) for item in put_away_list.items]
     item_responses.sort(key=lambda x: x.sort_order)
+
+    # Compute counts from items
+    total_qty = sum(int(it.quantity) for it in put_away_list.items)
+    completed_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "completed")
+    pending_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "pending")
+
+    # Resolve receiving slip number and worker
+    slip_no = None
+    if put_away_list.receiving_slip and put_away_list.receiving_slip.slip_number:
+        slip_no = put_away_list.receiving_slip.slip_number
 
     return PutAwayListResponse(
         id=str(put_away_list.id),
@@ -439,11 +517,16 @@ async def get_put_away_list(
         receiving_slip_id=str(put_away_list.receiving_slip_id)
         if put_away_list.receiving_slip_id
         else None,
+        receiving_slip_no=slip_no,
+        total_items=total_qty,
+        completed_items=completed_qty,
+        pending_items=pending_qty,
         remarks=put_away_list.remarks,
         warnings=_extract_warnings(put_away_list.remarks),
         assigned_to=str(put_away_list.assigned_to)
         if put_away_list.assigned_to
         else None,
+        worker_name=None,
         completed_at=put_away_list.completed_at.isoformat()
         if put_away_list.completed_at
         else None,
