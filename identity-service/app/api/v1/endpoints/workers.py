@@ -123,6 +123,7 @@ async def list_workers(
     search: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     user_type: str | None = Query(None),
+    warehouse_id: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUser = Depends(require_worker_manager),
@@ -139,6 +140,9 @@ async def list_workers(
             "(w.first_name ILIKE :s OR w.last_name ILIKE :s OR w.email ILIKE :s OR w.barcode ILIKE :s)"
         )
         p["s"] = f"%{search}%"
+    if warehouse_id:
+        where.append("w.warehouse_id=:wh")
+        p["wh"] = warehouse_id
     if status_filter == "active":
         where.append("w.is_active=true")
     elif status_filter == "inactive":
