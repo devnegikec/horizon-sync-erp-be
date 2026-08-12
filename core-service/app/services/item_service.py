@@ -116,6 +116,18 @@ class ItemService:
         except Exception as e:
             logger.error(f"Failed to publish item created event: {e}")
 
+        # ── Sync to linked QRProduct (Item is primary source) ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        # See: app/services/product_item_sync_service.py for full removal steps.
+        if item.qr_product_id:
+            try:
+                from app.services.product_item_sync_service import (
+                    ProductItemSyncService,
+                )
+                ProductItemSyncService(self.db).sync_item_to_product(item)
+            except Exception as e:
+                logger.error(f"Failed to sync item→product: {e}")
+
         return item
 
     def get_item_by_id(
@@ -216,6 +228,17 @@ class ItemService:
             )
         except Exception as e:
             logger.error(f"Failed to publish item updated event: {e}")
+
+        # ── Sync to linked QRProduct (Item is primary source) ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        if updated_item.qr_product_id:
+            try:
+                from app.services.product_item_sync_service import (
+                    ProductItemSyncService,
+                )
+                ProductItemSyncService(self.db).sync_item_to_product(updated_item)
+            except Exception as e:
+                logger.error(f"Failed to sync item→product: {e}")
 
         return updated_item
 
