@@ -86,6 +86,10 @@ class ResourceType(str, enum.Enum):
     ASN_ORDER = "asn_order"
     PICK_LIST = "pick_list"
     RECEIVING_SLIP = "receiving_slip"
+    QSEAL = "qseal"
+    QR_PRODUCT = "qr_product"
+    QR_BLOCK = "qr_block"
+    LANDING_PAGE = "landing_page"
 
     # Accounting
     CHART_OF_ACCOUNT = "chart_of_account"
