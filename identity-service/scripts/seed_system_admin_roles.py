@@ -469,6 +469,8 @@ def _seed_org_level_permissions(db: Session) -> None:
         (ResourceType.QR_PRODUCT,     [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.QR_BLOCK,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.LANDING_PAGE,   [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.UOM,            [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
+        (ResourceType.TAX_TEMPLATE,   [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.INVOICE,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.PAYMENT,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
         (ResourceType.SALES_ORDER,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
@@ -645,6 +647,8 @@ def _seed_wms_default_roles(db: Session) -> None:
         "landing_page.read", "landing_page.create",
         "landing_page.update", "landing_page.delete",
         "landing_page.manage",
+        "uom.read", "uom.create", "uom.update", "uom.delete",
+        "tax_template.read",
     ]
     perm_map: dict[str, Permission] = {}
     for code in perm_codes:
@@ -677,6 +681,8 @@ def _seed_wms_default_roles(db: Session) -> None:
                 "landing_page.read", "landing_page.create",
                 "landing_page.update", "landing_page.delete",
                 "landing_page.manage",
+                "uom.read", "uom.create", "uom.update", "uom.delete",
+                "tax_template.read",
             ],
         },
         {
@@ -702,6 +708,8 @@ def _seed_wms_default_roles(db: Session) -> None:
                 "landing_page.read", "landing_page.create",
                 "landing_page.update", "landing_page.delete",
                 "landing_page.manage",
+                "uom.read", "uom.create", "uom.update", "uom.delete",
+                "tax_template.read",
             ],
         },
         {

@@ -210,6 +210,7 @@ class QRProductService:
                 ProductItemSyncService,
             )
             ProductItemSyncService(self.db).sync_product_to_items(qr_product)
+            self.db.commit()
         except Exception as e:
             logger.error(f"Failed to sync product→items: {e}")
 
@@ -328,6 +329,7 @@ class QRProductService:
                 ProductItemSyncService,
             )
             ProductItemSyncService(self.db).sync_product_to_items(product)
+            self.db.commit()
         except Exception as e:
             logger.error(f"Failed to sync product→items: {e}")
 

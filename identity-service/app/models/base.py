@@ -90,6 +90,8 @@ class ResourceType(str, enum.Enum):
     QR_PRODUCT = "qr_product"
     QR_BLOCK = "qr_block"
     LANDING_PAGE = "landing_page"
+    UOM = "uom"
+    TAX_TEMPLATE = "tax_template"
 
     # Accounting
     CHART_OF_ACCOUNT = "chart_of_account"
