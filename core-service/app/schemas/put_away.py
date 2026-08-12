@@ -129,3 +129,49 @@ class PutAwayListListResponse(BaseModel):
 
     put_away_lists: list[PutAwayListSummaryResponse]
     pagination: PaginationMeta
+
+
+# ===========================================
+# DUAL-AXIS: QR-BASED PUT-AWAY (no slip/list)
+# ===========================================
+
+
+class CompletePutawayByQrRequest(BaseModel):
+    """Complete put-away by scanning the same QR from inbound."""
+
+    qr: str = Field(
+        ..., min_length=1, description="QR identifier from the physical item"
+    )
+    bin_id: UUID = Field(..., description="Bin location UUID to put away into")
+    quantity: int | None = Field(None, ge=1, description="Optional quantity override")
+
+
+class TrackingItemResponse(BaseModel):
+    """Response for a scanned_item_tracking row (dual-axis state)."""
+
+    id: str
+    qr_identifier: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    receiving_status: str
+    putaway_status: str
+    bin_location_id: str | None = None
+    stock_entered: bool = False
+    rejection_reason: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class CompletePutawayResponse(BaseModel):
+    """Response after completing put-away by QR."""
+
+    id: str
+    qr_identifier: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    bin_location_id: str | None = None
+    putaway_status: str
+    stock_entered: bool = False
+    completed_at: str | None = None

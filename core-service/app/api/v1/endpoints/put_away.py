@@ -25,12 +25,15 @@ from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
     CompletePutAwayItemRequest,
+    CompletePutawayByQrRequest,
     GeneratePutAwayRequest,
     PutAwayListItemResponse,
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
     SkipPutAwayItemRequest,
+    TrackingItemResponse,
+    CompletePutawayResponse,
 )
 from app.services.put_away_service import PutAwayService
 
@@ -707,4 +710,147 @@ async def skip_put_away_item(
         created_at=skipped_item.created_at.isoformat()
         if skipped_item.created_at
         else None,
+    )
+
+
+# ================================================================
+# DUAL-AXIS: QR-based Put-Away (no slip/list context needed)
+# ================================================================
+
+
+@router.post(
+    "/complete",
+    summary="Complete put-away by QR (dual-axis)",
+    description="Worker scans the same QR from inbound, enters bin, completes put-away",
+)
+async def complete_putaway_by_qr(
+    data: "CompletePutawayByQrRequest",
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Complete put-away for a tracked item by scanning its QR code."""
+    from app.schemas.put_away import CompletePutawayByQrRequest, CompletePutawayResponse
+    from app.services.scanned_item_tracking_service import ScannedItemTrackingService
+
+    svc = ScannedItemTrackingService(db)
+    try:
+        tracking = svc.complete_putaway(
+            qr_identifier=data.qr,
+            bin_location_id=data.bin_id,
+            putaway_by=current_user.id,
+        )
+        return CompletePutawayResponse(
+            id=str(tracking.id),
+            qr_identifier=tracking.qr_identifier,
+            sku=tracking.sku,
+            batch_number=tracking.batch_number,
+            quantity=tracking.quantity,
+            bin_location_id=str(tracking.bin_location_id)
+            if tracking.bin_location_id
+            else None,
+            putaway_status=tracking.putaway_status,
+            stock_entered=tracking.stock_entered,
+            completed_at=tracking.putaway_at.isoformat()
+            if tracking.putaway_at
+            else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.get(
+    "/available",
+    summary="List items available for put-away",
+    description="Returns scanned items with putaway_status='pending' and not rejected",
+)
+async def list_available_for_putaway(
+    warehouse_id: UUID = Query(..., description="Warehouse UUID"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """List items pending put-away in a warehouse."""
+    from app.schemas.put_away import TrackingItemResponse
+    from app.services.scanned_item_tracking_service import ScannedItemTrackingService
+
+    svc = ScannedItemTrackingService(db)
+    items = svc.get_available_for_putaway(warehouse_id)
+
+    # Simple pagination
+    total = len(items)
+    start = (page - 1) * page_size
+    page_items = items[start : start + page_size]
+
+    result = [
+        TrackingItemResponse(
+            id=str(t.id),
+            qr_identifier=t.qr_identifier,
+            sku=t.sku,
+            batch_number=t.batch_number,
+            quantity=t.quantity,
+            receiving_status=t.receiving_status,
+            putaway_status=t.putaway_status,
+            bin_location_id=str(t.bin_location_id) if t.bin_location_id else None,
+            stock_entered=t.stock_entered,
+            rejection_reason=t.rejection_reason,
+            created_at=t.created_at.isoformat() if t.created_at else None,
+            updated_at=t.updated_at.isoformat() if t.updated_at else None,
+        )
+        for t in page_items
+    ]
+
+    return {
+        "put_away_items": result,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_items": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "has_next": start + page_size < total,
+            "has_prev": page > 1,
+        },
+    }
+
+
+@router.get(
+    "/lookup/{qr}",
+    summary="Lookup tracking by QR code",
+    description="Find a scanned_item_tracking row by QR identifier for put-away",
+)
+async def lookup_tracking_by_qr(
+    qr: str,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Look up a tracking record by its QR identifier."""
+    from app.models.scanned_item_tracking import ScannedItemTracking
+    from app.schemas.put_away import TrackingItemResponse
+
+    tracking = (
+        db.query(ScannedItemTracking)
+        .filter(ScannedItemTracking.qr_identifier == qr)
+        .first()
+    )
+
+    if not tracking:
+        raise HTTPException(
+            status_code=404, detail="QR not found in any inbound session"
+        )
+
+    return TrackingItemResponse(
+        id=str(tracking.id),
+        qr_identifier=tracking.qr_identifier,
+        sku=tracking.sku,
+        batch_number=tracking.batch_number,
+        quantity=tracking.quantity,
+        receiving_status=tracking.receiving_status,
+        putaway_status=tracking.putaway_status,
+        bin_location_id=str(tracking.bin_location_id)
+        if tracking.bin_location_id
+        else None,
+        stock_entered=tracking.stock_entered,
+        rejection_reason=tracking.rejection_reason,
+        created_at=tracking.created_at.isoformat() if tracking.created_at else None,
+        updated_at=tracking.updated_at.isoformat() if tracking.updated_at else None,
     )
