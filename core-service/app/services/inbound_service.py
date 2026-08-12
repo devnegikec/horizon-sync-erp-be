@@ -1062,19 +1062,22 @@ class InboundService:
 
         # ── Update dual-axis tracking row ──
         # batch_number in receiving_slip_items stores the serial number (qr_identifier)
+        # receiving_slip_id may not be set yet (only set during approve), so match by session
         from app.models.scanned_item_tracking import ScannedItemTracking
 
         tracking = (
             self.db.query(ScannedItemTracking)
             .filter(
                 ScannedItemTracking.qr_identifier == updated_item.batch_number,
-                ScannedItemTracking.receiving_slip_id == slip_id,
+                ScannedItemTracking.scan_session_id == slip.session_id,
             )
             .first()
         )
         if tracking:
             tracking.receiving_status = "rejected"
             tracking.rejection_reason = reason.strip()
+            if not tracking.receiving_slip_id:
+                tracking.receiving_slip_id = slip_id
             self.db.commit()
             logger.info(
                 "Tracking rejected: qr=%s slip=%s item=%s",
@@ -1084,9 +1087,9 @@ class InboundService:
             )
         else:
             logger.warning(
-                "No tracking row found for rejected item: qr=%s slip=%s",
+                "No tracking row found for rejected item: qr=%s session=%s",
                 updated_item.batch_number,
-                slip_id,
+                slip.session_id,
             )
 
         return {
