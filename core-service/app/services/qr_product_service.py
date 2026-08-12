@@ -201,6 +201,18 @@ class QRProductService:
         # requiring a separate frontend call.
         self._create_linked_item(qr_product, organization_id, user_id)
 
+        # ── Sync Product → linked Items ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        # See: app/services/product_item_sync_service.py for full removal steps.
+        self.db.refresh(qr_product)
+        try:
+            from app.services.product_item_sync_service import (
+                ProductItemSyncService,
+            )
+            ProductItemSyncService(self.db).sync_product_to_items(qr_product)
+        except Exception as e:
+            logger.error(f"Failed to sync product→items: {e}")
+
         return qr_product
 
     def _create_linked_item(
@@ -307,7 +319,19 @@ class QRProductService:
             )
 
         update_dict["updated_by"] = user_id
-        return self.product_repo.update(product, update_dict)
+        product = self.product_repo.update(product, update_dict)
+
+        # ── Sync Product → linked Items ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        try:
+            from app.services.product_item_sync_service import (
+                ProductItemSyncService,
+            )
+            ProductItemSyncService(self.db).sync_product_to_items(product)
+        except Exception as e:
+            logger.error(f"Failed to sync product→items: {e}")
+
+        return product
 
     def delete_product(
         self, product_id: UUID, organization_id: UUID, user_id: UUID
