@@ -666,11 +666,12 @@ class InboundService:
         )
 
         # ------------------------------------------------------------------
-        # Step 5: Update ASN delivered_qty (includes rejected — shipper sent them)
+        # Step 5: Update ASN delivered_qty and status
+        # _sync_asn_delivered_qty handles both delivered_qty per item AND
+        # the overall ASN status (partially_delivered / delivered).
         # ------------------------------------------------------------------
         if slip.asn_order_id:
             self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
-            self._update_asn_status(slip.asn_order_id, organization_id)
 
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
@@ -733,8 +734,15 @@ class InboundService:
         all_delivered = True
         any_delivered = False
         for asn_item in asn_order.items:
-            sku = asn_item.item.sku if asn_item.item else None
-            delivered = delivered_by_sku.get(sku, 0)
+            if not asn_item.item:
+                continue
+            delivered = 0
+            # Try matching on sku first, then item_code (receiving may use either)
+            for lookup_key in (asn_item.item.sku, asn_item.item.item_code):
+                if lookup_key:
+                    delivered = delivered_by_sku.get(lookup_key, 0)
+                    if delivered > 0:
+                        break
             asn_item.delivered_qty = delivered
             if delivered > 0:
                 any_delivered = True
