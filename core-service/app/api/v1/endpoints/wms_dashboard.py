@@ -310,7 +310,7 @@ async def get_wms_dashboard_stats(
         all_activity.append({
             "type": "put_away",
             "title": f"Put-Away {pa.put_away_list_no}",
-            "status": pa.status.value if pa.status else "unknown",
+            "status": pa.status or "unknown",
             "warehouse_id": str(pa.warehouse_id),
             "worker_name": None,
             "created_at": pa.created_at.isoformat() if pa.created_at else None,
