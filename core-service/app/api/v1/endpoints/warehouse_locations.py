@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -370,3 +370,38 @@ async def get_location_qr_image(
             "Content-Disposition": f"inline; filename=bin-qr-{payload.full_path}.png"
         },
     )
+
+
+@router.get(
+    "/by-qr/{qr_code}",
+    response_model=LocationResponse,
+    summary="Lookup bin by QR code",
+    description="Find a bin location using its 5-character QR code",
+)
+async def lookup_by_qr_code(
+    qr_code: str,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Lookup a bin location by its unique 5-character QR code.
+
+    Returns the full location details including location_id (UUID)
+    needed for put-away API calls.
+    """
+    from app.models.warehouse_location import WarehouseLocation
+
+    loc = (
+        db.query(WarehouseLocation)
+        .filter(
+            WarehouseLocation.qr_code == qr_code.upper(),
+            WarehouseLocation.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if not loc:
+        raise HTTPException(
+            status_code=404, detail=f"Bin with QR code '{qr_code}' not found"
+        )
+
+    return LocationResponse.model_validate(loc)

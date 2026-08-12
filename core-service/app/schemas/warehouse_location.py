@@ -161,3 +161,5 @@ class LocationQRPayload(BaseModel):
     full_path: str
     location_type: str
     location_code: str
+    qr_code: str | None = None  # 5-char short code for quick lookup
+    bin_code: str | None = None  # Alias for qr_code for mobile app compatibility

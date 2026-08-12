@@ -168,6 +168,7 @@ class WarehouseLocation(Base):
     max_weight_grams = Column(Numeric(15, 2), nullable=True)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
+    qr_code = Column(String(5), nullable=True, unique=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
