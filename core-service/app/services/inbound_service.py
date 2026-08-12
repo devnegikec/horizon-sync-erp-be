@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -179,17 +180,50 @@ class InboundService:
             ScannedItemTrackingService,
         )
 
-        # Resolve item from SKU
+        # Resolve the inventory Item for tracking.
+        # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
+        #   the Item via ProductItem → QRProduct → Item.qr_product_id.
+        # - JSON box labels: payload.sku is the real SKU, so fall back to
+        #   SKU / GTIN / item_code matching.
         from app.models.item import Item
+        from app.models.product_item import ProductItem
 
-        item = (
-            self.db.query(Item)
+        item = None
+
+        product_item = (
+            self.db.query(ProductItem)
             .filter(
-                Item.sku == payload.sku,
-                Item.organization_id == organization_id,
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
             )
             .first()
         )
+        if product_item is not None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.qr_product_id == product_item.product_id,
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                )
+                .first()
+            )
+
+        if item is None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.sku == payload.sku,
+                        Item.gtin == payload.sku,
+                        Item.item_code == payload.sku,
+                    ),
+                )
+                .first()
+            )
 
         if item is not None:
             tracking_svc = ScannedItemTrackingService(self.db)
@@ -200,14 +234,15 @@ class InboundService:
                 scan_item_id=scan_item.id,
                 qr_identifier=payload.id,
                 item_id=item.id,
-                sku=payload.sku,
+                sku=item.sku or item.item_code or payload.sku,
                 quantity=payload.qty or 1,
                 batch_number=payload.batch,
                 scanned_by=worker_id,
             )
         else:
             logger.warning(
-                "No item found for SKU='%s' in org=%s — tracking record skipped",
+                "No Item found for QR id='%s' sku='%s' in org=%s — tracking record skipped",
+                payload.id,
                 payload.sku,
                 organization_id,
             )
