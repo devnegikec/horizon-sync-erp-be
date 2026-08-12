@@ -118,7 +118,31 @@ class ItemService:
 
         # ── Sync to linked QRProduct (Item is primary source) ──
         # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
-        # See: app/services/product_item_sync_service.py for full removal steps.
+        # If no qr_product_id, auto-create a QR product so sync works both ways.
+        if not item.qr_product_id:
+            try:
+                from app.models.qr_product import QRProduct
+
+                product = QRProduct(
+                    organization_id=organization_id,
+                    name=item.item_name,
+                    sku=item.sku or item.item_code,
+                    gtin=item.barcode,
+                    is_active=True,
+                    created_by=user_id,
+                    updated_by=user_id,
+                )
+                self.db.add(product)
+                self.db.flush()
+                item.qr_product_id = product.id
+                self.db.flush()
+                logger.info(
+                    "Auto-created QR product '%s' for item '%s'",
+                    product.name, item.item_code,
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-create QR product for item: {e}")
+
         if item.qr_product_id:
             try:
                 from app.services.product_item_sync_service import (
@@ -231,6 +255,31 @@ class ItemService:
 
         # ── Sync to linked QRProduct (Item is primary source) ──
         # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        # If no qr_product_id, auto-create a QR product (covers legacy items)
+        if not updated_item.qr_product_id:
+            try:
+                from app.models.qr_product import QRProduct
+
+                product = QRProduct(
+                    organization_id=organization_id,
+                    name=updated_item.item_name,
+                    sku=updated_item.sku or updated_item.item_code,
+                    gtin=updated_item.barcode,
+                    is_active=True,
+                    created_by=user_id,
+                    updated_by=user_id,
+                )
+                self.db.add(product)
+                self.db.flush()
+                updated_item.qr_product_id = product.id
+                self.db.flush()
+                logger.info(
+                    "Auto-created QR product for legacy item '%s'",
+                    updated_item.item_code,
+                )
+            except Exception as e:
+                logger.error(f"Failed to auto-create QR product for item: {e}")
+
         if updated_item.qr_product_id:
             try:
                 from app.services.product_item_sync_service import (
