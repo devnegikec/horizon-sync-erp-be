@@ -118,6 +118,14 @@ class ProductItemSyncService:
         _copy_if_set(product, item, "has_batch_no")
         _copy_if_set(product, item, "has_serial_no")
         _copy_if_set(product, item, "image_url")
+        _copy_if_set(product, item, "industry")
+        _copy_if_set(product, item, "qr_type")
+        _copy_if_set(product, item, "warranty_period_months")
+        _copy_if_set(product, item, "activation_method")
+        _copy_if_set(product, item, "sr_number_type")
+        _copy_if_set(product, item, "landing_page")
+        _copy_if_set(product, item, "brand_id")
+        _copy_if_set(product, item, "gtin")
 
         # item_name → product.name (not the reverse, Item wins)
         if item.item_name and item.item_name != product.name:
