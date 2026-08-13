@@ -14,7 +14,7 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -44,6 +44,170 @@ class PutAwayService:
         self.capacity_service = CapacityService(db)
         self.routing_optimizer = RoutingOptimizer()
         self.reservation_service = BinReservationService(db)
+
+    # ── Direct Put-Away reconciliation ──────────────────────────────────
+
+    def create_direct_list(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        created_by: UUID | None = None,
+    ) -> PutAwayList:
+        """Create an empty put-away list for a direct put-away session."""
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        number = DocumentNumberingService(self.db).get_next_number(
+            organization_id, "put_away_list"
+        )
+        pal = PutAwayList(
+            organization_id=organization_id,
+            warehouse_id=warehouse_id,
+            put_away_list_no=number,
+            status="pending",
+            reference_type="direct_putaway",
+            created_by=created_by,
+        )
+        self.db.add(pal)
+        self.db.commit()
+        self.db.refresh(pal)
+        return pal
+
+    def add_direct_completed_item(
+        self, tracking, list_id: UUID
+    ) -> PutAwayListItem | None:
+        """Attach a completed tracking row to a direct put-away list (idempotent)."""
+        pal = self.db.query(PutAwayList).filter(PutAwayList.id == list_id).first()
+        if pal is None:
+            raise NotFoundError(
+                message="Put-away list not found",
+                entity_type="PutAwayList",
+                entity_id=str(list_id),
+            )
+
+        # Idempotent: reuse the item already created for this tracking row
+        if tracking.put_away_item_id:
+            existing = self.db.get(PutAwayListItem, tracking.put_away_item_id)
+            if existing is not None:
+                return existing
+
+        item = PutAwayListItem(
+            organization_id=tracking.organization_id,
+            put_away_list_id=list_id,
+            item_id=tracking.item_id,
+            sku=tracking.sku,
+            batch_number=tracking.qr_identifier,
+            quantity=tracking.quantity,
+            bin_location_id=tracking.bin_location_id,
+            status="completed",
+            completed_at=datetime.now(UTC),
+        )
+        self.db.add(item)
+        self.db.flush()
+
+        tracking.put_away_list_id = list_id
+        tracking.put_away_item_id = item.id
+
+        # Mark the list complete once all items are completed
+        pending = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.put_away_list_id == list_id,
+                PutAwayListItem.status != "completed",
+            )
+            .count()
+        )
+        if pending == 0:
+            pal.status = "completed"
+            pal.completed_at = datetime.now(UTC)
+
+        self.db.commit()
+        return item
+
+    def reconcile_tracking_with_recent_slip(
+        self,
+        tracking,
+        organization_id: UUID,
+        within_hours: int = 24,
+    ):
+        """Link a completed tracking row to a matching receiving slip (≤24h)."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        cutoff = datetime.now(UTC) - timedelta(hours=within_hours)
+        slip_item = (
+            self.db.query(ReceivingSlipItem)
+            .join(ReceivingSlip, ReceivingSlip.id == ReceivingSlipItem.slip_id)
+            .filter(
+                ReceivingSlipItem.batch_number == tracking.qr_identifier,
+                ReceivingSlipItem.organization_id == organization_id,
+                ReceivingSlip.created_at >= cutoff,
+            )
+            .order_by(ReceivingSlip.created_at.desc())
+            .first()
+        )
+        if slip_item is None:
+            return None
+
+        tracking.receiving_slip_id = slip_item.slip_id
+        slip_item.put_away_status = "completed"
+        slip_item.bin_location_id = tracking.bin_location_id
+        slip_item.put_away_at = tracking.putaway_at or datetime.now(UTC)
+
+        if tracking.put_away_list_id:
+            pal = (
+                self.db.query(PutAwayList)
+                .filter(PutAwayList.id == tracking.put_away_list_id)
+                .first()
+            )
+            if pal is not None and pal.receiving_slip_id is None:
+                pal.receiving_slip_id = slip_item.slip_id
+
+        self.db.commit()
+        return slip_item
+
+    def reconcile_slip_with_completed_putaway(self, slip, organization_id: UUID) -> int:
+        """After a receiving slip is created, link items already put away via
+        direct put-away (matched by QR identifier == batch_number)."""
+        from app.models.receiving_slip import ReceivingSlipItem
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        slip_items = (
+            self.db.query(ReceivingSlipItem)
+            .filter(ReceivingSlipItem.slip_id == slip.id)
+            .all()
+        )
+
+        linked = 0
+        for slip_item in slip_items:
+            tracking = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.qr_identifier == slip_item.batch_number,
+                    ScannedItemTracking.organization_id == organization_id,
+                    ScannedItemTracking.putaway_status == "completed",
+                )
+                .first()
+            )
+            if tracking is None:
+                continue
+
+            tracking.receiving_slip_id = slip.id
+            slip_item.put_away_status = "completed"
+            slip_item.bin_location_id = tracking.bin_location_id
+            slip_item.put_away_at = tracking.putaway_at or datetime.now(UTC)
+
+            if tracking.put_away_list_id:
+                pal = (
+                    self.db.query(PutAwayList)
+                    .filter(PutAwayList.id == tracking.put_away_list_id)
+                    .first()
+                )
+                if pal is not None and pal.receiving_slip_id is None:
+                    pal.receiving_slip_id = slip.id
+            linked += 1
+
+        if linked:
+            self.db.commit()
+        return linked
 
     def generate_from_slip(
         self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
@@ -122,8 +286,7 @@ class PutAwayService:
             # Skip items flagged as damaged or rejected
             if slip_item.flag in ("damaged", "rejected"):
                 skipped = (
-                    skipped_damaged if slip_item.flag == "damaged"
-                    else skipped_rejected
+                    skipped_damaged if slip_item.flag == "damaged" else skipped_rejected
                 )
                 skipped.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
@@ -735,6 +898,7 @@ class PutAwayService:
     ) -> None:
         """Update scanned_item_tracking records when put-away completes."""
         import logging
+
         logger = logging.getLogger(__name__)
 
         from app.models.scanned_item_tracking import ScannedItemTracking
@@ -746,7 +910,8 @@ class PutAwayService:
         trackings = (
             self.db.query(ScannedItemTracking)
             .filter(
-                ScannedItemTracking.receiving_slip_id == put_away_list.receiving_slip_id,
+                ScannedItemTracking.receiving_slip_id
+                == put_away_list.receiving_slip_id,
                 ScannedItemTracking.item_id == put_away_item.item_id,
                 ScannedItemTracking.batch_number == put_away_item.batch_number,
                 ScannedItemTracking.putaway_status == "pending",
@@ -765,10 +930,7 @@ class PutAwayService:
             t.putaway_by = worker_id
 
             # Enter stock if receiving is also approved (no double entry — stock_entered flag guards)
-            if (
-                t.receiving_status == "approved"
-                and not t.stock_entered
-            ):
+            if t.receiving_status == "approved" and not t.stock_entered:
                 from app.services.bin_stock_service import BinStockService
 
                 BinStockService.add_stock(
@@ -783,7 +945,8 @@ class PutAwayService:
         self.db.flush()
         logger.info(
             "Tracking: %d records updated for put-away item %s",
-            len(trackings), put_away_item.id,
+            len(trackings),
+            put_away_item.id,
         )
 
     def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:

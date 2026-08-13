@@ -96,7 +96,107 @@ class ScannedItemTrackingService:
         self.db.flush()
         logger.info(
             "Tracking created: qr=%s session=%s item=%s",
-            qr_identifier, session_id, scan_item_id,
+            qr_identifier,
+            session_id,
+            scan_item_id,
+        )
+        return tracking
+
+    # ── Standalone Scan (Direct Put-Away) ────────────────────────────────
+
+    def resolve_item_from_payload(self, payload, organization_id: UUID):
+        """Resolve the inventory Item for a decoded QR payload.
+
+        - Unit/serial scans: resolve via ProductItem → QRProduct → Item.qr_product_id.
+        - JSON box labels: fall back to SKU / GTIN / item_code matching.
+        """
+        from sqlalchemy import or_
+
+        from app.models.item import Item
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if product_item is not None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.qr_product_id == product_item.product_id,
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if item is not None:
+                return item
+
+        return (
+            self.db.query(Item)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.deleted_at.is_(None),
+                or_(
+                    Item.sku == payload.sku,
+                    Item.gtin == payload.sku,
+                    Item.item_code == payload.sku,
+                ),
+            )
+            .first()
+        )
+
+    def ensure_tracking_from_qr(
+        self,
+        qr_data: str,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        scanned_by: UUID | None = None,
+    ) -> ScannedItemTracking:
+        """Decode a QR and return an existing or newly-created tracking row.
+
+        Used by Direct Put-Away when no inbound scan has created the row yet.
+        """
+        from app.services.qr_decoder import decode_qr_payload
+
+        payload = decode_qr_payload(qr_data, db=self.db)
+
+        existing = self.get_by_qr(payload.id)
+        if existing is not None:
+            return existing
+
+        item = self.resolve_item_from_payload(payload, organization_id)
+        if item is None:
+            raise ValueError(
+                f"No Item found for QR id='{payload.id}' sku='{payload.sku}'"
+            )
+
+        tracking = ScannedItemTracking(
+            organization_id=organization_id,
+            warehouse_id=warehouse_id,
+            scan_session_id=None,
+            scan_session_item_id=None,
+            qr_identifier=payload.id,
+            item_id=item.id,
+            sku=item.sku or item.item_code or payload.sku,
+            batch_number=payload.batch,
+            quantity=payload.qty or 1,
+            receiving_status="scanned",
+            putaway_status="pending",
+            stock_entered=False,
+            scanned_by=scanned_by,
+        )
+        self.db.add(tracking)
+        self.db.commit()
+        logger.info(
+            "Standalone tracking created (direct put-away): qr=%s item=%s",
+            payload.id,
+            item.id,
         )
         return tracking
 
@@ -140,7 +240,9 @@ class ScannedItemTrackingService:
         self.db.commit()
         logger.info(
             "Slip %s approved: %d items approved, %d entered stock",
-            slip_id, updated, len(ready),
+            slip_id,
+            updated,
+            len(ready),
         )
         return len(ready)
 
@@ -167,13 +269,16 @@ class ScannedItemTrackingService:
                 self._notify_retrieval_needed(t, reason)
                 logger.warning(
                     "Item %s rejected after put-away — retrieval needed from bin %s",
-                    t.qr_identifier, t.bin_location_id,
+                    t.qr_identifier,
+                    t.bin_location_id,
                 )
 
         self.db.commit()
         logger.info(
             "Slip %s rejected: %d items rejected, %d need retrieval",
-            slip_id, len(trackings), retrieval_count,
+            slip_id,
+            len(trackings),
+            retrieval_count,
         )
         return len(trackings)
 
@@ -218,7 +323,9 @@ class ScannedItemTrackingService:
         logger.info("Put-away completed: qr=%s bin=%s", qr_identifier, bin_location_id)
         return tracking
 
-    def get_available_for_putaway(self, warehouse_id: UUID) -> list[ScannedItemTracking]:
+    def get_available_for_putaway(
+        self, warehouse_id: UUID
+    ) -> list[ScannedItemTracking]:
         """Get items scanned but not yet put away."""
         return (
             self.db.query(ScannedItemTracking)
@@ -259,8 +366,10 @@ class ScannedItemTrackingService:
         tracking.stock_entered_at = datetime.now(timezone.utc)
         logger.info(
             "Stock entered: qr=%s item=%s qty=%d bin=%s",
-            tracking.qr_identifier, tracking.item_id,
-            tracking.quantity, tracking.bin_location_id,
+            tracking.qr_identifier,
+            tracking.item_id,
+            tracking.quantity,
+            tracking.bin_location_id,
         )
 
     # ── Queries ───────────────────────────────────────────────────────────
@@ -339,4 +448,6 @@ class ScannedItemTrackingService:
             self.db.add(notification)
             self.db.flush()
         except Exception:
-            logger.warning("Failed to create retrieval notification for %s", tracking.qr_identifier)
+            logger.warning(
+                "Failed to create retrieval notification for %s", tracking.qr_identifier
+            )

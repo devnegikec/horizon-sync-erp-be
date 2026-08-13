@@ -31,6 +31,8 @@ from app.schemas.put_away import (
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
+    CreateDirectPutAwayListRequest,
+    ScanItemForPutawayRequest,
     SkipPutAwayItemRequest,
     TrackingItemResponse,
     CompletePutawayResponse,
@@ -211,8 +213,12 @@ async def generate_put_away_from_slip(
 
     # Compute counts
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
-    completed_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "completed")
-    pending_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "pending")
+    completed_qty = sum(
+        int(it.quantity) for it in put_away_list.items if it.status == "completed"
+    )
+    pending_qty = sum(
+        int(it.quantity) for it in put_away_list.items if it.status == "pending"
+    )
 
     # Resolve receiving slip number
     slip_no = None
@@ -344,7 +350,10 @@ async def list_put_away_lists(
     # Resolve receiving slip numbers and worker names
     slip_no_map, worker_name_map = _resolve_references(db, pal_ids)
 
-    summaries = [_build_list_response(pal, item_counts, slip_no_map, worker_name_map) for pal in put_away_lists]
+    summaries = [
+        _build_list_response(pal, item_counts, slip_no_map, worker_name_map)
+        for pal in put_away_lists
+    ]
 
     pagination = PaginationMeta(
         page=page,
@@ -499,8 +508,12 @@ async def get_put_away_list(
 
     # Compute counts from items
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
-    completed_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "completed")
-    pending_qty = sum(int(it.quantity) for it in put_away_list.items if it.status == "pending")
+    completed_qty = sum(
+        int(it.quantity) for it in put_away_list.items if it.status == "completed"
+    )
+    pending_qty = sum(
+        int(it.quantity) for it in put_away_list.items if it.status == "pending"
+    )
 
     # Resolve receiving slip number and worker
     slip_no = None
@@ -719,6 +732,32 @@ async def skip_put_away_item(
 
 
 @router.post(
+    "/lists",
+    summary="Create a direct put-away list",
+    description="Create an empty put-away list for a direct put-away session.",
+)
+async def create_direct_putaway_list(
+    data: "CreateDirectPutAwayListRequest",
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Create an empty put-away list for a direct put-away session."""
+    if current_user.organization_id is None:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
+    pal = PutAwayService(db).create_direct_list(
+        organization_id=current_user.organization_id,
+        warehouse_id=data.warehouse_id,
+        created_by=current_user.id,
+    )
+    return {
+        "id": str(pal.id),
+        "put_away_list_no": pal.put_away_list_no,
+        "status": pal.status,
+    }
+
+
+@router.post(
     "/complete",
     summary="Complete put-away by QR (dual-axis)",
     description="Worker scans the same QR from inbound, enters bin, completes put-away",
@@ -732,13 +771,26 @@ async def complete_putaway_by_qr(
     from app.schemas.put_away import CompletePutawayByQrRequest, CompletePutawayResponse
     from app.services.scanned_item_tracking_service import ScannedItemTrackingService
 
+    if current_user.organization_id is None:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
     svc = ScannedItemTrackingService(db)
     try:
         tracking = svc.complete_putaway(
             qr_identifier=data.qr,
             bin_location_id=data.bin_id,
             putaway_by=current_user.id,
+            put_away_list_id=data.put_away_list_id,
         )
+
+        # Attach to a direct put-away list + reconcile with a recent receiving slip
+        pa_svc = PutAwayService(db)
+        if data.put_away_list_id:
+            pa_svc.add_direct_completed_item(tracking, data.put_away_list_id)
+        pa_svc.reconcile_tracking_with_recent_slip(
+            tracking, current_user.organization_id
+        )
+
         return CompletePutawayResponse(
             id=str(tracking.id),
             qr_identifier=tracking.qr_identifier,
@@ -756,6 +808,52 @@ async def complete_putaway_by_qr(
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post(
+    "/scan",
+    summary="Scan item for direct put-away (creates tracking row if missing)",
+    description="Decodes the QR, resolves the item, and returns an existing or "
+    "newly-created tracking row. No inbound session required.",
+)
+async def scan_item_for_putaway(
+    data: "ScanItemForPutawayRequest",
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """Scan a QR during direct put-away and ensure a tracking row exists."""
+    from app.services.scanned_item_tracking_service import ScannedItemTrackingService
+
+    if current_user.organization_id is None:
+        raise HTTPException(status_code=400, detail="User has no organization")
+
+    svc = ScannedItemTrackingService(db)
+    try:
+        tracking = svc.ensure_tracking_from_qr(
+            qr_data=data.qr,
+            organization_id=current_user.organization_id,
+            warehouse_id=data.warehouse_id,
+            scanned_by=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return TrackingItemResponse(
+        id=str(tracking.id),
+        qr_identifier=tracking.qr_identifier,
+        sku=tracking.sku,
+        batch_number=tracking.batch_number,
+        quantity=tracking.quantity,
+        receiving_status=tracking.receiving_status,
+        putaway_status=tracking.putaway_status,
+        bin_location_id=str(tracking.bin_location_id)
+        if tracking.bin_location_id
+        else None,
+        stock_entered=tracking.stock_entered,
+        rejection_reason=tracking.rejection_reason,
+        created_at=tracking.created_at.isoformat() if tracking.created_at else None,
+        updated_at=tracking.updated_at.isoformat() if tracking.updated_at else None,
+    )
 
 
 @router.get(

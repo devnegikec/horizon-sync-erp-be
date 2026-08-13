@@ -4,7 +4,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Text,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -31,13 +37,13 @@ class ScannedItemTracking(Base):
     scan_session_id = Column(
         UUID(as_uuid=True),
         ForeignKey("scan_sessions.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     scan_session_item_id = Column(
         UUID(as_uuid=True),
         ForeignKey("scan_session_items.id"),
-        nullable=False,
+        nullable=True,
         unique=True,
     )
     qr_identifier = Column(String(255), nullable=False, index=True)

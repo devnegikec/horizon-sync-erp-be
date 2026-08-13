@@ -144,6 +144,30 @@ class CompletePutawayByQrRequest(BaseModel):
     )
     bin_id: UUID = Field(..., description="Bin location UUID to put away into")
     quantity: int | None = Field(None, ge=1, description="Optional quantity override")
+    put_away_list_id: UUID | None = Field(
+        None, description="Optional direct put-away list to attach this item to"
+    )
+
+
+class ScanItemForPutawayRequest(BaseModel):
+    """Scan a QR during direct put-away and ensure a tracking row exists."""
+
+    qr: str = Field(
+        ...,
+        min_length=1,
+        description="Raw QR data (product URL, bare serial, or JSON)",
+    )
+    warehouse_id: UUID = Field(
+        ..., description="Warehouse UUID where the item is scanned"
+    )
+
+
+class CreateDirectPutAwayListRequest(BaseModel):
+    """Create an empty put-away list for a direct put-away session."""
+
+    warehouse_id: UUID = Field(
+        ..., description="Warehouse UUID for the direct put-away list"
+    )
 
 
 class TrackingItemResponse(BaseModel):
