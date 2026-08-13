@@ -1,10 +1,16 @@
 """Scanned Item Tracking — dual-axis state machine for receiving & put-away."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Text,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -31,13 +37,13 @@ class ScannedItemTracking(Base):
     scan_session_id = Column(
         UUID(as_uuid=True),
         ForeignKey("scan_sessions.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     scan_session_item_id = Column(
         UUID(as_uuid=True),
         ForeignKey("scan_session_items.id"),
-        nullable=False,
+        nullable=True,
         unique=True,
     )
     qr_identifier = Column(String(255), nullable=False, index=True)
@@ -90,13 +96,11 @@ class ScannedItemTracking(Base):
     # ── Metadata ──
     scanned_by = Column(UUID(as_uuid=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     # ── Relationships ──

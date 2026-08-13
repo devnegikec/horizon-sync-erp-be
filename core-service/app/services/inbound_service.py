@@ -1259,6 +1259,14 @@ class InboundService:
 
         # Refresh to load items relationship
         self.db.refresh(slip)
+
+        # Flow B: link items already put away via direct put-away (match by QR)
+        from app.services.put_away_service import PutAwayService
+
+        PutAwayService(self.db).reconcile_slip_with_completed_putaway(
+            slip, organization_id
+        )
+
         return slip
 
     def _session_to_dict(self, session) -> dict:
