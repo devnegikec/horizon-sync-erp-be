@@ -54,7 +54,7 @@ services:
     container_name: horizon_identity
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
+      DATABASE_URL:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       PYDEVD_DISABLE_FILE_VALIDATION: "1"
       DEBUG: ${DEBUG:-false}
@@ -113,7 +113,7 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_core
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db
+      DATABASE_URL:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
