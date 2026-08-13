@@ -70,6 +70,7 @@ and `POST /put-away/complete` works exactly as it does today.
 ## Decisions (final)
 
 ### D1. Receiving-axis status for standalone rows
+
 `receiving_status = 'scanned'` (dual-axis stays intact).
 Stock still enters only when BOTH `receiving_status='approved'` AND
 `putaway_status='completed'`. Direct put-away alone does not bypass admin approval.
@@ -79,16 +80,20 @@ Stock still enters only when BOTH `receiving_status='approved'` AND
 > separately (per-row approval) — out of scope for this change.
 
 ### D2. `scan_session_id` / `scan_session_item_id`
+
 Make both columns **nullable** (Alembic migration).
+
 - Inbound scans: still populate both (unchanged).
 - Standalone put-away: both `NULL`.
 
 ### D3. QSeal parent scan
+
 Parent QSeal → resolve children (`getLinkedUnits`) → each child gets its own
 tracking row (child-level tracking, same as inbound). The parent serial itself is
 not tracked.
 
 ### D4. Slip reconciliation
+
 Standalone rows have `receiving_slip_id = NULL` and are excluded from
 receiving-slip reconciliation (no slip by definition).
 

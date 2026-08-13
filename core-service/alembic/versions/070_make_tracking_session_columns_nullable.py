@@ -8,11 +8,12 @@ Allow scanned_item_tracking rows to exist without an inbound scan session,
 so Direct Put-Away can create tracking rows standalone.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
+
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision: str = "070_make_tracking_session_columns_nullable"
 down_revision: Union[str, None] = "069_sync_item_product"

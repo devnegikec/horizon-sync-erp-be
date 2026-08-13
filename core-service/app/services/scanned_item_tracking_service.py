@@ -1,7 +1,7 @@
 """Scanned Item Tracking Service — gate functions and stock entry logic."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -214,7 +214,7 @@ class ScannedItemTrackingService:
             .update(
                 {
                     "receiving_status": "approved",
-                    "received_at": datetime.now(timezone.utc),
+                    "received_at": datetime.now(UTC),
                     "received_by": approved_by,
                 },
                 synchronize_session="fetch",
@@ -309,7 +309,7 @@ class ScannedItemTrackingService:
 
         tracking.putaway_status = "completed"
         tracking.bin_location_id = bin_location_id
-        tracking.putaway_at = datetime.now(timezone.utc)
+        tracking.putaway_at = datetime.now(UTC)
         tracking.putaway_by = putaway_by
         tracking.put_away_list_id = put_away_list_id
         tracking.put_away_item_id = put_away_item_id
@@ -363,7 +363,7 @@ class ScannedItemTrackingService:
         )
 
         tracking.stock_entered = True
-        tracking.stock_entered_at = datetime.now(timezone.utc)
+        tracking.stock_entered_at = datetime.now(UTC)
         logger.info(
             "Stock entered: qr=%s item=%s qty=%d bin=%s",
             tracking.qr_identifier,

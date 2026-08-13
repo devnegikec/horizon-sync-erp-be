@@ -24,18 +24,17 @@ from app.dependencies import CurrentUser, require_permission
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
-    CompletePutAwayItemRequest,
     CompletePutawayByQrRequest,
+    CompletePutAwayItemRequest,
+    CreateDirectPutAwayListRequest,
     GeneratePutAwayRequest,
     PutAwayListItemResponse,
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
-    CreateDirectPutAwayListRequest,
     ScanItemForPutawayRequest,
     SkipPutAwayItemRequest,
     TrackingItemResponse,
-    CompletePutawayResponse,
 )
 from app.services.put_away_service import PutAwayService
 
@@ -768,7 +767,7 @@ async def complete_putaway_by_qr(
     db: Session = Depends(get_db),
 ):
     """Complete put-away for a tracked item by scanning its QR code."""
-    from app.schemas.put_away import CompletePutawayByQrRequest, CompletePutawayResponse
+    from app.schemas.put_away import CompletePutawayResponse
     from app.services.scanned_item_tracking_service import ScannedItemTrackingService
 
     if current_user.organization_id is None:
