@@ -16,15 +16,19 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.item import Item
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.location_allocation import LocationAllocation
+from app.models.put_away_rule import PutAwayRule
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
+from app.services.capacity_math import MM3_PER_M3
 
 Position = tuple[float, float, float]
 
@@ -35,6 +39,7 @@ class LocationSuggestionService:
     def __init__(self, db: Session):
         self.db = db
         self.reservation_service = BinReservationService(db)
+        self.capacity_service = BinCapacityService(db)
 
     # ------------------------------------------------------------------
     # PUBLIC API
@@ -154,6 +159,7 @@ class LocationSuggestionService:
         max_distance: float,
     ) -> list[dict]:
         item_group_id = item.item_group_id
+        required_m3 = self._required_volume_m3(item, quantity)
 
         # Allocation lookups for this item group.
         exclusive_loc_ids = self._allocated_location_ids(
@@ -198,15 +204,20 @@ class LocationSuggestionService:
                 # Exclusively allocated to a different group — skip.
                 continue
 
-            # 2. Capacity
-            available = self._available_capacity(b)
-            if available < quantity:
+            # 2. Capacity (volume/weight based)
+            cap = self.capacity_service.get_bin_capacity(b.id, org_id)
+            if not cap["is_available"]:
                 continue
-            total_capacity = Decimal(str(b.capacity or 0))
-            if total_capacity > 0:
-                capacity_ratio = float(available / total_capacity)
-                score += capacity_ratio * 10
-                reasons.append(f"{round(capacity_ratio * 100)}% capacity available")
+            remaining = None
+            if cap["volume"]["capacity_m3"] is not None:
+                remaining = cap["volume"]["capacity_m3"] - cap["volume"]["occupied_m3"]
+                if required_m3 is not None and required_m3 > remaining:
+                    continue
+                if cap["volume"]["capacity_m3"] > 0:
+                    capacity_ratio = float(remaining) / float(cap["volume"]["capacity_m3"])
+                    score += capacity_ratio * 10
+                    reasons.append(f"{round(capacity_ratio * 100)}% volume available")
+            available = Decimal(str(remaining)) if remaining is not None else Decimal("0")
 
             # 3. Proximity to dock
             dist_to_dock = self._distance(self._position(b), dock_position)
@@ -265,6 +276,10 @@ class LocationSuggestionService:
         bin_stocks = query.all()
 
         today = datetime.now(UTC).date()
+        allocation_priority = self._allocation_priority_map(org_id, item.item_group_id)
+        rule_priority = self._put_away_rule_priority(
+            org_id, warehouse_id, item.id, item.item_group_id
+        )
         results: list[dict] = []
         for bs in bin_stocks:
             if bs.bin_location_id in excluded or bs.bin_location_id in reserved_bin_ids:
@@ -296,7 +311,13 @@ class LocationSuggestionService:
                 score += age_days * 80
                 reasons.append(f"FIFO: {age_days} day(s) in stock")
 
-            # 3. Quantity match
+            # 3. Admin pre-selected priority
+            admin_priority = allocation_priority.get(bin_location.id, 0) + rule_priority
+            if admin_priority:
+                score += admin_priority * 40
+                reasons.append(f"Admin priority {admin_priority}")
+
+            # 4. Quantity match
             on_hand = Decimal(str(bs.quantity_on_hand or 0))
             if on_hand >= quantity:
                 score += 20
@@ -382,16 +403,85 @@ class LocationSuggestionService:
                     queue.append(child.id)
         return bin_ids
 
-    def _available_capacity(self, bin_location: WarehouseLocation) -> Decimal:
-        bin_capacity = Decimal(str(bin_location.capacity or 0))
-        current = (
-            self.db.query(
-                func.coalesce(func.sum(BinStockLevel.quantity_on_hand), Decimal("0"))
+    def _required_volume_m3(self, item: Item, quantity: Decimal) -> Decimal | None:
+        """Required m³ for an incoming put-away (None when dimensions are unknown)."""
+        base = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.is_base_unit.is_(True),
             )
-            .filter(BinStockLevel.bin_location_id == bin_location.id)
-            .scalar()
-        ) or Decimal("0")
-        return bin_capacity - Decimal(str(current))
+            .first()
+        )
+        if base is None or not (base.length_mm and base.width_mm and base.height_mm):
+            return None
+        mm3 = (
+            Decimal(str(quantity))
+            * Decimal(str(base.length_mm))
+            * Decimal(str(base.width_mm))
+            * Decimal(str(base.height_mm))
+        )
+        return mm3 / MM3_PER_M3
+
+    def _allocation_priority_map(
+        self, org_id: UUID, item_group_id: UUID | None
+    ) -> dict[UUID, int]:
+        """Map bin_id → max admin priority from item-group location allocations."""
+        result: dict[UUID, int] = {}
+        if not item_group_id:
+            return result
+        allocations = (
+            self.db.query(LocationAllocation)
+            .filter(
+                LocationAllocation.organization_id == org_id,
+                LocationAllocation.item_group_id == item_group_id,
+                LocationAllocation.is_active.is_(True),
+            )
+            .all()
+        )
+        for alloc in allocations:
+            priority = alloc.priority or 0
+            loc = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.id == alloc.location_id,
+                    WarehouseLocation.is_active.is_(True),
+                )
+                .first()
+            )
+            if loc is None:
+                continue
+            if loc.location_type == "bin":
+                result[loc.id] = max(result.get(loc.id, 0), priority)
+            else:
+                for bin_id in self._descendant_bin_ids(loc.id):
+                    result[bin_id] = max(result.get(bin_id, 0), priority)
+        return result
+
+    def _put_away_rule_priority(
+        self,
+        org_id: UUID,
+        warehouse_id: UUID,
+        item_id: UUID,
+        item_group_id: UUID | None,
+    ) -> int:
+        """Highest active put-away rule priority for this item/group in the warehouse."""
+        rule = (
+            self.db.query(PutAwayRule)
+            .filter(
+                PutAwayRule.organization_id == org_id,
+                PutAwayRule.warehouse_id == warehouse_id,
+                PutAwayRule.is_active.is_(True),
+                PutAwayRule.priority.isnot(None),
+                or_(
+                    PutAwayRule.item_id == item_id,
+                    PutAwayRule.item_group_id == item_group_id,
+                ),
+            )
+            .order_by(PutAwayRule.priority.desc())
+            .first()
+        )
+        return (rule.priority or 0) if rule else 0
 
     def _bin_contains_item(self, bin_id: UUID, item_id: UUID) -> bool:
         return (
