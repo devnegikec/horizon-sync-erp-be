@@ -161,6 +161,10 @@ class PutAwayService:
             if pal is not None and pal.receiving_slip_id is None:
                 pal.receiving_slip_id = slip_item.slip_id
 
+        self.db.flush()
+        # If this was the last pending item, advance the slip status.
+        if self.all_slip_items_put_away(slip_item.slip_id):
+            self.mark_slip_putaway_complete(slip_item.slip_id)
         self.db.commit()
         return slip_item
 
@@ -208,6 +212,32 @@ class PutAwayService:
         if linked:
             self.db.commit()
         return linked
+
+    def all_slip_items_put_away(self, slip_id: UUID) -> bool:
+        """Return True when every accepted receiving-slip item has been binned."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        accepted = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        )
+        return bool(accepted) and all(
+            item.put_away_status == "completed" for item in accepted
+        )
+
+    def mark_slip_putaway_complete(self, slip_id: UUID) -> bool:
+        """Advance a pending_putaway receiving slip to putaway_complete."""
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
+        if slip is None or slip.status != "pending_putaway":
+            return False
+        slip.status = "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+        self.db.flush()
+        return True
 
     def generate_from_slip(
         self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None

@@ -666,13 +666,7 @@ class InboundService:
 
         self.db.flush()
 
-        # ------------------------------------------------------------------
-        # Step 4: Transition slip status to PENDING_PUTAWAY
-        # ------------------------------------------------------------------
-        updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
-        self.db.refresh(updated_slip)
-
-        # ── NEW: Approve tracking records for this slip ──
+        # ── Approve tracking records for this slip ──
         from app.services.scanned_item_tracking_service import (
             ScannedItemTrackingService,
         )
@@ -699,14 +693,22 @@ class InboundService:
             stock_entered,
         )
 
-        # Trigger put-away list generation (with optional worker assignment)
-        # Only accepted items (flag='ok') are included in put-away
+        # ------------------------------------------------------------------
+        # Step 4: Determine slip status after approval.
+        # If every accepted item is already binned (direct put-away happened
+        # before the slip was generated), go straight to PUTAWAY_COMPLETE and
+        # skip generating a duplicate put-away list.
+        # ------------------------------------------------------------------
         from app.services.put_away_service import PutAwayService
 
         put_away_service = PutAwayService(self.db)
-        put_away_service.generate_from_slip(
-            slip_id, organization_id, worker_id=worker_id
-        )
+        if put_away_service.all_slip_items_put_away(slip_id):
+            updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
+        else:
+            updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
+            put_away_service.generate_from_slip(
+                slip_id, organization_id, worker_id=worker_id
+            )
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status
