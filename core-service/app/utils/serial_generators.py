@@ -90,27 +90,32 @@ def build_qr_url(
     signature: str,
     base_url: str = "",
 ) -> str:
-    """Build a QR verification URL.
+    """Build a GS1 Digital Link QR verification URL.
 
     Args:
         org_short_code: Brand short code (e.g. "amc").
         domain: QR domain (e.g. "verify.example.com"). Only used when base_url is empty.
         gtin: Product GTIN.
         serial_number: Unique serial number.
-        timestamp: Unix timestamp in milliseconds.
+        timestamp: Unix timestamp in milliseconds (anti-replay nonce).
         signature: ECDSA signature (base64).
         base_url: Optional full base URL override (scheme+host, no trailing slash).
                    When provided, used directly instead of ``https://{org_short_code}.{domain}``.
 
     Returns:
-        URL in the format:
-        ``{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+        GS1 Digital Link SGTIN URL with the ECDSA signature (``c``) and nonce
+        (``n``) carried as custom query parameters:
+        ``{base_url}/01/{gtin}/21/{serial_number}?c={signature}&n={timestamp}``
         or when base_url is empty:
-        ``https://{org_short_code}.{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+        ``https://{org_short_code}.{domain}/01/{gtin}/21/{serial_number}?c={signature}&n={timestamp}``
     """
     if base_url:
-        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
+        return (
+            f"{base_url}/01/{gtin}/21/{serial_number}"
+            f"?c={quote(signature, safe='')}&n={timestamp}"
+        )
     return (
         f"https://{org_short_code}.{domain}"
-        f"/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
+        f"/01/{gtin}/21/{serial_number}"
+        f"?c={quote(signature, safe='')}&n={timestamp}"
     )
