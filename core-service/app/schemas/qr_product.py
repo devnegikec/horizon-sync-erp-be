@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class QRProductBase(BaseModel):
     name: str = Field(..., max_length=100)
+    sku: str | None = None
     generic_name: str | None = None
     gtin: str | None = None
     industry: str | None = None

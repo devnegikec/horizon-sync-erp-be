@@ -64,9 +64,38 @@ class ItemService:
 
         # Check if item code already exists
         if self.item_repo.item_code_exists(item_data.item_code, organization_id):
-            raise DuplicateItemCodeException(
-                f"Item with code '{item_data.item_code}' already exists"
-            )
+            # If caller supplied a qr_product_id, try to attach the existing
+            # item to that QR product instead of failing the request. This
+            # handles races where a QR product auto-created the Item first.
+            try:
+                existing = self.item_repo.get_item_by_code(
+                    item_data.item_code, organization_id
+                )
+                if existing:
+                    # If caller provided qr_product_id and existing item isn't
+                    # linked yet, attach and return the existing item.
+                    if item_data.qr_product_id:
+                        if not existing.qr_product_id:
+                            existing.qr_product_id = item_data.qr_product_id
+                            existing.updated_by = user_id
+                            self.db.add(existing)
+                            self.db.commit()
+                            self.db.refresh(existing)
+                            return existing
+                        # If already linked to the same product, return it.
+                        if existing.qr_product_id == item_data.qr_product_id:
+                            return existing
+                    # Otherwise, treat as duplicate error
+                    raise DuplicateItemCodeException(
+                        f"Item with code '{item_data.item_code}' already exists"
+                    )
+            except DuplicateItemCodeException:
+                raise
+            except Exception:
+                # Fallback to original behavior on unexpected errors
+                raise DuplicateItemCodeException(
+                    f"Item with code '{item_data.item_code}' already exists"
+                )
 
         # Convert enum strings to enum values
         item_dict = item_data.model_dump()
@@ -146,7 +175,8 @@ class ItemService:
                 self.db.flush()
                 logger.info(
                     "Auto-created QR product '%s' for item '%s'",
-                    product.name, item.item_code,
+                    product.name,
+                    item.item_code,
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-create QR product for item: {e}")
@@ -156,6 +186,7 @@ class ItemService:
                 from app.services.product_item_sync_service import (
                     ProductItemSyncService,
                 )
+
                 ProductItemSyncService(self.db).sync_item_to_product(item)
                 self.db.commit()
             except Exception as e:
@@ -302,6 +333,7 @@ class ItemService:
                 from app.services.product_item_sync_service import (
                     ProductItemSyncService,
                 )
+
                 ProductItemSyncService(self.db).sync_item_to_product(updated_item)
                 self.db.commit()
             except Exception as e:
