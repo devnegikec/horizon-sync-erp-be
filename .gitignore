@@ -6,6 +6,10 @@
 .env
 .env.local
 .env.*.local
+.sync.env
+
+# Local DB sync artifacts
+.db_dumps/
 
 # Python
 __pycache__/
@@ -63,3 +67,4 @@ search-service/.dockerignore
 search-service//.gitignore
 search-service/alembic/script.py.mako
 search-service/pyproject.toml
+LOCAL_DB_SETUP.md
