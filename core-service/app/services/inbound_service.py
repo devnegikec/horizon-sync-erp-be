@@ -702,6 +702,12 @@ class InboundService:
         from app.services.put_away_service import PutAwayService
 
         put_away_service = PutAwayService(self.db)
+        # approve_slip deletes and recreates receiving_slip_items (Step 3),
+        # which resets put_away_status to "pending". Re-run reconciliation so
+        # items already binned via direct put-away are linked again before we
+        # decide the slip status.
+        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
+
         if put_away_service.all_slip_items_put_away(slip_id):
             updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
         else:
