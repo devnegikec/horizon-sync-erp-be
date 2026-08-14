@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     campaigns,
+    capacity,
     cascade_qr,
     charge_templates,
     chart_of_accounts,
@@ -124,6 +125,11 @@ api_router.include_router(
     warehouse_locations.router,
     prefix="/warehouse-locations",
     tags=["Warehouse Locations"],
+)
+api_router.include_router(
+    capacity.router,
+    prefix="/capacity",
+    tags=["Capacity"],
 )
 api_router.include_router(
     warehouse_users.router,

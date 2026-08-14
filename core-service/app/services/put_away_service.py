@@ -30,6 +30,7 @@ from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService
@@ -478,6 +479,8 @@ class PutAwayService:
         if put_away_packaging_unit_id is not None:
             bin_stock.packaging_unit_id = put_away_packaging_unit_id
             self.db.flush()
+            # Recompute capacity with the actual (case-pack) dimensions.
+            BinCapacityService(self.db).refresh_bin(target_bin_id, org_id)
 
         # Mark item as completed
         put_away_item.status = "completed"
