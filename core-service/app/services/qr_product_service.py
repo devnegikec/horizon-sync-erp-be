@@ -227,6 +227,7 @@ class QRProductService:
         never bubble up — a failed item creation must not roll back the
         QR product itself.
         """
+        item_code = None
         try:
             from app.models.base import ItemStatus, ItemType
             from app.models.item import Item
@@ -260,7 +261,9 @@ class QRProductService:
                 description=qr_product.generic_name,
                 item_type=ItemType.STOCK,
                 uom="Nos",
-                sku=qr_product.gtin,
+                sku=qr_product.sku or qr_product.gtin,
+                gtin=qr_product.gtin,
+                brand_id=qr_product.brand_id,
                 maintain_stock=True,
                 status=ItemStatus.ACTIVE,
                 qr_product_id=qr_product.id,
@@ -310,15 +313,17 @@ class QRProductService:
                         exc,
                     )
 
-                    existing_by_code = (
-                        self.db.query(Item)
-                        .filter(
-                            Item.organization_id == organization_id,
-                            Item.item_code == item_code,
-                            Item.deleted_at.is_(None),
+                    existing_by_code = None
+                    if item_code:
+                        existing_by_code = (
+                            self.db.query(Item)
+                            .filter(
+                                Item.organization_id == organization_id,
+                                Item.item_code == item_code,
+                                Item.deleted_at.is_(None),
+                            )
+                            .first()
                         )
-                        .first()
-                    )
                     if existing_by_code:
                         # Link existing item to this QR product if not already linked
                         if existing_by_code.qr_product_id != qr_product.id:

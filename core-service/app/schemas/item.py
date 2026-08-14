@@ -11,6 +11,7 @@ from app.schemas.common import PaginationMeta
 
 class ItemBase(BaseModel):
     """Base item schema with common fields"""
+
     item_code: str | None = Field(None, max_length=100)
     item_name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None, max_length=1000)
@@ -142,6 +143,10 @@ class ItemUpdate(BaseModel):
 
     # QR Product link
     qr_product_id: UUID | None = None
+
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = Field(None, max_length=20)
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)

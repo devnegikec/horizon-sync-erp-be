@@ -91,11 +91,16 @@ class ItemService:
                     )
             except DuplicateItemCodeException:
                 raise
-            except Exception:
-                # Fallback to original behavior on unexpected errors
+            except Exception as exc:
+                # Fallback to original behavior on unexpected errors, but log
+                # the real cause so failures aren't silently masked as 409s.
+                logger.exception(
+                    "Unexpected error while resolving duplicate item code '%s'",
+                    item_data.item_code,
+                )
                 raise DuplicateItemCodeException(
                     f"Item with code '{item_data.item_code}' already exists"
-                )
+                ) from exc
 
         # Convert enum strings to enum values
         item_dict = item_data.model_dump()
