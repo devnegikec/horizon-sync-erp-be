@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -26,6 +27,9 @@ class Item(Base):
 
     __tablename__ = "items"
     __audited__ = True
+    __table_args__ = (
+        UniqueConstraint("organization_id", "item_code", name="uq_items_org_item_code"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -113,9 +117,7 @@ class Item(Base):
     # ── Synced from QRProduct ──
     # TODO(DEPRECATION): Drop these columns when QRProduct is removed.
     # See: app/services/product_item_sync_service.py
-    brand_id = Column(
-        UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True
-    )
+    brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
     gtin = Column(String(20), nullable=True)
     industry = Column(String(100), nullable=True)
     landing_page = Column(Text, nullable=True)
@@ -161,7 +163,9 @@ class Item(Base):
     packaging_units = relationship(
         "ItemPackagingUnit", back_populates="item", cascade="all, delete-orphan"
     )
-    qr_product = relationship("QRProduct", back_populates="items", foreign_keys=[qr_product_id])
+    qr_product = relationship(
+        "QRProduct", back_populates="items", foreign_keys=[qr_product_id]
+    )
     brand = relationship("Brand", foreign_keys=[brand_id])
 
     @property
