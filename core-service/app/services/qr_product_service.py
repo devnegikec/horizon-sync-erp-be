@@ -209,6 +209,7 @@ class QRProductService:
             from app.services.product_item_sync_service import (
                 ProductItemSyncService,
             )
+
             ProductItemSyncService(self.db).sync_product_to_items(qr_product)
             self.db.commit()
         except Exception as e:
@@ -231,6 +232,21 @@ class QRProductService:
             from app.models.item import Item
             from app.repositories.item_repository import ItemRepository
             from app.services.document_numbering_service import DocumentNumberingService
+
+            # Guard: if an Item already exists referencing this QR product, skip creation.
+            existing = (
+                self.db.query(Item)
+                .filter(Item.qr_product_id == qr_product.id, Item.deleted_at.is_(None))
+                .first()
+            )
+            if existing:
+                logger.info(
+                    "Linked item already exists for QR product '%s' (product_id=%s) — skipping auto-create. Existing item: %s",
+                    qr_product.name,
+                    qr_product.id,
+                    existing.item_code,
+                )
+                return
 
             item_code = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "item"
@@ -265,6 +281,76 @@ class QRProductService:
         except Exception as exc:
             # Roll back only the item insert, keep the QR product committed
             self.db.rollback()
+
+            # Normalize detection of unique-constraint / integrity failures.
+            # Some DB drivers wrap the underlying IntegrityError (DBAPIError),
+            # so inspect __cause__ / orig when available.
+            from sqlalchemy.exc import IntegrityError, DBAPIError
+
+            def _is_integrity_error(e: BaseException) -> bool:
+                if isinstance(e, IntegrityError):
+                    return True
+                if isinstance(e, DBAPIError):
+                    # DBAPIError may wrap an underlying DB-API error in .orig
+                    orig = getattr(e, "orig", None)
+                    if orig and "unique" in str(orig).lower():
+                        return True
+                # Inspect chained exception
+                cause = getattr(e, "__cause__", None)
+                if cause:
+                    return _is_integrity_error(cause)
+                return False
+
+            try:
+                if _is_integrity_error(exc):
+                    logger.warning(
+                        "IntegrityError while creating item for QR product '%s' (id=%s): %s — attempting to attach to existing item",
+                        qr_product.name,
+                        qr_product.id,
+                        exc,
+                    )
+
+                    existing_by_code = (
+                        self.db.query(Item)
+                        .filter(
+                            Item.organization_id == organization_id,
+                            Item.item_code == item_code,
+                            Item.deleted_at.is_(None),
+                        )
+                        .first()
+                    )
+                    if existing_by_code:
+                        # Link existing item to this QR product if not already linked
+                        if existing_by_code.qr_product_id != qr_product.id:
+                            existing_by_code.qr_product_id = qr_product.id
+                            existing_by_code.updated_by = user_id
+                            self.db.add(existing_by_code)
+                            self.db.commit()
+                            logger.info(
+                                "Attached existing item '%s' (id=%s) to QR product '%s' (id=%s)",
+                                existing_by_code.item_code,
+                                existing_by_code.id,
+                                qr_product.name,
+                                qr_product.id,
+                            )
+                            return
+                        else:
+                            logger.info(
+                                "Existing item '%s' (id=%s) already linked to QR product '%s'",
+                                existing_by_code.item_code,
+                                existing_by_code.id,
+                                qr_product.id,
+                            )
+                            return
+            except Exception as exc2:
+                # If attachment attempt failed, fall through to error log below
+                logger.error(
+                    "Failed to attach existing item for QR product '%s' (id=%s): %s",
+                    qr_product.name,
+                    qr_product.id,
+                    exc2,
+                )
+
             logger.error(
                 "Failed to auto-create item for QR product '%s' (id=%s): %s",
                 qr_product.name,
@@ -328,6 +414,7 @@ class QRProductService:
             from app.services.product_item_sync_service import (
                 ProductItemSyncService,
             )
+
             ProductItemSyncService(self.db).sync_product_to_items(product)
             self.db.commit()
         except Exception as e:
