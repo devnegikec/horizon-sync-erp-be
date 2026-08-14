@@ -355,10 +355,11 @@ class ScannedItemTrackingService:
 
         from app.services.bin_stock_service import BinStockService
 
-        BinStockService.add_stock(
-            bin_location_id=tracking.bin_location_id,
+        BinStockService(self.db).add_stock(
+            bin_id=tracking.bin_location_id,
             item_id=tracking.item_id,
             quantity=tracking.quantity,
+            org_id=tracking.organization_id,
             batch_number=tracking.batch_number,
         )
 

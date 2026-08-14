@@ -929,16 +929,10 @@ class PutAwayService:
             t.putaway_at = now
             t.putaway_by = worker_id
 
-            # Enter stock if receiving is also approved (no double entry — stock_entered flag guards)
+            # Stock for this item/batch was already added to the target bin by
+            # complete_item(); mark the tracking rows as entered so the
+            # dual-axis state machine stays consistent (avoid double-counting).
             if t.receiving_status == "approved" and not t.stock_entered:
-                from app.services.bin_stock_service import BinStockService
-
-                BinStockService.add_stock(
-                    bin_location_id=t.bin_location_id,
-                    item_id=t.item_id,
-                    quantity=t.quantity,
-                    batch_number=t.batch_number,
-                )
                 t.stock_entered = True
                 t.stock_entered_at = now
 
