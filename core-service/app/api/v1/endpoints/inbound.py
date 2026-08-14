@@ -26,6 +26,7 @@ from app.schemas.inbound import (
     ApproveSlipRequest,
     AssignBinRequest,
     AssignBinResponse,
+    BulkItemStatusUpdateRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
     LinkAsnToSessionRequest,
@@ -748,6 +749,33 @@ async def reject_slip_item(
         notes=data.notes,
     )
     return RejectedItemResponse(**result)
+
+
+@router.post(
+    "/receiving-slips/{slip_id}/items/status",
+    summary="Bulk update receiving slip item statuses",
+    description="Update multiple receiving slip line items in one request. "
+    "Each item carries a status ('rejected', 'ok', 'short', or 'damaged').",
+)
+async def update_slip_items_status(
+    slip_id: UUID,
+    data: BulkItemStatusUpdateRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Bulk update item statuses on a receiving slip.
+
+    Request body:
+        { "items": [ { "item_id": "...", "status": "rejected", "reason": "..." } ] }
+    """
+    service = InboundService(db)
+    results = service.update_items_status(
+        slip_id=slip_id,
+        items=data.items,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return {"items": results}
 
 
 # ------------------------------------------------------------------
