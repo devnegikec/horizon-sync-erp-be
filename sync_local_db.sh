@@ -17,10 +17,10 @@
 #                         -> Postgres -> Connect -> "Public Network" connection
 #                         string. (If Railway CLI is installed and this is unset,
 #                         a `railway connect` tunnel is used automatically.)
-#   LOCAL_DB_USER         default: horizon_user
-#   LOCAL_DB_PASSWORD     default: horizon_pass
+#   LOCAL_DB_USER         default: db_user
+#   LOCAL_DB_PASSWORD     default: db_pass
 #   LOCAL_DB_PORT         default: 5432
-#   LOCAL_CONTAINER       default: horizon_postgres
+#   LOCAL_CONTAINER       default: postgres
 #   RAILWAY_SERVICE       default: Postgres   (Railway plugin service name)
 # =============================================================================
 set -euo pipefail
@@ -49,10 +49,10 @@ for arg in "$@"; do
   [[ "$arg" == "--full" ]] && MODE="full"
 done
 
-LOCAL_DB_USER="${LOCAL_DB_USER:-horizon_user}"
-LOCAL_DB_PASSWORD="${LOCAL_DB_PASSWORD:-horizon_pass}"
+LOCAL_DB_USER="${LOCAL_DB_USER:-db_user}"
+LOCAL_DB_PASSWORD="${LOCAL_DB_PASSWORD:-db_pass}"
 LOCAL_DB_PORT="${LOCAL_DB_PORT:-5432}"
-LOCAL_CONTAINER="${LOCAL_CONTAINER:-horizon_postgres}"
+LOCAL_CONTAINER="${LOCAL_CONTAINER:-postgres}"
 RAILWAY_SERVICE="${RAILWAY_SERVICE:-Postgres}"
 DUMP_DIR="${SCRIPT_DIR}/.db_dumps"
 
