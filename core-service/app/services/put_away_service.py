@@ -287,6 +287,24 @@ class PutAwayService:
                 required_state=["pending_putaway"],
             )
 
+        # Prevent duplicate put-away lists for the same receiving slip.
+        # Only lists generated FROM the slip count as duplicates — direct
+        # put-away lists (reference_type='direct_putaway') get linked to the
+        # slip during reconciliation and must not block generation.
+        existing = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip_id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
+        )
+        if existing is not None:
+            raise ValidationError(
+                f"Put-away list '{existing.put_away_list_no}' already exists "
+                f"for receiving slip '{slip.slip_number}'"
+            )
+
         # Generate unique put-away list number
         from app.services.document_numbering_service import DocumentNumberingService
 
