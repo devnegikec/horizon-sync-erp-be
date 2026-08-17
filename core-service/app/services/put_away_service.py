@@ -162,6 +162,10 @@ class PutAwayService:
             if pal is not None and pal.receiving_slip_id is None:
                 pal.receiving_slip_id = slip_item.slip_id
 
+        self.db.flush()
+        # If this was the last pending item, advance the slip status.
+        if self.all_slip_items_put_away(slip_item.slip_id):
+            self.mark_slip_putaway_complete(slip_item.slip_id)
         self.db.commit()
         return slip_item
 
@@ -210,6 +214,32 @@ class PutAwayService:
             self.db.commit()
         return linked
 
+    def all_slip_items_put_away(self, slip_id: UUID) -> bool:
+        """Return True when every accepted receiving-slip item has been binned."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        accepted = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        )
+        return bool(accepted) and all(
+            item.put_away_status == "completed" for item in accepted
+        )
+
+    def mark_slip_putaway_complete(self, slip_id: UUID) -> bool:
+        """Advance a pending_putaway receiving slip to putaway_complete."""
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
+        if slip is None or slip.status != "pending_putaway":
+            return False
+        slip.status = "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+        self.db.flush()
+        return True
+
     def generate_from_slip(
         self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
     ) -> PutAwayList:
@@ -256,6 +286,24 @@ class PutAwayService:
                 message="Receiving slip must be in pending_putaway status to generate put-away list",
                 current_state=slip.status,
                 required_state=["pending_putaway"],
+            )
+
+        # Prevent duplicate put-away lists for the same receiving slip.
+        # Only lists generated FROM the slip count as duplicates — direct
+        # put-away lists (reference_type='direct_putaway') get linked to the
+        # slip during reconciliation and must not block generation.
+        existing = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip_id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
+        )
+        if existing is not None:
+            raise ValidationError(
+                f"Put-away list '{existing.put_away_list_no}' already exists "
+                f"for receiving slip '{slip.slip_number}'"
             )
 
         # Generate unique put-away list number
@@ -932,16 +980,10 @@ class PutAwayService:
             t.putaway_at = now
             t.putaway_by = worker_id
 
-            # Enter stock if receiving is also approved (no double entry — stock_entered flag guards)
+            # Stock for this item/batch was already added to the target bin by
+            # complete_item(); mark the tracking rows as entered so the
+            # dual-axis state machine stays consistent (avoid double-counting).
             if t.receiving_status == "approved" and not t.stock_entered:
-                from app.services.bin_stock_service import BinStockService
-
-                BinStockService.add_stock(
-                    bin_location_id=t.bin_location_id,
-                    item_id=t.item_id,
-                    quantity=t.quantity,
-                    batch_number=t.batch_number,
-                )
                 t.stock_entered = True
                 t.stock_entered_at = now
 

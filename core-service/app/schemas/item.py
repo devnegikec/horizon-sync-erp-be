@@ -67,6 +67,10 @@ class ItemBase(BaseModel):
     # QR Product link — enables unit-level QR tracking for this item
     qr_product_id: UUID | None = None
 
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = Field(None, max_length=20)
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str = Field(default="ACTIVE")
@@ -139,6 +143,10 @@ class ItemUpdate(BaseModel):
 
     # QR Product link
     qr_product_id: UUID | None = None
+
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = Field(None, max_length=20)
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)

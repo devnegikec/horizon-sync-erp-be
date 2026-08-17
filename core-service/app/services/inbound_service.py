@@ -666,13 +666,7 @@ class InboundService:
 
         self.db.flush()
 
-        # ------------------------------------------------------------------
-        # Step 4: Transition slip status to PENDING_PUTAWAY
-        # ------------------------------------------------------------------
-        updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
-        self.db.refresh(updated_slip)
-
-        # ── NEW: Approve tracking records for this slip ──
+        # ── Approve tracking records for this slip ──
         from app.services.scanned_item_tracking_service import (
             ScannedItemTrackingService,
         )
@@ -699,14 +693,28 @@ class InboundService:
             stock_entered,
         )
 
-        # Trigger put-away list generation (with optional worker assignment)
-        # Only accepted items (flag='ok') are included in put-away
+        # ------------------------------------------------------------------
+        # Step 4: Determine slip status after approval.
+        # If every accepted item is already binned (direct put-away happened
+        # before the slip was generated), go straight to PUTAWAY_COMPLETE and
+        # skip generating a duplicate put-away list.
+        # ------------------------------------------------------------------
         from app.services.put_away_service import PutAwayService
 
         put_away_service = PutAwayService(self.db)
-        put_away_service.generate_from_slip(
-            slip_id, organization_id, worker_id=worker_id
-        )
+        # approve_slip deletes and recreates receiving_slip_items (Step 3),
+        # which resets put_away_status to "pending". Re-run reconciliation so
+        # items already binned via direct put-away are linked again before we
+        # decide the slip status.
+        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
+
+        if put_away_service.all_slip_items_put_away(slip_id):
+            updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
+        else:
+            updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
+            put_away_service.generate_from_slip(
+                slip_id, organization_id, worker_id=worker_id
+            )
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status
@@ -1147,6 +1155,131 @@ class InboundService:
             "rejected_at": updated_item.rejected_at.isoformat()
             if updated_item.rejected_at
             else None,
+        }
+
+    def update_items_status(
+        self,
+        slip_id: UUID,
+        items: list,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> list[dict]:
+        """Apply per-item status updates (rejected / ok / short / damaged).
+
+        This is the bulk equivalent of calling the individual reject / flag
+        endpoints — one request, one payload, with a per-item ``status``.
+        """
+        results: list[dict] = []
+        for entry in items:
+            status = entry.status
+            if status == "rejected":
+                results.append(
+                    self.reject_slip_item(
+                        slip_id=slip_id,
+                        item_id=entry.item_id,
+                        reason=entry.reason or "Rejected during review",
+                        organization_id=organization_id,
+                        rejected_by=user_id,
+                        notes=entry.notes,
+                    )
+                )
+            elif status in ("short", "damaged"):
+                results.append(
+                    self.flag_line_item(
+                        slip_id=slip_id,
+                        item_id=entry.item_id,
+                        flag=status,
+                        notes=entry.notes,
+                        organization_id=organization_id,
+                    )
+                )
+            elif status == "ok":
+                results.append(
+                    self.reset_slip_item(
+                        slip_id=slip_id,
+                        item_id=entry.item_id,
+                        organization_id=organization_id,
+                    )
+                )
+            else:
+                raise ValidationError(
+                    message=f"Invalid item status '{status}'",
+                    details=[
+                        {
+                            "field": "items",
+                            "reason": "status must be one of: rejected, ok, short, damaged",
+                        }
+                    ],
+                )
+        return results
+
+    def reset_slip_item(
+        self,
+        slip_id: UUID,
+        item_id: UUID,
+        organization_id: UUID,
+    ) -> dict:
+        """Reset a receiving slip item back to 'ok' (undo a rejection/flag)."""
+        slip = self.slip_repo.get_by_id(slip_id, organization_id)
+        if slip is None:
+            raise NotFoundError(
+                message="Receiving slip not found",
+                entity_type="ReceivingSlip",
+                entity_id=str(slip_id),
+            )
+
+        item = self.slip_repo.get_item_by_id(item_id, organization_id)
+        if item is None:
+            raise NotFoundError(
+                message="Receiving slip item not found",
+                entity_type="ReceivingSlipItem",
+                entity_id=str(item_id),
+            )
+
+        if item.slip_id != slip_id:
+            raise ValidationError(
+                message="Item does not belong to the specified receiving slip",
+                details=[
+                    {
+                        "field": "item_id",
+                        "reason": f"Item {item_id} does not belong to slip {slip_id}",
+                    }
+                ],
+            )
+
+        updated_item = self.slip_repo.update_item_flag(item_id, "ok", None)
+        updated_item.rejection_reason = None
+        updated_item.rejected_by = None
+        updated_item.rejected_at = None
+        self.db.commit()
+
+        # Reset the dual-axis tracking row back to 'scanned'
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        tracking = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.qr_identifier == updated_item.batch_number,
+                ScannedItemTracking.scan_session_id == slip.session_id,
+            )
+            .first()
+        )
+        if tracking:
+            tracking.receiving_status = "scanned"
+            tracking.rejection_reason = None
+            self.db.commit()
+
+        return {
+            "id": str(updated_item.id),
+            "slip_id": str(updated_item.slip_id),
+            "sku": updated_item.sku,
+            "batch_number": updated_item.batch_number,
+            "quantity": updated_item.quantity,
+            "box_count": updated_item.box_count,
+            "flag": updated_item.flag,
+            "rejection_reason": updated_item.rejection_reason,
+            "notes": updated_item.notes,
+            "rejected_at": None,
         }
 
     # ------------------------------------------------------------------

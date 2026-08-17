@@ -276,6 +276,27 @@ class RejectSlipItemRequest(BaseModel):
     )
 
 
+class ItemStatusUpdateRequest(BaseModel):
+    """Per-item status update in a bulk request."""
+
+    item_id: UUID
+    status: str = Field(
+        ..., description="New status: 'rejected', 'ok', 'short', or 'damaged'"
+    )
+    reason: str | None = Field(
+        None, max_length=1000, description="Reason (used when status is 'rejected')"
+    )
+    notes: str | None = Field(
+        None, max_length=1000, description="Optional additional notes"
+    )
+
+
+class BulkItemStatusUpdateRequest(BaseModel):
+    """Bulk update of receiving-slip line item statuses in a single request."""
+
+    items: list[ItemStatusUpdateRequest] = Field(..., min_length=1)
+
+
 class RejectedItemResponse(BaseModel):
     """Response for a rejected receiving slip line item."""
 
