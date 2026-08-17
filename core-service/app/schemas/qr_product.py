@@ -35,6 +35,7 @@ class QRProductCreate(QRProductBase):
 
 class QRProductUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
+    sku: str | None = None
     generic_name: str | None = None
     gtin: str | None = None
     industry: str | None = None
