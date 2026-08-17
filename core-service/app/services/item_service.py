@@ -9,6 +9,7 @@ from app.core.exceptions import DuplicateItemCodeException, ItemNotFoundExceptio
 from app.events.publisher import get_event_publisher
 from app.models.base import ItemStatus, ItemType, ValuationMethod
 from app.models.item import Item
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.repositories.item_repository import ItemRepository
 from app.repositories.stock_level_repository import StockLevelRepository
 from app.repositories.tax_template_repository import TaxTemplateRepository
@@ -104,6 +105,8 @@ class ItemService:
 
         # Convert enum strings to enum values
         item_dict = item_data.model_dump()
+        # packaging_details is not an items column — handled separately below.
+        item_dict.pop("packaging_details", None)
         item_dict["organization_id"] = organization_id
         item_dict["created_by"] = user_id
         item_dict["updated_by"] = user_id
@@ -133,6 +136,13 @@ class ItemService:
 
         # Create item
         item = self.item_repo.create_item(item_dict)
+
+        # Auto-create the base packaging unit when packaging details are supplied.
+        if item_data.packaging_details is not None:
+            self._upsert_base_packaging_unit(
+                item, item_data.packaging_details, organization_id
+            )
+            self.db.commit()
 
         # Publish entity created event
         try:
@@ -254,6 +264,8 @@ class ItemService:
 
         # Prepare update data
         update_dict = item_data.model_dump(exclude_unset=True)
+        packaging_details_provided = "packaging_details" in update_dict
+        update_dict.pop("packaging_details", None)
         update_dict["updated_by"] = user_id
 
         # Convert string enums to actual enums (case-insensitive)
@@ -281,6 +293,13 @@ class ItemService:
 
         # Update item
         updated_item = self.item_repo.update_item(item, update_dict)
+
+        # Upsert the base packaging unit when packaging details are supplied.
+        if packaging_details_provided:
+            self._upsert_base_packaging_unit(
+                updated_item, item_data.packaging_details, organization_id
+            )
+            self.db.commit()
 
         # Publish entity updated event
         try:
@@ -345,6 +364,66 @@ class ItemService:
                 logger.error(f"Failed to sync item→product: {e}")
 
         return updated_item
+
+    def _upsert_base_packaging_unit(
+        self, item: Item, packaging_details, organization_id: UUID
+    ) -> None:
+        """Create or update the item's base packaging unit from packaging details.
+
+        The base unit (``is_base_unit = True``) is the physical "Each" pack level.
+        If one already exists its dimensions/weight are updated in place; if a
+        non-base unit already uses the same ``unit_name`` it is promoted to the
+        base unit to respect the ``(item_id, unit_name)`` unique constraint.
+        """
+        if packaging_details is None:
+            return
+
+        unit_name = (packaging_details.unit_name or "").strip() or "Each"
+
+        base = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.is_base_unit == True,  # noqa: E712
+            )
+            .first()
+        )
+
+        if base is None:
+            # Avoid a unique-constraint violation: reuse a unit that already
+            # carries the same name for this item.
+            base = (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item.id,
+                    ItemPackagingUnit.unit_name == unit_name,
+                )
+                .first()
+            )
+            if base is None:
+                base = ItemPackagingUnit(
+                    organization_id=organization_id,
+                    item_id=item.id,
+                    unit_name=unit_name,
+                    qr_identifier=None,
+                    conversion_factor=packaging_details.conversion_factor,
+                    length_mm=packaging_details.length_mm,
+                    width_mm=packaging_details.width_mm,
+                    height_mm=packaging_details.height_mm,
+                    weight_grams=packaging_details.weight_grams,
+                    is_base_unit=True,
+                    is_active=True,
+                )
+                self.db.add(base)
+            else:
+                base.is_base_unit = True
+
+        base.conversion_factor = packaging_details.conversion_factor
+        base.length_mm = packaging_details.length_mm
+        base.width_mm = packaging_details.width_mm
+        base.height_mm = packaging_details.height_mm
+        base.weight_grams = packaging_details.weight_grams
+        self.db.flush()
 
     def delete_item(
         self,

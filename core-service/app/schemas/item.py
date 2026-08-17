@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import PaginationMeta
+from app.schemas.item_packaging_unit import ItemPackagingUnitResponse
 
 
 class ItemBase(BaseModel):
@@ -81,10 +82,21 @@ class ItemBase(BaseModel):
     extra_data: dict | None = None
 
 
+class ItemPackagingDetails(BaseModel):
+    """Physical packaging details for an item's base packaging unit."""
+
+    unit_name: str = Field(default="Each", min_length=1, max_length=100)
+    conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
+    length_mm: Decimal | None = Field(None, ge=0)
+    width_mm: Decimal | None = Field(None, ge=0)
+    height_mm: Decimal | None = Field(None, ge=0)
+    weight_grams: Decimal | None = Field(None, ge=0)
+
+
 class ItemCreate(ItemBase):
     """Schema for creating a new item"""
 
-    pass
+    packaging_details: ItemPackagingDetails | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -156,6 +168,7 @@ class ItemUpdate(BaseModel):
     tags: list[str] | None = None
     custom_fields: dict | None = None
     extra_data: dict | None = None
+    packaging_details: ItemPackagingDetails | None = None
 
 
 class ItemGroupInfo(BaseModel):
@@ -239,6 +252,9 @@ class ItemResponse(BaseModel):
     tags: list[str] | None = None
     custom_fields: dict | None = None
     extra_data: dict | None = None
+
+    # Packaging units (base unit first)
+    packaging_units: list[ItemPackagingUnitResponse] | None = None
 
     # Audit
     created_by: UUID | None = None

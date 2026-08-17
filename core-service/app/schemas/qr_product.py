@@ -1,12 +1,24 @@
 """Pydantic schemas for QR Products module"""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 # ── QR Product ────────────────────────────────────────────────────────────────
+
+
+class QRProductPackagingDetails(BaseModel):
+    """Physical packaging details for a product's base packaging unit."""
+
+    unit_name: str = Field("Each", min_length=1, max_length=100)
+    conversion_factor: Decimal = Field(Decimal("1"), gt=0)
+    length_mm: Decimal | None = Field(None, ge=0)
+    width_mm: Decimal | None = Field(None, ge=0)
+    height_mm: Decimal | None = Field(None, ge=0)
+    weight_grams: Decimal | None = Field(None, ge=0)
 
 
 class QRProductBase(BaseModel):
@@ -31,6 +43,7 @@ class QRProductBase(BaseModel):
 
 class QRProductCreate(QRProductBase):
     brand_id: UUID | None = None
+    packaging_details: QRProductPackagingDetails | None = None
 
 
 class QRProductUpdate(BaseModel):
@@ -51,6 +64,7 @@ class QRProductUpdate(BaseModel):
     qr_type: str | None = None
     is_active: bool | None = None
     extra_data: dict[str, Any] | None = None
+    packaging_details: QRProductPackagingDetails | None = None
 
 
 class QRProductResponse(QRProductBase):
