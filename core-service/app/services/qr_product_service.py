@@ -5,6 +5,7 @@ import secrets
 import string
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -178,6 +179,11 @@ class QRProductService:
         self, data: QRProductCreate, organization_id: UUID, user_id: UUID
     ) -> QRProduct:
         product_dict = data.model_dump()
+        packaging_details = product_dict.pop("packaging_details", None)
+        if packaging_details is not None:
+            extra = dict(product_dict.get("extra_data") or {})
+            extra["packaging_details"] = packaging_details
+            product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
@@ -199,7 +205,7 @@ class QRProductService:
         # Auto-create a corresponding inventory Item linked to this QR product.
         # This ensures every QR product has a trackable item in the ERP without
         # requiring a separate frontend call.
-        self._create_linked_item(qr_product, organization_id, user_id)
+        self._create_linked_item(qr_product, organization_id, user_id, packaging_details)
 
         # ── Sync Product → linked Items ──
         # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
@@ -218,7 +224,11 @@ class QRProductService:
         return qr_product
 
     def _create_linked_item(
-        self, qr_product: QRProduct, organization_id: UUID, user_id: UUID
+        self,
+        qr_product: QRProduct,
+        organization_id: UUID,
+        user_id: UUID,
+        packaging_details: dict | None = None,
     ) -> None:
         """Create an inventory Item that references this QR product.
 
@@ -281,6 +291,32 @@ class QRProductService:
                 qr_product.name,
                 qr_product.id,
             )
+
+            if packaging_details:
+                try:
+                    from app.schemas.item import ItemPackagingDetails
+                    from app.services.item_service import ItemService
+
+                    details = ItemPackagingDetails(
+                        unit_name=packaging_details.get("unit_name") or "Each",
+                        conversion_factor=packaging_details.get("conversion_factor")
+                        or Decimal("1"),
+                        length_mm=packaging_details.get("length_mm"),
+                        width_mm=packaging_details.get("width_mm"),
+                        height_mm=packaging_details.get("height_mm"),
+                        weight_grams=packaging_details.get("weight_grams"),
+                    )
+                    ItemService(self.db)._upsert_base_packaging_unit(
+                        item, details, organization_id
+                    )
+                    self.db.commit()
+                except Exception as exc:
+                    self.db.rollback()
+                    logger.warning(
+                        "Failed to upsert packaging unit for linked item '%s': %s",
+                        item.id,
+                        exc,
+                    )
         except Exception as exc:
             # Roll back only the item insert, keep the QR product committed
             self.db.rollback()
@@ -402,6 +438,11 @@ class QRProductService:
     ) -> QRProduct:
         product = self.get_product(product_id, organization_id)
         update_dict = data.model_dump(exclude_unset=True)
+        packaging_details = update_dict.pop("packaging_details", None)
+        if packaging_details is not None:
+            extra = dict(update_dict.get("extra_data") or {})
+            extra["packaging_details"] = packaging_details
+            update_dict["extra_data"] = extra
 
         # brand_id is immutable after creation
         if "brand_id" in update_dict:
@@ -412,6 +453,37 @@ class QRProductService:
 
         update_dict["updated_by"] = user_id
         product = self.product_repo.update(product, update_dict)
+
+        if packaging_details is not None:
+            try:
+                from app.models.item import Item
+                from app.schemas.item import ItemPackagingDetails
+                from app.services.item_service import ItemService
+
+                linked_item = (
+                    self.db.query(Item)
+                    .filter(
+                        Item.qr_product_id == product.id,
+                        Item.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if linked_item is not None:
+                    details = ItemPackagingDetails(
+                        unit_name=packaging_details.get("unit_name") or "Each",
+                        conversion_factor=packaging_details.get("conversion_factor")
+                        or Decimal("1"),
+                        length_mm=packaging_details.get("length_mm"),
+                        width_mm=packaging_details.get("width_mm"),
+                        height_mm=packaging_details.get("height_mm"),
+                        weight_grams=packaging_details.get("weight_grams"),
+                    )
+                    ItemService(self.db)._upsert_base_packaging_unit(
+                        linked_item, details, organization_id
+                    )
+                    self.db.commit()
+            except Exception as exc:
+                logger.error("Failed to upsert linked item packaging: %s", exc)
 
         # ── Sync Product → linked Items ──
         # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
