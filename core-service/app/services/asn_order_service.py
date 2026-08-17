@@ -215,6 +215,7 @@ class AsnOrderService:
                     warehouse_id=asn_order.warehouse_id_from,
                     sender_id=user_id,
                 )
+                self._create_delivery_stock_entry(asn_order, organization_id, user_id)
             elif new_status == AsnOrderStatus.CANCELLED:
                 self._emit_asn_notification(
                     asn_order=asn_order,
@@ -292,6 +293,7 @@ class AsnOrderService:
                 warehouse_id=asn_order.warehouse_id_from,
                 sender_id=user_id,
             )
+            self._create_delivery_stock_entry(asn_order, organization_id, user_id)
         elif new_status_enum == AsnOrderStatus.CANCELLED:
             self._emit_asn_notification(
                 asn_order=asn_order,
@@ -371,6 +373,119 @@ class AsnOrderService:
             logger.error(
                 "Failed to emit ASN notification %s for order %s: %s",
                 notif_type,
+                asn_order.asn_order_no,
+                exc,
+                exc_info=True,
+            )
+
+    # ── stock entry on delivery ─────────────────────────────────────────
+
+    def _create_delivery_stock_entry(
+        self,
+        asn_order: AsnOrder,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Create + submit a material_receipt stock entry when an ASN is delivered.
+
+        Guardrails so stock is never double-counted:
+        - Skip when a stock entry already references this ASN.
+        - Skip when stock was already received via approved receiving slips
+          (receiving + put-away already update stock levels).
+        """
+        import logging
+        from datetime import UTC, datetime
+
+        from app.models.receiving_slip import ReceivingSlip
+        from app.models.stock_entry import StockEntry
+        from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+        from app.services.stock_entry_service import StockEntryService
+
+        logger = logging.getLogger(__name__)
+
+        # Idempotency: one stock entry per ASN.
+        existing = (
+            self.db.query(StockEntry)
+            .filter(
+                StockEntry.organization_id == organization_id,
+                StockEntry.reference_type == "asn_order",
+                StockEntry.reference_id == asn_order.id,
+            )
+            .first()
+        )
+        if existing:
+            logger.info(
+                "Stock entry already exists for ASN %s (%s) — skipping.",
+                asn_order.asn_order_no,
+                existing.stock_entry_no,
+            )
+            return
+
+        # Receiving slips already approved? Then receiving/put-away has already
+        # booked the stock at bin + warehouse level — avoid a duplicate receipt.
+        received = (
+            self.db.query(ReceivingSlip.id)
+            .filter(
+                ReceivingSlip.asn_order_id == asn_order.id,
+                ReceivingSlip.organization_id == organization_id,
+                ReceivingSlip.status.in_(["pending_putaway", "putaway_complete"]),
+            )
+            .first()
+        )
+        if received:
+            logger.info(
+                "ASN %s has approved receiving slips — stock already accounted via receiving/put-away; skipping stock entry.",
+                asn_order.asn_order_no,
+            )
+            return
+
+        if not asn_order.warehouse_id_to:
+            logger.warning(
+                "ASN %s delivered but has no receiving warehouse (warehouse_id_to); skipping stock entry.",
+                asn_order.asn_order_no,
+            )
+            return
+
+        items = [
+            StockEntryItemCreate(
+                item_id=item.item_id,
+                qty=Decimal(str(item.qty or 0)),
+                uom=item.uom or "pcs",
+            )
+            for item in asn_order.items
+            if item.item_id and Decimal(str(item.qty or 0)) > 0
+        ]
+        if not items:
+            logger.warning(
+                "ASN %s delivered but has no line items; skipping stock entry.",
+                asn_order.asn_order_no,
+            )
+            return
+
+        try:
+            svc = StockEntryService(self.db)
+            entry = svc.create(
+                StockEntryCreate(
+                    stock_entry_type="material_receipt",
+                    to_warehouse_id=asn_order.warehouse_id_to,
+                    posting_date=datetime.now(UTC),
+                    reference_type="asn_order",
+                    reference_id=asn_order.id,
+                    remarks=f"Auto-generated from ASN {asn_order.asn_order_no}",
+                    items=items,
+                ),
+                organization_id,
+                user_id,
+            )
+            svc.submit(entry.id, organization_id, user_id)
+            logger.info(
+                "Created stock entry %s for ASN %s.",
+                entry.stock_entry_no,
+                asn_order.asn_order_no,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to create stock entry for ASN %s: %s",
                 asn_order.asn_order_no,
                 exc,
                 exc_info=True,
