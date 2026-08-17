@@ -788,8 +788,14 @@ class InboundService:
             if not asn_item.item:
                 continue
             delivered = 0
-            # Try matching on sku first, then item_code (receiving may use either)
-            for lookup_key in (asn_item.item.sku, asn_item.item.item_code):
+            # Try matching on sku, item_code, gtin, or barcode (receiving may
+            # use any of these as the receiving-slip item's sku).
+            for lookup_key in (
+                asn_item.item.sku,
+                asn_item.item.item_code,
+                asn_item.item.gtin,
+                asn_item.item.barcode,
+            ):
                 if lookup_key:
                     delivered = delivered_by_sku.get(lookup_key, 0)
                     if delivered > 0:
