@@ -2,7 +2,6 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
@@ -54,7 +53,7 @@ class AsnOrderRepository:
         status: str | None = None,
         warehouse_id: UUID | None = None,
         search: str | None = None,
-        sort_by: str = "order_date",
+        sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[AsnOrder], int]:
         q = (
@@ -68,12 +67,9 @@ class AsnOrderRepository:
         if status is not None:
             q = q.filter(AsnOrder.status == status)
         if warehouse_id is not None:
-            q = q.filter(
-                or_(
-                    AsnOrder.warehouse_id_from == warehouse_id,
-                    AsnOrder.warehouse_id_to == warehouse_id,
-                )
-            )
+            # Filter by target (to) warehouse only — the warehouse a user
+            # selects is the one receiving the goods.
+            q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
         if search:
             t = f"%{search}%"
             q = q.filter(AsnOrder.asn_order_no.ilike(t))
