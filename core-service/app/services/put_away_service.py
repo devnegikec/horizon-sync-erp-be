@@ -511,13 +511,17 @@ class PutAwayService:
         ):
             put_away_item.bin_location_id = bin_id_override
 
-        # Add stock to the target bin using BinStockService
+        # Add stock to the target bin using BinStockService.
+        # Skip the warehouse-level sync when a stock entry already booked the
+        # warehouse stock at receiving-slip approval (avoids double counting).
+        sync_warehouse = self._should_sync_warehouse_stock(put_away_item)
         bin_stock = self.bin_stock_service.add_stock(
             bin_id=target_bin_id,
             item_id=put_away_item.item_id,
             quantity=Decimal(str(put_away_item.quantity)),
             org_id=org_id,
             batch_number=put_away_item.batch_number,
+            sync_warehouse=sync_warehouse,
         )
 
         # If the put-away item carries a packaging_unit_id, propagate it to the
@@ -554,6 +558,30 @@ class PutAwayService:
         self.db.commit()
         self.db.refresh(put_away_item)
         return put_away_item
+
+    def _should_sync_warehouse_stock(self, put_away_item: PutAwayListItem) -> bool:
+        """Return False when a receiving-slip stock entry already booked the
+        warehouse-level stock (avoid double counting with put-away bin adds)."""
+        from app.models.stock_entry import StockEntry
+
+        put_away_list = (
+            self.db.query(PutAwayList)
+            .filter(PutAwayList.id == put_away_item.put_away_list_id)
+            .first()
+        )
+        if put_away_list is None or put_away_list.receiving_slip_id is None:
+            return True
+
+        existing = (
+            self.db.query(StockEntry)
+            .filter(
+                StockEntry.organization_id == put_away_item.organization_id,
+                StockEntry.reference_type == "receiving_slip",
+                StockEntry.reference_id == put_away_list.receiving_slip_id,
+            )
+            .first()
+        )
+        return existing is None
 
     def skip_item(
         self, put_away_item_id: UUID, reason: str, org_id: UUID

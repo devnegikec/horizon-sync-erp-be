@@ -39,6 +39,7 @@ class BinStockService:
         quantity: Decimal,
         org_id: UUID,
         batch_number: str | None = None,
+        sync_warehouse: bool = True,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -107,13 +108,15 @@ class BinStockService:
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=quantity,
-        )
+        # Sync warehouse-level stock_levels (skipped when the warehouse stock
+        # was already booked by a stock entry, e.g. receiving-slip approval).
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=quantity,
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
