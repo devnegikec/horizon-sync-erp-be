@@ -169,3 +169,42 @@ Async equivalent: `redis.asyncio.cluster.RedisCluster`.
 | `REDIS_WAREHOUSE_URL` | `rediss://default:<pwd>@<upstash-host>.upstash.io:6379/1` |
 
 That is the current, production-ready setup. Migrate to §4 only when you hit a single-node limit.
+
+## How Railway bills Redis
+
+There's **no fixed per-database fee** — Redis is deployed as a regular service (the standard `redis` Docker image) and billed by metered usage:
+
+| Resource | Rate |
+|---|---|
+| RAM | $10 / GB / month |
+| CPU | $20 / vCPU / month |
+| Volume (optional persistence) | $0.15 / GB / month |
+| Network egress | $0.05 / GB (negligible for internal pub/sub) |
+
+## How the $5 Hobby plan works
+
+- You **always pay $5/month** (subscription), which includes **$5 of usage credit**.
+- If your total usage stays ≤ $5, your bill is just $5.
+- If total usage exceeds $5, you pay only the **difference** on top.
+
+So Redis doesn't add a fixed cost — it just adds to your metered usage.
+
+## Realistic cost for WMS bin capacity
+
+Bin capacity pub/sub + a small cache is very light. A minimal Redis is plenty:
+
+| Redis size | RAM cost | CPU cost | Est. total/month |
+|---|---|---|---|
+| 256 MB + 0.1 vCPU | $2.50 | $2.00 | **~$4.50** |
+| 256 MB + 0.25 vCPU | $2.50 | $5.00 | ~$7.50 |
+| 512 MB + 0.5 vCPU | $5.00 | $10.00 | ~$15.00 |
+
+**Bottom line:** a small Redis will add roughly **$2.50–$5/month** in usage. Since your existing services (Postgres + `core-service` + gateway) already consume part of the $5 credit, adding a 256 MB Redis will most likely push you a **few dollars over $5**, depending on your current usage.
+
+## Two things worth noting
+
+1. **WMS bin capacity doesn't actually require Redis.** Looking at bin_capacity_service.py, it computes occupancy directly from PostgreSQL (`compute_bin_occupancy`). Redis would only be an optional caching layer for the capacity tree, or for the 3D warehouse real-time pub/sub already described in the guide (`REDIS_WAREHOUSE_URL`).
+
+2. **Persistence is extra.** The Railway Redis template is unmanaged and loses data on redeploy unless you attach a Volume ($0.15/GB/month).
+
+If you want, I can check your current Railway usage to tell you exactly how much headroom you have left in the $5 credit before adding Redis.

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.capacity import VolumeCapacity, WeightCapacity
 from app.schemas.common import PaginationMeta
 
 # ===========================================
@@ -90,6 +91,12 @@ class LocationTree(BaseModel):
     position_y: Decimal = Decimal("0")
     is_active: bool = True
     qr_code: str | None = None
+    max_volume_cc: Decimal | None = None
+    volume: VolumeCapacity | None = None
+    weight: WeightCapacity | None = None
+    binding_pct: Decimal | None = None
+    bin_state: str | None = None
+    is_available: bool | None = None
     children: list[LocationTree] = []
 
     model_config = ConfigDict(from_attributes=True)

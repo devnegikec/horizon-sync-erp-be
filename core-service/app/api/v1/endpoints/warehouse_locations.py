@@ -1,5 +1,6 @@
 """Warehouse location layout and capacity API endpoints"""
 
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.warehouse import Warehouse
 from app.schemas.common import PaginationMeta
 from app.schemas.warehouse_location import (
     CreateLocationRequest,
@@ -18,6 +20,7 @@ from app.schemas.warehouse_location import (
     PaginatedLocations,
     UpdateLocationRequest,
 )
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.layout_service import LayoutService
 
 router = APIRouter()
@@ -83,6 +86,10 @@ async def get_location_tree(
     """
     Get the full location hierarchy for a warehouse as a nested tree.
 
+    When volume-based capacity is enabled for the warehouse, capacity is
+    calculated with the same engine as /capacity/warehouses/{id}/tree and the
+    response carries m³ values instead of unit counts.
+
     **Path Parameters:**
     - **warehouse_id**: Warehouse UUID
 
@@ -93,7 +100,60 @@ async def get_location_tree(
         warehouse_id=warehouse_id,
         organization_id=current_user.organization_id,
     )
+
+    warehouse = db.get(Warehouse, warehouse_id)
+    if warehouse is not None and BinCapacityService._use_volume(warehouse):
+        capacity_tree = BinCapacityService(db).get_capacity_tree(
+            warehouse_id=warehouse_id,
+            org_id=current_user.organization_id,
+        )
+        _merge_volume_capacity(tree, capacity_tree)
+
     return tree
+
+
+def _merge_volume_capacity(locations: list[dict], capacity_tree: dict) -> None:
+    """Overlay volume-based capacity values onto the location tree nodes."""
+    cap_by_id: dict[str, dict] = {}
+
+    def _index(node: dict) -> None:
+        cap_by_id[node.get("node")] = node
+        for child in node.get("children") or []:
+            _index(child)
+
+    _index(capacity_tree)
+
+    def _merge(nodes: list[dict]) -> None:
+        for node in nodes:
+            cap = cap_by_id.get(str(node.get("id")))
+            if cap:
+                volume = cap.get("volume") or {}
+                weight = cap.get("weight") or {}
+                occupied_m3 = volume.get("occupied_m3") or Decimal("0")
+                capacity_m3 = volume.get("capacity_m3")
+
+                node["volume"] = volume
+                node["weight"] = weight
+                node["binding_pct"] = cap.get("binding_pct")
+                node["bin_state"] = cap.get("bin_state")
+                node["is_available"] = cap.get("is_available")
+
+                node["capacity"] = (
+                    capacity_m3 if capacity_m3 is not None else Decimal("0")
+                )
+                node["total_capacity"] = (
+                    capacity_m3 if capacity_m3 is not None else Decimal("0")
+                )
+                node["available_capacity"] = (
+                    capacity_m3 - occupied_m3
+                    if capacity_m3 is not None
+                    else Decimal("0")
+                )
+                node["capacity_uom"] = "m3"
+
+            _merge(node.get("children") or [])
+
+    _merge(locations)
 
 
 @router.get(

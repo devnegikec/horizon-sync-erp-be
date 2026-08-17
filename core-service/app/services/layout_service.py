@@ -274,6 +274,7 @@ class LayoutService:
                 "position_x": loc.position_x,
                 "position_y": loc.position_y,
                 "is_active": loc.is_active,
+                "max_volume_cc": loc.max_volume_cc,
                 "parent_location_id": loc.parent_location_id,
                 "children": [],
             }
