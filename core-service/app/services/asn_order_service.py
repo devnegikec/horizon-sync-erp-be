@@ -100,7 +100,7 @@ class AsnOrderService:
         status: str | None = None,
         warehouse_id: UUID | None = None,
         search: str | None = None,
-        sort_by: str = "order_date",
+        sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[dict], dict]:
         items, total = self.repo.list_asn_orders(
