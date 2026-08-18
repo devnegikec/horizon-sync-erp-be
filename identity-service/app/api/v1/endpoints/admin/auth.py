@@ -2,8 +2,10 @@
 
 import logging
 import secrets
+import uuid as _uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints.workers import require_worker_manager
@@ -175,6 +177,42 @@ async def create_warehouse_worker(
     db.add(user_org_role)
     db.commit()
     db.refresh(user)
+
+    # Mirror to wms_workers (inventory app's worker list / printed QR source).
+    # Only possible when a warehouse is assigned (warehouse_id is NOT NULL).
+    if warehouse_ids:
+        try:
+            mirror_exists = db.execute(
+                sa_text("SELECT 1 FROM wms_workers WHERE barcode=:bc"),
+                {"bc": qr_code},
+            ).fetchone()
+            if not mirror_exists:
+                db.execute(
+                    sa_text(
+                        "INSERT INTO wms_workers (id,organization_id,warehouse_id,"
+                        "first_name,last_name,display_name,email,phone,barcode,"
+                        "employee_id,login_username,role,status,is_active,created_at,"
+                        "updated_at) VALUES (:id,:org,:wh,:fn,:ln,:dn,:em,:ph,:bc,"
+                        ":eid,:lu,:role,'active',true,NOW(),NOW())"
+                    ),
+                    {
+                        "id": str(_uuid.uuid4()),
+                        "org": str(org_id),
+                        "wh": str(warehouse_ids[0]),
+                        "fn": body.first_name,
+                        "ln": body.last_name,
+                        "dn": user.display_name,
+                        "em": worker_email,
+                        "ph": body.phone or "",
+                        "bc": qr_code,
+                        "eid": body.employee_id,
+                        "lu": body.login_username,
+                        "role": "warehouse_worker",
+                    },
+                )
+                db.commit()
+        except Exception as exc:
+            logger.warning("Failed to mirror worker to wms_workers: %s", exc)
 
     # Assign warehouse access if warehouse_ids provided
     warehouse_errors = []

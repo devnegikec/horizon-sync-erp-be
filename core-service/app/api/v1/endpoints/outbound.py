@@ -51,6 +51,7 @@ from app.schemas.gate_verification import (
     GateSessionResponse,
 )
 from app.schemas.outbound import (
+    AssignWorkerRequest,
     OutboundPickListListResponse,
     OutboundPickListResponse,
     PickListProgress,
@@ -436,6 +437,85 @@ def _compute_progress(pick_list) -> PickListProgress:
     )
 
 
+def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
+    """Resolve per-unit serials for each pick list item from its serial_nos.
+
+    ``batch_no`` holds the packing-slip batch number (matches the uploaded
+    PDF), while ``serial_nos`` holds the individual bin-stock serials assigned
+    during bin resolution. Here we only enrich the serials with Mfg/Exp from
+    QSealParameters.
+    """
+    result: dict[str, list[dict]] = {}
+    if not items:
+        return result
+
+    all_serials: set[str] = set()
+    for item in items:
+        serials: list[dict] = []
+        for sn in item.serial_nos or []:
+            if sn:
+                all_serials.add(sn)
+                serials.append(
+                    {
+                        "serial_number": sn,
+                        "manufacturing_date": None,
+                        "expiry_date": None,
+                    }
+                )
+        result[str(item.id)] = serials
+
+    if all_serials and db:
+        try:
+            from app.models.qseal import QSealParameters
+
+            qrows = (
+                db.query(
+                    QSealParameters.serial_number,
+                    QSealParameters.manufacturing_date,
+                    QSealParameters.expiry_date,
+                )
+                .filter(QSealParameters.serial_number.in_(all_serials))
+                .all()
+            )
+            qmeta = {
+                sn: {
+                    "manufacturing_date": str(m) if m else None,
+                    "expiry_date": str(e) if e else None,
+                }
+                for sn, m, e in qrows
+            }
+            for item in items:
+                for s in result[str(item.id)]:
+                    meta = qmeta.get(s["serial_number"]) or {}
+                    s["manufacturing_date"] = meta.get("manufacturing_date")
+                    s["expiry_date"] = meta.get("expiry_date")
+        except Exception:
+            pass
+
+    return result
+
+
+def _resolve_worker_name(worker_id, db) -> str | None:
+    """Resolve a human-readable worker name for a pick list's assigned worker."""
+    if not worker_id:
+        return None
+    if db is not None:
+        try:
+            from app.models.wms_worker import WMSWorker
+
+            worker = db.query(WMSWorker).filter(WMSWorker.id == worker_id).first()
+            if worker:
+                return (
+                    worker.display_name
+                    or f"{worker.first_name} {worker.last_name}".strip()
+                    or worker.barcode
+                    or str(worker_id)
+                )
+        except Exception:
+            pass
+    return str(worker_id)
+
+
 def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     """Convert a PickList model to an OutboundPickListResponse."""
     progress = _compute_progress(pl)
@@ -460,6 +540,9 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         ).all()
         bin_map = {str(r.id): r.full_path for r in rows}
 
+    # Resolve per-unit serials for each item line
+    serials_by_item = _resolve_pick_serials(pl.items or [], db)
+
     items = []
     for item in pl.items or []:
         info = item_map.get(str(item.item_id), {})
@@ -473,6 +556,15 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 "qty": float(item.qty),
                 "picked_qty": float(item.picked_qty or 0),
                 "uom": item.uom,
+                "per_case_qty": float(item.per_case_qty)
+                if item.per_case_qty is not None
+                else None,
+                "case_qty": float(item.case_qty)
+                if item.case_qty is not None
+                else None,
+                "loose_qty": float(item.loose_qty)
+                if item.loose_qty is not None
+                else None,
                 "batch_no": item.batch_no,
                 "bin_location_id": str(item.bin_location_id)
                 if item.bin_location_id
@@ -481,8 +573,14 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 if item.bin_location_id
                 else None,
                 "sort_order": item.sort_order or 0,
+                "serials": [
+                    {**s, "sku": info.get("sku")}
+                    for s in serials_by_item.get(str(item.id), [])
+                ],
             }
         )
+
+    worker_name = _resolve_worker_name(pl.assigned_to, db)
 
     return OutboundPickListResponse(
         id=str(pl.id),
@@ -493,6 +591,8 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         pick_date=pl.pick_date.isoformat() if pl.pick_date else None,
         reference_type=pl.reference_type,
         invoice_reference=pl.invoice_reference,
+        assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
+        worker_name=worker_name,
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
         created_at=pl.created_at.isoformat() if pl.created_at else None,
         updated_at=pl.updated_at.isoformat() if pl.updated_at else None,
@@ -540,6 +640,10 @@ async def create_from_invoice(
                 sku=item.sku,
                 quantity=item.quantity,
                 uom=item.uom,
+                per_case_qty=item.per_case_qty,
+                case_qty=item.case_qty,
+                loose_qty=item.loose_qty,
+                batch_no=item.batch_no,
             )
             for item in data.items
         ],
@@ -549,6 +653,7 @@ async def create_from_invoice(
         invoice_data=invoice_payload,
         org_id=current_user.organization_id,
         worker_id=current_user.id,
+        assigned_to=data.assigned_to,
     )
 
     return _pick_list_to_response(pick_list, db)
@@ -697,6 +802,8 @@ async def list_pick_lists(
                     "warehouse_id": str(pl.warehouse_id),
                     "status": pl.status.value if pl.status else "draft",
                     "invoice_reference": pl.invoice_reference,
+                    "assigned_to": str(pl.assigned_to) if pl.assigned_to else None,
+                    "worker_name": _resolve_worker_name(pl.assigned_to, db),
                     "pick_date": pl.pick_date.isoformat() if pl.pick_date else None,
                     "completed_at": pl.completed_at.isoformat()
                     if pl.completed_at
@@ -756,6 +863,40 @@ async def get_pick_list_detail(
         raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
     return _pick_list_to_response(pl, db)
+
+
+@router.post(
+    "/{pick_list_id}/assign",
+    response_model=OutboundPickListResponse,
+    summary="Assign or reassign a worker to a pick list",
+    description="Assign a warehouse worker to a pick list. Call again to reassign.",
+)
+async def assign_pick_list_worker(
+    pick_list_id: UUID,
+    data: AssignWorkerRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Assign (or reassign) a worker to a pick list.
+
+    **Path Parameters:**
+    - **pick_list_id**: UUID of the pick list
+
+    **Request Body:**
+    - **worker_id**: UUID of the warehouse worker to assign
+
+    **Returns:** Updated pick list with the assigned worker
+    """
+    service = PickListService(db)
+
+    pick_list = service.assign_worker(
+        pick_list_id=pick_list_id,
+        worker_id=data.worker_id,
+        org_id=current_user.organization_id,
+    )
+
+    return _pick_list_to_response(pick_list, db)
 
 
 @router.post(

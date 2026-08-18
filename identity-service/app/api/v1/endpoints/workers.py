@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.models.base import UserType
@@ -65,6 +66,142 @@ def _worker_row_to_dict(row) -> dict:
     }
 
 
+# Valid, non-reserved domain — `.local` is rejected by Pydantic EmailStr.
+FALLBACK_EMAIL_DOMAIN = "warehouse.horizonsync.com"
+
+
+def _wh_role_for(worker_role: str | None) -> str:
+    if worker_role in ("warehouse_supervisor", "supervisor"):
+        return "supervisor"
+    if worker_role == "manager":
+        return "manager"
+    return "operator"
+
+
+def _ensure_auth_user(
+    db: Session,
+    *,
+    barcode: str,
+    org_id: str | None,
+    warehouse_ids: list[str],
+    role: str | None,
+    email: str | None,
+    first_name: str,
+    last_name: str,
+    display_name: str,
+    phone: str | None,
+    is_active: bool = True,
+) -> None:
+    """Create/keep in sync the identity `users` row, org role and warehouse
+    assignment for a wms_worker, so mobile QR login and warehouse loading work."""
+    if not barcode:
+        return
+
+    # 1. Find or create the users row by qr_code
+    row = db.execute(
+        sa_text("SELECT id FROM users WHERE qr_code=:q"), {"q": barcode}
+    ).fetchone()
+    if row:
+        uid = str(row.id)
+        db.execute(
+            sa_text(
+                "UPDATE users SET first_name=:fn, last_name=:ln, display_name=:dn, "
+                "phone=:ph, is_active=:ia, updated_at=NOW() WHERE id=:id"
+            ),
+            {
+                "fn": first_name,
+                "ln": last_name,
+                "dn": display_name,
+                "ph": phone,
+                "ia": is_active,
+                "id": uid,
+            },
+        )
+    else:
+        uid = str(_uuid.uuid4())
+        em = email or f"{barcode}@{FALLBACK_EMAIL_DOMAIN}"
+        if db.execute(
+            sa_text("SELECT 1 FROM users WHERE email=:e"), {"e": em}
+        ).fetchone():
+            em = f"{barcode}.{_uuid.uuid4().hex[:6]}@{FALLBACK_EMAIL_DOMAIN}"
+        pw = hash_password(secrets.token_urlsafe(16))
+        db.execute(
+            sa_text(
+                "INSERT INTO users (id, email, password_hash, first_name, last_name, "
+                "display_name, phone, user_type, status, is_active, email_verified, "
+                "qr_code, preferences, timezone, language, created_at, updated_at) "
+                "VALUES (:id,:em,:pw,:fn,:ln,:dn,:ph,'warehouse_worker','active',:ia,"
+                "true,:q,'{}','UTC','en',NOW(),NOW())"
+            ),
+            {
+                "id": uid,
+                "em": em,
+                "pw": pw,
+                "fn": first_name,
+                "ln": last_name,
+                "dn": display_name,
+                "ph": phone,
+                "ia": is_active,
+                "q": barcode,
+            },
+        )
+
+    # 2. Ensure org role assignment
+    if org_id:
+        role_row = db.execute(
+            sa_text(
+                "SELECT id FROM roles WHERE code='warehouse_work_user' AND "
+                "organization_id=:org AND is_active=true LIMIT 1"
+            ),
+            {"org": org_id},
+        ).fetchone()
+        if role_row:
+            role_id = str(role_row.id)
+            exists = db.execute(
+                sa_text(
+                    "SELECT 1 FROM user_organization_roles WHERE user_id=:u AND "
+                    "organization_id=:org AND role_id=:r"
+                ),
+                {"u": uid, "org": org_id, "r": role_id},
+            ).fetchone()
+            if not exists:
+                db.execute(
+                    sa_text(
+                        "INSERT INTO user_organization_roles (id, user_id, organization_id, "
+                        "role_id, is_primary, is_active, status, created_at, updated_at) "
+                        "VALUES (:id,:u,:org,:r,true,true,'active',NOW(),NOW())"
+                    ),
+                    {"id": str(_uuid.uuid4()), "u": uid, "org": org_id, "r": role_id},
+                )
+
+    # 3. Ensure warehouse assignments
+    wh_role = _wh_role_for(role)
+    for wh in warehouse_ids:
+        if not wh:
+            continue
+        exists = db.execute(
+            sa_text(
+                "SELECT 1 FROM warehouse_users WHERE user_id=:u AND warehouse_id=:wh"
+            ),
+            {"u": uid, "wh": wh},
+        ).fetchone()
+        if not exists:
+            db.execute(
+                sa_text(
+                    "INSERT INTO warehouse_users (id, organization_id, user_id, "
+                    "warehouse_id, role, is_primary, is_active, created_at, updated_at) "
+                    "VALUES (:id,:org,:u,:wh,:r,false,true,NOW(),NOW())"
+                ),
+                {
+                    "id": str(_uuid.uuid4()),
+                    "org": org_id,
+                    "u": uid,
+                    "wh": wh,
+                    "r": wh_role,
+                },
+            )
+
+
 @router.post("/workers", status_code=status.HTTP_201_CREATED)
 async def create_worker(
     body: dict,
@@ -110,6 +247,19 @@ async def create_worker(
             "lu": body.get("login_username"),
             "role": role,
         },
+    )
+    _ensure_auth_user(
+        db,
+        barcode=qr,
+        org_id=org_id,
+        warehouse_ids=wids,
+        role=role,
+        email=email,
+        first_name=fn,
+        last_name=ln,
+        display_name=dn,
+        phone=body.get("phone") or "",
+        is_active=True,
     )
     db.commit()
     row = db.execute(
@@ -192,6 +342,7 @@ async def update_worker(
     ).fetchone()
     if not row:
         raise HTTPException(404, "Worker not found")
+    old_barcode = row.barcode
     updates, params = [], {"id": worker_id}
     for f in [
         "first_name",
@@ -220,6 +371,30 @@ async def update_worker(
     db.execute(
         sa_text(f"UPDATE wms_workers SET {', '.join(updates)} WHERE id=:id"), params
     )
+    # Keep identity `users` row in sync (barcode/qr_code + active state)
+    new_barcode = body.get("barcode") or old_barcode
+    if new_barcode and new_barcode != old_barcode:
+        db.execute(
+            sa_text("UPDATE users SET qr_code=:nq, updated_at=NOW() WHERE qr_code=:oq"),
+            {"nq": new_barcode, "oq": old_barcode},
+        )
+    if "is_active" in body and body["is_active"] is not None:
+        db.execute(
+            sa_text(
+                "UPDATE users SET is_active=:ia, status=:st, updated_at=NOW() "
+                "WHERE qr_code=:q"
+            ),
+            {
+                "ia": bool(body["is_active"]),
+                "st": "active" if body["is_active"] else "suspended",
+                "q": new_barcode,
+            },
+        )
+    if "email" in body and body["email"] is not None:
+        db.execute(
+            sa_text("UPDATE users SET email=:em, updated_at=NOW() WHERE qr_code=:q"),
+            {"em": body["email"], "q": new_barcode},
+        )
     db.commit()
     row = db.execute(
         sa_text("SELECT * FROM wms_workers WHERE id=:id"), {"id": worker_id}
@@ -234,7 +409,7 @@ async def delete_worker(
     db: Session = Depends(get_db),
 ):
     row = db.execute(
-        sa_text("SELECT id FROM wms_workers WHERE id=:id"), {"id": worker_id}
+        sa_text("SELECT id, barcode FROM wms_workers WHERE id=:id"), {"id": worker_id}
     ).fetchone()
     if not row:
         raise HTTPException(404, "Worker not found")
@@ -244,5 +419,13 @@ async def delete_worker(
         ),
         {"id": worker_id},
     )
+    if row.barcode:
+        db.execute(
+            sa_text(
+                "UPDATE users SET is_active=false, status='suspended', updated_at=NOW() "
+                "WHERE qr_code=:q"
+            ),
+            {"q": row.barcode},
+        )
     db.commit()
     return None
