@@ -200,6 +200,14 @@ class PutAwayService:
             slip_item.bin_location_id = tracking.bin_location_id
             slip_item.put_away_at = tracking.putaway_at or datetime.now(UTC)
 
+            # Approve the receiving axis and enter stock now that both axes are
+            # complete (direct put-away happened before the receiving slip).
+            from app.services.scanned_item_tracking_service import (
+                ScannedItemTrackingService,
+            )
+
+            ScannedItemTrackingService(self.db).approve_tracking_row(tracking)
+
             if tracking.put_away_list_id:
                 pal = (
                     self.db.query(PutAwayList)
