@@ -67,6 +67,56 @@ class InboundService:
 
         Requirements: 5.1
         """
+        # ── Guard against duplicate sessions/slips for the same ASN ──
+        if asn_order_id:
+            from app.models.receiving_slip import ReceivingSlip
+            from app.models.scan_session import ScanSession
+
+            existing_open = (
+                self.db.query(ScanSession)
+                .filter(
+                    ScanSession.organization_id == organization_id,
+                    ScanSession.asn_order_id == asn_order_id,
+                    ScanSession.status == "open",
+                )
+                .first()
+            )
+            if existing_open is not None:
+                raise ValidationError(
+                    message="An open scan session already exists for this ASN",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                f"Session {existing_open.id} is already open for this ASN"
+                            ),
+                        }
+                    ],
+                )
+
+            existing_slip = (
+                self.db.query(ReceivingSlip)
+                .filter(
+                    ReceivingSlip.organization_id == organization_id,
+                    ReceivingSlip.asn_order_id == asn_order_id,
+                    ReceivingSlip.status != "rejected",
+                )
+                .first()
+            )
+            if existing_slip is not None:
+                raise ValidationError(
+                    message="A receiving slip already exists for this ASN",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                f"Receiving slip {existing_slip.slip_number} already "
+                                f"exists for this ASN"
+                            ),
+                        }
+                    ],
+                )
+
         session_data = {
             "organization_id": organization_id,
             "session_type": "inbound",
@@ -154,38 +204,13 @@ class InboundService:
                     ],
                 )
 
-        # Resolve packaging unit from QR payload (best-effort — null if not found)
-        packaging_unit_id = None
-        if payload.packaging_unit_qr_id:
-            pu = ItemPackagingUnitService().resolve_by_qr_identifier(
-                payload.packaging_unit_qr_id, organization_id, self.db
-            )
-            if pu is not None:
-                packaging_unit_id = pu.id
-
-        # Add scan session item
-        item_data = {
-            "organization_id": organization_id,
-            "qr_identifier": payload.id,
-            "sku": payload.sku,
-            "raw_quantity": payload.qty,
-            "batch_number": payload.batch,
-            "raw_qr_data": qr_data,
-            "packaging_unit_id": packaging_unit_id,
-        }
-        scan_item = self.session_repo.add_item(session_id, item_data)
-
-        # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
-        # Resolve the inventory Item for tracking.
+        # ── Resolve the inventory Item for this scan ──
         # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
         #   the Item via ProductItem → QRProduct → Item.qr_product_id.
         # - JSON box labels: payload.sku is the real SKU, so fall back to
         #   SKU / GTIN / item_code matching.
         from app.models.item import Item
         from app.models.product_item import ProductItem
-        from app.services.scanned_item_tracking_service import (
-            ScannedItemTrackingService,
-        )
 
         item = None
 
@@ -223,6 +248,91 @@ class InboundService:
                 )
                 .first()
             )
+
+        # ── Validate scanned item against the linked ASN (when present) ──
+        if session.asn_order_id:
+            from app.models.asn_order import AsnOrder
+
+            asn_order = (
+                self.db.query(AsnOrder)
+                .filter(
+                    AsnOrder.id == session.asn_order_id,
+                    AsnOrder.organization_id == organization_id,
+                )
+                .first()
+            )
+            if asn_order is None:
+                raise ValidationError(
+                    message="Linked ASN order not found",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": f"ASN '{session.asn_order_id}' does not exist",
+                        }
+                    ],
+                )
+
+            asn_item_ids = {line.item_id for line in asn_order.items}
+            asn_lookup_keys: set[str] = set()
+            for line in asn_order.items:
+                if not line.item:
+                    continue
+                for key in (line.item.sku, line.item.gtin, line.item.item_code):
+                    if key:
+                        asn_lookup_keys.add(key)
+
+            matched = False
+            if item is not None:
+                if item.id in asn_item_ids:
+                    matched = True
+                else:
+                    for key in (item.sku, item.gtin, item.item_code):
+                        if key and key in asn_lookup_keys:
+                            matched = True
+                            break
+            if not matched and payload.sku in asn_lookup_keys:
+                matched = True
+
+            if not matched:
+                raise ValidationError(
+                    message="Scanned item does not belong to the linked ASN",
+                    details=[
+                        {
+                            "field": "qr_data",
+                            "reason": (
+                                f"Item '{payload.sku or payload.id}' is not part of "
+                                f"ASN order {asn_order.asn_order_no}"
+                            ),
+                        }
+                    ],
+                )
+
+        # Resolve packaging unit from QR payload (best-effort — null if not found)
+        packaging_unit_id = None
+        if payload.packaging_unit_qr_id:
+            pu = ItemPackagingUnitService().resolve_by_qr_identifier(
+                payload.packaging_unit_qr_id, organization_id, self.db
+            )
+            if pu is not None:
+                packaging_unit_id = pu.id
+
+        # Add scan session item
+        item_data = {
+            "organization_id": organization_id,
+            "qr_identifier": payload.id,
+            "sku": payload.sku,
+            "raw_quantity": payload.qty,
+            "batch_number": payload.batch,
+            "raw_qr_data": qr_data,
+            "packaging_unit_id": packaging_unit_id,
+        }
+        scan_item = self.session_repo.add_item(session_id, item_data)
+
+        # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
+        # `item` was resolved above (and validated against the linked ASN).
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
 
         if item is not None:
             tracking_svc = ScannedItemTrackingService(self.db)
@@ -1396,9 +1506,17 @@ class InboundService:
         # Flow B: link items already put away via direct put-away (match by QR)
         from app.services.put_away_service import PutAwayService
 
-        PutAwayService(self.db).reconcile_slip_with_completed_putaway(
-            slip, organization_id
-        )
+        put_away_service = PutAwayService(self.db)
+        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
+
+        # ── Direct put-away already completed before receiving? ──
+        # If every accepted item is already binned, skip the review/approve
+        # cycle entirely: mark the slip PUTAWAY_COMPLETE and advance the ASN so
+        # the flow ends at the expected terminal state immediately.
+        if put_away_service.all_slip_items_put_away(slip.id):
+            slip = self.slip_repo.update_status(slip.id, "putaway_complete")
+            if slip is not None and slip.asn_order_id:
+                self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
 
         return slip
 
