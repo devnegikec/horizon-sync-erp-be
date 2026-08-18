@@ -834,8 +834,150 @@ class InboundService:
         if slip.asn_order_id:
             self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
 
+        # Step 6: Create a material_receipt stock entry for ERP traceability.
+        self._create_receiving_stock_entry(slip, organization_id, worker_id)
+
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
+
+    # ------------------------------------------------------------------
+    # RECEIVING STOCK ENTRY (ERP traceability)
+    # ------------------------------------------------------------------
+
+    def _create_receiving_stock_entry(
+        self,
+        slip,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> None:
+        """Create a submitted material_receipt stock entry for a receiving slip.
+
+        Document-only record for ERP traceability. Bin and warehouse stock
+        levels are already updated by the dual-axis flow, so stock levels are
+        NOT re-applied here (avoids double counting).
+        """
+        from decimal import Decimal
+
+        from app.models.item import Item
+        from app.models.stock_entry import StockEntry
+        from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+        from app.services.stock_entry_service import StockEntryService
+
+        # Idempotency: one stock entry per receiving slip.
+        existing = (
+            self.db.query(StockEntry)
+            .filter(
+                StockEntry.organization_id == organization_id,
+                StockEntry.reference_type == "receiving_slip",
+                StockEntry.reference_id == slip.id,
+            )
+            .first()
+        )
+        if existing:
+            logger.info(
+                "Stock entry already exists for receiving slip %s (%s) — skipping.",
+                slip.slip_number,
+                existing.stock_entry_no,
+            )
+            return
+
+        if not slip.warehouse_id:
+            logger.warning(
+                "Receiving slip %s has no warehouse; skipping stock entry.",
+                slip.slip_number,
+            )
+            return
+
+        # Fresh query of accepted slip items (approve_slip recreates them).
+        slip_items = (
+            self.db.query(ReceivingSlipItem)
+            .filter(ReceivingSlipItem.slip_id == slip.id)
+            .all()
+        )
+
+        resolved: list[tuple[UUID, Decimal, str | None, str | None]] = []
+        for slip_item in slip_items:
+            if slip_item.flag != "ok":
+                continue
+            item = (
+                self.db.query(Item)
+                .filter(
+                    (
+                        (Item.item_code == slip_item.sku)
+                        | (Item.sku == slip_item.sku)
+                        | (Item.gtin == slip_item.sku)
+                    ),
+                    Item.organization_id == organization_id,
+                )
+                .first()
+            )
+            if item is None:
+                logger.warning(
+                    "Receiving slip %s: no item matched for sku %s; skipping stock entry line.",
+                    slip.slip_number,
+                    slip_item.sku,
+                )
+                continue
+            resolved.append(
+                (
+                    item.id,
+                    Decimal(str(slip_item.quantity or 0)),
+                    item.uom,
+                    slip_item.batch_number,
+                )
+            )
+
+        if not resolved:
+            logger.warning(
+                "Receiving slip %s has no resolvable accepted items; skipping stock entry.",
+                slip.slip_number,
+            )
+            return
+
+        items = [
+            StockEntryItemCreate(
+                item_id=item_id,
+                qty=qty,
+                uom=uom or "Nos",
+                batch_no=batch,
+            )
+            for item_id, qty, uom, batch in resolved
+        ]
+
+        try:
+            svc = StockEntryService(self.db)
+            entry = svc.create(
+                StockEntryCreate(
+                    stock_entry_type="material_receipt",
+                    to_warehouse_id=slip.warehouse_id,
+                    posting_date=datetime.now(UTC),
+                    status="submitted",
+                    reference_type="receiving_slip",
+                    reference_id=slip.id,
+                    remarks=(
+                        f"Auto-generated from receiving slip {slip.slip_number}"
+                        + (f" (ASN {slip.asn_order_id})" if slip.asn_order_id else "")
+                    ),
+                    items=items,
+                ),
+                organization_id,
+                user_id,  # type: ignore[arg-type]
+            )
+            # `create` already stores the entry as submitted; stamp the time.
+            entry.submitted_at = datetime.now(UTC)
+            self.db.commit()
+            logger.info(
+                "Created stock entry %s for receiving slip %s.",
+                entry.stock_entry_no,
+                slip.slip_number,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to create stock entry for receiving slip %s: %s",
+                slip.slip_number,
+                exc,
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # SYNC ASN DELIVERED QTY
@@ -1522,6 +1664,9 @@ class InboundService:
             slip = self.slip_repo.update_status(slip.id, "putaway_complete")
             if slip is not None and slip.asn_order_id:
                 self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+            # Create a material_receipt stock entry for ERP traceability.
+            if slip is not None:
+                self._create_receiving_stock_entry(slip, organization_id)
 
         return slip
 
