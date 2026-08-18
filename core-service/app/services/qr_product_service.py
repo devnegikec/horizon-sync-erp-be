@@ -182,7 +182,12 @@ class QRProductService:
         packaging_details = product_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(product_dict.get("extra_data") or {})
-            extra["packaging_details"] = packaging_details
+            # packaging_details contains Decimal values; the JSONB serializer
+            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
+            extra["packaging_details"] = {
+                key: (float(value) if isinstance(value, Decimal) else value)
+                for key, value in packaging_details.items()
+            }
             product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
@@ -205,7 +210,9 @@ class QRProductService:
         # Auto-create a corresponding inventory Item linked to this QR product.
         # This ensures every QR product has a trackable item in the ERP without
         # requiring a separate frontend call.
-        self._create_linked_item(qr_product, organization_id, user_id, packaging_details)
+        self._create_linked_item(
+            qr_product, organization_id, user_id, packaging_details
+        )
 
         # ── Sync Product → linked Items ──
         # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
