@@ -898,13 +898,12 @@ class InboundService:
             if not asn_item.item:
                 continue
             delivered = 0
-            # Receiving slip items may carry the SKU, GTIN, barcode, or item_code
-            # as the identifier, so try all of them.
+            # Receiving slip items may carry the SKU, GTIN, or item_code as the
+            # identifier, so try all of them.
             for lookup_key in (
                 asn_item.item.sku,
                 asn_item.item.item_code,
                 asn_item.item.gtin,
-                getattr(asn_item.item, "barcode", None),
             ):
                 if lookup_key:
                     delivered = delivered_by_sku.get(lookup_key, 0)
