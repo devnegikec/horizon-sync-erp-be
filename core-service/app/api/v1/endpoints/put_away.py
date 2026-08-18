@@ -53,6 +53,33 @@ def _extract_warnings(remarks: str | None) -> list[str] | None:
         return None
 
 
+def _serial_meta_map(db: Session, batch_numbers: set[str]) -> dict[str, dict]:
+    """Resolve manufacturing/expiry dates for serial numbers from QSealParameters."""
+    meta: dict[str, dict] = {}
+    if not batch_numbers:
+        return meta
+    try:
+        from app.models.qseal import QSealParameters
+
+        rows = (
+            db.query(
+                QSealParameters.serial_number,
+                QSealParameters.manufacturing_date,
+                QSealParameters.expiry_date,
+            )
+            .filter(QSealParameters.serial_number.in_(batch_numbers))
+            .all()
+        )
+        for sn, mfg, exp in rows:
+            meta[sn] = {
+                "manufacturing_date": str(mfg) if mfg else None,
+                "expiry_date": str(exp) if exp else None,
+            }
+    except Exception:
+        pass
+    return meta
+
+
 def _resolve_references(
     db: Session, pal_ids: list[UUID]
 ) -> tuple[dict[UUID, str], dict[UUID, str]]:
@@ -110,7 +137,7 @@ def _resolve_references(
     return slip_no_map, worker_name_map
 
 
-def _build_item_response(item: PutAwayListItem) -> PutAwayListItemResponse:
+def _build_item_response(item: PutAwayListItem, serial_meta: dict | None = None) -> PutAwayListItemResponse:
     """Build a PutAwayListItemResponse from a PutAwayListItem model."""
     bin_location_code = None
     if item.bin_location:
@@ -121,12 +148,17 @@ def _build_item_response(item: PutAwayListItem) -> PutAwayListItemResponse:
     if item.item:
         item_name = item.item.item_name
 
+    meta = (serial_meta or {}).get(item.batch_number) or {}
+
     return PutAwayListItemResponse(
         id=str(item.id),
         item_id=str(item.item_id),
         sku=item.sku,
         item_name=item_name,
         batch_number=item.batch_number,
+        serial_number=item.batch_number,
+        manufacturing_date=meta.get("manufacturing_date"),
+        expiry_date=meta.get("expiry_date"),
         quantity=float(item.quantity),
         bin_location_id=str(item.bin_location_id) if item.bin_location_id else None,
         bin_location_code=bin_location_code,
@@ -207,7 +239,12 @@ async def generate_put_away_from_slip(
     )
 
     # Build item responses with bin location codes
-    item_responses = [_build_item_response(item) for item in put_away_list.items]
+    serial_meta = _serial_meta_map(
+        db, {it.batch_number for it in put_away_list.items if it.batch_number}
+    )
+    item_responses = [
+        _build_item_response(item, serial_meta) for item in put_away_list.items
+    ]
     item_responses.sort(key=lambda x: x.sort_order)
 
     # Compute counts
@@ -502,7 +539,12 @@ async def get_put_away_list(
         )
 
     # Build item responses with bin location codes
-    item_responses = [_build_item_response(item) for item in put_away_list.items]
+    serial_meta = _serial_meta_map(
+        db, {it.batch_number for it in put_away_list.items if it.batch_number}
+    )
+    item_responses = [
+        _build_item_response(item, serial_meta) for item in put_away_list.items
+    ]
     item_responses.sort(key=lambda x: x.sort_order)
 
     # Compute counts from items

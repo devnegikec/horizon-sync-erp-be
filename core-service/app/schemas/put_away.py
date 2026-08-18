@@ -65,6 +65,9 @@ class PutAwayListItemResponse(BaseModel):
     sku: str | None = None
     item_name: str | None = None
     batch_number: str | None = None
+    serial_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
     quantity: float
     bin_location_id: str | None = None
     bin_location_code: str | None = None

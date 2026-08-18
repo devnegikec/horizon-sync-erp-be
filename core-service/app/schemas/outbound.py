@@ -31,6 +31,10 @@ class SAPInvoiceItem(BaseModel):
     sku: str = Field(..., min_length=1, max_length=100, description="SKU / item code")
     quantity: Decimal = Field(..., gt=0, description="Quantity to pick")
     uom: str = Field(..., min_length=1, max_length=50, description="Unit of measure")
+    per_case_qty: Decimal | None = Field(None, description="Items per case/box")
+    case_qty: Decimal | None = Field(None, description="Cases/boxes to pick")
+    loose_qty: Decimal | None = Field(None, description="Loose pieces to pick")
+    batch_no: str | None = Field(None, max_length=100, description="Batch/serial number")
 
 
 class SAPInvoicePayload(BaseModel):
@@ -49,6 +53,15 @@ class SAPInvoicePayload(BaseModel):
     items: list[SAPInvoiceItem] = Field(
         ..., min_length=1, description="Invoice line items to pick"
     )
+    assigned_to: UUID | None = Field(
+        None, description="Optional worker UUID to assign the pick list to"
+    )
+
+
+class AssignWorkerRequest(BaseModel):
+    """Request schema for assigning/reassigning a worker to a pick list."""
+
+    worker_id: UUID = Field(..., description="Worker UUID to assign")
 
 
 class PickScanRequest(BaseModel):
@@ -109,6 +122,15 @@ class PickListProgress(BaseModel):
     )
 
 
+class PickSerialDetail(BaseModel):
+    """A single serial/unit being picked within a pick list line item."""
+
+    serial_number: str
+    sku: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+
+
 class PickListItemResponse(BaseModel):
     """Response schema for a pick list item."""
 
@@ -120,10 +142,14 @@ class PickListItemResponse(BaseModel):
     qty: float
     picked_qty: float
     uom: str
+    per_case_qty: float | None = None
+    case_qty: float | None = None
+    loose_qty: float | None = None
     batch_no: str | None = None
     bin_location_id: str | None = None
     bin_location_path: str | None = None
     sort_order: int = 0
+    serials: list[PickSerialDetail] = []
 
 
 class OutboundPickListResponse(BaseModel):
@@ -140,6 +166,8 @@ class OutboundPickListResponse(BaseModel):
     pick_date: str | None = None
     reference_type: str | None = None
     invoice_reference: str | None = None
+    assigned_to: str | None = None
+    worker_name: str | None = None
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -174,6 +202,8 @@ class OutboundPickListListItem(BaseModel):
     warehouse_id: str
     status: str
     invoice_reference: str | None = None
+    assigned_to: str | None = None
+    worker_name: str | None = None
     pick_date: str | None = None
     completed_at: str | None = None
     created_at: str | None = None
