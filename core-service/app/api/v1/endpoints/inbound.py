@@ -27,6 +27,7 @@ from app.schemas.inbound import (
     AssignBinRequest,
     AssignBinResponse,
     BulkItemStatusUpdateRequest,
+    EndSessionRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
     LinkAsnToSessionRequest,
@@ -139,6 +140,7 @@ async def record_scan(
 )
 async def end_session(
     session_id: UUID,
+    data: EndSessionRequest | None = None,
     current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
@@ -146,7 +148,8 @@ async def end_session(
     End a scan session and generate a receiving slip.
 
     Closes the session and generates a receiving slip from the scanned items,
-    grouped by SKU and batch number.
+    grouped by SKU and batch number. Any rejections supplied in the request
+    body are applied before the slip is finalized.
 
     **Path Parameters:**
     - **session_id**: UUID of the scan session to close
@@ -156,10 +159,14 @@ async def end_session(
     Requirements: 5.5, 6.1
     """
     service = InboundService(db)
+    rejections = (
+        [r.model_dump() for r in data.rejections] if data and data.rejections else None
+    )
     result = service.end_session(
         session_id=session_id,
         worker_id=current_user.id,
         organization_id=current_user.organization_id,
+        rejections=rejections,
     )
     return ReceivingSlipResponse(**result)
 

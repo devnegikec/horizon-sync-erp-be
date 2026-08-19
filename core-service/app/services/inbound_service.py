@@ -67,6 +67,56 @@ class InboundService:
 
         Requirements: 5.1
         """
+        # ── Guard against duplicate sessions/slips for the same ASN ──
+        if asn_order_id:
+            from app.models.receiving_slip import ReceivingSlip
+            from app.models.scan_session import ScanSession
+
+            existing_open = (
+                self.db.query(ScanSession)
+                .filter(
+                    ScanSession.organization_id == organization_id,
+                    ScanSession.asn_order_id == asn_order_id,
+                    ScanSession.status == "open",
+                )
+                .first()
+            )
+            if existing_open is not None:
+                raise ValidationError(
+                    message="An open scan session already exists for this ASN",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                f"Session {existing_open.id} is already open for this ASN"
+                            ),
+                        }
+                    ],
+                )
+
+            existing_slip = (
+                self.db.query(ReceivingSlip)
+                .filter(
+                    ReceivingSlip.organization_id == organization_id,
+                    ReceivingSlip.asn_order_id == asn_order_id,
+                    ReceivingSlip.status != "rejected",
+                )
+                .first()
+            )
+            if existing_slip is not None:
+                raise ValidationError(
+                    message="A receiving slip already exists for this ASN",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                f"Receiving slip {existing_slip.slip_number} already "
+                                f"exists for this ASN"
+                            ),
+                        }
+                    ],
+                )
+
         session_data = {
             "organization_id": organization_id,
             "session_type": "inbound",
@@ -154,38 +204,13 @@ class InboundService:
                     ],
                 )
 
-        # Resolve packaging unit from QR payload (best-effort — null if not found)
-        packaging_unit_id = None
-        if payload.packaging_unit_qr_id:
-            pu = ItemPackagingUnitService().resolve_by_qr_identifier(
-                payload.packaging_unit_qr_id, organization_id, self.db
-            )
-            if pu is not None:
-                packaging_unit_id = pu.id
-
-        # Add scan session item
-        item_data = {
-            "organization_id": organization_id,
-            "qr_identifier": payload.id,
-            "sku": payload.sku,
-            "raw_quantity": payload.qty,
-            "batch_number": payload.batch,
-            "raw_qr_data": qr_data,
-            "packaging_unit_id": packaging_unit_id,
-        }
-        scan_item = self.session_repo.add_item(session_id, item_data)
-
-        # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
-        # Resolve the inventory Item for tracking.
+        # ── Resolve the inventory Item for this scan ──
         # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
         #   the Item via ProductItem → QRProduct → Item.qr_product_id.
         # - JSON box labels: payload.sku is the real SKU, so fall back to
         #   SKU / GTIN / item_code matching.
         from app.models.item import Item
         from app.models.product_item import ProductItem
-        from app.services.scanned_item_tracking_service import (
-            ScannedItemTrackingService,
-        )
 
         item = None
 
@@ -223,6 +248,91 @@ class InboundService:
                 )
                 .first()
             )
+
+        # ── Validate scanned item against the linked ASN (when present) ──
+        if session.asn_order_id:
+            from app.models.asn_order import AsnOrder
+
+            asn_order = (
+                self.db.query(AsnOrder)
+                .filter(
+                    AsnOrder.id == session.asn_order_id,
+                    AsnOrder.organization_id == organization_id,
+                )
+                .first()
+            )
+            if asn_order is None:
+                raise ValidationError(
+                    message="Linked ASN order not found",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": f"ASN '{session.asn_order_id}' does not exist",
+                        }
+                    ],
+                )
+
+            asn_item_ids = {line.item_id for line in asn_order.items}
+            asn_lookup_keys: set[str] = set()
+            for line in asn_order.items:
+                if not line.item:
+                    continue
+                for key in (line.item.sku, line.item.gtin, line.item.item_code):
+                    if key:
+                        asn_lookup_keys.add(key)
+
+            matched = False
+            if item is not None:
+                if item.id in asn_item_ids:
+                    matched = True
+                else:
+                    for key in (item.sku, item.gtin, item.item_code):
+                        if key and key in asn_lookup_keys:
+                            matched = True
+                            break
+            if not matched and payload.sku in asn_lookup_keys:
+                matched = True
+
+            if not matched:
+                raise ValidationError(
+                    message="Scanned item does not belong to the linked ASN",
+                    details=[
+                        {
+                            "field": "qr_data",
+                            "reason": (
+                                f"Item '{payload.sku or payload.id}' is not part of "
+                                f"ASN order {asn_order.asn_order_no}"
+                            ),
+                        }
+                    ],
+                )
+
+        # Resolve packaging unit from QR payload (best-effort — null if not found)
+        packaging_unit_id = None
+        if payload.packaging_unit_qr_id:
+            pu = ItemPackagingUnitService().resolve_by_qr_identifier(
+                payload.packaging_unit_qr_id, organization_id, self.db
+            )
+            if pu is not None:
+                packaging_unit_id = pu.id
+
+        # Add scan session item
+        item_data = {
+            "organization_id": organization_id,
+            "qr_identifier": payload.id,
+            "sku": payload.sku,
+            "raw_quantity": payload.qty,
+            "batch_number": payload.batch,
+            "raw_qr_data": qr_data,
+            "packaging_unit_id": packaging_unit_id,
+        }
+        scan_item = self.session_repo.add_item(session_id, item_data)
+
+        # ── NEW: Create scanned_item_tracking record (dual-axis handoff) ──
+        # `item` was resolved above (and validated against the linked ASN).
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
 
         if item is not None:
             tracking_svc = ScannedItemTrackingService(self.db)
@@ -292,6 +402,7 @@ class InboundService:
         session_id: UUID,
         worker_id: UUID,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ) -> dict:
         """
         Close a scan session and generate a receiving slip.
@@ -341,6 +452,7 @@ class InboundService:
             session=closed_session,
             items=items,
             organization_id=organization_id,
+            rejections=rejections,
         )
 
         return self._slip_to_dict(slip)
@@ -448,6 +560,7 @@ class InboundService:
         self,
         session_id: UUID,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ) -> dict:
         """
         Generate a receiving slip from a closed scan session.
@@ -504,6 +617,7 @@ class InboundService:
             session=session,
             items=items,
             organization_id=organization_id,
+            rejections=rejections,
         )
 
         return self._slip_to_dict(slip)
@@ -581,6 +695,7 @@ class InboundService:
                         "notes": existing_item.notes,
                     }
                 )
+        rejected_keys = {(r["sku"], r["batch_number"]) for r in rejected_items}
 
         # ------------------------------------------------------------------
         # Step 1: Fetch all ScanSessionItems for this slip's session
@@ -615,6 +730,9 @@ class InboundService:
                 eaches_qty = scan_item.raw_quantity
 
             key = (scan_item.sku, scan_item.batch_number)
+            if key in rejected_keys:
+                # Already saved above — will be re-added as rejected below.
+                continue
             slip_items_by_key[key]["eaches_qty"] += eaches_qty
             slip_items_by_key[key]["box_count"] += 1
 
@@ -724,8 +842,150 @@ class InboundService:
         if slip.asn_order_id:
             self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
 
+        # Step 6: Create a material_receipt stock entry for ERP traceability.
+        self._create_receiving_stock_entry(slip, organization_id, worker_id)
+
         self.db.refresh(updated_slip)
         return self._slip_to_dict(updated_slip)
+
+    # ------------------------------------------------------------------
+    # RECEIVING STOCK ENTRY (ERP traceability)
+    # ------------------------------------------------------------------
+
+    def _create_receiving_stock_entry(
+        self,
+        slip,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+    ) -> None:
+        """Create a submitted material_receipt stock entry for a receiving slip.
+
+        Document-only record for ERP traceability. Bin and warehouse stock
+        levels are already updated by the dual-axis flow, so stock levels are
+        NOT re-applied here (avoids double counting).
+        """
+        from decimal import Decimal
+
+        from app.models.item import Item
+        from app.models.stock_entry import StockEntry
+        from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+        from app.services.stock_entry_service import StockEntryService
+
+        # Idempotency: one stock entry per receiving slip.
+        existing = (
+            self.db.query(StockEntry)
+            .filter(
+                StockEntry.organization_id == organization_id,
+                StockEntry.reference_type == "receiving_slip",
+                StockEntry.reference_id == slip.id,
+            )
+            .first()
+        )
+        if existing:
+            logger.info(
+                "Stock entry already exists for receiving slip %s (%s) — skipping.",
+                slip.slip_number,
+                existing.stock_entry_no,
+            )
+            return
+
+        if not slip.warehouse_id:
+            logger.warning(
+                "Receiving slip %s has no warehouse; skipping stock entry.",
+                slip.slip_number,
+            )
+            return
+
+        # Fresh query of accepted slip items (approve_slip recreates them).
+        slip_items = (
+            self.db.query(ReceivingSlipItem)
+            .filter(ReceivingSlipItem.slip_id == slip.id)
+            .all()
+        )
+
+        resolved: list[tuple[UUID, Decimal, str | None, str | None]] = []
+        for slip_item in slip_items:
+            if slip_item.flag != "ok":
+                continue
+            item = (
+                self.db.query(Item)
+                .filter(
+                    (
+                        (Item.item_code == slip_item.sku)
+                        | (Item.sku == slip_item.sku)
+                        | (Item.gtin == slip_item.sku)
+                    ),
+                    Item.organization_id == organization_id,
+                )
+                .first()
+            )
+            if item is None:
+                logger.warning(
+                    "Receiving slip %s: no item matched for sku %s; skipping stock entry line.",
+                    slip.slip_number,
+                    slip_item.sku,
+                )
+                continue
+            resolved.append(
+                (
+                    item.id,
+                    Decimal(str(slip_item.quantity or 0)),
+                    item.uom,
+                    slip_item.batch_number,
+                )
+            )
+
+        if not resolved:
+            logger.warning(
+                "Receiving slip %s has no resolvable accepted items; skipping stock entry.",
+                slip.slip_number,
+            )
+            return
+
+        items = [
+            StockEntryItemCreate(
+                item_id=item_id,
+                qty=qty,
+                uom=uom or "Nos",
+                batch_no=batch,
+            )
+            for item_id, qty, uom, batch in resolved
+        ]
+
+        try:
+            svc = StockEntryService(self.db)
+            entry = svc.create(
+                StockEntryCreate(
+                    stock_entry_type="material_receipt",
+                    to_warehouse_id=slip.warehouse_id,
+                    posting_date=datetime.now(UTC),
+                    status="submitted",
+                    reference_type="receiving_slip",
+                    reference_id=slip.id,
+                    remarks=(
+                        f"Auto-generated from receiving slip {slip.slip_number}"
+                        + (f" (ASN {slip.asn_order_id})" if slip.asn_order_id else "")
+                    ),
+                    items=items,
+                ),
+                organization_id,
+                user_id,  # type: ignore[arg-type]
+            )
+            # `create` already stores the entry as submitted; stamp the time.
+            entry.submitted_at = datetime.now(UTC)
+            self.db.commit()
+            logger.info(
+                "Created stock entry %s for receiving slip %s.",
+                entry.stock_entry_no,
+                slip.slip_number,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to create stock entry for receiving slip %s: %s",
+                slip.slip_number,
+                exc,
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # SYNC ASN DELIVERED QTY
@@ -765,7 +1025,8 @@ class InboundService:
         if not slip_ids:
             return
 
-        # Aggregate ALL qty per SKU across all slips (rejected items still count as delivered)
+        # Aggregate accepted qty per SKU across all slips (rejected/floating
+        # items are NOT counted as delivered).
         delivered_by_sku = {}
         rows = (
             self.db.query(
@@ -774,6 +1035,7 @@ class InboundService:
             )
             .filter(
                 ReceivingSlipItem.slip_id.in_(slip_ids),
+                ReceivingSlipItem.flag == "ok",
             )
             .group_by(ReceivingSlipItem.sku)
             .all()
@@ -788,8 +1050,13 @@ class InboundService:
             if not asn_item.item:
                 continue
             delivered = 0
-            # Try matching on sku first, then item_code (receiving may use either)
-            for lookup_key in (asn_item.item.sku, asn_item.item.item_code):
+            # Receiving slip items may carry the SKU, GTIN, or item_code as the
+            # identifier, so try all of them.
+            for lookup_key in (
+                asn_item.item.sku,
+                asn_item.item.item_code,
+                asn_item.item.gtin,
+            ):
                 if lookup_key:
                     delivered = delivered_by_sku.get(lookup_key, 0)
                     if delivered > 0:
@@ -1286,11 +1553,70 @@ class InboundService:
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
 
+    def _apply_rejections(
+        self,
+        slip,
+        session,
+        organization_id: UUID,
+        rejections: list[dict] | None,
+    ) -> None:
+        """Mark scanned units as rejected on the receiving slip + tracking rows.
+
+        Applied at slip generation time so rejected items are excluded from
+        put-away, stock entry, and ASN delivered qty. If the item was already
+        put away via direct put-away, we deliberately do nothing else — the
+        warehouse manager is alerted and resolves it manually.
+        """
+        if not rejections:
+            return
+
+        from app.models.receiving_slip import ReceivingSlipItem
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        now = datetime.now(UTC)
+        for rej in rejections:
+            serial = str(rej.get("serial_number") or "").strip()
+            if not serial:
+                continue
+            reason = str(rej.get("reason") or "Rejected during review").strip()
+
+            slip_items = (
+                self.db.query(ReceivingSlipItem)
+                .filter(
+                    ReceivingSlipItem.slip_id == slip.id,
+                    ReceivingSlipItem.batch_number == serial,
+                    ReceivingSlipItem.flag == "ok",
+                )
+                .all()
+            )
+            for item in slip_items:
+                item.flag = "rejected"
+                item.rejection_reason = reason
+                item.rejected_at = now
+                item.put_away_status = "pending"
+
+            trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.qr_identifier == serial,
+                    ScannedItemTracking.scan_session_id == session.id,
+                )
+                .all()
+            )
+            for tracking in trackings:
+                if tracking.receiving_status == "scanned":
+                    tracking.receiving_status = "rejected"
+                    tracking.rejection_reason = reason
+                    tracking.receiving_slip_id = slip.id
+
+        self.db.flush()
+
     def _generate_receiving_slip(
         self,
         session,
         items: list,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ):
         """Generate a receiving slip from session items grouped by SKU+batch.
 
@@ -1393,12 +1719,27 @@ class InboundService:
         # Refresh to load items relationship
         self.db.refresh(slip)
 
+        # Apply rejections before finalization (rejected items never enter
+        # stock or put-away — they are left for the warehouse manager).
+        self._apply_rejections(slip, session, organization_id, rejections)
+
         # Flow B: link items already put away via direct put-away (match by QR)
         from app.services.put_away_service import PutAwayService
 
-        PutAwayService(self.db).reconcile_slip_with_completed_putaway(
-            slip, organization_id
-        )
+        put_away_service = PutAwayService(self.db)
+        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
+
+        # ── Direct put-away already completed before receiving? ──
+        # If every accepted item is already binned, skip the review/approve
+        # cycle entirely: mark the slip PUTAWAY_COMPLETE and advance the ASN so
+        # the flow ends at the expected terminal state immediately.
+        if put_away_service.all_slip_items_put_away(slip.id):
+            slip = self.slip_repo.update_status(slip.id, "putaway_complete")
+            if slip is not None and slip.asn_order_id:
+                self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+            # Create a material_receipt stock entry for ERP traceability.
+            if slip is not None:
+                self._create_receiving_stock_entry(slip, organization_id)
 
         return slip
 

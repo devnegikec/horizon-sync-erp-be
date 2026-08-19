@@ -373,6 +373,27 @@ class ScannedItemTrackingService:
             tracking.bin_location_id,
         )
 
+    def approve_tracking_row(
+        self, tracking: ScannedItemTracking, approved_by: UUID | None = None
+    ) -> bool:
+        """Approve the receiving axis for a single tracking row.
+
+        Used when a receiving slip is reconciled with items that were already
+        put away via direct put-away. Once both axes are complete, stock is
+        entered (idempotent via the stock_entered flag).
+
+        Returns True if stock was entered.
+        """
+        if tracking.receiving_status == "scanned":
+            tracking.receiving_status = "approved"
+            tracking.received_at = datetime.now(UTC)
+            tracking.received_by = approved_by
+
+        if self._should_enter_stock(tracking):
+            self._enter_stock(tracking)
+            return True
+        return False
+
     # ── Queries ───────────────────────────────────────────────────────────
 
     def get_by_qr(self, qr_identifier: str) -> ScannedItemTracking | None:
