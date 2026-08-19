@@ -308,6 +308,9 @@ class QRProductService:
                         unit_name=packaging_details.get("unit_name") or "Each",
                         conversion_factor=packaging_details.get("conversion_factor")
                         or Decimal("1"),
+                        items_per_master_pack=packaging_details.get(
+                            "items_per_master_pack"
+                        ),
                         length_mm=packaging_details.get("length_mm"),
                         width_mm=packaging_details.get("width_mm"),
                         height_mm=packaging_details.get("height_mm"),
@@ -480,6 +483,9 @@ class QRProductService:
                         unit_name=packaging_details.get("unit_name") or "Each",
                         conversion_factor=packaging_details.get("conversion_factor")
                         or Decimal("1"),
+                        items_per_master_pack=packaging_details.get(
+                            "items_per_master_pack"
+                        ),
                         length_mm=packaging_details.get("length_mm"),
                         width_mm=packaging_details.get("width_mm"),
                         height_mm=packaging_details.get("height_mm"),
