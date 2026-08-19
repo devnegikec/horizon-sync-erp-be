@@ -336,8 +336,11 @@ class OrganizationOnboardingService:
         skipped = 0
 
         for uom_data in DEFAULT_UOMS:
-            existing = self.uom_repo.get_by_abbreviation(
-                uom_data["abbreviation"], organization_id
+            existing = (
+                self.uom_repo.get_by_abbreviation(
+                    uom_data["abbreviation"], organization_id
+                )
+                or self.uom_repo.get_by_name(uom_data["name"], organization_id)
             )
             if existing:
                 skipped += 1
