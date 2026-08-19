@@ -289,9 +289,7 @@ class PickListService:
         items_to_remove: list[PickListItem] = []
 
         # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
-        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(
-            org_id=org_id
-        )
+        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
 
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
@@ -351,7 +349,9 @@ class PickListService:
                 # Need to split across multiple bins
                 items_to_remove.append(item)
 
-                for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(allocations):
+                for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(
+                    allocations
+                ):
                     split_item = PickListItem(
                         organization_id=org_id,
                         pick_list_id=pick_list.id,
@@ -399,6 +399,7 @@ class PickListService:
         qr_data: str,
         worker_id: UUID,
         org_id: UUID,
+        bin_location_id: UUID | None = None,
     ) -> dict:
         """Record a pick scan against a pick list.
 
@@ -485,13 +486,17 @@ class PickListService:
         # Increment picked_qty
         matching_pick_item.picked_qty = new_picked
 
-        # Decrement bin stock if bin_location_id is set
-        if matching_pick_item.bin_location_id:
+        # Determine the bin to pick from. The worker may pick from the
+        # suggested bin (default) or override with a different location.
+        effective_bin_id = bin_location_id or matching_pick_item.bin_location_id
+
+        # Decrement bin stock if an effective bin was resolved
+        if effective_bin_id:
             from app.services.bin_stock_service import BinStockService
 
             bin_stock_service = BinStockService(self.db)
             bin_stock_service.remove_stock(
-                bin_id=matching_pick_item.bin_location_id,
+                bin_id=effective_bin_id,
                 item_id=item.id,
                 quantity=scanned_qty,
                 org_id=org_id,
@@ -502,7 +507,7 @@ class PickListService:
             # reservation on the bin so it is available to others (FR-CW).
             if new_picked >= required_qty:
                 self.reservation_service.release(
-                    bin_id=matching_pick_item.bin_location_id,
+                    bin_id=effective_bin_id,
                     worker_id=worker_id,
                     org_id=org_id,
                 )
@@ -521,6 +526,9 @@ class PickListService:
                 "pick_list_id": str(pick_list_id),
                 "worker_id": str(worker_id),
                 "pick_list_item_id": str(matching_pick_item.id),
+                "picked_from_bin_id": str(effective_bin_id)
+                if effective_bin_id
+                else None,
                 "decoded_payload": {
                     "id": payload.id,
                     "sku": payload.sku,
@@ -546,6 +554,7 @@ class PickListService:
             "required_qty": float(matching_pick_item.qty),
             "remaining_qty": float(required_qty - new_picked),
             "batch": payload.batch,
+            "bin_location_id": str(effective_bin_id) if effective_bin_id else None,
         }
 
     def complete_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
