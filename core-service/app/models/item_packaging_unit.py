@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -35,6 +36,7 @@ class ItemPackagingUnit(Base):
     unit_name = Column(String(100), nullable=False)
     qr_identifier = Column(String(255), nullable=True, unique=True)
     conversion_factor = Column(Numeric(15, 6), nullable=False)
+    items_per_master_pack = Column(Integer, nullable=True)
     length_mm = Column(Numeric(10, 2), nullable=True)
     width_mm = Column(Numeric(10, 2), nullable=True)
     height_mm = Column(Numeric(10, 2), nullable=True)

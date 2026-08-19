@@ -145,6 +145,7 @@ from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
+from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 
 # Public Marketing module
