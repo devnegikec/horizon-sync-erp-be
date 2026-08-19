@@ -35,6 +35,33 @@ class RecordScanRequest(BaseModel):
     os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
+class EndSessionRejection(BaseModel):
+    """A single item rejection submitted when ending a scan session."""
+
+    serial_number: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Serial number (QR identifier) of the rejected unit",
+    )
+    reason: str | None = Field(
+        None, max_length=1000, description="Reason for rejection"
+    )
+
+
+class EndSessionRequest(BaseModel):
+    """Optional request body for ending a scan session.
+
+    Rejections are applied before the receiving slip is finalized, so rejected
+    items never enter stock or put-away.
+    """
+
+    rejections: list[EndSessionRejection] = Field(
+        default_factory=list,
+        description="Items to mark as rejected on the receiving slip",
+    )
+
+
 class RejectSlipRequest(BaseModel):
     """Schema for rejecting a receiving slip with a reason."""
 

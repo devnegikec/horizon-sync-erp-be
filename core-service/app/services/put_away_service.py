@@ -183,6 +183,11 @@ class PutAwayService:
 
         linked = 0
         for slip_item in slip_items:
+            # Only reconcile accepted items. Rejected/floating items are left
+            # for the warehouse manager to resolve manually.
+            if slip_item.flag != "ok":
+                continue
+
             tracking = (
                 self.db.query(ScannedItemTracking)
                 .filter(

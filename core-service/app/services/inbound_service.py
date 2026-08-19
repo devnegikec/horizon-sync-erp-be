@@ -402,6 +402,7 @@ class InboundService:
         session_id: UUID,
         worker_id: UUID,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ) -> dict:
         """
         Close a scan session and generate a receiving slip.
@@ -451,6 +452,7 @@ class InboundService:
             session=closed_session,
             items=items,
             organization_id=organization_id,
+            rejections=rejections,
         )
 
         return self._slip_to_dict(slip)
@@ -558,6 +560,7 @@ class InboundService:
         self,
         session_id: UUID,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ) -> dict:
         """
         Generate a receiving slip from a closed scan session.
@@ -614,6 +617,7 @@ class InboundService:
             session=session,
             items=items,
             organization_id=organization_id,
+            rejections=rejections,
         )
 
         return self._slip_to_dict(slip)
@@ -691,6 +695,7 @@ class InboundService:
                         "notes": existing_item.notes,
                     }
                 )
+        rejected_keys = {(r["sku"], r["batch_number"]) for r in rejected_items}
 
         # ------------------------------------------------------------------
         # Step 1: Fetch all ScanSessionItems for this slip's session
@@ -725,6 +730,9 @@ class InboundService:
                 eaches_qty = scan_item.raw_quantity
 
             key = (scan_item.sku, scan_item.batch_number)
+            if key in rejected_keys:
+                # Already saved above — will be re-added as rejected below.
+                continue
             slip_items_by_key[key]["eaches_qty"] += eaches_qty
             slip_items_by_key[key]["box_count"] += 1
 
@@ -1017,7 +1025,8 @@ class InboundService:
         if not slip_ids:
             return
 
-        # Aggregate ALL qty per SKU across all slips (rejected items still count as delivered)
+        # Aggregate accepted qty per SKU across all slips (rejected/floating
+        # items are NOT counted as delivered).
         delivered_by_sku = {}
         rows = (
             self.db.query(
@@ -1026,6 +1035,7 @@ class InboundService:
             )
             .filter(
                 ReceivingSlipItem.slip_id.in_(slip_ids),
+                ReceivingSlipItem.flag == "ok",
             )
             .group_by(ReceivingSlipItem.sku)
             .all()
@@ -1543,11 +1553,70 @@ class InboundService:
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
 
+    def _apply_rejections(
+        self,
+        slip,
+        session,
+        organization_id: UUID,
+        rejections: list[dict] | None,
+    ) -> None:
+        """Mark scanned units as rejected on the receiving slip + tracking rows.
+
+        Applied at slip generation time so rejected items are excluded from
+        put-away, stock entry, and ASN delivered qty. If the item was already
+        put away via direct put-away, we deliberately do nothing else — the
+        warehouse manager is alerted and resolves it manually.
+        """
+        if not rejections:
+            return
+
+        from app.models.receiving_slip import ReceivingSlipItem
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        now = datetime.now(UTC)
+        for rej in rejections:
+            serial = str(rej.get("serial_number") or "").strip()
+            if not serial:
+                continue
+            reason = str(rej.get("reason") or "Rejected during review").strip()
+
+            slip_items = (
+                self.db.query(ReceivingSlipItem)
+                .filter(
+                    ReceivingSlipItem.slip_id == slip.id,
+                    ReceivingSlipItem.batch_number == serial,
+                    ReceivingSlipItem.flag == "ok",
+                )
+                .all()
+            )
+            for item in slip_items:
+                item.flag = "rejected"
+                item.rejection_reason = reason
+                item.rejected_at = now
+                item.put_away_status = "pending"
+
+            trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.qr_identifier == serial,
+                    ScannedItemTracking.scan_session_id == session.id,
+                )
+                .all()
+            )
+            for tracking in trackings:
+                if tracking.receiving_status == "scanned":
+                    tracking.receiving_status = "rejected"
+                    tracking.rejection_reason = reason
+                    tracking.receiving_slip_id = slip.id
+
+        self.db.flush()
+
     def _generate_receiving_slip(
         self,
         session,
         items: list,
         organization_id: UUID,
+        rejections: list[dict] | None = None,
     ):
         """Generate a receiving slip from session items grouped by SKU+batch.
 
@@ -1649,6 +1718,10 @@ class InboundService:
 
         # Refresh to load items relationship
         self.db.refresh(slip)
+
+        # Apply rejections before finalization (rejected items never enter
+        # stock or put-away — they are left for the warehouse manager).
+        self._apply_rejections(slip, session, organization_id, rejections)
 
         # Flow B: link items already put away via direct put-away (match by QR)
         from app.services.put_away_service import PutAwayService
