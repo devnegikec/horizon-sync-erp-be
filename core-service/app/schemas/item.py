@@ -79,6 +79,13 @@ class ItemBase(BaseModel):
     qr_type: str | None = Field(None, max_length=30)
     activation_method: str | None = None
     sr_number_type: str | None = None
+    generic_name: str | None = Field(None, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone_number: str | None = Field(None, max_length=15)
+    banner_image_url: str | None = None
+    client_product_auth_url: str | None = None
+    redirect_to_client: bool | None = None
+    is_active: bool | None = None
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
@@ -178,6 +185,13 @@ class ItemUpdate(BaseModel):
     qr_type: str | None = Field(None, max_length=30)
     activation_method: str | None = None
     sr_number_type: str | None = None
+    generic_name: str | None = Field(None, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone_number: str | None = Field(None, max_length=15)
+    banner_image_url: str | None = None
+    client_product_auth_url: str | None = None
+    redirect_to_client: bool | None = None
+    is_active: bool | None = None
 
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
@@ -274,6 +288,13 @@ class ItemResponse(BaseModel):
     qr_type: str | None = None
     activation_method: str | None = None
     sr_number_type: str | None = None
+    generic_name: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    banner_image_url: str | None = None
+    client_product_auth_url: str | None = None
+    redirect_to_client: bool | None = None
+    is_active: bool | None = None
 
     # Additional Info
     barcode: str | None = None
@@ -320,6 +341,13 @@ class ItemListItem(BaseModel):
     qr_type: str | None = None
     activation_method: str | None = None
     sr_number_type: str | None = None
+    generic_name: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    banner_image_url: str | None = None
+    client_product_auth_url: str | None = None
+    redirect_to_client: bool | None = None
+    is_active: bool | None = None
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

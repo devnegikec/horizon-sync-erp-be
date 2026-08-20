@@ -13,11 +13,11 @@ audit logging.
 import enum
 import logging
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import event, inspect
+from sqlalchemy import event, insert, inspect
 from sqlalchemy.orm import object_session
 from sqlalchemy.orm.attributes import get_history
 
@@ -94,7 +94,7 @@ def _get_record_id(target) -> uuid.UUID | None:
 # ── Audit entry helper ───────────────────────────────────────────────────────
 
 def _create_audit_entry(
-    session,
+    connection,
     action: str,
     table_name: str,
     record_id: uuid.UUID | None,
@@ -102,25 +102,32 @@ def _create_audit_entry(
     new_values: dict | None,
     changed_fields: list[str] | None,
 ) -> None:
-    """Create an AuditLog row and add it to *session* (no flush/commit)."""
+    """Insert an AuditLog row directly on the connection.
+
+    Writing via Core ``insert()`` (rather than ``session.add``) is the
+    supported way to write audit rows from ``after_insert``/``after_update``/
+    ``after_delete`` events, which fire during the flush/execution stage.
+    """
     from app.models.audit_log import AuditLog
 
     ctx = get_audit_context()
 
-    audit_log = AuditLog(
-        id=uuid.uuid4(),
-        user_id=uuid.UUID(ctx.user_id) if ctx.user_id else None,
-        organization_id=uuid.UUID(ctx.organization_id) if ctx.organization_id else None,
-        action=action,
-        table_name=table_name,
-        record_id=record_id,
-        old_values=old_values,
-        new_values=new_values,
-        changed_fields=changed_fields,
-        ip_address=ctx.ip_address,
-        user_agent=ctx.user_agent,
+    connection.execute(
+        insert(AuditLog.__table__).values(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID(ctx.user_id) if ctx.user_id else None,
+            organization_id=uuid.UUID(ctx.organization_id) if ctx.organization_id else None,
+            action=action,
+            table_name=table_name,
+            record_id=record_id,
+            old_values=old_values,
+            new_values=new_values,
+            changed_fields=changed_fields,
+            ip_address=ctx.ip_address,
+            user_agent=ctx.user_agent,
+            created_at=datetime.now(UTC),
+        )
     )
-    session.add(audit_log)
 
 
 # ── Event handlers ───────────────────────────────────────────────────────────
@@ -139,7 +146,7 @@ def _after_insert(mapper, connection, target):  # noqa: ARG001
             return
 
         _create_audit_entry(
-            session=session,
+            connection=connection,
             action="CREATE",
             table_name=table_name,
             record_id=record_id,
@@ -184,7 +191,7 @@ def _after_update(mapper, connection, target):  # noqa: ARG001
             return
 
         _create_audit_entry(
-            session=session,
+            connection=connection,
             action="UPDATE",
             table_name=table_name,
             record_id=record_id,
@@ -210,7 +217,7 @@ def _after_delete(mapper, connection, target):  # noqa: ARG001
             return
 
         _create_audit_entry(
-            session=session,
+            connection=connection,
             action="DELETE",
             table_name=table_name,
             record_id=record_id,
