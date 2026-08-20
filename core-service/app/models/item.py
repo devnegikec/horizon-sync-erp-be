@@ -125,6 +125,13 @@ class Item(Base):
     qr_type = Column(String(30), nullable=True)
     activation_method = Column(String(4), nullable=True)
     sr_number_type = Column(String(50), nullable=True)
+    generic_name = Column(String(100), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone_number = Column(String(15), nullable=True)
+    banner_image_url = Column(Text, nullable=True)
+    client_product_auth_url = Column(Text, nullable=True)
+    redirect_to_client = Column(Boolean, nullable=True)
+    is_active = Column(Boolean, nullable=True)
 
     # Additional Info
     barcode = Column(String(100), nullable=True)

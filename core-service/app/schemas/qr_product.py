@@ -74,6 +74,7 @@ class QRProductResponse(QRProductBase):
     id: UUID
     organization_id: UUID
     brand_id: UUID | None = None
+    brand_name: str | None = None
     is_active: bool
     created_by: UUID | None
     created_at: datetime
@@ -82,6 +83,41 @@ class QRProductResponse(QRProductBase):
     linked_item_id: UUID | None = None
     # Items per master pack, resolved from the linked item's base packaging unit
     items_per_master_pack: int | None = None
+
+    # Item-sourced mirrors (synced from the linked inventory item)
+    item_code: str | None = None
+    description: str | None = None
+    uom: str | None = None
+    standard_rate: Decimal | None = None
+    valuation_rate: Decimal | None = None
+    weight_per_unit: Decimal | None = None
+    weight_uom: str | None = None
+    barcode: str | None = None
+    maintain_stock: bool | None = None
+    has_batch_no: bool | None = None
+    has_serial_no: bool | None = None
+    item_type: str | None = None
+    valuation_method: str | None = None
+    allow_negative_stock: bool | None = None
+    item_group_id: UUID | None = None
+    has_variants: bool | None = None
+    variant_of: UUID | None = None
+    variant_attributes: dict | None = None
+    batch_number_series: str | None = None
+    serial_number_series: str | None = None
+    enable_auto_reorder: bool | None = None
+    reorder_level: int | None = None
+    reorder_qty: int | None = None
+    min_order_qty: int | None = None
+    max_order_qty: int | None = None
+    inspection_required_before_purchase: bool | None = None
+    inspection_required_before_delivery: bool | None = None
+    quality_inspection_template: UUID | None = None
+    sales_tax_template_id: UUID | None = None
+    purchase_tax_template_id: UUID | None = None
+    images: list[str] | None = None
+    tags: list[str] | None = None
+    custom_fields: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -100,6 +136,12 @@ class QRProductResponse(QRProductBase):
                     if pu.is_base_unit:
                         instance.items_per_master_pack = pu.items_per_master_pack
                         break
+        except Exception:
+            pass
+        try:
+            brand = obj.brand  # type: ignore[attr-defined]
+            if brand is not None:
+                instance.brand_name = brand.name
         except Exception:
             pass
         return instance

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.product_item import ProductItem
 from app.models.qr_block import QRBlock
@@ -27,6 +27,7 @@ class QRProductRepository:
     def get_by_id(self, product_id: UUID, organization_id: UUID) -> QRProduct | None:
         return (
             self.db.query(QRProduct)
+            .options(joinedload(QRProduct.brand))
             .filter(
                 QRProduct.id == product_id,
                 QRProduct.organization_id == organization_id,
@@ -43,7 +44,7 @@ class QRProductRepository:
         search: str | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[QRProduct], int]:
-        q = self.db.query(QRProduct).filter(
+        q = self.db.query(QRProduct).options(joinedload(QRProduct.brand)).filter(
             QRProduct.organization_id == organization_id,
             QRProduct.deleted_at.is_(None),
         )

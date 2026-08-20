@@ -451,7 +451,12 @@ class QRProductService:
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(update_dict.get("extra_data") or {})
-            extra["packaging_details"] = packaging_details
+            # packaging_details contains Decimal values; the JSONB serializer
+            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
+            extra["packaging_details"] = {
+                key: (float(value) if isinstance(value, Decimal) else value)
+                for key, value in packaging_details.items()
+            }
             update_dict["extra_data"] = extra
 
         # brand_id is immutable after creation

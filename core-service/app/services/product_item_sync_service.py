@@ -32,6 +32,8 @@ When QRProduct is deprecated and Item becomes the sole source of truth:
 
 from __future__ import annotations
 
+import enum
+
 from sqlalchemy.orm import Session
 
 from app.models.item import Item
@@ -44,12 +46,15 @@ class ProductItemSyncService:
     Rules:
     - Item is the primary source of truth (wins on conflict).
     - All synced fields are optional — only populated fields are pushed.
+    - Empty strings are treated as "unset" and never overwrite a value on the
+      other side. This prevents an untouched Item form field (sent as '') from
+      wiping a value that was already set on the Product.
     """
 
-    # ── Fields synced FROM Item TO Product ──
+    # ── Fields synced FROM Item TO Product (Item wins on conflict) ──
     ITEM_TO_PRODUCT_FIELDS = [
+        # Item-native fields
         "item_code",
-        "item_name",   # → product.name
         "description",
         "sku",
         "uom",
@@ -61,22 +66,58 @@ class ProductItemSyncService:
         "maintain_stock",
         "has_batch_no",
         "has_serial_no",
+        "item_type",
+        "valuation_method",
+        "allow_negative_stock",
+        "item_group_id",
+        "has_variants",
+        "variant_of",
+        "variant_attributes",
+        "batch_number_series",
+        "serial_number_series",
+        "enable_auto_reorder",
+        "reorder_level",
+        "reorder_qty",
+        "min_order_qty",
+        "max_order_qty",
+        "inspection_required_before_purchase",
+        "inspection_required_before_delivery",
+        "quality_inspection_template",
+        "sales_tax_template_id",
+        "purchase_tax_template_id",
+        "images",
+        "tags",
+        "custom_fields",
+        # Product-native fields mirrored on Item — Item still wins.
         "image_url",
+        "industry",
+        "qr_type",
+        "warranty_period_months",
+        "activation_method",
+        "sr_number_type",
+        "landing_page",
+        "brand_id",
+        "gtin",
     ]
 
-    # ── Fields synced FROM Product TO Item ──
+    # ── Fields synced FROM Product TO Item (only fill when Item is empty) ──
     PRODUCT_TO_ITEM_FIELDS = [
-        "name",        # → item.item_name (only if item_name is empty)
-        "sku",
         "gtin",
         "industry",
         "landing_page",
-        "image_url",
         "warranty_period_months",
         "qr_type",
         "activation_method",
         "sr_number_type",
         "brand_id",
+        "image_url",
+        "generic_name",
+        "email",
+        "phone_number",
+        "banner_image_url",
+        "client_product_auth_url",
+        "redirect_to_client",
+        "is_active",
     ]
 
     def __init__(self, db: Session):
@@ -90,6 +131,7 @@ class ProductItemSyncService:
         """Push Item changes to the linked QRProduct.
 
         Called after Item create/update when qr_product_id is set.
+        Item is the primary source of truth — its values overwrite Product's.
         """
         if not item.qr_product_id:
             return None
@@ -105,32 +147,19 @@ class ProductItemSyncService:
         changed = False
 
         # Direct field mappings (Item field → Product field, same name)
-        _copy_if_set(product, item, "sku")
-        _copy_if_set(product, item, "item_code")
-        _copy_if_set(product, item, "description")
-        _copy_if_set(product, item, "uom")
-        _copy_if_set(product, item, "standard_rate")
-        _copy_if_set(product, item, "valuation_rate")
-        _copy_if_set(product, item, "weight_per_unit")
-        _copy_if_set(product, item, "weight_uom")
-        _copy_if_set(product, item, "barcode")
-        _copy_if_set(product, item, "maintain_stock")
-        _copy_if_set(product, item, "has_batch_no")
-        _copy_if_set(product, item, "has_serial_no")
-        _copy_if_set(product, item, "image_url")
-        _copy_if_set(product, item, "industry")
-        _copy_if_set(product, item, "qr_type")
-        _copy_if_set(product, item, "warranty_period_months")
-        _copy_if_set(product, item, "activation_method")
-        _copy_if_set(product, item, "sr_number_type")
-        _copy_if_set(product, item, "landing_page")
-        _copy_if_set(product, item, "brand_id")
-        _copy_if_set(product, item, "gtin")
+        for field in self.ITEM_TO_PRODUCT_FIELDS:
+            changed = _copy_if_set(product, item, field) or changed
 
-        # item_name → product.name (not the reverse, Item wins)
+        # item_name → product.name (Item wins; never reversed here)
         if item.item_name and item.item_name != product.name:
             product.name = item.item_name
             changed = True
+
+        # Merge arbitrary metadata blobs (Item wins on conflicting keys)
+        changed = _merge_extra_data(product, item, source_wins=True) or changed
+
+        # Sync the base packaging unit (stored on the Item as a separate row)
+        changed = self._sync_packaging_to_product(item, product) or changed
 
         if changed:
             self.db.flush()
@@ -167,19 +196,67 @@ class ProductItemSyncService:
 
     def _sync_product_fields_to_item(self, product: QRProduct, item: Item) -> None:
         """Push individual Product fields to an Item (Item wins on conflict)."""
-        _copy_if_not_set(item, product, "gtin")
-        _copy_if_not_set(item, product, "industry")
-        _copy_if_not_set(item, product, "landing_page")
-        _copy_if_not_set(item, product, "warranty_period_months")
-        _copy_if_not_set(item, product, "qr_type")
-        _copy_if_not_set(item, product, "activation_method")
-        _copy_if_not_set(item, product, "sr_number_type")
-        _copy_if_not_set(item, product, "brand_id")
-        _copy_if_not_set(item, product, "image_url")
+        for field in self.PRODUCT_TO_ITEM_FIELDS:
+            _copy_if_not_set(item, product, field)
+
+        # name → item.item_name only if Item name is empty (fills gaps only)
+        if product.name and not item.item_name:
+            item.item_name = product.name
 
         # sku: Product → Item only if Item.sku is empty
         if product.sku and not item.sku:
             item.sku = product.sku
+
+        # Merge arbitrary metadata blobs (Item wins — keep existing keys).
+        # Skip packaging_details, which is Product-internal storage.
+        _merge_extra_data(
+            item, product, source_wins=False, exclude_keys={"packaging_details"}
+        )
+
+    def _sync_packaging_to_product(self, item: Item, product: QRProduct) -> bool:
+        """Push the Item's base packaging unit into the Product's extra_data.
+
+        Item packaging lives in ``item_packaging_units`` (base unit row);
+        Product packaging lives in ``extra_data["packaging_details"]``.
+        """
+        from decimal import Decimal
+
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        base = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.is_base_unit == True,  # noqa: E712
+            )
+            .first()
+        )
+        if base is None:
+            return False
+
+        def _num(value):
+            return float(value) if isinstance(value, Decimal) else value
+
+        packaging = {
+            "unit_name": base.unit_name,
+            "conversion_factor": (
+                _num(base.conversion_factor)
+                if base.conversion_factor is not None
+                else 1.0
+            ),
+            "items_per_master_pack": base.items_per_master_pack,
+            "length_mm": _num(base.length_mm),
+            "width_mm": _num(base.width_mm),
+            "height_mm": _num(base.height_mm),
+            "weight_grams": _num(base.weight_grams),
+        }
+
+        extra = dict(product.extra_data or {})
+        if extra.get("packaging_details") == packaging:
+            return False
+        extra["packaging_details"] = packaging
+        product.extra_data = extra
+        return True
 
 
 # ------------------------------------------------------------------
@@ -187,19 +264,67 @@ class ProductItemSyncService:
 # ------------------------------------------------------------------
 
 def _copy_if_set(target, source, field: str) -> bool:
-    """Copy field from source to target if source value is not None."""
-    val = getattr(source, field, None)
-    if val is not None:
+    """Copy field from source to target if source has a non-empty value.
+
+    Empty strings are skipped so an untouched form field (sent as '') never
+    wipes an existing value on the target.
+    """
+    val = _to_plain_value(getattr(source, field, None))
+    if _has_value(val):
         setattr(target, field, val)
         return True
     return False
 
 
 def _copy_if_not_set(target, source, field: str) -> bool:
-    """Copy field from source to target only if target doesn't have a value."""
+    """Copy field from source to target only if target has no value yet."""
     existing = getattr(target, field, None)
-    val = getattr(source, field, None)
-    if val is not None and existing is None:
+    val = _to_plain_value(getattr(source, field, None))
+    if _has_value(val) and not _has_value(existing):
         setattr(target, field, val)
+        return True
+    return False
+
+
+def _to_plain_value(val):
+    """Convert an enum member to its string value for storage."""
+    if isinstance(val, enum.Enum):
+        return val.value
+    return val
+
+
+def _has_value(val) -> bool:
+    """A value counts as 'set' when it is not None and not an empty string."""
+    if val is None:
+        return False
+    if isinstance(val, str) and val == "":
+        return False
+    return True
+
+
+def _merge_extra_data(
+    target,
+    source,
+    source_wins: bool,
+    exclude_keys: set[str] | None = None,
+) -> bool:
+    """Merge the JSONB ``extra_data`` dictionaries.
+
+    When ``source_wins`` is True (Item → Product), source keys overwrite target.
+    When False (Product → Item), existing target keys are kept and only missing
+    keys are filled in — i.e. Item remains the source of truth.
+    """
+    exclude_keys = exclude_keys or set()
+    src = {
+        key: value
+        for key, value in (source.extra_data or {}).items()
+        if key not in exclude_keys
+    }
+    tgt = target.extra_data or {}
+    if not src:
+        return False
+    merged = {**tgt, **src} if source_wins else {**src, **tgt}
+    if merged != tgt:
+        target.extra_data = merged
         return True
     return False

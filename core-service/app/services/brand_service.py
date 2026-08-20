@@ -21,7 +21,11 @@ class BrandService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = BrandRepository(db)
-        self.key_service = KeyService(settings.brand_key_encryption_secret)
+        self.key_service = (
+            KeyService(settings.brand_key_encryption_secret)
+            if settings.brand_key_encryption_secret
+            else None
+        )
 
     def create(self, data: BrandCreate, organization_id: UUID, user_id: UUID) -> Brand:
         """Create a new brand with an auto-generated ECDSA P-256 key pair.
@@ -37,6 +41,14 @@ class BrandService:
         Returns:
             Created Brand object.
         """
+        if not self.key_service:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Brand key encryption secret is not configured. "
+                    "Set BRAND_KEY_ENCRYPTION_SECRET in the environment."
+                ),
+            )
         encrypted_private_key, public_key_hex = self.key_service.generate_key_pair()
 
         brand_data = data.model_dump()
