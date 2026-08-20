@@ -72,6 +72,14 @@ class ItemBase(BaseModel):
     brand_id: UUID | None = None
     gtin: str | None = Field(None, max_length=20)
 
+    # QR Product metadata (synced with the linked QR product)
+    industry: str | None = Field(None, max_length=100)
+    landing_page: str | None = None
+    warranty_period_months: int | None = Field(None, ge=0)
+    qr_type: str | None = Field(None, max_length=30)
+    activation_method: str | None = None
+    sr_number_type: str | None = None
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str = Field(default="ACTIVE")
@@ -163,6 +171,14 @@ class ItemUpdate(BaseModel):
     brand_id: UUID | None = None
     gtin: str | None = Field(None, max_length=20)
 
+    # QR Product metadata (synced with the linked QR product)
+    industry: str | None = Field(None, max_length=100)
+    landing_page: str | None = None
+    warranty_period_months: int | None = Field(None, ge=0)
+    qr_type: str | None = Field(None, max_length=30)
+    activation_method: str | None = None
+    sr_number_type: str | None = None
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str | None = None
@@ -247,6 +263,18 @@ class ItemResponse(BaseModel):
     # QR Product link
     qr_product_id: UUID | None = None
 
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = None
+
+    # QR Product metadata (synced with the linked QR product)
+    industry: str | None = None
+    landing_page: str | None = None
+    warranty_period_months: int | None = None
+    qr_type: str | None = None
+    activation_method: str | None = None
+    sr_number_type: str | None = None
+
     # Additional Info
     barcode: str | None = None
     status: str
@@ -284,6 +312,14 @@ class ItemListItem(BaseModel):
     maintain_stock: bool | None = None
     barcode: str | None = None
     image_url: str | None = None
+    brand_id: UUID | None = None
+    gtin: str | None = None
+    industry: str | None = None
+    landing_page: str | None = None
+    warranty_period_months: int | None = None
+    qr_type: str | None = None
+    activation_method: str | None = None
+    sr_number_type: str | None = None
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
