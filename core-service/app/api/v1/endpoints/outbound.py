@@ -526,18 +526,26 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     bin_map: dict[str, str] = {}
     if item_ids and db:
         from app.models.item import Item
-        rows = db.query(Item.id, Item.item_name, Item.sku).filter(
-            Item.id.in_(item_ids)
-        ).all()
+
+        rows = (
+            db.query(Item.id, Item.item_name, Item.sku)
+            .filter(Item.id.in_(item_ids))
+            .all()
+        )
         item_map = {str(r.id): {"item_name": r.item_name, "sku": r.sku} for r in rows}
 
     # Batch-fetch bin full paths
-    bin_ids = [item.bin_location_id for item in (pl.items or []) if item.bin_location_id]
+    bin_ids = [
+        item.bin_location_id for item in (pl.items or []) if item.bin_location_id
+    ]
     if bin_ids and db:
         from app.models.warehouse_location import WarehouseLocation
-        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
-            WarehouseLocation.id.in_(bin_ids)
-        ).all()
+
+        rows = (
+            db.query(WarehouseLocation.id, WarehouseLocation.full_path)
+            .filter(WarehouseLocation.id.in_(bin_ids))
+            .all()
+        )
         bin_map = {str(r.id): r.full_path for r in rows}
 
     # Resolve per-unit serials for each item line
@@ -559,9 +567,7 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 "per_case_qty": float(item.per_case_qty)
                 if item.per_case_qty is not None
                 else None,
-                "case_qty": float(item.case_qty)
-                if item.case_qty is not None
-                else None,
+                "case_qty": float(item.case_qty) if item.case_qty is not None else None,
                 "loose_qty": float(item.loose_qty)
                 if item.loose_qty is not None
                 else None,
@@ -936,6 +942,7 @@ async def record_pick_scan(
         qr_data=data.qr_data,
         worker_id=current_user.id,
         org_id=current_user.organization_id,
+        bin_location_id=data.bin_location_id,
     )
 
     return PickScanResult(**result)

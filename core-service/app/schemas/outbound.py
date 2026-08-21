@@ -34,7 +34,9 @@ class SAPInvoiceItem(BaseModel):
     per_case_qty: Decimal | None = Field(None, description="Items per case/box")
     case_qty: Decimal | None = Field(None, description="Cases/boxes to pick")
     loose_qty: Decimal | None = Field(None, description="Loose pieces to pick")
-    batch_no: str | None = Field(None, max_length=100, description="Batch/serial number")
+    batch_no: str | None = Field(
+        None, max_length=100, description="Batch/serial number"
+    )
 
 
 class SAPInvoicePayload(BaseModel):
@@ -72,6 +74,14 @@ class PickScanRequest(BaseModel):
 
     qr_data: str = Field(
         ..., min_length=1, description="Raw QR code payload string (JSON)"
+    )
+    bin_location_id: UUID | None = Field(
+        None,
+        description=(
+            "Optional bin location to pick from. When omitted, the item's "
+            "suggested bin is used. Pass an explicit bin to pick from a "
+            "different location."
+        ),
     )
 
 
@@ -191,6 +201,7 @@ class PickScanResult(BaseModel):
     required_qty: float
     remaining_qty: float
     batch: str | None = None
+    bin_location_id: str | None = None
 
 
 class OutboundPickListListItem(BaseModel):
