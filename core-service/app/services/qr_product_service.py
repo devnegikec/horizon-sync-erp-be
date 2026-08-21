@@ -226,9 +226,7 @@ class QRProductService:
     ) -> None:
         if setting_id is None:
             return
-        setting = self.product_setting_repo.get_by_id(
-            setting_id, organization_id
-        )
+        setting = self.product_setting_repo.get_by_id(setting_id, organization_id)
         if not setting:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -578,6 +576,26 @@ class QRProductService:
         block.task_id = None
         self.credit_service.release_reserved_credits(organization_id, block_id)
 
+    def fail_block_processing(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        """Make a task-level worker failure visible and return held credits."""
+        self.db.rollback()
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if block is None or block.status == "completed":
+            return
+        block.status = "failed"
+        block.task_status = "failed"
+        block.error_code = "worker_failed"
+        block.error_message = "QR generation worker failed"
+        block.task_id = None
+        block.progress = 0
+        block.generated_count = 0
+        self.credit_service.release_reserved_credits(organization_id, block_id)
+        self.db.commit()
+
     def retry_block_job(
         self,
         block_id: UUID,
@@ -667,9 +685,7 @@ class QRProductService:
             block.progress = 70
             self.db.commit()
 
-            uploaded_artifact_key = self._store_block_artifact(
-                block, generated_items
-            )
+            uploaded_artifact_key = self._store_block_artifact(block, generated_items)
             block.progress = 90
             self.db.commit()
 
@@ -699,9 +715,7 @@ class QRProductService:
                         uploaded_artifact_key,
                     )
             self.item_repo.soft_delete_by_block(block.id, organization_id)
-            failed_block = (
-                self.block_repo.get_by_id(block.id, organization_id) or block
-            )
+            failed_block = self.block_repo.get_by_id(block.id, organization_id) or block
             failed_block.status = "failed"
             failed_block.task_status = "failed"
             failed_block.error_code = "generation_failed"
@@ -782,9 +796,7 @@ class QRProductService:
         suffix = f" and {remaining} more" if remaining > 0 else ""
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Serial numbers already exist: " f"{preview}{suffix}"
-            ),
+            detail=("Serial numbers already exist: " f"{preview}{suffix}"),
         )
 
     @staticmethod
@@ -829,9 +841,7 @@ class QRProductService:
             )
 
         max_value = (
-            99_999_999
-            if serial_type == SerialNumberType.S8DN
-            else 9_999_999_999
+            99_999_999 if serial_type == SerialNumberType.S8DN else 9_999_999_999
         )
         if int(starting_serial) + quantity - 1 > max_value:
             raise HTTPException(
@@ -910,9 +920,7 @@ class QRProductService:
                     brand.private_key_encrypted
                 )
 
-        serial_gen = self._get_serial_generator(
-            sr_number_type, block.starting_serial
-        )
+        serial_gen = self._get_serial_generator(sr_number_type, block.starting_serial)
 
         def with_prefix(suffix: str) -> str:
             return f"{prefix}-{suffix}" if prefix else suffix
@@ -985,14 +993,17 @@ class QRProductService:
                 # Dual QR: retain distinct overt and covert signed URLs.
                 if qr_type == QRType.DUAL:
                     sig2, ts2 = sign_qr_item(self.key_service, private_key, serial)
-                    covert_url = build_qr_url(
-                        settings.qr_domain,
-                        gtin,
-                        serial,
-                        ts2,
-                        sig2,
-                        base_url=settings.qr_base_url,
-                    ) + "&qr=covert"
+                    covert_url = (
+                        build_qr_url(
+                            settings.qr_domain,
+                            gtin,
+                            serial,
+                            ts2,
+                            sig2,
+                            base_url=settings.qr_base_url,
+                        )
+                        + "&qr=covert"
+                    )
                     overt_url = f"{url}&qr=overt"
                     short_overt_url = self.qr_shortener.shorten(overt_url)
                     short_covert_url = self.qr_shortener.shorten(covert_url)
@@ -1025,9 +1036,7 @@ class QRProductService:
         master_pack_enabled = getattr(block, "master_pack_enabled", False)
         master_pack_size = getattr(block, "master_pack_size", None)
         if master_pack_enabled and master_pack_size and master_pack_size > 0:
-            self._create_qseal_parents(
-                block, items, organization_id, user_id, now
-            )
+            self._create_qseal_parents(block, items, organization_id, user_id, now)
 
         return items
 
@@ -1185,14 +1194,10 @@ class QRProductService:
             )
         return block
 
-    def get_block_detail(
-        self, block_id: UUID, organization_id: UUID
-    ) -> QRBlock:
+    def get_block_detail(self, block_id: UUID, organization_id: UUID) -> QRBlock:
         """Return a tenant-scoped Block with its current activation summary."""
         block = self.get_block(block_id, organization_id)
-        total, active = self.item_repo.get_activation_summary(
-            block_id, organization_id
-        )
+        total, active = self.item_repo.get_activation_summary(block_id, organization_id)
         if total and active == total:
             activation_status = "activated"
         elif active:
@@ -1367,9 +1372,7 @@ class QRProductService:
         enriched = []
         for block, product_name in rows:
             block_dict = {
-                k: v
-                for k, v in block.__dict__.items()
-                if k != "_sa_instance_state"
+                k: v for k, v in block.__dict__.items() if k != "_sa_instance_state"
             }
             block_dict["product_name"] = product_name
             block_dict["distribution_channel"] = block.distribution_channel

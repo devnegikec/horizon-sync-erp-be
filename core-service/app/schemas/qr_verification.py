@@ -1,6 +1,7 @@
 """Public QR verification API contracts."""
 
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -75,3 +76,10 @@ class PublicQRVerifyResponse(BaseModel):
     contact_email: str | None = None
     contact_phone: str | None = None
     website_url: str | None = None
+    scan_event_id: UUID | None = None
+
+
+class PublicScanLocationUpdate(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    accuracy_meters: int | None = Field(None, ge=0, le=100_000)

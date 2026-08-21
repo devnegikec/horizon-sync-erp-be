@@ -24,6 +24,7 @@ from app.models.bank_transaction import BankTransaction
 from app.models.base import (
     AccountStatus,
     AccountType,
+    AsnOrderStatus,
     BankAccountHistoryAction,
     BatchStatus,
     CustomerStatus,
@@ -67,6 +68,8 @@ from app.models.base import (
 from app.models.batch import Batch
 from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
+from app.models.bulk_export_job import BulkExportJob
+from app.models.bulk_import_job import BulkImportJob
 
 # QR Products module
 from app.models.brand import Brand
@@ -123,6 +126,7 @@ from app.models.item_price import ItemPrice
 from app.models.item_supplier import ItemSupplier
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.landed_cost import LandedCostVoucher
+from app.models.landing_page import LandingPageConfig
 from app.models.location_allocation import LocationAllocation
 from app.models.location_scan import LocationScan
 from app.models.material_request import MaterialRequest, MaterialRequestLine
@@ -145,6 +149,8 @@ from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
+from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
+from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 from app.models.product_sku import ProductSKU
 
@@ -205,6 +211,7 @@ from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.stock_settings import StockSettings
+from app.models.supplier import Supplier
 from app.models.system_config import SystemConfig
 from app.models.tax_template import TaxRule, TaxTemplate
 from app.models.transaction_breakdown import (
@@ -360,7 +367,7 @@ __all__ = [
     "QRCreditReservation",
     "QRCreditLedger",
     "QRCTAConfig",
-    "QRCTAConfig",
+    "LandingPageConfig",
     "QRScanEvent",
     "QRScanInteraction",
     # Campaigns & Coupons module

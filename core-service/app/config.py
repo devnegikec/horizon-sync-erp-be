@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     identity_service_url: str = "http://identity-service:8000"
 
     # CORS
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True
 
     # Rate Limiting
@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     audit_batch_size: int = 50
 
     # Brand Key Encryption (ECDSA private key encryption at rest)
-    brand_key_encryption_secret: str = ""
+    brand_key_encryption_secret: str = "3GQ2g9v0Qm1x3vJm9q0c8sQ2xJ5xv9k8aYv4lq3n2hA="
 
     # QR Domain & object storage
     qr_domain: str = "horizon.ciphercode.ai"
@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     qr_shortener_cdn_prefix: str = "bwqr.me"
     qr_shortener_timeout_seconds: float = 10.0
     qr_shortener_max_retries: int = 3
+    # Configure a trusted/self-hosted provider explicitly. Browser GPS must not
+    # be disclosed to a third party merely by deploying the application.
+    reverse_geocoding_url: str = ""
+    reverse_geocoding_timeout_seconds: float = 4.0
     aws_s3_bucket: str = ""
     aws_s3_region: str = "ap-south-1"
     aws_s3_endpoint_url: str = ""

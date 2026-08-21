@@ -3,6 +3,7 @@
 import logging
 from uuid import UUID
 
+from app import models as _models  # noqa: F401 - register every ORM mapper
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.services.qr_product_service import QRProductService
@@ -23,8 +24,9 @@ def generate_qr_block_task(
 ) -> None:
     """Generate one tenant-scoped QR Block and persist its terminal state."""
     db = SessionLocal()
+    service = QRProductService(db)
     try:
-        QRProductService(db).process_block(
+        service.process_block(
             UUID(block_id),
             UUID(organization_id),
             task_id=self.request.id,
@@ -35,6 +37,18 @@ def generate_qr_block_task(
             block_id,
             organization_id,
         )
+        try:
+            service.fail_block_processing(
+                UUID(block_id),
+                UUID(organization_id),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to recover QR Block after worker error: block_id=%s "
+                "organization_id=%s",
+                block_id,
+                organization_id,
+            )
         raise
     finally:
         db.close()

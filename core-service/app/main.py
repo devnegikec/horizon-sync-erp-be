@@ -163,6 +163,8 @@ async def lifespan(app: FastAPI):
 
     register_audit_listeners()
 
+    cleanup_task = asyncio.create_task(_bin_reservation_cleanup_loop())
+
     yield
     # Shutdown
     cleanup_task.cancel()

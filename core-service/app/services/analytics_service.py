@@ -6,6 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.product_item import ProductItem
+from app.models.qr_product import QRProduct
 from app.repositories.analytics_repository import (
     CTAConfigRepository,
     MetaCampaignRepository,
@@ -51,6 +53,24 @@ class AnalyticsService:
         payload = data.model_dump()
         payload["organization_id"] = organization_id
         payload["scan_timestamp"] = datetime.now(UTC)
+
+        # Resolve the trusted item/product metadata when the serial belongs to
+        # this tenant. Client-provided values remain a fallback for legacy QR
+        # landing pages that do not yet resolve to a ProductItem.
+        item_and_type = (
+            self.db.query(ProductItem.id, QRProduct.qr_type)
+            .join(QRProduct, QRProduct.id == ProductItem.product_id)
+            .filter(
+                ProductItem.serial_number == data.serial_number,
+                ProductItem.organization_id == organization_id,
+                QRProduct.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if item_and_type:
+            payload["product_item_id"] = item_and_type.id
+            payload["qr_type"] = item_and_type.qr_type
 
         # ── Enrich from HTTP headers ──────────────────────────────────────
         headers = request_headers or {}
@@ -135,6 +155,8 @@ class AnalyticsService:
         payload["scan_event_id"] = scan_event_id
 
         interaction = self.interaction_repo.create(payload)
+        if interaction is None:
+            return None
         logger.info(
             "[ANALYTICS] interaction recorded scan=%s type=%s",
             scan_event_id,
@@ -201,16 +223,25 @@ class AnalyticsService:
         return self.cta_config_repo.get_by_id(config_id, organization_id)
 
     def update_cta_config(
-        self, config_id: UUID, data: CTAConfigUpdate, organization_id: UUID
+        self,
+        config_id: UUID,
+        data: CTAConfigUpdate,
+        organization_id: UUID,
+        product_id: UUID | None = None,
     ):
         config = self.cta_config_repo.get_by_id(config_id, organization_id)
-        if not config:
+        if not config or (product_id is not None and config.product_id != product_id):
             return None
         return self.cta_config_repo.update(config, data.model_dump(exclude_unset=True))
 
-    def delete_cta_config(self, config_id: UUID, organization_id: UUID) -> bool:
+    def delete_cta_config(
+        self,
+        config_id: UUID,
+        organization_id: UUID,
+        product_id: UUID | None = None,
+    ) -> bool:
         config = self.cta_config_repo.get_by_id(config_id, organization_id)
-        if not config:
+        if not config or (product_id is not None and config.product_id != product_id):
             return False
         self.cta_config_repo.delete(config)
         return True
