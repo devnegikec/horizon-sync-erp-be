@@ -35,7 +35,7 @@ def reservation_service(db_session):
     return BinReservationService(db_session)
 
 
-def _create_bin(db_session, org_id, warehouse_id, code="BIN01", capacity=100, x=0, y=0, z=0):
+def _create_bin(db_session, org_id, warehouse_id, code="BIN01", capacity=100, max_volume_cc=None, x=0, y=0, z=0):
     loc = WarehouseLocation(
         id=uuid.uuid4(),
         organization_id=org_id,
@@ -44,6 +44,7 @@ def _create_bin(db_session, org_id, warehouse_id, code="BIN01", capacity=100, x=
         code=code,
         full_path=code,
         capacity=Decimal(str(capacity)),
+        max_volume_cc=Decimal(str(max_volume_cc)) if max_volume_cc is not None else None,
         position_x=Decimal(str(x)),
         position_y=Decimal(str(y)),
         position_z=Decimal(str(z)),
@@ -68,6 +69,27 @@ def _create_item(db_session, org_id, item_code="SKU001", name="Test Item"):
     db_session.add(item)
     db_session.commit()
     return item
+
+
+def _create_packaging_unit(db_session, org_id, item_id, length=100, width=100, height=100):
+    from app.models.item_packaging_unit import ItemPackagingUnit
+
+    pu = ItemPackagingUnit(
+        id=uuid.uuid4(),
+        organization_id=org_id,
+        item_id=item_id,
+        unit_name="Each",
+        conversion_factor=Decimal("1"),
+        length_mm=Decimal(str(length)),
+        width_mm=Decimal(str(width)),
+        height_mm=Decimal(str(height)),
+        weight_grams=Decimal("100"),
+        is_base_unit=True,
+        is_active=True,
+    )
+    db_session.add(pu)
+    db_session.commit()
+    return pu
 
 
 def _add_stock(db_session, bin_id, item_id, qty, org_id, batch=None, expiry=None):
@@ -125,9 +147,11 @@ class TestPutAway:
         assert b2.id in bin_ids
 
     def test_capacity_insufficient_excluded(self, db_session, suggest_service, org_id, warehouse_id):
-        b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", capacity=5)
-        b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", capacity=50)
+        # b1 volume (0.005 m³) can't fit 10 units (10 × 0.001 m³ = 0.01 m³).
+        b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", max_volume_cc=5000)
+        b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", max_volume_cc=100000)
         item = _create_item(db_session, org_id)
+        _create_packaging_unit(db_session, org_id, item.id, length=100, width=100, height=100)
 
         result = suggest_service.suggest(
             task_type="put_away",

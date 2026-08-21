@@ -195,6 +195,7 @@ from app.models.reminder_config import (
 from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
+from app.models.scanned_item_tracking import ScannedItemTracking
 from app.models.serial_no import SerialNo
 
 # URL Management module

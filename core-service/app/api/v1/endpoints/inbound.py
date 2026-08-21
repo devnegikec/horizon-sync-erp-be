@@ -26,6 +26,8 @@ from app.schemas.inbound import (
     ApproveSlipRequest,
     AssignBinRequest,
     AssignBinResponse,
+    BulkItemStatusUpdateRequest,
+    EndSessionRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
     LinkAsnToSessionRequest,
@@ -138,6 +140,7 @@ async def record_scan(
 )
 async def end_session(
     session_id: UUID,
+    data: EndSessionRequest | None = None,
     current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
     db: Session = Depends(get_db),
 ):
@@ -145,7 +148,8 @@ async def end_session(
     End a scan session and generate a receiving slip.
 
     Closes the session and generates a receiving slip from the scanned items,
-    grouped by SKU and batch number.
+    grouped by SKU and batch number. Any rejections supplied in the request
+    body are applied before the slip is finalized.
 
     **Path Parameters:**
     - **session_id**: UUID of the scan session to close
@@ -155,10 +159,14 @@ async def end_session(
     Requirements: 5.5, 6.1
     """
     service = InboundService(db)
+    rejections = (
+        [r.model_dump() for r in data.rejections] if data and data.rejections else None
+    )
     result = service.end_session(
         session_id=session_id,
         worker_id=current_user.id,
         organization_id=current_user.organization_id,
+        rejections=rejections,
     )
     return ReceivingSlipResponse(**result)
 
@@ -748,6 +756,33 @@ async def reject_slip_item(
         notes=data.notes,
     )
     return RejectedItemResponse(**result)
+
+
+@router.post(
+    "/receiving-slips/{slip_id}/items/status",
+    summary="Bulk update receiving slip item statuses",
+    description="Update multiple receiving slip line items in one request. "
+    "Each item carries a status ('rejected', 'ok', 'short', or 'damaged').",
+)
+async def update_slip_items_status(
+    slip_id: UUID,
+    data: BulkItemStatusUpdateRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Bulk update item statuses on a receiving slip.
+
+    Request body:
+        { "items": [ { "item_id": "...", "status": "rejected", "reason": "..." } ] }
+    """
+    service = InboundService(db)
+    results = service.update_items_status(
+        slip_id=slip_id,
+        items=data.items,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return {"items": results}
 
 
 # ------------------------------------------------------------------

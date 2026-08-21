@@ -166,8 +166,16 @@ class WarehouseLocation(Base):
     position_z = Column(Numeric(10, 2), default=0)
     max_volume_cc = Column(Numeric(15, 2), nullable=True)
     max_weight_grams = Column(Numeric(15, 2), nullable=True)
+    # Capacity planning (BinCapacityService) — thresholds + cached state
+    full_threshold_pct = Column(Numeric(5, 3), nullable=True)
+    almost_full_threshold_pct = Column(Numeric(5, 3), nullable=True)
+    capacity_volume_pct = Column(Numeric(6, 2), nullable=True)
+    capacity_weight_pct = Column(Numeric(6, 2), nullable=True)
+    bin_state = Column(String(20), nullable=True)
+    is_available = Column(Boolean, nullable=False, default=True)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
+    qr_code = Column(String(5), nullable=True, unique=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

@@ -331,6 +331,7 @@ class ReceivingSlipRepository:
             self.db.query(ReceivingSlip)
             .options(
                 joinedload(ReceivingSlip.asn_order),
+                joinedload(ReceivingSlip.items),  # Eager-load to prevent N+1
             )
             .filter(
                 ReceivingSlip.organization_id == org_id,

@@ -35,6 +35,33 @@ class RecordScanRequest(BaseModel):
     os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
+class EndSessionRejection(BaseModel):
+    """A single item rejection submitted when ending a scan session."""
+
+    serial_number: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Serial number (QR identifier) of the rejected unit",
+    )
+    reason: str | None = Field(
+        None, max_length=1000, description="Reason for rejection"
+    )
+
+
+class EndSessionRequest(BaseModel):
+    """Optional request body for ending a scan session.
+
+    Rejections are applied before the receiving slip is finalized, so rejected
+    items never enter stock or put-away.
+    """
+
+    rejections: list[EndSessionRejection] = Field(
+        default_factory=list,
+        description="Items to mark as rejected on the receiving slip",
+    )
+
+
 class RejectSlipRequest(BaseModel):
     """Schema for rejecting a receiving slip with a reason."""
 
@@ -274,6 +301,27 @@ class RejectSlipItemRequest(BaseModel):
     notes: str | None = Field(
         None, max_length=1000, description="Optional additional notes"
     )
+
+
+class ItemStatusUpdateRequest(BaseModel):
+    """Per-item status update in a bulk request."""
+
+    item_id: UUID
+    status: str = Field(
+        ..., description="New status: 'rejected', 'ok', 'short', or 'damaged'"
+    )
+    reason: str | None = Field(
+        None, max_length=1000, description="Reason (used when status is 'rejected')"
+    )
+    notes: str | None = Field(
+        None, max_length=1000, description="Optional additional notes"
+    )
+
+
+class BulkItemStatusUpdateRequest(BaseModel):
+    """Bulk update of receiving-slip line item statuses in a single request."""
+
+    items: list[ItemStatusUpdateRequest] = Field(..., min_length=1)
 
 
 class RejectedItemResponse(BaseModel):

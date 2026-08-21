@@ -112,7 +112,7 @@ def build_qr_url(
         timestamp: Unix timestamp in milliseconds.
         signature: ECDSA signature (base64).
         base_url: Optional full base URL override (scheme+host, no trailing slash).
-                   When provided, used directly instead of ``https://{org_short_code}.{domain}``.
+                   When provided, used directly instead of ``https://{domain}``.
 
     Returns:
         URL in the format:
@@ -121,7 +121,10 @@ def build_qr_url(
         ``https://{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
     """
     if base_url:
-        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
+        return (
+            f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}"
+            f"?c={quote(signature, safe='')}"
+        )
     return (
         f"https://{domain}"
         f"/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"

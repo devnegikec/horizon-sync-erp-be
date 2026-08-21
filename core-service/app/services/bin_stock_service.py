@@ -21,6 +21,7 @@ from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.stock_level import StockLevel
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
 
 
@@ -75,6 +76,7 @@ class BinStockService:
 
         # Check capacity won't be exceeded (skip if capacity is 0 = unlimited)
         bin_capacity = Decimal(str(bin_location.capacity or 0))
+        current_stock_in_bin = Decimal("0")
         if bin_capacity > 0:
             current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
             available_capacity = bin_capacity - current_stock_in_bin
@@ -98,9 +100,10 @@ class BinStockService:
         self.db.flush()
 
         # Update the bin's own available_capacity (recalculate_ancestors only walks up)
-        bin_location.available_capacity = bin_capacity - (
-            current_stock_in_bin + quantity
-        )
+        if bin_capacity > 0:
+            bin_location.available_capacity = bin_capacity - (
+                current_stock_in_bin + quantity
+            )
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
@@ -114,6 +117,8 @@ class BinStockService:
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
+        # Refresh bin volume/weight capacity + 3-D state (mobile-app trigger point)
+        BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
         self.db.commit()
         self.db.refresh(bin_stock)
@@ -256,6 +261,7 @@ class BinStockService:
         # Trigger capacity rollup for ancestors (once for all items)
         if added_count > 0:
             self.capacity_service.recalculate_ancestors(bin_id)
+            BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
         self.db.commit()
 
@@ -349,6 +355,8 @@ class BinStockService:
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
+        # Refresh bin volume/weight capacity + 3-D state (mobile-app trigger point)
+        BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
         self.db.commit()
         self.db.refresh(bin_stock)

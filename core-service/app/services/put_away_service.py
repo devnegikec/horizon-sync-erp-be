@@ -14,7 +14,7 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 20.3, 20.4, 20.5, 20.6
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -30,6 +30,7 @@ from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService
@@ -44,6 +45,213 @@ class PutAwayService:
         self.capacity_service = CapacityService(db)
         self.routing_optimizer = RoutingOptimizer()
         self.reservation_service = BinReservationService(db)
+
+    # ── Direct Put-Away reconciliation ──────────────────────────────────
+
+    def create_direct_list(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        created_by: UUID | None = None,
+    ) -> PutAwayList:
+        """Create an empty put-away list for a direct put-away session."""
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        number = DocumentNumberingService(self.db).get_next_number(
+            organization_id, "put_away_list"
+        )
+        pal = PutAwayList(
+            organization_id=organization_id,
+            warehouse_id=warehouse_id,
+            put_away_list_no=number,
+            status="pending",
+            reference_type="direct_putaway",
+            created_by=created_by,
+        )
+        self.db.add(pal)
+        self.db.commit()
+        self.db.refresh(pal)
+        return pal
+
+    def add_direct_completed_item(
+        self, tracking, list_id: UUID
+    ) -> PutAwayListItem | None:
+        """Attach a completed tracking row to a direct put-away list (idempotent)."""
+        pal = self.db.query(PutAwayList).filter(PutAwayList.id == list_id).first()
+        if pal is None:
+            raise NotFoundError(
+                message="Put-away list not found",
+                entity_type="PutAwayList",
+                entity_id=str(list_id),
+            )
+
+        # Idempotent: reuse the item already created for this tracking row
+        if tracking.put_away_item_id:
+            existing = self.db.get(PutAwayListItem, tracking.put_away_item_id)
+            if existing is not None:
+                return existing
+
+        item = PutAwayListItem(
+            organization_id=tracking.organization_id,
+            put_away_list_id=list_id,
+            item_id=tracking.item_id,
+            sku=tracking.sku,
+            batch_number=tracking.qr_identifier,
+            quantity=tracking.quantity,
+            bin_location_id=tracking.bin_location_id,
+            status="completed",
+            completed_at=datetime.now(UTC),
+        )
+        self.db.add(item)
+        self.db.flush()
+
+        tracking.put_away_list_id = list_id
+        tracking.put_away_item_id = item.id
+
+        # Mark the list complete once all items are completed
+        pending = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.put_away_list_id == list_id,
+                PutAwayListItem.status != "completed",
+            )
+            .count()
+        )
+        if pending == 0:
+            pal.status = "completed"
+            pal.completed_at = datetime.now(UTC)
+
+        self.db.commit()
+        return item
+
+    def reconcile_tracking_with_recent_slip(
+        self,
+        tracking,
+        organization_id: UUID,
+        within_hours: int = 24,
+    ):
+        """Link a completed tracking row to a matching receiving slip (≤24h)."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        cutoff = datetime.now(UTC) - timedelta(hours=within_hours)
+        slip_item = (
+            self.db.query(ReceivingSlipItem)
+            .join(ReceivingSlip, ReceivingSlip.id == ReceivingSlipItem.slip_id)
+            .filter(
+                ReceivingSlipItem.batch_number == tracking.qr_identifier,
+                ReceivingSlipItem.organization_id == organization_id,
+                ReceivingSlip.created_at >= cutoff,
+            )
+            .order_by(ReceivingSlip.created_at.desc())
+            .first()
+        )
+        if slip_item is None:
+            return None
+
+        tracking.receiving_slip_id = slip_item.slip_id
+        slip_item.put_away_status = "completed"
+        slip_item.bin_location_id = tracking.bin_location_id
+        slip_item.put_away_at = tracking.putaway_at or datetime.now(UTC)
+
+        if tracking.put_away_list_id:
+            pal = (
+                self.db.query(PutAwayList)
+                .filter(PutAwayList.id == tracking.put_away_list_id)
+                .first()
+            )
+            if pal is not None and pal.receiving_slip_id is None:
+                pal.receiving_slip_id = slip_item.slip_id
+
+        self.db.flush()
+        # If this was the last pending item, advance the slip status.
+        if self.all_slip_items_put_away(slip_item.slip_id):
+            self.mark_slip_putaway_complete(slip_item.slip_id)
+        self.db.commit()
+        return slip_item
+
+    def reconcile_slip_with_completed_putaway(self, slip, organization_id: UUID) -> int:
+        """After a receiving slip is created, link items already put away via
+        direct put-away (matched by QR identifier == batch_number)."""
+        from app.models.receiving_slip import ReceivingSlipItem
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        slip_items = (
+            self.db.query(ReceivingSlipItem)
+            .filter(ReceivingSlipItem.slip_id == slip.id)
+            .all()
+        )
+
+        linked = 0
+        for slip_item in slip_items:
+            # Only reconcile accepted items. Rejected/floating items are left
+            # for the warehouse manager to resolve manually.
+            if slip_item.flag != "ok":
+                continue
+
+            tracking = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.qr_identifier == slip_item.batch_number,
+                    ScannedItemTracking.organization_id == organization_id,
+                    ScannedItemTracking.putaway_status == "completed",
+                )
+                .first()
+            )
+            if tracking is None:
+                continue
+
+            tracking.receiving_slip_id = slip.id
+            slip_item.put_away_status = "completed"
+            slip_item.bin_location_id = tracking.bin_location_id
+            slip_item.put_away_at = tracking.putaway_at or datetime.now(UTC)
+
+            # Approve the receiving axis and enter stock now that both axes are
+            # complete (direct put-away happened before the receiving slip).
+            from app.services.scanned_item_tracking_service import (
+                ScannedItemTrackingService,
+            )
+
+            ScannedItemTrackingService(self.db).approve_tracking_row(tracking)
+
+            if tracking.put_away_list_id:
+                pal = (
+                    self.db.query(PutAwayList)
+                    .filter(PutAwayList.id == tracking.put_away_list_id)
+                    .first()
+                )
+                if pal is not None and pal.receiving_slip_id is None:
+                    pal.receiving_slip_id = slip.id
+            linked += 1
+
+        if linked:
+            self.db.commit()
+        return linked
+
+    def all_slip_items_put_away(self, slip_id: UUID) -> bool:
+        """Return True when every accepted receiving-slip item has been binned."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        accepted = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        )
+        return bool(accepted) and all(
+            item.put_away_status == "completed" for item in accepted
+        )
+
+    def mark_slip_putaway_complete(self, slip_id: UUID) -> bool:
+        """Advance a pending_putaway receiving slip to putaway_complete."""
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
+        if slip is None or slip.status != "pending_putaway":
+            return False
+        slip.status = "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+        self.db.flush()
+        return True
 
     def generate_from_slip(
         self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
@@ -93,6 +301,24 @@ class PutAwayService:
                 required_state=["pending_putaway"],
             )
 
+        # Prevent duplicate put-away lists for the same receiving slip.
+        # Only lists generated FROM the slip count as duplicates — direct
+        # put-away lists (reference_type='direct_putaway') get linked to the
+        # slip during reconciliation and must not block generation.
+        existing = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip_id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
+        )
+        if existing is not None:
+            raise ValidationError(
+                f"Put-away list '{existing.put_away_list_no}' already exists "
+                f"for receiving slip '{slip.slip_number}'"
+            )
+
         # Generate unique put-away list number
         from app.services.document_numbering_service import DocumentNumberingService
 
@@ -116,11 +342,15 @@ class PutAwayService:
         # Process each receiving slip item and assign bins
         put_away_items = []
         skipped_damaged: list[str] = []
+        skipped_rejected: list[str] = []
         skipped_unresolved: list[str] = []
         for slip_item in slip.items:
-            # Skip items flagged as damaged
-            if slip_item.flag == "damaged":
-                skipped_damaged.append(
+            # Skip items flagged as damaged or rejected
+            if slip_item.flag in ("damaged", "rejected"):
+                skipped = (
+                    skipped_damaged if slip_item.flag == "damaged" else skipped_rejected
+                )
+                skipped.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
                 )
                 continue
@@ -178,6 +408,11 @@ class PutAwayService:
             warnings_parts.append(
                 f"Skipped {len(skipped_damaged)} damaged item(s): "
                 + "; ".join(skipped_damaged)
+            )
+        if skipped_rejected:
+            warnings_parts.append(
+                f"Skipped {len(skipped_rejected)} rejected item(s): "
+                + "; ".join(skipped_rejected)
             )
         if skipped_unresolved:
             warnings_parts.append(
@@ -305,11 +540,21 @@ class PutAwayService:
         if put_away_packaging_unit_id is not None:
             bin_stock.packaging_unit_id = put_away_packaging_unit_id
             self.db.flush()
+            # Recompute capacity with the actual (case-pack) dimensions.
+            BinCapacityService(self.db).refresh_bin(target_bin_id, org_id)
 
         # Mark item as completed
         put_away_item.status = "completed"
         put_away_item.completed_at = datetime.now(UTC)
         self.db.flush()
+
+        # ── NEW: Update tracking records for this put-away ──
+        self._update_tracking_on_putaway(
+            put_away_item=put_away_item,
+            target_bin_id=target_bin_id,
+            worker_id=worker_id,
+            org_id=org_id,
+        )
 
         # Release any reservation the worker held on the destination bin so it
         # becomes immediately available to others (FR-CW lifecycle).
@@ -707,6 +952,60 @@ class PutAwayService:
                 item_map[opt_loc.id].sort_order = opt_loc.sort_order
 
         self.db.flush()
+
+    def _update_tracking_on_putaway(
+        self,
+        put_away_item,
+        target_bin_id: UUID,
+        worker_id: UUID,
+        org_id: UUID,
+    ) -> None:
+        """Update scanned_item_tracking records when put-away completes."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        put_away_list = put_away_item.put_away_list
+        if not put_away_list or not put_away_list.receiving_slip_id:
+            return
+
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.receiving_slip_id
+                == put_away_list.receiving_slip_id,
+                ScannedItemTracking.item_id == put_away_item.item_id,
+                ScannedItemTracking.batch_number == put_away_item.batch_number,
+                ScannedItemTracking.putaway_status == "pending",
+            )
+            .all()
+        )
+
+        if not trackings:
+            return
+
+        now = datetime.now(UTC)
+        for t in trackings:
+            t.putaway_status = "completed"
+            t.bin_location_id = target_bin_id
+            t.putaway_at = now
+            t.putaway_by = worker_id
+
+            # Stock for this item/batch was already added to the target bin by
+            # complete_item(); mark the tracking rows as entered so the
+            # dual-axis state machine stays consistent (avoid double-counting).
+            if t.receiving_status == "approved" and not t.stock_entered:
+                t.stock_entered = True
+                t.stock_entered_at = now
+
+        self.db.flush()
+        logger.info(
+            "Tracking: %d records updated for put-away item %s",
+            len(trackings),
+            put_away_item.id,
+        )
 
     def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:
         """Check if all items in a put-away list are done and update statuses.

@@ -6,6 +6,7 @@ import secrets
 import string
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -247,6 +248,16 @@ class QRProductService:
         self, data: QRProductCreate, organization_id: UUID, user_id: UUID
     ) -> QRProduct:
         product_dict = data.model_dump()
+        packaging_details = product_dict.pop("packaging_details", None)
+        if packaging_details is not None:
+            extra = dict(product_dict.get("extra_data") or {})
+            # packaging_details contains Decimal values; the JSONB serializer
+            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
+            extra["packaging_details"] = {
+                key: (float(value) if isinstance(value, Decimal) else value)
+                for key, value in packaging_details.items()
+            }
+            product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
@@ -269,7 +280,204 @@ class QRProductService:
                     detail="Brand not found",
                 )
 
-        return self.product_repo.create(product_dict)
+        qr_product = self.product_repo.create(product_dict)
+
+        # Auto-create a corresponding inventory Item linked to this QR product.
+        # This ensures every QR product has a trackable item in the ERP without
+        # requiring a separate frontend call.
+        self._create_linked_item(
+            qr_product, organization_id, user_id, packaging_details
+        )
+
+        # ── Sync Product → linked Items ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        # See: app/services/product_item_sync_service.py for full removal steps.
+        self.db.refresh(qr_product)
+        try:
+            from app.services.product_item_sync_service import (
+                ProductItemSyncService,
+            )
+
+            ProductItemSyncService(self.db).sync_product_to_items(qr_product)
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Failed to sync product→items: {e}")
+
+        return qr_product
+
+    def _create_linked_item(  # noqa: C901
+        self,
+        qr_product: QRProduct,
+        organization_id: UUID,
+        user_id: UUID,
+        packaging_details: dict | None = None,
+    ) -> None:
+        """Create an inventory Item that references this QR product.
+
+        Uses the QR product's name as the item name. The item_code is
+        auto-generated via DocumentNumberingService. Errors are logged but
+        never bubble up — a failed item creation must not roll back the
+        QR product itself.
+        """
+        item_code = None
+        try:
+            from app.models.base import ItemStatus, ItemType
+            from app.models.item import Item
+            from app.services.document_numbering_service import DocumentNumberingService
+
+            # Guard: if an Item already exists referencing this QR product, skip creation.
+            existing = (
+                self.db.query(Item)
+                .filter(Item.qr_product_id == qr_product.id, Item.deleted_at.is_(None))
+                .first()
+            )
+            if existing:
+                logger.info(
+                    "Linked item already exists for QR product '%s' (product_id=%s) — skipping auto-create. Existing item: %s",
+                    qr_product.name,
+                    qr_product.id,
+                    existing.item_code,
+                )
+                return
+
+            item_code = DocumentNumberingService(self.db).get_next_number(
+                organization_id, "item"
+            )
+
+            item = Item(
+                organization_id=organization_id,
+                item_code=item_code,
+                item_name=qr_product.name,
+                description=qr_product.generic_name,
+                item_type=ItemType.STOCK,
+                uom="Nos",
+                sku=qr_product.sku or qr_product.gtin,
+                gtin=qr_product.gtin,
+                brand_id=qr_product.brand_id,
+                maintain_stock=True,
+                status=ItemStatus.ACTIVE,
+                qr_product_id=qr_product.id,
+                image_url=qr_product.image_url,
+                created_by=user_id,
+                updated_by=user_id,
+            )
+            self.db.add(item)
+            self.db.commit()
+            self.db.refresh(item)
+            logger.info(
+                "Auto-created item '%s' (id=%s) linked to QR product '%s' (id=%s)",
+                item.item_code,
+                item.id,
+                qr_product.name,
+                qr_product.id,
+            )
+
+            if packaging_details:
+                try:
+                    from app.schemas.item import ItemPackagingDetails
+                    from app.services.item_service import ItemService
+
+                    details = ItemPackagingDetails(
+                        unit_name=packaging_details.get("unit_name") or "Each",
+                        conversion_factor=packaging_details.get("conversion_factor")
+                        or Decimal("1"),
+                        length_mm=packaging_details.get("length_mm"),
+                        width_mm=packaging_details.get("width_mm"),
+                        height_mm=packaging_details.get("height_mm"),
+                        weight_grams=packaging_details.get("weight_grams"),
+                    )
+                    ItemService(self.db)._upsert_base_packaging_unit(
+                        item, details, organization_id
+                    )
+                    self.db.commit()
+                except Exception as exc:
+                    self.db.rollback()
+                    logger.warning(
+                        "Failed to upsert packaging unit for linked item '%s': %s",
+                        item.id,
+                        exc,
+                    )
+        except Exception as exc:
+            # Roll back only the item insert, keep the QR product committed
+            self.db.rollback()
+
+            # Normalize detection of unique-constraint / integrity failures.
+            # Some DB drivers wrap the underlying IntegrityError (DBAPIError),
+            # so inspect __cause__ / orig when available.
+            from sqlalchemy.exc import DBAPIError, IntegrityError
+
+            def _is_integrity_error(e: BaseException) -> bool:
+                if isinstance(e, IntegrityError):
+                    return True
+                if isinstance(e, DBAPIError):
+                    # DBAPIError may wrap an underlying DB-API error in .orig
+                    orig = getattr(e, "orig", None)
+                    if orig and "unique" in str(orig).lower():
+                        return True
+                # Inspect chained exception
+                cause = getattr(e, "__cause__", None)
+                if cause:
+                    return _is_integrity_error(cause)
+                return False
+
+            try:
+                if _is_integrity_error(exc):
+                    logger.warning(
+                        "IntegrityError while creating item for QR product '%s' (id=%s): %s — attempting to attach to existing item",
+                        qr_product.name,
+                        qr_product.id,
+                        exc,
+                    )
+
+                    existing_by_code = None
+                    if item_code:
+                        existing_by_code = (
+                            self.db.query(Item)
+                            .filter(
+                                Item.organization_id == organization_id,
+                                Item.item_code == item_code,
+                                Item.deleted_at.is_(None),
+                            )
+                            .first()
+                        )
+                    if existing_by_code:
+                        # Link existing item to this QR product if not already linked
+                        if existing_by_code.qr_product_id != qr_product.id:
+                            existing_by_code.qr_product_id = qr_product.id
+                            existing_by_code.updated_by = user_id
+                            self.db.add(existing_by_code)
+                            self.db.commit()
+                            logger.info(
+                                "Attached existing item '%s' (id=%s) to QR product '%s' (id=%s)",
+                                existing_by_code.item_code,
+                                existing_by_code.id,
+                                qr_product.name,
+                                qr_product.id,
+                            )
+                            return
+                        else:
+                            logger.info(
+                                "Existing item '%s' (id=%s) already linked to QR product '%s'",
+                                existing_by_code.item_code,
+                                existing_by_code.id,
+                                qr_product.id,
+                            )
+                            return
+            except Exception as exc2:
+                # If attachment attempt failed, fall through to error log below
+                logger.error(
+                    "Failed to attach existing item for QR product '%s' (id=%s): %s",
+                    qr_product.name,
+                    qr_product.id,
+                    exc2,
+                )
+
+            logger.error(
+                "Failed to auto-create item for QR product '%s' (id=%s): %s",
+                qr_product.name,
+                qr_product.id,
+                exc,
+            )
 
     def get_product(self, product_id: UUID, organization_id: UUID) -> QRProduct:
         product = self.product_repo.get_by_id(product_id, organization_id)
@@ -310,6 +518,11 @@ class QRProductService:
     ) -> QRProduct:
         product = self.get_product(product_id, organization_id)
         update_dict = data.model_dump(exclude_unset=True)
+        packaging_details = update_dict.pop("packaging_details", None)
+        if packaging_details is not None:
+            extra = dict(update_dict.get("extra_data") or {})
+            extra["packaging_details"] = packaging_details
+            update_dict["extra_data"] = extra
 
         if "shelf_life_setting_id" in update_dict:
             self._validate_shelf_life_setting(
@@ -338,7 +551,52 @@ class QRProductService:
             )
 
         update_dict["updated_by"] = user_id
-        return self.product_repo.update(product, update_dict)
+        product = self.product_repo.update(product, update_dict)
+
+        if packaging_details is not None:
+            try:
+                from app.models.item import Item
+                from app.schemas.item import ItemPackagingDetails
+                from app.services.item_service import ItemService
+
+                linked_item = (
+                    self.db.query(Item)
+                    .filter(
+                        Item.qr_product_id == product.id,
+                        Item.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if linked_item is not None:
+                    details = ItemPackagingDetails(
+                        unit_name=packaging_details.get("unit_name") or "Each",
+                        conversion_factor=packaging_details.get("conversion_factor")
+                        or Decimal("1"),
+                        length_mm=packaging_details.get("length_mm"),
+                        width_mm=packaging_details.get("width_mm"),
+                        height_mm=packaging_details.get("height_mm"),
+                        weight_grams=packaging_details.get("weight_grams"),
+                    )
+                    ItemService(self.db)._upsert_base_packaging_unit(
+                        linked_item, details, organization_id
+                    )
+                    self.db.commit()
+            except Exception as exc:
+                logger.error("Failed to upsert linked item packaging: %s", exc)
+
+        # ── Sync Product → linked Items ──
+        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
+        try:
+            from app.services.product_item_sync_service import (
+                ProductItemSyncService,
+            )
+
+            ProductItemSyncService(self.db).sync_product_to_items(product)
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Failed to sync product→items: {e}")
+
+        return product
 
     def delete_product(
         self, product_id: UUID, organization_id: UUID, user_id: UUID

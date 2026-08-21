@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -50,6 +50,22 @@ class QRProduct(Base):
     warranty_period_months = Column(Integer, nullable=True)
     qr_type = Column(String(30), nullable=True)
     is_active = Column(Boolean, default=True)
+
+    # ── Synced from Item ──
+    # TODO(DEPRECATION): These columns are duplicated from Item for sync.
+    # No action needed when QRProduct is removed — they disappear with the table.
+    item_code = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    uom = Column(String(50), nullable=True)
+    standard_rate = Column(Numeric(15, 2), nullable=True)
+    valuation_rate = Column(Numeric(15, 2), nullable=True)
+    weight_per_unit = Column(Numeric(10, 3), nullable=True)
+    weight_uom = Column(String(50), nullable=True)
+    barcode = Column(String(100), nullable=True)
+    maintain_stock = Column(Boolean, nullable=True)
+    has_batch_no = Column(Boolean, nullable=True)
+    has_serial_no = Column(Boolean, nullable=True)
+
     extra_data = Column(JSONB, nullable=True)
 
     # Audit
