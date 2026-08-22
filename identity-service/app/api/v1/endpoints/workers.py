@@ -283,8 +283,9 @@ async def list_workers(
     where = ["1=1"]
     p: dict = {}
     if current_user.user_type != UserType.SYSTEM_ADMIN and org_id:
-        where.append("w.organization_id=:org")
-        p["org"] = org_id
+        where.append("w.organization_id=:org"); p["org"] = org_id
+    if warehouse_id:
+        where.append("w.warehouse_id=:wh"); p["wh"] = warehouse_id
     if search:
         where.append(
             "(w.first_name ILIKE :s OR w.last_name ILIKE :s OR w.email ILIKE :s OR w.barcode ILIKE :s)"
