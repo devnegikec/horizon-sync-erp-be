@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.product_item import ProductItem
 from app.models.qr_block import QRBlock
@@ -27,6 +27,7 @@ class QRProductRepository:
     def get_by_id(self, product_id: UUID, organization_id: UUID) -> QRProduct | None:
         return (
             self.db.query(QRProduct)
+            .options(joinedload(QRProduct.serial_prefix_setting))
             .filter(
                 QRProduct.id == product_id,
                 QRProduct.organization_id == organization_id,
@@ -43,7 +44,9 @@ class QRProductRepository:
         search: str | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[QRProduct], int]:
-        q = self.db.query(QRProduct).filter(
+        q = self.db.query(QRProduct).options(
+            joinedload(QRProduct.serial_prefix_setting)
+        ).filter(
             QRProduct.organization_id == organization_id,
             QRProduct.deleted_at.is_(None),
         )
@@ -74,14 +77,21 @@ class QRBlockRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, data: dict) -> QRBlock:
+    def create(self, data: dict, *, commit: bool = True) -> QRBlock:
         block = QRBlock(**data)
         self.db.add(block)
-        self.db.commit()
-        self.db.refresh(block)
+        if commit:
+            self.db.commit()
+            self.db.refresh(block)
+        else:
+            self.db.flush()
         return block
 
-    def get_by_id(self, block_id: UUID, organization_id: UUID) -> QRBlock | None:
+    def get_by_id_for_update(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> QRBlock | None:
         return (
             self.db.query(QRBlock)
             .filter(
@@ -89,7 +99,35 @@ class QRBlockRepository:
                 QRBlock.organization_id == organization_id,
                 QRBlock.deleted_at.is_(None),
             )
+            .with_for_update()
             .first()
+        )
+
+    def get_by_id(self, block_id: UUID, organization_id: UUID) -> QRBlock | None:
+        return (
+            self.db.query(QRBlock)
+            .options(
+                joinedload(QRBlock.channel_setting),
+                joinedload(QRBlock.destination_setting),
+            )
+            .filter(
+                QRBlock.id == block_id,
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def batch_exists(self, batch: str, organization_id: UUID) -> bool:
+        return (
+            self.db.query(QRBlock.id)
+            .filter(
+                func.lower(QRBlock.batch) == batch.lower(),
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
+            .first()
+            is not None
         )
 
     def list_by_product(
@@ -99,7 +137,10 @@ class QRBlockRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[QRBlock], int]:
-        q = self.db.query(QRBlock).filter(
+        q = self.db.query(QRBlock).options(
+            joinedload(QRBlock.channel_setting),
+            joinedload(QRBlock.destination_setting),
+        ).filter(
             QRBlock.product_id == product_id,
             QRBlock.organization_id == organization_id,
             QRBlock.deleted_at.is_(None),
@@ -116,9 +157,17 @@ class QRBlockRepository:
         page_size: int = 20,
         status: str | None = None,
         product_id: UUID | None = None,
+        search: str | None = None,
+        qr_type: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> tuple[list[tuple[QRBlock, str | None]], int]:
         q = (
             self.db.query(QRBlock, QRProduct.name)
+            .options(
+                joinedload(QRBlock.channel_setting),
+                joinedload(QRBlock.destination_setting),
+            )
             .outerjoin(QRProduct, QRBlock.product_id == QRProduct.id)
             .filter(
                 QRBlock.organization_id == organization_id,
@@ -129,6 +178,20 @@ class QRBlockRepository:
             q = q.filter(QRBlock.status == status)
         if product_id is not None:
             q = q.filter(QRBlock.product_id == product_id)
+        if search:
+            pattern = f"%{search.strip()}%"
+            q = q.filter(
+                or_(
+                    QRBlock.batch.ilike(pattern),
+                    QRProduct.name.ilike(pattern),
+                )
+            )
+        if qr_type is not None:
+            q = q.filter(QRBlock.qr_type == qr_type)
+        if created_from is not None:
+            q = q.filter(QRBlock.created_at >= created_from)
+        if created_to is not None:
+            q = q.filter(QRBlock.created_at < created_to)
         total = q.count()
         rows = (
             q.order_by(QRBlock.created_at.desc())
@@ -201,6 +264,39 @@ class ProductItemRepository:
             .first()
         )
 
+    def get_existing_serials(
+        self, serial_numbers: list[str], organization_id: UUID
+    ) -> set[str]:
+        if not serial_numbers:
+            return set()
+        rows = (
+            self.db.query(ProductItem.serial_number)
+            .filter(
+                ProductItem.serial_number.in_(serial_numbers),
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+        return {row[0] for row in rows}
+
+    def get_existing_serials_global(
+        self,
+        serial_numbers: list[str],
+    ) -> set[str]:
+        """Return active collisions for the globally unique public serial key."""
+        if not serial_numbers:
+            return set()
+        rows = (
+            self.db.query(ProductItem.serial_number)
+            .filter(
+                ProductItem.serial_number.in_(serial_numbers),
+                ProductItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+        return {row[0] for row in rows}
+
     def list_by_block(
         self,
         block_id: UUID,
@@ -239,6 +335,43 @@ class ProductItemRepository:
             .all()
         )
         return items, total
+
+    def get_activation_summary(
+        self, block_id: UUID, organization_id: UUID
+    ) -> tuple[int, int]:
+        """Count all and active items in one tenant-scoped Block query."""
+        total, active = (
+            self.db.query(
+                func.count(ProductItem.id),
+                func.count(ProductItem.id).filter(
+                    ProductItem.qr_active.is_(True)
+                ),
+            )
+            .filter(
+                ProductItem.block_id == block_id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .one()
+        )
+        return int(total or 0), int(active or 0)
+
+    def soft_delete_by_block(
+        self, block_id: UUID, organization_id: UUID
+    ) -> int:
+        """Deactivate generated items when their Block generation fails."""
+        return (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.block_id == block_id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .update(
+                {ProductItem.deleted_at: datetime.now(UTC)},
+                synchronize_session=False,
+            )
+        )
 
     def update(self, item: ProductItem, data: dict) -> ProductItem:
         for k, v in data.items():

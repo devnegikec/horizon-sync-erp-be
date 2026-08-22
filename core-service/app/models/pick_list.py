@@ -45,6 +45,7 @@ class PickList(Base):
     reference_type = Column(String(50), nullable=True)
     reference_id = Column(UUID(as_uuid=True), nullable=True)
     remarks = Column(Text, nullable=True)
+    assigned_to = Column(UUID(as_uuid=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
 
@@ -93,6 +94,9 @@ class PickListItem(Base):
     qty = Column(Numeric(15, 3), nullable=False)
     picked_qty = Column(Numeric(15, 3), default=0)
     uom = Column(String(50), nullable=False)
+    per_case_qty = Column(Numeric(15, 3), nullable=True)
+    case_qty = Column(Numeric(15, 3), nullable=True)
+    loose_qty = Column(Numeric(15, 3), nullable=True)
     batch_no = Column(String(100), nullable=True)
     serial_nos = Column(JSONB, nullable=True)
     sort_order = Column(Integer, default=0)

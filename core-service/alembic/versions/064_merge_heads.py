@@ -5,10 +5,8 @@ Revises: 062, 063_add_landing_page_configs, 063_add_qr_cta_configs
 Create Date: 2026-08-06
 """
 
-from typing import Sequence, Union
-
-from alembic import op
-import sqlalchemy as sa
+from collections.abc import Sequence
+from typing import Union
 
 revision: str = "064_merge_heads"
 down_revision: Union[str, tuple[str, ...], None] = (

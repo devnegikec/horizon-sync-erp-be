@@ -2,6 +2,7 @@
 Serial number generation utilities and QR signing/URL helpers.
 
 Provides:
+- R8DAN: 8-char random alphanumeric (uppercase + digits)
 - R6DAN: 6-char random alphanumeric (uppercase + digits)
 - R4DAN: 4-char random alphanumeric (uppercase + digits)
 - S8DN: zero-padded 8-digit sequential
@@ -12,13 +13,20 @@ Provides:
 Requirements: 7.1, 7.2, 7.3, 7.4
 """
 
+import logging
+import re
 import secrets
 import string
 import time
 from collections.abc import Generator
 from urllib.parse import quote
 
+import httpx
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
+SERIAL_PATTERN = re.compile(r"/s/([^/?]+)")
 
 # Character set for random alphanumeric generators
 _ALPHANUMERIC = string.ascii_uppercase + string.digits
@@ -27,6 +35,11 @@ _ALPHANUMERIC = string.ascii_uppercase + string.digits
 def generate_r6dan() -> str:
     """Generate a 6-character random alphanumeric serial (uppercase letters + digits)."""
     return "".join(secrets.choice(_ALPHANUMERIC) for _ in range(6))
+
+
+def generate_r8dan() -> str:
+    """Generate an 8-character random alphanumeric serial."""
+    return "".join(secrets.choice(_ALPHANUMERIC) for _ in range(8))
 
 
 def generate_r4dan() -> str:
@@ -82,7 +95,6 @@ def sign_qr_item(
 
 
 def build_qr_url(
-    org_short_code: str,
     domain: str,
     gtin: str,
     serial_number: str,
@@ -100,17 +112,91 @@ def build_qr_url(
         timestamp: Unix timestamp in milliseconds.
         signature: ECDSA signature (base64).
         base_url: Optional full base URL override (scheme+host, no trailing slash).
-                   When provided, used directly instead of ``https://{org_short_code}.{domain}``.
+                   When provided, used directly instead of ``https://{domain}``.
 
     Returns:
         URL in the format:
         ``{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
         or when base_url is empty:
-        ``https://{org_short_code}.{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+        ``https://{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
     """
     if base_url:
-        return f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
+        return (
+            f"{base_url}/g/{gtin}/s/{serial_number}/{timestamp}"
+            f"?c={quote(signature, safe='')}"
+        )
     return (
-        f"https://{org_short_code}.{domain}"
+        f"https://{domain}"
         f"/g/{gtin}/s/{serial_number}/{timestamp}?c={quote(signature, safe='')}"
     )
+
+
+def build_long_qr_url(
+    domain: str,
+    gtin: str,
+    serial_number: str,
+    timestamp: int,
+    signature: str,
+) -> str:
+    """Build a QR verification URL.
+
+    Returns:
+        URL in the format:
+        ``https://{domain}/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}``
+    """
+    return (
+        f"https://{domain}"
+        f"/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}"
+    )
+
+
+
+async def resolve_serial_from_short_url(short_url: str) -> str:
+    """
+    Resolve serial number from a short QR URL.
+
+    Strategy: read the Location header from the 301 redirect directly
+    instead of following it — the redirect target may not be publicly
+    reachable but the serial number is always in the Location URL.
+    """
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=10.0,
+        ) as client:
+            response = await client.get(short_url)
+
+            # Get Location header from 301/302 response
+            if response.status_code in (301, 302, 307, 308):
+                location = response.headers.get("location")
+                if not location:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No redirect location found in response",
+                    )
+            else:
+                # Already at final URL
+                location = str(response.url)
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="URL resolution timed out",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to reach URL: {str(e)}",
+        )
+
+    # Extract serial from /s/{serial} in the Location URL
+    match = SERIAL_PATTERN.search(location)
+    if not match:
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not extract serial number from URL: {location}",
+        )
+
+    serial = match.group(1)
+    return serial

@@ -39,6 +39,13 @@ _QR_URL_PATTERN = re.compile(
     r"https?://[^/]+/g/[^/]+/s/(?P<serial>[^/?]+)(?:/(?P<nonce>[^?]+))?"  # unsigned also
 )
 
+# GS1 Digital Link SGTIN:
+#   https://<anything>/01/<gtin>/21/<serial>
+#   https://<anything>/01/<gtin>/10/<lot>/21/<serial>
+_GS1_SGTIN_URL_PATTERN = re.compile(
+    r"https?://[^/]+/01/[^/]+(?:/10/[^/]+)?/21/(?P<serial>[^/?]+)"
+)
+
 # Bare serial number — alphanumeric plus dashes/underscores, 4–75 chars.
 # Anything outside this set falls through to the JSON branch so we still
 # surface a helpful error for malformed payloads.
@@ -119,8 +126,12 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
 
 
 def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
-    """Extract a QRPayload from a product authentication URL."""
-    match = _QR_URL_PATTERN.search(qr_data)
+    """Extract a QRPayload from a product authentication URL.
+
+    Supports GS1 Digital Link SGTIN (/01/{gtin}/21/{serial}) and the legacy
+    /g/{gtin}/s/{serial} format for backward compatibility.
+    """
+    match = _GS1_SGTIN_URL_PATTERN.search(qr_data) or _QR_URL_PATTERN.search(qr_data)
     if not match:
         raise ValidationError(
             message="Invalid QR payload: URL format not recognised",
@@ -129,7 +140,8 @@ def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
                     "field": "qr_data",
                     "reason": (
                         "Expected URL format: "
-                        "https://<domain>/g/<gtin>/s/<serial>[/<nonce>]"
+                        "https://<domain>/01/<gtin>/21/<serial> "
+                        "or https://<domain>/g/<gtin>/s/<serial>[/<nonce>]"
                     ),
                 }
             ],
@@ -142,7 +154,8 @@ def decode_qr_payload(qr_data: str, db: "Session | None" = None) -> QRPayload:  
     """Decode and validate a QR payload string.
 
     Accepts three formats:
-    - Product authentication URL: https://.../g/{gtin}/s/{serial}/{nonce}?c={sig}
+    - Product authentication URL (GS1): https://.../01/{gtin}/21/{serial}?c={sig}&n={nonce}
+      or legacy: https://.../g/{gtin}/s/{serial}/{nonce}?c={sig}
     - Bare serial number: e.g. "RB7FJE" (4–75 alphanumeric / dash / underscore)
     - JSON string: {"id": "...", "sku": "...", "qty": N, "batch": "..."}
 

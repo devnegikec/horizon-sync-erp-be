@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.constants import ANALYTICS_MODULE_ENABLED
@@ -11,6 +11,11 @@ from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_feature_flag
 from app.schemas.analytics import (
     CTABreakdownResponse,
+    CTAConfigCreate,
+    CTAConfigResponse,
+    CTAConfigUpdate,
+    DeviceTimelineResponse,
+    GeoHeatmapResponse,
     InteractionFunnelResponse,
     MetaCampaignCreate,
     MetaCampaignListResponse,
@@ -18,6 +23,8 @@ from app.schemas.analytics import (
     QRScanAnalyticsResponse,
     QRScanEventIngest,
     QRScanEventResponse,
+    ScanInteractionIngest,
+    ScanInteractionResponse,
 )
 from app.services.analytics_service import AnalyticsService
 
@@ -41,13 +48,47 @@ def get_service(db: Session = Depends(get_db)) -> AnalyticsService:
 )
 async def ingest_scan(
     data: QRScanEventIngest,
+    request: Request,
     organization_id: UUID = Query(
         ..., description="Organization that owns the QR code"
     ),
     service: AnalyticsService = Depends(get_service),
 ):
     """No auth required — called by the consumer-facing QR landing page."""
-    return await service.ingest_scan(data, organization_id)
+    return await service.ingest_scan(data, organization_id, dict(request.headers))
+
+
+@router.post(
+    "/scans/{scan_id}/interactions",
+    response_model=ScanInteractionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a post-scan interaction (public)",
+)
+def record_interaction(
+    scan_id: UUID,
+    data: ScanInteractionIngest,
+    organization_id: UUID = Query(
+        ..., description="Organization that owns the scan event"
+    ),
+    service: AnalyticsService = Depends(get_service),
+):
+    interaction = service.record_interaction(scan_id, data, organization_id)
+    if interaction is None:
+        raise HTTPException(status_code=404, detail="Scan event not found")
+    return interaction
+
+
+@router.get(
+    "/scans/{scan_id}/interactions",
+    response_model=list[ScanInteractionResponse],
+    summary="List interactions for a scan event",
+)
+def list_interactions(
+    scan_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    return service.list_interactions(scan_id, current_user.organization_id)
 
 
 @router.get(
@@ -121,6 +162,7 @@ def get_cta_breakdown(
 
 @router.get(
     "/scans/geo-heatmap",
+    response_model=GeoHeatmapResponse,
     summary="Get geographic heatmap data for scans",
 )
 def get_geo_heatmap(
@@ -136,6 +178,7 @@ def get_geo_heatmap(
 
 @router.get(
     "/scans/device-timeline",
+    response_model=DeviceTimelineResponse,
     summary="Get scan counts over time grouped by device type",
 )
 def get_device_timeline(
@@ -146,6 +189,100 @@ def get_device_timeline(
 ):
     org_id = current_user.organization_id
     return service.get_device_timeline(org_id, date_from, date_to)
+
+
+# ── CTA Configuration ──────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/products/{product_id}/ctas",
+    response_model=CTAConfigResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a product CTA configuration",
+)
+def create_cta_config(
+    product_id: UUID,
+    data: CTAConfigCreate,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    config = service.create_cta_config(data, current_user.organization_id, product_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="QR product not found")
+    return config
+
+
+@router.get(
+    "/products/{product_id}/ctas",
+    response_model=list[CTAConfigResponse],
+    summary="List CTA configurations for a product",
+)
+def list_cta_configs(
+    product_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    return service.list_cta_configs(current_user.organization_id, product_id)
+
+
+@router.get(
+    "/products/{product_id}/ctas/{config_id}",
+    response_model=CTAConfigResponse,
+    summary="Get a product CTA configuration",
+)
+def get_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    config = service.get_cta_config(config_id, current_user.organization_id)
+    if config is None or config.product_id != product_id:
+        raise HTTPException(status_code=404, detail="CTA configuration not found")
+    return config
+
+
+@router.put(
+    "/products/{product_id}/ctas/{config_id}",
+    response_model=CTAConfigResponse,
+    summary="Update a product CTA configuration",
+)
+def update_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    data: CTAConfigUpdate,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    config = service.update_cta_config(
+        config_id,
+        data,
+        current_user.organization_id,
+        product_id,
+    )
+    if config is None:
+        raise HTTPException(status_code=404, detail="CTA configuration not found")
+    return config
+
+
+@router.delete(
+    "/products/{product_id}/ctas/{config_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a product CTA configuration",
+)
+def delete_cta_config(
+    product_id: UUID,
+    config_id: UUID,
+    service: AnalyticsService = Depends(get_service),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> None:
+    deleted = service.delete_cta_config(
+        config_id,
+        current_user.organization_id,
+        product_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="CTA configuration not found")
 
 
 # ── Meta Campaign Analytics ───────────────────────────────────────────────────

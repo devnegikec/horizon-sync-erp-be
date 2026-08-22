@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -64,6 +65,12 @@ class Warehouse(Base):
     # Capacity
     total_capacity = Column(Integer, nullable=True)
     capacity_uom = Column(String(50), nullable=True)
+
+    # Capacity planning — dimension toggles & threshold defaults
+    use_volume = Column(Boolean, nullable=False, default=True)
+    use_weight = Column(Boolean, nullable=False, default=False)
+    full_threshold_pct = Column(Numeric(5, 3), nullable=False, default=0.90)
+    almost_full_threshold_pct = Column(Numeric(5, 3), nullable=False, default=0.70)
 
     # Accounting
     stock_account_id = Column(UUID(as_uuid=True), nullable=True)
