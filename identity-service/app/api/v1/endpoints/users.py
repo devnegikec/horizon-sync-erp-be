@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.authorization import (
     is_system_admin,
+    is_system_admin_or_owner,
     require_permission,
     validate_user_in_organization,
 )
@@ -806,10 +807,10 @@ async def update_user_roles(
 
     # Check for system roles
     system_roles = [r for r in requested_roles if r.is_system]
-    if system_roles and not is_system_admin(current_user.permissions):
+    if system_roles and not is_system_admin_or_owner(current_user.permissions):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only system admins can assign system roles",
+            detail="Only system admins or organization owners can assign system roles",
         )
 
     # Deactivate existing role assignments for this user/org
