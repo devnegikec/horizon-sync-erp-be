@@ -1,31 +1,30 @@
 # QR Analytics — Frontend Dashboard Integration Guide
 
-> **Audience:** Frontend developers building the QSeal analytics dashboard  
-> **Base URL:** `https://core-xxxxx.snapdeploy.dev/api/v1/analytics`  
-> **Auth:** Bearer token from Identity Service login
+> **Audience:** Frontend developers building the QSeal analytics dashboard
+> **Base URL:** `https://core-xxxxx.snapdeploy.dev/api/v1/analytics` > **Auth:** Bearer token from Identity Service login
 
 ---
 
 ## 1. Quick Reference — All Endpoints
 
-| # | Method | Endpoint | Auth | Purpose |
-|---|---|---|---|---|
-| 1 | `POST` | `/scans/ingest` | **Public** | Record a QR scan (called by QR landing page, not dashboard) |
-| 2 | `GET` | `/scans` | ✅ Auth | Paginated list of all scan events |
-| 3 | `GET` | `/scans/summary` | ✅ Auth | Aggregate: total scans, unique serials, by date/country/device |
-| 4 | `GET` | `/scans/cta-breakdown` | ✅ Auth | CTA action distribution (view_product vs call vs website) |
-| 5 | `GET` | `/scans/geo-heatmap` | ✅ Auth | Scans grouped by city with lat/lng (map-ready) |
-| 6 | `GET` | `/scans/device-timeline` | ✅ Auth | Scans over time, pivoted by mobile/desktop/tablet |
-| 7 | `GET` | `/scans/interaction-funnel` | ✅ Auth | Funnel: scans → CTA clicks → conversion rate |
-| 8 | `POST` | `/scans/{id}/interactions` | **Public** | Record post-scan action (called by QR landing page) |
-| 9 | `GET` | `/scans/{id}/interactions` | ✅ Auth | List interactions for a specific scan |
-| 10 | `POST` | `/products/{pid}/ctas` | ✅ Auth | Create CTA button config |
-| 11 | `GET` | `/products/{pid}/ctas` | ✅ Auth | List CTA configs for a product |
-| 12 | `GET` | `/products/{pid}/ctas/{id}` | ✅ Auth | Get single CTA config |
-| 13 | `PUT` | `/products/{pid}/ctas/{id}` | ✅ Auth | Update CTA config |
-| 14 | `DELETE` | `/products/{pid}/ctas/{id}` | ✅ Auth | Delete CTA config |
+| #   | Method   | Endpoint                    | Auth       | Purpose                                                        |
+| --- | -------- | --------------------------- | ---------- | -------------------------------------------------------------- |
+| 1   | `POST`   | `/scans/ingest`             | **Public** | Record a QR scan (called by QR landing page, not dashboard)    |
+| 2   | `GET`    | `/scans`                    | ✅ Auth    | Paginated list of all scan events                              |
+| 3   | `GET`    | `/scans/summary`            | ✅ Auth    | Aggregate: total scans, unique serials, by date/country/device |
+| 4   | `GET`    | `/scans/cta-breakdown`      | ✅ Auth    | CTA action distribution (view_product vs call vs website)      |
+| 5   | `GET`    | `/scans/geo-heatmap`        | ✅ Auth    | Scans grouped by city with lat/lng (map-ready)                 |
+| 6   | `GET`    | `/scans/device-timeline`    | ✅ Auth    | Scans over time, pivoted by mobile/desktop/tablet              |
+| 7   | `GET`    | `/scans/interaction-funnel` | ✅ Auth    | Funnel: scans → CTA clicks → conversion rate                   |
+| 8   | `POST`   | `/scans/{id}/interactions`  | **Public** | Record post-scan action (called by QR landing page)            |
+| 9   | `GET`    | `/scans/{id}/interactions`  | ✅ Auth    | List interactions for a specific scan                          |
+| 10  | `POST`   | `/products/{pid}/ctas`      | ✅ Auth    | Create CTA button config                                       |
+| 11  | `GET`    | `/products/{pid}/ctas`      | ✅ Auth    | List CTA configs for a product                                 |
+| 12  | `GET`    | `/products/{pid}/ctas/{id}` | ✅ Auth    | Get single CTA config                                          |
+| 13  | `PUT`    | `/products/{pid}/ctas/{id}` | ✅ Auth    | Update CTA config                                              |
+| 14  | `DELETE` | `/products/{pid}/ctas/{id}` | ✅ Auth    | Delete CTA config                                              |
 
-Endpoints 1 & 8 are **public** — called by the QR landing page when a consumer scans a code.  
+Endpoints 1 & 8 are **public** — called by the QR landing page when a consumer scans a code.
 All others require an **auth token** — used by the dashboard.
 
 ---
@@ -45,6 +44,7 @@ Content-Type: application/json
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGciOi...",
@@ -76,19 +76,19 @@ The `organization_id` is automatically resolved from the token — you never nee
 
 **Purpose:** Executive summary — key metrics at a glance.
 
-| Widget | Endpoint | Key Fields |
-|---|---|---|
-| **Total Scans (KPI card)** | `GET /scans/summary` | `total_scans`, `unique_serials` |
-| **Scans Over Time (line chart)** | `GET /scans/summary` | `by_date[]` → `{date, count}` |
-| **Top Countries (bar chart)** | `GET /scans/summary` | `by_country[]` → `{country, count}` |
-| **Device Split (pie chart)** | `GET /scans/summary` | `by_device[]` → `{device_type, count}` |
+| Widget                           | Endpoint             | Key Fields                             |
+| -------------------------------- | -------------------- | -------------------------------------- |
+| **Total Scans (KPI card)**       | `GET /scans/summary` | `total_scans`, `unique_serials`        |
+| **Scans Over Time (line chart)** | `GET /scans/summary` | `by_date[]` → `{date, count}`          |
+| **Top Countries (bar chart)**    | `GET /scans/summary` | `by_country[]` → `{country, count}`    |
+| **Device Split (pie chart)**     | `GET /scans/summary` | `by_device[]` → `{device_type, count}` |
 
 **Single API call covers all 4 widgets:**
 
 ```javascript
 const { total_scans, unique_serials, by_date, by_country, by_device } =
-  await api.get('/analytics/scans/summary', {
-    params: { date_from: '2026-06-01', date_to: '2026-07-13' }
+  await api.get("/analytics/scans/summary", {
+    params: { date_from: "2026-06-01", date_to: "2026-07-13" },
   });
 ```
 
@@ -98,22 +98,22 @@ const { total_scans, unique_serials, by_date, by_country, by_device } =
 
 **Purpose:** Which Call-to-Action buttons are driving engagement?
 
-| Widget | Endpoint | Key Fields |
-|---|---|---|
-| **CTA Distribution (donut chart)** | `GET /scans/cta-breakdown` | `breakdown[]` → `{cta_action, count}` |
-| **Total Scans with CTA (metric)** | `GET /scans/cta-breakdown` | `total_scans_with_cta` |
-| **Conversion Funnel (funnel chart)** | `GET /scans/interaction-funnel` | `total_scans → scans_with_cta → scans_with_interactions → conversion_rate` |
-| **Top Interaction Types (bar chart)** | `GET /scans/interaction-funnel` | `top_interaction_types[]` → `{interaction_type, count}` |
+| Widget                                | Endpoint                        | Key Fields                                                                 |
+| ------------------------------------- | ------------------------------- | -------------------------------------------------------------------------- |
+| **CTA Distribution (donut chart)**    | `GET /scans/cta-breakdown`      | `breakdown[]` → `{cta_action, count}`                                      |
+| **Total Scans with CTA (metric)**     | `GET /scans/cta-breakdown`      | `total_scans_with_cta`                                                     |
+| **Conversion Funnel (funnel chart)**  | `GET /scans/interaction-funnel` | `total_scans → scans_with_cta → scans_with_interactions → conversion_rate` |
+| **Top Interaction Types (bar chart)** | `GET /scans/interaction-funnel` | `top_interaction_types[]` → `{interaction_type, count}`                    |
 
 **Example Response — CTA Breakdown:**
 
 ```json
 {
   "breakdown": [
-    { "cta_action": "view_product",    "count": 452 },
-    { "cta_action": "visit_website",   "count": 287 },
-    { "cta_action": "verify_auth",     "count": 193 },
-    { "cta_action": "call_support",    "count": 68 }
+    { "cta_action": "view_product", "count": 452 },
+    { "cta_action": "visit_website", "count": 287 },
+    { "cta_action": "verify_auth", "count": 193 },
+    { "cta_action": "call_support", "count": 68 }
   ],
   "total_scans_with_cta": 1000
 }
@@ -129,9 +129,9 @@ const { total_scans, unique_serials, by_date, by_country, by_device } =
   "total_interactions": 485,
   "conversion_rate": 0.32,
   "top_interaction_types": [
-    { "interaction_type": "click",     "count": 245 },
-    { "interaction_type": "share",     "count": 120 },
-    { "interaction_type": "call",      "count": 68 },
+    { "interaction_type": "click", "count": 245 },
+    { "interaction_type": "share", "count": 120 },
+    { "interaction_type": "call", "count": 68 },
     { "interaction_type": "form_submit", "count": 52 }
   ]
 }
@@ -143,36 +143,64 @@ const { total_scans, unique_serials, by_date, by_country, by_device } =
 
 **Purpose:** World/region map showing scan density.
 
-| Widget | Endpoint | Key Fields |
-|---|---|---|
+| Widget                      | Endpoint                           | Key Fields                                             |
+| --------------------------- | ---------------------------------- | ------------------------------------------------------ |
 | **Geo Heatmap (map tiles)** | `GET /scans/geo-heatmap?limit=500` | `[{city, state, country, latitude, longitude, count}]` |
 
 **Response:**
 
 ```json
 [
-  { "city": "Mumbai",    "state": "Maharashtra", "country": "India",       "latitude": 19.07, "longitude": 72.87, "count": 145 },
-  { "city": "Delhi",     "state": "Delhi",       "country": "India",       "latitude": 28.61, "longitude": 77.23, "count": 98 },
-  { "city": "Dubai",     "state": null,          "country": "UAE",         "latitude": 25.20, "longitude": 55.27, "count": 42 },
-  { "city": "New York",  "state": "New York",    "country": "United States","latitude": 40.71, "longitude": -74.0, "count": 31 }
+  {
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "country": "India",
+    "latitude": 19.07,
+    "longitude": 72.87,
+    "count": 145
+  },
+  {
+    "city": "Delhi",
+    "state": "Delhi",
+    "country": "India",
+    "latitude": 28.61,
+    "longitude": 77.23,
+    "count": 98
+  },
+  {
+    "city": "Dubai",
+    "state": null,
+    "country": "UAE",
+    "latitude": 25.2,
+    "longitude": 55.27,
+    "count": 42
+  },
+  {
+    "city": "New York",
+    "state": "New York",
+    "country": "United States",
+    "latitude": 40.71,
+    "longitude": -74.0,
+    "count": 31
+  }
 ]
 ```
 
 **Mapping library integration (Leaflet example):**
 
 ```javascript
-const points = await api.get('/analytics/scans/geo-heatmap', {
-  params: { date_from: '2026-06-01', limit: 500 }
+const points = await api.get("/analytics/scans/geo-heatmap", {
+  params: { date_from: "2026-06-01", limit: 500 },
 });
 
-points.forEach(p => {
+points.forEach((p) => {
   L.circleMarker([p.latitude, p.longitude], {
     radius: Math.min(p.count / 5, 20),
-    fillColor: '#3B82F6',
-    fillOpacity: 0.6
+    fillColor: "#3B82F6",
+    fillOpacity: 0.6,
   })
-  .bindPopup(`${p.city}, ${p.country}<br><b>${p.count} scans</b>`)
-  .addTo(map);
+    .bindPopup(`${p.city}, ${p.country}<br><b>${p.count} scans</b>`)
+    .addTo(map);
 });
 ```
 
@@ -182,39 +210,75 @@ points.forEach(p => {
 
 **Purpose:** Track device adoption — are users on mobile, desktop, or tablet?
 
-| Widget | Endpoint | Key Fields |
-|---|---|---|
+| Widget                                   | Endpoint                     | Key Fields                                   |
+| ---------------------------------------- | ---------------------------- | -------------------------------------------- |
 | **Device Timeline (stacked area chart)** | `GET /scans/device-timeline` | `[{date, mobile, desktop, tablet, unknown}]` |
 
 **Response:**
 
 ```json
 [
-  { "date": "2026-07-10", "mobile": 45, "desktop": 12, "tablet": 3, "unknown": 0 },
-  { "date": "2026-07-11", "mobile": 52, "desktop": 15, "tablet": 5, "unknown": 1 },
-  { "date": "2026-07-12", "mobile": 61, "desktop": 10, "tablet": 2, "unknown": 0 },
-  { "date": "2026-07-13", "mobile": 38, "desktop": 18, "tablet": 4, "unknown": 0 }
+  {
+    "date": "2026-07-10",
+    "mobile": 45,
+    "desktop": 12,
+    "tablet": 3,
+    "unknown": 0
+  },
+  {
+    "date": "2026-07-11",
+    "mobile": 52,
+    "desktop": 15,
+    "tablet": 5,
+    "unknown": 1
+  },
+  {
+    "date": "2026-07-12",
+    "mobile": 61,
+    "desktop": 10,
+    "tablet": 2,
+    "unknown": 0
+  },
+  {
+    "date": "2026-07-13",
+    "mobile": 38,
+    "desktop": 18,
+    "tablet": 4,
+    "unknown": 0
+  }
 ]
 ```
 
 **Chart.js stacked bar example:**
 
 ```javascript
-const timeline = await api.get('/analytics/scans/device-timeline');
+const timeline = await api.get("/analytics/scans/device-timeline");
 
 new Chart(ctx, {
-  type: 'bar',
+  type: "bar",
   data: {
-    labels: timeline.map(d => d.date),
+    labels: timeline.map((d) => d.date),
     datasets: [
-      { label: 'Mobile',  data: timeline.map(d => d.mobile),  backgroundColor: '#3B82F6' },
-      { label: 'Desktop', data: timeline.map(d => d.desktop), backgroundColor: '#10B981' },
-      { label: 'Tablet',  data: timeline.map(d => d.tablet),  backgroundColor: '#F59E0B' },
-    ]
+      {
+        label: "Mobile",
+        data: timeline.map((d) => d.mobile),
+        backgroundColor: "#3B82F6",
+      },
+      {
+        label: "Desktop",
+        data: timeline.map((d) => d.desktop),
+        backgroundColor: "#10B981",
+      },
+      {
+        label: "Tablet",
+        data: timeline.map((d) => d.tablet),
+        backgroundColor: "#F59E0B",
+      },
+    ],
   },
   options: {
-    scales: { x: { stacked: true }, y: { stacked: true } }
-  }
+    scales: { x: { stacked: true }, y: { stacked: true } },
+  },
 });
 ```
 
@@ -224,10 +288,10 @@ new Chart(ctx, {
 
 **Purpose:** Drill-down table — see individual scan records with all enriched data.
 
-| Widget | Endpoint | Key Fields |
-|---|---|---|
-| **Scan Events Table** | `GET /scans?page=1&page_size=50` | `events[]`, `pagination` |
-| **Filters** | Query params | `serial_number`, `date_from`, `date_to`, `product_item_id` |
+| Widget                | Endpoint                         | Key Fields                                                 |
+| --------------------- | -------------------------------- | ---------------------------------------------------------- |
+| **Scan Events Table** | `GET /scans?page=1&page_size=50` | `events[]`, `pagination`                                   |
+| **Filters**           | Query params                     | `serial_number`, `date_from`, `date_to`, `product_item_id` |
 
 **Response:**
 
@@ -274,15 +338,15 @@ new Chart(ctx, {
 
 **Table columns to display:**
 
-| Column | Field | Notes |
-|---|---|---|
-| Time | `scan_timestamp` | Format: `Jul 13, 2026 4:57 PM` |
-| Serial | `serial_number` | Link to product detail |
-| CTA | `cta_action` | Badge: `view_product`, `visit_website`, etc. |
-| Device | `os` / `browser` | Icon + text |
-| Location | `city`, `country` | Flag emoji + text |
-| Referrer | `referrer_url` | Truncated, link if present |
-| Details | `id` | Link to scan detail with interactions |
+| Column   | Field             | Notes                                        |
+| -------- | ----------------- | -------------------------------------------- |
+| Time     | `scan_timestamp`  | Format: `Jul 13, 2026 4:57 PM`               |
+| Serial   | `serial_number`   | Link to product detail                       |
+| CTA      | `cta_action`      | Badge: `view_product`, `visit_website`, etc. |
+| Device   | `os` / `browser`  | Icon + text                                  |
+| Location | `city`, `country` | Flag emoji + text                            |
+| Referrer | `referrer_url`    | Truncated, link if present                   |
+| Details  | `id`              | Link to scan detail with interactions        |
 
 ---
 
@@ -290,11 +354,11 @@ new Chart(ctx, {
 
 **Purpose:** Admin page to configure which CTA buttons appear on each product's QR landing page.
 
-| Action | Endpoint |
-|---|---|
-| List CTAs | `GET /products/{productId}/ctas` |
-| Add CTA | `POST /products/{productId}/ctas` |
-| Edit CTA | `PUT /products/{productId}/ctas/{ctaId}` |
+| Action     | Endpoint                                    |
+| ---------- | ------------------------------------------- |
+| List CTAs  | `GET /products/{productId}/ctas`            |
+| Add CTA    | `POST /products/{productId}/ctas`           |
+| Edit CTA   | `PUT /products/{productId}/ctas/{ctaId}`    |
 | Remove CTA | `DELETE /products/{productId}/ctas/{ctaId}` |
 
 **CTA Config Object:**
@@ -338,8 +402,8 @@ All summary/analytics endpoints support `date_from` and `date_to` (ISO 8601):
 const from = new Date(Date.now() - 30 * 86400000).toISOString();
 const to = new Date().toISOString();
 
-const summary = await api.get('/analytics/scans/summary', {
-  params: { date_from: from, date_to: to }
+const summary = await api.get("/analytics/scans/summary", {
+  params: { date_from: from, date_to: to },
 });
 ```
 
@@ -353,7 +417,7 @@ const useAnalytics = (endpoint, params, interval = 60000) => {
 
   useEffect(() => {
     const fetch = () => api.get(endpoint, { params }).then(setData);
-    fetch();                    // initial load
+    fetch(); // initial load
     const timer = setInterval(fetch, interval);
     return () => clearInterval(timer);
   }, [endpoint, JSON.stringify(params)]);
@@ -362,23 +426,26 @@ const useAnalytics = (endpoint, params, interval = 60000) => {
 };
 
 // Usage
-const summary = useAnalytics('/analytics/scans/summary', { date_from, date_to });
+const summary = useAnalytics("/analytics/scans/summary", {
+  date_from,
+  date_to,
+});
 ```
 
 ### 4.3 Error Handling
 
 ```javascript
 try {
-  const data = await api.get('/analytics/scans/summary');
+  const data = await api.get("/analytics/scans/summary");
 } catch (error) {
   if (error.response?.status === 401) {
     // Token expired — redirect to login
-    router.push('/login');
-  } else if (error.response?.data?.code === 'FEATURE_DISABLED') {
+    router.push("/login");
+  } else if (error.response?.data?.code === "FEATURE_DISABLED") {
     // Analytics module not enabled for this org
-    showBanner('Analytics module is not enabled. Contact your administrator.');
+    showBanner("Analytics module is not enabled. Contact your administrator.");
   } else {
-    showToast('Failed to load analytics. Please try again.');
+    showToast("Failed to load analytics. Please try again.");
   }
 }
 ```
@@ -407,7 +474,7 @@ When an org has no scan data yet:
 ```typescript
 // services/analyticsApi.ts
 
-const BASE = '/api/v1/analytics';
+const BASE = "/api/v1/analytics";
 
 interface DateRange {
   date_from?: string;
@@ -440,11 +507,13 @@ export const analyticsApi = {
   },
 
   // ── Scan Log ──────────────────────────────────────────────
-  getScans(params?: DateRange & {
-    page?: number;
-    page_size?: number;
-    serial_number?: string;
-  }) {
+  getScans(
+    params?: DateRange & {
+      page?: number;
+      page_size?: number;
+      serial_number?: string;
+    },
+  ) {
     return api.get(`${BASE}/scans`, { params });
   },
 
@@ -461,7 +530,11 @@ export const analyticsApi = {
     return api.post(`${BASE}/products/${productId}/ctas`, data);
   },
 
-  updateCTAConfig(productId: string, ctaId: string, data: Partial<CTAConfigInput>) {
+  updateCTAConfig(
+    productId: string,
+    ctaId: string,
+    data: Partial<CTAConfigInput>,
+  ) {
     return api.put(`${BASE}/products/${productId}/ctas/${ctaId}`, data);
   },
 
@@ -532,14 +605,14 @@ export const analyticsApi = {
 
 ## 7. API Call Summary Per Dashboard Load
 
-| Dashboard Page | APIs Called | Total Requests |
-|---|---|---|
-| Overview | `/scans/summary` | **1** |
-| CTA Performance | `/scans/cta-breakdown` + `/scans/interaction-funnel` | **2** |
-| Geo Heatmap | `/scans/geo-heatmap` | **1** |
-| Device Timeline | `/scans/device-timeline` | **1** |
-| Scan Log | `/scans` (+ `/scans/{id}/interactions` on row click) | **1-2** |
-| CTA Config (Admin) | `/products/{pid}/ctas` (list), POST/PUT/DELETE on action | **1-2** |
+| Dashboard Page     | APIs Called                                              | Total Requests |
+| ------------------ | -------------------------------------------------------- | -------------- |
+| Overview           | `/scans/summary`                                         | **1**          |
+| CTA Performance    | `/scans/cta-breakdown` + `/scans/interaction-funnel`     | **2**          |
+| Geo Heatmap        | `/scans/geo-heatmap`                                     | **1**          |
+| Device Timeline    | `/scans/device-timeline`                                 | **1**          |
+| Scan Log           | `/scans` (+ `/scans/{id}/interactions` on row click)     | **1-2**        |
+| CTA Config (Admin) | `/products/{pid}/ctas` (list), POST/PUT/DELETE on action | **1-2**        |
 
 **Recommended:** Load all summary endpoints in parallel on dashboard mount:
 

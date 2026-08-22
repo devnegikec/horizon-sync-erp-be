@@ -2,11 +2,9 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
-from app.models.item import Item
 
 
 class AsnOrderRepository:
@@ -55,7 +53,7 @@ class AsnOrderRepository:
         status: str | None = None,
         warehouse_id: UUID | None = None,
         search: str | None = None,
-        sort_by: str = "order_date",
+        sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[AsnOrder], int]:
         q = (
@@ -69,12 +67,9 @@ class AsnOrderRepository:
         if status is not None:
             q = q.filter(AsnOrder.status == status)
         if warehouse_id is not None:
-            q = q.filter(
-                or_(
-                    AsnOrder.warehouse_id_from == warehouse_id,
-                    AsnOrder.warehouse_id_to == warehouse_id,
-                )
-            )
+            # Filter by target (to) warehouse only — the warehouse a user
+            # selects is the one receiving the goods.
+            q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
         if search:
             t = f"%{search}%"
             q = q.filter(AsnOrder.asn_order_no.ilike(t))
@@ -97,9 +92,81 @@ class AsnOrderRepository:
         self.db.commit()
 
     def update_item_delivered_qty(self, item_id: UUID, qty_to_add) -> None:
-        item = (
-            self.db.query(AsnOrderItem).filter(AsnOrderItem.id == item_id).first()
-        )
+        item = self.db.query(AsnOrderItem).filter(AsnOrderItem.id == item_id).first()
         if item:
             item.delivered_qty += qty_to_add
             self.db.commit()
+
+    def get_receiving_summary(self, asn_order_id: UUID) -> list[dict]:
+        """Get aggregated receiving data per ASN line item across all linked slips.
+
+        Returns list of dicts with keys:
+            asn_item_id, item_id, sku, item_name, expected_qty,
+            accepted_qty, rejected_qty, pending_qty
+        """
+        from sqlalchemy import func
+
+        from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+
+        # Get ASN items
+        asn_items = (
+            self.db.query(AsnOrderItem)
+            .filter(AsnOrderItem.asn_order_id == asn_order_id)
+            .all()
+        )
+
+        if not asn_items:
+            return []
+
+        # Get all receiving slips linked to this ASN
+        slip_ids = (
+            self.db.query(ReceivingSlip.id)
+            .filter(ReceivingSlip.asn_order_id == asn_order_id)
+            .subquery()
+        )
+
+        # Aggregate receiving data grouped by SKU (since ReceivingSlipItem uses SKU not item_id)
+        receiving_agg = {}
+        rows = (
+            self.db.query(
+                ReceivingSlipItem.sku,
+                ReceivingSlipItem.flag,
+                func.sum(ReceivingSlipItem.quantity).label("total_qty"),
+            )
+            .filter(ReceivingSlipItem.slip_id.in_(slip_ids))
+            .group_by(ReceivingSlipItem.sku, ReceivingSlipItem.flag)
+            .all()
+        )
+        for sku, flag, qty in rows:
+            if sku not in receiving_agg:
+                receiving_agg[sku] = {"accepted": 0, "rejected": 0}
+            if flag == "rejected":
+                receiving_agg[sku]["rejected"] += int(qty) if qty else 0
+            else:
+                # ok, short, damaged all count as "accepted" (physically present)
+                receiving_agg[sku]["accepted"] += int(qty) if qty else 0
+
+        result = []
+        for asn_item in asn_items:
+            sku = asn_item.item.sku if asn_item.item else None
+            agg = receiving_agg.get(sku, {"accepted": 0, "rejected": 0})
+            accepted = agg["accepted"]
+            rejected = agg["rejected"]
+            expected = int(asn_item.qty) if asn_item.qty else 0
+            pending = expected - accepted - rejected
+
+            result.append(
+                {
+                    "asn_item_id": str(asn_item.id),
+                    "item_id": str(asn_item.item_id),
+                    "sku": sku,
+                    "item_name": asn_item.item.name if asn_item.item else None,
+                    "expected_qty": expected,
+                    "accepted_qty": accepted,
+                    "rejected_qty": rejected,
+                    "pending_qty": max(0, pending),
+                    "over_qty": abs(pending) if pending < 0 else 0,
+                }
+            )
+
+        return result

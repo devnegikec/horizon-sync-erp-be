@@ -63,10 +63,15 @@ class PutAwayListItemResponse(BaseModel):
     id: str
     item_id: str
     sku: str | None = None
+    item_name: str | None = None
     batch_number: str | None = None
+    serial_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
     quantity: float
     bin_location_id: str | None = None
     bin_location_code: str | None = None
+    suggested_bin_code: str | None = None
     sort_order: int = 0
     status: str
     notes: str | None = None
@@ -85,9 +90,14 @@ class PutAwayListResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     receiving_slip_id: str | None = None
+    receiving_slip_no: str | None = None
     remarks: str | None = None
     warnings: list[str] | None = None
     assigned_to: str | None = None
+    worker_name: str | None = None
+    total_items: int = 0
+    completed_items: int = 0
+    pending_items: int = 0
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -105,8 +115,10 @@ class PutAwayListSummaryResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     receiving_slip_id: str | None = None
+    receiving_slip_no: str | None = None
     remarks: str | None = None
     assigned_to: str | None = None
+    worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0
     pending_items: int = 0
@@ -120,3 +132,73 @@ class PutAwayListListResponse(BaseModel):
 
     put_away_lists: list[PutAwayListSummaryResponse]
     pagination: PaginationMeta
+
+
+# ===========================================
+# DUAL-AXIS: QR-BASED PUT-AWAY (no slip/list)
+# ===========================================
+
+
+class CompletePutawayByQrRequest(BaseModel):
+    """Complete put-away by scanning the same QR from inbound."""
+
+    qr: str = Field(
+        ..., min_length=1, description="QR identifier from the physical item"
+    )
+    bin_id: UUID = Field(..., description="Bin location UUID to put away into")
+    quantity: int | None = Field(None, ge=1, description="Optional quantity override")
+    put_away_list_id: UUID | None = Field(
+        None, description="Optional direct put-away list to attach this item to"
+    )
+
+
+class ScanItemForPutawayRequest(BaseModel):
+    """Scan a QR during direct put-away and ensure a tracking row exists."""
+
+    qr: str = Field(
+        ...,
+        min_length=1,
+        description="Raw QR data (product URL, bare serial, or JSON)",
+    )
+    warehouse_id: UUID = Field(
+        ..., description="Warehouse UUID where the item is scanned"
+    )
+
+
+class CreateDirectPutAwayListRequest(BaseModel):
+    """Create an empty put-away list for a direct put-away session."""
+
+    warehouse_id: UUID = Field(
+        ..., description="Warehouse UUID for the direct put-away list"
+    )
+
+
+class TrackingItemResponse(BaseModel):
+    """Response for a scanned_item_tracking row (dual-axis state)."""
+
+    id: str
+    qr_identifier: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    receiving_status: str
+    putaway_status: str
+    bin_location_id: str | None = None
+    stock_entered: bool = False
+    rejection_reason: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class CompletePutawayResponse(BaseModel):
+    """Response after completing put-away by QR."""
+
+    id: str
+    qr_identifier: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    bin_location_id: str | None = None
+    putaway_status: str
+    stock_entered: bool = False
+    completed_at: str | None = None

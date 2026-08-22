@@ -11,19 +11,21 @@ import in router.py: `from app.api.v1.endpoints import admin` / `admin.router`.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints.admin.dashboard import router as dashboard_router
-from app.api.v1.endpoints.admin.dev import router as dev_router
-from app.api.v1.endpoints.admin.invoices import router as invoices_router
-from app.api.v1.endpoints.admin.organizations import router as organizations_router
-from app.api.v1.endpoints.admin.payments import router as payments_router
 from app.api.v1.endpoints.admin.activity_logs import router as activity_logs_router
 from app.api.v1.endpoints.admin.audit_logs import router as audit_logs_router
-from app.api.v1.endpoints.admin.users import router as users_router
 from app.api.v1.endpoints.admin.billing import router as billing_router
-from app.api.v1.endpoints.admin.payment_reminders import router as payment_reminders_router
+from app.api.v1.endpoints.admin.dashboard import router as dashboard_router
+from app.api.v1.endpoints.admin.dev import router as dev_router
+from app.api.v1.endpoints.admin.feature_flags import router as feature_flags_router
+from app.api.v1.endpoints.admin.invoices import router as invoices_router
+from app.api.v1.endpoints.admin.organizations import router as organizations_router
+from app.api.v1.endpoints.admin.payment_reminders import (
+    router as payment_reminders_router,
+)
+from app.api.v1.endpoints.admin.payments import router as payments_router
 from app.api.v1.endpoints.admin.roles import router as roles_router
 from app.api.v1.endpoints.admin.system import router as system_router
-from app.api.v1.endpoints.admin.feature_flags import router as feature_flags_router
+from app.api.v1.endpoints.admin.users import router as users_router
 
 # Main admin router — all admin sub-routers are included here.
 # This is the single router mounted at /admin in the main app router.
@@ -36,7 +38,9 @@ router.include_router(dev_router, tags=["Admin - Dev"])
 router.include_router(dashboard_router, prefix="/dashboard", tags=["Admin - Dashboard"])
 
 # Organizations
-router.include_router(organizations_router, prefix="/organizations", tags=["Admin - Organizations"])
+router.include_router(
+    organizations_router, prefix="/organizations", tags=["Admin - Organizations"]
+)
 
 # Users
 router.include_router(users_router, prefix="/users", tags=["Admin - Users"])
@@ -48,16 +52,24 @@ router.include_router(invoices_router, prefix="/invoices", tags=["Admin - Invoic
 router.include_router(payments_router, prefix="/payments", tags=["Admin - Payments"])
 
 # Activity Logs
-router.include_router(activity_logs_router, prefix="/activity-logs", tags=["Admin - Activity Logs"])
+router.include_router(
+    activity_logs_router, prefix="/activity-logs", tags=["Admin - Activity Logs"]
+)
 
 # Audit Logs
-router.include_router(audit_logs_router, prefix="/audit-logs", tags=["Admin - Audit Logs"])
+router.include_router(
+    audit_logs_router, prefix="/audit-logs", tags=["Admin - Audit Logs"]
+)
 
 # Billing
 router.include_router(billing_router, prefix="/billing", tags=["Admin - Billing"])
 
 # Payment Reminders
-router.include_router(payment_reminders_router, prefix="/payment-reminders", tags=["Admin - Payment Reminders"])
+router.include_router(
+    payment_reminders_router,
+    prefix="/payment-reminders",
+    tags=["Admin - Payment Reminders"],
+)
 
 # System Administration
 router.include_router(system_router, tags=["Admin - System"])

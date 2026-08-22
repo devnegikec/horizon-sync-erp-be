@@ -51,10 +51,10 @@ async def list_asn_orders(
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     ),
     warehouse_id: UUID | None = Query(
-        None, description="Filter where from OR to warehouse matches"
+        None, description="Filter by target (to) warehouse"
     ),
     search: str | None = Query(None, description="Search by ASN order number"),
-    sort_by: str = Query("order_date"),
+    sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
     db: Session = Depends(get_db),
@@ -246,3 +246,152 @@ async def upload_asn_csv(
         current_user.id,
     )
     return AsnOrderResponse.model_validate(data)
+
+
+# ------------------------------------------------------------------
+# ASN Receiving Summary (Mismatch View)
+# ------------------------------------------------------------------
+
+
+@router.get(
+    "/{asn_order_id}/receiving-summary",
+    summary="Get ASN receiving summary",
+    description="Compare ASN expected quantities against actual receipts across all linked receiving slips",
+)
+async def get_receiving_summary(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get a mismatch summary comparing ASN expected vs actually received.
+
+    Aggregates data from all receiving slips linked to this ASN order.
+    Shows per-line-item comparison of expected, accepted, rejected,
+    pending, and over-delivered quantities.
+
+    **Path Parameters:**
+    - **asn_order_id**: UUID of the ASN order
+
+    **Returns:**
+    - ASN-level summary with totals
+    - Per-line-item comparison
+    - List of linked receiving slips
+    """
+    from app.repositories.asn_order_repository import AsnOrderRepository
+    from app.repositories.receiving_slip_repository import ReceivingSlipRepository
+    from app.schemas.inbound import (
+        AsnLineItemReceivingSummary,
+        AsnReceivingSummaryResponse,
+        LinkedReceivingSlipSummary,
+    )
+
+    asn_repo = AsnOrderRepository(db)
+    slip_repo = ReceivingSlipRepository(db)
+
+    # Get ASN with items
+    asn = asn_repo.get_by_id_with_items(asn_order_id, current_user.organization_id)
+    if not asn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="ASN order not found"
+        )
+
+    # Get linked receiving slips
+    slips = slip_repo.get_slips_by_asn_order(asn_order_id, current_user.organization_id)
+
+    # Get per-line-item receiving summary
+    line_items_data = asn_repo.get_receiving_summary(asn_order_id)
+
+    # Build line item summaries with status
+    line_items = []
+    matched = partial = not_received = over = 0
+    for li in line_items_data:
+        expected = li["expected_qty"]
+        accepted = li["accepted_qty"]
+        rejected_q = li["rejected_qty"]
+        pending_q = li["pending_qty"]
+        over_q = li["over_qty"]
+
+        if expected == 0:
+            item_status = "not_applicable"
+        elif accepted == expected and rejected_q == 0:
+            item_status = "matched"
+            matched += 1
+        elif accepted + rejected_q > expected:
+            item_status = "over"
+            over += 1
+        elif accepted + rejected_q < expected:
+            if accepted + rejected_q == 0:
+                item_status = "not_received"
+                not_received += 1
+            else:
+                item_status = "partial"
+                partial += 1
+        else:
+            item_status = "matched"
+            matched += 1
+
+        line_items.append(
+            AsnLineItemReceivingSummary(
+                asn_item_id=li["asn_item_id"],
+                item_id=li["item_id"],
+                sku=li["sku"],
+                item_name=li["item_name"],
+                expected_qty=expected,
+                accepted_qty=accepted,
+                rejected_qty=rejected_q,
+                pending_qty=pending_q,
+                over_qty=over_q,
+                status=item_status,
+            )
+        )
+
+    # Build linked slip summaries
+    linked_slips = []
+    for slip in slips:
+        accepted_qty = 0
+        rejected_qty = 0
+        for item in slip.items:
+            if item.flag == "rejected":
+                rejected_qty += item.quantity
+            else:
+                accepted_qty += item.quantity
+
+        linked_slips.append(
+            LinkedReceivingSlipSummary(
+                slip_id=str(slip.id),
+                slip_number=slip.slip_number,
+                status=slip.status,
+                created_at=slip.created_at.isoformat() if slip.created_at else None,
+                total_accepted_qty=accepted_qty,
+                total_rejected_qty=rejected_qty,
+                total_items=len(slip.items),
+            )
+        )
+
+    # Compute totals
+    expected_total = sum(li["expected_qty"] for li in line_items_data)
+    accepted_total = sum(li["accepted_qty"] for li in line_items_data)
+    rejected_total = sum(li["rejected_qty"] for li in line_items_data)
+    pending_total = sum(li["pending_qty"] for li in line_items_data)
+    over_total = sum(li["over_qty"] for li in line_items_data)
+
+    return AsnReceivingSummaryResponse(
+        asn_order_id=str(asn.id),
+        asn_order_no=asn.asn_order_no,
+        asn_status=asn.status.value
+        if hasattr(asn.status, "value")
+        else str(asn.status),
+        expected_total_qty=expected_total,
+        accepted_total_qty=accepted_total,
+        rejected_total_qty=rejected_total,
+        pending_total_qty=pending_total,
+        over_total_qty=over_total,
+        total_line_items=len(line_items_data),
+        matched_items=matched,
+        partial_items=partial,
+        not_received_items=not_received,
+        over_items=over,
+        linked_slips=linked_slips,
+        line_items=line_items,
+    )

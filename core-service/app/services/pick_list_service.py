@@ -40,6 +40,10 @@ class SAPInvoiceItem:
     sku: str
     quantity: Decimal
     uom: str
+    per_case_qty: Decimal | None = None
+    case_qty: Decimal | None = None
+    loose_qty: Decimal | None = None
+    batch_no: str | None = None
 
 
 @dataclass
@@ -141,6 +145,7 @@ class PickListService:
         invoice_data: SAPInvoicePayload,
         org_id: UUID,
         worker_id: UUID | None = None,
+        assigned_to: UUID | None = None,
     ) -> PickList:
         """Create a pick list from a SAP invoice payload.
 
@@ -188,6 +193,7 @@ class PickListService:
             pick_date=datetime.now(UTC),
             reference_type="sap_invoice",
             invoice_reference=invoice_data.invoice_reference,
+            assigned_to=assigned_to,
             invoice_data={
                 "invoice_reference": invoice_data.invoice_reference,
                 "warehouse_id": str(invoice_data.warehouse_id),
@@ -197,6 +203,16 @@ class PickListService:
                         "sku": item.sku,
                         "quantity": str(item.quantity),
                         "uom": item.uom,
+                        "per_case_qty": str(item.per_case_qty)
+                        if item.per_case_qty is not None
+                        else None,
+                        "case_qty": str(item.case_qty)
+                        if item.case_qty is not None
+                        else None,
+                        "loose_qty": str(item.loose_qty)
+                        if item.loose_qty is not None
+                        else None,
+                        "batch_no": item.batch_no,
                     }
                     for item in invoice_data.items
                 ],
@@ -215,6 +231,10 @@ class PickListService:
                 qty=item.quantity,
                 picked_qty=Decimal("0"),
                 uom=item.uom,
+                per_case_qty=item.per_case_qty,
+                case_qty=item.case_qty,
+                loose_qty=item.loose_qty,
+                batch_no=item.batch_no,
                 sort_order=0,
             )
             self.db.add(pick_list_item)
@@ -303,7 +323,7 @@ class PickListService:
                 continue
 
             # Track whether we need to split across bins
-            allocations: list[tuple[UUID, Decimal]] = []
+            allocations: list[tuple[UUID, Decimal, str | None]] = []
 
             for bin_stock in bin_stocks:
                 if remaining_qty <= 0:
@@ -311,7 +331,9 @@ class PickListService:
 
                 available = Decimal(str(bin_stock.quantity_on_hand))
                 allocate_qty = min(remaining_qty, available)
-                allocations.append((bin_stock.bin_location_id, allocate_qty))
+                allocations.append(
+                    (bin_stock.bin_location_id, allocate_qty, bin_stock.batch_number)
+                )
                 remaining_qty -= allocate_qty
 
             if len(allocations) == 0:
@@ -319,14 +341,17 @@ class PickListService:
                 resolved_items.append(item)
             elif len(allocations) == 1:
                 # Single bin can fulfill the entire quantity
-                bin_location_id, _ = allocations[0]
+                bin_location_id, _, batch_number = allocations[0]
                 item.bin_location_id = bin_location_id
+                # Keep the packing-slip batch number; store the bin-stock serial(s)
+                # separately so the batch column matches the uploaded PDF.
+                item.serial_nos = [batch_number] if batch_number else None
                 resolved_items.append(item)
             else:
                 # Need to split across multiple bins
                 items_to_remove.append(item)
 
-                for bin_location_id, alloc_qty in allocations:
+                for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(allocations):
                     split_item = PickListItem(
                         organization_id=org_id,
                         pick_list_id=pick_list.id,
@@ -335,7 +360,13 @@ class PickListService:
                         qty=alloc_qty,
                         picked_qty=Decimal("0"),
                         uom=item.uom,
+                        # Case/loose breakdown belongs to the line as a whole;
+                        # carry it on the first split so it isn't duplicated.
+                        per_case_qty=item.per_case_qty if split_idx == 0 else None,
+                        case_qty=item.case_qty if split_idx == 0 else None,
+                        loose_qty=item.loose_qty if split_idx == 0 else None,
                         batch_no=item.batch_no,
+                        serial_nos=[batch_number] if batch_number else None,
                         bin_location_id=bin_location_id,
                         sort_order=0,
                     )
@@ -617,6 +648,22 @@ class PickListService:
         self.db.refresh(pick_list)
         return pick_list
 
+    def assign_worker(
+        self, pick_list_id: UUID, worker_id: UUID, org_id: UUID
+    ) -> PickList:
+        """Assign (or reassign) a worker to a pick list.
+
+        Requirements: worker assignment for pick lists.
+        """
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        pick_list.assigned_to = worker_id
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
     def _apply_routing_optimization(self, pick_list: PickList) -> None:
         """Apply RoutingOptimizer to sort pick list items by optimal traversal order.
 
@@ -680,6 +727,7 @@ class PickListService:
             "reference_type": pl.reference_type,
             "reference_id": pl.reference_id,
             "remarks": pl.remarks,
+            "assigned_to": pl.assigned_to,
             "completed_at": pl.completed_at,
             "created_by": pl.created_by,
             "updated_by": pl.updated_by,
@@ -695,6 +743,9 @@ class PickListService:
                     "qty": item.qty,
                     "picked_qty": item.picked_qty,
                     "uom": item.uom,
+                    "per_case_qty": item.per_case_qty,
+                    "case_qty": item.case_qty,
+                    "loose_qty": item.loose_qty,
                     "batch_no": item.batch_no,
                     "sort_order": item.sort_order,
                     "created_at": item.created_at,
@@ -765,6 +816,9 @@ class PickListService:
                 "qty": item.qty,
                 "picked_qty": item.picked_qty,
                 "uom": item.uom,
+                "per_case_qty": item.per_case_qty,
+                "case_qty": item.case_qty,
+                "loose_qty": item.loose_qty,
                 "batch_no": item.batch_no,
                 "sort_order": item.sort_order,
                 "created_at": item.created_at,
@@ -789,6 +843,7 @@ class PickListService:
             "reference_id": pl.reference_id,
             "reference": reference,
             "remarks": pl.remarks,
+            "assigned_to": pl.assigned_to,
             "completed_at": pl.completed_at,
             "created_by": pl.created_by,
             "updated_by": pl.updated_by,
@@ -808,6 +863,7 @@ class PickListService:
             "pick_date": pl.pick_date,
             "reference_type": pl.reference_type,
             "reference_id": pl.reference_id,
+            "assigned_to": pl.assigned_to,
             "items_count": len(pl.items) if pl.items else 0,
             "created_at": pl.created_at,
         }

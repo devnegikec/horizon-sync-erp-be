@@ -33,7 +33,7 @@ async def create_stock_entry(
     """Create a stock entry with optional line items."""
     svc = StockEntryService(db)
     e = svc.create(data, current_user.organization_id, current_user.id)
-    return stock_entry_to_response(e)
+    return stock_entry_to_response(e, db)
 
 
 @router.get("", response_model=StockEntryListResponse)
@@ -44,7 +44,7 @@ async def list_stock_entries(
     status: str | None = Query(None),
     from_warehouse_id: UUID | None = None,
     to_warehouse_id: UUID | None = None,
-    warehouse_id: UUID | None = Query(None, description="Filter where from OR to matches"),
+    warehouse_id: UUID | None = Query(None, description="Filter by target (to) warehouse"),
     search: str | None = None,
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -67,7 +67,7 @@ async def list_stock_entries(
         sort_order=sort_order,
     )
     return StockEntryListResponse(
-        stock_entries=[stock_entry_to_list_item(e) for e in items],
+        stock_entries=[stock_entry_to_list_item(e, db) for e in items],
         pagination=PaginationMeta(**pagination),
     )
 
@@ -81,7 +81,7 @@ async def get_stock_entry(
     """Get stock entry by ID including line items."""
     svc = StockEntryService(db)
     e = svc.get_by_id(entry_id, current_user.organization_id)
-    return stock_entry_to_response(e)
+    return stock_entry_to_response(e, db)
 
 
 @router.put("/{entry_id}", response_model=StockEntryResponse)
@@ -94,7 +94,7 @@ async def update_stock_entry(
     """Update stock entry header (draft only)."""
     svc = StockEntryService(db)
     e = svc.update(entry_id, data, current_user.organization_id, current_user.id)
-    return stock_entry_to_response(e)
+    return stock_entry_to_response(e, db)
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -173,7 +173,7 @@ async def submit_stock_entry(
     """
     svc = StockEntryService(db)
     e = svc.submit(entry_id, current_user.organization_id, current_user.id)
-    return stock_entry_to_response(e)
+    return stock_entry_to_response(e, db)
 
 
 @router.post("/{entry_id}/reprocess", response_model=StockEntryResponse)
@@ -192,4 +192,4 @@ async def reprocess_stock_entry(
     e = svc.reprocess_stock_levels(
         entry_id, current_user.organization_id, current_user.id
     )
-    return stock_entry_to_response(e)
+    return stock_entry_to_response(e, db)

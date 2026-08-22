@@ -14,6 +14,7 @@ class ItemPackagingUnitCreate(BaseModel):
     unit_name: str = Field(..., min_length=1, max_length=100, description="Name of the packaging unit (e.g. 'Box of 12')")
     qr_identifier: Optional[str] = Field(None, max_length=255, description="Optional unique QR identifier for this packaging unit")
     conversion_factor: Decimal = Field(..., gt=0, description="Number of base units (Eaches) in this packaging unit — must be > 0")
+    items_per_master_pack: Optional[int] = Field(None, gt=0, description="Items per master pack (used for QR master pack grouping)")
     length_mm: Optional[Decimal] = Field(None, ge=0, description="Length in millimetres")
     width_mm: Optional[Decimal] = Field(None, ge=0, description="Width in millimetres")
     height_mm: Optional[Decimal] = Field(None, ge=0, description="Height in millimetres")
@@ -35,6 +36,7 @@ class ItemPackagingUnitUpdate(BaseModel):
     unit_name: Optional[str] = Field(None, min_length=1, max_length=100)
     qr_identifier: Optional[str] = Field(None, max_length=255)
     conversion_factor: Optional[Decimal] = Field(None, gt=0)
+    items_per_master_pack: Optional[int] = Field(None, gt=0)
     length_mm: Optional[Decimal] = Field(None, ge=0)
     width_mm: Optional[Decimal] = Field(None, ge=0)
     height_mm: Optional[Decimal] = Field(None, ge=0)
@@ -61,6 +63,7 @@ class ItemPackagingUnitResponse(BaseModel):
     unit_name: str
     qr_identifier: Optional[str] = None
     conversion_factor: Decimal
+    items_per_master_pack: Optional[int] = None
     length_mm: Optional[Decimal] = None
     width_mm: Optional[Decimal] = None
     height_mm: Optional[Decimal] = None

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.authorization import (
     is_system_admin,
+    is_system_admin_or_owner,
     require_permission,
     validate_user_in_organization,
 )
@@ -346,7 +347,7 @@ async def update_role(
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -420,7 +421,7 @@ async def delete_role(
         )
 
         # Check if trying to delete system role
-        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
             logger.warning(
                 f"User {current_user.id} attempted to delete system role {role_id}"
             )
@@ -582,7 +583,7 @@ async def assign_permission_to_role(
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -681,7 +682,7 @@ async def remove_permission_from_role(
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -767,7 +768,7 @@ async def bulk_assign_permissions_to_role(
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
             logger.warning(
                 f"User {current_user.id} attempted to bulk modify system role {role_id}"
             )

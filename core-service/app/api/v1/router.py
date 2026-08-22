@@ -15,7 +15,8 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     campaigns,
-    cascade_qr,
+    capacity,
+    cascade,
     charge_templates,
     chart_of_accounts,
     chart_of_accounts_setup,
@@ -51,10 +52,12 @@ from app.api.v1.endpoints import (
     payments,
     pick_lists,
     public_marketing,
+    public_qr,
     purchase_orders,
     purchase_receipts,
     put_away,
     put_away_rules,
+    qr_activation,
     qr_credits,
     qr_product_settings,
     qr_products,
@@ -67,6 +70,7 @@ from app.api.v1.endpoints import (
     scan_events,
     serial_numbers,
     short_urls,
+    sku_endpoint,
     smart_picking,
     stock_entries,
     stock_entry_bulk_import,
@@ -124,6 +128,11 @@ api_router.include_router(
     warehouse_locations.router,
     prefix="/warehouse-locations",
     tags=["Warehouse Locations"],
+)
+api_router.include_router(
+    capacity.router,
+    prefix="/capacity",
+    tags=["Capacity"],
 )
 api_router.include_router(
     warehouse_users.router,
@@ -376,6 +385,13 @@ api_router.include_router(
     tags=["QR Products"],
 )
 
+# SKU Management module
+api_router.include_router(
+    sku_endpoint.router,
+    prefix="/sku",
+    tags=["SKU Management"],
+)
+
 # Landing Page Config (nested under /products/{productId}/landing-page)
 api_router.include_router(
     landing_pages.router,
@@ -432,13 +448,6 @@ api_router.include_router(
     tags=["Analytics"],
 )
 
-# Cascade / Hierarchical QR module
-api_router.include_router(
-    cascade_qr.router,
-    prefix="/cascade-qr",
-    tags=["Cascade QR"],
-)
-
 # QSeal module
 api_router.include_router(
     qseal.router,
@@ -480,3 +489,19 @@ api_router.include_router(
     prefix="/public",
     tags=["Public"],
 )
+
+api_router.include_router(
+    public_qr.router,
+    prefix="/public/qr",
+    tags=["Public QR Verification"],
+)
+
+
+# QR Activation module
+api_router.include_router(
+    qr_activation.router,
+    prefix="/qr-activation",
+    tags=["QR Activation"],
+)
+
+api_router.include_router(cascade.router, prefix="/cascade", tags=["Cascade"])

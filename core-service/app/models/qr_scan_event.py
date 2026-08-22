@@ -3,7 +3,16 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -33,7 +42,19 @@ class QRScanEvent(Base):
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
     country = Column(String(100), nullable=True)
+    street_address = Column(Text, nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # Public verification analytics. ``event_id`` is supplied by the landing
+    # page and makes retries/refreshes idempotent.
+    event_id = Column(UUID(as_uuid=True), nullable=True, unique=True, index=True)
+    verification_status = Column(String(40), nullable=True, index=True)
+    authentic = Column(Boolean, nullable=True)
+    qr_channel = Column(String(10), nullable=True)
+    ip_hash = Column(String(64), nullable=True)
+    is_bot = Column(Boolean, nullable=False, default=False)
+    location_source = Column(String(20), nullable=True)
+    location_accuracy_meters = Column(Integer, nullable=True)
 
     # ── Phase 1 enhancements ────────────────────────────────────────────
     user_agent_raw = Column(Text, nullable=True)
