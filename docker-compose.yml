@@ -1,6 +1,14 @@
-# Horizon Sync Backend - All Services
-# Run all microservices with: docker compose up -d
-# Run specific service: docker compose up -d identity-service
+# Horizon Sync Backend — Local stack (identity + core + database)
+#
+# A single local Postgres container hosts one 'railway' database — an exact
+# replica of the Railway deployment, where identity + core share the same DB.
+#
+# Switch between LOCAL and REMOTE database by changing DATABASE_URL in the
+# root .env file — no other change needed:
+#   LOCAL:  postgresql://horizon_user:horizon_pass@postgres:5432/railway
+#   REMOTE: postgresql://postgres:<password>@roundhouse.proxy.rlwy.net:12893/railway
+#
+# Start:  docker compose up -d --build
 
 services:
   # ===========================================
@@ -12,15 +20,15 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-horizon_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-horizon_pass}
-      POSTGRES_DB: ${DB_NAME:-postgres}
+      POSTGRES_DB: ${DB_NAME:-railway}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./scripts/init_databases.sql:/docker-entrypoint-initdb.d/01_init_databases.sql
+      - ./scripts/init_railway.sql:/docker-entrypoint-initdb.d/01_init_railway.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-railway}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,7 +61,7 @@ services:
     container_name: horizon_identity
     environment:
       PYTHONPATH: /app
-      DATABASE_URL:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       PYDEVD_DISABLE_FILE_VALIDATION: "1"
       DEBUG: ${DEBUG:-false}
@@ -95,7 +103,7 @@ services:
         echo 'Normalizing Identity Service alembic version...' &&
         python scripts/normalize_alembic_version.py &&
         echo 'Running Identity Service migrations...' &&
-        python -m alembic upgrade head &&
+        (python -m alembic upgrade head || echo 'WARNING: migrations had issues') ;
         echo 'Starting Identity Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
@@ -112,15 +120,18 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_core
     environment:
-      DATABASE_URL:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
-      IDENTITY_DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db
+      IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM_NAME: search:events
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_QR_QUEUE_NAME: qr-generation
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -131,6 +142,13 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
       SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
       BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_REGION: ${AWS_S3_REGION:-ap-south-1}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       - "8001:8001"
       - "5679:5679"
@@ -154,7 +172,7 @@ services:
         sleep 10 &&
         echo 'Running Core Service migrations...' &&
         python scripts/normalize_alembic_version.py &&
-        python -m alembic upgrade head &&
+        (python -m alembic upgrade heads || echo 'WARNING: migrations had issues') ;
         echo 'Starting Core Service with Debugger...' &&
         python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5679 -m uvicorn app.main:app --host 0.0.0.0 --port 8001
       "
@@ -162,72 +180,42 @@ services:
       - horizon_network
     restart: unless-stopped
 
-  # ===========================================
-  # SEARCH SERVICE (Unified Search API)
-  # ===========================================
-  search-service:
+  qr-worker:
     build:
-      context: ./search-service
+      context: ./core-service
       dockerfile: Dockerfile
-    container_name: horizon_search
+    container_name: horizon_qr_worker
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/search_db
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
-      DEBUG: ${DEBUG:-false}
-      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
-      IDENTITY_SERVICE_URL: http://identity-service:8000
-      CORE_SERVICE_URL: http://core-service:8001
-      SYNC_SERVICE_USERNAME: ${SYNC_SERVICE_USERNAME:-devendera.negi@gmail.com}
-      SYNC_SERVICE_PASSWORD: ${SYNC_SERVICE_PASSWORD:-Test@123}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
-      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
-      SEARCH_MAX_RESULTS: ${SEARCH_MAX_RESULTS:-1000}
-      SEARCH_DEFAULT_PAGE_SIZE: ${SEARCH_DEFAULT_PAGE_SIZE:-20}
-    ports:
-      - "8002:8002"
-      - "5680:5680"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_QR_QUEUE_NAME: qr-generation
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_REGION: ${AWS_S3_REGION:-ap-south-1}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      identity-service:
-        condition: service_started
       core-service:
         condition: service_started
     volumes:
-      - ./search-service/app:/app/app
-      - ./search-service/alembic:/app/alembic
-      - ./search-service/tests:/app/tests
+      - ./core-service/app:/app/app
     command: >
-      bash -c "
-        echo 'Waiting for dependencies...' &&
-        sleep 15 &&
-        echo 'Running Search Service migrations...' &&
-        python -m alembic upgrade head &&
-        echo 'Starting Search Service with Debugger...' &&
-        python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5680 -m uvicorn app.main:app --host 0.0.0.0 --port 8002
-      "
-    networks:
-      - horizon_network
-    restart: unless-stopped
-
-  # ===========================================
-  # API GATEWAY (Nginx — single port for ngrok)
-  # ===========================================
-  api-gateway:
-    build:
-      context: ./nginx-gateway
-      dockerfile: Dockerfile
-    container_name: horizon_gateway
-    ports:
-      - "9000:9000"
-    depends_on:
-      - identity-service
-      - core-service
-      - search-service
+      celery -A app.celery_app:celery_app worker
+      --loglevel=${LOG_LEVEL:-INFO}
+      --queues=qr-generation
+      --concurrency=${QR_WORKER_CONCURRENCY:-2}
     networks:
       - horizon_network
     restart: unless-stopped
