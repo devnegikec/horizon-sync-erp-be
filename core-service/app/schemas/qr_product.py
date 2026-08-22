@@ -88,7 +88,6 @@ class QRProductResponse(QRProductBase):
     updated_at: datetime
     # Linked inventory item (auto-created when the QR product is created)
     linked_item_id: UUID | None = None
-<<<<<<< HEAD
     # Items per master pack, resolved from the linked item's base packaging unit
     items_per_master_pack: int | None = None
 
@@ -126,9 +125,11 @@ class QRProductResponse(QRProductBase):
     images: list[str] | None = None
     tags: list[str] | None = None
     custom_fields: dict | None = None
-=======
     serial_prefix: str | None = None
->>>>>>> 7178735a4769458aa25c8353e9f215cfe0b9e019
+
+    # Items per master pack, resolved from the linked item's base packaging unit
+    items_per_master_pack: int | None = None
+    serial_prefix: str | None = None
 
     model_config = {"from_attributes": True}
 

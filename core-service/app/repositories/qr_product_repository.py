@@ -45,8 +45,8 @@ class QRProductRepository:
         search: str | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[QRProduct], int]:
-        q = self.db.query(QRProduct).options(joinedload(QRProduct.brand)).options(joinedload(QRProduct.serial_prefix_setting)
-        ).filter(
+        q = self.db.query(QRProduct).options(joinedload(QRProduct.brand)).options(joinedload(QRProduct.serial_prefix_setting))
+        .filter(
             QRProduct.organization_id == organization_id,
             QRProduct.deleted_at.is_(None),
         )
