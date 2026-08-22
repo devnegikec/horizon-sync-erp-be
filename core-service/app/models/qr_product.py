@@ -18,10 +18,24 @@ class QRProduct(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
+    shelf_life_setting_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("qr_product_settings.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    serial_prefix_setting_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("qr_product_settings.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
 
     name = Column(String(100), nullable=False)
     sku = Column(String(100), nullable=True)
     generic_name = Column(String(100), nullable=True)
+     # DEPRECATED — kept nullable for backward compatibility during migration.
+    # GTIN now lives on ProductSKU (each variant has its own barcode).
     gtin = Column(String(20), nullable=True)
     industry = Column(String(100), nullable=True)
     landing_page = Column(Text, nullable=True)
@@ -95,11 +109,33 @@ class QRProduct(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    shelf_life_setting = relationship(
+        "QRProductSetting", foreign_keys=[shelf_life_setting_id]
+    )
+    serial_prefix_setting = relationship(
+        "QRProductSetting", foreign_keys=[serial_prefix_setting_id]
+    )
+
+    @property
+    def serial_prefix(self) -> str | None:
+        """Return the prefix value used when generating block serials."""
+        return (
+            self.serial_prefix_setting.value
+            if self.serial_prefix_setting is not None
+            else None
+        )
+
+    # Convenience back-references — reachable via product → skus → qr_blocks/product_items
+    # Kept for backward compatibility with existing queries during migration.
     qr_blocks = relationship(
         "QRBlock", back_populates="product", cascade="all, delete-orphan"
     )
     product_items = relationship("ProductItem", back_populates="product")
     items = relationship("Item", back_populates="qr_product")
+
+    # SKUs are the direct children of a Product
+    skus = relationship("ProductSKU",back_populates="product",cascade="all, delete-orphan",)
+
 
     def __repr__(self):
         return f"<QRProduct(id={self.id}, name='{self.name}')>"

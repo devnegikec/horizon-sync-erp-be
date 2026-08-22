@@ -16,6 +16,7 @@ from app.utils.serial_generators import (
     build_qr_url,
     generate_r4dan,
     generate_r6dan,
+    generate_r8dan,
     sequential_s8dn,
     sequential_s10dn,
     sign_qr_item,
@@ -37,6 +38,19 @@ class TestGenerateR6DAN:
 
     def test_multiple_calls_produce_different_values(self):
         serials = {generate_r6dan() for _ in range(50)}
+        assert len(serials) > 1
+
+
+class TestGenerateR8DAN:
+    def test_length_is_8(self):
+        assert len(generate_r8dan()) == 8
+
+    def test_only_uppercase_and_digits(self):
+        serial = generate_r8dan()
+        assert all(c in ALPHANUMERIC for c in serial)
+
+    def test_multiple_calls_produce_different_values(self):
+        serials = {generate_r8dan() for _ in range(50)}
         assert len(serials) > 1
 
 
@@ -149,56 +163,36 @@ class TestSignQrItem:
 class TestBuildQrUrl:
     def test_url_format(self):
         url = build_qr_url(
-            org_short_code="acme",
-            domain="verify.example.com",
+            domain="horizon.ciphercode.ai",
             gtin="1234567890123",
             serial_number="ABC123",
             timestamp=1718000000000,
             signature="c2lnbmF0dXJl",
         )
         assert url == (
-            "https://acme.verify.example.com"
+            "https://horizon.ciphercode.ai"
             "/g/1234567890123/s/ABC123/1718000000000?c=c2lnbmF0dXJl"
         )
 
     def test_url_starts_with_https(self):
-        url = build_qr_url("org", "d.com", "gtin", "sn", 123, "sig")
+        url = build_qr_url("d.com", "gtin", "sn", 123, "sig")
         assert url.startswith("https://")
 
     def test_url_contains_all_components(self):
-        url = build_qr_url("myorg", "qr.io", "0012345", "XY99", 999, "abc123")
-        assert "myorg.qr.io" in url
+        url = build_qr_url("qr.io", "0012345", "XY99", 999, "abc123")
+        assert "qr.io" in url
         assert "/g/0012345/" in url
         assert "/s/XY99/" in url
         assert "/999?" in url
         assert "c=abc123" in url
 
-    def test_url_with_custom_base_url(self):
+    def test_url_percent_encodes_base64_signature_characters(self):
         url = build_qr_url(
-            org_short_code="acme",
-            domain="verify.example.com",
-            gtin="1234567890123",
-            serial_number="ABC123",
-            timestamp=1718000000000,
-            signature="c2lnbmF0dXJl",
-            base_url="https://app.horizonsync.com/verify",
-        )
-        assert url == (
-            "https://app.horizonsync.com/verify"
-            "/g/1234567890123/s/ABC123/1718000000000?c=c2lnbmF0dXJl"
+            "horizon.ciphercode.ai",
+            "0012345",
+            "XY99",
+            999,
+            "MEQC+ABC/DEF=",
         )
 
-    def test_custom_base_url_ignores_domain(self):
-        url = build_qr_url(
-            org_short_code="acme",
-            domain="verify.example.com",
-            gtin="gtin",
-            serial_number="SN",
-            timestamp=1,
-            signature="sig",
-            base_url="https://myfrontend.com",
-        )
-        # Should NOT contain the domain or org_short_code
-        assert "verify.example.com" not in url
-        assert "acme" not in url.split("/")[2]  # not in host
-        assert url == "https://myfrontend.com/g/gtin/s/SN/1?c=sig"
+        assert "c=MEQC%2BABC%2FDEF%3D" in url

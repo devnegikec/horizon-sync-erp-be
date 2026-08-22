@@ -1,11 +1,23 @@
 """QR Products API endpoints"""
 
+from datetime import datetime
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.qr_product import (
@@ -21,6 +33,7 @@ from app.schemas.qr_product import (
     QRBlockCreate,
     QRBlockResponse,
     QRProductCreate,
+    QRProductImageResponse,
     QRProductListResponse,
     QRProductResponse,
     QRProductUpdate,
@@ -28,9 +41,23 @@ from app.schemas.qr_product import (
     QRValidateResponse,
     ScanAnalyticsResponse,
 )
+from app.services.qr_block_queue import enqueue_qr_block
 from app.services.qr_product_service import QRProductService
+from app.services.storage_service import (
+    PRODUCT_IMAGE_CONTENT_TYPES,
+    delete_product_image,
+    read_product_image,
+    store_product_image,
+)
 
 router = APIRouter()
+
+
+def _stored_image_key(url: str | None) -> str | None:
+    marker = "/api/v1/qr-products/image-files/"
+    if not url or marker not in url:
+        return None
+    return url.split(marker, maxsplit=1)[1]
 
 
 # ── Products ──────────────────────────────────────────────────────────────────
@@ -75,6 +102,123 @@ async def list_qr_products(
     )
 
 
+@router.get(
+    "/image-files/{object_key:path}",
+    name="get_qr_product_image_file",
+    include_in_schema=False,
+)
+async def get_qr_product_image_file(object_key: str):
+    try:
+        data, content_type = read_product_image(object_key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product image not found",
+        ) from exc
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post(
+    "/{product_id}/images/{image_type}",
+    response_model=QRProductImageResponse,
+    summary="Upload or replace a Product image",
+)
+async def upload_qr_product_image(
+    product_id: UUID,
+    image_type: Literal["logo", "banner"],
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(require_permission("qr_product.update")),
+    db: Session = Depends(get_db),
+):
+    content_type = (file.content_type or "").lower()
+    if content_type not in PRODUCT_IMAGE_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PNG, JPEG, and WebP images are supported",
+        )
+
+    data = await file.read(settings.product_image_max_bytes + 1)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Image file is empty",
+        )
+    if len(data) > settings.product_image_max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds the configured maximum size",
+        )
+
+    svc = QRProductService(db)
+    svc.get_product(product_id, current_user.organization_id)
+    try:
+        object_key = store_product_image(
+            data,
+            content_type,
+            current_user.organization_id,
+            product_id,
+            image_type,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    image_url = str(
+        request.url_for("get_qr_product_image_file", object_key=object_key)
+    )
+    try:
+        _, previous_url = svc.update_product_image(
+            product_id,
+            image_type,
+            image_url,
+            current_user.organization_id,
+            current_user.id,
+        )
+    except Exception:
+        delete_product_image(object_key)
+        raise
+
+    previous_key = _stored_image_key(previous_url)
+    if previous_key:
+        delete_product_image(previous_key)
+    return QRProductImageResponse(image_type=image_type, url=image_url)
+
+
+@router.delete(
+    "/{product_id}/images/{image_type}",
+    response_model=QRProductImageResponse,
+    summary="Remove a Product image",
+)
+async def delete_qr_product_image(
+    product_id: UUID,
+    image_type: Literal["logo", "banner"],
+    current_user: CurrentUser = Depends(require_permission("qr_product.update")),
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    _, previous_url = svc.update_product_image(
+        product_id,
+        image_type,
+        None,
+        current_user.organization_id,
+        current_user.id,
+    )
+    previous_key = _stored_image_key(previous_url)
+    if previous_key:
+        delete_product_image(previous_key)
+    return QRProductImageResponse(image_type=image_type, url=None)
+
+
 # ── QR Blocks (literal paths — MUST be before /{product_id} routes) ───────────
 
 
@@ -87,14 +231,28 @@ async def list_qr_products(
 async def list_org_qr_blocks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None, min_length=1, max_length=100),
     status: Literal["pending", "in_progress", "completed", "failed"] | None = Query(None),
     product_id: UUID | None = Query(None),
+    qr_type: Literal[
+        "dynamic", "dual", "secure_code", "one_time"
+    ] | None = Query(None),
+    created_from: datetime | None = Query(None),
+    created_to: datetime | None = Query(None),
     current_user: CurrentUser = Depends(require_permission("qr_product.read")),
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
     blocks, pagination = svc.list_blocks_by_org(
-        current_user.organization_id, page, page_size, status, product_id
+        current_user.organization_id,
+        page,
+        page_size,
+        status,
+        product_id,
+        search,
+        qr_type,
+        created_from,
+        created_to,
     )
     return OrgBlockListResponse(
         blocks=[OrgBlockListItem(**b) for b in blocks],
@@ -106,7 +264,10 @@ async def list_org_qr_blocks(
     "/blocks/{block_id}",
     response_model=QRBlockResponse,
     summary="Get QR block detail",
-    description="Returns a single QR block with its current generation status. Poll this until status is 'completed' or 'failed'.",
+    description=(
+        "Returns a single QR block with generation status and an "
+        "organization-scoped QR activation summary."
+    ),
 )
 async def get_qr_block(
     block_id: UUID,
@@ -114,7 +275,33 @@ async def get_qr_block(
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
-    block = svc.get_block(block_id, current_user.organization_id)
+    block = svc.get_block_detail(block_id, current_user.organization_id)
+    return QRBlockResponse.model_validate(block)
+
+
+@router.post(
+    "/blocks/{block_id}/retry",
+    response_model=QRBlockResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry a failed QR block generation job",
+)
+async def retry_qr_block(
+    block_id: UUID,
+    current_user: CurrentUser = Depends(require_permission("qr_product.create")),
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    block = svc.retry_block_job(block_id, current_user.organization_id)
+    task_id = str(uuid4())
+    block = svc.assign_block_task(block.id, current_user.organization_id, task_id)
+    try:
+        enqueue_qr_block(block.id, current_user.organization_id, task_id)
+    except Exception as exc:
+        svc.fail_block_enqueue(block.id, current_user.organization_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="QR generation queue is temporarily unavailable",
+        ) from exc
     return QRBlockResponse.model_validate(block)
 
 
@@ -122,7 +309,8 @@ async def get_qr_block(
     "/blocks/{block_id}/download",
     summary="Download Excel file for a completed QR block",
     description=(
-        "Returns a signed GCS URL if available, otherwise streams the Excel file directly. "
+        "Returns a short-lived signed object-storage URL if available, otherwise "
+        "streams the Excel file directly. "
         "Returns 409 if the block is not yet completed."
     ),
 )
@@ -133,11 +321,11 @@ async def get_block_download_url(
 ):
     from io import BytesIO
 
-    from fastapi.responses import RedirectResponse, StreamingResponse
+    from fastapi.responses import StreamingResponse
 
     svc = QRProductService(db)
 
-    # Try signed URL first (GCS path stored on block)
+    # Prefer a private S3 artifact, while retaining the legacy stored URL path.
     try:
         signed_url, expires_at = svc.get_block_download_url(
             block_id, current_user.organization_id
@@ -195,6 +383,7 @@ async def list_product_items(
         "Public endpoint called when a consumer scans a QR code. "
         "Records the scan event and returns authenticity status."
     ),
+    deprecated=True,
 )
 async def validate_qr(
     req: QRValidateRequest,
@@ -213,6 +402,7 @@ async def validate_qr(
     response_model=AuthenticateResponse,
     summary="Authenticate a QR code via ECDSA signature",
     description="Public endpoint for cryptographic QR verification. No auth required.",
+    deprecated=True,
 )
 async def authenticate_qr(
     req: AuthenticateRequest,
@@ -298,9 +488,12 @@ async def delete_qr_product(
 @router.post(
     "/{product_id}/blocks",
     response_model=QRBlockResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Generate QR block",
-    description="Generate a batch of QR codes for a product. Checks monthly credit quota.",
+    description=(
+        "Validate and queue a QR generation batch. Credits are reserved until "
+        "the background job completes or fails."
+    ),
 )
 async def generate_qr_block(
     product_id: UUID,
@@ -309,9 +502,27 @@ async def generate_qr_block(
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
-    block = svc.generate_block(
+    block = svc.create_block_job(
         product_id, data, current_user.organization_id, current_user.id
     )
+    task_id = str(uuid4())
+    block = svc.assign_block_task(
+        block.id,
+        current_user.organization_id,
+        task_id,
+    )
+    try:
+        enqueue_qr_block(
+            block.id,
+            current_user.organization_id,
+            task_id,
+        )
+    except Exception as exc:
+        svc.fail_block_enqueue(block.id, current_user.organization_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="QR generation queue is temporarily unavailable",
+        ) from exc
     return QRBlockResponse.model_validate(block)
 
 

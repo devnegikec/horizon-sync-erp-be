@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     smtp_validate_certs: bool = True
 
     # CORS
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True
 
     # Rate Limiting

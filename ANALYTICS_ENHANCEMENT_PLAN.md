@@ -1,8 +1,18 @@
 # Analytics Enhancement Plan — QSeal QR Scan Analytics
 
-> **Status:** Planning
+> **Status:** Backend implemented; staging migration and frontend validation pending
 > **Strategy:** Enhance existing `qr_scan_events` + add `qr_scan_interactions` table
 > **Users:** Anonymous consumers scanning product QR codes
+
+## Implementation Status (2026-08-21)
+
+- Phases 1–4 are implemented in Core Service, including scan enrichment,
+  interaction persistence, and the four enhanced analytics endpoints.
+- CTA configuration endpoints and persistence are implemented as an extension
+  of the original optional Phase 5.
+- Alembic branches are merged by revision `070_merge_qr_analytics_heads`.
+- Focused backend analytics tests pass. Staging must still run
+  `alembic upgrade head` and complete a real public QSeal scan smoke test.
 
 ---
 
