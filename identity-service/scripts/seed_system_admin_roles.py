@@ -270,6 +270,7 @@ ROLE_DEFS = [
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_or_create_master_org(db: Session) -> Organization:
     """Find or create the master organization."""
     master_org = (
@@ -385,7 +386,9 @@ def _seed_roles(db: Session, master_org_id, perm_map: dict) -> dict:
 
     db.flush()
     print(f"  Roles: {roles_created} created, {roles_skipped} already existed")
-    print(f"  RolePermission links: {links_created} created, {links_skipped} already existed")
+    print(
+        f"  RolePermission links: {links_created} created, {links_skipped} already existed"
+    )
     return role_map
 
 
@@ -449,35 +452,283 @@ def _seed_org_level_permissions(db: Session) -> None:
     # (ResourceType, [ActionType], module)
     ORG_PERMISSION_DEFS: list[tuple[ResourceType, list[ActionType], str]] = [
         # ── Identity service resources ──────────────────────────────
-        (ResourceType.USER,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
-        (ResourceType.ORGANIZATION, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
-        (ResourceType.ROLE,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
-        (ResourceType.PERMISSION,   [ActionType.READ, ActionType.MANAGE], "identity"),
-        (ResourceType.INVITATION,   [ActionType.READ, ActionType.CREATE, ActionType.DELETE, ActionType.MANAGE], "identity"),
+        (
+            ResourceType.USER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "identity",
+        ),
+        (
+            ResourceType.ORGANIZATION,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "identity",
+        ),
+        (
+            ResourceType.ROLE,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "identity",
+        ),
+        (ResourceType.PERMISSION, [ActionType.READ, ActionType.MANAGE], "identity"),
+        (
+            ResourceType.INVITATION,
+            [ActionType.READ, ActionType.CREATE, ActionType.DELETE, ActionType.MANAGE],
+            "identity",
+        ),
         # ── Core service resources ──────────────────────────────────
-        (ResourceType.CUSTOMER,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.SUPPLIER,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.ITEM,           [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.ITEM_GROUP,     [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.WAREHOUSE,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.STOCK_ENTRY,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.BATCH,          [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.SERIAL,         [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.ASN_ORDER,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.PICK_LIST,      [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.QSEAL,          [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.QR_PRODUCT,     [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.QR_BLOCK,       [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.LANDING_PAGE,   [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.UOM,            [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.TAX_TEMPLATE,   [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.INVOICE,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.PAYMENT,        [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.SALES_ORDER,    [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.PURCHASE_ORDER, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.CHART_OF_ACCOUNT, [ActionType.READ, ActionType.CREATE, ActionType.UPDATE, ActionType.DELETE, ActionType.MANAGE], "core"),
-        (ResourceType.REPORT,         [ActionType.READ, ActionType.EXECUTE], "core"),
-        (ResourceType.SETTING,        [ActionType.READ, ActionType.UPDATE, ActionType.MANAGE], "core"),
+        (
+            ResourceType.CUSTOMER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.SUPPLIER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.ITEM,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.ITEM_GROUP,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.WAREHOUSE,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.STOCK_ENTRY,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.BATCH,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.SERIAL,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.ASN_ORDER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.PICK_LIST,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.QSEAL,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.QR_PRODUCT,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.QR_BLOCK,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.LANDING_PAGE,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.UOM,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.TAX_TEMPLATE,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.INVOICE,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.PAYMENT,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.SALES_ORDER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.PURCHASE_ORDER,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (
+            ResourceType.CHART_OF_ACCOUNT,
+            [
+                ActionType.READ,
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+                ActionType.MANAGE,
+            ],
+            "core",
+        ),
+        (ResourceType.REPORT, [ActionType.READ, ActionType.EXECUTE], "core"),
+        (
+            ResourceType.SETTING,
+            [ActionType.READ, ActionType.UPDATE, ActionType.MANAGE],
+            "core",
+        ),
     ]
 
     created = 0
@@ -512,31 +763,41 @@ def _seed_org_level_permissions(db: Session) -> None:
 
     # Ensure *. * wildcard exists with module="identity" (it's an auth concern)
     wildcard_code = "*.*"
-    existing_wildcard = db.query(Permission).filter(Permission.code == wildcard_code).first()
+    existing_wildcard = (
+        db.query(Permission).filter(Permission.code == wildcard_code).first()
+    )
     if not existing_wildcard:
-        db.add(Permission(
-            code=wildcard_code,
-            name="Full Access (Wildcard)",
-            description="Grants access to all resources and actions",
-            resource=ResourceType.ALL,
-            action=ActionType.MANAGE,
-            module="identity",
-            is_active=True,
-        ))
+        db.add(
+            Permission(
+                code=wildcard_code,
+                name="Full Access (Wildcard)",
+                description="Grants access to all resources and actions",
+                resource=ResourceType.ALL,
+                action=ActionType.MANAGE,
+                module="identity",
+                is_active=True,
+            )
+        )
         created += 1
     elif existing_wildcard.module == "platform":
         existing_wildcard.module = "identity"
         updated += 1
 
     db.flush()
-    print(f"  Org-level permissions: {created} created, {updated} updated (module fixed), {skipped} already correct")
+    print(
+        f"  Org-level permissions: {created} created, {updated} updated (module fixed), {skipped} already correct"
+    )
 
     # ── Cleanup: deactivate legacy "org.*" shorthand permissions ──────────────
     # The canonical form is "organization.*". Any "org.*" rows are duplicates.
-    legacy_org_perms = db.query(Permission).filter(
-        Permission.code.like("org.%"),
-        Permission.is_active == True,
-    ).all()
+    legacy_org_perms = (
+        db.query(Permission)
+        .filter(
+            Permission.code.like("org.%"),
+            Permission.is_active == True,
+        )
+        .all()
+    )
     cleaned = 0
     for legacy in legacy_org_perms:
         legacy.is_active = False
@@ -630,24 +891,53 @@ def _seed_wms_default_roles(db: Session) -> None:
 
     # Permission-code → Permission map for lookup
     perm_codes = [
-        "warehouse.read", "warehouse.create", "warehouse.update",
-        "warehouse.delete", "warehouse.manage",
-        "pick_list.read", "pick_list.create", "pick_list.update",
-        "pick_list.delete", "pick_list.manage",
-        "asn_order.read", "asn_order.create", "asn_order.update",
-        "asn_order.delete", "asn_order.manage",
-        "stock_entry.read", "stock_entry.create", "stock_entry.update",
-        "stock_entry.delete", "stock_entry.manage",
-        "item.read", "batch.read", "serial.read",
-        "qseal.read", "qseal.create", "qseal.update", "qseal.delete", "qseal.manage",
-        "qr_product.read", "qr_product.create", "qr_product.update",
-        "qr_product.delete", "qr_product.manage",
-        "qr_block.read", "qr_block.create", "qr_block.update",
-        "qr_block.delete", "qr_block.manage",
-        "landing_page.read", "landing_page.create",
-        "landing_page.update", "landing_page.delete",
+        "warehouse.read",
+        "warehouse.create",
+        "warehouse.update",
+        "warehouse.delete",
+        "warehouse.manage",
+        "pick_list.read",
+        "pick_list.create",
+        "pick_list.update",
+        "pick_list.delete",
+        "pick_list.manage",
+        "asn_order.read",
+        "asn_order.create",
+        "asn_order.update",
+        "asn_order.delete",
+        "asn_order.manage",
+        "stock_entry.read",
+        "stock_entry.create",
+        "stock_entry.update",
+        "stock_entry.delete",
+        "stock_entry.manage",
+        "item.read",
+        "batch.read",
+        "serial.read",
+        "qseal.read",
+        "qseal.create",
+        "qseal.update",
+        "qseal.delete",
+        "qseal.manage",
+        "qr_product.read",
+        "qr_product.create",
+        "qr_product.update",
+        "qr_product.delete",
+        "qr_product.manage",
+        "qr_block.read",
+        "qr_block.create",
+        "qr_block.update",
+        "qr_block.delete",
+        "qr_block.manage",
+        "landing_page.read",
+        "landing_page.create",
+        "landing_page.update",
+        "landing_page.delete",
         "landing_page.manage",
-        "uom.read", "uom.create", "uom.update", "uom.delete",
+        "uom.read",
+        "uom.create",
+        "uom.update",
+        "uom.delete",
         "tax_template.read",
     ]
     perm_map: dict[str, Permission] = {}
@@ -663,25 +953,53 @@ def _seed_wms_default_roles(db: Session) -> None:
             "description": "Full warehouse administration — global access to all warehouses, layout, inbound, put-away, outbound, gate, ASN, dispatches, and worker/device management",
             "hierarchy_level": 75,
             "permission_codes": [
-                "warehouse.read", "warehouse.create", "warehouse.update",
-                "warehouse.delete", "warehouse.manage",
-                "pick_list.read", "pick_list.create", "pick_list.update",
-                "pick_list.delete", "pick_list.manage",
-                "asn_order.read", "asn_order.create", "asn_order.update",
-                "asn_order.delete", "asn_order.manage",
-                "stock_entry.read", "stock_entry.create", "stock_entry.update",
-                "stock_entry.delete", "stock_entry.manage",
-                "item.read", "batch.read", "serial.read",
-                "qseal.read", "qseal.create", "qseal.update",
-                "qseal.delete", "qseal.manage",
-                "qr_product.read", "qr_product.create", "qr_product.update",
-                "qr_product.delete", "qr_product.manage",
-                "qr_block.read", "qr_block.create", "qr_block.update",
-                "qr_block.delete", "qr_block.manage",
-                "landing_page.read", "landing_page.create",
-                "landing_page.update", "landing_page.delete",
+                "warehouse.read",
+                "warehouse.create",
+                "warehouse.update",
+                "warehouse.delete",
+                "warehouse.manage",
+                "pick_list.read",
+                "pick_list.create",
+                "pick_list.update",
+                "pick_list.delete",
+                "pick_list.manage",
+                "asn_order.read",
+                "asn_order.create",
+                "asn_order.update",
+                "asn_order.delete",
+                "asn_order.manage",
+                "stock_entry.read",
+                "stock_entry.create",
+                "stock_entry.update",
+                "stock_entry.delete",
+                "stock_entry.manage",
+                "item.read",
+                "batch.read",
+                "serial.read",
+                "qseal.read",
+                "qseal.create",
+                "qseal.update",
+                "qseal.delete",
+                "qseal.manage",
+                "qr_product.read",
+                "qr_product.create",
+                "qr_product.update",
+                "qr_product.delete",
+                "qr_product.manage",
+                "qr_block.read",
+                "qr_block.create",
+                "qr_block.update",
+                "qr_block.delete",
+                "qr_block.manage",
+                "landing_page.read",
+                "landing_page.create",
+                "landing_page.update",
+                "landing_page.delete",
                 "landing_page.manage",
-                "uom.read", "uom.create", "uom.update", "uom.delete",
+                "uom.read",
+                "uom.create",
+                "uom.update",
+                "uom.delete",
                 "tax_template.read",
             ],
         },
@@ -691,24 +1009,50 @@ def _seed_wms_default_roles(db: Session) -> None:
             "description": "Warehouse manager for assigned warehouse(s) — inbound, put-away, outbound, picking, and ASN coordination",
             "hierarchy_level": 70,
             "permission_codes": [
-                "warehouse.read", "warehouse.update",
-                "pick_list.read", "pick_list.create", "pick_list.update",
-                "pick_list.delete", "pick_list.manage",
-                "asn_order.read", "asn_order.create", "asn_order.update",
-                "asn_order.delete", "asn_order.manage",
-                "stock_entry.read", "stock_entry.create", "stock_entry.update",
-                "stock_entry.delete", "stock_entry.manage",
-                "item.read", "batch.read", "serial.read",
-                "qseal.read", "qseal.create", "qseal.update",
-                "qseal.delete", "qseal.manage",
-                "qr_product.read", "qr_product.create", "qr_product.update",
-                "qr_product.delete", "qr_product.manage",
-                "qr_block.read", "qr_block.create", "qr_block.update",
-                "qr_block.delete", "qr_block.manage",
-                "landing_page.read", "landing_page.create",
-                "landing_page.update", "landing_page.delete",
+                "warehouse.read",
+                "warehouse.update",
+                "pick_list.read",
+                "pick_list.create",
+                "pick_list.update",
+                "pick_list.delete",
+                "pick_list.manage",
+                "asn_order.read",
+                "asn_order.create",
+                "asn_order.update",
+                "asn_order.delete",
+                "asn_order.manage",
+                "stock_entry.read",
+                "stock_entry.create",
+                "stock_entry.update",
+                "stock_entry.delete",
+                "stock_entry.manage",
+                "item.read",
+                "batch.read",
+                "serial.read",
+                "qseal.read",
+                "qseal.create",
+                "qseal.update",
+                "qseal.delete",
+                "qseal.manage",
+                "qr_product.read",
+                "qr_product.create",
+                "qr_product.update",
+                "qr_product.delete",
+                "qr_product.manage",
+                "qr_block.read",
+                "qr_block.create",
+                "qr_block.update",
+                "qr_block.delete",
+                "qr_block.manage",
+                "landing_page.read",
+                "landing_page.create",
+                "landing_page.update",
+                "landing_page.delete",
                 "landing_page.manage",
-                "uom.read", "uom.create", "uom.update", "uom.delete",
+                "uom.read",
+                "uom.create",
+                "uom.update",
+                "uom.delete",
                 "tax_template.read",
             ],
         },
@@ -719,9 +1063,12 @@ def _seed_wms_default_roles(db: Session) -> None:
             "hierarchy_level": 50,
             "permission_codes": [
                 "warehouse.read",
-                "pick_list.read", "pick_list.update",
+                "pick_list.read",
+                "pick_list.update",
                 "stock_entry.read",
-                "item.read", "batch.read", "serial.read",
+                "item.read",
+                "batch.read",
+                "serial.read",
             ],
         },
         {
@@ -730,8 +1077,11 @@ def _seed_wms_default_roles(db: Session) -> None:
             "description": "Manages advance stock notices (ASN) and inter-warehouse transfers — create, confirm, and track fulfillment",
             "hierarchy_level": 65,
             "permission_codes": [
-                "asn_order.read", "asn_order.create", "asn_order.update",
-                "asn_order.delete", "asn_order.manage",
+                "asn_order.read",
+                "asn_order.create",
+                "asn_order.update",
+                "asn_order.delete",
+                "asn_order.manage",
                 "warehouse.read",
                 "stock_entry.read",
                 "item.read",
@@ -788,13 +1138,18 @@ def _seed_wms_default_roles(db: Session) -> None:
                     links_skipped += 1
 
     db.flush()
-    print(f"  WMS default roles: {roles_created} created, {roles_skipped} already existed")
-    print(f"  WMS role-permission links: {links_created} created, {links_skipped} already existed")
+    print(
+        f"  WMS default roles: {roles_created} created, {roles_skipped} already existed"
+    )
+    print(
+        f"  WMS role-permission links: {links_created} created, {links_skipped} already existed"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def seed_system_admin_roles():
     """Run the full seed process."""

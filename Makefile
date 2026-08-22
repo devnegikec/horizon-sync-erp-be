@@ -98,6 +98,20 @@ up-core:
 	docker compose up -d postgres identity-service core-service
 
 # ===========================================
+# Remote DB (Railway) - no local postgres/redis
+# Requires DATABASE_URL + SECRET_KEY in root .env
+# ===========================================
+
+up-remote:
+	docker-compose -f docker-compose.remote.yml up -d --build
+
+down-remote:
+	docker-compose -f docker-compose.remote.yml down
+
+logs-remote:
+	docker-compose -f docker-compose.remote.yml logs -f
+
+# ===========================================
 # Testing (Docker)
 # ===========================================
 

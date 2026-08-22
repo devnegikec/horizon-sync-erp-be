@@ -90,7 +90,9 @@ class TestAddStockTriggersCapacityRefresh:
         self, db_session, bin_stock_service, org_id, warehouse_id, item_id
     ):
         _create_warehouse(db_session, org_id, warehouse_id)
-        bin_loc = _create_bin(db_session, org_id, warehouse_id, "BIN-01", max_volume_cc=100000)
+        bin_loc = _create_bin(
+            db_session, org_id, warehouse_id, "BIN-01", max_volume_cc=100000
+        )
         _create_base_packaging_unit(db_session, org_id, item_id)
         db_session.commit()
 
@@ -110,7 +112,9 @@ class TestAddStockTriggersCapacityRefresh:
         self, db_session, bin_stock_service, org_id, warehouse_id, item_id
     ):
         _create_warehouse(db_session, org_id, warehouse_id)
-        bin_loc = _create_bin(db_session, org_id, warehouse_id, "BIN-01", max_volume_cc=100000)
+        bin_loc = _create_bin(
+            db_session, org_id, warehouse_id, "BIN-01", max_volume_cc=100000
+        )
         _create_base_packaging_unit(db_session, org_id, item_id)
         db_session.commit()
 

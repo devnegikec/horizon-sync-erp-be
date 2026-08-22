@@ -44,7 +44,9 @@ async def list_stock_entries(
     status: str | None = Query(None),
     from_warehouse_id: UUID | None = None,
     to_warehouse_id: UUID | None = None,
-    warehouse_id: UUID | None = Query(None, description="Filter by target (to) warehouse"),
+    warehouse_id: UUID | None = Query(
+        None, description="Filter by target (to) warehouse"
+    ),
     search: str | None = None,
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),

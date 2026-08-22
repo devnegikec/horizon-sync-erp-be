@@ -103,9 +103,7 @@ def compute_bin_occupancy(
     use_weight: bool = True,
 ) -> tuple[Decimal, Decimal]:
     """Return (occupied_m3, occupied_kg) for one bin."""
-    row = db.execute(
-        _BIN_OCCUPANCY_SQL, {"bin_id": _uuid_bind(db, bin_id)}
-    ).fetchone()
+    row = db.execute(_BIN_OCCUPANCY_SQL, {"bin_id": _uuid_bind(db, bin_id)}).fetchone()
     if row is None:
         return Decimal("0"), Decimal("0")
     mm3 = Decimal(str(row[0]))

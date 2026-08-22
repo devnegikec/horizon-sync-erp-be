@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.main import app
-from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
 

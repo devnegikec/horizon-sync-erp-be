@@ -22,20 +22,20 @@ The system must answer three questions:
 
 ### Functional requirements
 
-| ID | Requirement | Priority |
-|---|---|---|
-| FR-1 | Compute occupied **volume (m³), weight (kg), and pallet positions** per warehouse from live bin stock | P0 |
-| FR-2 | Roll capacity up the existing location hierarchy (Bin → Level → Bay → Aisle → Zone → Warehouse) | P0 |
-| FR-3 | Configure warehouse-level physical capacity: usable volume, max weight, pallet positions, utilization factor, thresholds | P0 |
-| FR-4 | Track utilization per dimension and report the **binding** dimension | P0 |
-| FR-5 | Snapshot daily utilization (volume/weight/pallet + %) for history/trending | P1 |
-| FR-6 | Build a **time-phased capacity calendar** for inbound (ASN/PO expected arrivals) and outbound (pick lists/dispatch) | P0 |
-| FR-7 | Check **receivable-on-date** for an inbound delivery (dock slot + free cube + flow) | P0 |
-| FR-8 | Estimate **available-to-pick date** after receipt using the receiving→QC→putaway lead time | P1 |
-| FR-9 | Raise **alerts** when utilization crosses configured thresholds (e.g. 80% / 90%) or a day's inbound exceeds dock capacity | P1 |
-| FR-10 | Recommend next open date / split shipment / cross-dock when a delivery does not fit | P2 |
-| FR-11 | Expose capacity + calendar via REST endpoints and (optionally) Redis real-time events | P0/P2 |
-| FR-12 | All computations tenant-scoped by `organization_id` | P0 |
+| ID    | Requirement                                                                                                               | Priority |
+| ----- | ------------------------------------------------------------------------------------------------------------------------- | -------- |
+| FR-1  | Compute occupied **volume (m³), weight (kg), and pallet positions** per warehouse from live bin stock                     | P0       |
+| FR-2  | Roll capacity up the existing location hierarchy (Bin → Level → Bay → Aisle → Zone → Warehouse)                           | P0       |
+| FR-3  | Configure warehouse-level physical capacity: usable volume, max weight, pallet positions, utilization factor, thresholds  | P0       |
+| FR-4  | Track utilization per dimension and report the **binding** dimension                                                      | P0       |
+| FR-5  | Snapshot daily utilization (volume/weight/pallet + %) for history/trending                                                | P1       |
+| FR-6  | Build a **time-phased capacity calendar** for inbound (ASN/PO expected arrivals) and outbound (pick lists/dispatch)       | P0       |
+| FR-7  | Check **receivable-on-date** for an inbound delivery (dock slot + free cube + flow)                                       | P0       |
+| FR-8  | Estimate **available-to-pick date** after receipt using the receiving→QC→putaway lead time                                | P1       |
+| FR-9  | Raise **alerts** when utilization crosses configured thresholds (e.g. 80% / 90%) or a day's inbound exceeds dock capacity | P1       |
+| FR-10 | Recommend next open date / split shipment / cross-dock when a delivery does not fit                                       | P2       |
+| FR-11 | Expose capacity + calendar via REST endpoints and (optionally) Redis real-time events                                     | P0/P2    |
+| FR-12 | All computations tenant-scoped by `organization_id`                                                                       | P0       |
 
 ### Non-functional requirements
 
@@ -51,21 +51,21 @@ The system must answer three questions:
 
 The codebase already contains a large part of the machinery. This design **reuses it rather than replacing it**.
 
-| Concern | Existing asset | Status |
-|---|---|---|
-| Location hierarchy | `WarehouseLocation` (`zone→aisle→bay→level→bin`), `WarehouseFloorPlan` | ✅ implemented |
-| Bin physical limits | `WarehouseLocation.max_volume_cc`, `max_weight_grams` (nullable = unconstrained) | ✅ implemented |
-| SKU dimensions | `ItemPackagingUnit` (`length_mm`, `width_mm`, `height_mm`, `weight_grams`, `conversion_factor`, `is_base_unit`) | ✅ implemented |
-| Volumetric bin assignment | `VolumetricAssignmentService` (putaway-time volume/weight check via SQL CTE) | ✅ implemented |
-| Capacity rollup | `CapacityService` (ancestor `total_capacity` / `available_capacity` + optimistic locking) | ⚠️ unit-based only |
-| Per-bin occupancy | `BinStockLevel` (`quantity_on_hand`, batch, expiry) | ✅ implemented |
-| Item/warehouse stock | `StockLevel` (`on_hand`, `reserved`, `available`) | ✅ implemented |
-| Reservation semantics | `SmartPickingService` (`reserved += qty`, `available -= qty`; dispatch decrements both) | ✅ implemented |
-| Inbound signal | `AsnOrder` (`warehouse_id_to`, `delivery_date`, status) + `AsnOrderItem` (`qty`, `delivered_qty`) | ✅ data exists, unused for capacity |
-| Outbound signal | `PickList` (`pick_date`) + `PickListItem` (`qty`, `picked_qty`), `DispatchRecord` (`dispatched_at`) | ✅ data exists, unused for capacity |
-| Scheduled tasks | `app/tasks/billing_automation.py` (standalone function + cron pattern) | ✅ pattern exists |
-| Real-time events | `app/core/redis_pubsub.py` (3D warehouse events) | ✅ pattern exists |
-| Warehouse master | `Warehouse` (`total_capacity` Integer, `capacity_uom` String) | ❌ no cube/weight/pallet/dock |
+| Concern                   | Existing asset                                                                                                  | Status                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Location hierarchy        | `WarehouseLocation` (`zone→aisle→bay→level→bin`), `WarehouseFloorPlan`                                          | ✅ implemented                      |
+| Bin physical limits       | `WarehouseLocation.max_volume_cc`, `max_weight_grams` (nullable = unconstrained)                                | ✅ implemented                      |
+| SKU dimensions            | `ItemPackagingUnit` (`length_mm`, `width_mm`, `height_mm`, `weight_grams`, `conversion_factor`, `is_base_unit`) | ✅ implemented                      |
+| Volumetric bin assignment | `VolumetricAssignmentService` (putaway-time volume/weight check via SQL CTE)                                    | ✅ implemented                      |
+| Capacity rollup           | `CapacityService` (ancestor `total_capacity` / `available_capacity` + optimistic locking)                       | ⚠️ unit-based only                  |
+| Per-bin occupancy         | `BinStockLevel` (`quantity_on_hand`, batch, expiry)                                                             | ✅ implemented                      |
+| Item/warehouse stock      | `StockLevel` (`on_hand`, `reserved`, `available`)                                                               | ✅ implemented                      |
+| Reservation semantics     | `SmartPickingService` (`reserved += qty`, `available -= qty`; dispatch decrements both)                         | ✅ implemented                      |
+| Inbound signal            | `AsnOrder` (`warehouse_id_to`, `delivery_date`, status) + `AsnOrderItem` (`qty`, `delivered_qty`)               | ✅ data exists, unused for capacity |
+| Outbound signal           | `PickList` (`pick_date`) + `PickListItem` (`qty`, `picked_qty`), `DispatchRecord` (`dispatched_at`)             | ✅ data exists, unused for capacity |
+| Scheduled tasks           | `app/tasks/billing_automation.py` (standalone function + cron pattern)                                          | ✅ pattern exists                   |
+| Real-time events          | `app/core/redis_pubsub.py` (3D warehouse events)                                                                | ✅ pattern exists                   |
+| Warehouse master          | `Warehouse` (`total_capacity` Integer, `capacity_uom` String)                                                   | ❌ no cube/weight/pallet/dock       |
 
 ### Identified gaps
 
@@ -81,15 +81,16 @@ The codebase already contains a large part of the machinery. This design **reuse
 
 These encode the corrections agreed during review:
 
-1. **Capacity is multi-dimensional.** Track volume, weight, and pallet positions independently; report the *binding* one:
+1. **Capacity is multi-dimensional.** Track volume, weight, and pallet positions independently; report the _binding_ one:
    $$\text{utilization} = \max(\text{util}_{volume},\ \text{util}_{weight},\ \text{util}_{pallet})$$
 
 2. **Three stock states are not the same.**
-   - **On-hand** → occupies space now.
-   - **Reserved** → still on-hand (a subset), occupies space now — *never add again*.
-   - **In-transit** → not in the warehouse → goes into the *future* inbound calendar, not current occupancy.
 
-3. **Storage vs flow are separate.** Storage = cube/weight/pallet. Flow = dock, receiving, putaway, staging throughput. Staging is modeled as *slots × turnover*, not a volume bucket:
+   - **On-hand** → occupies space now.
+   - **Reserved** → still on-hand (a subset), occupies space now — _never add again_.
+   - **In-transit** → not in the warehouse → goes into the _future_ inbound calendar, not current occupancy.
+
+3. **Storage vs flow are separate.** Storage = cube/weight/pallet. Flow = dock, receiving, putaway, staging throughput. Staging is modeled as _slots × turnover_, not a volume bucket:
    $$\text{staging throughput} = \frac{\text{staging slots}}{\text{avg dwell time (days)}}$$
 
 4. **Capacity for scheduling is time-phased.** A single "available" number is insufficient; use a daily calendar:
@@ -110,20 +111,20 @@ These encode the corrections agreed during review:
 
 **`warehouses_extended`** (model `Warehouse`) — add operational capacity fields:
 
-| Column | Type | Notes |
-|---|---|---|
-| `total_volume_m3` | `Numeric(18,3)` nullable | gross storage cube of the building |
-| `usable_volume_m3` | `Numeric(18,3)` nullable | = `total_volume_m3 × cube_utilization_factor` |
-| `cube_utilization_factor` | `Numeric(5,3)` default 0.40 | fraction of building usable for storage |
-| `max_weight_kg` | `Numeric(18,3)` nullable | rack/floor structural limit |
-| `total_pallet_positions` | `Integer` nullable | pallet-slot count |
-| `utilization_threshold_warn` | `Numeric(5,3)` default 0.80 | amber |
-| `utilization_threshold_critical` | `Numeric(5,3)` default 0.90 | red |
-| `dock_doors` | `Integer` nullable | inbound/outbound doors |
-| `dock_slots_per_door_per_day` | `Integer` nullable | truck slots/day/door |
-| `receiving_capacity_m3_per_day` | `Numeric(18,3)` nullable | flow limit |
-| `staging_slots` | `Integer` nullable | outbound staging positions |
-| `staging_avg_dwell_hours` | `Numeric(8,2)` nullable | turnover time |
+| Column                           | Type                        | Notes                                         |
+| -------------------------------- | --------------------------- | --------------------------------------------- |
+| `total_volume_m3`                | `Numeric(18,3)` nullable    | gross storage cube of the building            |
+| `usable_volume_m3`               | `Numeric(18,3)` nullable    | = `total_volume_m3 × cube_utilization_factor` |
+| `cube_utilization_factor`        | `Numeric(5,3)` default 0.40 | fraction of building usable for storage       |
+| `max_weight_kg`                  | `Numeric(18,3)` nullable    | rack/floor structural limit                   |
+| `total_pallet_positions`         | `Integer` nullable          | pallet-slot count                             |
+| `utilization_threshold_warn`     | `Numeric(5,3)` default 0.80 | amber                                         |
+| `utilization_threshold_critical` | `Numeric(5,3)` default 0.90 | red                                           |
+| `dock_doors`                     | `Integer` nullable          | inbound/outbound doors                        |
+| `dock_slots_per_door_per_day`    | `Integer` nullable          | truck slots/day/door                          |
+| `receiving_capacity_m3_per_day`  | `Numeric(18,3)` nullable    | flow limit                                    |
+| `staging_slots`                  | `Integer` nullable          | outbound staging positions                    |
+| `staging_avg_dwell_hours`        | `Numeric(8,2)` nullable     | turnover time                                 |
 
 > `total_capacity` + `capacity_uom` stay as-is (legacy generic "slot/unit" capacity) to avoid breaking existing UI.
 
@@ -284,15 +285,15 @@ Located at `app/services/warehouse_capacity_service.py`. Responsibilities:
 
 ### 7.2 New endpoints (prefix `/capacity`)
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/warehouses/{id}/capacity` | live occupancy + utilization summary |
-| GET | `/warehouses/{id}/capacity/history` | snapshot history |
-| GET | `/warehouses/{id}/capacity/calendar?from=&to=` | time-phased inbound/outbound/free |
-| POST | `/capacity/check-receivable` | promise check for an inbound delivery |
-| POST | `/capacity/dock-appointments` | create/reschedule dock slot |
-| GET | `/capacity/alerts` | list alerts |
-| POST | `/capacity/refresh` | trigger snapshot recomputation |
+| Method | Path                                           | Purpose                               |
+| ------ | ---------------------------------------------- | ------------------------------------- |
+| GET    | `/warehouses/{id}/capacity`                    | live occupancy + utilization summary  |
+| GET    | `/warehouses/{id}/capacity/history`            | snapshot history                      |
+| GET    | `/warehouses/{id}/capacity/calendar?from=&to=` | time-phased inbound/outbound/free     |
+| POST   | `/capacity/check-receivable`                   | promise check for an inbound delivery |
+| POST   | `/capacity/dock-appointments`                  | create/reschedule dock slot           |
+| GET    | `/capacity/alerts`                             | list alerts                           |
+| POST   | `/capacity/refresh`                            | trigger snapshot recomputation        |
 
 Existing routers to extend (read-only enrichments): `/asn-orders`, `/purchase-orders`, `/sales-orders` can return capacity availability flags per line.
 
@@ -330,25 +331,25 @@ These call `WarehouseCapacityService.invalidate(warehouse_id)` → marks snapsho
 
 ## 9. Phased Implementation Plan
 
-| Phase | Scope | Deliverables |
-|---|---|---|
-| **P1** | SKU→cube rollup + warehouse capacity config | `Warehouse` columns, `WarehouseCapacityService.get_occupancy`, migration, `/warehouses/{id}/capacity` endpoint |
-| **P2** | Daily snapshots + history + alerts | `capacity_snapshots`, `capacity_alerts`, `tasks/capacity_snapshot.py`, history + alert endpoints |
-| **P3** | Time-phased calendar + inbound promise | `dock_schedules`, `/capacity/calendar`, `check_receivable` (dock + flow + storage) |
-| **P4** | Available-to-pick + recommendations | lead-time config, promise dates, split/cross-dock suggestions |
-| **P5** | Zone-level capacity + real-time events + frontend | zone snapshots, Redis events, dashboard integration |
+| Phase  | Scope                                             | Deliverables                                                                                                   |
+| ------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **P1** | SKU→cube rollup + warehouse capacity config       | `Warehouse` columns, `WarehouseCapacityService.get_occupancy`, migration, `/warehouses/{id}/capacity` endpoint |
+| **P2** | Daily snapshots + history + alerts                | `capacity_snapshots`, `capacity_alerts`, `tasks/capacity_snapshot.py`, history + alert endpoints               |
+| **P3** | Time-phased calendar + inbound promise            | `dock_schedules`, `/capacity/calendar`, `check_receivable` (dock + flow + storage)                             |
+| **P4** | Available-to-pick + recommendations               | lead-time config, promise dates, split/cross-dock suggestions                                                  |
+| **P5** | Zone-level capacity + real-time events + frontend | zone snapshots, Redis events, dashboard integration                                                            |
 
 ---
 
 ## 10. Risks & Mitigations
 
-| Risk | Mitigation |
-|---|---|
-| Live rollup is expensive | Precompute daily snapshots; on-demand only per warehouse subtree; cache short-lived |
+| Risk                                | Mitigation                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------ |
+| Live rollup is expensive            | Precompute daily snapshots; on-demand only per warehouse subtree; cache short-lived  |
 | Unit vs physical capacity confusion | Keep `CapacityService` untouched; new physical service is additive and clearly named |
-| Inconsistent cube math | Single shared helper reused by `VolumetricAssignmentService` and new service |
-| Stale inbound calendar | Recompute on ASN status change; exclude cancelled; net out `delivered_qty` |
-| Data quality (missing dims) | Coverage metric + admin prompt to complete `ItemPackagingUnit` |
+| Inconsistent cube math              | Single shared helper reused by `VolumetricAssignmentService` and new service         |
+| Stale inbound calendar              | Recompute on ASN status change; exclude cancelled; net out `delivered_qty`           |
+| Data quality (missing dims)         | Coverage metric + admin prompt to complete `ItemPackagingUnit`                       |
 
 ---
 
@@ -364,9 +365,11 @@ These call `WarehouseCapacityService.invalidate(warehouse_id)` → marks snapsho
 ## 12. Layman's Explanation (Plain English)
 
 ### The problem in one line
+
 We need to know **how full the warehouse is**, so we can promise realistic delivery dates instead of guessing.
 
 ### The everyday analogy
+
 Think of the warehouse like a **fridge plus the kitchen counter** where orders get plated:
 
 - **The shelves (storage)** — how much stuff can physically fit.
@@ -375,6 +378,7 @@ Think of the warehouse like a **fridge plus the kitchen counter** where orders g
 A fridge can be "full" in three different ways, and they're not the same thing.
 
 ### What "full" actually means (3 ways of being full)
+
 1. **By space (volume)** — the boxes literally don't fit anymore.
 2. **By weight** — the shelves have a load limit; you can't stack heavy bars to the ceiling.
 3. **By slots (pallet positions)** — all the marked parking spots for pallets are taken.
@@ -382,19 +386,23 @@ A fridge can be "full" in three different ways, and they're not the same thing.
 Whichever limit is hit **first** is the one that matters. We track all three and report the worst one — because "80% empty by space" doesn't help if the racks are about to collapse from weight.
 
 ### The 80–85% rule
-A warehouse that is 85% full is *practically* full, because workers need empty room to move around, rearrange things, and receive new deliveries. Beyond that point everything slows down a lot.
+
+A warehouse that is 85% full is _practically_ full, because workers need empty room to move around, rearrange things, and receive new deliveries. Beyond that point everything slows down a lot.
 
 ### Three types of stock — easy to mix up
+
 - **On-hand** — physically in the warehouse. Takes up space.
 - **Reserved** — already promised to a customer, but still sitting on the shelf. It still takes up space, so we never count it twice.
-- **In-transit** — on a truck, not here yet. It takes up space *tomorrow*, not today.
+- **In-transit** — on a truck, not here yet. It takes up space _tomorrow_, not today.
 
 This matters because a common mistake is counting all three together and getting a wrong "full" number.
 
 ### Staging is a conveyor belt, not a shelf
+
 The outgoing staging area can be "full" every single day and still be healthy — as long as stuff keeps flowing out quickly. So we judge it by **how fast it turns over**, not by how full it looks.
 
 ### Why time matters, not just "right now"
+
 "Are we full today?" is not enough. We need to know **"will we have room next Tuesday when that truck arrives?"**
 
 So the system builds a **day-by-day calendar**:
@@ -404,11 +412,13 @@ So the system builds a **day-by-day calendar**:
 - The result is **free space per day**.
 
 ### The three questions the system answers
+
 1. **How full are we right now?** (by space, weight, and slots)
 2. **Can we take this delivery on Friday?** — checks three things: is there a loading-dock slot, can the team unload it that day, and is there shelf space?
 3. **When can we actually sell it?** — arrival date plus the time to unload, quality-check, and put it on the shelf.
 
 ### What's already built vs what we're adding
+
 Most of the plumbing already exists in the software — bins with size limits, product dimensions, and a routine that already checks "does this item fit in this bin" during putaway. What's missing is:
 
 - Adding all that bin-level data up into a **whole-warehouse picture** (space, weight, slots),
@@ -418,8 +428,9 @@ Most of the plumbing already exists in the software — bins with size limits, p
 - **Warnings** when we're getting close to full.
 
 ### What you'll get at the end
+
 A single clear answer, like:
 
-> *"Warehouse A is 72% full by space, but 91% full by weight — weight is the limit. Friday's delivery fits. The new goods will be sellable by Monday."*
+> _"Warehouse A is 72% full by space, but 91% full by weight — weight is the limit. Friday's delivery fits. The new goods will be sellable by Monday."_
 
 That's the whole point: stop guessing delivery dates, and let the system tell you when stock can realistically arrive and be ready to sell.

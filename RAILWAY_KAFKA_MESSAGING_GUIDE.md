@@ -9,13 +9,13 @@ This guide covers standing up a **Kafka** message bus for the Railway-deployed b
 
 ## 1. Why Kafka alongside Redis
 
-| Concern | Redis (current) | Kafka (proposed) |
-|---|---|---|
-| Model | pub/sub + short stream | durable, replayable log |
-| Retention | ephemeral (stream trimmed to 5000) | configurable, persists |
-| Ordering | per-channel | per-partition (strong) |
-| Consumers | live only | replay from any offset, consumer groups |
-| Use | 3-D real-time UI events, search sync | audit, billing, inventory events, cross-service integration |
+| Concern   | Redis (current)                      | Kafka (proposed)                                            |
+| --------- | ------------------------------------ | ----------------------------------------------------------- |
+| Model     | pub/sub + short stream               | durable, replayable log                                     |
+| Retention | ephemeral (stream trimmed to 5000)   | configurable, persists                                      |
+| Ordering  | per-channel                          | per-partition (strong)                                      |
+| Consumers | live only                            | replay from any offset, consumer groups                     |
+| Use       | 3-D real-time UI events, search sync | audit, billing, inventory events, cross-service integration |
 
 Keep Redis for **real-time UI** (3-D view, search live sync). Add Kafka for **durable, ordered, replayable** events (invoices, payments, stock movements, ASN).
 
@@ -23,10 +23,10 @@ Keep Redis for **real-time UI** (3-D view, search live sync). Add Kafka for **du
 
 ## 2. Options (pick one)
 
-| Option | Provider | Effort | When |
-|---|---|---|---|
-| **A. Managed Kafka** | Confluent Cloud / Upstash Kafka / Aiven / AWS MSK | low | recommended for prod |
-| **B. Self-hosted (KRaft)** | Your own services in Railway | medium | dev/test, full control |
+| Option                     | Provider                                          | Effort | When                   |
+| -------------------------- | ------------------------------------------------- | ------ | ---------------------- |
+| **A. Managed Kafka**       | Confluent Cloud / Upstash Kafka / Aiven / AWS MSK | low    | recommended for prod   |
+| **B. Self-hosted (KRaft)** | Your own services in Railway                      | medium | dev/test, full control |
 
 > **Recommendation:** Option A for production (Confluent Cloud free tier or Upstash Kafka). Option B only for local parity / cost control.
 
@@ -57,11 +57,13 @@ Kafka 3.3+ can run **without Zookeeper** using KRaft. Run a single broker for de
 ### 4.1 Dockerfile service (`infra/kafka`)
 
 `infra/kafka/Dockerfile`:
+
 ```dockerfile
 FROM apache/kafka:3.7.0
 ```
 
 `infra/kafka/server.properties` (single-node KRaft):
+
 ```properties
 process.roles=broker,controller
 node.id=1
@@ -94,6 +96,7 @@ The backend is **FastAPI (async)** — use **`aiokafka`** for async producers/co
 ### 5.1 Add dependency
 
 `core-service/requirements.txt`:
+
 ```
 aiokafka==0.11.0
 ```
@@ -161,13 +164,14 @@ async def consume():
 
 ## 6. Topic design for this codebase
 
-| Topic | Producer | Consumers | Purpose |
-|---|---|---|---|
-| `warehouse.events` | core-service (stock change, put-away, dispatch) | search-service, analytics | inventory + capacity events |
-| `billing.events` | core-service (invoice/payment) | identity-service, analytics | financial events |
-| `asn.events` | core-service | ai-service, notifications | inbound pre-alerts |
+| Topic              | Producer                                        | Consumers                   | Purpose                     |
+| ------------------ | ----------------------------------------------- | --------------------------- | --------------------------- |
+| `warehouse.events` | core-service (stock change, put-away, dispatch) | search-service, analytics   | inventory + capacity events |
+| `billing.events`   | core-service (invoice/payment)                  | identity-service, analytics | financial events            |
+| `asn.events`       | core-service                                    | ai-service, notifications   | inbound pre-alerts          |
 
 Conventions:
+
 - One topic per **domain**, not per service.
 - Partition by `organization_id` (key) so an org's events stay ordered.
 - Keep events **immutable** and versioned (`{"event": "stock.changed", "v": 1, ...}`).

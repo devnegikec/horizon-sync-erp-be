@@ -74,11 +74,19 @@ class BinCapacityService:
 
     @staticmethod
     def _use_volume(warehouse: Warehouse | None) -> bool:
-        return warehouse.use_volume if warehouse and warehouse.use_volume is not None else True
+        return (
+            warehouse.use_volume
+            if warehouse and warehouse.use_volume is not None
+            else True
+        )
 
     @staticmethod
     def _use_weight(warehouse: Warehouse | None) -> bool:
-        return warehouse.use_weight if warehouse and warehouse.use_weight is not None else False
+        return (
+            warehouse.use_weight
+            if warehouse and warehouse.use_weight is not None
+            else False
+        )
 
     def _effective_thresholds(
         self, bin_loc: WarehouseLocation, warehouse: Warehouse | None
@@ -261,7 +269,9 @@ class BinCapacityService:
             occupied_m3, occupied_kg = occupancy.get(
                 str(bin_loc.id), (Decimal("0"), Decimal("0"))
             )
-            metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
+            metrics = self._compute_metrics(
+                bin_loc, warehouse, occupied_m3, occupied_kg
+            )
             full, almost = self._effective_thresholds(bin_loc, warehouse)
             state = self._derive_state(metrics["binding_pct"], full, almost)
             results.append(
@@ -314,14 +324,24 @@ class BinCapacityService:
                 "level": loc.location_type,
                 "code": loc.code,
                 "full_path": loc.full_path,
-                "volume": {"occupied_m3": Decimal("0"), "capacity_m3": None, "pct": None},
-                "weight": {"occupied_kg": Decimal("0"), "capacity_kg": None, "pct": None},
+                "volume": {
+                    "occupied_m3": Decimal("0"),
+                    "capacity_m3": None,
+                    "pct": None,
+                },
+                "weight": {
+                    "occupied_kg": Decimal("0"),
+                    "capacity_kg": None,
+                    "pct": None,
+                },
                 "binding_pct": Decimal("0"),
                 "bin_state": None,
                 "is_available": None,
                 "children": [],
                 "_loc": loc,
-                "_parent": str(loc.parent_location_id) if loc.parent_location_id else None,
+                "_parent": str(loc.parent_location_id)
+                if loc.parent_location_id
+                else None,
             }
 
         for loc in locations:
@@ -402,12 +422,16 @@ class BinCapacityService:
         total_cap_m3 = None
         for c in children:
             if c["volume"]["capacity_m3"] is not None:
-                total_cap_m3 = (total_cap_m3 or Decimal("0")) + c["volume"]["capacity_m3"]
+                total_cap_m3 = (total_cap_m3 or Decimal("0")) + c["volume"][
+                    "capacity_m3"
+                ]
         total_kg = sum((c["weight"]["occupied_kg"] for c in children), Decimal("0"))
         total_cap_kg = None
         for c in children:
             if c["weight"]["capacity_kg"] is not None:
-                total_cap_kg = (total_cap_kg or Decimal("0")) + c["weight"]["capacity_kg"]
+                total_cap_kg = (total_cap_kg or Decimal("0")) + c["weight"][
+                    "capacity_kg"
+                ]
         pcts = [
             p
             for p in (
@@ -512,7 +536,9 @@ class BinCapacityService:
                 use_volume=self._use_volume(warehouse),
                 use_weight=self._use_weight(warehouse),
             )
-            metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
+            metrics = self._compute_metrics(
+                bin_loc, warehouse, occupied_m3, occupied_kg
+            )
             full, almost = self._effective_thresholds(bin_loc, warehouse)
             state = self._derive_state(metrics["binding_pct"], full, almost)
 

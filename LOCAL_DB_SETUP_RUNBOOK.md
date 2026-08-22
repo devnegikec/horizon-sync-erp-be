@@ -5,6 +5,7 @@ A step-by-step runbook for running a **local Postgres container** and pulling a
 instead of the remote cloud DB.
 
 > Companion docs:
+>
 > - `RAILWAY_LOCAL_DB_SYNC_GUIDE.md` — the conceptual approach (snapshot + restore)
 > - `railway-db-sync.md` — workflow options & scheduling notes
 
@@ -30,11 +31,11 @@ Because production is a single shared DB, this runbook mirrors that: we use
 
 ## 1. Prerequisites
 
-| Tool | Status | Notes |
-|------|--------|-------|
-| Docker Desktop | Required | Must be **running** (daemon up) |
-| `psql` / `pg_dump` | Not needed | All dump/restore runs inside the Postgres container |
-| Railway CLI | Optional | Only needed for the private tunnel (`railway connect`) |
+| Tool               | Status     | Notes                                                  |
+| ------------------ | ---------- | ------------------------------------------------------ |
+| Docker Desktop     | Required   | Must be **running** (daemon up)                        |
+| `psql` / `pg_dump` | Not needed | All dump/restore runs inside the Postgres container    |
+| Railway CLI        | Optional   | Only needed for the private tunnel (`railway connect`) |
 
 > **Version match is mandatory:** local Postgres must be the same major version
 > as Railway (currently **18.x**). A 15.x `pg_dump` cannot dump a 18.x server —
@@ -66,6 +67,7 @@ Railway dashboard → your project → **Postgres** → **Connect** → copy the
 > (the `roundhouse.proxy.rlwy.net:12893/railway` one).
 
 **Option B — Railway CLI (optional, enables a private tunnel):**
+
 ```bash
 npm i -g @railway/cli
 railway login
@@ -81,6 +83,7 @@ cp .sync.env.example .sync.env
 ```
 
 Edit `.sync.env` and set:
+
 ```ini
 SOURCE_DATABASE_URL=remoteDB_URL
 ```
@@ -103,6 +106,7 @@ auto-creates `identity_db`, `core_db`, `search_db`.
 
 > If you previously ran the old `postgres:15-alpine` container, you must recreate
 > it (Postgres cannot upgrade its data directory across major versions in place):
+>
 > ```bash
 > docker compose down -v
 > docker compose up -d postgres
@@ -132,11 +136,13 @@ Dumps everything from Railway and restores it into local `railway`.
 ## 7. Step 5 — Point services at localhost
 
 **`identity-service/.env`:**
+
 ```ini
 DATABASE_URL=localDB_url
 ```
 
 **`core-service/.env`:**
+
 ```ini
 DATABASE_URL=localDB_url
 IDENTITY_DATABASE_URL=localDB_url
@@ -174,11 +180,13 @@ Defaults to **data-only** mode — faster, does not touch schema.
 ## 10. Scheduling (optional)
 
 **Windows Task Scheduler:**
+
 ```bash
 schtasks /create /tn "SyncRailwayDB" /tr "\"C:\Program Files\Git\bin\bash.exe\" -lc \"D:/Code/CRM_NEW/horizon-sync-erp-be/sync_local_db.sh railway\"" /sc daily /st 08:00
 ```
 
 **WSL cron:**
+
 ```bash
 0 8 * * * /mnt/d/Code/CRM_NEW/horizon-sync-erp-be/sync_local_db.sh railway >> /tmp/db_sync.log 2>&1
 ```
@@ -189,18 +197,18 @@ schtasks /create /tn "SyncRailwayDB" /tr "\"C:\Program Files\Git\bin\bash.exe\" 
 
 `sync_local_db.sh <database> [--full]`
 
-| Argument | Meaning | Default |
-|----------|---------|---------|
-| `<database>` | Target local DB | `railway` |
-| `--full` | Full schema+data replace | (off → data-only) |
+| Argument     | Meaning                  | Default           |
+| ------------ | ------------------------ | ----------------- |
+| `<database>` | Target local DB          | `railway`         |
+| `--full`     | Full schema+data replace | (off → data-only) |
 
-| Env var (in `.sync.env`) | Purpose | Default |
-|--------------------------|---------|---------|
-| `SOURCE_DATABASE_URL` | Railway URL (or use CLI tunnel) | — |
-| `LOCAL_DB_USER` | Local DB user | `db_user` |
-| `LOCAL_DB_PASSWORD` | Local DB password | `db_password` |
-| `LOCAL_DB_PORT` | Local DB port | `5432` |
-| `LOCAL_CONTAINER` | Postgres container name | `horizon_postgres` |
-| `RAILWAY_SERVICE` | Railway plugin name for tunnel | `Postgres` |
+| Env var (in `.sync.env`) | Purpose                         | Default            |
+| ------------------------ | ------------------------------- | ------------------ |
+| `SOURCE_DATABASE_URL`    | Railway URL (or use CLI tunnel) | —                  |
+| `LOCAL_DB_USER`          | Local DB user                   | `db_user`          |
+| `LOCAL_DB_PASSWORD`      | Local DB password               | `db_password`      |
+| `LOCAL_DB_PORT`          | Local DB port                   | `5432`             |
+| `LOCAL_CONTAINER`        | Postgres container name         | `horizon_postgres` |
+| `RAILWAY_SERVICE`        | Railway plugin name for tunnel  | `Postgres`         |
 
 Dumps are archived to `horizon-sync-erp-be/.db_dumps/` with timestamps for rollback.

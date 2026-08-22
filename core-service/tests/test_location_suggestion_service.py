@@ -35,7 +35,17 @@ def reservation_service(db_session):
     return BinReservationService(db_session)
 
 
-def _create_bin(db_session, org_id, warehouse_id, code="BIN01", capacity=100, max_volume_cc=None, x=0, y=0, z=0):
+def _create_bin(
+    db_session,
+    org_id,
+    warehouse_id,
+    code="BIN01",
+    capacity=100,
+    max_volume_cc=None,
+    x=0,
+    y=0,
+    z=0,
+):
     loc = WarehouseLocation(
         id=uuid.uuid4(),
         organization_id=org_id,
@@ -44,7 +54,9 @@ def _create_bin(db_session, org_id, warehouse_id, code="BIN01", capacity=100, ma
         code=code,
         full_path=code,
         capacity=Decimal(str(capacity)),
-        max_volume_cc=Decimal(str(max_volume_cc)) if max_volume_cc is not None else None,
+        max_volume_cc=Decimal(str(max_volume_cc))
+        if max_volume_cc is not None
+        else None,
         position_x=Decimal(str(x)),
         position_y=Decimal(str(y)),
         position_z=Decimal(str(z)),
@@ -71,7 +83,9 @@ def _create_item(db_session, org_id, item_code="SKU001", name="Test Item"):
     return item
 
 
-def _create_packaging_unit(db_session, org_id, item_id, length=100, width=100, height=100):
+def _create_packaging_unit(
+    db_session, org_id, item_id, length=100, width=100, height=100
+):
     from app.models.item_packaging_unit import ItemPackagingUnit
 
     pu = ItemPackagingUnit(
@@ -107,7 +121,9 @@ def _add_stock(db_session, bin_id, item_id, qty, org_id, batch=None, expiry=None
 
 
 class TestPutAway:
-    def test_reserved_bin_excluded(self, db_session, suggest_service, reservation_service, org_id, warehouse_id):
+    def test_reserved_bin_excluded(
+        self, db_session, suggest_service, reservation_service, org_id, warehouse_id
+    ):
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", capacity=100)
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", capacity=100)
         item = _create_item(db_session, org_id)
@@ -146,12 +162,20 @@ class TestPutAway:
         assert b1.id not in bin_ids
         assert b2.id in bin_ids
 
-    def test_capacity_insufficient_excluded(self, db_session, suggest_service, org_id, warehouse_id):
+    def test_capacity_insufficient_excluded(
+        self, db_session, suggest_service, org_id, warehouse_id
+    ):
         # b1 volume (0.005 m³) can't fit 10 units (10 × 0.001 m³ = 0.01 m³).
-        b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", max_volume_cc=5000)
-        b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", max_volume_cc=100000)
+        b1 = _create_bin(
+            db_session, org_id, warehouse_id, code="B1", max_volume_cc=5000
+        )
+        b2 = _create_bin(
+            db_session, org_id, warehouse_id, code="B2", max_volume_cc=100000
+        )
         item = _create_item(db_session, org_id)
-        _create_packaging_unit(db_session, org_id, item.id, length=100, width=100, height=100)
+        _create_packaging_unit(
+            db_session, org_id, item.id, length=100, width=100, height=100
+        )
 
         result = suggest_service.suggest(
             task_type="put_away",
@@ -165,7 +189,9 @@ class TestPutAway:
         assert b1.id not in bin_ids
         assert b2.id in bin_ids
 
-    def test_consolidation_bonus(self, db_session, suggest_service, org_id, warehouse_id):
+    def test_consolidation_bonus(
+        self, db_session, suggest_service, org_id, warehouse_id
+    ):
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", capacity=100)
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", capacity=100)
         item = _create_item(db_session, org_id)
@@ -183,7 +209,9 @@ class TestPutAway:
         assert result["suggestions"][0]["bin_id"] == b1.id
         assert any("same item" in r for r in result["suggestions"][0]["reasons"])
 
-    def test_exclusive_allocation_filter(self, db_session, suggest_service, org_id, warehouse_id):
+    def test_exclusive_allocation_filter(
+        self, db_session, suggest_service, org_id, warehouse_id
+    ):
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1", capacity=100)
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2", capacity=100)
         item = _create_item(db_session, org_id)
@@ -225,13 +253,19 @@ class TestPutAway:
 
 
 class TestPick:
-    def test_fefo_orders_by_expiry(self, db_session, suggest_service, org_id, warehouse_id):
+    def test_fefo_orders_by_expiry(
+        self, db_session, suggest_service, org_id, warehouse_id
+    ):
         item = _create_item(db_session, org_id)
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1")
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2")
         today = datetime.now(UTC).date()
-        _add_stock(db_session, b1.id, item.id, 10, org_id, expiry=today + timedelta(days=10))
-        _add_stock(db_session, b2.id, item.id, 10, org_id, expiry=today + timedelta(days=3))
+        _add_stock(
+            db_session, b1.id, item.id, 10, org_id, expiry=today + timedelta(days=10)
+        )
+        _add_stock(
+            db_session, b2.id, item.id, 10, org_id, expiry=today + timedelta(days=3)
+        )
 
         result = suggest_service.suggest(
             task_type="pick",
@@ -245,7 +279,9 @@ class TestPick:
         assert result["suggestions"][0]["bin_id"] == b2.id
         assert any("FEFO" in r for r in result["suggestions"][0]["reasons"])
 
-    def test_reserved_bin_excluded_in_pick(self, db_session, suggest_service, reservation_service, org_id, warehouse_id):
+    def test_reserved_bin_excluded_in_pick(
+        self, db_session, suggest_service, reservation_service, org_id, warehouse_id
+    ):
         item = _create_item(db_session, org_id)
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1")
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2")
@@ -266,7 +302,9 @@ class TestPick:
         assert b1.id not in bin_ids
         assert b2.id in bin_ids
 
-    def test_full_quantity_single_stop_bonus(self, db_session, suggest_service, org_id, warehouse_id):
+    def test_full_quantity_single_stop_bonus(
+        self, db_session, suggest_service, org_id, warehouse_id
+    ):
         item = _create_item(db_session, org_id)
         b1 = _create_bin(db_session, org_id, warehouse_id, code="B1")
         b2 = _create_bin(db_session, org_id, warehouse_id, code="B2")

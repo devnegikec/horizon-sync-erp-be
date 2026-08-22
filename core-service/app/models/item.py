@@ -13,8 +13,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
-from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base

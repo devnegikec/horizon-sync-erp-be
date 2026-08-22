@@ -5,9 +5,10 @@ Revises: 070_make_tracking_session_columns_nullable
 Create Date: 2026-08-13
 """
 
-from alembic import op
 import sqlalchemy as sa
-from app.alembic_guards import has_table, has_column, has_constraint
+
+from alembic import op
+from app.alembic_guards import has_constraint, has_table
 
 # revision identifiers, used by Alembic.
 revision = "071_add_unique_constraint_items_org_item_code"

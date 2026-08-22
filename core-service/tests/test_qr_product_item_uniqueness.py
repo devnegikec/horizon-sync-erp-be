@@ -1,10 +1,8 @@
-import uuid
 import pytest
 
-from app.services.qr_product_service import QRProductService
-from app.repositories.item_repository import ItemRepository
 from app.models.item import Item
-from app.models.qr_product import QRProduct
+from app.repositories.item_repository import ItemRepository
+from app.services.qr_product_service import QRProductService
 
 
 def test_qr_product_creation_does_not_duplicate_item(db_session, mock_current_user):
@@ -50,6 +48,7 @@ def test_qr_product_creation_does_not_duplicate_item(db_session, mock_current_us
     # Additionally, ensure database unique constraint prevents duplicate item_code
     # Create a raw Item with duplicate item_code and expect an IntegrityError
     from sqlalchemy.exc import IntegrityError
+
     from app.services.document_numbering_service import DocumentNumberingService
 
     item_code = DocumentNumberingService(db_session).get_next_number(

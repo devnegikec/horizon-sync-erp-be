@@ -60,7 +60,7 @@ from app.schemas.outbound import (
     SAPInvoicePayload,
 )
 from app.services.gate_verification_service import GateVerificationService
-from app.services.order_import_service import ImportResult, OrderImportService
+from app.services.order_import_service import OrderImportService
 from app.services.outbound_service import OutboundService
 from app.services.pick_list_service import (
     PickListService,

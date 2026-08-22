@@ -49,7 +49,7 @@ class ProductItemSyncService:
     # ── Fields synced FROM Item TO Product ──
     ITEM_TO_PRODUCT_FIELDS = [
         "item_code",
-        "item_name",   # → product.name
+        "item_name",  # → product.name
         "description",
         "sku",
         "uom",
@@ -66,7 +66,7 @@ class ProductItemSyncService:
 
     # ── Fields synced FROM Product TO Item ──
     PRODUCT_TO_ITEM_FIELDS = [
-        "name",        # → item.item_name (only if item_name is empty)
+        "name",  # → item.item_name (only if item_name is empty)
         "sku",
         "gtin",
         "industry",
@@ -95,9 +95,7 @@ class ProductItemSyncService:
             return None
 
         product = (
-            self.db.query(QRProduct)
-            .filter(QRProduct.id == item.qr_product_id)
-            .first()
+            self.db.query(QRProduct).filter(QRProduct.id == item.qr_product_id).first()
         )
         if not product:
             return None
@@ -185,6 +183,7 @@ class ProductItemSyncService:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _copy_if_set(target, source, field: str) -> bool:
     """Copy field from source to target if source value is not None."""

@@ -137,7 +137,9 @@ def _resolve_references(
     return slip_no_map, worker_name_map
 
 
-def _build_item_response(item: PutAwayListItem, serial_meta: dict | None = None) -> PutAwayListItemResponse:
+def _build_item_response(
+    item: PutAwayListItem, serial_meta: dict | None = None
+) -> PutAwayListItemResponse:
     """Build a PutAwayListItemResponse from a PutAwayListItem model."""
     bin_location_code = None
     if item.bin_location:

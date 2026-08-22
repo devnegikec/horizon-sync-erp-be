@@ -16,7 +16,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-
 from app.alembic_guards import has_column, has_table
 
 # revision identifiers, used by Alembic.
@@ -32,7 +31,8 @@ def upgrade() -> None:
 
     if not has_column("pick_list_items", "extra_data"):
         op.add_column(
-            "pick_list_items", sa.Column("extra_data", postgresql.JSONB(), nullable=True)
+            "pick_list_items",
+            sa.Column("extra_data", postgresql.JSONB(), nullable=True),
         )
     if not has_column("pick_list_items", "created_at"):
         op.add_column(

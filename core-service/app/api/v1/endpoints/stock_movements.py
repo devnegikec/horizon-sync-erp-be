@@ -27,11 +27,14 @@ def _resolve_user_names(user_ids: set[str]) -> dict[str, str]:
         return {}
     try:
         from app.config import settings
+
         if not settings.identity_database_url:
             return {}
         from sqlalchemy import create_engine, text
 
-        engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+        engine = create_engine(
+            settings.identity_database_url, pool_size=2, max_overflow=0
+        )
         placeholders = ", ".join(f"'{uid}'" for uid in user_ids)
         with engine.connect() as conn:
             rows = conn.execute(
@@ -40,10 +43,7 @@ def _resolve_user_names(user_ids: set[str]) -> dict[str, str]:
                     f"FROM users WHERE id::text IN ({placeholders})"
                 )
             ).fetchall()
-            return {
-                r[0]: f"{r[1] or ''} {r[2] or ''}".strip() or None
-                for r in rows
-            }
+            return {r[0]: f"{r[1] or ''} {r[2] or ''}".strip() or None for r in rows}
     except Exception:
         return {}
 
@@ -73,7 +73,9 @@ async def list_stock_movements(
     ),
     reference_type: str | None = None,
     reference_id: UUID | None = None,
-    search: str | None = Query(None, description="Search by item name, item code or notes"),
+    search: str | None = Query(
+        None, description="Search by item name, item code or notes"
+    ),
     sort_by: str = Query("performed_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(get_current_active_user),

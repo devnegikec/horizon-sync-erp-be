@@ -96,7 +96,12 @@ class TestComputeBinOccupancy:
         bin_loc = _create_bin(db_session, org_id, warehouse_id)
         pu = _create_packaging_unit(db_session, org_id, item_id)
         _add_stock(
-            db_session, org_id, bin_loc.id, item_id, Decimal("5"), packaging_unit_id=pu.id
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("5"),
+            packaging_unit_id=pu.id,
         )
 
         m3, kg = compute_bin_occupancy(db_session, bin_loc.id)
@@ -112,19 +117,38 @@ class TestComputeBinOccupancy:
         bin_loc = _create_bin(db_session, org_id, warehouse_id)
         _create_packaging_unit(db_session, org_id, item_id)
         # No packaging_unit_id on the stock row → must fall back to base unit.
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("2"), packaging_unit_id=None)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("2"),
+            packaging_unit_id=None,
+        )
 
         m3, kg = compute_bin_occupancy(db_session, bin_loc.id)
 
-        assert m3 == Decimal("100") * Decimal("100") * Decimal("100") * Decimal("2") / MM3_PER_M3
+        assert (
+            m3
+            == Decimal("100")
+            * Decimal("100")
+            * Decimal("100")
+            * Decimal("2")
+            / MM3_PER_M3
+        )
         assert kg == Decimal("200") * Decimal("2") / G_PER_KG
 
-    def test_toggles_skip_dimensions(
-        self, db_session, org_id, warehouse_id, item_id
-    ):
+    def test_toggles_skip_dimensions(self, db_session, org_id, warehouse_id, item_id):
         bin_loc = _create_bin(db_session, org_id, warehouse_id)
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("3"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("3"),
+            packaging_unit_id=pu.id,
+        )
 
         m3_vol, kg_zero = compute_bin_occupancy(
             db_session, bin_loc.id, use_volume=True, use_weight=False
@@ -155,7 +179,9 @@ class TestComputeWarehouseBinOccupancy:
         bin1 = _create_bin(db_session, org_id, warehouse_id, code="BIN-01")
         bin2 = _create_bin(db_session, org_id, warehouse_id, code="BIN-02")
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, bin1.id, item_id, Decimal("2"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session, org_id, bin1.id, item_id, Decimal("2"), packaging_unit_id=pu.id
+        )
 
         occ = compute_warehouse_bin_occupancy(db_session, warehouse_id)
 

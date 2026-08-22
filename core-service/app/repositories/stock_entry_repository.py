@@ -1,11 +1,10 @@
 """Stock entry and items repository"""
 
+from decimal import Decimal
 from uuid import UUID
 
-from decimal import Decimal
-
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload, subqueryload
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.base import StockEntryStatus, StockEntryType
 from app.models.item import Item

@@ -12,7 +12,6 @@ import io
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from PyPDF2 import PdfReader
@@ -62,39 +61,37 @@ class OrderImportService:
     """Service for importing orders from PDF and CSV files."""
 
     # Regex patterns for extracting data from PDF text
-    INVOICE_NO_PATTERN = re.compile(
-        r'Invoice\s*No[:\s]*([\w][\w/-]*)', re.IGNORECASE
-    )
+    INVOICE_NO_PATTERN = re.compile(r"Invoice\s*No[:\s]*([\w][\w/-]*)", re.IGNORECASE)
     DOC_NUMBER_PATTERN = re.compile(
-        r'Doc\.?\s*Number\s*:\s*([\w][\w/-]*)', re.IGNORECASE
+        r"Doc\.?\s*Number\s*:\s*([\w][\w/-]*)", re.IGNORECASE
     )
     INVOICE_NOS_PATTERN = re.compile(
-        r'Invoice\s*Nos?\s*:\s*([\w][\w/,-]*)', re.IGNORECASE
+        r"Invoice\s*Nos?\s*:\s*([\w][\w/,-]*)", re.IGNORECASE
     )
 
     # Packing-slip numeric tail: UOM INV_QTY PER_CASE_QTY NO_OF_CASES
     # CASE_QTY LOOSE_QTY LOOSE_BOXES BATCH_NUMBER
     PACKING_NUMERIC_TAIL = re.compile(
-        r'(NOS|PCS|EA|EACH)?\s*'
-        r'(?P<inv>\d+)\s+'
-        r'(?P<per_case>\d+)\s+'
-        r'(?P<no_cases>\d+)\s+'
-        r'(?P<case_qty>\d+)\s+'
-        r'(?P<loose_qty>\d+)\s+'
-        r'(?P<loose_boxes>\d+)\s+'
-        r'(?P<batch>[A-Za-z0-9-]{3,})'
+        r"(NOS|PCS|EA|EACH)?\s*"
+        r"(?P<inv>\d+)\s+"
+        r"(?P<per_case>\d+)\s+"
+        r"(?P<no_cases>\d+)\s+"
+        r"(?P<case_qty>\d+)\s+"
+        r"(?P<loose_qty>\d+)\s+"
+        r"(?P<loose_boxes>\d+)\s+"
+        r"(?P<batch>[A-Za-z0-9-]{3,})"
     )
 
     # Item line: starts with row number then code, then description, then qty UOM
     # Examples: "1SVACHH-SS-POP-2L Svachh SS Popular 2L Pressure Cooker 2 Nos"
     #           "2SVACHH-SS-POP-1.5L Svachh SS Popular 1.5L Pressure Cooker 3 Nos"
     ITEM_LINE_PATTERN = re.compile(
-        r'^\d+'                           # leading row number (discard)
-        r'([A-Za-z][\w/.-]{2,})'          # SKU/code (letters, digits, hyphens, dots, slashes)
-        r'\s+(.+?)'                       # description (non-greedy)
-        r'\s+(\d+)\s*'                    # quantity
-        r'(Nos|pcs|PCS|NOS|Ream|Piece)?'  # optional UOM
-        r'\s*$',
+        r"^\d+"  # leading row number (discard)
+        r"([A-Za-z][\w/.-]{2,})"  # SKU/code (letters, digits, hyphens, dots, slashes)
+        r"\s+(.+?)"  # description (non-greedy)
+        r"\s+(\d+)\s*"  # quantity
+        r"(Nos|pcs|PCS|NOS|Ream|Piece)?"  # optional UOM
+        r"\s*$",
     )
 
     def __init__(self, db):
@@ -123,9 +120,9 @@ class OrderImportService:
         Returns:
             ImportResult with counts and any errors.
         """
-        if filename.lower().endswith('.pdf'):
+        if filename.lower().endswith(".pdf"):
             return self._import_pdf(file_content, org_id, warehouse_id)
-        elif filename.lower().endswith('.csv'):
+        elif filename.lower().endswith(".csv"):
             return self._import_csv(file_content, org_id, warehouse_id)
         else:
             raise ValidationError(
@@ -156,7 +153,9 @@ class OrderImportService:
             raise ValidationError(f"Failed to read PDF: {str(e)}")
 
         if not full_text.strip():
-            raise ValidationError("PDF appears to be empty or contains no extractable text.")
+            raise ValidationError(
+                "PDF appears to be empty or contains no extractable text."
+            )
 
         # Try to split into multiple orders (multiple packing slips in one PDF)
         # Packing slips are usually separated by page breaks or clear demarcation
@@ -184,9 +183,7 @@ class OrderImportService:
                 continue
 
             if not order.items:
-                result.errors.append(
-                    f"Order {order.invoice_reference}: no items found"
-                )
+                result.errors.append(f"Order {order.invoice_reference}: no items found")
                 continue
 
             try:
@@ -200,9 +197,7 @@ class OrderImportService:
                 elif action == "skipped":
                     skipped_count += 1
             except Exception as e:
-                result.errors.append(
-                    f"Order {order.invoice_reference}: {str(e)}"
-                )
+                result.errors.append(f"Order {order.invoice_reference}: {str(e)}")
 
         if overwritten_count:
             result.errors.append(
@@ -218,7 +213,7 @@ class OrderImportService:
     def _extract_orders_from_text(self, text: str) -> list[ParsedOrder]:
         """Extract individual orders from concatenated PDF text."""
         orders: list[ParsedOrder] = []
-        lines = text.split('\n')
+        lines = text.split("\n")
 
         current_order: ParsedOrder | None = None
 
@@ -260,7 +255,10 @@ class OrderImportService:
     def _parse_item_line(self, line: str) -> ParsedOrderItem | None:
         """Attempt to parse a line as an order item."""
         # Skip header/title/footer lines
-        if any(kw in line.lower() for kw in ['#', 'item code', 'total', 'grand', 'freight', 'page']):
+        if any(
+            kw in line.lower()
+            for kw in ["#", "item code", "total", "grand", "freight", "page"]
+        ):
             return None
 
         m = self.ITEM_LINE_PATTERN.match(line)
@@ -269,7 +267,7 @@ class OrderImportService:
                 sku=m.group(1).strip(),
                 description=m.group(2).strip(),
                 quantity=Decimal(m.group(3)),
-                uom=m.group(4) or 'pcs',
+                uom=m.group(4) or "pcs",
             )
 
         return None
@@ -277,7 +275,7 @@ class OrderImportService:
     def _is_packing_slip(self, text: str) -> bool:
         """Detect the extended packing-slip layout (per-case/loose/batch columns)."""
         up = text.upper()
-        return ('PER CASE QTY' in up) or ('BATCH NUMBER' in up and 'LOOSE QTY' in up)
+        return ("PER CASE QTY" in up) or ("BATCH NUMBER" in up and "LOOSE QTY" in up)
 
     def _parse_packing_slip_text(self, text: str) -> list[ParsedOrder]:
         """Parse an extended packing slip with case/loose/batch columns.
@@ -286,7 +284,7 @@ class OrderImportService:
         the numeric tail (INV QTY, PER CASE QTY, NO OF CASES, CASE QTY,
         LOOSE QTY, LOOSE BOXES, BATCH NUMBER) sits at the end of a line.
         """
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
 
         doc_ref = ""
         for line in lines:
@@ -297,9 +295,9 @@ class OrderImportService:
         if not doc_ref:
             m = self.INVOICE_NOS_PATTERN.search(text)
             if m:
-                doc_ref = m.group(1).split(',')[0].strip()
+                doc_ref = m.group(1).split(",")[0].strip()
 
-        order = ParsedOrder(invoice_reference=doc_ref or 'PACKING-SLIP')
+        order = ParsedOrder(invoice_reference=doc_ref or "PACKING-SLIP")
 
         header_seen = False
         pending: ParsedOrderItem | None = None
@@ -307,7 +305,7 @@ class OrderImportService:
         for line in lines:
             up = line.upper()
 
-            if 'PER CASE' in up or 'BATCH NUMBER' in up or 'LOOSE QTY' in up:
+            if "PER CASE" in up or "BATCH NUMBER" in up or "LOOSE QTY" in up:
                 header_seen = True
                 continue
 
@@ -316,20 +314,20 @@ class OrderImportService:
 
             # Stop at totals / footer sections
             if (
-                up.startswith('GRAND TOTAL')
-                or 'TOTAL PRODUCT GROSS' in up
-                or 'FREIGHT DETAILS' in up
-                or 'BEFORE TAKING DELIVERY' in up
+                up.startswith("GRAND TOTAL")
+                or "TOTAL PRODUCT GROSS" in up
+                or "FREIGHT DETAILS" in up
+                or "BEFORE TAKING DELIVERY" in up
             ):
                 break
 
             if re.match(
-                r'^(Invoice|Doc|Dealer|SL\.?|SL\s+NO|Particulars)', line, re.IGNORECASE
+                r"^(Invoice|Doc|Dealer|SL\.?|SL\s+NO|Particulars)", line, re.IGNORECASE
             ):
                 continue
 
             code = None
-            cm = re.search(r'\(([A-Za-z0-9][A-Za-z0-9./_-]*)\)', line)
+            cm = re.search(r"\(([A-Za-z0-9][A-Za-z0-9./_-]*)\)", line)
             if cm:
                 code = cm.group(1)
 
@@ -341,23 +339,23 @@ class OrderImportService:
                     ParsedOrderItem(
                         sku=code,
                         description=self._packing_desc(line, code),
-                        quantity=Decimal(num.group('inv')),
-                        uom=num.group(1) or 'pcs',
-                        per_case_qty=Decimal(num.group('per_case')),
-                        case_qty=Decimal(num.group('no_cases')),
-                        loose_qty=Decimal(num.group('loose_qty')),
-                        batch_no=num.group('batch'),
+                        quantity=Decimal(num.group("inv")),
+                        uom=num.group(1) or "pcs",
+                        per_case_qty=Decimal(num.group("per_case")),
+                        case_qty=Decimal(num.group("no_cases")),
+                        loose_qty=Decimal(num.group("loose_qty")),
+                        batch_no=num.group("batch"),
                     )
                 )
                 pending = None
             elif num is not None and pending is not None:
                 # Numeric tail on a continuation line
-                pending.quantity = Decimal(num.group('inv'))
-                pending.uom = num.group(1) or 'pcs'
-                pending.per_case_qty = Decimal(num.group('per_case'))
-                pending.case_qty = Decimal(num.group('no_cases'))
-                pending.loose_qty = Decimal(num.group('loose_qty'))
-                pending.batch_no = num.group('batch')
+                pending.quantity = Decimal(num.group("inv"))
+                pending.uom = num.group(1) or "pcs"
+                pending.per_case_qty = Decimal(num.group("per_case"))
+                pending.case_qty = Decimal(num.group("no_cases"))
+                pending.loose_qty = Decimal(num.group("loose_qty"))
+                pending.batch_no = num.group("batch")
                 order.items.append(pending)
                 pending = None
             elif code is not None:
@@ -365,12 +363,12 @@ class OrderImportService:
                 pending = ParsedOrderItem(
                     sku=code,
                     description=self._packing_desc(line, code),
-                    quantity=Decimal('0'),
-                    uom='pcs',
+                    quantity=Decimal("0"),
+                    uom="pcs",
                 )
             elif pending is not None:
                 # Description continuation line
-                continuation = re.sub(r'\s+', ' ', line).strip()
+                continuation = re.sub(r"\s+", " ", line).strip()
                 if continuation:
                     pending.description = (
                         f"{pending.description} {continuation}".strip()
@@ -384,11 +382,11 @@ class OrderImportService:
     @staticmethod
     def _packing_desc(line: str, code: str) -> str:
         """Extract the item description from a packing-slip row."""
-        s = re.sub(r'^\d+\s*', '', line)
-        s = s.replace(f'({code})', '', 1)
-        s = OrderImportService.PACKING_NUMERIC_TAIL.sub('', s)
-        s = re.sub(r'\b(NOS|PCS|EA|EACH)\s*$', '', s, flags=re.IGNORECASE)
-        return re.sub(r'\s+', ' ', s).strip()
+        s = re.sub(r"^\d+\s*", "", line)
+        s = s.replace(f"({code})", "", 1)
+        s = OrderImportService.PACKING_NUMERIC_TAIL.sub("", s)
+        s = re.sub(r"\b(NOS|PCS|EA|EACH)\s*$", "", s, flags=re.IGNORECASE)
+        return re.sub(r"\s+", " ", s).strip()
 
     @staticmethod
     def _to_decimal(value: str | None) -> Decimal | None:
@@ -417,10 +415,10 @@ class OrderImportService:
         result = ImportResult()
 
         try:
-            text = content.decode('utf-8-sig')
+            text = content.decode("utf-8-sig")
         except UnicodeDecodeError:
             try:
-                text = content.decode('latin-1')
+                text = content.decode("latin-1")
             except Exception as e:
                 raise ValidationError(f"Failed to decode CSV file: {str(e)}")
 
@@ -432,15 +430,28 @@ class OrderImportService:
         headers = [h.strip().lower() for h in reader.fieldnames]
 
         # Detect column mapping
-        invoice_col = self._find_column(headers, ['invoice', 'invoice_no', 'invoice_reference', 'order_no', 'order_id'])
-        sku_col = self._find_column(headers, ['sku', 'item_code', 'item_id', 'product_code', 'code'])
-        desc_col = self._find_column(headers, ['description', 'item_name', 'product_name', 'name', 'desc'])
-        qty_col = self._find_column(headers, ['quantity', 'qty', 'qty_ordered'])
-        uom_col = self._find_column(headers, ['uom', 'unit', 'unit_of_measure'])
-        per_case_col = self._find_column(headers, ['per_case_qty', 'per_case', 'case_per_qty', 'pieces_per_case'])
-        case_col = self._find_column(headers, ['case_qty', 'no_of_cases', 'cases', 'boxes', 'case_count'])
-        loose_col = self._find_column(headers, ['loose_qty', 'loose', 'loose_pieces'])
-        batch_col = self._find_column(headers, ['batch_no', 'batch_number', 'batch', 'serial_no', 'serial_number'])
+        invoice_col = self._find_column(
+            headers,
+            ["invoice", "invoice_no", "invoice_reference", "order_no", "order_id"],
+        )
+        sku_col = self._find_column(
+            headers, ["sku", "item_code", "item_id", "product_code", "code"]
+        )
+        desc_col = self._find_column(
+            headers, ["description", "item_name", "product_name", "name", "desc"]
+        )
+        qty_col = self._find_column(headers, ["quantity", "qty", "qty_ordered"])
+        uom_col = self._find_column(headers, ["uom", "unit", "unit_of_measure"])
+        per_case_col = self._find_column(
+            headers, ["per_case_qty", "per_case", "case_per_qty", "pieces_per_case"]
+        )
+        case_col = self._find_column(
+            headers, ["case_qty", "no_of_cases", "cases", "boxes", "case_count"]
+        )
+        loose_col = self._find_column(headers, ["loose_qty", "loose", "loose_pieces"])
+        batch_col = self._find_column(
+            headers, ["batch_no", "batch_number", "batch", "serial_no", "serial_number"]
+        )
 
         if not sku_col:
             raise ValidationError(
@@ -454,21 +465,23 @@ class OrderImportService:
 
         for row in reader:
             row_idx += 1
-            invoice_ref = (row.get(invoice_col, '') if invoice_col else '').strip()
-            sku = (row.get(sku_col, '') if sku_col else '').strip()
-            qty_str = (row.get(qty_col, '1') if qty_col else '1').strip()
-            desc = (row.get(desc_col, '') if desc_col else '').strip()
-            uom = (row.get(uom_col, 'pcs') if uom_col else 'pcs').strip()
-            per_case_qty = self._to_decimal(row.get(per_case_col, '') if per_case_col else None)
-            case_qty = self._to_decimal(row.get(case_col, '') if case_col else None)
-            loose_qty = self._to_decimal(row.get(loose_col, '') if loose_col else None)
-            batch_no = (row.get(batch_col, '') if batch_col else '').strip() or None
+            invoice_ref = (row.get(invoice_col, "") if invoice_col else "").strip()
+            sku = (row.get(sku_col, "") if sku_col else "").strip()
+            qty_str = (row.get(qty_col, "1") if qty_col else "1").strip()
+            desc = (row.get(desc_col, "") if desc_col else "").strip()
+            uom = (row.get(uom_col, "pcs") if uom_col else "pcs").strip()
+            per_case_qty = self._to_decimal(
+                row.get(per_case_col, "") if per_case_col else None
+            )
+            case_qty = self._to_decimal(row.get(case_col, "") if case_col else None)
+            loose_qty = self._to_decimal(row.get(loose_col, "") if loose_col else None)
+            batch_no = (row.get(batch_col, "") if batch_col else "").strip() or None
 
             if not sku:
                 continue
 
             try:
-                qty = Decimal(qty_str) if qty_str else Decimal('1')
+                qty = Decimal(qty_str) if qty_str else Decimal("1")
             except Exception:
                 result.errors.append(f"Row {row_idx}: invalid quantity '{qty_str}'")
                 continue
@@ -540,9 +553,10 @@ class OrderImportService:
         """Create or overwrite a pick list from a parsed order. Returns action: created/overwritten/skipped."""
         from sqlalchemy import text
 
+        from app.models.base import PickListStatus
+
         # Check for existing pick list with same invoice reference
         from app.models.pick_list import PickList
-        from app.models.base import PickListStatus
 
         existing = (
             self.db.query(PickList)
@@ -586,7 +600,7 @@ class OrderImportService:
                         item_id=item_uuid,
                         sku=item.sku,
                         quantity=item.quantity,
-                        uom=item.uom or 'pcs',
+                        uom=item.uom or "pcs",
                         per_case_qty=item.per_case_qty,
                         case_qty=item.case_qty,
                         loose_qty=item.loose_qty,
@@ -621,6 +635,7 @@ class OrderImportService:
     ) -> None:
         """Replace items on an existing draft pick list with new order data."""
         from sqlalchemy import text
+
         from app.models.pick_list import PickListItem
 
         # Remove existing items
@@ -653,7 +668,7 @@ class OrderImportService:
                 warehouse_id=warehouse_id,
                 qty=item.quantity,
                 picked_qty=Decimal("0"),
-                uom=item.uom or 'pcs',
+                uom=item.uom or "pcs",
                 per_case_qty=item.per_case_qty,
                 case_qty=item.case_qty,
                 loose_qty=item.loose_qty,
@@ -666,6 +681,7 @@ class OrderImportService:
 
         # Re-resolve bin locations
         from app.models.pick_list import PickList as PL
+
         pick_list = self.db.query(PL).filter(PL.id == pick_list.id).first()
         if pick_list:
             self.pick_list_service.resolve_bin_locations(pick_list.id, org_id)

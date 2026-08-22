@@ -9,12 +9,13 @@ This guide covers **Redis in Railway cloud** — both the simple managed-Redis s
 
 ## 1. What the codebase uses Redis for
 
-| Setting | DB | Purpose | Client |
-|---|---|---|---|
-| `REDIS_URL` | `.../0` | Search-service event stream (`app/events/publisher.py`, search-service consumer) | `redis` (sync) + `aioredis` |
-| `REDIS_WAREHOUSE_URL` | `.../1` | 3D warehouse real-time pub/sub (`app/core/redis_pubsub.py`, `wms_3d.py`) | `redis` + `aioredis` |
+| Setting               | DB      | Purpose                                                                          | Client                      |
+| --------------------- | ------- | -------------------------------------------------------------------------------- | --------------------------- |
+| `REDIS_URL`           | `.../0` | Search-service event stream (`app/events/publisher.py`, search-service consumer) | `redis` (sync) + `aioredis` |
+| `REDIS_WAREHOUSE_URL` | `.../1` | 3D warehouse real-time pub/sub (`app/core/redis_pubsub.py`, `wms_3d.py`)         | `redis` + `aioredis`        |
 
 Current defaults in `core-service/app/config.py`:
+
 ```python
 redis_url: str = "redis://redis:6379/0"
 redis_warehouse_url: str = "redis://redis:6379/1"
@@ -24,11 +25,11 @@ redis_warehouse_url: str = "redis://redis:6379/1"
 
 ## 2. Options (pick one)
 
-| Option | Provider | Clustering / HA | Effort | When to use |
-|---|---|---|---|---|
-| **A. Managed Redis** | Railway Redis plugin | single (replicated) | low | default, most projects |
-| **B. Managed Redis (HA)** | Upstash / Aiven / Redis Cloud | replication + failover | low | prod without managing nodes |
-| **C. Self-hosted Redis Cluster** | Your own services in Railway | true sharding (3×3) | high | high throughput, > single-node memory, pub/sub at scale |
+| Option                           | Provider                      | Clustering / HA        | Effort | When to use                                             |
+| -------------------------------- | ----------------------------- | ---------------------- | ------ | ------------------------------------------------------- |
+| **A. Managed Redis**             | Railway Redis plugin          | single (replicated)    | low    | default, most projects                                  |
+| **B. Managed Redis (HA)**        | Upstash / Aiven / Redis Cloud | replication + failover | low    | prod without managing nodes                             |
+| **C. Self-hosted Redis Cluster** | Your own services in Railway  | true sharding (3×3)    | high   | high throughput, > single-node memory, pub/sub at scale |
 
 > **Recommendation:** for this project, **Option A** (Railway Redis plugin) is enough. Your workload is pub/sub + a short event stream, not a large key space. Jump to §4 only if you specifically need sharding.
 
@@ -39,15 +40,18 @@ redis_warehouse_url: str = "redis://redis:6379/1"
 ### 3.1 Provision
 
 **Railway plugin (simplest):**
+
 ```bash
 railway login
 railway link                 # in horizon-sync-erp-be
 railway add
 # → select "Redis" plugin (or "Database" → Redis)
 ```
+
 This creates a `Redis` service and exposes `${{Redis.REDIS_URL}}` to your app services.
 
 **Upstash (existing approach in this repo):**
+
 1. https://console.upstash.com/redis → **Create Redis Database**
 2. Choose region close to your Railway project (e.g. `us-west1`)
 3. Copy the connection string.
@@ -69,10 +73,12 @@ REDIS_WAREHOUSE_URL=rediss://default:<password>@<host>.upstash.io:6379/1
 ### 3.3 Reference the Railway plugin (optional, config-as-code)
 
 In `railway.toml` you can inject the plugin URL with a variable reference in the Railway dashboard:
+
 ```
 REDIS_URL=${{Redis.REDIS_URL}}
 REDIS_WAREHOUSE_URL=${{Redis.REDIS_URL}}/1
 ```
+
 (Set these under each service's Variables, not in `railway.toml` — `railway.toml` is for build/deploy config.)
 
 ### 3.4 Verify
@@ -111,6 +117,7 @@ startCommand = "redis-server /etc/redis/redis.conf"
 ```
 
 `infra/redis/redis.conf` (identical on all nodes except `port` / `cluster-announce-ip`):
+
 ```
 port 6379
 cluster-enabled yes
@@ -122,6 +129,7 @@ bind 0.0.0.0
 ```
 
 After all nodes are up, form the cluster once (run from any node):
+
 ```bash
 redis-cli --cluster create \
   <node1>:6379 <node2>:6379 <node3>:6379 \
@@ -163,9 +171,9 @@ Async equivalent: `redis.asyncio.cluster.RedisCluster`.
 
 ## 6. Recommended final config (this project)
 
-| Env var | Value |
-|---|---|
-| `REDIS_URL` | `rediss://default:<pwd>@<upstash-host>.upstash.io:6379/0` |
+| Env var               | Value                                                     |
+| --------------------- | --------------------------------------------------------- |
+| `REDIS_URL`           | `rediss://default:<pwd>@<upstash-host>.upstash.io:6379/0` |
 | `REDIS_WAREHOUSE_URL` | `rediss://default:<pwd>@<upstash-host>.upstash.io:6379/1` |
 
 That is the current, production-ready setup. Migrate to §4 only when you hit a single-node limit.

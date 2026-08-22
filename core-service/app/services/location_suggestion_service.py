@@ -162,17 +162,19 @@ class LocationSuggestionService:
         required_m3 = self._required_volume_m3(item, quantity)
 
         # Allocation lookups for this item group.
-        exclusive_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "exclusive"
-        ) if item_group_id else set()
-        preferred_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "preferred"
-        ) if item_group_id else set()
+        exclusive_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "exclusive")
+            if item_group_id
+            else set()
+        )
+        preferred_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "preferred")
+            if item_group_id
+            else set()
+        )
         # Bins exclusively allocated to *any* group (blocked for this item
         # unless the allocation belongs to this item's group).
-        all_exclusive_loc_ids = self._allocated_location_ids(
-            org_id, None, "exclusive"
-        )
+        all_exclusive_loc_ids = self._allocated_location_ids(org_id, None, "exclusive")
 
         bins = (
             self.db.query(WarehouseLocation)
@@ -214,10 +216,14 @@ class LocationSuggestionService:
                 if required_m3 is not None and required_m3 > remaining:
                     continue
                 if cap["volume"]["capacity_m3"] > 0:
-                    capacity_ratio = float(remaining) / float(cap["volume"]["capacity_m3"])
+                    capacity_ratio = float(remaining) / float(
+                        cap["volume"]["capacity_m3"]
+                    )
                     score += capacity_ratio * 10
                     reasons.append(f"{round(capacity_ratio * 100)}% volume available")
-            available = Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            available = (
+                Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            )
 
             # 3. Proximity to dock
             dist_to_dock = self._distance(self._position(b), dock_position)
@@ -569,9 +575,7 @@ class LocationSuggestionService:
 
     @staticmethod
     def _distance(a: Position, b: Position) -> float:
-        return math.sqrt(
-            (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
-        )
+        return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
     @staticmethod
     def _build_suggestion(

@@ -18,7 +18,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-
 from app.alembic_guards import has_column, has_table
 
 # revision identifiers, used by Alembic.

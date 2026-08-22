@@ -82,7 +82,9 @@ def _create_location(
         location_type=location_type,
         code=code,
         full_path=code,
-        max_volume_cc=Decimal(str(max_volume_cc)) if max_volume_cc is not None else None,
+        max_volume_cc=Decimal(str(max_volume_cc))
+        if max_volume_cc is not None
+        else None,
         max_weight_grams=Decimal(str(max_weight_grams))
         if max_weight_grams is not None
         else None,
@@ -150,13 +152,22 @@ class TestGetBinCapacity:
         assert result["is_available"] is True
         assert result["volume"]["pct"] == Decimal("0")
 
-    def test_volume_percentage(self, db_session, service, org_id, warehouse_id, item_id):
+    def test_volume_percentage(
+        self, db_session, service, org_id, warehouse_id, item_id
+    ):
         _create_warehouse(db_session, org_id, warehouse_id)
         bin_loc = _create_location(
             db_session, org_id, warehouse_id, "bin", "BIN-01", max_volume_cc=100000
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("50"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("50"),
+            packaging_unit_id=pu.id,
+        )
 
         result = service.get_bin_capacity(bin_loc.id, org_id)
 
@@ -203,7 +214,9 @@ class TestConfigurableDimensions:
     def test_weight_excluded_by_default(
         self, db_session, service, org_id, warehouse_id, item_id
     ):
-        _create_warehouse(db_session, org_id, warehouse_id, use_volume=True, use_weight=False)
+        _create_warehouse(
+            db_session, org_id, warehouse_id, use_volume=True, use_weight=False
+        )
         bin_loc = _create_location(
             db_session,
             org_id,
@@ -214,7 +227,14 @@ class TestConfigurableDimensions:
             max_weight_grams=1000,
         )
         pu = _create_packaging_unit(db_session, org_id, item_id, weight=200)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("2"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("2"),
+            packaging_unit_id=pu.id,
+        )
 
         result = service.get_bin_capacity(bin_loc.id, org_id)
 
@@ -225,7 +245,9 @@ class TestConfigurableDimensions:
     def test_weight_included_when_enabled(
         self, db_session, service, org_id, warehouse_id, item_id
     ):
-        _create_warehouse(db_session, org_id, warehouse_id, use_volume=True, use_weight=True)
+        _create_warehouse(
+            db_session, org_id, warehouse_id, use_volume=True, use_weight=True
+        )
         bin_loc = _create_location(
             db_session,
             org_id,
@@ -235,7 +257,14 @@ class TestConfigurableDimensions:
             max_weight_grams=1000,
         )
         pu = _create_packaging_unit(db_session, org_id, item_id, weight=200)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("2"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("2"),
+            packaging_unit_id=pu.id,
+        )
 
         result = service.get_bin_capacity(bin_loc.id, org_id)
 
@@ -260,7 +289,14 @@ class TestThresholds:
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
         # 60% → above the bin's 50% override → full
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("60"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("60"),
+            packaging_unit_id=pu.id,
+        )
 
         result = service.get_bin_capacity(bin_loc.id, org_id)
         assert result["bin_state"] == STATE_FULL
@@ -275,7 +311,14 @@ class TestRefreshBin:
             db_session, org_id, warehouse_id, "bin", "BIN-01", max_volume_cc=100000
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("75"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("75"),
+            packaging_unit_id=pu.id,
+        )
         db_session.commit()
 
         service.refresh_bin(bin_loc.id, org_id)
@@ -310,7 +353,14 @@ class TestGetAvailableBins:
             db_session, org_id, warehouse_id, "bin", "BIN-EMPTY", max_volume_cc=100000
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, full_bin.id, item_id, Decimal("95"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            full_bin.id,
+            item_id,
+            Decimal("95"),
+            packaging_unit_id=pu.id,
+        )
 
         results = service.get_available_bins(warehouse_id, org_id, task_type="put_away")
         ids = {r["bin_id"] for r in results}
@@ -329,7 +379,14 @@ class TestGetAvailableBins:
             db_session, org_id, warehouse_id, "bin", "BIN-EMPTY", max_volume_cc=100000
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, stocked.id, item_id, Decimal("10"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            stocked.id,
+            item_id,
+            Decimal("10"),
+            packaging_unit_id=pu.id,
+        )
 
         results = service.get_available_bins(warehouse_id, org_id, task_type="pick")
         ids = {r["bin_id"] for r in results}
@@ -354,7 +411,14 @@ class TestGetCapacityTree:
             max_volume_cc=100000,
         )
         pu = _create_packaging_unit(db_session, org_id, item_id)
-        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("50"), packaging_unit_id=pu.id)
+        _add_stock(
+            db_session,
+            org_id,
+            bin_loc.id,
+            item_id,
+            Decimal("50"),
+            packaging_unit_id=pu.id,
+        )
 
         tree = service.get_capacity_tree(warehouse_id, org_id)
 

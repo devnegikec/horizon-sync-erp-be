@@ -1,8 +1,7 @@
 # GS1 QR Migration — Design & Plan
 
 > **Status**: Decisions locked — not yet implemented
-> **Reference**: `bwmobile/docs/GS1_Offline_packing_and_aggregatino_guide.md`
-> **Date**: 2026-08-13
+> **Reference**: `bwmobile/docs/GS1_Offline_packing_and_aggregatino_guide.md` > **Date**: 2026-08-13
 
 ---
 
@@ -20,11 +19,11 @@ app must still tell the user whether a scanned product is valid).
 
 ## 2. Decisions (locked)
 
-| # | Topic | Decision |
-|---|---|---|
-| D1 | Authentication in GS1 URL | Append custom query params: `/01/{gtin}/21/{serial}?c={signature}&n={nonce}`. Signed message stays `"{serial}~{nonce}"`. |
-| D2 | Backward compatibility | Decoder + verify page accept **both** the old `/g/…` format and the new GS1 format. |
-| D3 | Master identity | **SSCC replaces** `QSealTrack.serial_number` as the master's primary identity. |
+| #   | Topic                     | Decision                                                                                                                 |
+| --- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Authentication in GS1 URL | Append custom query params: `/01/{gtin}/21/{serial}?c={signature}&n={nonce}`. Signed message stays `"{serial}~{nonce}"`. |
+| D2  | Backward compatibility    | Decoder + verify page accept **both** the old `/g/…` format and the new GS1 format.                                      |
+| D3  | Master identity           | **SSCC replaces** `QSealTrack.serial_number` as the master's primary identity.                                           |
 
 ---
 
@@ -59,6 +58,7 @@ Request: `{ "serial_number", "nonce", "cipher" }`
 ### 3.3 Consumer verification (frontend)
 
 Files:
+
 - `apps/inventory/src/app/pages/PublicQRValidation.tsx`
 - `apps/inventory/src/app/pages/QRVerifyPage.tsx`
 - `apps/platform/src/app/pages/PublicQRValidation.tsx`
@@ -84,29 +84,30 @@ File: `core-service/app/models/qseal.py`
 
 ## 4. Target formats
 
-| Type | New QR URL |
-|---|---|
-| Unit (SGTIN) | `https://{domain}/01/{gtin}/21/{serial}?c={signature}&n={nonce}` |
+| Type          | New QR URL                                                           |
+| ------------- | -------------------------------------------------------------------- |
+| Unit (SGTIN)  | `https://{domain}/01/{gtin}/21/{serial}?c={signature}&n={nonce}`     |
 | Master (SSCC) | `https://{domain}/00/{sscc}?02={contained_gtin}&37={count}&10={lot}` |
 
 ---
 
 ## 5. Gap analysis
 
-| Area | Today | GS1 target | Change |
-|---|---|---|---|
-| Unit URL | `/g/{gtin}/s/{serial}/{ts}?c={sig}` | `/01/{gtin}/21/{serial}?c={sig}&n={nonce}` | `build_qr_url`, decoder, verify page |
-| Signature | ECDSA on `{serial}~{ts}` in `?c=` | keep, but nonce moves to `?n=` | no crypto change |
-| Master | `QSealTrack.serial_number` | SSCC (AI `00`) | model + migration + generator |
-| Decoder | `/g/…` only | `/01/…`, `/00/…?02=…` | add GS1 parsing |
-| Verify page | parses `/g/…` | parses `/01/…` | frontend change |
-| Mobile serial extraction | `/g/…/s/{serial}` | `/01/…/21/{serial}` | `qrHelpers`, inbound/direct-putaway hooks |
+| Area                     | Today                               | GS1 target                                 | Change                                    |
+| ------------------------ | ----------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| Unit URL                 | `/g/{gtin}/s/{serial}/{ts}?c={sig}` | `/01/{gtin}/21/{serial}?c={sig}&n={nonce}` | `build_qr_url`, decoder, verify page      |
+| Signature                | ECDSA on `{serial}~{ts}` in `?c=`   | keep, but nonce moves to `?n=`             | no crypto change                          |
+| Master                   | `QSealTrack.serial_number`          | SSCC (AI `00`)                             | model + migration + generator             |
+| Decoder                  | `/g/…` only                         | `/01/…`, `/00/…?02=…`                      | add GS1 parsing                           |
+| Verify page              | parses `/g/…`                       | parses `/01/…`                             | frontend change                           |
+| Mobile serial extraction | `/g/…/s/{serial}`                   | `/01/…/21/{serial}`                        | `qrHelpers`, inbound/direct-putaway hooks |
 
 ---
 
 ## 6. Files to change
 
 ### Backend — QR generation
+
 - `core-service/app/utils/serial_generators.py`
   - `build_qr_url()` → emit `/01/{gtin}/21/{serial}?c={sig}&n={ts}`
   - add `build_master_sscc_url()` → `/00/{sscc}?02={gtin}&37={count}&10={lot}`
@@ -114,16 +115,19 @@ File: `core-service/app/models/qseal.py`
   - `sign_qr_item()` unchanged
 
 ### Backend — authentication (no logic change)
+
 - `core-service/app/services/qr_product_service.py` — `authenticate()` unchanged
   (message still `"{serial}~{nonce}"`, nonce now supplied via `?n=`).
 
 ### Backend — decoder
+
 - `core-service/app/services/qr_decoder.py`
   - accept `/01/{gtin}/21/{serial}` (+ optional `/10/{lot}`)
   - accept `/00/{sscc}?02=…&37=…&10=…` (resolve master by SSCC)
   - keep `/g/…` and bare-serial and JSON for backward compatibility (D2)
 
 ### Backend — master / SSCC
+
 - `core-service/app/models/qseal.py` — `QSealTrack`: replace/augment serial with `sscc`
 - Alembic migration (add `sscc`, backfill if keeping existing masters)
 - `core-service/app/services/qseal_service.py` — `scanQSeal` / `getLinkedUnits`
@@ -131,10 +135,12 @@ File: `core-service/app/models/qseal.py`
 - master QR creation writes `/00/{sscc}?…` as the parent token
 
 ### Frontend — consumer verify
+
 - `PublicQRValidation.tsx`, `QRVerifyPage.tsx` (inventory + platform)
   - parse `/01/{gtin}/21/{serial}?c=…&n=…` (keep `/g/…`)
 
 ### Mobile app (`bwmobile`)
+
 - `src/components/putaway/qrHelpers.ts` — `extractSerial` / `isQSealUrl`
 - `src/screens/InboundScreen.tsx` / `src/hooks/useInboundFlow.ts`
 - `src/hooks/useDirectPutaway.ts`

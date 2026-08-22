@@ -24,7 +24,9 @@ import os
 
 from fpdf import FPDF
 
-OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "seed_data", "picklist_packing_slip_test_columned.pdf")
+OUTPUT_PATH = os.path.join(
+    os.path.dirname(__file__), "seed_data", "picklist_packing_slip_test_columned.pdf"
+)
 
 # Column definitions: (header label, width in mm). Order matters for parsing.
 COLS = [
@@ -44,7 +46,9 @@ COLS = [
 class PackingSlipPDF(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 14)
-        self.cell(0, 8, "TTK PRESTIGE LIMITED", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            0, 8, "TTK PRESTIGE LIMITED", align="C", new_x="LMARGIN", new_y="NEXT"
+        )
         self.set_font("Helvetica", "B", 11)
         self.cell(0, 6, "PACKING SLIP", align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "", 9)
@@ -52,7 +56,13 @@ class PackingSlipPDF(FPDF):
         self.cell(0, 5, "Doc.Date   : 18.08.2026", new_x="LMARGIN", new_y="NEXT")
         self.cell(0, 5, "Invoice Nos : INV-PICK-0001", new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
-        self.cell(0, 5, "Dealer : 1000040082 - SRI ESHWARA ENTERPRISES, BENGALURU", new_x="LMARGIN", new_y="NEXT")
+        self.cell(
+            0,
+            5,
+            "Dealer : 1000040082 - SRI ESHWARA ENTERPRISES, BENGALURU",
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
         self.ln(3)
 
     def _row(self, cells, bold=False):
@@ -62,7 +72,9 @@ class PackingSlipPDF(FPDF):
         widths = [w for _, w in COLS]
 
         # Height required by the (possibly wrapping) particulars column.
-        split = self.multi_cell(widths[1], line_h, cells[1], dry_run=True, output="LINES")
+        split = self.multi_cell(
+            widths[1], line_h, cells[1], dry_run=True, output="LINES"
+        )
         row_h = max(line_h, line_h * len(split))
 
         x = self.l_margin
@@ -94,31 +106,35 @@ def generate():
 
     pdf._row([name for name, _ in COLS], bold=True)
 
-    pdf._row([
-        "1",
-        "(PPI-SKO-89) Prestige Digi Kettle 2.0 Litre with 6 Preset Modes",
-        "NOS",
-        "12",
-        "4",
-        "3",
-        "12",
-        "0",
-        "0",
-        "BATCH-K89-001",
-    ])
+    pdf._row(
+        [
+            "1",
+            "(PPI-SKO-89) Prestige Digi Kettle 2.0 Litre with 6 Preset Modes",
+            "NOS",
+            "12",
+            "4",
+            "3",
+            "12",
+            "0",
+            "0",
+            "BATCH-K89-001",
+        ]
+    )
 
-    pdf._row([
-        "2",
-        "(PPI-SKO-90) Prestige Deluxe Plus Aluminium Outer Lid Pressure Pan, Silver",
-        "NOS",
-        "10",
-        "6",
-        "1",
-        "6",
-        "4",
-        "1",
-        "BATCH-P90-002",
-    ])
+    pdf._row(
+        [
+            "2",
+            "(PPI-SKO-90) Prestige Deluxe Plus Aluminium Outer Lid Pressure Pan, Silver",
+            "NOS",
+            "10",
+            "6",
+            "1",
+            "6",
+            "4",
+            "1",
+            "BATCH-P90-002",
+        ]
+    )
 
     pdf._row(["", "GRAND TOTAL", "", "22", "", "4", "7", "4", "", ""], bold=True)
 

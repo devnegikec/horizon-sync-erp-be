@@ -28,9 +28,9 @@ from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
-from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService

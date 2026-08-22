@@ -331,7 +331,7 @@ class QRProductService:
             # Normalize detection of unique-constraint / integrity failures.
             # Some DB drivers wrap the underlying IntegrityError (DBAPIError),
             # so inspect __cause__ / orig when available.
-            from sqlalchemy.exc import IntegrityError, DBAPIError
+            from sqlalchemy.exc import DBAPIError, IntegrityError
 
             def _is_integrity_error(e: BaseException) -> bool:
                 if isinstance(e, IntegrityError):
