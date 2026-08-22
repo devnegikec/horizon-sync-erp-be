@@ -147,6 +147,7 @@ class ItemPackagingUnitService:
             unit_name=data.unit_name,
             qr_identifier=data.qr_identifier,
             conversion_factor=data.conversion_factor,
+            items_per_master_pack=data.items_per_master_pack,
             length_mm=data.length_mm,
             width_mm=data.width_mm,
             height_mm=data.height_mm,

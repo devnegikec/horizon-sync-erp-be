@@ -407,6 +407,9 @@ class ItemService:
                     unit_name=unit_name,
                     qr_identifier=None,
                     conversion_factor=packaging_details.conversion_factor,
+                    items_per_master_pack=getattr(
+                        packaging_details, "items_per_master_pack", None
+                    ),
                     length_mm=packaging_details.length_mm,
                     width_mm=packaging_details.width_mm,
                     height_mm=packaging_details.height_mm,
@@ -419,6 +422,8 @@ class ItemService:
                 base.is_base_unit = True
 
         base.conversion_factor = packaging_details.conversion_factor
+        if hasattr(packaging_details, "items_per_master_pack"):
+            base.items_per_master_pack = packaging_details.items_per_master_pack
         base.length_mm = packaging_details.length_mm
         base.width_mm = packaging_details.width_mm
         base.height_mm = packaging_details.height_mm

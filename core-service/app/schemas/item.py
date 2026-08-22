@@ -87,6 +87,9 @@ class ItemPackagingDetails(BaseModel):
 
     unit_name: str = Field(default="Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
+    items_per_master_pack: int | None = Field(
+        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+    )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
