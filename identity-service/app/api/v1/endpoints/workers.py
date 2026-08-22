@@ -269,6 +269,10 @@ async def create_worker(
 
 
 @router.get("/workers")
+async def list_workers(search: str|None=Query(None), status_filter: str|None=Query(None,alias="status"),
+                       user_type: str|None=Query(None), warehouse_id: str|None=Query(None),
+                       page: int=Query(1,ge=1), page_size: int=Query(20,ge=1,le=100),
+                       current_user: CurrentUser=Depends(require_worker_manager), db: Session=Depends(get_db)):
 async def list_workers(
     search: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
@@ -278,13 +282,13 @@ async def list_workers(
     page_size: int = Query(20, ge=1, le=100),
     current_user: CurrentUser = Depends(require_worker_manager),
     db: Session = Depends(get_db),
-):
-    org_id = _get_org_id(current_user, db)
+):  org_id = _get_org_id(current_user, db)
     where = ["1=1"]
     p: dict = {}
     if current_user.user_type != UserType.SYSTEM_ADMIN and org_id:
-        where.append("w.organization_id=:org")
-        p["org"] = org_id
+        where.append("w.organization_id=:org"); p["org"] = org_id
+    if warehouse_id:
+        where.append("w.warehouse_id=:wh"); p["wh"] = warehouse_id
     if search:
         where.append(
             "(w.first_name ILIKE :s OR w.last_name ILIKE :s OR w.email ILIKE :s OR w.barcode ILIKE :s)"

@@ -256,8 +256,11 @@ class AuthService:
         Raises:
             AuthenticationError: If QR code is invalid or worker is not active
         """
-        # Look up user by QR code
+        # Look up user by QR code — check users table first, then wms_workers
         user = self.user_repo.get_user_by_qr_code(qr_code)
+        if not user:
+            # Fallback: check wms_workers.barcode (workers created directly in core-service)
+            user = self._find_or_create_user_from_wms_worker(qr_code)
         if not user:
             raise AuthenticationError("Invalid QR code")
 
@@ -309,6 +312,83 @@ class AuthService:
         )
 
         return user, access_token, refresh_token
+
+    def _find_or_create_user_from_wms_worker(self, qr_code: str):
+        """Look up a worker in wms_workers by barcode and create a users entry if needed."""
+        import uuid as _uuid
+        from sqlalchemy import text as sa_text
+
+        row = self.db.execute(
+            sa_text("SELECT * FROM wms_workers WHERE barcode = :bc AND is_active = true"),
+            {"bc": qr_code},
+        ).fetchone()
+        if not row:
+            return None
+
+        # Check if a user already exists with same email
+        email = row.email or f"{qr_code}@warehouse.local"
+        existing = self.user_repo.get_user_by_email(email)
+        if existing:
+            # Update the existing user's QR code if needed
+            if not existing.qr_code:
+                existing.qr_code = qr_code
+                self.db.commit()
+            return existing
+
+        # Create a new user for this worker
+        from app.models.user import User
+        user = User(
+            id=_uuid.uuid4(),
+            email=email,
+            password_hash="",  # Workers use QR login, no password
+            first_name=row.first_name,
+            last_name=row.last_name,
+            display_name=row.display_name,
+            phone=row.phone or "",
+            user_type=UserType.WAREHOUSE_WORKER,
+            status=UserStatus.ACTIVE,
+            is_active=True,
+            email_verified=True,
+            qr_code=qr_code,
+        )
+        self.db.add(user)
+        self.db.flush()
+
+        # Assign the warehouse_work_user role
+        from app.models.role import Role, UserOrganizationRole
+        ww_role = self.db.query(Role).filter(
+            Role.code == "warehouse_work_user", Role.is_active == True
+        ).first()
+        if ww_role:
+            self.db.add(UserOrganizationRole(
+                user_id=user.id,
+                organization_id=row.organization_id,
+                role_id=ww_role.id,
+                is_primary=True,
+                is_active=True,
+                status="active",
+            ))
+        # Also create warehouse_users record so /my-warehouses works
+        wms_role = (row.role or "warehouse_worker").replace("warehouse_", "")
+        if wms_role not in ("supervisor", "manager", "operator", "coordinator"):
+            wms_role = "operator"
+        self.db.execute(
+            sa_text(
+                "INSERT INTO warehouse_users (id, organization_id, user_id, warehouse_id, role, is_primary, is_active, created_at, updated_at) "
+                "VALUES (:id, :org, :uid, :wh, :role, false, true, NOW(), NOW()) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {
+                "id": str(_uuid.uuid4()),
+                "org": str(row.organization_id),
+                "uid": str(user.id),
+                "wh": str(row.warehouse_id) if row.warehouse_id else None,
+                "role": wms_role,
+            },
+        )
+        self.db.commit()
+        self.db.refresh(user)
+        return user
 
     def _ensure_worker_permissions(self, user: User) -> None:
         """Ensure the warehouse_work_user role has all required permissions.
