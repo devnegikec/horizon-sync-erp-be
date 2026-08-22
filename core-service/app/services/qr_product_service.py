@@ -1,5 +1,6 @@
 """Service layer for QR Products module"""
 
+import hashlib
 import logging
 import secrets
 import string
@@ -9,6 +10,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -20,20 +22,28 @@ from app.repositories.qr_product_repository import (
     QRBlockRepository,
     QRProductRepository,
 )
+from app.repositories.qr_product_setting_repository import QRProductSettingRepository
+from app.repositories.sku_repository import ProductSKURepository
 from app.schemas.qr_product import (
     AuthenticateRequest,
     QRActivationParamsCreate,
     QRBlockCreate,
     QRProductCreate,
     QRProductUpdate,
+    QRType,
     QRValidateRequest,
+    SerialNumberType,
+    normalize_qr_type,
+    normalize_serial_number_type,
 )
 from app.services.credit_service import CreditService
 from app.services.key_service import KeyService
+from app.services.qr_shortener import QRShortener
 from app.utils.serial_generators import (
     build_qr_url,
     generate_r4dan,
     generate_r6dan,
+    generate_r8dan,
     sequential_s8dn,
     sequential_s10dn,
     sign_qr_item,
@@ -42,118 +52,89 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
-def _embed_qr(ws, url: str, row: int, col: int, size: int = 150) -> None:
-    """Generate a QR code image from a URL and embed it into a worksheet cell."""
+def _build_excel(  # noqa: C901
+    rows: list[dict],
+    qr_type: str,
+    include_qr_images: bool = False,
+) -> bytes:
+    """Build a QR workbook, optionally embedding PNG QR images."""
     from io import BytesIO
 
     import qrcode
-    from openpyxl.drawing.image import Image as XLImage
-    from openpyxl.utils import get_column_letter
-
-    if not url:
-        return
-
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
-        border=2,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-
-    xl_img = XLImage(buf)
-    xl_img.width = size
-    xl_img.height = size
-
-    cell_ref = f"{get_column_letter(col)}{row}"
-    ws.add_image(xl_img, cell_ref)
-
-
-def _build_excel(rows: list[dict], qr_type: str) -> bytes:
-    """Build an Excel file from block item rows. Returns raw bytes.
-
-    Includes embedded QR code images so users can print the sheet and
-    scan QR codes directly from the Excel.
-    """
-    from io import BytesIO
-
     from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as WorksheetImage
     from openpyxl.styles import Alignment, Font
-    from openpyxl.utils import get_column_letter
 
     wb = Workbook()
     ws = wb.active
     ws.title = "QR Codes"
 
-    qr_type = qr_type.upper()
-    if qr_type == "B":
-        headers = [
-            "URL (Overt)",
-            "QR Code (Overt)",
-            "URL (Covert)",
-            "QR Code (Covert)",
-            "Serial Number",
-        ]
-    elif qr_type == "SC":
-        headers = ["QR URL", "QR Code", "Serial Number", "Secret Code"]
+    normalized_type = normalize_qr_type(qr_type) or QRType.DYNAMIC
+    if normalized_type == QRType.DUAL:
+        headers = ["URL (Overt)", "URL (Covert)", "Serial Number"]
+        image_fields = [("QR (Overt)", "overt_url"), ("QR (Covert)", "covert_url")]
+    elif normalized_type == QRType.SECURE_CODE:
+        headers = ["QR URL", "Serial Number", "Secret Code"]
+        image_fields = [("QR Image", "primary_url")]
     else:
-        headers = ["QR URL", "QR Code", "Serial Number"]
+        headers = ["QR URL", "Serial Number"]
+        image_fields = [("QR Image", "primary_url")]
+
+    if include_qr_images:
+        headers.extend(label for label, _field in image_fields)
 
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=h)
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal="center")
 
-    # Set column widths: URL columns wider, QR code columns sized for ~150px image
-    url_col_width = 55
-    qr_col_width = 24  # ~150px at default DPI
-    if qr_type == "B":
-        ws.column_dimensions[get_column_letter(1)].width = url_col_width
-        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
-        ws.column_dimensions[get_column_letter(3)].width = url_col_width
-        ws.column_dimensions[get_column_letter(4)].width = qr_col_width
-        ws.column_dimensions[get_column_letter(5)].width = 20
-    elif qr_type == "SC":
-        ws.column_dimensions[get_column_letter(1)].width = url_col_width
-        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
-        ws.column_dimensions[get_column_letter(3)].width = 20
-        ws.column_dimensions[get_column_letter(4)].width = 18
-    else:
-        ws.column_dimensions[get_column_letter(1)].width = url_col_width
-        ws.column_dimensions[get_column_letter(2)].width = qr_col_width
-        ws.column_dimensions[get_column_letter(3)].width = 20
-
-    qr_size = 150  # pixels for QR image
-
+    image_streams: list[BytesIO] = []
     for row_idx, item in enumerate(rows, 2):
-        # Set row height to accommodate the QR code image
-        ws.row_dimensions[row_idx].height = 115
-
-        if qr_type == "B":
-            overt_url = item.get("short_url", "")
-            covert_url = item.get("overt_url", "")
-            ws.cell(row=row_idx, column=1, value=overt_url)
-            _embed_qr(ws, overt_url, row_idx, 2, qr_size)
-            ws.cell(row=row_idx, column=3, value=covert_url)
-            _embed_qr(ws, covert_url, row_idx, 4, qr_size)
-            ws.cell(row=row_idx, column=5, value=item.get("serial", ""))
-        elif qr_type == "SC":
-            url = item.get("short_url", "")
-            ws.cell(row=row_idx, column=1, value=url)
-            _embed_qr(ws, url, row_idx, 2, qr_size)
+        if normalized_type == QRType.DUAL:
+            ws.cell(row=row_idx, column=1, value=item.get("overt_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("covert_url", ""))
             ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
-            ws.cell(row=row_idx, column=4, value=item.get("secret_code", ""))
+        elif normalized_type == QRType.SECURE_CODE:
+            ws.cell(row=row_idx, column=1, value=item.get("primary_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+            ws.cell(row=row_idx, column=3, value=item.get("secret_code", ""))
         else:
-            url = item.get("short_url", "")
-            ws.cell(row=row_idx, column=1, value=url)
-            _embed_qr(ws, url, row_idx, 2, qr_size)
-            ws.cell(row=row_idx, column=3, value=item.get("serial", ""))
+            ws.cell(row=row_idx, column=1, value=item.get("primary_url", ""))
+            ws.cell(row=row_idx, column=2, value=item.get("serial", ""))
+
+        for url_column in range(1, 3 if normalized_type == QRType.DUAL else 2):
+            cell = ws.cell(row=row_idx, column=url_column)
+            if cell.value:
+                cell.hyperlink = str(cell.value)
+                cell.style = "Hyperlink"
+
+        if include_qr_images:
+            first_image_column = len(headers) - len(image_fields) + 1
+            for offset, (_label, field) in enumerate(image_fields):
+                url = item.get(field, "")
+                if not url:
+                    continue
+                stream = BytesIO()
+                qrcode.make(url).save(stream, format="PNG")
+                stream.seek(0)
+                image_streams.append(stream)
+                image = WorksheetImage(stream)
+                image.width = 96
+                image.height = 96
+                anchor = ws.cell(
+                    row=row_idx,
+                    column=first_image_column + offset,
+                ).coordinate
+                ws.add_image(image, anchor)
+            ws.row_dimensions[row_idx].height = 75
+
+    for column in range(1, len(headers) + 1):
+        is_image_column = (
+            "QR" in headers[column - 1] and "URL" not in headers[column - 1]
+        )
+        ws.column_dimensions[ws.cell(row=1, column=column).column_letter].width = (
+            18 if is_image_column else 42
+        )
 
     buf = BytesIO()
     wb.save(buf)
@@ -164,9 +145,12 @@ class QRProductService:
     def __init__(self, db: Session):
         self.db = db
         self.product_repo = QRProductRepository(db)
+        self.product_setting_repo = QRProductSettingRepository(db)
+        self.sku_repo = ProductSKURepository(db)
         self.block_repo = QRBlockRepository(db)
         self.item_repo = ProductItemRepository(db)
         self.credit_service = CreditService(db)
+        self.qr_shortener = QRShortener()
         self.key_service = (
             KeyService(settings.brand_key_encryption_secret)
             if settings.brand_key_encryption_secret
@@ -174,6 +158,91 @@ class QRProductService:
         )
 
     # ── Products ──────────────────────────────────────────────────────────────
+
+    def _validate_shelf_life_setting(
+        self,
+        setting_id: UUID | None,
+        organization_id: UUID,
+        *,
+        allow_inactive: bool = False,
+    ) -> list[dict]:
+        if setting_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Shelf life setting is required",
+            )
+
+        setting = self.product_setting_repo.get_by_id(setting_id, organization_id)
+        if not setting:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shelf life setting not found",
+            )
+        if setting.setting_type != "shelf_life":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Selected setting is not a shelf life setting",
+            )
+        if not setting.is_active and not allow_inactive:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Selected shelf life setting is inactive",
+            )
+
+    def _validate_serial_prefix_setting(
+        self,
+        setting_id: UUID | None,
+        organization_id: UUID,
+        *,
+        allow_inactive: bool = False,
+    ) -> None:
+        if setting_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Serial prefix setting is required",
+            )
+
+        setting = self.product_setting_repo.get_by_id(setting_id, organization_id)
+        if not setting:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serial prefix setting not found",
+            )
+        if setting.setting_type != "serial_prefix":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Selected setting is not a serial prefix setting",
+            )
+        if not setting.is_active and not allow_inactive:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Selected serial prefix setting is inactive",
+            )
+
+    def _validate_optional_block_setting(
+        self,
+        setting_id: UUID | None,
+        expected_type: str,
+        organization_id: UUID,
+    ) -> None:
+        if setting_id is None:
+            return
+        setting = self.product_setting_repo.get_by_id(setting_id, organization_id)
+        if not setting:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{expected_type.title()} setting not found",
+            )
+        if setting.setting_type != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Selected setting is not a {expected_type} setting",
+            )
+        if not setting.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Selected {expected_type} setting is inactive",
+            )
 
     def create_product(
         self, data: QRProductCreate, organization_id: UUID, user_id: UUID
@@ -192,6 +261,12 @@ class QRProductService:
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
+        self._validate_shelf_life_setting(
+            product_dict.get("shelf_life_setting_id"), organization_id
+        )
+        self._validate_serial_prefix_setting(
+            product_dict.get("serial_prefix_setting_id"), organization_id
+        )
 
         # Validate brand_id belongs to the organization when provided
         if product_dict.get("brand_id"):
@@ -230,7 +305,7 @@ class QRProductService:
 
         return qr_product
 
-    def _create_linked_item(
+    def _create_linked_item(  # noqa: C901
         self,
         qr_product: QRProduct,
         organization_id: UUID,
@@ -248,7 +323,6 @@ class QRProductService:
         try:
             from app.models.base import ItemStatus, ItemType
             from app.models.item import Item
-            from app.repositories.item_repository import ItemRepository
             from app.services.document_numbering_service import DocumentNumberingService
 
             # Guard: if an Item already exists referencing this QR product, skip creation.
@@ -270,7 +344,6 @@ class QRProductService:
                 organization_id, "item"
             )
 
-            item_repo = ItemRepository(self.db)
             item = Item(
                 organization_id=organization_id,
                 item_code=item_code,
@@ -331,7 +404,7 @@ class QRProductService:
             # Normalize detection of unique-constraint / integrity failures.
             # Some DB drivers wrap the underlying IntegrityError (DBAPIError),
             # so inspect __cause__ / orig when available.
-            from sqlalchemy.exc import IntegrityError, DBAPIError
+            from sqlalchemy.exc import DBAPIError, IntegrityError
 
             def _is_integrity_error(e: BaseException) -> bool:
                 if isinstance(e, IntegrityError):
@@ -451,6 +524,25 @@ class QRProductService:
             extra["packaging_details"] = packaging_details
             update_dict["extra_data"] = extra
 
+        if "shelf_life_setting_id" in update_dict:
+            self._validate_shelf_life_setting(
+                update_dict["shelf_life_setting_id"],
+                organization_id,
+                allow_inactive=(
+                    update_dict["shelf_life_setting_id"]
+                    == getattr(product, "shelf_life_setting_id", None)
+                ),
+            )
+        if "serial_prefix_setting_id" in update_dict:
+            self._validate_serial_prefix_setting(
+                update_dict["serial_prefix_setting_id"],
+                organization_id,
+                allow_inactive=(
+                    update_dict["serial_prefix_setting_id"]
+                    == getattr(product, "serial_prefix_setting_id", None)
+                ),
+            )
+
         # brand_id is immutable after creation
         if "brand_id" in update_dict:
             raise HTTPException(
@@ -512,6 +604,35 @@ class QRProductService:
         product = self.get_product(product_id, organization_id)
         self.product_repo.soft_delete(product, user_id)
 
+    def update_product_image(
+        self,
+        product_id: UUID,
+        image_type: str,
+        image_url: str | None,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> tuple[QRProduct, str | None]:
+        product = self.get_product(product_id, organization_id)
+        field = {
+            "logo": "image_url",
+            "banner": "banner_image_url",
+        }.get(image_type)
+        if field is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="image_type must be 'logo' or 'banner'",
+            )
+
+        previous_url = getattr(product, field)
+        updated = self.product_repo.update(
+            product,
+            {
+                field: image_url,
+                "updated_by": user_id,
+            },
+        )
+        return updated, previous_url
+
     # ── QR Blocks ─────────────────────────────────────────────────────────────
 
     def generate_block(
@@ -522,86 +643,484 @@ class QRProductService:
         user_id: UUID,
         org_credit_limit: int = 0,
     ) -> QRBlock:
-        """Generate a QR block for a product.
+        """Generate synchronously for internal callers and focused tests."""
+        block = self.create_block_job(
+            product_id,
+            data,
+            organization_id,
+            user_id,
+        )
+        return self.process_block(
+            block.id,
+            organization_id,
+            _claimed_block=block,
+        )
 
-        Enhanced flow:
-        1. Validate product exists
-        2. Check credits via CreditService.check_balance()
-        3. Create block with status="pending"
-        4. Set status="in_progress", generate items
-        5. On success: status="completed", deduct credits
-        6. On failure: status="failed", no credit deduction
-
-        Requirements: 5.1-5.7, 6.3, 6.4, 7.1-7.9, 8.1-8.5
-        """
-        # 1. Validate product exists
+    def create_block_job(
+        self,
+        product_id: UUID,
+        data: QRBlockCreate,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> QRBlock:
+        """Validate a request, create its pending Block, and reserve credits."""
         product = self.get_product(product_id, organization_id)
+        self._validate_optional_block_setting(
+            data.channel_setting_id, "channel", organization_id
+        )
+        self._validate_optional_block_setting(
+            data.destination_setting_id, "destination", organization_id
+        )
 
-        # 2. Credit check via CreditService
+        if self.block_repo.batch_exists(data.batch, organization_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Batch '{data.batch}' already exists",
+            )
+
+        sku = self._get_block_sku(
+            data.sku_id,
+            product_id,
+            organization_id,
+        )
+
+        try:
+            qr_type = normalize_qr_type(data.qr_type or product.qr_type)
+            serial_type = normalize_serial_number_type(
+                (sku.sr_number_type if sku else None) or product.sr_number_type
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        qr_type = qr_type or QRType.DYNAMIC
+        if serial_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Product serial number type is not configured. "
+                    "Update the product before generating a block."
+                ),
+            )
+        serial_prefix = product.serial_prefix
+        if not serial_prefix:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Product serial prefix is not configured. "
+                    "Update the product before generating a block."
+                ),
+            )
+        self._validate_block_generation_options(
+            qr_type,
+            serial_type,
+            data.quantity,
+            data.starting_serial,
+        )
+        requested_serials = self._build_deterministic_serials(
+            qr_type,
+            serial_type,
+            serial_prefix,
+            data.batch,
+            data.starting_serial,
+            data.quantity,
+        )
+        self._ensure_serials_available(requested_serials)
+
+        # The balance is checked again under a row lock while reserving.
         self.credit_service.check_balance(organization_id, data.quantity)
 
-        # 3. Create block with status="pending"
-        # qr_type lives on QRProduct, not QRBlock — strip it before DB insert
-        block_dict = {k: v for k, v in data.model_dump().items() if k != "qr_type"}
+        block_dict = data.model_dump()
+        block_dict["qr_type"] = qr_type.value
+        block_dict["sr_number_type"] = serial_type.value
+        block_dict["serial_prefix"] = serial_prefix
         block_dict["product_id"] = product_id
         block_dict["organization_id"] = organization_id
         block_dict["created_by"] = user_id
         block_dict["updated_by"] = user_id
         block_dict["status"] = "pending"
         block_dict["task_status"] = "pending"
-
-        block = self.block_repo.create(block_dict)
-
-        # 4. Set status="in_progress" and generate items
-        block.status = "in_progress"
-        block.task_status = "in_progress"
-        self.db.commit()
+        block_dict["generated_count"] = 0
+        block_dict["progress"] = 0
 
         try:
-            self._generate_product_items(block, product, organization_id, user_id)
+            block = self.block_repo.create(block_dict, commit=False)
+            # Repository implementations return a fully populated ORM object.
+            # Keeping these assignments explicit also makes the processing
+            # contract clear for alternate repository implementations.
+            for field, value in block_dict.items():
+                if not hasattr(block, field):
+                    setattr(block, field, value)
+            self.credit_service.reserve_credits(
+                organization_id,
+                block.id,
+                data.quantity,
+                commit=False,
+            )
+            self.db.commit()
+            self.db.refresh(block)
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Batch '{data.batch}' already exists",
+            ) from exc
+        return block
 
-            # 5. Success: mark completed, deduct credits
+    def _get_block_sku(
+        self,
+        sku_id: UUID | None,
+        product_id: UUID,
+        organization_id: UUID,
+    ):
+        if sku_id is None:
+            return None
+        sku = self.sku_repo.get_by_id(sku_id, organization_id)
+        if not sku or sku.product_id != product_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product SKU not found",
+            )
+        if not sku.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Product SKU is inactive",
+            )
+        return sku
+
+    def assign_block_task(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+        task_id: str,
+    ) -> QRBlock:
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if block is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR Block not found",
+            )
+        if block.status not in {"pending", "failed"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Block cannot be queued from status '{block.status}'",
+            )
+        block.task_id = task_id
+        block.status = "pending"
+        block.task_status = "pending"
+        block.progress = 0
+        block.generated_count = 0
+        block.error_code = None
+        block.error_message = None
+        block.completed_at = None
+        self.db.commit()
+        self.db.refresh(block)
+        return block
+
+    def fail_block_enqueue(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if block is None or block.status == "completed":
+            return
+        block.status = "failed"
+        block.task_status = "failed"
+        block.error_code = "queue_unavailable"
+        block.error_message = "QR generation queue is unavailable"
+        block.task_id = None
+        self.credit_service.release_reserved_credits(organization_id, block_id)
+
+    def fail_block_processing(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        """Make a task-level worker failure visible and return held credits."""
+        self.db.rollback()
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if block is None or block.status == "completed":
+            return
+        block.status = "failed"
+        block.task_status = "failed"
+        block.error_code = "worker_failed"
+        block.error_message = "QR generation worker failed"
+        block.task_id = None
+        block.progress = 0
+        block.generated_count = 0
+        self.credit_service.release_reserved_credits(organization_id, block_id)
+        self.db.commit()
+
+    def retry_block_job(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> QRBlock:
+        """Reset a failed Block and reserve its credits for a new worker task."""
+        block = self.block_repo.get_by_id_for_update(block_id, organization_id)
+        if block is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR Block not found",
+            )
+        if block.status != "failed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only failed QR Blocks can be retried",
+            )
+        self.credit_service.reserve_credits(
+            organization_id,
+            block.id,
+            block.quantity,
+            commit=False,
+        )
+        block.status = "pending"
+        block.task_status = "pending"
+        block.task_id = None
+        block.progress = 0
+        block.generated_count = 0
+        block.error_code = None
+        block.error_message = None
+        block.completed_at = None
+        self.db.commit()
+        self.db.refresh(block)
+        return block
+
+    def process_block(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+        task_id: str | None = None,
+        _claimed_block: QRBlock | None = None,
+    ) -> QRBlock:
+        """Idempotently process one queued Block within a worker session."""
+        block = _claimed_block or self.block_repo.get_by_id_for_update(
+            block_id,
+            organization_id,
+        )
+        if block is None:
+            raise RuntimeError("Queued QR Block no longer exists")
+        if block.status == "completed":
+            return block
+        if block.status == "failed":
+            return block
+        if task_id and block.task_id != task_id:
+            logger.warning(
+                "Ignoring stale QR Block task: block_id=%s task_id=%s current=%s",
+                block.id,
+                task_id,
+                block.task_id,
+            )
+            return block
+
+        product = self.get_product(block.product_id, organization_id)
+
+        # A redelivered task may follow a worker crash after item insertion.
+        # Remove only this tenant's prior active rows before regenerating.
+        if block.status == "in_progress":
+            self.item_repo.soft_delete_by_block(block.id, organization_id)
+
+        block.status = "in_progress"
+        block.task_status = "in_progress"
+        block.progress = 5
+        block.error_code = None
+        block.error_message = None
+        self.db.commit()
+
+        uploaded_artifact_key: str | None = None
+        try:
+            generated_items = self._generate_product_items(
+                block,
+                product,
+                organization_id,
+                block.created_by,
+            )
+            block = self.block_repo.get_by_id(block.id, organization_id) or block
+            block.generated_count = len(generated_items)
+            block.progress = 70
+            self.db.commit()
+
+            uploaded_artifact_key = self._store_block_artifact(block, generated_items)
+            block.progress = 90
+            self.db.commit()
+
             block.status = "completed"
             block.task_status = "completed"
             block.completed_at = datetime.now(UTC)
-            self.db.commit()
+            block.generated_count = block.quantity
+            block.progress = 100
+            self.credit_service.consume_reserved_credits(
+                organization_id,
+                block.id,
+                block.created_by,
+            )
 
-            self.credit_service.deduct_credits(organization_id, block.id, data.quantity)
+        except Exception as exc:
+            self.db.rollback()
+            if uploaded_artifact_key:
+                try:
+                    from app.services import storage_service
 
-        except Exception:
-            # 6. Failure: mark failed, no credit deduction
-            block.status = "failed"
-            block.task_status = "failed"
-            self.db.commit()
+                    storage_service.delete_qr_artifact(uploaded_artifact_key)
+                except Exception:
+                    logger.exception(
+                        "Failed to clean up QR artifact after generation failure: "
+                        "block_id=%s object_key=%s",
+                        block.id,
+                        uploaded_artifact_key,
+                    )
+            self.item_repo.soft_delete_by_block(block.id, organization_id)
+            failed_block = self.block_repo.get_by_id(block.id, organization_id) or block
+            failed_block.status = "failed"
+            failed_block.task_status = "failed"
+            failed_block.error_code = "generation_failed"
+            failed_block.error_message = "QR block generation failed"
+            failed_block.progress = 0
+            failed_block.generated_count = 0
+            failed_block.artifact_object_key = None
+            failed_block.artifact_size_bytes = None
+            failed_block.artifact_checksum_sha256 = None
+            failed_block.artifact_generated_at = None
+            self.credit_service.release_reserved_credits(
+                organization_id,
+                block.id,
+            )
             logger.exception(
                 "Block generation failed: block_id=%s product_id=%s org=%s",
                 block.id,
-                product_id,
+                block.product_id,
                 organization_id,
             )
+            if isinstance(exc, IntegrityError):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "A generated serial number already exists; retry with "
+                        "a different batch or serial range"
+                    ),
+                ) from exc
             raise
 
         logger.info(
             "QR block generated: block_id=%s product_id=%s qty=%d org=%s",
             block.id,
-            product_id,
-            data.quantity,
+            block.product_id,
+            block.quantity,
             organization_id,
         )
         return block
 
     # ── Serial number helpers ─────────────────────────────────────────────────
 
-    def _get_serial_generator(self, sr_number_type: str | None):
+    @staticmethod
+    def _build_deterministic_serials(
+        qr_type: QRType,
+        serial_type: SerialNumberType,
+        prefix: str,
+        batch: str,
+        starting_serial: str | None,
+        quantity: int,
+    ) -> list[str]:
+        def with_prefix(suffix: str) -> str:
+            return f"{prefix}-{suffix}" if prefix else suffix
+
+        if qr_type == QRType.STATIC:
+            return [with_prefix(batch)]
+        if serial_type not in {SerialNumberType.S8DN, SerialNumberType.S10DN}:
+            return []
+
+        width = 8 if serial_type == SerialNumberType.S8DN else 10
+        start = int(starting_serial or "1")
+        return [
+            with_prefix(f"{value:0{width}d}")
+            for value in range(start, start + quantity)
+        ]
+
+    def _ensure_serials_available(
+        self,
+        serials: list[str],
+    ) -> None:
+        if not serials:
+            return
+        existing = self.item_repo.get_existing_serials_global(serials)
+        if not existing:
+            return
+
+        preview = ", ".join(sorted(existing)[:5])
+        remaining = len(existing) - 5
+        suffix = f" and {remaining} more" if remaining > 0 else ""
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("Serial numbers already exist: " f"{preview}{suffix}"),
+        )
+
+    @staticmethod
+    def _validate_block_generation_options(
+        qr_type: QRType,
+        serial_type: SerialNumberType,
+        quantity: int,
+        starting_serial: str | None,
+    ) -> list[dict]:
+        if qr_type == QRType.STATIC and quantity != 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Static QR generation requires quantity=1",
+            )
+        if qr_type == QRType.STATIC:
+            if starting_serial is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="starting_serial is not valid for Static QR",
+                )
+            return
+
+        if serial_type not in {SerialNumberType.S8DN, SerialNumberType.S10DN}:
+            if starting_serial is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "starting_serial is only valid for sequential serial numbers"
+                    ),
+                )
+            return
+
+        if starting_serial is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="starting_serial is required for sequential serial numbers",
+            )
+        if not starting_serial.isdigit():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="starting_serial must contain digits only",
+            )
+
+        max_value = (
+            99_999_999 if serial_type == SerialNumberType.S8DN else 9_999_999_999
+        )
+        if int(starting_serial) + quantity - 1 > max_value:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Sequential range exceeds {serial_type.value} capacity",
+            )
+
+    def _get_serial_generator(
+        self, sr_number_type: str | None, starting_serial: str | None = None
+    ):
         """Return a callable that produces serial numbers for the given type."""
         sr_type = (sr_number_type or "R6DAN").upper()
+        if sr_type == "R8DAN":
+            return generate_r8dan
         if sr_type == "R4DAN":
             return generate_r4dan
         if sr_type == "S8DN":
-            gen = sequential_s8dn()
+            gen = sequential_s8dn(int(starting_serial or "1"))
             return lambda: next(gen)
         if sr_type == "S10DN":
-            gen = sequential_s10dn()
+            gen = sequential_s10dn(int(starting_serial or "1"))
             return lambda: next(gen)
         # Default: R6DAN
         return generate_r6dan
@@ -615,7 +1134,7 @@ class QRProductService:
 
     # ── Item generation ───────────────────────────────────────────────────────
 
-    def _generate_product_items(
+    def _generate_product_items(  # noqa: C901
         self,
         block: QRBlock,
         product: QRProduct,
@@ -632,15 +1151,22 @@ class QRProductService:
         - D (Dynamic) / default: unique URL per item
         """
         now = datetime.now(UTC)
-        qr_type = (product.qr_type or "D").upper()
+        qr_type = normalize_qr_type(block.qr_type) or QRType.DYNAMIC
         sr_number_type = block.sr_number_type or product.sr_number_type
         prefix = block.serial_prefix or ""
 
         # Determine if we need signing (product linked to a brand)
         brand = None
         private_key = None
-        org_short_code = ""
         gtin = product.gtin or ""
+
+        if block.sku_id:
+            sku = self.sku_repo.get_by_id(block.sku_id, organization_id)
+            if sku and sku.gtin:
+                gtin = sku.gtin
+
+        if not gtin:
+            raise RuntimeError("Product GTIN is required for QR generation")
 
         if product.brand_id and self.key_service:
             from app.repositories.brand_repository import BrandRepository
@@ -651,25 +1177,50 @@ class QRProductService:
                 private_key = self.key_service.decrypt_private_key(
                     brand.private_key_encrypted
                 )
-                org_short_code = brand.short_code or ""
 
-        serial_gen = self._get_serial_generator(sr_number_type)
+        serial_gen = self._get_serial_generator(sr_number_type, block.starting_serial)
 
-        # For Static QR: generate one serial used for all items
-        static_serial = None
-        if qr_type == "S":
-            static_serial = f"{prefix}{serial_gen()}"
+        def with_prefix(suffix: str) -> str:
+            return f"{prefix}-{suffix}" if prefix else suffix
+
+        normalized_serial_type = normalize_serial_number_type(sr_number_type)
+        serials = self._build_deterministic_serials(
+            qr_type,
+            normalized_serial_type or SerialNumberType.R6DAN,
+            prefix,
+            block.batch,
+            block.starting_serial,
+            block.quantity,
+        )
+        if serials:
+            self._ensure_serials_available(serials)
+        else:
+            attempts = 0
+            while len(serials) < block.quantity:
+                missing = block.quantity - len(serials)
+                candidates = [with_prefix(serial_gen()) for _ in range(missing)]
+                candidates = list(dict.fromkeys(candidates))
+                existing = self.item_repo.get_existing_serials_global(candidates)
+                serials.extend(
+                    candidate
+                    for candidate in candidates
+                    if candidate not in existing and candidate not in serials
+                )
+                attempts += 1
+                if attempts >= 20 and len(serials) < block.quantity:
+                    raise RuntimeError(
+                        "Unable to generate the requested number of unique serials"
+                    )
 
         items: list[dict] = []
 
-        for _ in range(block.quantity):
-            serial = static_serial if static_serial else f"{prefix}{serial_gen()}"
-
+        for serial in serials:
             item_dict: dict = {
                 "id": uuid.uuid4(),
                 "organization_id": organization_id,
                 "product_id": block.product_id,
                 "block_id": block.id,
+                "sku_id": block.sku_id,
                 "serial_number": serial,
                 "created_by": user_id,
                 "updated_by": user_id,
@@ -678,18 +1229,18 @@ class QRProductService:
             }
 
             # SecureCode: generate 12-char secret
-            if qr_type == "SC":
+            if qr_type == QRType.SECURE_CODE:
                 item_dict["secrete_code"] = self._generate_secret_code()
 
-            # OneTime: set qr_active based on activation_method
-            if qr_type == "O":
-                item_dict["qr_active"] = product.activation_method == "pre"
+            is_pre_activated = product.activation_method != "post"
+            item_dict["qr_active"] = is_pre_activated
+            item_dict["qr_deactive"] = not is_pre_activated
+            item_dict["qr_deactive_unit"] = not is_pre_activated
 
             # Sign if brand is linked
             if private_key is not None:
                 sig, ts = sign_qr_item(self.key_service, private_key, serial)
                 url = build_qr_url(
-                    org_short_code,
                     settings.qr_domain,
                     gtin,
                     serial,
@@ -697,22 +1248,39 @@ class QRProductService:
                     sig,
                     base_url=settings.qr_base_url,
                 )
-                item_dict["token_id"] = url
-
-                # Dual QR: generate a second (covert) URL
-                if qr_type == "B":
+                # Dual QR: retain distinct overt and covert signed URLs.
+                if qr_type == QRType.DUAL:
                     sig2, ts2 = sign_qr_item(self.key_service, private_key, serial)
-                    covert_url = build_qr_url(
-                        org_short_code,
-                        settings.qr_domain,
-                        gtin,
-                        serial,
-                        ts2,
-                        sig2,
-                        base_url=settings.qr_base_url,
+                    covert_url = (
+                        build_qr_url(
+                            settings.qr_domain,
+                            gtin,
+                            serial,
+                            ts2,
+                            sig2,
+                            base_url=settings.qr_base_url,
+                        )
+                        + "&qr=covert"
                     )
-                    item_dict.setdefault("extra_data", {})
-                    item_dict["extra_data"]["covert_url"] = covert_url
+                    overt_url = f"{url}&qr=overt"
+                    short_overt_url = self.qr_shortener.shorten(overt_url)
+                    short_covert_url = self.qr_shortener.shorten(covert_url)
+                    item_dict["token_id"] = short_overt_url
+                    item_dict["extra_data"] = {
+                        "long_url": overt_url,
+                        "short_url": short_overt_url,
+                        "overt_url": short_overt_url,
+                        "covert_url": short_covert_url,
+                        "overt_long_url": overt_url,
+                        "covert_long_url": covert_url,
+                    }
+                else:
+                    short_url = self.qr_shortener.shorten(url)
+                    item_dict["token_id"] = short_url
+                    item_dict["extra_data"] = {
+                        "long_url": url,
+                        "short_url": short_url,
+                    }
             else:
                 # No brand/key — still generate a URL for Excel download
                 base = settings.qr_base_url or f"https://{settings.qr_domain}"
@@ -722,13 +1290,66 @@ class QRProductService:
 
         self.item_repo.bulk_create(items)
 
-        # ── Master Pack: auto-create QSeal parent nodes ───────────────────────
-        if (
-            block.master_pack_enabled
-            and block.master_pack_size
-            and block.master_pack_size > 0
-        ):
+        # Create QSeal parent nodes after the child items are persisted.
+        master_pack_enabled = getattr(block, "master_pack_enabled", False)
+        master_pack_size = getattr(block, "master_pack_size", None)
+        if master_pack_enabled and master_pack_size and master_pack_size > 0:
             self._create_qseal_parents(block, items, organization_id, user_id, now)
+
+        return items
+
+    @staticmethod
+    def _items_to_excel_rows(items: list) -> list[dict]:
+        rows = []
+        for item in items:
+            if isinstance(item, dict):
+                serial = item.get("serial_number")
+                primary_url = item.get("token_id") or ""
+                secret_code = item.get("secrete_code") or ""
+                extra_data = item.get("extra_data") or {}
+            else:
+                serial = item.serial_number
+                primary_url = item.token_id or ""
+                secret_code = item.secrete_code or ""
+                extra_data = item.extra_data or {}
+            rows.append(
+                {
+                    "serial": serial,
+                    "primary_url": primary_url,
+                    "secret_code": secret_code,
+                    "overt_url": extra_data.get("overt_url", primary_url),
+                    "covert_url": extra_data.get("covert_url", ""),
+                }
+            )
+        return rows
+
+    def _store_block_artifact(
+        self,
+        block: QRBlock,
+        generated_items: list[dict],
+    ) -> str | None:
+        """Build and privately store the completed workbook when S3 is configured."""
+        from app.services import storage_service
+
+        if not settings.aws_s3_bucket:
+            if settings.environment.lower() == "production":
+                raise RuntimeError("AWS_S3_BUCKET is required for QR artifacts")
+            return None
+
+        rows = self._items_to_excel_rows(generated_items)
+        excel_bytes = _build_excel(rows, block.qr_type, bool(block.qr_image))
+        object_key = storage_service.build_qr_artifact_key(
+            block.organization_id,
+            block.product_id,
+            block.id,
+        )
+        filename = f"qr_block_{block.id}.xlsx"
+        storage_service.store_qr_artifact(excel_bytes, object_key, filename)
+        block.artifact_object_key = object_key
+        block.artifact_size_bytes = len(excel_bytes)
+        block.artifact_checksum_sha256 = hashlib.sha256(excel_bytes).hexdigest()
+        block.artifact_generated_at = datetime.now(UTC)
+        return object_key
 
     def _create_qseal_parents(
         self,
@@ -831,6 +1452,22 @@ class QRProductService:
             )
         return block
 
+    def get_block_detail(self, block_id: UUID, organization_id: UUID) -> QRBlock:
+        """Return a tenant-scoped Block with its current activation summary."""
+        block = self.get_block(block_id, organization_id)
+        total, active = self.item_repo.get_activation_summary(block_id, organization_id)
+        if total and active == total:
+            activation_status = "activated"
+        elif active:
+            activation_status = "partially_activated"
+        else:
+            activation_status = "deactivated"
+
+        block.activation_status = activation_status
+        block.activated_count = active
+        block.deactivated_count = total - active
+        return block
+
     def get_block_download_url(
         self, block_id: UUID, organization_id: UUID
     ) -> tuple[str, datetime]:
@@ -844,6 +1481,23 @@ class QRProductService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Block is not ready (status: {block.status})",
             )
+
+        if block.artifact_object_key:
+            try:
+                return storage_service.get_qr_artifact_signed_url(
+                    block.artifact_object_key
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Failed to create QR artifact download URL: "
+                    "block_id=%s organization_id=%s",
+                    block.id,
+                    organization_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="QR artifact storage is temporarily unavailable",
+                ) from exc
 
         expiry_minutes = 60
         expires_at = datetime.now(UTC) + timedelta(minutes=expiry_minutes)
@@ -881,8 +1535,7 @@ class QRProductService:
                 detail=f"Block is not ready (status: {block.status})",
             )
 
-        product = self.product_repo.get_by_id(block.product_id, organization_id)
-        qr_type = (product.qr_type if product else None) or "D"
+        qr_type = block.qr_type or QRType.DYNAMIC.value
 
         items = (
             self.db.query(PIModel)
@@ -895,22 +1548,8 @@ class QRProductService:
             .all()
         )
 
-        rows = [
-            {
-                "serial": item.serial_number,
-                "short_url": item.token_id
-                or (
-                    f"{settings.qr_base_url or 'https://' + settings.qr_domain}/g/{product.gtin or ''}/s/{item.serial_number}"
-                    if product and item.serial_number
-                    else ""
-                ),
-                "secret_code": item.secrete_code or "",
-                "overt_url": (item.extra_data or {}).get("covert_url", ""),
-            }
-            for item in items
-        ]
-
-        excel_bytes = _build_excel(rows, qr_type)
+        rows = self._items_to_excel_rows(items)
+        excel_bytes = _build_excel(rows, qr_type, bool(block.qr_image))
         filename = f"qr_block_{block.batch}_{block_id}.xlsx"
         return excel_bytes, filename
 
@@ -942,11 +1581,42 @@ class QRProductService:
         organization_id: UUID,
         page: int = 1,
         page_size: int = 20,
-        status: str | None = None,
+        block_status: str | None = None,
         product_id: UUID | None = None,
+        search: str | None = None,
+        qr_type: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> tuple[list[dict], dict]:
+        for value, label in (
+            (created_from, "created_from"),
+            (created_to, "created_to"),
+        ):
+            if value is not None and value.utcoffset() is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"{label} must include a timezone offset",
+                )
+        if (
+            created_from is not None
+            and created_to is not None
+            and created_from >= created_to
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="created_from must be earlier than created_to",
+            )
+
         rows, total = self.block_repo.list_by_org(
-            organization_id, page, page_size, status, product_id
+            organization_id,
+            page,
+            page_size,
+            block_status,
+            product_id,
+            search.strip() if search else None,
+            qr_type,
+            created_from,
+            created_to,
         )
         total_pages = max(1, (total + page_size - 1) // page_size)
         pagination = {
@@ -963,6 +1633,9 @@ class QRProductService:
                 k: v for k, v in block.__dict__.items() if k != "_sa_instance_state"
             }
             block_dict["product_name"] = product_name
+            block_dict["distribution_channel"] = block.distribution_channel
+            block_dict["destination_market"] = block.destination_market
+            block_dict["download_available"] = block.download_available
             enriched.append(block_dict)
         return enriched, pagination
 
@@ -996,13 +1669,12 @@ class QRProductService:
 
     # ── QR Validate (public) ──────────────────────────────────────────────────
 
-    def validate_qr(self, req: QRValidateRequest) -> dict:
+    def validate_qr(self, organization_id: UUID, req: QRValidateRequest) -> dict:
         """
         Authenticate a QR scan. Records the scan event and returns authenticity.
         This endpoint is typically called from the consumer-facing landing page.
-        organization_id is resolved from the serial number — callers don't need to supply it.
         """
-        item = self.item_repo.get_by_serial_global(req.serial_number)
+        item = self.item_repo.get_by_serial(req.serial_number, organization_id)
         if not item:
             return {
                 "is_authentic": False,
@@ -1031,7 +1703,7 @@ class QRProductService:
         logger.info(
             "QR scan: serial=%s org=%s scans=%d suspicious=%s",
             req.serial_number,
-            item.organization_id,
+            organization_id,
             item.scans,
             item.is_suspicious,
         )
@@ -1050,18 +1722,14 @@ class QRProductService:
 
     # ── QR Authenticate (public, ECDSA) ─────────────────────────────────────
 
-    def authenticate(self, data: AuthenticateRequest) -> dict:
+    def authenticate(self, organization_id: UUID, data: AuthenticateRequest) -> dict:
         """
         Verify a QR scan using ECDSA signature verification.
 
-        organization_id is NOT required — serial numbers are globally unique,
-        so we look up the item across all orgs. This allows the public
-        /authenticate endpoint to work without the caller knowing the org.
-
         Requirements: 9.1-9.9, 8.4
         """
-        # 1. Look up item by serial_number globally (no org filter)
-        item = self.item_repo.get_by_serial_global(data.serial_number)
+        # 1. Look up item by serial_number
+        item = self.item_repo.get_by_serial(data.serial_number, organization_id)
         if not item:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1114,7 +1782,7 @@ class QRProductService:
         logger.info(
             "QR authenticate: serial=%s org=%s authentic=True scan_count=%d",
             data.serial_number,
-            item.organization_id,
+            organization_id,
             item.scan_count,
         )
 

@@ -1096,7 +1096,7 @@ async def list_bank_transactions(
 
 
 @router.get(
-    "/{bank_account_id}/balance",
+    "/bank-accounts/{bank_account_id}/balance",
     response_model=BankAccountBalanceResponse,
     summary="Get bank and GL balances",
     description="Get bank balance, GL balance, and unreconciled amount for a bank account",

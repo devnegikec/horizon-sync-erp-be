@@ -92,6 +92,7 @@ class QSealScanRequest(BaseModel):
     city: str | None = None
     state: str | None = None
     country: str | None = None
+    street_address: str | None = None
     extra_data: dict[str, Any] | None = None
 
 
@@ -119,6 +120,7 @@ class QSealHistoryItem(BaseModel):
     city: str | None
     state: str | None
     country: str | None
+    street_address: str | None
 
     model_config = {"from_attributes": True}
 

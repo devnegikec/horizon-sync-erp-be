@@ -4,7 +4,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, inspect, pool, text
 
 from alembic import context
 
@@ -28,6 +28,46 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 # add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
 
+VERSION_TABLE = "alembic_version_identity"
+LEGACY_VERSION_TABLE = "alembic_version"
+
+
+def _copy_legacy_revision(connection) -> None:
+    """Preserve migration state after moving to a service-specific table.
+
+    Existing identity databases used ``alembic_version`` before the service
+    adopted ``alembic_version_identity``.  Without copying that revision once,
+    Alembic treats a populated database as new and attempts to replay every
+    migration from the beginning.
+    """
+    table_names = set(inspect(connection).get_table_names())
+    if VERSION_TABLE in table_names or LEGACY_VERSION_TABLE not in table_names:
+        return
+
+    legacy_revisions = connection.execute(
+        text(f"SELECT version_num FROM {LEGACY_VERSION_TABLE}")
+    ).scalars().all()
+    known_revisions = {
+        revision.revision for revision in context.script.walk_revisions()
+    }
+    matching_revisions = [
+        revision for revision in legacy_revisions if revision in known_revisions
+    ]
+
+    if len(matching_revisions) != 1:
+        return
+
+    connection.execute(
+        text(
+            f"CREATE TABLE {VERSION_TABLE} "
+            "(version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+        )
+    )
+    connection.execute(
+        text(f"INSERT INTO {VERSION_TABLE} (version_num) VALUES (:revision)"),
+        {"revision": matching_revisions[0]},
+    )
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -47,7 +87,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        version_table="alembic_version_identity",
+        version_table=VERSION_TABLE,
     )
 
     with context.begin_transaction():
@@ -68,10 +108,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        with connection.begin():
+            _copy_legacy_revision(connection)
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            version_table="alembic_version_identity",
+            version_table=VERSION_TABLE,
         )
 
         with context.begin_transaction():
