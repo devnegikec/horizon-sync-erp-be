@@ -52,6 +52,10 @@ class AsnOrderRepository:
         page_size: int = 20,
         status: str | None = None,
         warehouse_id: UUID | None = None,
+        source_warehouse_id: UUID | None = None,
+        delivery_date_from=None,
+        delivery_date_to=None,
+        vehicle_no: str | None = None,
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
@@ -70,6 +74,32 @@ class AsnOrderRepository:
             # Filter by target (to) warehouse only — the warehouse a user
             # selects is the one receiving the goods.
             q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
+        if source_warehouse_id is not None:
+            q = q.filter(AsnOrder.warehouse_id_from == source_warehouse_id)
+        if delivery_date_from is not None:
+            q = q.filter(AsnOrder.delivery_date >= delivery_date_from)
+        if delivery_date_to is not None:
+            q = q.filter(AsnOrder.delivery_date <= delivery_date_to)
+        if vehicle_no:
+            from app.models.vehicle import (
+                Vehicle,
+                VehicleArrival,
+                vehicle_arrival_asns,
+            )
+
+            q = (
+                q.join(
+                    vehicle_arrival_asns,
+                    vehicle_arrival_asns.c.asn_order_id == AsnOrder.id,
+                )
+                .join(
+                    VehicleArrival,
+                    VehicleArrival.id == vehicle_arrival_asns.c.vehicle_arrival_id,
+                )
+                .join(Vehicle, Vehicle.id == VehicleArrival.vehicle_id)
+                .filter(Vehicle.vehicle_no.ilike(f"%{vehicle_no}%"))
+                .distinct()
+            )
         if search:
             t = f"%{search}%"
             q = q.filter(AsnOrder.asn_order_no.ilike(t))
