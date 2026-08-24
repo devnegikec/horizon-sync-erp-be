@@ -73,12 +73,19 @@ class AsnOrder(Base):
 
     from_warehouse = relationship("Warehouse", foreign_keys=[warehouse_id_from])
     to_warehouse = relationship("Warehouse", foreign_keys=[warehouse_id_to])
+    vehicle_arrivals = relationship(
+        "VehicleArrival",
+        secondary="vehicle_arrival_asns",
+        back_populates="asn_orders",
+    )
     items = relationship(
         "AsnOrderItem", back_populates="asn_order", cascade="all, delete-orphan"
     )
 
     def __repr__(self):
-        return f"<AsnOrder(id={self.id}, no='{self.asn_order_no}', status={self.status})>"
+        return (
+            f"<AsnOrder(id={self.id}, no='{self.asn_order_no}', status={self.status})>"
+        )
 
 
 class AsnOrderItem(Base):

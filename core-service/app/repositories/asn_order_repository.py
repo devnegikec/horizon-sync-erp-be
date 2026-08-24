@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
+from app.models.vehicle import VehicleArrival
 
 
 class AsnOrderRepository:
@@ -37,6 +38,9 @@ class AsnOrderRepository:
                 joinedload(AsnOrder.from_warehouse),
                 joinedload(AsnOrder.to_warehouse),
                 joinedload(AsnOrder.items).joinedload(AsnOrderItem.item),
+                selectinload(AsnOrder.vehicle_arrivals).joinedload(
+                    VehicleArrival.vehicle
+                ),
             )
             .filter(
                 AsnOrder.id == asn_order_id,
@@ -65,6 +69,9 @@ class AsnOrderRepository:
             .options(
                 joinedload(AsnOrder.from_warehouse),
                 joinedload(AsnOrder.to_warehouse),
+                selectinload(AsnOrder.vehicle_arrivals).joinedload(
+                    VehicleArrival.vehicle
+                ),
             )
             .filter(AsnOrder.organization_id == organization_id)
         )
@@ -83,7 +90,6 @@ class AsnOrderRepository:
         if vehicle_no:
             from app.models.vehicle import (
                 Vehicle,
-                VehicleArrival,
                 vehicle_arrival_asns,
             )
 
