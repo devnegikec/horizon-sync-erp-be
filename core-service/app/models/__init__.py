@@ -7,7 +7,7 @@ from app.models.account_balance import AccountBalance
 from app.models.admin import (
     AdminAuditLog,
     AdminNotification,
-   # FeatureFlag,
+    # FeatureFlag,
     UserActivityLog,
 )
 
@@ -221,6 +221,7 @@ from app.models.transaction_breakdown import (
 )
 from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
+from app.models.vehicle import Vehicle, VehicleArrival
 from app.models.warehouse import Warehouse
 from app.models.warehouse_floor_plan import WarehouseFloorPlan
 
@@ -325,6 +326,8 @@ __all__ = [
     "PickListItem",
     "AsnOrder",
     "AsnOrderItem",
+    "Vehicle",
+    "VehicleArrival",
     "Quotation",
     "QuotationItem",
     "SalesOrder",

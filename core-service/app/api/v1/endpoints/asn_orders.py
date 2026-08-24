@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -53,6 +53,16 @@ async def list_asn_orders(
     warehouse_id: UUID | None = Query(
         None, description="Filter by target (to) warehouse"
     ),
+    source_warehouse_id: UUID | None = Query(
+        None, description="Filter by source (from) warehouse"
+    ),
+    delivery_date_from: date | None = Query(
+        None, description="Filter by expected arrival date from (inclusive)"
+    ),
+    delivery_date_to: date | None = Query(
+        None, description="Filter by expected arrival date to (inclusive)"
+    ),
+    vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -67,6 +77,10 @@ async def list_asn_orders(
         page_size=page_size,
         status=status,
         warehouse_id=warehouse_id,
+        source_warehouse_id=source_warehouse_id,
+        delivery_date_from=delivery_date_from,
+        delivery_date_to=delivery_date_to,
+        vehicle_no=vehicle_no,
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,

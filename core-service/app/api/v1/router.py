@@ -82,6 +82,7 @@ from app.api.v1.endpoints import (
     tax_templates,
     uom_conversions,
     uoms,
+    vehicle_arrivals,
     warehouse_locations,
     warehouse_users,
     warehouses,
@@ -174,6 +175,12 @@ api_router.include_router(
     inbound.router,
     prefix="/inbound",
     tags=["Inbound"],
+)
+# Vehicle arrivals (inbound dock check-in)
+api_router.include_router(
+    vehicle_arrivals.router,
+    prefix="/vehicle-arrivals",
+    tags=["Vehicle Arrivals"],
 )
 # Outbound (SAP invoice-triggered pick lists)
 api_router.include_router(
