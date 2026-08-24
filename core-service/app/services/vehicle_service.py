@@ -1,12 +1,14 @@
 """Vehicle arrival service for inbound receiving."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundException
+from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.asn_order import AsnOrder
-from app.models.vehicle import Vehicle, VehicleArrival, vehicle_arrival_asns
+from app.models.vehicle import Vehicle, VehicleArrival
 
 
 class VehicleArrivalService:
@@ -78,6 +80,51 @@ class VehicleArrivalService:
         )
         arrival.asn_orders = asns
         self.db.add(arrival)
+        self.db.commit()
+        self.db.refresh(arrival)
+        return arrival
+
+    def update(
+        self, arrival_id: UUID, data: dict, organization_id: UUID
+    ) -> VehicleArrival:
+        """Update editable arrival and vehicle details for an arrival."""
+        arrival = self.get(arrival_id, organization_id)
+
+        # Arrival-level fields
+        if "dock" in data:
+            arrival.dock = data.get("dock")
+        if "notes" in data:
+            arrival.notes = data.get("notes")
+
+        # Vehicle-level fields
+        vehicle = arrival.vehicle
+        if vehicle is not None:
+            if "vehicle_no" in data:
+                new_vehicle_no = (data.get("vehicle_no") or "").strip()
+                if not new_vehicle_no:
+                    raise ValidationError("Vehicle number cannot be empty")
+                if new_vehicle_no != vehicle.vehicle_no:
+                    conflict = (
+                        self.db.query(Vehicle)
+                        .filter(
+                            Vehicle.organization_id == organization_id,
+                            Vehicle.vehicle_no == new_vehicle_no,
+                            Vehicle.id != vehicle.id,
+                        )
+                        .first()
+                    )
+                    if conflict:
+                        raise ValidationError(
+                            f"Vehicle number '{new_vehicle_no}' is already in use"
+                        )
+                    vehicle.vehicle_no = new_vehicle_no
+            if "driver_name" in data:
+                vehicle.driver_name = data.get("driver_name")
+            if "driver_contact" in data:
+                vehicle.driver_contact = data.get("driver_contact")
+            if "transporter" in data:
+                vehicle.transporter = data.get("transporter")
+
         self.db.commit()
         self.db.refresh(arrival)
         return arrival

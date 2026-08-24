@@ -21,6 +21,17 @@ class VehicleArrivalCreate(BaseModel):
     notes: str | None = Field(None, max_length=1000)
 
 
+class VehicleArrivalUpdate(BaseModel):
+    """Update editable vehicle arrival / vehicle details."""
+
+    vehicle_no: str | None = Field(None, min_length=1, max_length=100)
+    driver_name: str | None = Field(None, max_length=255)
+    driver_contact: str | None = Field(None, max_length=50)
+    transporter: str | None = Field(None, max_length=255)
+    dock: str | None = Field(None, max_length=255)
+    notes: str | None = Field(None, max_length=1000)
+
+
 class VehicleArrivalLinkRequest(BaseModel):
     """Link one or more ASN orders to an existing vehicle arrival."""
 
@@ -68,9 +79,11 @@ class VehicleArrivalListItem(BaseModel):
     id: UUID
     vehicle_no: str | None = None
     driver_name: str | None = None
+    driver_contact: str | None = None
     transporter: str | None = None
     warehouse_id: UUID | None = None
     dock: str | None = None
+    notes: str | None = None
     status: str
     arrived_at: datetime
     asn_order_count: int = 0

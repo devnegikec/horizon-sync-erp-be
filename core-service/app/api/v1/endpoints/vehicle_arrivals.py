@@ -5,7 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import RECEIVING_SLIP_CREATE, WAREHOUSE_READ
+from app.core.authorization import (
+    RECEIVING_SLIP_CREATE,
+    RECEIVING_SLIP_UPDATE,
+    WAREHOUSE_READ,
+)
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
@@ -16,6 +20,7 @@ from app.schemas.vehicle import (
     VehicleArrivalListItem,
     VehicleArrivalListResponse,
     VehicleArrivalResponse,
+    VehicleArrivalUpdate,
     VehicleInfo,
 )
 from app.services.vehicle_service import VehicleArrivalService
@@ -100,9 +105,11 @@ async def list_vehicle_arrivals(
             id=a.id,
             vehicle_no=a.vehicle.vehicle_no if a.vehicle else None,
             driver_name=a.vehicle.driver_name if a.vehicle else None,
+            driver_contact=a.vehicle.driver_contact if a.vehicle else None,
             transporter=a.vehicle.transporter if a.vehicle else None,
             warehouse_id=a.warehouse_id,
             dock=a.dock,
+            notes=a.notes,
             status=a.status,
             arrived_at=a.arrived_at,
             asn_order_count=len(a.asn_orders),
@@ -124,6 +131,23 @@ async def get_vehicle_arrival(
     """Get a vehicle arrival by ID."""
     svc = VehicleArrivalService(db)
     arrival = svc.get(arrival_id, current_user.organization_id)
+    return _to_response(arrival)
+
+
+@router.patch("/{arrival_id}", response_model=VehicleArrivalResponse)
+async def update_vehicle_arrival(
+    arrival_id: UUID,
+    body: VehicleArrivalUpdate,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Update editable vehicle arrival details (vehicle no., driver, transporter, dock, notes)."""
+    svc = VehicleArrivalService(db)
+    arrival = svc.update(
+        arrival_id,
+        body.model_dump(exclude_unset=True),
+        current_user.organization_id,
+    )
     return _to_response(arrival)
 
 
