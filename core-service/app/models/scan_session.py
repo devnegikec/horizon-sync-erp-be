@@ -40,6 +40,12 @@ class ScanSession(Base):
         nullable=True,
         index=True,
     )
+    vehicle_arrival_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("vehicle_arrivals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status = Column(String(20), nullable=False, default="open")
     total_boxes_scanned = Column(Integer, default=0)
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -59,6 +65,7 @@ class ScanSession(Base):
     )
     warehouse = relationship("Warehouse")
     asn_order = relationship("AsnOrder", foreign_keys=[asn_order_id])
+    vehicle_arrival = relationship("VehicleArrival", foreign_keys=[vehicle_arrival_id])
     receiving_slips = relationship("ReceivingSlip", back_populates="session")
 
     def __repr__(self):

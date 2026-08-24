@@ -113,6 +113,7 @@ async def list_vehicle_arrivals(
             status=a.status,
             arrived_at=a.arrived_at,
             asn_order_count=len(a.asn_orders),
+            receiving_slip_count=len(a.receiving_slips),
         )
         for a in arrivals
     ]

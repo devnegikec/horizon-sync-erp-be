@@ -87,6 +87,7 @@ class VehicleArrivalListItem(BaseModel):
     status: str
     arrived_at: datetime
     asn_order_count: int = 0
+    receiving_slip_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 

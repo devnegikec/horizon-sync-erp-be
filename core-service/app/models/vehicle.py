@@ -111,6 +111,7 @@ class VehicleArrival(Base):
     vehicle = relationship("Vehicle", back_populates="arrivals")
     warehouse = relationship("Warehouse")
     asn_orders = relationship("AsnOrder", secondary=vehicle_arrival_asns)
+    receiving_slips = relationship("ReceivingSlip", back_populates="vehicle_arrival")
 
     def __repr__(self):
         return (
