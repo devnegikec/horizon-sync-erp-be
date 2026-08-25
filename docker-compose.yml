@@ -28,11 +28,7 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./scripts/init_railway.sql:/docker-entrypoint-initdb.d/01_init_railway.sql
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-railway}",
-        ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-railway}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,7 +43,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -131,6 +127,7 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
       IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
+      SKIP_MASTER_ORG_SETUP: ${SKIP_MASTER_ORG_SETUP:-false}
       REDIS_URL: redis://redis:6379/0
       REDIS_STREAM_NAME: search:events
       CELERY_BROKER_URL: redis://redis:6379/0
