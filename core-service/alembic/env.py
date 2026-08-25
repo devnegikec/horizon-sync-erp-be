@@ -4,7 +4,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from alembic import context
 
@@ -68,18 +68,27 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        # Use a separate version table to avoid conflicts with identity-service
-        connection.execute(__import__("sqlalchemy").text("COMMIT"))
-        try:
-            connection.execute(
-                __import__("sqlalchemy").text(
-                    "ALTER TABLE core_alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
-                )
+    # Ensure the version table exists with a version_num column wide enough
+    # for our long revision IDs (alembic's default is VARCHAR(32), which is
+    # too short for e.g. '035_add_subscription_billing_fields'). Do this on a
+    # separate autocommit-style connection so it is committed before the
+    # migration transaction begins.
+    with connectable.connect() as ddl_connection:
+        ddl_connection.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS core_alembic_version "
+                "(version_num VARCHAR(255) NOT NULL PRIMARY KEY)"
             )
-        except Exception:
-            pass  # Table may not exist yet on a fresh DB — that's fine
+        )
+        ddl_connection.execute(
+            text(
+                "ALTER TABLE core_alembic_version "
+                "ALTER COLUMN version_num TYPE VARCHAR(255)"
+            )
+        )
+        ddl_connection.commit()
 
+    with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
