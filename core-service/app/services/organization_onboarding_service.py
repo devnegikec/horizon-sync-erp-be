@@ -216,6 +216,7 @@ class OrganizationOnboardingService:
             "uoms": self._seed_uoms(organization_id, user_id, now),
             "tax_templates": self._seed_tax_templates(organization_id, user_id, now),
             "item_groups": self._seed_item_groups(organization_id, user_id, now),
+            "dual_mode_flags": self._seed_dual_mode_flags(organization_id, user_id, now),
         }
 
         # Also set the system_config base_currency so the UI picks it up immediately
@@ -233,6 +234,79 @@ class OrganizationOnboardingService:
         )
 
         return summary
+
+    # ------------------------------------------------------------------
+    # Product/Item dual-mode feature flags (catalog vs WMS)
+    # ------------------------------------------------------------------
+
+    def _seed_dual_mode_flags(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+    ) -> dict:
+        """Seed tenant-scoped product/item dual-mode flags with safe defaults."""
+        from app.core.constants import (
+            AUTO_APPROVE_SINGLE_CREATE,
+            AUTO_CREATE_SKU_ON_ITEM,
+            AUTO_CREATE_VARIANT_AXES,
+            ITEM_AUTO_CREATE_PRODUCT,
+            PRODUCT_EDITABLE_MANUALLY,
+            QSEAL_ENABLED,
+            REQUIRE_ITEM_APPROVAL,
+            TENANT_SCOPE,
+            VARIANT_STRUCTURED_ENABLED,
+            WMS_ENABLED,
+        )
+        from app.models.feature_flag import FeatureFlag
+
+        defaults = {
+            WMS_ENABLED: True,
+            QSEAL_ENABLED: True,
+            PRODUCT_EDITABLE_MANUALLY: False,
+            ITEM_AUTO_CREATE_PRODUCT: True,
+            VARIANT_STRUCTURED_ENABLED: True,
+            AUTO_CREATE_SKU_ON_ITEM: False,
+            AUTO_CREATE_VARIANT_AXES: False,
+            REQUIRE_ITEM_APPROVAL: False,
+            AUTO_APPROVE_SINGLE_CREATE: True,
+        }
+        created = 0
+        skipped = 0
+        for name, enabled in defaults.items():
+            existing = (
+                self.db.query(FeatureFlag)
+                .filter(
+                    FeatureFlag.name == name,
+                    FeatureFlag.scope == TENANT_SCOPE,
+                    FeatureFlag.tenant_id == organization_id,
+                )
+                .first()
+            )
+            if existing:
+                skipped += 1
+                continue
+            self.db.add(
+                FeatureFlag(
+                    name=name,
+                    description=f"Tenant-scoped product/item dual-mode flag ({name})",
+                    enabled=enabled,
+                    visible=True,
+                    scope=TENANT_SCOPE,
+                    tenant_id=organization_id,
+                    user_id=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            created += 1
+        logger.debug(
+            "Dual-mode flags: %s created, %s skipped for org %s",
+            created,
+            skipped,
+            organization_id,
+        )
+        return {"created": created, "skipped": skipped}
 
     # ------------------------------------------------------------------
     # Currency

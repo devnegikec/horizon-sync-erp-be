@@ -1,15 +1,22 @@
 """Item service with business logic"""
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import DuplicateItemCodeException, ItemNotFoundException
+from app.core.exceptions import (
+    DuplicateItemCodeException,
+    ItemNotFoundException,
+    ValidationError,
+)
 from app.events.publisher import get_event_publisher
 from app.models.base import ItemStatus, ItemType, ValuationMethod
 from app.models.item import Item
 from app.models.item_packaging_unit import ItemPackagingUnit
+from app.models.uom import UOM
 from app.repositories.item_repository import ItemRepository
 from app.repositories.stock_level_repository import StockLevelRepository
 from app.repositories.tax_template_repository import TaxTemplateRepository
@@ -34,6 +41,179 @@ class ItemService:
         self.item_repo = ItemRepository(db)
         self.stock_level_repo = StockLevelRepository(db)
         self.tax_template_repo = TaxTemplateRepository(db)
+
+    def _resolve_uom_id(self, uom_str: str, organization_id: UUID) -> UUID | None:
+        """Resolve a legacy UOM string to a uoms.id (abbreviation, then name)."""
+        uom = (
+            self.db.query(UOM)
+            .filter(
+                UOM.organization_id == organization_id,
+                func.upper(UOM.abbreviation) == uom_str.upper(),
+                UOM.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if uom is None:
+            uom = (
+                self.db.query(UOM)
+                .filter(
+                    UOM.organization_id == organization_id,
+                    func.upper(UOM.name) == uom_str.upper(),
+                    UOM.deleted_at.is_(None),
+                )
+                .first()
+            )
+        return uom.id if uom else None
+
+    def _sync_variant_attributes_from_sku(
+        self, item: Item, organization_id: UUID
+    ) -> None:
+        """One-way sync: derive item.variant_attributes from the linked ProductSKU."""
+        if not item.product_sku_id:
+            return
+        from app.models.product_sku import ProductSKU
+
+        sku = self.db.get(ProductSKU, item.product_sku_id)
+        if not sku or sku.organization_id != organization_id:
+            return
+        attrs: dict = {}
+        for link in sku.sku_attribute_values:
+            av = link.attribute_value
+            if av and av.attribute:
+                attrs[av.attribute.name.lower()] = av.display_value or av.value
+        if attrs:
+            item.variant_attributes = attrs
+
+    def _ensure_product_sku(
+        self, item: Item, organization_id: UUID, user_id: UUID
+    ) -> None:
+        """Auto-create/link a ProductSKU for a concrete variant item (guarded).
+
+        Only runs when structured-variant mode is enabled AND
+        ``auto_create_sku_on_item`` is enabled. Applies to child variant items
+        (``variant_of`` is set), never the ``has_variants`` template parent.
+        """
+        import uuid as _uuid
+
+        from app.core.constants import (
+            AUTO_CREATE_SKU_ON_ITEM,
+            AUTO_CREATE_VARIANT_AXES,
+            VARIANT_STRUCTURED_ENABLED,
+        )
+        from app.models.product_sku import ProductSKU
+        from app.models.sku_variant_attribute import (
+            ProductSKUAttributeValue,
+            VariantAttribute,
+            VariantAttributeValue,
+        )
+        from app.services.feature_flag_service import is_feature_enabled_for_org
+
+        if not is_feature_enabled_for_org(
+            VARIANT_STRUCTURED_ENABLED, self.db, organization_id
+        ):
+            return
+        if not is_feature_enabled_for_org(
+            AUTO_CREATE_SKU_ON_ITEM, self.db, organization_id
+        ):
+            return
+        # Only concrete variants, not the template parent, and not already linked.
+        if item.variant_of is None or item.product_sku_id is not None:
+            return
+        if not item.qr_product_id or not item.variant_attributes:
+            return
+
+        auto_axes = is_feature_enabled_for_org(
+            AUTO_CREATE_VARIANT_AXES, self.db, organization_id
+        )
+
+        # Reuse an existing SKU with the same code (idempotent).
+        existing_sku = (
+            self.db.query(ProductSKU)
+            .filter(
+                ProductSKU.organization_id == organization_id,
+                ProductSKU.sku_code == item.sku,
+                ProductSKU.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if existing_sku:
+            item.product_sku_id = existing_sku.id
+            self.db.flush()
+            return
+
+        # Resolve or create attribute values from the JSONB variant_attributes.
+        value_ids: list[UUID] = []
+        for axis_name, axis_value in item.variant_attributes.items():
+            if not axis_value:
+                continue
+            attr = (
+                self.db.query(VariantAttribute)
+                .filter(
+                    VariantAttribute.organization_id == organization_id,
+                    func.lower(VariantAttribute.name) == str(axis_name).lower(),
+                )
+                .first()
+            )
+            if attr is None:
+                if not auto_axes:
+                    continue
+                attr = VariantAttribute(
+                    organization_id=organization_id,
+                    name=str(axis_name),
+                    created_by=user_id,
+                    updated_by=user_id,
+                )
+                self.db.add(attr)
+                self.db.flush()
+
+            value_str = str(axis_value)
+            av = (
+                self.db.query(VariantAttributeValue)
+                .filter(
+                    VariantAttributeValue.attribute_id == attr.id,
+                    VariantAttributeValue.value == value_str,
+                )
+                .first()
+            )
+            if av is None:
+                av = VariantAttributeValue(
+                    attribute_id=attr.id,
+                    value=value_str,
+                    display_value=value_str,
+                    sort_order=0,
+                    created_by=user_id,
+                )
+                self.db.add(av)
+                self.db.flush()
+            value_ids.append(av.id)
+
+        if not value_ids:
+            return
+
+        sku_code = item.sku or f"{item.item_code or 'item'}-{_uuid.uuid4().hex[:8]}"
+        sku = ProductSKU(
+            organization_id=organization_id,
+            product_id=item.qr_product_id,
+            sku_code=sku_code,
+            name=item.item_name,
+            gtin=item.gtin,
+            is_active=True,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        self.db.add(sku)
+        self.db.flush()
+
+        for vid in value_ids:
+            self.db.add(
+                ProductSKUAttributeValue(
+                    sku_id=sku.id, attribute_value_id=vid, created_by=user_id
+                )
+            )
+        self.db.flush()
+
+        item.product_sku_id = sku.id
+        self.db.flush()
 
     def create_item(
         self,
@@ -111,6 +291,12 @@ class ItemService:
         item_dict["created_by"] = user_id
         item_dict["updated_by"] = user_id
 
+        # Resolve base_uom_id from the legacy uom string when not supplied.
+        if not item_dict.get("base_uom_id") and item_dict.get("uom"):
+            item_dict["base_uom_id"] = self._resolve_uom_id(
+                str(item_dict["uom"]), organization_id
+            )
+
         # Convert string enums to actual enums (case-insensitive)
         # ItemType and ItemStatus use lowercase values: "stock", "active", etc.
         if item_dict.get("item_type"):
@@ -126,6 +312,23 @@ class ItemService:
                 item_dict["status"] = ItemStatus(status_str)
             except (ValueError, KeyError):
                 item_dict["status"] = ItemStatus.ACTIVE
+
+        # Approval workflow: flag-based default when status not explicitly set.
+        if "status" not in item_data.model_fields_set:
+            from app.core.constants import (
+                AUTO_APPROVE_SINGLE_CREATE,
+                REQUIRE_ITEM_APPROVAL,
+            )
+            from app.services.feature_flag_service import is_feature_enabled_for_org
+
+            require_approval = is_feature_enabled_for_org(
+                REQUIRE_ITEM_APPROVAL, self.db, organization_id
+            )
+            auto_approve = is_feature_enabled_for_org(
+                AUTO_APPROVE_SINGLE_CREATE, self.db, organization_id
+            )
+            if require_approval and not auto_approve:
+                item_dict["status"] = ItemStatus.PENDING_APPROVAL
 
         if item_dict.get("valuation_method"):
             try:
@@ -144,6 +347,11 @@ class ItemService:
             )
             self.db.commit()
 
+        # Variant handling: auto-create/link SKU (guarded), then one-way sync.
+        self._ensure_product_sku(item, organization_id, user_id)
+        self._sync_variant_attributes_from_sku(item, organization_id)
+        self.db.commit()
+
         # Publish entity created event
         try:
             event_publisher = get_event_publisher()
@@ -160,9 +368,8 @@ class ItemService:
         except Exception as e:
             logger.error(f"Failed to publish item created event: {e}")
 
-        # ── Sync to linked QRProduct (Item is primary source) ──
-        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
-        # If no qr_product_id, auto-create a QR product so sync works both ways.
+        # ── Auto-create a linked QR product (backward compatibility) ──
+        # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not item.qr_product_id:
             try:
                 from app.models.qr_product import QRProduct
@@ -173,12 +380,6 @@ class ItemService:
                     sku=item.sku or item.item_code,
                     gtin=item.barcode,
                     image_url=item.image_url,
-                    industry=item.industry,
-                    qr_type=item.qr_type,
-                    warranty_period_months=item.warranty_period_months,
-                    activation_method=item.activation_method,
-                    sr_number_type=item.sr_number_type,
-                    landing_page=item.landing_page,
                     brand_id=item.brand_id,
                     is_active=True,
                     created_by=user_id,
@@ -195,17 +396,6 @@ class ItemService:
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-create QR product for item: {e}")
-
-        if item.qr_product_id:
-            try:
-                from app.services.product_item_sync_service import (
-                    ProductItemSyncService,
-                )
-
-                ProductItemSyncService(self.db).sync_item_to_product(item)
-                self.db.commit()
-            except Exception as e:
-                logger.error(f"Failed to sync item→product: {e}")
 
         return item
 
@@ -294,6 +484,9 @@ class ItemService:
         # Update item
         updated_item = self.item_repo.update_item(item, update_dict)
 
+        # One-way sync: variant_attributes ← linked ProductSKU (Phase 3).
+        self._sync_variant_attributes_from_sku(updated_item, organization_id)
+
         # Upsert the base packaging unit when packaging details are supplied.
         if packaging_details_provided:
             self._upsert_base_packaging_unit(
@@ -317,9 +510,8 @@ class ItemService:
         except Exception as e:
             logger.error(f"Failed to publish item updated event: {e}")
 
-        # ── Sync to linked QRProduct (Item is primary source) ──
-        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
-        # If no qr_product_id, auto-create a QR product (covers legacy items)
+        # ── Auto-create a linked QR product (backward compatibility) ──
+        # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not updated_item.qr_product_id:
             try:
                 from app.models.qr_product import QRProduct
@@ -330,12 +522,6 @@ class ItemService:
                     sku=updated_item.sku or updated_item.item_code,
                     gtin=updated_item.barcode,
                     image_url=updated_item.image_url,
-                    industry=updated_item.industry,
-                    qr_type=updated_item.qr_type,
-                    warranty_period_months=updated_item.warranty_period_months,
-                    activation_method=updated_item.activation_method,
-                    sr_number_type=updated_item.sr_number_type,
-                    landing_page=updated_item.landing_page,
                     brand_id=updated_item.brand_id,
                     is_active=True,
                     created_by=user_id,
@@ -352,18 +538,60 @@ class ItemService:
             except Exception as e:
                 logger.error(f"Failed to auto-create QR product for item: {e}")
 
-        if updated_item.qr_product_id:
-            try:
-                from app.services.product_item_sync_service import (
-                    ProductItemSyncService,
-                )
-
-                ProductItemSyncService(self.db).sync_item_to_product(updated_item)
-                self.db.commit()
-            except Exception as e:
-                logger.error(f"Failed to sync item→product: {e}")
-
         return updated_item
+
+    def submit_for_approval(
+        self, item_id: UUID, organization_id: UUID, user_id: UUID
+    ) -> Item:
+        """Submit an item for approval (DRAFT/INACTIVE → PENDING_APPROVAL)."""
+        item = self.get_item_by_id(item_id, organization_id)
+        if item.status not in (ItemStatus.DRAFT, ItemStatus.INACTIVE):
+            raise ValidationError(
+                f"Cannot submit item with status '{item.status.value}' for approval"
+            )
+        item.status = ItemStatus.PENDING_APPROVAL
+        item.submitted_by = user_id
+        item.submitted_at = datetime.now(UTC)
+        item.rejection_reason = None
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def approve_item(
+        self, item_id: UUID, organization_id: UUID, user_id: UUID
+    ) -> Item:
+        """Approve a pending item (PENDING_APPROVAL → ACTIVE)."""
+        item = self.get_item_by_id(item_id, organization_id)
+        if item.status != ItemStatus.PENDING_APPROVAL:
+            raise ValidationError(
+                f"Cannot approve item with status '{item.status.value}'"
+            )
+        item.status = ItemStatus.ACTIVE
+        item.approved_by = user_id
+        item.approved_at = datetime.now(UTC)
+        item.rejection_reason = None
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def reject_item(
+        self,
+        item_id: UUID,
+        organization_id: UUID,
+        user_id: UUID,
+        reason: str,
+    ) -> Item:
+        """Reject a pending item (PENDING_APPROVAL → DRAFT) with a reason."""
+        item = self.get_item_by_id(item_id, organization_id)
+        if item.status != ItemStatus.PENDING_APPROVAL:
+            raise ValidationError(
+                f"Cannot reject item with status '{item.status.value}'"
+            )
+        item.status = ItemStatus.DRAFT
+        item.rejection_reason = reason
+        self.db.commit()
+        self.db.refresh(item)
+        return item
 
     def _upsert_base_packaging_unit(
         self, item: Item, packaging_details, organization_id: UUID

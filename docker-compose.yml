@@ -216,10 +216,7 @@ services:
     volumes:
       - ./core-service/app:/app/app
     command: >
-      celery -A app.celery_app:celery_app worker
-      --loglevel=${LOG_LEVEL:-INFO}
-      --queues=qr-generation
-      --concurrency=${QR_WORKER_CONCURRENCY:-2}
+      celery -A app.celery_app:celery_app worker --loglevel=${LOG_LEVEL:-INFO} --queues=qr-generation --concurrency=${QR_WORKER_CONCURRENCY:-2}
     networks:
       - horizon_network
     restart: unless-stopped

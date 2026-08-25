@@ -15,7 +15,11 @@ from app.core.exceptions import (
 from app.models.item import Item
 from app.models.uom_conversion import UOMConversion
 from app.repositories.uom_conversion_repository import UOMConversionRepository
-from app.schemas.uom_conversion import UOMConversionCreate, UOMConversionUpdate
+from app.schemas.uom_conversion import (
+    UOMConversionBulkItem,
+    UOMConversionCreate,
+    UOMConversionUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,26 @@ class UOMConversionService:
                 f"Item '{item_id}' not found in this organization"
             )
 
+    def _find_existing_conversion(
+        self,
+        item_id: UUID | None,
+        from_uom: str,
+        to_uom: str,
+        from_uom_id: UUID | None,
+        to_uom_id: UUID | None,
+        organization_id: UUID,
+    ) -> UOMConversion | None:
+        """Find an existing conversion, preferring FK ids, then name caches."""
+        if from_uom_id and to_uom_id:
+            found = self.repo.get_by_item_and_ids(
+                item_id, from_uom_id, to_uom_id, organization_id
+            )
+            if found is not None:
+                return found
+        return self.repo.get_by_item_and_pair(
+            item_id, from_uom, to_uom, organization_id
+        )
+
     def create_conversion(
         self,
         conversion_data: UOMConversionCreate,
@@ -67,10 +91,12 @@ class UOMConversionService:
         self._validate_item_exists(conversion_data.item_id, organization_id)
 
         # Check duplicate (item_id, from_uom, to_uom) within org
-        existing = self.repo.get_by_item_and_pair(
+        existing = self._find_existing_conversion(
             conversion_data.item_id,
             conversion_data.from_uom,
             conversion_data.to_uom,
+            conversion_data.from_uom_id,
+            conversion_data.to_uom_id,
             organization_id,
         )
         if existing:
@@ -86,6 +112,85 @@ class UOMConversionService:
         conversion_dict["updated_by"] = user_id
 
         return self.repo.create(conversion_dict)
+
+    def bulk_upsert_conversions(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        conversions: list[UOMConversionBulkItem],
+    ) -> tuple[int, int, int, list[dict]]:
+        """
+        Bulk process UOM conversions (create by default; supports create /
+        modify / delete actions). Each row is committed independently so
+        partial success is reported via the returned error list.
+
+        Returns:
+            Tuple of (created, updated, deleted, errors).
+        """
+        created = 0
+        updated = 0
+        deleted = 0
+        errors: list[dict] = []
+
+        for index, conv in enumerate(conversions):
+            try:
+                action = (conv.action or "").strip().lower() or "create"
+                if conv.item_id is not None:
+                    self._validate_item_exists(conv.item_id, organization_id)
+
+                existing = self._find_existing_conversion(
+                    conv.item_id,
+                    conv.from_uom,
+                    conv.to_uom,
+                    conv.from_uom_id,
+                    conv.to_uom_id,
+                    organization_id,
+                )
+
+                if action == "delete":
+                    if existing is not None:
+                        existing.updated_by = user_id
+                        self.repo.soft_delete(existing)
+                        deleted += 1
+                    continue  # missing → silently ignored
+
+                if action == "create" and existing is not None:
+                    continue  # already exists → nothing happens
+
+                if action == "modify" and existing is None:
+                    continue  # nothing to modify → silently ignored
+
+                if conv.conversion_factor is None:
+                    errors.append(
+                        {"row": index, "error": "conversion_factor is required"}
+                    )
+                    continue
+
+                if existing is not None:
+                    self.repo.update(
+                        existing,
+                        {
+                            "conversion_factor": conv.conversion_factor,
+                            "from_uom_id": conv.from_uom_id,
+                            "to_uom_id": conv.to_uom_id,
+                            "updated_by": user_id,
+                        },
+                    )
+                    updated += 1
+                else:
+                    data = conv.model_dump(exclude={"action"})
+                    data["organization_id"] = organization_id
+                    data["created_by"] = user_id
+                    data["updated_by"] = user_id
+                    self.repo.create(data)
+                    created += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Bulk UOM conversion row %d failed: %s", index, exc
+                )
+                errors.append({"row": index, "error": str(exc)})
+
+        return created, updated, deleted, errors
 
     def get_conversion(
         self,
@@ -279,12 +384,25 @@ class UOMConversionService:
         if forward:
             return quantity * forward.conversion_factor
 
-        # Reverse lookup
+        # Reverse lookup (item-specific)
         reverse = self.repo.get_by_item_and_pair(
             item_id, to_uom, from_uom, organization_id
         )
         if reverse:
             return quantity / reverse.conversion_factor
+
+        # Global fallback (item_id IS NULL) — org-wide standard conversions
+        global_forward = self.repo.get_by_item_and_pair(
+            None, from_uom, to_uom, organization_id
+        )
+        if global_forward:
+            return quantity * global_forward.conversion_factor
+
+        global_reverse = self.repo.get_by_item_and_pair(
+            None, to_uom, from_uom, organization_id
+        )
+        if global_reverse:
+            return quantity / global_reverse.conversion_factor
 
         raise ValidationError(
             f"No UOM conversion found for item {item_id} from '{from_uom}' to '{to_uom}'"

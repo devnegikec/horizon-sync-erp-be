@@ -128,6 +128,7 @@ from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.landed_cost import LandedCostVoucher
 from app.models.landing_page import LandingPageConfig
 from app.models.location_allocation import LocationAllocation
+from app.models.packaging_types import PackagingType
 from app.models.location_scan import LocationScan
 from app.models.material_request import MaterialRequest, MaterialRequestLine
 
@@ -153,6 +154,7 @@ from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
 from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 from app.models.product_sku import ProductSKU
+from app.models.products import Product
 
 # Public Marketing module
 # Public Marketing module
@@ -314,6 +316,7 @@ __all__ = [
     "Item",
     "ItemGroup",
     "ItemPackagingUnit",
+    "PackagingType",
     "JournalEntry",
     "JournalEntryLine",
     "PaymentEntry",
@@ -359,6 +362,7 @@ __all__ = [
     "QRBlock",
     "ProductItem",
     "ProductSKU",
+    "Product",
     "VariantAttribute",
     "VariantAttributeValue",
     "ProductSKUAttributeValue",

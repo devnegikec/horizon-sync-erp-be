@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     campaigns,
     capacity,
     cascade,
+    catalog_import,
     charge_templates,
     chart_of_accounts,
     chart_of_accounts_setup,
@@ -30,6 +31,7 @@ from app.api.v1.endpoints import (
     document_numbering,
     exchange_rates,
     feature_flag_evaluate,
+    feature_flags_admin,
     floor_plans,
     inbound,
     internal_warehouse_users,
@@ -55,6 +57,7 @@ from app.api.v1.endpoints import (
     public_qr,
     purchase_orders,
     purchase_receipts,
+    products,
     put_away,
     put_away_rules,
     qr_activation,
@@ -101,6 +104,13 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 # Feature flag evaluation (any authenticated user)
 api_router.include_router(
     feature_flag_evaluate.router,
+    prefix="/feature-flags",
+    tags=["Feature Flags"],
+)
+
+# Feature flag admin (tenant management, Settings tab)
+api_router.include_router(
+    feature_flags_admin.router,
     prefix="/feature-flags",
     tags=["Feature Flags"],
 )
@@ -271,6 +281,11 @@ api_router.include_router(
 api_router.include_router(currencies.router, prefix="/currencies", tags=["Currencies"])
 api_router.include_router(
     exchange_rates.router, prefix="/exchange-rates", tags=["Exchange Rates"]
+)
+# Shared catalog core (Product)
+api_router.include_router(products.router, prefix="/products", tags=["Products"])
+api_router.include_router(
+    catalog_import.router, prefix="/catalog-import", tags=["Catalog Import"]
 )
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])

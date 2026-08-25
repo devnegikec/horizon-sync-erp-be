@@ -12,6 +12,7 @@ class ItemPackagingUnitCreate(BaseModel):
     """Schema for creating a packaging unit for an item"""
 
     unit_name: str = Field(..., min_length=1, max_length=100, description="Name of the packaging unit (e.g. 'Box of 12')")
+    packaging_type_id: Optional[UUID] = Field(None, description="Optional reference to a shared packaging type")
     qr_identifier: Optional[str] = Field(None, max_length=255, description="Optional unique QR identifier for this packaging unit")
     conversion_factor: Decimal = Field(..., gt=0, description="Number of base units (Eaches) in this packaging unit — must be > 0")
     items_per_master_pack: Optional[int] = Field(None, gt=0, description="Items per master pack (used for QR master pack grouping)")
@@ -34,6 +35,7 @@ class ItemPackagingUnitUpdate(BaseModel):
     """Schema for partially updating a packaging unit (all fields optional)"""
 
     unit_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    packaging_type_id: Optional[UUID] = None
     qr_identifier: Optional[str] = Field(None, max_length=255)
     conversion_factor: Optional[Decimal] = Field(None, gt=0)
     items_per_master_pack: Optional[int] = Field(None, gt=0)
@@ -61,6 +63,7 @@ class ItemPackagingUnitResponse(BaseModel):
     organization_id: UUID
     item_id: UUID
     unit_name: str
+    packaging_type_id: Optional[UUID] = None
     qr_identifier: Optional[str] = None
     conversion_factor: Decimal
     items_per_master_pack: Optional[int] = None

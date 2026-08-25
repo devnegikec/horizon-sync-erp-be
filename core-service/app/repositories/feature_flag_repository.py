@@ -28,8 +28,38 @@ class FeatureFlagRepository:
             .first()
         )
 
+    def get_by_name_for_tenant(
+        self, name: str, organization_id: UUID
+    ) -> FeatureFlag | None:
+        return (
+            self.db.query(FeatureFlag)
+            .filter(
+                FeatureFlag.name == name,
+                FeatureFlag.scope == "TENANT",
+                FeatureFlag.tenant_id == organization_id,
+            )
+            .first()
+        )
+
     def list_all(self) -> list[FeatureFlag]:
         return self.db.query(FeatureFlag).all()
+
+    def list_by_scope(self, scope: str) -> list[FeatureFlag]:
+        return (
+            self.db.query(FeatureFlag)
+            .filter(FeatureFlag.scope == scope)
+            .all()
+        )
+
+    def list_by_tenant(self, organization_id: UUID) -> list[FeatureFlag]:
+        return (
+            self.db.query(FeatureFlag)
+            .filter(
+                FeatureFlag.scope == "TENANT",
+                FeatureFlag.tenant_id == organization_id,
+            )
+            .all()
+        )
 
     def update(self, flag: FeatureFlag, data: dict) -> FeatureFlag:
         for k, v in data.items():
