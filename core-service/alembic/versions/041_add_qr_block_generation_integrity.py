@@ -9,6 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
+from app.alembic_guards import has_column, has_constraint, has_index
+
 revision = "041_qr_block_integrity"
 down_revision = "040_add_product_shelf_life"
 branch_labels = None
@@ -57,8 +59,14 @@ def _assert_no_active_duplicates() -> None:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "qr_blocks",
+    # Idempotent: this migration can run against databases where the QSeal
+    # branch schema was already materialized out-of-band (schema drift).
+    def _add_col(name: str, col: sa.Column) -> None:
+        if not has_column("qr_blocks", name):
+            op.add_column("qr_blocks", col)
+
+    _add_col(
+        "qr_type",
         sa.Column(
             "qr_type",
             sa.String(length=30),
@@ -66,12 +74,12 @@ def upgrade() -> None:
             server_default="dynamic",
         ),
     )
-    op.add_column(
-        "qr_blocks",
+    _add_col(
+        "starting_serial",
         sa.Column("starting_serial", sa.String(length=10), nullable=True),
     )
-    op.add_column(
-        "qr_blocks",
+    _add_col(
+        "generated_count",
         sa.Column(
             "generated_count",
             sa.Integer(),
@@ -79,8 +87,8 @@ def upgrade() -> None:
             server_default="0",
         ),
     )
-    op.add_column(
-        "qr_blocks",
+    _add_col(
+        "progress",
         sa.Column(
             "progress",
             sa.Integer(),
@@ -88,12 +96,12 @@ def upgrade() -> None:
             server_default="0",
         ),
     )
-    op.add_column(
-        "qr_blocks",
+    _add_col(
+        "error_code",
         sa.Column("error_code", sa.String(length=50), nullable=True),
     )
-    op.add_column(
-        "qr_blocks",
+    _add_col(
+        "error_message",
         sa.Column("error_message", sa.String(length=500), nullable=True),
     )
 
@@ -118,34 +126,44 @@ def upgrade() -> None:
         """
     )
 
-    op.create_check_constraint(
-        "ck_qr_blocks_qr_type",
-        "qr_blocks",
-        "qr_type IN "
-        "('dynamic', 'static', 'dual', 'secure_code', 'one_time', "
-        "'post_activation')",
-    )
-    op.create_check_constraint(
-        "ck_qr_blocks_progress",
-        "qr_blocks",
-        "progress >= 0 AND progress <= 100",
-    )
+    if not has_constraint("qr_blocks", "ck_qr_blocks_qr_type"):
+        op.create_check_constraint(
+            "ck_qr_blocks_qr_type",
+            "qr_blocks",
+            "qr_type IN "
+            "('dynamic', 'static', 'dual', 'secure_code', 'one_time', "
+            "'post_activation')",
+        )
+    if not has_constraint("qr_blocks", "ck_qr_blocks_progress"):
+        op.create_check_constraint(
+            "ck_qr_blocks_progress",
+            "qr_blocks",
+            "progress >= 0 AND progress <= 100",
+        )
 
-    _assert_no_active_duplicates()
-    op.create_index(
-        "uq_qr_blocks_org_batch_active",
-        "qr_blocks",
-        ["organization_id", sa.text("lower(batch)")],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
+    need_batch_index = not has_index("qr_blocks", "uq_qr_blocks_org_batch_active")
+    need_serial_index = not has_index(
+        "product_items", "uq_product_items_org_serial_active"
     )
-    op.create_index(
-        "uq_product_items_org_serial_active",
-        "product_items",
-        ["organization_id", "serial_number"],
-        unique=True,
-        postgresql_where=sa.text("deleted_at IS NULL"),
-    )
+    if need_batch_index or need_serial_index:
+        _assert_no_active_duplicates()
+
+    if need_batch_index:
+        op.create_index(
+            "uq_qr_blocks_org_batch_active",
+            "qr_blocks",
+            ["organization_id", sa.text("lower(batch)")],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
+    if need_serial_index:
+        op.create_index(
+            "uq_product_items_org_serial_active",
+            "product_items",
+            ["organization_id", "serial_number"],
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        )
 
 
 def downgrade() -> None:
