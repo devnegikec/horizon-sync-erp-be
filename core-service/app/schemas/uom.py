@@ -13,6 +13,8 @@ class UOMBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=50)
     abbreviation: str = Field(..., min_length=1, max_length=10)
+    uom_type: str | None = Field(None, max_length=20, description="count | weight | volume | length | time")
+    precision: int = Field(default=0, ge=0)
     description: str | None = None
 
 
@@ -27,6 +29,8 @@ class UOMUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=50)
     abbreviation: str | None = Field(None, min_length=1, max_length=10)
+    uom_type: str | None = Field(None, max_length=20)
+    precision: int | None = Field(None, ge=0)
     description: str | None = None
 
 
@@ -37,6 +41,8 @@ class UOMResponse(BaseModel):
     organization_id: UUID
     name: str
     abbreviation: str
+    uom_type: str | None = None
+    precision: int = 0
     description: str | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None

@@ -23,6 +23,7 @@ class ItemBase(BaseModel):
 
     # Unit of Measure
     uom: str = Field(default="Nos", max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -67,6 +68,10 @@ class ItemBase(BaseModel):
 
     # QR Product link — enables unit-level QR tracking for this item
     qr_product_id: UUID | None = None
+
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
 
     # Brand link and GTIN
     brand_id: UUID | None = None
@@ -114,6 +119,7 @@ class ItemUpdate(BaseModel):
 
     # Unit of Measure
     uom: str | None = Field(None, max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -159,6 +165,10 @@ class ItemUpdate(BaseModel):
     # QR Product link
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
     # Brand link and GTIN
     brand_id: UUID | None = None
     gtin: str | None = Field(None, max_length=20)
@@ -200,6 +210,7 @@ class ItemResponse(BaseModel):
 
     # Unit of Measure
     uom: str
+    base_uom_id: UUID | None = None
 
     # Warehouse SKU
     sku: str | None = None
@@ -246,6 +257,10 @@ class ItemResponse(BaseModel):
 
     # QR Product link
     qr_product_id: UUID | None = None
+
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = None

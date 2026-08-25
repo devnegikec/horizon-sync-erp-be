@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.config import settings
 from app.models.uom import UOM
 
-DATABASE_URL = "postgresql://horizon_user:horizon_pass@localhost:5432/core_db"
+DATABASE_URL = settings.database_url
 ORG_ID = uuid.UUID("bfe4fc3e-0b7d-45c9-a983-2ea9f9e99150")
 
 UOMS_DATA = [
@@ -113,6 +114,32 @@ UOMS_DATA = [
     {"name": "Bottle", "abbreviation": "BTL", "description": "Bottle packaging"},
 ]
 
+# abbreviation -> (uom_type, precision)
+UOM_TYPE_MAP = {
+    # count
+    "PCS": ("count", 0), "DOZ": ("count", 0), "PR": ("count", 0),
+    "SET": ("count", 0), "BOX": ("count", 0), "CTN": ("count", 0),
+    "PCK": ("count", 0), "ROL": ("count", 0), "SHT": ("count", 0),
+    "BDL": ("count", 0), "UNIT": ("count", 0), "LOT": ("count", 0),
+    "PLT": ("count", 0), "CNT": ("count", 0), "BAG": ("count", 0),
+    "DRM": ("count", 0), "BTL": ("count", 0),
+    # weight
+    "KG": ("weight", 3), "GM": ("weight", 0), "MG": ("weight", 0),
+    "MT": ("weight", 3), "LB": ("weight", 2), "OZ": ("weight", 2),
+    # volume
+    "LTR": ("volume", 2), "ML": ("volume", 0), "CBM": ("volume", 3),
+    "GAL": ("volume", 2),
+    # length
+    "MTR": ("length", 2), "CM": ("length", 1), "MM": ("length", 0),
+    "KM": ("length", 2), "IN": ("length", 1), "FT": ("length", 1),
+    "YD": ("length", 1),
+    # area
+    "SQM": ("area", 2), "SQF": ("area", 2),
+    # time
+    "HR": ("time", 1), "DAY": ("time", 0), "MON": ("time", 0),
+    "YR": ("time", 0),
+}
+
 
 def seed_uoms():
     engine = create_engine(DATABASE_URL)
@@ -124,6 +151,8 @@ def seed_uoms():
 
     try:
         for uom_data in UOMS_DATA:
+            uom_type, precision = UOM_TYPE_MAP.get(uom_data["abbreviation"], (None, 0))
+
             existing = (
                 db.query(UOM)
                 .filter(
@@ -135,7 +164,17 @@ def seed_uoms():
             )
 
             if existing:
-                print(f"  skip  {uom_data['abbreviation']} — already exists")
+                updated = False
+                if existing.uom_type is None and uom_type is not None:
+                    existing.uom_type = uom_type
+                    updated = True
+                if getattr(existing, "precision", None) is None and precision:
+                    existing.precision = precision
+                    updated = True
+                if updated:
+                    print(f"  update {uom_data['abbreviation']} — set uom_type={uom_type}, precision={precision}")
+                else:
+                    print(f"  skip  {uom_data['abbreviation']} — already exists")
                 skipped += 1
                 continue
 
@@ -144,6 +183,8 @@ def seed_uoms():
                 organization_id=ORG_ID,
                 name=uom_data["name"],
                 abbreviation=uom_data["abbreviation"],
+                uom_type=uom_type,
+                precision=precision,
                 description=uom_data["description"],
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),

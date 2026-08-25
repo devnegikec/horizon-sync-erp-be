@@ -18,6 +18,10 @@ class QRProduct(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
+    # Shared catalog core link (1:1 from products)
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("products.id"), nullable=True, index=True
+    )
     shelf_life_setting_id = Column(
         UUID(as_uuid=True),
         ForeignKey("qr_product_settings.id", ondelete="RESTRICT"),
@@ -81,6 +85,7 @@ class QRProduct(Base):
 
     # Relationships
     brand = relationship("Brand", back_populates="qr_products")
+    product = relationship("Product", foreign_keys=[product_id])
     landing_page_config = relationship(
         "LandingPageConfig",
         back_populates="product",

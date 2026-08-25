@@ -19,6 +19,8 @@ class ItemType(str, enum.Enum):
 class ItemStatus(str, enum.Enum):
     """Item status enumeration"""
 
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
     ACTIVE = "active"
     INACTIVE = "inactive"
     DISCONTINUED = "discontinued"
