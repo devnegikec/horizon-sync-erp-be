@@ -124,6 +124,14 @@ class InboundService:
             "warehouse_id": warehouse_id,
             "dock_location": dock_location,
             "asn_order_id": asn_order_id,
+            "vehicle_arrival_id": self._resolve_vehicle_arrival(
+                organization_id=organization_id,
+                warehouse_id=warehouse_id,
+                asn_order_id=asn_order_id,
+                dock_location=dock_location,
+            )
+            if asn_order_id
+            else None,
             "status": "open",
             "total_boxes_scanned": 0,
             "started_at": datetime.now(UTC),
@@ -132,6 +140,54 @@ class InboundService:
         session = self.session_repo.create_session(session_data)
 
         return self._session_to_dict(session)
+
+    def _resolve_vehicle_arrival(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        asn_order_id: UUID,
+        dock_location: str | None = None,
+    ) -> UUID | None:
+        """Find the open vehicle arrival that carries the given ASN.
+
+        Matches on organization + warehouse + ASN, preferring an arrival whose
+        dock matches the session's ``dock_location``. Returns an arrival id only
+        when the match is unambiguous; otherwise ``None`` so the WMS manager can
+        link manually (e.g. when one ASN is split across multiple vehicles).
+        """
+        from app.models.vehicle import VehicleArrival, vehicle_arrival_asns
+
+        q = (
+            self.db.query(VehicleArrival)
+            .join(
+                vehicle_arrival_asns,
+                vehicle_arrival_asns.c.vehicle_arrival_id == VehicleArrival.id,
+            )
+            .filter(
+                VehicleArrival.organization_id == organization_id,
+                VehicleArrival.status == "arrived",
+                vehicle_arrival_asns.c.asn_order_id == asn_order_id,
+            )
+        )
+        if warehouse_id is not None:
+            q = q.filter(
+                (VehicleArrival.warehouse_id == warehouse_id)
+                | (VehicleArrival.warehouse_id.is_(None))
+            )
+
+        candidates = q.order_by(VehicleArrival.arrived_at.desc()).all()
+        if not candidates:
+            return None
+
+        # A dock match makes the association unambiguous.
+        if dock_location:
+            dock_matches = [a for a in candidates if a.dock == dock_location]
+            if len(dock_matches) == 1:
+                return dock_matches[0].id
+
+        # Otherwise only link when all candidates are the same arrival.
+        ids = {a.id for a in candidates}
+        return next(iter(ids)) if len(ids) == 1 else None
 
     # ------------------------------------------------------------------
     # RECORD SCAN
@@ -1698,6 +1754,7 @@ class InboundService:
             "session_id": session.id,
             "warehouse_id": session.warehouse_id,
             "asn_order_id": session.asn_order_id,
+            "vehicle_arrival_id": session.vehicle_arrival_id,
             "status": "pending_review",
             "total_boxes": total_boxes,
             "total_items": total_items,
@@ -1758,6 +1815,9 @@ class InboundService:
             "dock_location": session.dock_location,
             "asn_order_id": str(session.asn_order_id) if session.asn_order_id else None,
             "asn_order_no": asn_order_no,
+            "vehicle_arrival_id": str(session.vehicle_arrival_id)
+            if session.vehicle_arrival_id
+            else None,
             "status": session.status,
             "total_boxes_scanned": session.total_boxes_scanned or 0,
             "started_at": session.started_at.isoformat()
@@ -1791,6 +1851,10 @@ class InboundService:
             "warehouse_id": str(slip.warehouse_id),
             "asn_order_id": str(slip.asn_order_id) if slip.asn_order_id else None,
             "asn_order_no": asn_order_no,
+            "vehicle_arrival_id": str(slip.vehicle_arrival_id)
+            if slip.vehicle_arrival_id
+            else None,
+            "vehicle_no": self._get_slip_vehicle_no(slip),
             "status": slip.status,
             "total_boxes": slip.total_boxes,
             "total_items": slip.total_items,
@@ -1800,6 +1864,15 @@ class InboundService:
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }
+
+    def _get_slip_vehicle_no(self, slip) -> str | None:
+        """Return the vehicle number linked to a receiving slip, if any."""
+        if not slip.vehicle_arrival_id:
+            return None
+        vehicle_arrival = slip.vehicle_arrival
+        if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
+            return vehicle_arrival.vehicle.vehicle_no
+        return None
 
     # ------------------------------------------------------------------
     # COUNT DISTINCT QSEAL PARENT CONTAINERS

@@ -19,6 +19,19 @@ class AsnOrderWarehouseInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AsnOrderVehicleArrivalInfo(BaseModel):
+    """Vehicle arrival information linked to an ASN order."""
+
+    id: UUID
+    vehicle_no: str | None = None
+    driver_name: str | None = None
+    driver_contact: str | None = None
+    transporter: str | None = None
+    dock: str | None = None
+    status: str
+    arrived_at: datetime
+
+
 class AsnOrderItemBase(BaseModel):
     item_id: UUID
     qty: Decimal | float = Field(..., gt=0)
@@ -81,6 +94,7 @@ class AsnOrderResponse(AsnOrderBase):
     organization_id: UUID
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
+    vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -100,6 +114,7 @@ class AsnOrderListItem(BaseModel):
     grand_total: Decimal | float = 0
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
+    vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

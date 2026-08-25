@@ -62,7 +62,7 @@ Thumbs.db
 
 # Docker volumes (if local)
 postgres_data/
-
+core-service/.hypothesis/
 search-service/.hypothesis
 search-service/.dockerignore
 search-service//.gitignore

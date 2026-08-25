@@ -101,6 +101,8 @@ class SessionResponse(BaseModel):
     worker_id: str
     warehouse_id: str
     dock_location: str | None = None
+    asn_order_id: str | None = None
+    vehicle_arrival_id: str | None = None
     status: str
     total_boxes_scanned: int = 0
     started_at: str | None = None
@@ -198,6 +200,8 @@ class ReceivingSlipResponse(BaseModel):
     warehouse_id: str
     asn_order_id: str | None = None
     asn_order_no: str | None = None
+    vehicle_arrival_id: str | None = None
+    vehicle_no: str | None = None
     status: str
     total_boxes: int
     total_items: int
