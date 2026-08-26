@@ -15,6 +15,12 @@ PRODUCT_IMAGE_CONTENT_TYPES = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+INBOUND_EVIDENCE_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "application/pdf": ".pdf",
+}
 PRODUCT_IMAGE_S3_KEY_PATTERN = re.compile(
     r"^qseal/organizations/[0-9a-f-]{36}/products/[0-9a-f-]{36}/"
     r"images/(?:logo|banner)/[0-9a-f]{32}\.(?:jpg|png|webp)$"
@@ -202,9 +208,7 @@ def read_product_image(object_key: str) -> tuple[bytes, str]:
     # Backward compatibility for images uploaded before Product images moved to S3.
     if settings.gcs_bucket:
         client = _get_client()
-        blob = client.bucket(settings.gcs_bucket).blob(
-            f"product-images/{object_key}"
-        )
+        blob = client.bucket(settings.gcs_bucket).blob(f"product-images/{object_key}")
         if not blob.exists():
             raise FileNotFoundError(object_key)
         data = blob.download_as_bytes()
@@ -239,9 +243,7 @@ def delete_product_image(object_key: str) -> None:
     # Backward compatibility for images uploaded before Product images moved to S3.
     if settings.gcs_bucket:
         client = _get_client()
-        blob = client.bucket(settings.gcs_bucket).blob(
-            f"product-images/{object_key}"
-        )
+        blob = client.bucket(settings.gcs_bucket).blob(f"product-images/{object_key}")
         if blob.exists():
             blob.delete()
         return
@@ -249,3 +251,35 @@ def delete_product_image(object_key: str) -> None:
     path = _local_product_image_path(object_key)
     if path.is_file():
         path.unlink()
+
+
+def store_inbound_exception_evidence(
+    data: bytes,
+    content_type: str,
+    organization_id: UUID,
+    exception_id: UUID,
+) -> str:
+    """Store private optional photo/PDF evidence for an inbound exception."""
+    if content_type not in INBOUND_EVIDENCE_CONTENT_TYPES:
+        raise ValueError("Unsupported inbound evidence content type")
+    object_key = (
+        f"inbound/organizations/{organization_id}/exceptions/{exception_id}/"
+        f"evidence/{uuid4().hex}{INBOUND_EVIDENCE_CONTENT_TYPES[content_type]}"
+    )
+    if settings.aws_s3_bucket:
+        _get_s3_client().put_object(
+            Bucket=settings.aws_s3_bucket,
+            Key=object_key,
+            Body=data,
+            ContentType=content_type,
+            ServerSideEncryption="AES256",
+        )
+        return object_key
+    if settings.environment.lower() == "production":
+        raise RuntimeError(
+            "AWS_S3_BUCKET is required for inbound evidence in production"
+        )
+    path = _local_product_image_path(object_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return object_key

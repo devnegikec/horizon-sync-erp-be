@@ -289,9 +289,7 @@ class PickListService:
         items_to_remove: list[PickListItem] = []
 
         # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
-        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(
-            org_id=org_id
-        )
+        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
 
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
@@ -300,10 +298,15 @@ class PickListService:
             # earliest expiry first (NULLs last), then oldest arrival.
             bin_stocks = (
                 self.db.query(BinStockLevel)
+                .join(
+                    WarehouseLocation,
+                    BinStockLevel.bin_location_id == WarehouseLocation.id,
+                )
                 .filter(
                     BinStockLevel.item_id == item.item_id,
                     BinStockLevel.organization_id == org_id,
                     BinStockLevel.quantity_on_hand > 0,
+                    WarehouseLocation.is_pickable.is_(True),
                 )
                 .order_by(
                     BinStockLevel.expiry_date.asc().nullslast(),
@@ -351,7 +354,9 @@ class PickListService:
                 # Need to split across multiple bins
                 items_to_remove.append(item)
 
-                for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(allocations):
+                for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(
+                    allocations
+                ):
                     split_item = PickListItem(
                         organization_id=org_id,
                         pick_list_id=pick_list.id,

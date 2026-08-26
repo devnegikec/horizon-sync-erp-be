@@ -68,8 +68,6 @@ from app.models.base import (
 from app.models.batch import Batch
 from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
-from app.models.bulk_export_job import BulkExportJob
-from app.models.bulk_import_job import BulkImportJob
 
 # QR Products module
 from app.models.brand import Brand
@@ -82,6 +80,8 @@ from app.models.brand_trust import (
     BrandTrustAssessment,
     BrandTrustQuestion,
 )
+from app.models.bulk_export_job import BulkExportJob
+from app.models.bulk_import_job import BulkImportJob
 
 # Bulk Import/Export module
 # Campaigns & Coupons module
@@ -197,7 +197,6 @@ from app.models.reminder_config import (
 from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
-from app.models.scanned_item_tracking import ScannedItemTracking
 from app.models.serial_no import SerialNo
 
 # URL Management module

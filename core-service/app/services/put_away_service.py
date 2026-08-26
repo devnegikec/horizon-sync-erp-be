@@ -28,9 +28,9 @@ from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
-from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService
@@ -343,10 +343,24 @@ class PutAwayService:
         put_away_items = []
         skipped_damaged: list[str] = []
         skipped_rejected: list[str] = []
+        skipped_exception: list[str] = []
         skipped_unresolved: list[str] = []
         for slip_item in slip.items:
-            # Skip items flagged as damaged or rejected
-            if slip_item.flag in ("damaged", "rejected"):
+            # Only fully accepted, good receipt lines enter normal put-away.
+            # HOLD, QUARANTINE, and EXCESS are physically segregated and
+            # require an explicit manager disposition before release.
+            if slip_item.flag in (
+                "damaged",
+                "rejected",
+                "hold",
+                "quarantine",
+                "excess",
+            ):
+                if slip_item.flag in ("hold", "quarantine", "excess"):
+                    skipped_exception.append(
+                        f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity}, flag: {slip_item.flag})"
+                    )
+                    continue
                 skipped = (
                     skipped_damaged if slip_item.flag == "damaged" else skipped_rejected
                 )
@@ -414,6 +428,11 @@ class PutAwayService:
                 f"Skipped {len(skipped_rejected)} rejected item(s): "
                 + "; ".join(skipped_rejected)
             )
+        if skipped_exception:
+            warnings_parts.append(
+                f"Skipped {len(skipped_exception)} held/quarantined/excess item(s): "
+                + "; ".join(skipped_exception)
+            )
         if skipped_unresolved:
             warnings_parts.append(
                 f"Skipped {len(skipped_unresolved)} item(s) with unknown SKU (no matching Item found): "
@@ -457,6 +476,130 @@ class PutAwayService:
 
         self.db.refresh(put_away_list)
         return put_away_list
+
+    def enqueue_released_slip_item(
+        self,
+        slip_item_id: UUID,
+        org_id: UUID,
+        worker_id: UUID | None = None,
+    ) -> PutAwayList:
+        """Add a manager-released exception line to normal put-away.
+
+        A receipt may already have a put-away list when one held line is later
+        released.  Creating a second receipt list would break the one-slip
+        handoff, so the released line is appended to the existing list.
+        """
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        slip_item = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.id == slip_item_id,
+                ReceivingSlipItem.organization_id == org_id,
+            )
+            .first()
+        )
+        if slip_item is None:
+            raise NotFoundError(
+                message="Receiving slip item not found",
+                entity_type="ReceivingSlipItem",
+                entity_id=str(slip_item_id),
+            )
+        if slip_item.flag != "ok" or slip_item.condition_code != "GOOD":
+            raise StateError(
+                message="Only a released GOOD receipt line can be queued for put-away",
+                current_state=slip_item.flag,
+                required_state=["ok"],
+            )
+
+        slip = self.db.get(ReceivingSlip, slip_item.slip_id)
+        if slip is None:
+            raise NotFoundError(
+                message="Receiving slip not found",
+                entity_type="ReceivingSlip",
+                entity_id=str(slip_item.slip_id),
+            )
+
+        existing_list = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip.id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
+        )
+        if existing_list is None:
+            # A receipt containing only held/quarantined stock may have been
+            # marked complete without a normal list. Re-open it for the newly
+            # released inventory, then use the standard list generator.
+            slip.status = "pending_putaway"
+            self.db.flush()
+            return self.generate_from_slip(slip.id, org_id, worker_id)
+
+        duplicate = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.put_away_list_id == existing_list.id,
+                PutAwayListItem.sku == slip_item.sku,
+                PutAwayListItem.batch_number == slip_item.batch_number,
+                PutAwayListItem.status.in_(["pending", "in_progress", "completed"]),
+            )
+            .first()
+        )
+        if duplicate is not None:
+            return existing_list
+
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.organization_id == org_id,
+                ((Item.item_code == slip_item.sku) | (Item.sku == slip_item.sku)),
+            )
+            .first()
+        )
+        if item is None:
+            raise ValidationError(
+                f"Released SKU '{slip_item.sku}' no longer resolves to an active item"
+            )
+
+        assignments = self._assign_bins(
+            item_id=item.id,
+            item_group_id=item.item_group_id,
+            quantity=Decimal(str(slip_item.quantity)),
+            warehouse_id=slip.warehouse_id,
+            org_id=org_id,
+        )
+        if not assignments:
+            raise ValidationError(
+                f"No eligible pickable storage bin is available for released SKU '{slip_item.sku}'"
+            )
+
+        new_items: list[PutAwayListItem] = []
+        for assignment in assignments:
+            put_away_item = PutAwayListItem(
+                organization_id=org_id,
+                put_away_list_id=existing_list.id,
+                item_id=item.id,
+                sku=slip_item.sku,
+                batch_number=slip_item.batch_number,
+                quantity=assignment["quantity"],
+                bin_location_id=assignment["bin_location_id"],
+                sort_order=0,
+                status="pending",
+            )
+            self.db.add(put_away_item)
+            new_items.append(put_away_item)
+
+        existing_list.status = "pending"
+        existing_list.completed_at = None
+        if worker_id is not None:
+            existing_list.assigned_to = worker_id
+        slip.status = "pending_putaway"
+        self.db.flush()
+        self._optimize_item_routing(new_items)
+        self.db.commit()
+        self.db.refresh(existing_list)
+        return existing_list
 
     def complete_item(
         self,
@@ -525,13 +668,14 @@ class PutAwayService:
         ):
             put_away_item.bin_location_id = bin_id_override
 
-        # Add stock to the target bin using BinStockService
-        bin_stock = self.bin_stock_service.add_stock(
-            bin_id=target_bin_id,
-            item_id=put_away_item.item_id,
-            quantity=Decimal(str(put_away_item.quantity)),
+        # Approved receipts first exist in the non-pickable RECEIVING-STAGE.
+        # Completing a put-away moves that stock into its final pickable bin;
+        # legacy/direct flows without staged stock retain the prior add-stock
+        # behavior.
+        bin_stock = self._move_from_receiving_stage_or_add(
+            put_away_item=put_away_item,
+            target_bin_id=target_bin_id,
             org_id=org_id,
-            batch_number=put_away_item.batch_number,
         )
 
         # If the put-away item carries a packaging_unit_id, propagate it to the
@@ -760,6 +904,7 @@ class PutAwayService:
                 .filter(
                     WarehouseLocation.id == allocation.location_id,
                     WarehouseLocation.is_active == True,  # noqa: E712
+                    WarehouseLocation.is_pickable == True,  # noqa: E712
                 )
                 .first()
             )
@@ -788,6 +933,7 @@ class PutAwayService:
                 .filter(
                     WarehouseLocation.parent_location_id == current_id,
                     WarehouseLocation.is_active == True,  # noqa: E712
+                    WarehouseLocation.is_pickable == True,  # noqa: E712
                 )
                 .all()
             )
@@ -828,6 +974,7 @@ class PutAwayService:
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.location_type == "bin",
                 WarehouseLocation.is_active == True,  # noqa: E712
+                WarehouseLocation.is_pickable == True,  # noqa: E712
                 ~WarehouseLocation.id.in_(exclusively_allocated_location_ids),
             )
             .all()
@@ -999,12 +1146,73 @@ class PutAwayService:
             if t.receiving_status == "approved" and not t.stock_entered:
                 t.stock_entered = True
                 t.stock_entered_at = now
+            t.stock_location_id = target_bin_id
 
         self.db.flush()
         logger.info(
             "Tracking: %d records updated for put-away item %s",
             len(trackings),
             put_away_item.id,
+        )
+
+    def _move_from_receiving_stage_or_add(
+        self,
+        *,
+        put_away_item: PutAwayListItem,
+        target_bin_id: UUID,
+        org_id: UUID,
+    ) -> BinStockLevel:
+        """Move receipt-stage stock into storage, with legacy-flow fallback."""
+        put_away_list = put_away_item.put_away_list
+        if put_away_list and put_away_list.receiving_slip_id:
+            stage = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.warehouse_id == put_away_list.warehouse_id,
+                    WarehouseLocation.organization_id == org_id,
+                    WarehouseLocation.code == "RECEIVING-STAGE",
+                )
+                .first()
+            )
+            if stage is not None:
+                staged_stock = (
+                    self.db.query(BinStockLevel)
+                    .filter(
+                        BinStockLevel.bin_location_id == stage.id,
+                        BinStockLevel.item_id == put_away_item.item_id,
+                        BinStockLevel.organization_id == org_id,
+                        BinStockLevel.batch_number == put_away_item.batch_number,
+                    )
+                    .first()
+                )
+                if staged_stock is not None:
+                    required = Decimal(str(put_away_item.quantity))
+                    available = Decimal(str(staged_stock.quantity_on_hand or 0))
+                    if available < required:
+                        raise StateError(
+                            message=(
+                                f"RECEIVING-STAGE has {available} available for "
+                                f"{put_away_item.sku} / batch {put_away_item.batch_number}; "
+                                f"cannot put away {required}"
+                            ),
+                            current_state="insufficient_receiving_stage_stock",
+                            required_state=["staged_quantity_available"],
+                        )
+                    return self.bin_stock_service.transfer_stock(
+                        from_bin_id=stage.id,
+                        to_bin_id=target_bin_id,
+                        item_id=put_away_item.item_id,
+                        quantity=required,
+                        org_id=org_id,
+                        batch_number=put_away_item.batch_number,
+                    )
+
+        return self.bin_stock_service.add_stock(
+            bin_id=target_bin_id,
+            item_id=put_away_item.item_id,
+            quantity=Decimal(str(put_away_item.quantity)),
+            org_id=org_id,
+            batch_number=put_away_item.batch_number,
         )
 
     def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:

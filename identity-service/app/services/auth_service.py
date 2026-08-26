@@ -44,6 +44,8 @@ class AuthService:
         "receiving_slip.create",
         "receiving_slip.read",
         "receiving_slip.update",
+        "inbound_exception.read",
+        "inbound_exception.create",
         "pick_list.read",
         "pick_list.update",
         "stock_entry.create",
@@ -316,10 +318,13 @@ class AuthService:
     def _find_or_create_user_from_wms_worker(self, qr_code: str):
         """Look up a worker in wms_workers by barcode and create a users entry if needed."""
         import uuid as _uuid
+
         from sqlalchemy import text as sa_text
 
         row = self.db.execute(
-            sa_text("SELECT * FROM wms_workers WHERE barcode = :bc AND is_active = true"),
+            sa_text(
+                "SELECT * FROM wms_workers WHERE barcode = :bc AND is_active = true"
+            ),
             {"bc": qr_code},
         ).fetchone()
         if not row:
@@ -337,6 +342,7 @@ class AuthService:
 
         # Create a new user for this worker
         from app.models.user import User
+
         user = User(
             id=_uuid.uuid4(),
             email=email,
@@ -356,18 +362,23 @@ class AuthService:
 
         # Assign the warehouse_work_user role
         from app.models.role import Role, UserOrganizationRole
-        ww_role = self.db.query(Role).filter(
-            Role.code == "warehouse_work_user", Role.is_active == True
-        ).first()
+
+        ww_role = (
+            self.db.query(Role)
+            .filter(Role.code == "warehouse_work_user", Role.is_active == True)
+            .first()
+        )
         if ww_role:
-            self.db.add(UserOrganizationRole(
-                user_id=user.id,
-                organization_id=row.organization_id,
-                role_id=ww_role.id,
-                is_primary=True,
-                is_active=True,
-                status="active",
-            ))
+            self.db.add(
+                UserOrganizationRole(
+                    user_id=user.id,
+                    organization_id=row.organization_id,
+                    role_id=ww_role.id,
+                    is_primary=True,
+                    is_active=True,
+                    status="active",
+                )
+            )
         # Also create warehouse_users record so /my-warehouses works
         wms_role = (row.role or "warehouse_worker").replace("warehouse_", "")
         if wms_role not in ("supervisor", "manager", "operator", "coordinator"):
