@@ -125,7 +125,7 @@ class ReceivingSlipItem(Base):
 
     # Relationships
     slip = relationship("ReceivingSlip", back_populates="items")
-    bin_location = relationship("WarehouseLocation")
+    bin_location = relationship("WarehouseLocation", foreign_keys=[bin_location_id])
 
     def __repr__(self):
         return (

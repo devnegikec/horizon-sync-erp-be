@@ -114,7 +114,9 @@ class ScannedItemTracking(Base):
     scan_session = relationship("ScanSession", backref="item_trackings")
     warehouse = relationship("Warehouse", backref="item_trackings")
     item = relationship("Item", backref="item_trackings")
-    bin_location = relationship("WarehouseLocation", backref="item_trackings")
+    bin_location = relationship(
+        "WarehouseLocation", foreign_keys=[bin_location_id], backref="item_trackings"
+    )
 
     def __repr__(self):
         return (
