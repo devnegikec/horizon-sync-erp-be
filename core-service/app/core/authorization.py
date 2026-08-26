@@ -155,6 +155,13 @@ RECEIVING_SLIP_CREATE = "receiving_slip.create"
 RECEIVING_SLIP_READ = "receiving_slip.read"
 RECEIVING_SLIP_UPDATE = "receiving_slip.update"
 
+# Inbound exception & hold/quarantine workflow. Classification is delegated
+# through feature permissions; final disposition also requires warehouse-manager
+# authority at the warehouse level.
+INBOUND_EXCEPTION_READ = "inbound_exception.read"
+INBOUND_EXCEPTION_CREATE = "inbound_exception.create"
+INBOUND_EXCEPTION_DISPOSE = "inbound_exception.dispose"
+
 # QR scanning (Inbound + Outbound)
 WMS_SCAN = "wms.scan"
 
@@ -170,6 +177,8 @@ WMS_WORKER_PERMISSIONS = [
     RECEIVING_SLIP_CREATE,
     RECEIVING_SLIP_READ,
     RECEIVING_SLIP_UPDATE,
+    INBOUND_EXCEPTION_READ,
+    INBOUND_EXCEPTION_CREATE,
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
 ]

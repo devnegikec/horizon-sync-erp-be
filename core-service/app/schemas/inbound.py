@@ -49,6 +49,23 @@ class EndSessionRejection(BaseModel):
     )
 
 
+class EndSessionException(BaseModel):
+    """A scan-level exception classified before a receiving slip is finalized."""
+
+    serial_number: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Serial number (QR identifier) of the classified unit",
+    )
+    classification: str = Field(
+        ..., description="short, damaged, excess, hold, or quarantine"
+    )
+    reason_code: str = Field(..., max_length=80)
+    destination: str | None = Field(None, description="HOLD or QUARANTINE")
+    note: str | None = Field(None, max_length=2000)
+
+
 class EndSessionRequest(BaseModel):
     """Optional request body for ending a scan session.
 
@@ -59,6 +76,10 @@ class EndSessionRequest(BaseModel):
     rejections: list[EndSessionRejection] = Field(
         default_factory=list,
         description="Items to mark as rejected on the receiving slip",
+    )
+    exceptions: list[EndSessionException] = Field(
+        default_factory=list,
+        description="Reason-coded exceptions classified while scanning",
     )
 
 
@@ -73,7 +94,11 @@ class RejectSlipRequest(BaseModel):
 class FlagLineItemRequest(BaseModel):
     """Schema for flagging a receiving slip line item."""
 
-    flag: str = Field(..., description="Flag value: 'short' or 'damaged'")
+    flag: str = Field(
+        ..., description="Flag value: short, damaged, excess, hold, or quarantine"
+    )
+    reason_code: str | None = Field(None, max_length=80)
+    destination: str | None = Field(None, description="HOLD or QUARANTINE")
     notes: str | None = Field(
         None, max_length=1000, description="Optional notes about the discrepancy"
     )
@@ -84,6 +109,32 @@ class ApproveSlipRequest(BaseModel):
 
     worker_id: UUID | None = Field(
         None, description="Optional worker UUID to assign the put-away task to"
+    )
+
+
+class InboundExceptionClassifyRequest(BaseModel):
+    """Reason-coded exception classification for a receiving-slip line."""
+
+    classification: str = Field(
+        ..., description="short, damaged, excess, hold, or quarantine"
+    )
+    reason_code: str = Field(..., max_length=80)
+    destination: str | None = Field(
+        None, description="HOLD or QUARANTINE where physical segregation is required"
+    )
+    note: str | None = Field(None, max_length=2000)
+
+
+class InboundExceptionDispositionRequest(BaseModel):
+    """Manager-authorized final decision for a hold or quarantine exception."""
+
+    action: str = Field(
+        ...,
+        description="release_to_receiving, move_to_hold, move_to_quarantine, return_to_sender, or dispose",
+    )
+    note: str | None = Field(None, max_length=2000)
+    item_id: UUID | None = Field(
+        None, description="Required when release follows a SKU creation/correction"
     )
 
 
@@ -122,6 +173,8 @@ class ScanResult(BaseModel):
     packaging_unit_id: UUID | None = None
     scanned_at: str | None = None
     total_boxes_scanned: int = 0
+    exception_id: str | None = None
+    exception_status: str | None = None
 
 
 class BatchBreakdown(BaseModel):
@@ -179,6 +232,9 @@ class ReceivingSlipItemData(BaseModel):
     quantity: int
     box_count: int
     flag: str
+    condition_code: str | None = None
+    exception_status: str | None = None
+    exception_destination_location_id: str | None = None
     notes: str | None = None
 
 
@@ -223,6 +279,59 @@ class FlaggedItemResponse(BaseModel):
     box_count: int
     flag: str
     notes: str | None = None
+
+
+class InboundExceptionReasonResponse(BaseModel):
+    code: str
+    name: str
+    category: str
+    default_destination: str | None = None
+    requires_approval: bool
+
+
+class InboundEvidenceResponse(BaseModel):
+    id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+
+
+class InboundExceptionResponse(BaseModel):
+    id: str
+    warehouse_id: str
+    slip_id: str | None = None
+    slip_item_id: str | None = None
+    exception_type: str
+    reason_code: str
+    status: str
+    condition_code: str
+    destination: str | None = None
+    destination_location_id: str | None = None
+    qr_identifier: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    quantity: int
+    note: str | None = None
+    disposition: str | None = None
+    disposition_note: str | None = None
+    created_at: str | None = None
+    approved_at: str | None = None
+    disposed_at: str | None = None
+    evidence: list[InboundEvidenceResponse] = []
+
+
+class InboundShortBalanceResponse(BaseModel):
+    id: str
+    asn_order_id: str
+    asn_order_item_id: str
+    receiving_slip_id: str | None = None
+    item_id: str | None = None
+    sku: str
+    expected_qty: float
+    received_qty: float
+    short_qty: float
+    status: str
+    updated_at: str | None = None
 
 
 class ReceivingSlipPagination(BaseModel):

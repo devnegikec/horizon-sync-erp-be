@@ -45,8 +45,8 @@ class ScannedItemTrackingService:
             return False, "Not scanned yet — scan first"
         if tracking.putaway_status == "completed":
             return False, "Already put away"
-        if tracking.receiving_status == "rejected":
-            return False, "Rejected by admin — cannot put away"
+        if tracking.receiving_status not in ("scanned", "approved"):
+            return False, "Inbound exception is unresolved — cannot put away"
         return True, None
 
     def can_approve(self, tracking: ScannedItemTracking) -> tuple[bool, str | None]:
@@ -203,48 +203,32 @@ class ScannedItemTrackingService:
     # ── Receiving Axis ────────────────────────────────────────────────────
 
     def approve_items(self, slip_id: UUID, approved_by: UUID) -> int:
-        """Approve all scanned items on a receiving slip. Returns count of stock entries."""
-        # Update receiving axis for scanned items
-        updated = (
+        """Approve normal receipt rows and enter them into RECEIVING-STAGE.
+
+        A completed direct put-away still enters directly into its final bin;
+        ordinary receipt approval enters the non-pickable staging bin first.
+        """
+        trackings = (
             self.db.query(ScannedItemTracking)
             .filter(
                 ScannedItemTracking.receiving_slip_id == slip_id,
                 ScannedItemTracking.receiving_status == "scanned",
             )
-            .update(
-                {
-                    "receiving_status": "approved",
-                    "received_at": datetime.now(UTC),
-                    "received_by": approved_by,
-                },
-                synchronize_session="fetch",
-            )
-        )
-        self.db.flush()
-
-        # Enter stock for items where put-away is also complete
-        ready = (
-            self.db.query(ScannedItemTracking)
-            .filter(
-                ScannedItemTracking.receiving_slip_id == slip_id,
-                ScannedItemTracking.receiving_status == "approved",
-                ScannedItemTracking.putaway_status == "completed",
-                ScannedItemTracking.stock_entered == False,  # noqa: E712
-            )
             .all()
         )
-
-        for t in ready:
-            self._enter_stock(t)
+        stock_entries = 0
+        for tracking in trackings:
+            if self.approve_tracking_row(tracking, approved_by=approved_by):
+                stock_entries += 1
 
         self.db.commit()
         logger.info(
             "Slip %s approved: %d items approved, %d entered stock",
             slip_id,
-            updated,
-            len(ready),
+            len(trackings),
+            stock_entries,
         )
-        return len(ready)
+        return stock_entries
 
     def reject_items(self, slip_id: UUID, reason: str, rejected_by: UUID) -> int:
         """Reject scanned items on a slip. Items already binned get retrieval tasks."""
@@ -315,8 +299,56 @@ class ScannedItemTrackingService:
         tracking.put_away_item_id = put_away_item_id
         self.db.flush()
 
-        # Check if stock should enter now
-        if self._should_enter_stock(tracking):
+        # A normal approved receipt is staged at the receipt-line level. Move
+        # a matching unit from RECEIVING-STAGE when this QR-driven path is
+        # used; direct put-away retains the legacy receive-then-enter flow.
+        if (
+            tracking.stock_entered
+            and tracking.stock_location_id
+            and tracking.stock_location_id != bin_location_id
+        ):
+            from app.services.bin_stock_service import BinStockService
+
+            BinStockService(self.db).transfer_stock(
+                from_bin_id=tracking.stock_location_id,
+                to_bin_id=bin_location_id,
+                item_id=tracking.item_id,
+                quantity=tracking.quantity,
+                org_id=tracking.organization_id,
+                batch_number=tracking.batch_number,
+            )
+            tracking.stock_location_id = bin_location_id
+        elif tracking.receiving_status == "approved" and tracking.receiving_slip_id:
+            stage = self._get_or_create_system_bin(
+                tracking.warehouse_id, tracking.organization_id, "RECEIVING-STAGE"
+            )
+            from app.models.bin_stock_level import BinStockLevel
+            from app.services.bin_stock_service import BinStockService
+
+            staged = (
+                self.db.query(BinStockLevel)
+                .filter(
+                    BinStockLevel.bin_location_id == stage.id,
+                    BinStockLevel.item_id == tracking.item_id,
+                    BinStockLevel.organization_id == tracking.organization_id,
+                    BinStockLevel.batch_number == tracking.batch_number,
+                    BinStockLevel.quantity_on_hand >= tracking.quantity,
+                )
+                .first()
+            )
+            if staged is not None:
+                BinStockService(self.db).transfer_stock(
+                    from_bin_id=stage.id,
+                    to_bin_id=bin_location_id,
+                    item_id=tracking.item_id,
+                    quantity=tracking.quantity,
+                    org_id=tracking.organization_id,
+                    batch_number=tracking.batch_number,
+                )
+                tracking.stock_entered = True
+                tracking.stock_entered_at = datetime.now(UTC)
+                tracking.stock_location_id = bin_location_id
+        elif self._should_enter_stock(tracking):
             self._enter_stock(tracking)
 
         self.db.commit()
@@ -348,30 +380,76 @@ class ScannedItemTrackingService:
             and not tracking.stock_entered
         )
 
-    def _enter_stock(self, tracking: ScannedItemTracking) -> None:
+    def _enter_stock(
+        self, tracking: ScannedItemTracking, target_bin_id: UUID | None = None
+    ) -> None:
         """Enter stock into bin and update stock levels. Idempotent."""
         if tracking.stock_entered:
             return
 
         from app.services.bin_stock_service import BinStockService
 
+        bin_id = target_bin_id or tracking.stock_location_id or tracking.bin_location_id
+        if bin_id is None:
+            raise ValueError("No stock location is available for inbound stock entry")
+
         BinStockService(self.db).add_stock(
-            bin_id=tracking.bin_location_id,
+            bin_id=bin_id,
             item_id=tracking.item_id,
             quantity=tracking.quantity,
             org_id=tracking.organization_id,
             batch_number=tracking.batch_number,
+            commit=False,
         )
 
         tracking.stock_entered = True
         tracking.stock_entered_at = datetime.now(UTC)
+        tracking.stock_location_id = bin_id
         logger.info(
             "Stock entered: qr=%s item=%s qty=%d bin=%s",
             tracking.qr_identifier,
             tracking.item_id,
             tracking.quantity,
-            tracking.bin_location_id,
+            bin_id,
         )
+
+    def _get_or_create_system_bin(
+        self, warehouse_id: UUID, organization_id: UUID, code: str
+    ):
+        """Return a standard non-pickable WMS bin, creating it for new warehouses."""
+        from app.models.warehouse_location import WarehouseLocation
+
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.warehouse_id == warehouse_id,
+                WarehouseLocation.organization_id == organization_id,
+                WarehouseLocation.code == code,
+            )
+            .first()
+        )
+        if location is None:
+            location = WarehouseLocation(
+                organization_id=organization_id,
+                warehouse_id=warehouse_id,
+                location_type="bin",
+                code=code,
+                full_path=code,
+                name=code.replace("-", " ").title(),
+                is_pickable=False,
+                is_available=True,
+                is_active=True,
+            )
+            self.db.add(location)
+            self.db.flush()
+        return location
+
+    def stage_tracking(self, tracking: ScannedItemTracking) -> None:
+        """Put approved normal receipt inventory in RECEIVING-STAGE."""
+        stage = self._get_or_create_system_bin(
+            tracking.warehouse_id, tracking.organization_id, "RECEIVING-STAGE"
+        )
+        self._enter_stock(tracking, target_bin_id=stage.id)
 
     def approve_tracking_row(
         self, tracking: ScannedItemTracking, approved_by: UUID | None = None
@@ -389,7 +467,11 @@ class ScannedItemTrackingService:
             tracking.received_at = datetime.now(UTC)
             tracking.received_by = approved_by
 
-        if self._should_enter_stock(tracking):
+        if (
+            not tracking.stock_entered
+            and tracking.putaway_status == "completed"
+            and tracking.bin_location_id
+        ):
             self._enter_stock(tracking)
             return True
         return False

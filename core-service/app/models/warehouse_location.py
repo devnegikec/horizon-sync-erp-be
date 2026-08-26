@@ -110,6 +110,19 @@ class ReceivingSlipItemFlag(str, enum.Enum):
     OK = "ok"
     SHORT = "short"
     DAMAGED = "damaged"
+    EXCESS = "excess"
+    HOLD = "hold"
+    QUARANTINE = "quarantine"
+
+
+class ReceivingConditionCode(str, enum.Enum):
+    """Standard WMS condition codes carried by receipt lines and exceptions."""
+
+    GOOD = "GOOD"
+    DAMAGED = "DAMAGED"
+    HOLD = "HOLD"
+    QUARANTINE = "QUARANTINE"
+    REJECTED = "REJECTED"
 
 
 class GateVerificationStatus(str, enum.Enum):
@@ -173,6 +186,9 @@ class WarehouseLocation(Base):
     capacity_weight_pct = Column(Numeric(6, 2), nullable=True)
     bin_state = Column(String(20), nullable=True)
     is_available = Column(Boolean, nullable=False, default=True)
+    # Receiving, hold, and quarantine bins track physical stock but are never
+    # eligible for ATP or pick-task allocation.
+    is_pickable = Column(Boolean, nullable=False, default=True, index=True)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
     qr_code = Column(String(5), nullable=True, unique=True)

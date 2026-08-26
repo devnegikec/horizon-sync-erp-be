@@ -91,6 +91,8 @@ class ReceivingSlipItem(Base):
     quantity = Column(Integer, nullable=False)
     box_count = Column(Integer, default=0)
     flag = Column(String(20), default="ok")
+    condition_code = Column(String(30), nullable=False, default="GOOD")
+    exception_status = Column(String(30), nullable=True)
     notes = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), nullable=True)
@@ -100,6 +102,12 @@ class ReceivingSlipItem(Base):
     bin_location_id = Column(
         UUID(as_uuid=True),
         ForeignKey("warehouse_locations.id"),
+        nullable=True,
+        index=True,
+    )
+    exception_destination_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
