@@ -13,6 +13,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
+from app.alembic_guards import has_column, has_index, has_table
+
 revision: str = "078_add_inbound_exception_hold_quarantine"
 down_revision: str | Sequence[
     str
@@ -21,28 +23,46 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _ensure_column(table: str, column: sa.Column) -> None:
+    """Add a column only when it does not already exist (idempotent re-run)."""
+    if not has_column(table, column.name):
+        op.add_column(table, column)
+
+
+def _ensure_index(name: str, table: str, columns: list[str]) -> None:
+    """Create an index only when it does not already exist (idempotent re-run)."""
+    if not has_index(table, name):
+        op.create_index(name, table, columns)
+
+
+def _ensure_table(name: str, *columns: sa.Column) -> None:
+    """Create a table only when it does not already exist (idempotent re-run)."""
+    if not has_table(name):
+        op.create_table(name, *columns)
+
+
 def upgrade() -> None:
-    op.add_column(
+    _ensure_column(
         "warehouse_locations",
         sa.Column(
             "is_pickable", sa.Boolean(), nullable=False, server_default=sa.true()
         ),
     )
-    op.create_index(
+    _ensure_index(
         "ix_warehouse_locations_is_pickable", "warehouse_locations", ["is_pickable"]
     )
 
-    op.add_column(
+    _ensure_column(
         "receiving_slip_items",
         sa.Column(
             "condition_code", sa.String(30), nullable=False, server_default="GOOD"
         ),
     )
-    op.add_column(
+    _ensure_column(
         "receiving_slip_items",
         sa.Column("exception_status", sa.String(30), nullable=True),
     )
-    op.add_column(
+    _ensure_column(
         "receiving_slip_items",
         sa.Column(
             "exception_destination_location_id",
@@ -51,12 +71,12 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
-    op.create_index(
+    _ensure_index(
         "ix_receiving_slip_items_exception_destination_location_id",
         "receiving_slip_items",
         ["exception_destination_location_id"],
     )
-    op.add_column(
+    _ensure_column(
         "scanned_item_tracking",
         sa.Column(
             "stock_location_id",
@@ -66,7 +86,7 @@ def upgrade() -> None:
         ),
     )
 
-    op.create_table(
+    _ensure_table(
         "inbound_exception_reasons",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -91,13 +111,13 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
     )
-    op.create_index(
+    _ensure_index(
         "ix_inbound_exception_reasons_organization_id",
         "inbound_exception_reasons",
         ["organization_id"],
     )
 
-    op.create_table(
+    _ensure_table(
         "inbound_exceptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -210,11 +230,11 @@ def upgrade() -> None:
         "disposed_by",
         "created_at",
     ):
-        op.create_index(
+        _ensure_index(
             f"ix_inbound_exceptions_{column}", "inbound_exceptions", [column]
         )
 
-    op.create_table(
+    _ensure_table(
         "inbound_exception_evidence",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
@@ -236,23 +256,23 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
     )
-    op.create_index(
+    _ensure_index(
         "ix_inbound_exception_evidence_exception_id",
         "inbound_exception_evidence",
         ["exception_id"],
     )
-    op.create_index(
+    _ensure_index(
         "ix_inbound_exception_evidence_organization_id",
         "inbound_exception_evidence",
         ["organization_id"],
     )
-    op.create_index(
+    _ensure_index(
         "ix_inbound_exception_evidence_uploaded_by",
         "inbound_exception_evidence",
         ["uploaded_by"],
     )
 
-    op.create_table(
+    _ensure_table(
         "inbound_exception_events",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
@@ -280,7 +300,7 @@ def upgrade() -> None:
         "actor_id",
         "created_at",
     ):
-        op.create_index(
+        _ensure_index(
             f"ix_inbound_exception_events_{column}",
             "inbound_exception_events",
             [column],
@@ -322,6 +342,12 @@ def upgrade() -> None:
         sa.column("default_destination", sa.String),
         sa.column("requires_approval", sa.Boolean),
     )
+    existing_codes = {
+        row[0]
+        for row in op.get_bind().execute(
+            sa.text("SELECT code FROM inbound_exception_reasons")
+        ).fetchall()
+    }
     op.bulk_insert(
         reasons_table,
         [
@@ -334,6 +360,7 @@ def upgrade() -> None:
                 "requires_approval": approval,
             }
             for code, name, category, destination, approval in reason_rows
+            if code not in existing_codes
         ],
     )
 
