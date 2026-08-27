@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import PickListStatus
-from app.models.bin_stock_level import BinStockLevel
+from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.pick_list import PickList, PickListItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.warehouse_location import WarehouseLocation
@@ -306,6 +306,7 @@ class PickListService:
                     BinStockLevel.item_id == item.item_id,
                     BinStockLevel.organization_id == org_id,
                     BinStockLevel.quantity_on_hand > 0,
+                    BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
                     WarehouseLocation.is_pickable.is_(True),
                 )
                 .order_by(

@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
-from app.models.bin_stock_level import BinStockLevel
+from app.models.bin_stock_level import BinStockLevel, InventoryStatus
 from app.models.stock_level import StockLevel
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
@@ -473,6 +473,7 @@ class BinStockService:
                     "warehouse_id": bin_location.warehouse_id,
                     "item_id": bs.item_id,
                     "quantity_on_hand": bs.quantity_on_hand,
+                    "inventory_status": bs.inventory_status,
                     "batch_number": bs.batch_number,
                     "bin_capacity": bin_capacity,
                     "available_capacity": available_capacity,
@@ -610,6 +611,7 @@ class BinStockService:
                 organization_id=org_id,
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
+                inventory_status=InventoryStatus.AVAILABLE.value,
             )
             self.db.add(bin_stock)
             self.db.flush()
@@ -684,7 +686,6 @@ class BinStockService:
         # Apply the delta
         int_delta = int(quantity_delta)
         current_on_hand = stock_level.quantity_on_hand or 0
-        current_reserved = stock_level.quantity_reserved or 0
 
         new_on_hand = current_on_hand + int_delta
         available_delta = int(

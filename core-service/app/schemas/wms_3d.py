@@ -8,7 +8,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ===========================================
 # SHARED
 # ===========================================
@@ -199,6 +198,7 @@ class BinStockItem(BaseModel):
     item_code: str
     sku: str | None = None
     quantity_on_hand: float
+    inventory_status: str = "available"
     batch_number: str | None = None
     expiry_date: str | None = None
     uom: str | None = None
