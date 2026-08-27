@@ -75,6 +75,7 @@ class BinStockLevelResponse(BaseModel):
     bin_location_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -91,6 +92,7 @@ class BinStockInfoResponse(BaseModel):
     warehouse_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")

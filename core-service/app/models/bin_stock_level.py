@@ -1,5 +1,6 @@
 """Bin stock level model for tracking stock at individual bin locations"""
 
+import enum
 import uuid
 from datetime import UTC, datetime
 
@@ -16,6 +17,31 @@ from sqlalchemy.orm import relationship
 
 from app.database import Base
 from app.models.types import UUID
+
+
+class InventoryStatus(str, enum.Enum):
+    """Inventory status values for bin stock levels.
+
+    - ``available``: normal, pickable stock.
+    - ``blocked``: physically blocked / not usable.
+    - ``damaged``: damaged goods (exception-handled).
+    - ``hold``: operational hold pending review.
+    - ``quality``: quality-control quarantine.
+    - ``reserved``: reserved for an existing allocation (complements the
+      worker-level ``bin_reservation`` table).
+    """
+
+    AVAILABLE = "available"
+    BLOCKED = "blocked"
+    DAMAGED = "damaged"
+    HOLD = "hold"
+    QUALITY = "quality"
+    RESERVED = "reserved"
+
+
+# Statuses eligible for pick allocation (FEFO/FIFO resolution). PR-02 makes this
+# configurable via ``pick.inventory_statuses_pickable``; default is ``available``.
+PICKABLE_INVENTORY_STATUSES: list[str] = [InventoryStatus.AVAILABLE.value]
 
 
 class BinStockLevel(Base):
@@ -38,6 +64,12 @@ class BinStockLevel(Base):
         index=True,
     )
     quantity_on_hand = Column(Numeric(15, 3), default=0)
+    inventory_status = Column(
+        String(20),
+        nullable=False,
+        default=InventoryStatus.AVAILABLE.value,
+        index=True,
+    )
     batch_number = Column(String(100), nullable=True)
     # Expiry date for FEFO (First Expired, First Out) picking. Nullable: when
     # absent, FIFO (created_at) ordering is used instead.

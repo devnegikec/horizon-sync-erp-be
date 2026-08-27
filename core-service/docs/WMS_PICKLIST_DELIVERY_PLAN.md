@@ -51,8 +51,8 @@ Covers: **WF-003**, EX-007/010/011/013 (exclusion), config `pick.inventory_statu
 - **E2E:** seed a blocked bin → create pick list → line is not suggested/allocated.
 
 **Open questions**
-- **Q1 — Status naming:** `DRAFT` vs `OPEN`/`RELEASED` (applies to all workflow PRs). **Answer:** _(pending)_
-- **Q2 — Inventory status set:** confirm exact set `available/blocked/damaged/hold/quality`; is `reserved` a separate field? **Answer:** _(pending)_
+- **Q1 — Status naming:** `DRAFT` vs `OPEN`/`RELEASED` (applies to all workflow PRs). **Answer:** Yes — rename to `OPEN`/`RELEASED` in the workflow PRs.
+- **Q2 — Inventory status set:** confirm exact set `available/blocked/damaged/hold/quality`; is `reserved` a separate field? **Answer:** No separate field — keep `reserved` in the set: `available/blocked/damaged/hold/quality/reserved`.
 
 ### PR-02 — Pick configuration layer (T-17)
 Covers: **NFR-008** (all `pick.*` keys in §5 of the requirements doc).
