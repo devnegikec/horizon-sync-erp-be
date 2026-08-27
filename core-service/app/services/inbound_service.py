@@ -67,10 +67,49 @@ class InboundService:
 
         Requirements: 5.1
         """
-        # ── Guard against duplicate sessions/slips for the same ASN ──
+        # ── Guard against duplicate sessions and unresolved receipts ──
         if asn_order_id:
+            from app.models.asn_order import AsnOrder
             from app.models.receiving_slip import ReceivingSlip
             from app.models.scan_session import ScanSession
+
+            asn_order = (
+                self.db.query(AsnOrder)
+                .filter(
+                    AsnOrder.id == asn_order_id,
+                    AsnOrder.organization_id == organization_id,
+                )
+                .first()
+            )
+            if asn_order is None:
+                raise ValidationError(
+                    message="ASN order not found",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": f"ASN '{asn_order_id}' does not exist",
+                        }
+                    ],
+                )
+
+            asn_status = (
+                asn_order.status.value
+                if hasattr(asn_order.status, "value")
+                else str(asn_order.status)
+            )
+            if asn_status not in {"confirmed", "partially_delivered"}:
+                raise ValidationError(
+                    message="ASN is not open for receiving",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                "Only confirmed or partially delivered ASNs can "
+                                "start a receiving session"
+                            ),
+                        }
+                    ],
+                )
 
             existing_open = (
                 self.db.query(ScanSession)
@@ -94,24 +133,24 @@ class InboundService:
                     ],
                 )
 
-            existing_slip = (
+            existing_review_slip = (
                 self.db.query(ReceivingSlip)
                 .filter(
                     ReceivingSlip.organization_id == organization_id,
                     ReceivingSlip.asn_order_id == asn_order_id,
-                    ReceivingSlip.status != "rejected",
+                    ReceivingSlip.status == "pending_review",
                 )
                 .first()
             )
-            if existing_slip is not None:
+            if existing_review_slip is not None:
                 raise ValidationError(
-                    message="A receiving slip already exists for this ASN",
+                    message="A receiving slip is awaiting review for this ASN",
                     details=[
                         {
                             "field": "asn_order_id",
                             "reason": (
-                                f"Receiving slip {existing_slip.slip_number} already "
-                                f"exists for this ASN"
+                                f"Receiving slip {existing_review_slip.slip_number} must "
+                                "be approved or rejected before another receipt starts"
                             ),
                         }
                     ],

@@ -136,9 +136,9 @@ class AsnOrderRepository:
     def get_receiving_summary(self, asn_order_id: UUID) -> list[dict]:
         """Get aggregated receiving data per ASN line item across all linked slips.
 
-        Returns list of dicts with keys:
-            asn_item_id, item_id, sku, item_name, expected_qty,
-            accepted_qty, rejected_qty, pending_qty
+        Returns finalized receipt quantities, grouped by ASN line item and
+        classification. Active session scans are added by the endpoint so the
+        same summary can be used during an in-progress receipt.
         """
         from sqlalchemy import func
 
@@ -175,21 +175,49 @@ class AsnOrderRepository:
         )
         for sku, flag, qty in rows:
             if sku not in receiving_agg:
-                receiving_agg[sku] = {"accepted": 0, "rejected": 0}
-            if flag == "rejected":
-                receiving_agg[sku]["rejected"] += int(qty) if qty else 0
-            else:
-                # ok, short, damaged all count as "accepted" (physically present)
-                receiving_agg[sku]["accepted"] += int(qty) if qty else 0
+                receiving_agg[sku] = {
+                    "accepted": 0,
+                    "rejected": 0,
+                    "short": 0,
+                    "excess": 0,
+                    "damaged": 0,
+                    "hold": 0,
+                }
+
+            quantity = int(qty) if qty else 0
+            category = {
+                "rejected": "rejected",
+                "short": "short",
+                "excess": "excess",
+                "damaged": "damaged",
+                "hold": "hold",
+                "quarantine": "hold",
+            }.get(flag or "", "accepted")
+            receiving_agg[sku][category] += quantity
 
         result = []
         for asn_item in asn_items:
             sku = asn_item.item.sku if asn_item.item else None
-            agg = receiving_agg.get(sku, {"accepted": 0, "rejected": 0})
+            agg = receiving_agg.get(
+                sku,
+                {
+                    "accepted": 0,
+                    "rejected": 0,
+                    "short": 0,
+                    "excess": 0,
+                    "damaged": 0,
+                    "hold": 0,
+                },
+            )
             accepted = agg["accepted"]
             rejected = agg["rejected"]
+            short = agg["short"]
+            excess = agg["excess"]
+            damaged = agg["damaged"]
+            hold = agg["hold"]
             expected = int(asn_item.qty) if asn_item.qty else 0
-            pending = expected - accepted - rejected
+            resolved = accepted + rejected + excess + damaged + hold
+            pending = expected - resolved
 
             result.append(
                 {
@@ -200,6 +228,10 @@ class AsnOrderRepository:
                     "expected_qty": expected,
                     "accepted_qty": accepted,
                     "rejected_qty": rejected,
+                    "short_qty": short,
+                    "excess_qty": excess,
+                    "damaged_qty": damaged,
+                    "hold_qty": hold,
                     "pending_qty": max(0, pending),
                     "over_qty": abs(pending) if pending < 0 else 0,
                 }

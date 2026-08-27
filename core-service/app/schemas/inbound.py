@@ -493,18 +493,23 @@ class ResolveFloatingItemRequest(BaseModel):
 
 
 class AsnLineItemReceivingSummary(BaseModel):
-    """Per-line-item comparison of ASN expected vs actually received."""
+    """Live per-line-item comparison of ASN expected vs received quantities."""
 
     asn_item_id: str
     item_id: str
     sku: str | None = None
     item_name: str | None = None
     expected_qty: int
+    scanned_qty: int = 0
     accepted_qty: int
     rejected_qty: int
+    short_qty: int = 0
+    excess_qty: int = 0
+    damaged_qty: int = 0
+    hold_qty: int = 0
     pending_qty: int
     over_qty: int
-    status: str  # matched, partial, over, not_received
+    status: str  # matched, partial, over, exception, not_received
 
 
 class LinkedReceivingSlipSummary(BaseModel):
@@ -520,14 +525,19 @@ class LinkedReceivingSlipSummary(BaseModel):
 
 
 class AsnReceivingSummaryResponse(BaseModel):
-    """Full ASN receiving summary with mismatch details."""
+    """Full ASN receiving summary with live reconciliation state."""
 
     asn_order_id: str
     asn_order_no: str
     asn_status: str
     expected_total_qty: int
+    scanned_total_qty: int = 0
     accepted_total_qty: int
     rejected_total_qty: int
+    short_total_qty: int = 0
+    excess_total_qty: int = 0
+    damaged_total_qty: int = 0
+    hold_total_qty: int = 0
     pending_total_qty: int
     over_total_qty: int
     total_line_items: int
@@ -535,6 +545,11 @@ class AsnReceivingSummaryResponse(BaseModel):
     partial_items: int
     not_received_items: int
     over_items: int
+    reconciliation_status: str  # pending, partial, exception, reconciled
+    ready_for_receipt_note: bool
+    is_partial_receipt: bool
+    unresolved_exception_count: int = 0
+    active_session_id: str | None = None
     linked_slips: list[LinkedReceivingSlipSummary]
     line_items: list[AsnLineItemReceivingSummary]
 
