@@ -26,6 +26,7 @@ from app.api.v1.endpoints import (
     currency,
     customer_bulk,
     customers,
+    data_sync,
     delivery_notes,
     destinations,
     document_numbering,
@@ -53,11 +54,11 @@ from app.api.v1.endpoints import (
     outbound,
     payments,
     pick_lists,
+    products,
     public_marketing,
     public_qr,
     purchase_orders,
     purchase_receipts,
-    products,
     put_away,
     put_away_rules,
     qr_activation,
@@ -113,6 +114,13 @@ api_router.include_router(
     feature_flags_admin.router,
     prefix="/feature-flags",
     tags=["Feature Flags"],
+)
+
+# Data Sync (Settings tab — on-demand per-feature seeding)
+api_router.include_router(
+    data_sync.router,
+    prefix="/data-sync",
+    tags=["Data Sync"],
 )
 
 # Include endpoint routers

@@ -71,3 +71,4 @@ search-service/pyproject.toml
 LOCAL_DB_SETUP.md
 
 sync_local_db.sh
+test_results 

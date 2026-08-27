@@ -34,7 +34,11 @@ DEFAULT_UOMS = [
     {"name": "Piece", "abbreviation": "PCS", "description": "Individual unit or piece"},
     {"name": "Dozen", "abbreviation": "DOZ", "description": "12 pieces"},
     {"name": "Pair", "abbreviation": "PR", "description": "Set of two"},
-    {"name": "Set", "abbreviation": "SET", "description": "Group of items sold together"},
+    {
+        "name": "Set",
+        "abbreviation": "SET",
+        "description": "Group of items sold together",
+    },
     {"name": "Box", "abbreviation": "BOX", "description": "Standard box packaging"},
     {"name": "Carton", "abbreviation": "CTN", "description": "Carton packaging"},
     {"name": "Pack", "abbreviation": "PCK", "description": "Packaged bundle"},
@@ -43,27 +47,75 @@ DEFAULT_UOMS = [
     {"name": "Bundle", "abbreviation": "BDL", "description": "Bundled items"},
     # Weight
     {"name": "Kilogram", "abbreviation": "KG", "description": "Metric unit of weight"},
-    {"name": "Gram", "abbreviation": "GM", "description": "Metric unit of weight (1/1000 kg)"},
-    {"name": "Milligram", "abbreviation": "MG", "description": "Metric unit of weight (1/1000 g)"},
+    {
+        "name": "Gram",
+        "abbreviation": "GM",
+        "description": "Metric unit of weight (1/1000 kg)",
+    },
+    {
+        "name": "Milligram",
+        "abbreviation": "MG",
+        "description": "Metric unit of weight (1/1000 g)",
+    },
     {"name": "Metric Ton", "abbreviation": "MT", "description": "1000 kilograms"},
     {"name": "Pound", "abbreviation": "LB", "description": "Imperial unit of weight"},
-    {"name": "Ounce", "abbreviation": "OZ", "description": "Imperial unit of weight (1/16 lb)"},
+    {
+        "name": "Ounce",
+        "abbreviation": "OZ",
+        "description": "Imperial unit of weight (1/16 lb)",
+    },
     # Volume
     {"name": "Liter", "abbreviation": "LTR", "description": "Metric unit of volume"},
-    {"name": "Milliliter", "abbreviation": "ML", "description": "Metric unit of volume (1/1000 L)"},
-    {"name": "Cubic Meter", "abbreviation": "CBM", "description": "Metric unit of volume"},
+    {
+        "name": "Milliliter",
+        "abbreviation": "ML",
+        "description": "Metric unit of volume (1/1000 L)",
+    },
+    {
+        "name": "Cubic Meter",
+        "abbreviation": "CBM",
+        "description": "Metric unit of volume",
+    },
     {"name": "Gallon", "abbreviation": "GAL", "description": "Imperial unit of volume"},
     # Length
     {"name": "Meter", "abbreviation": "MTR", "description": "Metric unit of length"},
-    {"name": "Centimeter", "abbreviation": "CM", "description": "Metric unit of length (1/100 m)"},
-    {"name": "Millimeter", "abbreviation": "MM", "description": "Metric unit of length (1/1000 m)"},
-    {"name": "Kilometer", "abbreviation": "KM", "description": "Metric unit of length (1000 m)"},
+    {
+        "name": "Centimeter",
+        "abbreviation": "CM",
+        "description": "Metric unit of length (1/100 m)",
+    },
+    {
+        "name": "Millimeter",
+        "abbreviation": "MM",
+        "description": "Metric unit of length (1/1000 m)",
+    },
+    {
+        "name": "Kilometer",
+        "abbreviation": "KM",
+        "description": "Metric unit of length (1000 m)",
+    },
     {"name": "Inch", "abbreviation": "IN", "description": "Imperial unit of length"},
-    {"name": "Foot", "abbreviation": "FT", "description": "Imperial unit of length (12 inches)"},
-    {"name": "Yard", "abbreviation": "YD", "description": "Imperial unit of length (3 feet)"},
+    {
+        "name": "Foot",
+        "abbreviation": "FT",
+        "description": "Imperial unit of length (12 inches)",
+    },
+    {
+        "name": "Yard",
+        "abbreviation": "YD",
+        "description": "Imperial unit of length (3 feet)",
+    },
     # Area
-    {"name": "Square Meter", "abbreviation": "SQM", "description": "Metric unit of area"},
-    {"name": "Square Foot", "abbreviation": "SQF", "description": "Imperial unit of area"},
+    {
+        "name": "Square Meter",
+        "abbreviation": "SQM",
+        "description": "Metric unit of area",
+    },
+    {
+        "name": "Square Foot",
+        "abbreviation": "SQF",
+        "description": "Imperial unit of area",
+    },
     # Time / Service
     {"name": "Hour", "abbreviation": "HR", "description": "Unit of time"},
     {"name": "Day", "abbreviation": "DAY", "description": "Unit of time (24 hours)"},
@@ -164,6 +216,42 @@ DEFAULT_ITEM_GROUPS = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# On-demand data sync catalog (Settings → Data Sync tab)
+# ---------------------------------------------------------------------------
+
+# Each entry maps a stable API key to the matching idempotent seed routine.
+# `label`/`description` are surfaced by the GET /data-sync/features endpoint.
+SYNCABLE_FEATURES = [
+    {
+        "key": "currencies",
+        "label": "Currencies",
+        "description": "Base currency plus common international currencies",
+    },
+    {
+        "key": "uoms",
+        "label": "Units of Measure (UOM)",
+        "description": "Standard units of measure (PCS, KG, LTR, MTR, HR, ...)",
+    },
+    {
+        "key": "tax_templates",
+        "label": "Tax Templates",
+        "description": "Default Input and Output tax templates (0% placeholder)",
+    },
+    {
+        "key": "item_groups",
+        "label": "Item Groups",
+        "description": "Default item group hierarchy (All Items → Products, Services, ...)",
+    },
+    {
+        "key": "feature_flags",
+        "label": "Tenant Feature Flags",
+        "description": "Product/item dual-mode feature flags with safe defaults",
+    },
+]
+
+SYNCABLE_FEATURE_KEYS = {feature["key"] for feature in SYNCABLE_FEATURES}
+
 
 class OrganizationOnboardingService:
     """Seeds default master data for a newly created organization.
@@ -212,11 +300,15 @@ class OrganizationOnboardingService:
 
         summary = {
             "organization_id": str(organization_id),
-            "currency": self._seed_currency(organization_id, base_currency, user_id, now),
+            "currency": self._seed_currency(
+                organization_id, base_currency, user_id, now
+            ),
             "uoms": self._seed_uoms(organization_id, user_id, now),
             "tax_templates": self._seed_tax_templates(organization_id, user_id, now),
             "item_groups": self._seed_item_groups(organization_id, user_id, now),
-            "dual_mode_flags": self._seed_dual_mode_flags(organization_id, user_id, now),
+            "dual_mode_flags": self._seed_dual_mode_flags(
+                organization_id, user_id, now
+            ),
         }
 
         # Also set the system_config base_currency so the UI picks it up immediately
@@ -234,6 +326,74 @@ class OrganizationOnboardingService:
         )
 
         return summary
+
+    # ------------------------------------------------------------------
+    # On-demand data sync (Settings → Data Sync tab)
+    # ------------------------------------------------------------------
+
+    def sync_features(
+        self,
+        organization_id: UUID,
+        features: list[str],
+        created_by: str,
+        base_currency: str = "USD",
+    ) -> dict:
+        """Seed the requested default data categories on demand.
+
+        Each feature key is dispatched to the matching idempotent seed method.
+        Unknown keys are ignored here (the API layer validates them upstream).
+
+        Args:
+            organization_id: UUID of the organization
+            features: List of feature keys (see ``SYNCABLE_FEATURES``)
+            created_by: User identifier (UUID string)
+            base_currency: ISO currency code used when seeding currencies
+
+        Returns:
+            Per-feature summary dict with created/skipped counts.
+        """
+        now = datetime.now(UTC)
+        user_id = self._parse_user_id(created_by, organization_id)
+
+        summary: dict = {"organization_id": str(organization_id)}
+        for key in features:
+            summary[key] = self._sync_feature(
+                key, organization_id, user_id, now, base_currency
+            )
+
+        self.db.commit()
+
+        logger.info(
+            "On-demand data sync completed",
+            extra={
+                "organization_id": str(organization_id),
+                "features": features,
+                "event": "data_sync_completed",
+            },
+        )
+
+        return summary
+
+    def _sync_feature(
+        self,
+        key: str,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        base_currency: str,
+    ) -> dict:
+        """Dispatch a single feature key to its idempotent seed routine."""
+        if key == "currencies":
+            return self._seed_currency(organization_id, base_currency, user_id, now)
+        if key == "uoms":
+            return self._seed_uoms(organization_id, user_id, now)
+        if key == "tax_templates":
+            return self._seed_tax_templates(organization_id, user_id, now)
+        if key == "item_groups":
+            return self._seed_item_groups(organization_id, user_id, now)
+        if key == "feature_flags":
+            return self._seed_dual_mode_flags(organization_id, user_id, now)
+        return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
 
     # ------------------------------------------------------------------
     # Product/Item dual-mode feature flags (catalog vs WMS)
@@ -377,18 +537,23 @@ class OrganizationOnboardingService:
             self.db.add(currency)
             created += 1
 
-        logger.debug(f"Seeded {created} currencies for org {organization_id} (base: {code})")
+        logger.debug(
+            f"Seeded {created} currencies for org {organization_id} (base: {code})"
+        )
         return {"created": created, "skipped": skipped}
 
     # ------------------------------------------------------------------
     # System Config — base currency
     # ------------------------------------------------------------------
 
-    def _seed_system_config_base_currency(self, base_currency: str, updated_by: str) -> None:
+    def _seed_system_config_base_currency(
+        self, base_currency: str, updated_by: str
+    ) -> None:
         """Write the base currency into system_config so the /currency/base-currency
         endpoint returns the correct value immediately after onboarding."""
         try:
             from app.services.currency_service import CurrencyService
+
             svc = CurrencyService(self.db)
             svc.set_base_currency(base_currency.upper()[:3], updated_by)
             logger.debug(f"system_config base_currency set to {base_currency}")
@@ -410,12 +575,9 @@ class OrganizationOnboardingService:
         skipped = 0
 
         for uom_data in DEFAULT_UOMS:
-            existing = (
-                self.uom_repo.get_by_abbreviation(
-                    uom_data["abbreviation"], organization_id
-                )
-                or self.uom_repo.get_by_name(uom_data["name"], organization_id)
-            )
+            existing = self.uom_repo.get_by_abbreviation(
+                uom_data["abbreviation"], organization_id
+            ) or self.uom_repo.get_by_name(uom_data["name"], organization_id)
             if existing:
                 skipped += 1
                 continue
@@ -434,7 +596,9 @@ class OrganizationOnboardingService:
             self.db.add(uom)
             created += 1
 
-        logger.debug(f"UOM seed: {created} created, {skipped} skipped for org {organization_id}")
+        logger.debug(
+            f"UOM seed: {created} created, {skipped} skipped for org {organization_id}"
+        )
         return {"created": created, "skipped": skipped}
 
     # ------------------------------------------------------------------
