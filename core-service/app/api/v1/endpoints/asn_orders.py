@@ -307,6 +307,7 @@ async def get_receiving_summary(
         AsnReceivingSummaryResponse,
         LinkedReceivingSlipSummary,
     )
+    from app.services.asn_reconciliation import compute_asn_reconciliation
 
     asn_repo = AsnOrderRepository(db)
     slip_repo = ReceivingSlipRepository(db)
@@ -369,63 +370,14 @@ async def get_receiving_summary(
             .count()
         )
 
-    # Build line item summaries with status
-    line_items = []
-    matched = partial = not_received = over = 0
-    for li in line_items_data:
-        expected = li["expected_qty"]
-        accepted = li["accepted_qty"]
-        rejected_q = li["rejected_qty"]
-        short_q = li["short_qty"]
-        excess_q = li["excess_qty"]
-        damaged_q = li["damaged_qty"]
-        hold_q = li["hold_qty"]
-        pending_q = li["pending_qty"]
-        finalized_physical_qty = accepted + rejected_q + excess_q + damaged_q + hold_q
-        scanned_q = finalized_physical_qty + active_scans_by_sku.get(li["sku"], 0)
-        short_q = max(short_q, expected - scanned_q, 0)
-        over_q = max(li["over_qty"], scanned_q - expected, 0)
-        has_exception = any((rejected_q, excess_q, damaged_q, hold_q))
-
-        if expected == 0:
-            item_status = "not_applicable"
-        elif over_q > 0:
-            item_status = "over"
-            over += 1
-        elif has_exception:
-            item_status = "exception"
-        elif scanned_q == expected and short_q == 0:
-            item_status = "matched"
-            matched += 1
-        elif scanned_q < expected or short_q > 0:
-            if scanned_q == 0:
-                item_status = "not_received"
-                not_received += 1
-            else:
-                item_status = "partial"
-                partial += 1
-        else:
-            item_status = "exception"
-
-        line_items.append(
-            AsnLineItemReceivingSummary(
-                asn_item_id=li["asn_item_id"],
-                item_id=li["item_id"],
-                sku=li["sku"],
-                item_name=li["item_name"],
-                expected_qty=expected,
-                scanned_qty=scanned_q,
-                accepted_qty=accepted,
-                rejected_qty=rejected_q,
-                short_qty=short_q,
-                excess_qty=excess_q,
-                damaged_qty=damaged_q,
-                hold_qty=hold_q,
-                pending_qty=short_q if active_session_id else pending_q,
-                over_qty=over_q,
-                status=item_status,
-            )
-        )
+    # Build line item summaries with status (pure reconciliation computation)
+    summary = compute_asn_reconciliation(
+        line_items_data=line_items_data,
+        active_scans_by_sku=active_scans_by_sku,
+        unresolved_exception_count=unresolved_exception_count,
+        include_active_session=active_session_id is not None,
+    )
+    line_items = [AsnLineItemReceivingSummary(**li) for li in summary["line_items"]]
 
     # Build linked slip summaries
     linked_slips = []
@@ -450,57 +402,30 @@ async def get_receiving_summary(
             )
         )
 
-    # Compute totals
-    expected_total = sum(li["expected_qty"] for li in line_items_data)
-    scanned_total = sum(li.scanned_qty for li in line_items)
-    accepted_total = sum(li.accepted_qty for li in line_items)
-    rejected_total = sum(li.rejected_qty for li in line_items)
-    short_total = sum(li.short_qty for li in line_items)
-    excess_total = sum(li.excess_qty for li in line_items)
-    damaged_total = sum(li.damaged_qty for li in line_items)
-    hold_total = sum(li.hold_qty for li in line_items)
-    pending_total = sum(li.pending_qty for li in line_items)
-    over_total = sum(li.over_qty for li in line_items)
-    has_exceptions = unresolved_exception_count > 0 or any(
-        li.rejected_qty or li.excess_qty or li.damaged_qty or li.hold_qty or li.over_qty
-        for li in line_items
-    )
-    ready_for_receipt_note = (
-        bool(line_items) and matched == len(line_items) and not has_exceptions
-    )
-    if ready_for_receipt_note:
-        reconciliation_status = "reconciled"
-    elif has_exceptions:
-        reconciliation_status = "exception"
-    elif scanned_total > 0:
-        reconciliation_status = "partial"
-    else:
-        reconciliation_status = "pending"
-
     return AsnReceivingSummaryResponse(
         asn_order_id=str(asn.id),
         asn_order_no=asn.asn_order_no,
         asn_status=asn.status.value
         if hasattr(asn.status, "value")
         else str(asn.status),
-        expected_total_qty=expected_total,
-        scanned_total_qty=scanned_total,
-        accepted_total_qty=accepted_total,
-        rejected_total_qty=rejected_total,
-        short_total_qty=short_total,
-        excess_total_qty=excess_total,
-        damaged_total_qty=damaged_total,
-        hold_total_qty=hold_total,
-        pending_total_qty=pending_total,
-        over_total_qty=over_total,
+        expected_total_qty=summary["expected_total_qty"],
+        scanned_total_qty=summary["scanned_total_qty"],
+        accepted_total_qty=summary["accepted_total_qty"],
+        rejected_total_qty=summary["rejected_total_qty"],
+        short_total_qty=summary["short_total_qty"],
+        excess_total_qty=summary["excess_total_qty"],
+        damaged_total_qty=summary["damaged_total_qty"],
+        hold_total_qty=summary["hold_total_qty"],
+        pending_total_qty=summary["pending_total_qty"],
+        over_total_qty=summary["over_total_qty"],
         total_line_items=len(line_items_data),
-        matched_items=matched,
-        partial_items=partial,
-        not_received_items=not_received,
-        over_items=over,
-        reconciliation_status=reconciliation_status,
-        ready_for_receipt_note=ready_for_receipt_note,
-        is_partial_receipt=reconciliation_status == "partial" and short_total > 0,
+        matched_items=summary["matched_items"],
+        partial_items=summary["partial_items"],
+        not_received_items=summary["not_received_items"],
+        over_items=summary["over_items"],
+        reconciliation_status=summary["reconciliation_status"],
+        ready_for_receipt_note=summary["ready_for_receipt_note"],
+        is_partial_receipt=summary["is_partial_receipt"],
         unresolved_exception_count=unresolved_exception_count,
         active_session_id=active_session_id,
         linked_slips=linked_slips,
