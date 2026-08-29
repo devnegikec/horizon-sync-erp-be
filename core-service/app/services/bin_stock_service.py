@@ -18,8 +18,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
-from app.models.bin_stock_level import BinStockLevel, InventoryStatus
+from app.models.base import MovementType
+from app.models.bin_stock_level import (
+    BinStockLevel,
+    InventoryStatus,
+    can_transition_inventory_status,
+)
+from app.models.status_transition import StatusTransition
 from app.models.stock_level import StockLevel
+from app.models.stock_movement import StockMovement
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
@@ -377,6 +384,95 @@ class BinStockService:
             self.db.flush()
         self.db.refresh(bin_stock)
         return bin_stock
+
+    def transition_status(
+        self,
+        bin_stock: BinStockLevel,
+        new_status: str,
+        *,
+        user_id: UUID | None = None,
+        commit: bool = True,
+    ) -> BinStockLevel:
+        """Advance a bin stock record through the pick status machine.
+
+        Validates ``available → picked → in_transit_to_stage`` (WF-016 / T-09).
+        A same-status call is a no-op (replay-safe). Every actual transition is
+        audited via a ``StatusTransition`` row.
+
+        Raises:
+            ValidationError: if ``current → new_status`` is not allowed.
+        """
+        current = bin_stock.inventory_status or InventoryStatus.AVAILABLE.value
+        if current == new_status:
+            return bin_stock  # idempotent no-op
+
+        if not can_transition_inventory_status(current, new_status):
+            raise ValidationError(
+                f"Invalid inventory status transition: "
+                f"'{current}' -> '{new_status}'"
+            )
+
+        bin_stock.inventory_status = new_status
+        if user_id is not None:
+            self.db.add(
+                StatusTransition(
+                    entity_type="bin_stock_level",
+                    entity_id=bin_stock.id,
+                    previous_status=current,
+                    new_status=new_status,
+                    user_id=user_id,
+                )
+            )
+
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
+        return bin_stock
+
+    def record_pick_movement(
+        self,
+        *,
+        org_id: UUID,
+        product_id: UUID,
+        warehouse_id: UUID,
+        quantity: Decimal,
+        reference_type: str,
+        reference_id: UUID,
+        performed_by: UUID | None = None,
+        notes: str | None = None,
+    ) -> StockMovement | None:
+        """Post an idempotent OUT movement ledger entry for a pick (WF-016).
+
+        A movement is only written once per (reference_type, reference_id);
+        a replay returns ``None`` without double-posting.
+        """
+        existing = (
+            self.db.query(StockMovement)
+            .filter(
+                StockMovement.organization_id == org_id,
+                StockMovement.reference_type == reference_type,
+                StockMovement.reference_id == reference_id,
+            )
+            .first()
+        )
+        if existing is not None:
+            return None
+
+        movement = StockMovement(
+            organization_id=org_id,
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            movement_type=MovementType.OUT,
+            quantity=int(quantity),
+            reference_type=reference_type,
+            reference_id=reference_id,
+            notes=notes,
+            performed_by=performed_by,
+        )
+        self.db.add(movement)
+        self.db.flush()
+        return movement
 
     def transfer_stock(
         self,

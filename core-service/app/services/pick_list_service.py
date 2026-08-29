@@ -696,10 +696,11 @@ class PickListService:
 
         # Decrement bin stock if bin_location_id is set
         if matching_pick_item.bin_location_id:
+            from app.models.bin_stock_level import InventoryStatus
             from app.services.bin_stock_service import BinStockService
 
             bin_stock_service = BinStockService(self.db)
-            bin_stock_service.remove_stock(
+            bin_stock = bin_stock_service.remove_stock(
                 bin_id=matching_pick_item.bin_location_id,
                 item_id=item.id,
                 quantity=scanned_qty,
@@ -708,8 +709,14 @@ class PickListService:
             )
 
             # Once this pick line is fully satisfied, release the worker's
-            # reservation on the bin so it is available to others (FR-CW).
+            # reservation and advance the source bin stock to 'picked' (WF-016).
             if new_picked >= required_qty:
+                bin_stock_service.transition_status(
+                    bin_stock,
+                    InventoryStatus.PICKED.value,
+                    user_id=worker_id,
+                    commit=False,
+                )
                 self.reservation_service.release(
                     bin_id=matching_pick_item.bin_location_id,
                     worker_id=worker_id,
@@ -739,6 +746,21 @@ class PickListService:
             },
         )
         self.db.add(scan_event)
+
+        # Movement ledger (WF-016) — idempotent posting via PR-04 replay guard.
+        if matching_pick_item.bin_location_id:
+            from app.services.bin_stock_service import BinStockService
+
+            BinStockService(self.db).record_pick_movement(
+                org_id=org_id,
+                product_id=item.id,
+                warehouse_id=matching_pick_item.warehouse_id,
+                quantity=scanned_qty,
+                reference_type="pick_scan",
+                reference_id=scan_event.id,
+                performed_by=worker_id,
+                notes=f"Pick from bin {matching_pick_item.bin_location_id}",
+            )
 
         self.db.commit()
         self.db.refresh(matching_pick_item)
