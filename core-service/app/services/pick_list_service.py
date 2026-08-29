@@ -399,12 +399,53 @@ class PickListService:
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
     # ------------------------------------------------------------------
 
+    def validate_bin(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+        bin_location_id: UUID | None,
+    ) -> None:
+        """Enforce the wrong-bin hard stop (WF-012 / ALT-001 / EX-003).
+
+        When ``pick.require_bin_scan`` is enabled (default ``true``), a picker
+        must scan the source bin and it must match the bin assigned to the
+        pick line. When the flag is off, legacy behaviour (no bin validation)
+        is preserved.
+
+        Raises:
+            ValidationError: if a bin scan is required but missing, or the
+                scanned bin does not match the line's assigned bin.
+        """
+        from app.services.pick_settings_service import PickConfigResolver
+
+        require_bin_scan = PickConfigResolver.from_org(self.db, org_id).get_bool(
+            "require_bin_scan"
+        )
+        if not require_bin_scan:
+            return
+
+        # No source bin assigned to the line — nothing to validate against.
+        if pick_item.bin_location_id is None:
+            return
+
+        if bin_location_id is None:
+            raise ValidationError(
+                "Bin scan required: scan the source bin before scanning the item"
+            )
+
+        if bin_location_id != pick_item.bin_location_id:
+            raise ValidationError(
+                f"Wrong bin: expected bin {pick_item.bin_location_id}, "
+                f"scanned bin {bin_location_id}"
+            )
+
     def record_pick_scan(  # noqa: C901
         self,
         pick_list_id: UUID,
         qr_data: str,
         worker_id: UUID,
         org_id: UUID,
+        bin_location_id: UUID | None = None,
     ) -> dict:
         """Record a pick scan against a pick list.
 
@@ -417,6 +458,8 @@ class PickListService:
             qr_data: Raw QR payload JSON string.
             worker_id: The worker performing the scan.
             org_id: Organization ID for scoping.
+            bin_location_id: Scanned source bin (wrong-bin hard stop when
+                ``pick.require_bin_scan`` is enabled; WF-012 / ALT-001).
 
         Returns:
             Dict with scan result details.
@@ -424,9 +467,10 @@ class PickListService:
         Raises:
             ResourceNotFoundException: If pick list not found.
             ValidationError: If pick list is not in a scannable state,
-                item not on pick list, or over-picking would occur.
+                item not on pick list, wrong bin scanned, or over-picking
+                would occur.
 
-        Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 11.2
+        Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 11.2; WF-012, ALT-001
         """
         pick_list = self.repo.get_by_id(pick_list_id, org_id)
         if not pick_list:
@@ -474,6 +518,9 @@ class PickListService:
             raise ValidationError(
                 f"Item '{payload.sku}' is not on the pick list or has already been fully picked"
             )
+
+        # Wrong-bin hard stop (WF-012 / ALT-001 / EX-003).
+        self.validate_bin(org_id, matching_pick_item, bin_location_id)
 
         # Check for over-picking
         scanned_qty = Decimal(str(payload.qty))

@@ -945,7 +945,9 @@ async def record_pick_scan(
     org_id = current_user.organization_id
 
     key = idempotency_key or PickIdempotencyService.derive_key(
-        OPERATION_SCAN, pick_list_id, data.qr_data
+        OPERATION_SCAN,
+        pick_list_id,
+        f"{data.qr_data}|bin={data.bin_location_id}",
     )
     replay = idempotency.get_replay(org_id, OPERATION_SCAN, key)
     if replay is not None:
@@ -956,6 +958,7 @@ async def record_pick_scan(
         qr_data=data.qr_data,
         worker_id=current_user.id,
         org_id=org_id,
+        bin_location_id=data.bin_location_id,
     )
 
     response = PickScanResult(**result)
@@ -964,7 +967,9 @@ async def record_pick_scan(
         OPERATION_SCAN,
         key,
         pick_list_id,
-        PickIdempotencyService.request_hash(data.qr_data),
+        PickIdempotencyService.request_hash(
+            f"{data.qr_data}|bin={data.bin_location_id}"
+        ),
         response.model_dump(mode="json"),
     )
     return response

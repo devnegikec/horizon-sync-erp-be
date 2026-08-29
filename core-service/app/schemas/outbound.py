@@ -67,11 +67,19 @@ class AssignWorkerRequest(BaseModel):
 class PickScanRequest(BaseModel):
     """Request schema for recording a pick scan against a pick list.
 
-    Requirements: 10.1
+    Requirements: 10.1; WF-012 / ALT-001 / EX-003 (wrong-bin hard stop)
     """
 
     qr_data: str = Field(
         ..., min_length=1, description="Raw QR code payload string (JSON)"
+    )
+    bin_location_id: UUID | None = Field(
+        None,
+        description=(
+            "Scanned source bin location UUID. Required when "
+            "``pick.require_bin_scan`` is enabled; validated against the "
+            "item's assigned bin (wrong-bin hard stop)."
+        ),
     )
 
 
