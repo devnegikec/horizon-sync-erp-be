@@ -27,7 +27,7 @@ from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
-from app.models.warehouse_location import WarehouseLocation
+from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
 from app.services.bin_reservation_service import BinReservationService
 from app.services.qr_decoder import decode_qr_payload
@@ -902,6 +902,133 @@ class PickListService:
         pick_list.assigned_to = worker_id
         self.db.commit()
         self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
+    # STAGING (PR-10 / T-10, WF-019/020)
+    # ------------------------------------------------------------------
+
+    def validate_staging_lane(
+        self,
+        org_id: UUID,
+        staging_location_id: UUID,
+    ) -> WarehouseLocation:
+        """Return the staging lane, or raise (EX-019/020 — staging unavailable).
+
+        A staging lane is a ``warehouse_locations`` row with
+        ``location_type = 'staging'``.
+        """
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == staging_location_id,
+                WarehouseLocation.organization_id == org_id,
+            )
+            .first()
+        )
+        if location is None:
+            raise ValidationError(
+                f"Staging lane {staging_location_id} not found"
+            )
+        if location.location_type != LocationType.STAGING.value:
+            raise ValidationError(
+                f"Location {staging_location_id} is not a staging lane "
+                f"(type '{location.location_type}')"
+            )
+        return location
+
+    def stage_transfer(
+        self,
+        pick_list_id: UUID,
+        staging_location_id: UUID,
+        org_id: UUID,
+    ) -> PickList:
+        """Assign a staging lane and move picked stock to ``in_transit_to_stage``.
+
+        Raises:
+            ValidationError: invalid staging lane, or pick list not in a
+                stageable state.
+        """
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+            raise ValidationError(
+                f"Cannot stage pick list with status '{pick_list.status.value}'"
+            )
+
+        self.validate_staging_lane(org_id, staging_location_id)
+
+        pick_list.staging_location_id = staging_location_id
+
+        # Move each picked bin-stock record to in_transit_to_stage (WF-016).
+        from app.models.bin_stock_level import BinStockLevel, InventoryStatus
+        from app.services.bin_stock_service import BinStockService
+
+        bin_stock_service = BinStockService(self.db)
+        bin_ids = {
+            item.bin_location_id for item in pick_list.items if item.bin_location_id
+        }
+        for bin_id in bin_ids:
+            records = (
+                self.db.query(BinStockLevel)
+                .filter(
+                    BinStockLevel.bin_location_id == bin_id,
+                    BinStockLevel.organization_id == org_id,
+                    BinStockLevel.inventory_status == InventoryStatus.PICKED.value,
+                )
+                .all()
+            )
+            for record in records:
+                bin_stock_service.transition_status(
+                    record,
+                    InventoryStatus.IN_TRANSIT_TO_STAGE.value,
+                    commit=False,
+                )
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    def validate_stage_scan(
+        self,
+        pick_list: PickList,
+        staging_location_id: UUID,
+    ) -> None:
+        """Raise if the scanned lane is wrong or no lane is assigned (ALT-008)."""
+        if pick_list.staging_location_id is None:
+            raise ValidationError(
+                "Pick list has not been transferred to a staging lane"
+            )
+        if staging_location_id != pick_list.staging_location_id:
+            raise ValidationError(
+                f"Wrong staging lane: expected {pick_list.staging_location_id}, "
+                f"scanned {staging_location_id}"
+            )
+
+    def stage_scan(
+        self,
+        pick_list_id: UUID,
+        staging_location_id: UUID,
+        org_id: UUID,
+    ) -> PickList:
+        """Validate the scanned staging lane and mark the pick list staged.
+
+        Raises:
+            ValidationError: wrong lane scanned (ALT-008), or the pick list
+                has not been transferred to a staging lane.
+        """
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        self.validate_stage_scan(pick_list, staging_location_id)
+
+        if pick_list.staged_at is None:
+            pick_list.staged_at = datetime.now(UTC)
+            self.db.commit()
+            self.db.refresh(pick_list)
         return pick_list
 
     def _apply_routing_optimization(self, pick_list: PickList) -> None:

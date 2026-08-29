@@ -58,6 +58,8 @@ from app.schemas.outbound import (
     PickScanRequest,
     PickScanResult,
     SAPInvoicePayload,
+    StageScanRequest,
+    StageTransferRequest,
 )
 from app.services.gate_verification_service import GateVerificationService
 from app.services.order_import_service import ImportResult, OrderImportService
@@ -1089,3 +1091,60 @@ async def cancel_pick_list(
         response.model_dump(mode="json"),
     )
     return response
+
+
+@router.post(
+    "/{pick_list_id}/stage-transfer",
+    response_model=OutboundPickListResponse,
+    summary="Transfer pick list to a staging lane",
+    description="Assign a staging lane and move picked stock to in-transit-to-stage",
+)
+async def stage_transfer_pick_list(
+    pick_list_id: UUID,
+    data: StageTransferRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Transfer a pick list to a staging lane (WF-019).
+
+    Validates the staging lane, assigns it to the pick list, and transitions
+    the picked bin stock ``picked → in_transit_to_stage``.
+
+    Requirements: WF-019, EX-019/020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_transfer(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/stage-scan",
+    response_model=OutboundPickListResponse,
+    summary="Validate staging lane scan",
+    description="Validate the scanned staging lane and mark the pick list staged",
+)
+async def stage_scan_pick_list(
+    pick_list_id: UUID,
+    data: StageScanRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate a staging lane scan and mark the pick list staged (WF-020).
+
+    Rejects a wrong staging lane with a hard stop (ALT-008).
+
+    Requirements: WF-020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_scan(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)

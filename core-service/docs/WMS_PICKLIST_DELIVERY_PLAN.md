@@ -143,7 +143,7 @@ Covers: **WF-019/020**, EX-019/020, ALT-008, flag `pick.require_stage_scan`.
 - **E2E:** scan staging lane → task closes to staged.
 
 **Open questions**
-- **Q3 — Staging lanes:** lane-level (dock door/lane) or just a destination location? Full scan-at-staging in scope? **Answer:** _(pending)_
+- **Q3 — Staging lanes:** lane-level (dock door/lane) or just a destination location? Full scan-at-staging in scope? **Answer:** A destination location — a `warehouse_locations` row with `location_type = 'staging'` (no new table). `stage-transfer` assigns the lane + moves picked bin stock `picked → in_transit_to_stage`; `stage-scan` validates the scanned lane (wrong-lane hard stop) and stamps `staged_at`.
 
 ### PR-11 — Handling unit association (T-11)
 Covers: **WF-018**, flag `pick.enable_handling_unit`.

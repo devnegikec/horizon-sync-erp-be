@@ -64,6 +64,18 @@ class AssignWorkerRequest(BaseModel):
     worker_id: UUID = Field(..., description="Worker UUID to assign")
 
 
+class StageTransferRequest(BaseModel):
+    """Request schema for transferring a pick list to a staging lane (WF-019)."""
+
+    staging_location_id: UUID = Field(..., description="Staging lane location UUID")
+
+
+class StageScanRequest(BaseModel):
+    """Request schema for scanning a staging lane (WF-020)."""
+
+    staging_location_id: UUID = Field(..., description="Scanned staging lane UUID")
+
+
 class PickScanRequest(BaseModel):
     """Request schema for recording a pick scan against a pick list.
 

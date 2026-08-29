@@ -58,6 +58,14 @@ class PickList(Base):
         nullable=True,
     )
 
+    # Columns added by migration 095 for staging (PR-10 / T-10, WF-019/020).
+    staging_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    staged_at = Column(DateTime(timezone=True), nullable=True)
+
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
