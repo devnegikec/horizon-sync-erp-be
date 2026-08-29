@@ -154,6 +154,7 @@ class SessionResponse(BaseModel):
     dock_location: str | None = None
     asn_order_id: str | None = None
     vehicle_arrival_id: str | None = None
+    vehicle_no: str | None = None
     status: str
     total_boxes_scanned: int = 0
     started_at: str | None = None

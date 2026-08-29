@@ -129,6 +129,7 @@ class InboundService:
                             "reason": (
                                 f"Session {existing_open.id} is already open for this ASN"
                             ),
+                            "existing_session_id": str(existing_open.id),
                         }
                     ],
                 )
@@ -625,6 +626,51 @@ class InboundService:
         )
 
         return self._slip_to_dict(slip)
+
+    # ------------------------------------------------------------------
+    # CANCEL SESSION
+    # ------------------------------------------------------------------
+
+    def cancel_session(
+        self,
+        session_id: UUID,
+        organization_id: UUID,
+    ) -> dict:
+        """
+        Cancel an open scan session without generating a receiving slip.
+
+        Sets the session status to 'cancelled' and records the end timestamp.
+        Any scanned items are discarded and the ASN is released so a fresh
+        session can be started.
+
+        Args:
+            session_id: UUID of the scan session to cancel.
+            organization_id: Organization UUID for tenant isolation.
+
+        Returns:
+            Dictionary representation of the cancelled ScanSession.
+
+        Raises:
+            NotFoundError: If session is not found.
+            StateError: If session is not in OPEN status.
+        """
+        session = self.session_repo.get_by_id(session_id, organization_id)
+        if session is None:
+            raise NotFoundError(
+                message="Scan session not found",
+                entity_type="ScanSession",
+                entity_id=str(session_id),
+            )
+
+        if session.status != "open":
+            raise StateError(
+                message="Session is already closed",
+                current_state=session.status,
+                required_state=["open"],
+            )
+
+        cancelled_session = self.session_repo.cancel_session(session_id)
+        return self._session_to_dict(cancelled_session)
 
     # ------------------------------------------------------------------
     # GET SESSION SUMMARY
@@ -2139,6 +2185,7 @@ class InboundService:
             "vehicle_arrival_id": str(session.vehicle_arrival_id)
             if session.vehicle_arrival_id
             else None,
+            "vehicle_no": self._get_session_vehicle_no(session),
             "status": session.status,
             "total_boxes_scanned": session.total_boxes_scanned or 0,
             "started_at": session.started_at.isoformat()
@@ -2191,6 +2238,15 @@ class InboundService:
         if not slip.vehicle_arrival_id:
             return None
         vehicle_arrival = slip.vehicle_arrival
+        if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
+            return vehicle_arrival.vehicle.vehicle_no
+        return None
+
+    def _get_session_vehicle_no(self, session) -> str | None:
+        """Return the vehicle number linked to a scan session, if any."""
+        if not session.vehicle_arrival_id:
+            return None
+        vehicle_arrival = session.vehicle_arrival
         if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
             return vehicle_arrival.vehicle.vehicle_no
         return None

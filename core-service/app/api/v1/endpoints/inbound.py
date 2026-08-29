@@ -96,6 +96,36 @@ async def start_session(
 
 
 @router.post(
+    "/sessions/{session_id}/cancel",
+    response_model=SessionResponse,
+    summary="Cancel inbound scan session",
+    description="Cancel an open scan session without generating a receiving slip",
+)
+async def cancel_session(
+    session_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Cancel an open inbound scan session.
+
+    Discards any scanned items and releases the linked ASN so a fresh
+    session can be started. No receiving slip is generated.
+
+    **Path Parameters:**
+    - **session_id**: UUID of the open scan session to cancel
+
+    **Returns:** Cancelled session details
+    """
+    service = InboundService(db)
+    result = service.cancel_session(
+        session_id=session_id,
+        organization_id=current_user.organization_id,
+    )
+    return SessionResponse(**result)
+
+
+@router.post(
     "/sessions/{session_id}/scan",
     response_model=ScanResult,
     status_code=status.HTTP_201_CREATED,

@@ -224,7 +224,7 @@ class AsnOrderRepository:
                     "asn_item_id": str(asn_item.id),
                     "item_id": str(asn_item.item_id),
                     "sku": sku,
-                    "item_name": asn_item.item.name if asn_item.item else None,
+                    "item_name": asn_item.item.item_name if asn_item.item else None,
                     "expected_qty": expected,
                     "accepted_qty": accepted,
                     "rejected_qty": rejected,

@@ -140,6 +140,37 @@ class ScanSessionRepository:
         return session
 
     # ------------------------------------------------------------------
+    # CANCEL SESSION
+    # ------------------------------------------------------------------
+
+    def cancel_session(self, session_id: UUID) -> ScanSession | None:
+        """
+        Cancel a scan session by setting status to 'cancelled' and recording
+        the end timestamp.
+
+        Unlike close_session, cancelling does NOT generate a receiving slip —
+        any scanned items are discarded and the ASN is released for a fresh
+        session.
+
+        Args:
+            session_id: The scan session UUID.
+
+        Returns:
+            Updated ScanSession or None if not found.
+        """
+        session = (
+            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
+        )
+        if session is None:
+            return None
+
+        session.status = "cancelled"
+        session.ended_at = datetime.now(UTC)
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    # ------------------------------------------------------------------
     # SET ASN ORDER
     # ------------------------------------------------------------------
 
