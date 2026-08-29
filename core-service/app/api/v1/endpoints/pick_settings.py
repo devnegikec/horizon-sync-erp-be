@@ -7,6 +7,8 @@ overrides with server-side validation; ``POST /reset`` clears overrides.
 All routes require ``organization.update`` permission (same as Feature Flags).
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -23,7 +25,7 @@ from app.services.pick_settings_service import PickSettingsService
 router = APIRouter()
 
 
-def _org_id(current_user: CurrentUser) -> str:
+def _org_id(current_user: CurrentUser) -> UUID:
     if current_user.organization_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,7 +61,7 @@ async def get_pick_settings(
     org_id = _org_id(current_user)
     svc = PickSettingsService(db)
     return PickSettingsResponse(
-        organization_id=org_id,
+        organization_id=str(org_id),
         settings=svc.get_settings(org_id),
     )
 
@@ -86,7 +88,7 @@ async def update_pick_settings(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
         ) from e
-    return PickSettingsResponse(organization_id=org_id, settings=settings)
+    return PickSettingsResponse(organization_id=str(org_id), settings=settings)
 
 
 @router.post(
@@ -104,6 +106,6 @@ async def reset_pick_settings(
     svc = PickSettingsService(db)
     svc.reset_to_defaults(org_id)
     return PickSettingsResponse(
-        organization_id=org_id,
+        organization_id=str(org_id),
         settings=svc.get_settings(org_id),
     )
