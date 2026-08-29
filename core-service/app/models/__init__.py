@@ -151,6 +151,8 @@ from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
 from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
+from app.models.pick_exception import PickException, PickExceptionAudit
+from app.models.pick_idempotency import PickIdempotencyKey
 from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 from app.models.product_sku import ProductSKU
@@ -326,6 +328,9 @@ __all__ = [
     "PendingWarehouseAssignment",
     "PickList",
     "PickListItem",
+    "PickException",
+    "PickExceptionAudit",
+    "PickIdempotencyKey",
     "AsnOrder",
     "AsnOrderItem",
     "Vehicle",

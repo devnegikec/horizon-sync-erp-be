@@ -27,7 +27,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -62,6 +62,12 @@ from app.schemas.outbound import (
 from app.services.gate_verification_service import GateVerificationService
 from app.services.order_import_service import ImportResult, OrderImportService
 from app.services.outbound_service import OutboundService
+from app.services.pick_idempotency_service import (
+    OPERATION_CANCEL,
+    OPERATION_COMPLETE,
+    OPERATION_SCAN,
+    PickIdempotencyService,
+)
 from app.services.pick_list_service import (
     PickListService,
 )
@@ -911,6 +917,7 @@ async def record_pick_scan(
     data: PickScanRequest,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Record a QR code scan against a pick list.
@@ -925,20 +932,42 @@ async def record_pick_scan(
     **Request Body:**
     - **qr_data**: Raw QR code payload string (JSON)
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task + scan payload.
+
     **Returns:** Scan result with updated quantities
 
-    Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 11.2
+    Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 11.2; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_SCAN, pick_list_id, data.qr_data
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_SCAN, key)
+    if replay is not None:
+        return PickScanResult(**replay)
 
     result = service.record_pick_scan(
         pick_list_id=pick_list_id,
         qr_data=data.qr_data,
         worker_id=current_user.id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
     )
 
-    return PickScanResult(**result)
+    response = PickScanResult(**result)
+    idempotency.record(
+        org_id,
+        OPERATION_SCAN,
+        key,
+        pick_list_id,
+        PickIdempotencyService.request_hash(data.qr_data),
+        response.model_dump(mode="json"),
+    )
+    return response
 
 
 @router.post(
@@ -951,6 +980,7 @@ async def complete_pick_list(
     pick_list_id: UUID,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Complete a pick list.
@@ -961,18 +991,40 @@ async def complete_pick_list(
     **Path Parameters:**
     - **pick_list_id**: UUID of the pick list
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task.
+
     **Returns:** Updated pick list with completed status
 
-    Requirements: 10.6, 10.7
+    Requirements: 10.6, 10.7; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_COMPLETE, pick_list_id
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_COMPLETE, key)
+    if replay is not None:
+        return OutboundPickListResponse(**replay)
 
     pick_list = service.complete_pick_list(
         pick_list_id=pick_list_id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
     )
 
-    return _pick_list_to_response(pick_list, db)
+    response = _pick_list_to_response(pick_list, db)
+    idempotency.record(
+        org_id,
+        OPERATION_COMPLETE,
+        key,
+        pick_list_id,
+        None,
+        response.model_dump(mode="json"),
+    )
+    return response
 
 
 @router.post(
@@ -985,6 +1037,7 @@ async def cancel_pick_list(
     pick_list_id: UUID,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Cancel a pick list.
@@ -995,15 +1048,37 @@ async def cancel_pick_list(
     **Path Parameters:**
     - **pick_list_id**: UUID of the pick list
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task.
+
     **Returns:** Updated pick list with cancelled status
 
-    Requirements: 11.1, 11.5
+    Requirements: 11.1, 11.5; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_CANCEL, pick_list_id
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_CANCEL, key)
+    if replay is not None:
+        return OutboundPickListResponse(**replay)
 
     pick_list = service.cancel_pick_list(
         pick_list_id=pick_list_id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
     )
 
-    return _pick_list_to_response(pick_list, db)
+    response = _pick_list_to_response(pick_list, db)
+    idempotency.record(
+        org_id,
+        OPERATION_CANCEL,
+        key,
+        pick_list_id,
+        None,
+        response.model_dump(mode="json"),
+    )
+    return response
