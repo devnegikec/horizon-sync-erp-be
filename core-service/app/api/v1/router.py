@@ -53,7 +53,9 @@ from app.api.v1.endpoints import (
     organization_onboarding,
     outbound,
     payments,
+    pick_exceptions,
     pick_lists,
+    pick_settings,
     products,
     public_marketing,
     public_qr,
@@ -333,6 +335,18 @@ api_router.include_router(
 )
 # Phase 5: Order Processing
 api_router.include_router(pick_lists.router, prefix="/pick-lists", tags=["Pick Lists"])
+# Pick exception framework (PR-03 / T-02 + T-05) — reason codes + immutable audit
+api_router.include_router(
+    pick_exceptions.router,
+    prefix="/pick-exceptions",
+    tags=["Pick Exceptions"],
+)
+# Pick configuration layer (PR-02 / T-17) — tenant-scoped pick.* settings
+api_router.include_router(
+    pick_settings.router,
+    prefix="/pick-settings",
+    tags=["Pick Settings"],
+)
 api_router.include_router(
     delivery_notes.router, prefix="/delivery-notes", tags=["Delivery Notes"]
 )

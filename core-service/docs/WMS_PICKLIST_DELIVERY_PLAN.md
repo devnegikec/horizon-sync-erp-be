@@ -74,7 +74,7 @@ Covers: all **EX-\* capture**, **WF-023**, **NFR-005**.
 - **E2E:** picker reports a discrepancy → exception visible with correct reason + audit entry.
 
 **Open questions**
-- **Q10 — EX-001 vs EX-002 overlap:** should "bin empty" and "insufficient quantity" be distinct reason codes? **Answer:** _(pending)_
+- **Q10 — EX-001 vs EX-002 overlap:** should "bin empty" and "insufficient quantity" be distinct reason codes? **Answer:** Yes — distinct reason codes. `bin_empty` = zero found in the source bin (EX-001); `insufficient_quantity` = some found but less than required (EX-002). Both ship in the default `pick.reason_codes` master (`DEFAULT_REASON_CODES` in `app/core/pick_config.py`).
 
 ### PR-04 — Idempotency keys on scan/complete/cancel (T-04)
 Covers: **NFR-003**, EX-017.
@@ -86,7 +86,7 @@ Covers: **NFR-003**, EX-017.
 - **E2E:** rapid double-tap on confirm → single movement posted.
 
 **Open questions**
-- **Q9 — Idempotency key source:** can callers (mobile/web) send an idempotency key, or derive one server-side from task + scan payload? **Answer:** _(pending)_
+- **Q9 — Idempotency key source:** can callers (mobile/web) send an idempotency key, or derive one server-side from task + scan payload? **Answer:** Both. Callers send an `Idempotency-Key` header (the web client derives a deterministic key per action); when the header is omitted the server derives a stable key from the task + scan payload (`PickIdempotencyService.derive_key`), so EX-017 retries stay idempotent even without client support.
 
 ---
 
