@@ -106,7 +106,7 @@ Covers: **WF-014**, EX-005/006, ALT-003, flag `pick.require_serial`.
 - **E2E:** scan consumed serial → error; scan valid serial → accepted.
 
 **Open questions**
-- **Q5 — Serial enforcement:** mandatory hard stop for serialized items, or per-item policy (`has_serial_no`)? **Answer:** _(pending)_
+- **Q5 — Serial enforcement:** mandatory hard stop for serialized items, or per-item policy (`has_serial_no`)? **Answer:** Per-item policy via `pick.require_serial` enum — `per_item` (default, follow `item.has_serial_no`), `always` (force for every scan), `never` (disable). A valid serial must exist against `serial_nos` for the scanned SKU and must not be `consumed`/`blocked` (`PickListService.validate_serial`).
 
 ### PR-07 — Short-pick / over-pick tolerance + damage/hold capture (T-08)
 Covers: **WF-015**, EX-002/007/021, ALT-004/005; flags `over_pick_tolerance`, `allow_short_pick`.
@@ -116,7 +116,7 @@ Covers: **WF-015**, EX-002/007/021, ALT-004/005; flags `over_pick_tolerance`, `a
 - **E2E:** scan less qty → short-pick exception flow; scan damaged item → damage reason captured.
 
 **Open questions**
-- **Q12 — Damage photo/comment (EX-007):** "optionally photo/comment if configured" — in scope now or later? **Answer:** _(pending)_
+- **Q12 — Damage photo/comment (EX-007):** "optionally photo/comment if configured" — in scope now or later? **Answer:** Later. PR-07 captures the damage/hold reason code + affected quantity at scan (`PickScanRequest.reason_code` / `reason_quantity` → `pick_exceptions`); photo/comment attachment is deferred (can be added via the exception `details`/`evidence` payload later).
 
 ### PR-08 — Inventory movement status transitions (T-09)
 Covers: **WF-016**.

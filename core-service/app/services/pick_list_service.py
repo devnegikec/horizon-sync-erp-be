@@ -23,13 +23,18 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import PickListStatus
 from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
+from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
 from app.models.qr_scan_event import QRScanEvent
+from app.models.serial_no import SerialNo
 from app.models.warehouse_location import WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
 from app.services.bin_reservation_service import BinReservationService
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+
+#: Serial statuses that must NOT be picked (WF-014 / EX-005 / EX-006 / ALT-003).
+UNAVAILABLE_SERIAL_STATUSES: frozenset[str] = frozenset({"consumed", "blocked"})
 
 
 @dataclass
@@ -439,6 +444,159 @@ class PickListService:
                 f"scanned bin {bin_location_id}"
             )
 
+    def validate_serial(
+        self,
+        org_id: UUID,
+        item: Item,
+        serial_no: str | None,
+    ) -> None:
+        """Enforce serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
+
+        Policy is driven by ``pick.require_serial``:
+        - ``never`` → skip.
+        - ``per_item`` (default) → validate only serialized items
+          (``item.has_serial_no``).
+        - ``always`` → validate every scan.
+
+        When enforced, the scanned serial must exist against ``serial_nos``
+        for the scanned SKU (belongs-to-SKU) and must not be consumed or
+        blocked. Raises ``ValidationError`` otherwise.
+        """
+        from app.services.pick_settings_service import PickConfigResolver
+
+        policy = PickConfigResolver.from_org(self.db, org_id).get_enum(
+            "require_serial"
+        )
+        if policy == "never":
+            return
+        if policy == "per_item" and not item.has_serial_no:
+            return
+
+        if not serial_no:
+            raise ValidationError(
+                f"Serial scan required for item '{item.item_code}'"
+            )
+
+        serial_row = (
+            self.db.query(SerialNo)
+            .filter(
+                SerialNo.organization_id == org_id,
+                SerialNo.serial_no == serial_no,
+                SerialNo.item_id == item.id,
+            )
+            .first()
+        )
+        if serial_row is None:
+            raise ValidationError(
+                f"Serial '{serial_no}' is not valid for item '{item.item_code}'"
+            )
+
+        status = (serial_row.status or "").strip().lower()
+        if status in UNAVAILABLE_SERIAL_STATUSES:
+            raise ValidationError(
+                f"Serial '{serial_no}' is {status} and cannot be picked"
+            )
+
+    def _pick_config(self, org_id: UUID):
+        """Return a read-once snapshot of effective pick settings for an org."""
+        from app.services.pick_settings_service import PickConfigResolver
+
+        return PickConfigResolver.from_org(self.db, org_id)
+
+    def validate_over_pick(
+        self,
+        org_id: UUID,
+        required_qty: Decimal,
+        new_picked: Decimal,
+    ) -> None:
+        """Enforce the over-pick tolerance (EX-021).
+
+        A scan is blocked only when it exceeds the required quantity *plus*
+        ``pick.over_pick_tolerance`` (default ``0`` → no over-pick allowed).
+        """
+        tolerance = Decimal(
+            str(self._pick_config(org_id).get_numeric("over_pick_tolerance"))
+        )
+        if new_picked > required_qty + tolerance:
+            raise ValidationError(
+                f"Over-picking: scanning would result in {new_picked} picked, "
+                f"but only {required_qty} required (tolerance {tolerance})"
+            )
+
+    def validate_short_pick(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+    ) -> Decimal | None:
+        """Evaluate short-pick policy for a line (EX-002 / ALT-004).
+
+        Returns the shortfall to record as an exception, or ``None`` when the
+        line is fully picked. Raises ``ValidationError`` when short-picking is
+        disabled (``pick.allow_short_pick``) or the shortfall exceeds
+        ``pick.short_pick_approval_threshold`` (requires supervisor approval).
+        """
+        shortfall = Decimal(str(pick_item.qty)) - Decimal(
+            str(pick_item.picked_qty or 0)
+        )
+        if shortfall <= 0:
+            return None
+
+        config = self._pick_config(org_id)
+        if not config.get_bool("allow_short_pick"):
+            raise ValidationError(
+                f"Short-pick of {shortfall} on item {pick_item.id} is not allowed"
+            )
+        threshold = Decimal(
+            str(config.get_numeric("short_pick_approval_threshold"))
+        )
+        if shortfall > threshold:
+            raise ValidationError(
+                f"Short-pick of {shortfall} on item {pick_item.id} exceeds the "
+                f"approval threshold {threshold}"
+            )
+        return shortfall
+
+    def _capture_short_pick_exception(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+        shortfall: Decimal,
+    ) -> None:
+        """Record a short-pick exception (EX-002 / ALT-004) via PR-03."""
+        from app.services.pick_exception_service import PickExceptionService
+
+        PickExceptionService(self.db).capture(
+            org_id,
+            {
+                "pick_list_item_id": pick_item.id,
+                "reason_code": "insufficient_quantity",
+                "severity": "warning",
+                "quantity": shortfall,
+            },
+        )
+
+    def _capture_scan_exception(
+        self,
+        org_id: UUID,
+        pick_list_item_id: UUID,
+        reason_code: str,
+        quantity: Decimal,
+        worker_id: UUID,
+    ) -> None:
+        """Record a reason-coded exception raised during a scan (EX-007)."""
+        from app.services.pick_exception_service import PickExceptionService
+
+        PickExceptionService(self.db).capture(
+            org_id,
+            {
+                "pick_list_item_id": pick_list_item_id,
+                "reason_code": reason_code,
+                "severity": "warning",
+                "quantity": quantity,
+            },
+            reported_by=worker_id,
+        )
+
     def record_pick_scan(  # noqa: C901
         self,
         pick_list_id: UUID,
@@ -446,6 +604,8 @@ class PickListService:
         worker_id: UUID,
         org_id: UUID,
         bin_location_id: UUID | None = None,
+        reason_code: str | None = None,
+        reason_quantity: Decimal | None = None,
     ) -> dict:
         """Record a pick scan against a pick list.
 
@@ -487,8 +647,6 @@ class PickListService:
         payload = decode_qr_payload(qr_data)
 
         # Find matching pick list item by SKU (item_code)
-        from app.models.item import Item
-
         item = (
             self.db.query(Item)
             .filter(
@@ -522,18 +680,16 @@ class PickListService:
         # Wrong-bin hard stop (WF-012 / ALT-001 / EX-003).
         self.validate_bin(org_id, matching_pick_item, bin_location_id)
 
-        # Check for over-picking
+        # Serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
+        self.validate_serial(org_id, item, payload.id)
+
+        # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))
         current_picked = Decimal(str(matching_pick_item.picked_qty or 0))
         required_qty = Decimal(str(matching_pick_item.qty))
         new_picked = current_picked + scanned_qty
 
-        if new_picked > required_qty:
-            raise ValidationError(
-                f"Over-picking: scanning {payload.qty} would result in "
-                f"{new_picked} picked, but only {required_qty} required "
-                f"for item '{payload.sku}'"
-            )
+        self.validate_over_pick(org_id, required_qty, new_picked)
 
         # Increment picked_qty
         matching_pick_item.picked_qty = new_picked
@@ -588,12 +744,23 @@ class PickListService:
         self.db.refresh(matching_pick_item)
         self.db.refresh(pick_list)
 
+        # Damage/hold reason capture at scan (EX-007 / ALT-005).
+        if reason_code:
+            self._capture_scan_exception(
+                org_id,
+                matching_pick_item.id,
+                reason_code,
+                reason_quantity if reason_quantity is not None else scanned_qty,
+                worker_id,
+            )
+
         return {
             "pick_list_id": str(pick_list_id),
             "pick_list_status": pick_list.status.value,
             "pick_list_item_id": str(matching_pick_item.id),
             "item_id": str(item.id),
             "sku": payload.sku,
+            "serial_no": payload.id,
             "scanned_qty": payload.qty,
             "picked_qty": float(matching_pick_item.picked_qty),
             "required_qty": float(matching_pick_item.qty),
@@ -604,8 +771,10 @@ class PickListService:
     def complete_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
         """Mark a pick list as COMPLETED.
 
-        Validates that all items have been fully picked before allowing
-        completion.
+        Validates every line against the short-pick policy (``allow_short_pick``
+        + ``short_pick_approval_threshold``): fully-picked lines pass; within-
+        policy short lines record an ``insufficient_quantity`` exception and
+        complete; disallowed / over-threshold short lines block completion.
 
         Args:
             pick_list_id: The pick list to complete.
@@ -616,10 +785,10 @@ class PickListService:
 
         Raises:
             ResourceNotFoundException: If pick list not found.
-            ValidationError: If not all items are fully picked or
-                pick list is not in a completable state.
+            ValidationError: If a short-pick is disallowed or over-threshold,
+                or the pick list is not in a completable state.
 
-        Requirements: 10.6, 10.7, 11.1
+        Requirements: 10.6, 10.7, 11.1; WF-015, EX-002, ALT-004
         """
         pick_list = self.repo.get_by_id(pick_list_id, org_id)
         if not pick_list:
@@ -631,15 +800,11 @@ class PickListService:
                 f"Pick list must be in 'draft' or 'in_progress' status."
             )
 
-        # Validate all items are fully picked
+        # Validate all items are fully picked (short-pick policy, EX-002 / ALT-004).
         for item in pick_list.items:
-            picked = Decimal(str(item.picked_qty or 0))
-            required = Decimal(str(item.qty))
-            if picked < required:
-                raise ValidationError(
-                    f"Cannot complete pick list: item {item.id} has "
-                    f"{picked} picked out of {required} required"
-                )
+            shortfall = self.validate_short_pick(org_id, item)
+            if shortfall is not None:
+                self._capture_short_pick_exception(org_id, item, shortfall)
 
         pick_list.status = PickListStatus.COMPLETED
         pick_list.completed_at = datetime.now(UTC)

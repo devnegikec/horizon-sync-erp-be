@@ -67,7 +67,8 @@ class AssignWorkerRequest(BaseModel):
 class PickScanRequest(BaseModel):
     """Request schema for recording a pick scan against a pick list.
 
-    Requirements: 10.1; WF-012 / ALT-001 / EX-003 (wrong-bin hard stop)
+    Requirements: 10.1; WF-012 / ALT-001 / EX-003 (wrong-bin hard stop),
+    EX-007 (damage/hold capture at scan)
     """
 
     qr_data: str = Field(
@@ -80,6 +81,20 @@ class PickScanRequest(BaseModel):
             "``pick.require_bin_scan`` is enabled; validated against the "
             "item's assigned bin (wrong-bin hard stop)."
         ),
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Optional exception reason code reported at scan (e.g. "
+            "``damaged``). When set, a pick exception is recorded against the "
+            "line (EX-007 / ALT-005)."
+        ),
+    )
+    reason_quantity: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Affected quantity for the scan exception (defaults to scanned qty).",
     )
 
 
@@ -194,6 +209,7 @@ class PickScanResult(BaseModel):
     pick_list_item_id: str
     item_id: str
     sku: str
+    serial_no: str | None = None
     scanned_qty: int
     picked_qty: float
     required_qty: float
