@@ -134,7 +134,7 @@ Covers: **ALT-004/005/007/008/011/012** (in-app queue).
 - **E2E:** supervisor opens queue → resolves exception → status updated.
 
 **Open questions**
-- **Q11 — Alerts delivery:** in-app dashboard only, or also email/notification service (`communication.py`)? **Answer:** _(pending)_
+- **Q11 — Alerts delivery:** in-app dashboard only, or also email/notification service (`communication.py`)? **Answer:** Both. Alerts are delivered in-app via the supervisor queue and, on resolve/approve, as best-effort in-app `NotificationService` rows to the reporter (`NotificationType.PICK_EXCEPTION`). Email via `CommunicationService.send_email` is the documented extension point (requires recipient-email resolution from identity-service).
 
 ### PR-10 — Staging lane + stage validation (T-10)
 Covers: **WF-019/020**, EX-019/020, ALT-008, flag `pick.require_stage_scan`.

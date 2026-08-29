@@ -83,3 +83,15 @@ class PickReasonCodesResponse(BaseModel):
     """Effective reason-code master for the current organization."""
 
     reason_codes: list[str]
+
+
+class PickExceptionResolve(BaseModel):
+    """Body for resolving a pick exception (supervisor)."""
+
+    resolution: str = Field(..., min_length=1, max_length=4000)
+
+
+class PickExceptionApprove(BaseModel):
+    """Body for approving/rejecting a pick exception (supervisor)."""
+
+    decision: str = Field(..., pattern="^(approved|rejected)$")

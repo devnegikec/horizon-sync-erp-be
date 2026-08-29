@@ -509,6 +509,7 @@ class NotificationType(str, enum.Enum):
     RECEIVING_SLIP_CREATED = "receiving_slip_created"
     PUT_AWAY_LIST_CREATED = "put_away_list_created"
     PICK_LIST_CREATED = "pick_list_created"
+    PICK_EXCEPTION = "pick_exception"
 
 
 class WarehouseUserRole(str, enum.Enum):

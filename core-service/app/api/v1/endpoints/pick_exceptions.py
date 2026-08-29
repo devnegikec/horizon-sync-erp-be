@@ -18,15 +18,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import PICK_LIST_READ, PICK_LIST_UPDATE
+from app.core.authorization import PICK_LIST_READ, PICK_LIST_UPDATE, WAREHOUSE_MANAGE
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
 from app.schemas.pick_exception import (
+    PickExceptionApprove,
     PickExceptionAuditItem,
     PickExceptionAuditResponse,
     PickExceptionCreate,
     PickExceptionListResponse,
+    PickExceptionResolve,
     PickExceptionResponse,
     PickReasonCodesResponse,
 )
@@ -160,6 +162,56 @@ async def get_pick_exception(
     """Return a single pick exception."""
     svc = PickExceptionService(db)
     exception = svc.get(current_user.organization_id, exception_id)
+    return PickExceptionResponse.model_validate(
+        PickExceptionService._serialize(exception)
+    )
+
+
+@router.post(
+    "/{exception_id}/resolve",
+    response_model=PickExceptionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resolve a pick exception (supervisor)",
+)
+async def resolve_pick_exception(
+    exception_id: UUID,
+    body: PickExceptionResolve,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_MANAGE)),
+    db: Session = Depends(get_db),
+) -> PickExceptionResponse:
+    """Resolve an exception with a recorded resolution. Supervisor only."""
+    svc = PickExceptionService(db)
+    exception = svc.resolve(
+        organization_id=current_user.organization_id,
+        exception_id=exception_id,
+        resolution=body.resolution,
+        resolved_by=current_user.id,
+    )
+    return PickExceptionResponse.model_validate(
+        PickExceptionService._serialize(exception)
+    )
+
+
+@router.post(
+    "/{exception_id}/approve",
+    response_model=PickExceptionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Approve or reject a pick exception (supervisor)",
+)
+async def approve_pick_exception(
+    exception_id: UUID,
+    body: PickExceptionApprove,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_MANAGE)),
+    db: Session = Depends(get_db),
+) -> PickExceptionResponse:
+    """Approve or reject an exception. Supervisor only."""
+    svc = PickExceptionService(db)
+    exception = svc.approve(
+        organization_id=current_user.organization_id,
+        exception_id=exception_id,
+        approver=current_user.id,
+        decision=body.decision,
+    )
     return PickExceptionResponse.model_validate(
         PickExceptionService._serialize(exception)
     )
