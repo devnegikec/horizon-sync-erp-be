@@ -369,13 +369,15 @@ class PutAwayService:
                 )
                 continue
 
-            # Resolve item from SKU — match by item_code or sku field.
-            # QR-product-linked items store the GTIN in Item.sku while
-            # manually-created items are typically matched by item_code.
+            # Resolve item from SKU — match by item_code, sku or gtin.
+            # QR-product-linked slip items may store the GTIN in the sku field,
+            # so gtin is included for defensive/backward compatibility.
             item = (
                 self.db.query(Item)
                 .filter(
-                    (Item.item_code == slip_item.sku) | (Item.sku == slip_item.sku),
+                    (Item.item_code == slip_item.sku)
+                    | (Item.sku == slip_item.sku)
+                    | (Item.gtin == slip_item.sku),
                     Item.organization_id == org_id,
                 )
                 .first()
@@ -553,7 +555,11 @@ class PutAwayService:
             self.db.query(Item)
             .filter(
                 Item.organization_id == org_id,
-                ((Item.item_code == slip_item.sku) | (Item.sku == slip_item.sku)),
+                (
+                    (Item.item_code == slip_item.sku)
+                    | (Item.sku == slip_item.sku)
+                    | (Item.gtin == slip_item.sku)
+                ),
             )
             .first()
         )

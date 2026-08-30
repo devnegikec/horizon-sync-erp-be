@@ -25,7 +25,11 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
+import httpx
+
+from app.config import settings
 from app.core.exceptions import ValidationError
 
 if TYPE_CHECKING:
@@ -112,10 +116,26 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
             ],
         )
 
-    # Resolve SKU from the linked QR product (gtin → name → serial fallback)
+    # Resolve the real SKU/code. Prefer the WMS Item linked via the QR product,
+    # then fall back to the QR product's own identifiers, then the serial.
     sku = serial
-    if item.product:
-        sku = item.product.gtin or item.product.name or serial
+    if item.product_id and getattr(item, "organization_id", None):
+        from app.models.item import Item
+
+        wms_item = (
+            db.query(Item)
+            .filter(
+                Item.qr_product_id == item.product_id,
+                Item.organization_id == item.organization_id,
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if wms_item:
+            sku = wms_item.sku or wms_item.item_code or sku
+
+    if sku == serial and item.product:
+        sku = item.product.sku or item.product.gtin or item.product.name or serial
 
     return QRPayload(
         id=serial,
@@ -125,13 +145,66 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
     )
 
 
+_SHORT_URL_MAX_HOPS = 3
+_SHORT_URL_TIMEOUT = 5.0
+
+
+def _is_shortened_qr_url(url: str) -> bool:
+    """Return True when url is hosted on the configured QR shortener CDN."""
+    if not settings.qr_shortener_enabled:
+        return False
+    prefix = (settings.qr_shortener_cdn_prefix or "").lower()
+    if not prefix:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == prefix or host.endswith(f".{prefix}")
+
+
+def _resolve_short_url(url: str) -> str | None:
+    """Resolve a shortened QR URL to its long (redirect) URL.
+
+    The CDN shortener emits URLs like ``https://bwqr.me/01/<gtin>/<slug>``
+    which 301-redirect to the full signed product URL
+    (``.../g/<gtin>/s/<serial>/<ts>?c=<sig>``). The redirect target may not be
+    reachable from the backend, so the Location header is read without
+    following the redirect — the serial is always present in the long URL.
+    """
+    current = url
+    try:
+        with httpx.Client(follow_redirects=False, timeout=_SHORT_URL_TIMEOUT) as client:
+            for _ in range(_SHORT_URL_MAX_HOPS):
+                response = client.get(current)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current = location
+                    continue
+                return str(response.url) or current
+    except httpx.HTTPError:
+        return None
+    return current
+
+
 def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
     """Extract a QRPayload from a product authentication URL.
 
     Supports GS1 Digital Link SGTIN (/01/{gtin}/21/{serial}) and the legacy
-    /g/{gtin}/s/{serial} format for backward compatibility.
+    /g/{gtin}/s/{serial} format for backward compatibility. Shortened CDN
+    URLs are transparently resolved via their redirect Location header.
     """
     match = _GS1_SGTIN_URL_PATTERN.search(qr_data) or _QR_URL_PATTERN.search(qr_data)
+
+    if not match and _is_shortened_qr_url(qr_data):
+        resolved = _resolve_short_url(qr_data)
+        if resolved and resolved != qr_data:
+            match = _GS1_SGTIN_URL_PATTERN.search(resolved) or _QR_URL_PATTERN.search(
+                resolved
+            )
+
     if not match:
         raise ValidationError(
             message="Invalid QR payload: URL format not recognised",
