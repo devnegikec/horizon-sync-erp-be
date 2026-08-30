@@ -235,6 +235,8 @@ class OutboundPickListResponse(BaseModel):
     assigned_to: str | None = None
     worker_name: str | None = None
     completed_at: str | None = None
+    accepted_at: str | None = None
+    accepted_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     priority: int = 0

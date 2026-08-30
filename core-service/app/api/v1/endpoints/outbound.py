@@ -748,6 +748,8 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
         worker_name=worker_name,
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
+        accepted_at=pl.accepted_at.isoformat() if pl.accepted_at else None,
+        accepted_by=str(pl.accepted_by) if pl.accepted_by else None,
         created_at=pl.created_at.isoformat() if pl.created_at else None,
         updated_at=pl.updated_at.isoformat() if pl.updated_at else None,
         priority=pl.priority or 0,
@@ -1067,6 +1069,39 @@ async def assign_pick_list_worker(
         org_id=current_user.organization_id,
     )
 
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/accept",
+    response_model=OutboundPickListResponse,
+    summary="Accept a pick task",
+    description="Record the worker accepting the pick task and start the timer (WF-010)",
+)
+async def accept_pick_list(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Accept a pick task (WF-010).
+
+    Records ``accepted_at``/``accepted_by`` (idempotent on the first accept)
+    and moves a ``draft`` pick list to ``in_progress``.
+
+    **Path Parameters:**
+    - **pick_list_id**: UUID of the pick list to accept
+
+    **Returns:** Updated pick list with the accept timestamp
+
+    Requirements: WF-010
+    """
+    service = PickListService(db)
+    pick_list = service.accept_task(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        worker_id=current_user.id,
+    )
     return _pick_list_to_response(pick_list, db)
 
 

@@ -74,6 +74,10 @@ class PickList(Base):
     route = Column(String(100), nullable=True)
     sla_minutes = Column(Integer, nullable=True)
 
+    # Columns added by migration 099 for task accept (PR-14 / T-14, WF-010).
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_by = Column(UUID(as_uuid=True), nullable=True)
+
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

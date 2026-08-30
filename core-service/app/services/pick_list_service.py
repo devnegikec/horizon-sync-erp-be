@@ -910,6 +910,52 @@ class PickListService:
         return pick_list
 
     # ------------------------------------------------------------------
+    # TASK ACCEPT (PR-14 / T-14, WF-010)
+    # ------------------------------------------------------------------
+
+    def accept_task(
+        self,
+        pick_list_id: UUID,
+        org_id: UUID,
+        worker_id: UUID,
+    ) -> PickList:
+        """Record a worker accepting the pick task (WF-010).
+
+        Sets ``accepted_at``/``accepted_by`` (idempotent on the first accept)
+        and moves a ``draft`` pick list to ``in_progress``.
+
+        Raises:
+            ResourceNotFoundException: pick list not found.
+            ValidationError: pick list not in an acceptable state.
+        """
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id == pick_list_id,
+                PickList.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+            raise ValidationError(
+                f"Cannot accept pick list with status '{pick_list.status.value}'"
+            )
+
+        if pick_list.accepted_at is None:
+            pick_list.accepted_at = datetime.now(UTC)
+        pick_list.accepted_by = worker_id
+        pick_list.assigned_to = worker_id
+        if pick_list.status == PickListStatus.DRAFT:
+            pick_list.status = PickListStatus.IN_PROGRESS
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
     # PRIORITIZATION + TASK AGING (PR-12 / T-12, WF-007, ALT-011)
     # ------------------------------------------------------------------
 
