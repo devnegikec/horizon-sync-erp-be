@@ -152,7 +152,7 @@ Covers: **WF-018**, flag `pick.enable_handling_unit`.
 - **E2E:** assign HU → verify on pick detail.
 
 **Open questions**
-- **Q4 — Handling units:** tote/carton/pallet association during pick now, or is `item_packaging_units` enough for this phase? **Answer:** _(pending)_
+- **Q4 — Handling units:** tote/carton/pallet association during pick now, or is `item_packaging_units` enough for this phase? **Answer:** In scope now — a `handling_units` table (trolley/carton/pallet) plus a `pick_list_items.handling_unit_id` link. `item_packaging_units` is item-level packaging *definitions*, not pick-execution association; both are needed.
 
 ### PR-12 — Prioritization + task aging (T-12)
 Covers: **WF-007**, ALT-011, flags `priority_fields`, `aging_threshold_minutes`.

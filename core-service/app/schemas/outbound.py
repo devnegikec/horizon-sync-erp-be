@@ -76,6 +76,19 @@ class StageScanRequest(BaseModel):
     staging_location_id: UUID = Field(..., description="Scanned staging lane UUID")
 
 
+class AssignHandlingUnitRequest(BaseModel):
+    """Request schema for associating a handling unit with a pick item (WF-018)."""
+
+    handling_unit_id: UUID = Field(..., description="Handling unit UUID")
+
+
+class HandlingUnitAssignmentResponse(BaseModel):
+    """Response schema for a handling-unit association."""
+
+    pick_list_item_id: str
+    handling_unit_id: str
+
+
 class PickScanRequest(BaseModel):
     """Request schema for recording a pick scan against a pick list.
 
@@ -183,6 +196,7 @@ class PickListItemResponse(BaseModel):
     batch_no: str | None = None
     bin_location_id: str | None = None
     bin_location_path: str | None = None
+    handling_unit_id: str | None = None
     sort_order: int = 0
     serials: list[PickSerialDetail] = []
 

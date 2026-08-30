@@ -51,7 +51,9 @@ from app.schemas.gate_verification import (
     GateSessionResponse,
 )
 from app.schemas.outbound import (
+    AssignHandlingUnitRequest,
     AssignWorkerRequest,
+    HandlingUnitAssignmentResponse,
     OutboundPickListListResponse,
     OutboundPickListResponse,
     PickListProgress,
@@ -579,6 +581,9 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 else None,
                 "bin_location_path": bin_map.get(str(item.bin_location_id))
                 if item.bin_location_id
+                else None,
+                "handling_unit_id": str(item.handling_unit_id)
+                if item.handling_unit_id
                 else None,
                 "sort_order": item.sort_order or 0,
                 "serials": [
@@ -1148,3 +1153,36 @@ async def stage_scan_pick_list(
         org_id=current_user.organization_id,
     )
     return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/items/{pick_list_item_id}/handling-unit",
+    response_model=HandlingUnitAssignmentResponse,
+    summary="Associate a handling unit with a pick list item",
+    description="Link a trolley/carton/pallet handling unit to a pick line (WF-018)",
+)
+async def assign_handling_unit(
+    pick_list_id: UUID,
+    pick_list_item_id: UUID,
+    data: AssignHandlingUnitRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Associate a handling unit (trolley/carton/pallet) with a pick list item.
+
+    When ``pick.enable_handling_unit`` is enabled, a handling unit already
+    assigned to another pick item is rejected.
+
+    Requirements: WF-018
+    """
+    service = PickListService(db)
+    pick_item = service.assign_handling_unit(
+        pick_list_item_id=pick_list_item_id,
+        handling_unit_id=data.handling_unit_id,
+        org_id=current_user.organization_id,
+    )
+    return HandlingUnitAssignmentResponse(
+        pick_list_item_id=str(pick_item.id),
+        handling_unit_id=str(pick_item.handling_unit_id),
+    )

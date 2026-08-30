@@ -114,6 +114,12 @@ class PickListItem(Base):
         ForeignKey("warehouse_locations.id"),
         nullable=True,
     )
+    # Column added by migration 096 for handling-unit association (PR-11 / T-11).
+    handling_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("handling_units.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     extra_data = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(

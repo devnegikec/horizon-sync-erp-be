@@ -118,6 +118,7 @@ from app.models.exchange_rate import ExchangeRate
 # Feature Flag module
 from app.models.feature_flag import FeatureFlag
 from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.handling_unit import HandlingUnit, HandlingUnitType
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
@@ -467,6 +468,8 @@ __all__ = [
     "ReceivingSlipItem",
     "GateVerificationSession",
     "GateVerificationItem",
+    "HandlingUnit",
+    "HandlingUnitType",
     "DispatchRecord",
     "WorkerTask",
     "LocationScan",

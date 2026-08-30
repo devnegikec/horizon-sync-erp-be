@@ -1031,6 +1031,87 @@ class PickListService:
             self.db.refresh(pick_list)
         return pick_list
 
+    # ------------------------------------------------------------------
+    # HANDLING UNITS (PR-11 / T-11, WF-018)
+    # ------------------------------------------------------------------
+
+    def validate_handling_unit_assignment(
+        self,
+        org_id: UUID,
+        pick_list_item_id: UUID,
+        handling_unit_id: UUID,
+    ) -> None:
+        """Enforce handling-unit rules when ``pick.enable_handling_unit`` is on.
+
+        - Flag off → skip (legacy).
+        - Unknown handling unit → ResourceNotFoundException.
+        - Handling unit already assigned to another pick item → ValidationError
+          (duplicate HU rejected).
+        """
+        from app.models.handling_unit import HandlingUnit
+        from app.services.pick_settings_service import PickConfigResolver
+
+        if not PickConfigResolver.from_org(self.db, org_id).get_bool(
+            "enable_handling_unit"
+        ):
+            return
+
+        hu = (
+            self.db.query(HandlingUnit)
+            .filter(
+                HandlingUnit.id == handling_unit_id,
+                HandlingUnit.organization_id == org_id,
+            )
+            .first()
+        )
+        if hu is None:
+            raise ResourceNotFoundException(
+                f"Handling unit {handling_unit_id} not found"
+            )
+
+        other = (
+            self.db.query(PickListItem)
+            .filter(
+                PickListItem.organization_id == org_id,
+                PickListItem.handling_unit_id == handling_unit_id,
+                PickListItem.id != pick_list_item_id,
+            )
+            .first()
+        )
+        if other is not None:
+            raise ValidationError(
+                f"Handling unit {handling_unit_id} is already assigned to "
+                f"another pick item"
+            )
+
+    def assign_handling_unit(
+        self,
+        pick_list_item_id: UUID,
+        handling_unit_id: UUID,
+        org_id: UUID,
+    ) -> PickListItem:
+        """Associate a handling unit with a pick list item (WF-018)."""
+        pick_item = (
+            self.db.query(PickListItem)
+            .filter(
+                PickListItem.id == pick_list_item_id,
+                PickListItem.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_item is None:
+            raise ResourceNotFoundException(
+                f"Pick list item {pick_list_item_id} not found"
+            )
+
+        self.validate_handling_unit_assignment(
+            org_id, pick_list_item_id, handling_unit_id
+        )
+        pick_item.handling_unit_id = handling_unit_id
+        self.db.commit()
+        self.db.refresh(pick_item)
+        return pick_item
+
     def _apply_routing_optimization(self, pick_list: PickList) -> None:
         """Apply RoutingOptimizer to sort pick list items by optimal traversal order.
 
