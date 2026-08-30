@@ -163,3 +163,10 @@ class TestAssignHandlingUnit:
         svc = _service(org_id, True, rows=[hu])
         with pytest.raises(ResourceNotFoundException, match="not found"):
             svc.assign_handling_unit(uuid.uuid4(), hu.id, org_id)
+
+    def test_assign_flag_off_rejected(self, org_id):
+        item = _item(org_id)
+        hu = _hu(org_id)
+        svc = _service(org_id, False, rows=[item, hu])
+        with pytest.raises(ValidationError, match="disabled"):
+            svc.assign_handling_unit(item.id, hu.id, org_id)

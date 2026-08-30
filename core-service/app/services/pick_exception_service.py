@@ -30,7 +30,7 @@ from app.models.pick_exception import (
     PickExceptionSeverity,
     PickExceptionStatus,
 )
-from app.models.pick_list import PickListItem
+from app.models.pick_list import PickList, PickListItem
 from app.services.pick_settings_service import PickSettingsService
 
 logger = logging.getLogger(__name__)
@@ -161,6 +161,7 @@ class PickExceptionService:
         reason_code: str | None = None,
         severity: str | None = None,
         status_filter: str | None = None,
+        warehouse_id: UUID | None = None,
     ) -> tuple[list[PickException], dict[str, Any]]:
         """Paginated, filtered list of pick exceptions for an organization."""
         query = self.db.query(PickException).filter(
@@ -178,6 +179,10 @@ class PickExceptionService:
             query = query.filter(PickException.severity == severity)
         if status_filter is not None:
             query = query.filter(PickException.status == status_filter)
+        if warehouse_id is not None:
+            query = query.join(
+                PickList, PickException.pick_list_id == PickList.id
+            ).filter(PickList.warehouse_id == warehouse_id)
 
         total = query.count()
         items = (

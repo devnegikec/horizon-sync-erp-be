@@ -1237,7 +1237,21 @@ class PickListService:
         handling_unit_id: UUID,
         org_id: UUID,
     ) -> PickListItem:
-        """Associate a handling unit with a pick list item (WF-018)."""
+        """Associate a handling unit with a pick list item (WF-018).
+
+        Hard-gated on ``pick.enable_handling_unit``: when the flag is off the
+        assignment is rejected outright (the feature is fully disabled, not
+        just its validation).
+        """
+        from app.services.pick_settings_service import PickConfigResolver
+
+        if not PickConfigResolver.from_org(self.db, org_id).get_bool(
+            "enable_handling_unit"
+        ):
+            raise ValidationError(
+                "Handling units are disabled for this organization"
+            )
+
         pick_item = (
             self.db.query(PickListItem)
             .filter(

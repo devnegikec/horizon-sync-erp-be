@@ -97,6 +97,9 @@ async def list_pick_exceptions(
         alias="status",
         pattern="^(open|approved|rejected|resolved|cancelled)$",
     ),
+    warehouse_id: UUID | None = Query(
+        None, description="Filter by the pick list's warehouse"
+    ),
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
     db: Session = Depends(get_db),
 ) -> PickExceptionListResponse:
@@ -111,6 +114,7 @@ async def list_pick_exceptions(
         reason_code=reason_code,
         severity=severity,
         status_filter=status_filter,
+        warehouse_id=warehouse_id,
     )
     return PickExceptionListResponse(
         exceptions=[
