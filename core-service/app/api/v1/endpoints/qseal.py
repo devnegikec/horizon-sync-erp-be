@@ -3,13 +3,16 @@
 from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.schemas.qseal import (
+    QSealAggregationResponse,
+    QSealAutoLinkRequest,
+    QSealAutoLinkResponse,
     QSealChildCreate,
     QSealChildListResponse,
     QSealHistoryResponse,
@@ -247,3 +250,56 @@ def download_block_parents(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Auto-link (automatic cascade / aggregation) ─────────────────────────────
+
+
+@router.post(
+    "/blocks/{block_id}/auto-link",
+    response_model=QSealAutoLinkResponse,
+    summary="Auto-link a completed block's items into master packs (cascade)",
+)
+def auto_link_block(
+    block_id: UUID,
+    data: QSealAutoLinkRequest | None = Body(default=None),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.create")),
+):
+    """Automatically group a block's generated units into master packs.
+
+    Useful for bulk testing where manual linking/cascading via mobile is slow.
+    Re-running is idempotent: previous linkage is removed and rebuilt.
+    """
+    org_id = current_user.organization_id
+    return service.auto_link_block(
+        block_id,
+        org_id,
+        current_user.id,
+        data.master_pack_size if data else None,
+    )
+
+
+# ── Aggregation log ─────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/aggregation",
+    response_model=QSealAggregationResponse,
+    summary="List QSeal aggregation (cascading) log",
+)
+def list_aggregation(
+    block_id: UUID | None = Query(
+        None, description="Filter the log to a specific QR block/batch"
+    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    service: QSealService = Depends(get_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return one row per generated unit with its parent link + activation.
+
+    Lets operators spot wrong links or missing aggregations at batch level.
+    """
+    org_id = current_user.organization_id
+    return service.list_aggregation(org_id, block_id, page, page_size)

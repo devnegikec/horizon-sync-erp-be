@@ -180,3 +180,50 @@ class QSealLabelDownloadResponse(BaseModel):
     parent_id: UUID
     labels: list[dict[str, Any]]
     total: int
+
+
+# ── Auto-link (automatic cascade/aggregation) ────────────────────────────────
+
+
+class QSealAutoLinkRequest(BaseModel):
+    """Optional master-pack size override for automatic cascading."""
+
+    master_pack_size: int | None = Field(None, gt=0)
+
+
+class QSealAutoLinkResponse(BaseModel):
+    block_id: UUID
+    batch: str
+    master_pack_size: int
+    parent_count: int
+    linked_item_count: int
+    message: str
+
+
+# ── Aggregation log ──────────────────────────────────────────────────────────
+
+
+class QSealAggregationItem(BaseModel):
+    """One child unit and its aggregation (parent link) + activation state."""
+
+    id: UUID
+    block_id: UUID | None
+    batch: str | None
+    child_serial: str | None
+    activated: bool | None
+    scan_count: int
+    linked: bool
+    parent_id: UUID | None
+    parent_serial: str | None
+    parent_name: str | None
+    parent_type: str | None
+    parent_capacity: int | None
+    parent_linked_count: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QSealAggregationResponse(BaseModel):
+    items: list[QSealAggregationItem]
+    pagination: dict[str, Any]
