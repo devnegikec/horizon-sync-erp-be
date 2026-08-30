@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -25,6 +26,7 @@ from app.models.base import PickListStatus
 from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
+from app.models.product_item import ProductItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
 from app.models.warehouse_location import LocationType, WarehouseLocation
@@ -122,9 +124,7 @@ class PickListService:
         aging_threshold = self._pick_config(organization_id).get_int(
             "aging_threshold_minutes"
         )
-        return [
-            self._to_list_item(x, aging_threshold) for x in items
-        ], pagination
+        return [self._to_list_item(x, aging_threshold) for x in items], pagination
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -469,18 +469,14 @@ class PickListService:
         """
         from app.services.pick_settings_service import PickConfigResolver
 
-        policy = PickConfigResolver.from_org(self.db, org_id).get_enum(
-            "require_serial"
-        )
+        policy = PickConfigResolver.from_org(self.db, org_id).get_enum("require_serial")
         if policy == "never":
             return
         if policy == "per_item" and not item.has_serial_no:
             return
 
         if not serial_no:
-            raise ValidationError(
-                f"Serial scan required for item '{item.item_code}'"
-            )
+            raise ValidationError(f"Serial scan required for item '{item.item_code}'")
 
         serial_row = (
             self.db.query(SerialNo)
@@ -551,9 +547,7 @@ class PickListService:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} is not allowed"
             )
-        threshold = Decimal(
-            str(config.get_numeric("short_pick_approval_threshold"))
-        )
+        threshold = Decimal(str(config.get_numeric("short_pick_approval_threshold")))
         if shortfall > threshold:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} exceeds the "
@@ -648,18 +642,51 @@ class PickListService:
                 f"Pick list must be in 'draft' or 'in_progress' status."
             )
 
-        # Decode QR payload
-        payload = decode_qr_payload(qr_data)
+        # Decode QR payload. Pass the tenant DB session + org_id so serial-only
+        # and URL payloads resolve against product_items (mirrors inbound's
+        # decode_qr_payload(db=..., organization_id=...) call).
+        payload = decode_qr_payload(qr_data, db=self.db, organization_id=org_id)
 
-        # Find matching pick list item by SKU (item_code)
-        item = (
-            self.db.query(Item)
+        # Resolve the inventory Item for this scan:
+        # - Unit/serial scans: payload.id is the ProductItem serial → resolve
+        #   via ProductItem → Item.qr_product_id.
+        # - JSON box labels: payload.sku is the real SKU → fall back to
+        #   SKU / GTIN / item_code matching.
+        item = None
+        product_item = (
+            self.db.query(ProductItem)
             .filter(
-                Item.item_code == payload.sku,
-                Item.organization_id == org_id,
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == org_id,
+                ProductItem.deleted_at.is_(None),
             )
             .first()
         )
+        if product_item is not None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.qr_product_id == product_item.product_id,
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                )
+                .first()
+            )
+
+        if item is None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.item_code == payload.sku,
+                        Item.sku == payload.sku,
+                        Item.gtin == payload.sku,
+                    ),
+                )
+                .first()
+            )
 
         if not item:
             raise ValidationError(
@@ -1074,9 +1101,7 @@ class PickListService:
             .first()
         )
         if location is None:
-            raise ValidationError(
-                f"Staging lane {staging_location_id} not found"
-            )
+            raise ValidationError(f"Staging lane {staging_location_id} not found")
         if location.location_type != LocationType.STAGING.value:
             raise ValidationError(
                 f"Location {staging_location_id} is not a staging lane "
