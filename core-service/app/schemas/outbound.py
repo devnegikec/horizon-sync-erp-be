@@ -12,6 +12,7 @@ Requirements: 9.1, 10.1, 11.3, 11.4
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -64,14 +65,78 @@ class AssignWorkerRequest(BaseModel):
     worker_id: UUID = Field(..., description="Worker UUID to assign")
 
 
+class StageTransferRequest(BaseModel):
+    """Request schema for transferring a pick list to a staging lane (WF-019)."""
+
+    staging_location_id: UUID = Field(..., description="Staging lane location UUID")
+
+
+class StageScanRequest(BaseModel):
+    """Request schema for scanning a staging lane (WF-020)."""
+
+    staging_location_id: UUID = Field(..., description="Scanned staging lane UUID")
+
+
+class AssignHandlingUnitRequest(BaseModel):
+    """Request schema for associating a handling unit with a pick item (WF-018)."""
+
+    handling_unit_id: UUID = Field(..., description="Handling unit UUID")
+
+
+class UpdatePriorityRequest(BaseModel):
+    """Request schema for setting task prioritization fields (WF-007)."""
+
+    priority: int | None = Field(
+        None, ge=0, description="Manual priority (higher = more urgent)"
+    )
+    dispatch_cutoff: datetime | None = Field(
+        None, description="Dispatch cutoff time (SAP-supplied or manual)"
+    )
+    wave: str | None = Field(None, max_length=100, description="Wave sequence")
+    route: str | None = Field(None, max_length=100, description="Route code")
+    sla_minutes: int | None = Field(
+        None, gt=0, description="Per-task SLA in minutes (overrides aging threshold)"
+    )
+
+
+class HandlingUnitAssignmentResponse(BaseModel):
+    """Response schema for a handling-unit association."""
+
+    pick_list_item_id: str
+    handling_unit_id: str
+
+
 class PickScanRequest(BaseModel):
     """Request schema for recording a pick scan against a pick list.
 
-    Requirements: 10.1
+    Requirements: 10.1; WF-012 / ALT-001 / EX-003 (wrong-bin hard stop),
+    EX-007 (damage/hold capture at scan)
     """
 
     qr_data: str = Field(
         ..., min_length=1, description="Raw QR code payload string (JSON)"
+    )
+    bin_location_id: UUID | None = Field(
+        None,
+        description=(
+            "Scanned source bin location UUID. Required when "
+            "``pick.require_bin_scan`` is enabled; validated against the "
+            "item's assigned bin (wrong-bin hard stop)."
+        ),
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Optional exception reason code reported at scan (e.g. "
+            "``damaged``). When set, a pick exception is recorded against the "
+            "line (EX-007 / ALT-005)."
+        ),
+    )
+    reason_quantity: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Affected quantity for the scan exception (defaults to scanned qty).",
     )
 
 
@@ -148,6 +213,7 @@ class PickListItemResponse(BaseModel):
     batch_no: str | None = None
     bin_location_id: str | None = None
     bin_location_path: str | None = None
+    handling_unit_id: str | None = None
     sort_order: int = 0
     serials: list[PickSerialDetail] = []
 
@@ -169,8 +235,17 @@ class OutboundPickListResponse(BaseModel):
     assigned_to: str | None = None
     worker_name: str | None = None
     completed_at: str | None = None
+    accepted_at: str | None = None
+    accepted_by: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    priority: int = 0
+    dispatch_cutoff: str | None = None
+    wave: str | None = None
+    route: str | None = None
+    sla_minutes: int | None = None
+    age_minutes: int = 0
+    is_aging: bool = False
     items: list[PickListItemResponse] = []
     progress: PickListProgress | None = None
 
@@ -186,6 +261,7 @@ class PickScanResult(BaseModel):
     pick_list_item_id: str
     item_id: str
     sku: str
+    serial_no: str | None = None
     scanned_qty: int
     picked_qty: float
     required_qty: float
@@ -207,6 +283,12 @@ class OutboundPickListListItem(BaseModel):
     pick_date: str | None = None
     completed_at: str | None = None
     created_at: str | None = None
+    priority: int = 0
+    dispatch_cutoff: str | None = None
+    wave: str | None = None
+    route: str | None = None
+    age_minutes: int = 0
+    is_aging: bool = False
     progress: PickListProgress | None = None
 
 

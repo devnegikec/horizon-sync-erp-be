@@ -106,7 +106,7 @@ Covers: **WF-014**, EX-005/006, ALT-003, flag `pick.require_serial`.
 - **E2E:** scan consumed serial → error; scan valid serial → accepted.
 
 **Open questions**
-- **Q5 — Serial enforcement:** mandatory hard stop for serialized items, or per-item policy (`has_serial_no`)? **Answer:** _(pending)_
+- **Q5 — Serial enforcement:** mandatory hard stop for serialized items, or per-item policy (`has_serial_no`)? **Answer:** Per-item policy via `pick.require_serial` enum — `per_item` (default, follow `item.has_serial_no`), `always` (force for every scan), `never` (disable). A valid serial must exist against `serial_nos` for the scanned SKU and must not be `consumed`/`blocked` (`PickListService.validate_serial`).
 
 ### PR-07 — Short-pick / over-pick tolerance + damage/hold capture (T-08)
 Covers: **WF-015**, EX-002/007/021, ALT-004/005; flags `over_pick_tolerance`, `allow_short_pick`.
@@ -116,7 +116,7 @@ Covers: **WF-015**, EX-002/007/021, ALT-004/005; flags `over_pick_tolerance`, `a
 - **E2E:** scan less qty → short-pick exception flow; scan damaged item → damage reason captured.
 
 **Open questions**
-- **Q12 — Damage photo/comment (EX-007):** "optionally photo/comment if configured" — in scope now or later? **Answer:** _(pending)_
+- **Q12 — Damage photo/comment (EX-007):** "optionally photo/comment if configured" — in scope now or later? **Answer:** Later. PR-07 captures the damage/hold reason code + affected quantity at scan (`PickScanRequest.reason_code` / `reason_quantity` → `pick_exceptions`); photo/comment attachment is deferred (can be added via the exception `details`/`evidence` payload later).
 
 ### PR-08 — Inventory movement status transitions (T-09)
 Covers: **WF-016**.
@@ -134,7 +134,7 @@ Covers: **ALT-004/005/007/008/011/012** (in-app queue).
 - **E2E:** supervisor opens queue → resolves exception → status updated.
 
 **Open questions**
-- **Q11 — Alerts delivery:** in-app dashboard only, or also email/notification service (`communication.py`)? **Answer:** _(pending)_
+- **Q11 — Alerts delivery:** in-app dashboard only, or also email/notification service (`communication.py`)? **Answer:** Both. Alerts are delivered in-app via the supervisor queue and, on resolve/approve, as best-effort in-app `NotificationService` rows to the reporter (`NotificationType.PICK_EXCEPTION`). Email via `CommunicationService.send_email` is the documented extension point (requires recipient-email resolution from identity-service).
 
 ### PR-10 — Staging lane + stage validation (T-10)
 Covers: **WF-019/020**, EX-019/020, ALT-008, flag `pick.require_stage_scan`.
@@ -143,7 +143,7 @@ Covers: **WF-019/020**, EX-019/020, ALT-008, flag `pick.require_stage_scan`.
 - **E2E:** scan staging lane → task closes to staged.
 
 **Open questions**
-- **Q3 — Staging lanes:** lane-level (dock door/lane) or just a destination location? Full scan-at-staging in scope? **Answer:** _(pending)_
+- **Q3 — Staging lanes:** lane-level (dock door/lane) or just a destination location? Full scan-at-staging in scope? **Answer:** A destination location — a `warehouse_locations` row with `location_type = 'staging'` (no new table). `stage-transfer` assigns the lane + moves picked bin stock `picked → in_transit_to_stage`; `stage-scan` validates the scanned lane (wrong-lane hard stop) and stamps `staged_at`.
 
 ### PR-11 — Handling unit association (T-11)
 Covers: **WF-018**, flag `pick.enable_handling_unit`.
@@ -152,7 +152,7 @@ Covers: **WF-018**, flag `pick.enable_handling_unit`.
 - **E2E:** assign HU → verify on pick detail.
 
 **Open questions**
-- **Q4 — Handling units:** tote/carton/pallet association during pick now, or is `item_packaging_units` enough for this phase? **Answer:** _(pending)_
+- **Q4 — Handling units:** tote/carton/pallet association during pick now, or is `item_packaging_units` enough for this phase? **Answer:** In scope now — a `handling_units` table (trolley/carton/pallet) plus a `pick_list_items.handling_unit_id` link. `item_packaging_units` is item-level packaging *definitions*, not pick-execution association; both are needed.
 
 ### PR-12 — Prioritization + task aging (T-12)
 Covers: **WF-007**, ALT-011, flags `priority_fields`, `aging_threshold_minutes`.
@@ -161,7 +161,7 @@ Covers: **WF-007**, ALT-011, flags `priority_fields`, `aging_threshold_minutes`.
 - **E2E:** set priority → list reorders; aged task shows warning.
 
 **Open questions**
-- **Q7 — Prioritization/wave:** orders arrive with dispatch cutoff/wave/route from SAP, or manual priority only? **Answer:** _(pending)_
+- **Q7 — Prioritization/wave:** orders arrive with dispatch cutoff/wave/route from SAP, or manual priority only? **Answer:** Both. SAP-supplied `dispatch_cutoff`/`wave`/`route` pass through on the pick list (available on `create_from_invoice`/import), and a manual `priority` override is set via `PATCH /outbound/{id}/priority`. The `pick.priority_fields` config list selects which fields drive ordering (cutoff/wave/route); manual `priority` always sorts first (higher = more urgent). Task aging (ALT-011) is computed from `created_at` age vs `pick.aging_threshold_minutes`, overridable per task via `sla_minutes`.
 
 ### PR-13 — ERP sync queue + retry + alert (T-13)
 Covers: **WF-022**, ALT-009.
@@ -171,7 +171,7 @@ Covers: **WF-022**, ALT-009.
 - **E2E:** simulate outage → retry shown → alert raised.
 
 **Open questions**
-- **Q8 — ERP integration mode:** real-time sync or async queue? **Answer:** _(pending)_
+- **Q8 — ERP integration mode:** real-time sync or async queue? **Answer:** Async queue. A new `erp_sync_messages` outbound queue decouples pick completion/dispatch from ERP delivery (WF-022). Messages are enqueued on pick-list completion (`status_update`) and dispatch creation (`dispatch_created`), delivered by a flush step with exponential-backoff retry (`pick.erp_sync_max_retries` / `pick.erp_sync_retry_backoff_minutes`), and — once retries are exhausted — a failure alert is raised in-app (`NotificationType.ERP_SYNC_FAILED`, ALT-009). The transport is a pluggable callable; the real SAP transport is the documented extension point (default logs + dequeues as a no-op).
 
 ### PR-14 — Task accept + login session controls (T-14)
 Covers: **WF-009/010**, flags `login_lockout_attempts`, `session_timeout_minutes`.

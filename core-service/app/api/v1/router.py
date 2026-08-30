@@ -96,6 +96,7 @@ from app.api.v1.endpoints import (
     wms_3d,
     wms_dashboard,
     wms_devices,
+    worker_sessions,
     worker_tasks,
 )
 
@@ -219,6 +220,12 @@ api_router.include_router(
     worker_tasks.router,
     prefix="/worker-tasks",
     tags=["Worker Tasks"],
+)
+# Worker Sessions (handheld login session controls — WF-009)
+api_router.include_router(
+    worker_sessions.router,
+    prefix="/worker-sessions",
+    tags=["Worker Sessions"],
 )
 # Location Scans (QR-based time tracking)
 api_router.include_router(

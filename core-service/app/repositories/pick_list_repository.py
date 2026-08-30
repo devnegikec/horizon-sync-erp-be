@@ -63,8 +63,19 @@ class PickListRepository:
         if status is not None:
             q = q.filter(PickList.status == status)
         total = q.count()
-        col = getattr(PickList, sort_by, PickList.created_at)
-        q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
+        if sort_by == "priority":
+            # WF-007 ordering: higher manual priority first, then earlier
+            # dispatch cutoff, then wave/route sequence, oldest created last.
+            q = q.order_by(
+                PickList.priority.desc(),
+                PickList.dispatch_cutoff.asc().nullslast(),
+                PickList.wave.asc().nullslast(),
+                PickList.route.asc().nullslast(),
+                PickList.created_at.asc(),
+            )
+        else:
+            col = getattr(PickList, sort_by, PickList.created_at)
+            q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
         items = q.offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 

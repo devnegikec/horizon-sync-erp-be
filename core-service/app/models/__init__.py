@@ -113,11 +113,13 @@ from app.models.document_numbering import (
     DocumentNumberingConfig,
     DocumentSequenceCounter,
 )
+from app.models.erp_sync_message import ErpSyncMessage, ErpSyncStatus
 from app.models.exchange_rate import ExchangeRate
 
 # Feature Flag module
 from app.models.feature_flag import FeatureFlag
 from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.handling_unit import HandlingUnit, HandlingUnitType
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
@@ -128,7 +130,6 @@ from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.landed_cost import LandedCostVoucher
 from app.models.landing_page import LandingPageConfig
 from app.models.location_allocation import LocationAllocation
-from app.models.packaging_types import PackagingType
 from app.models.location_scan import LocationScan
 from app.models.material_request import MaterialRequest, MaterialRequestLine
 
@@ -146,6 +147,7 @@ from app.models.messaging import (
     WhatsAppReport,
 )
 from app.models.notification import Notification
+from app.models.packaging_types import PackagingType
 from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
@@ -251,6 +253,7 @@ from app.models.warehouse_user import WarehouseUser
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.wms_device import WMSDevice, WMSDeviceStatus
 from app.models.wms_worker import WMSWorker, WMSWorkerStatus
+from app.models.worker_session import WorkerSession, WorkerSessionStatus
 from app.models.worker_task import WorkerTask
 
 __all__ = [
@@ -331,6 +334,8 @@ __all__ = [
     "PickException",
     "PickExceptionAudit",
     "PickIdempotencyKey",
+    "ErpSyncMessage",
+    "ErpSyncStatus",
     "AsnOrder",
     "AsnOrderItem",
     "Vehicle",
@@ -467,9 +472,13 @@ __all__ = [
     "ReceivingSlipItem",
     "GateVerificationSession",
     "GateVerificationItem",
+    "HandlingUnit",
+    "HandlingUnitType",
     "DispatchRecord",
     "WorkerTask",
     "LocationScan",
+    "WorkerSession",
+    "WorkerSessionStatus",
     "PutAwayList",
     "PutAwayListItem",
     # Procurement / Sourcing / Fulfillment modules

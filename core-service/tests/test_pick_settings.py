@@ -42,6 +42,8 @@ class TestCatalog:
             "session_timeout_minutes",
             "reason_codes",
             "priority_fields",
+            "erp_sync_max_retries",
+            "erp_sync_retry_backoff_minutes",
             "backorder_rule",
             "inventory_statuses_pickable",
         }

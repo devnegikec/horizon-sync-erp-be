@@ -27,7 +27,16 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -43,6 +52,11 @@ from app.schemas.dispatch import (
     DispatchListResponse,
     DispatchResponse,
 )
+from app.schemas.erp_sync import (
+    ErpSyncFlushResponse,
+    ErpSyncListResponse,
+    ErpSyncMessageResponse,
+)
 from app.schemas.gate_verification import (
     GateScanRequest,
     GateScanResult,
@@ -51,16 +65,22 @@ from app.schemas.gate_verification import (
     GateSessionResponse,
 )
 from app.schemas.outbound import (
+    AssignHandlingUnitRequest,
     AssignWorkerRequest,
+    HandlingUnitAssignmentResponse,
     OutboundPickListListResponse,
     OutboundPickListResponse,
     PickListProgress,
     PickScanRequest,
     PickScanResult,
     SAPInvoicePayload,
+    StageScanRequest,
+    StageTransferRequest,
+    UpdatePriorityRequest,
 )
+from app.services.erp_sync_service import ErpSyncService
 from app.services.gate_verification_service import GateVerificationService
-from app.services.order_import_service import ImportResult, OrderImportService
+from app.services.order_import_service import OrderImportService
 from app.services.outbound_service import OutboundService
 from app.services.pick_idempotency_service import (
     OPERATION_CANCEL,
@@ -310,6 +330,23 @@ async def create_dispatch(
         org_id=current_user.organization_id,
     )
 
+    # Enqueue the dispatch-created sync for ERP (WF-022). Best-effort.
+    try:
+        ErpSyncService(db).enqueue(
+            org_id=current_user.organization_id,
+            entity_type="dispatch",
+            entity_id=UUID(result["id"]),
+            operation="dispatch_created",
+            payload={"dispatch_number": result["dispatch_number"]},
+            user_id=current_user.id,
+            pick_list_id=(
+                UUID(result["pick_list_id"]) if result.get("pick_list_id") else None
+            ),
+            dispatch_record_id=UUID(result["id"]),
+        )
+    except Exception:  # pragma: no cover - defensive
+        pass
+
     return DispatchResponse(**result)
 
 
@@ -401,6 +438,98 @@ async def get_dispatch_detail(
     )
 
     return DispatchResponse(**result)
+
+
+# =============================================================================
+# ERP SYNC QUEUE ENDPOINTS (PR-13 / T-13, WF-022, ALT-009)
+# =============================================================================
+# NOTE: literal-path routes registered before /{pick_list_id} routes.
+
+
+def _erp_message_to_response(message) -> ErpSyncMessageResponse:
+    return ErpSyncMessageResponse(
+        id=str(message.id),
+        organization_id=str(message.organization_id),
+        entity_type=message.entity_type,
+        entity_id=str(message.entity_id),
+        operation=message.operation,
+        status=message.status,
+        pick_list_id=str(message.pick_list_id) if message.pick_list_id else None,
+        dispatch_record_id=(
+            str(message.dispatch_record_id) if message.dispatch_record_id else None
+        ),
+        attempt_count=message.attempt_count or 0,
+        max_attempts=message.max_attempts or 0,
+        last_error=message.last_error,
+        next_attempt_at=message.next_attempt_at,
+        sent_at=message.sent_at,
+        created_at=message.created_at,
+    )
+
+
+@router.get(
+    "/erp-sync",
+    response_model=ErpSyncListResponse,
+    summary="List ERP sync queue messages",
+    description="List outbound ERP sync messages with optional status filter (WF-022)",
+)
+async def list_erp_sync(
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by status: pending, sent, failed"
+    ),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    List the outbound ERP sync queue (WF-022).
+
+    The frontend uses this as the sync status indicator: pending messages
+    awaiting delivery, sent messages, and failed messages that have raised an
+    integration-failure alert (ALT-009).
+    """
+    service = ErpSyncService(db)
+    messages, total = service.list_messages(
+        org_id=current_user.organization_id,
+        status=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+    total_pages = (total + page_size - 1) // page_size if page_size else 0
+    return ErpSyncListResponse(
+        messages=[_erp_message_to_response(m) for m in messages],
+        pagination={
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        },
+    )
+
+
+@router.post(
+    "/erp-sync/flush",
+    response_model=ErpSyncFlushResponse,
+    summary="Flush due ERP sync messages",
+    description="Deliver all due pending ERP sync messages (retry + failure alert)",
+)
+async def flush_erp_sync(
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Flush the due pending ERP sync queue (WF-022 / ALT-009).
+
+    Success marks messages sent; a transient failure schedules a backoff retry;
+    exhausting the retry budget marks the message failed and raises a
+    best-effort in-app failure alert.
+    """
+    service = ErpSyncService(db)
+    result = service.flush_pending(org_id=current_user.organization_id)
+    return ErpSyncFlushResponse(**result)
 
 
 # =============================================================================
@@ -522,6 +651,21 @@ def _resolve_worker_name(worker_id, db) -> str | None:
     return str(worker_id)
 
 
+def _pick_list_aging(pl, db) -> dict:
+    """Compute task-aging status (ALT-011) using the org's aging threshold."""
+    threshold = 120
+    if db is not None:
+        try:
+            from app.services.pick_settings_service import PickConfigResolver
+
+            threshold = PickConfigResolver.from_org(db, pl.organization_id).get_int(
+                "aging_threshold_minutes"
+            )
+        except Exception:
+            pass
+    return PickListService.aging_info(pl, threshold)
+
+
 def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     """Convert a PickList model to an OutboundPickListResponse."""
     progress = _compute_progress(pl)
@@ -578,6 +722,9 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 "bin_location_path": bin_map.get(str(item.bin_location_id))
                 if item.bin_location_id
                 else None,
+                "handling_unit_id": str(item.handling_unit_id)
+                if item.handling_unit_id
+                else None,
                 "sort_order": item.sort_order or 0,
                 "serials": [
                     {**s, "sku": info.get("sku")}
@@ -587,6 +734,7 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         )
 
     worker_name = _resolve_worker_name(pl.assigned_to, db)
+    aging = _pick_list_aging(pl, db)
 
     return OutboundPickListResponse(
         id=str(pl.id),
@@ -600,8 +748,17 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
         worker_name=worker_name,
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
+        accepted_at=pl.accepted_at.isoformat() if pl.accepted_at else None,
+        accepted_by=str(pl.accepted_by) if pl.accepted_by else None,
         created_at=pl.created_at.isoformat() if pl.created_at else None,
         updated_at=pl.updated_at.isoformat() if pl.updated_at else None,
+        priority=pl.priority or 0,
+        dispatch_cutoff=pl.dispatch_cutoff.isoformat() if pl.dispatch_cutoff else None,
+        wave=pl.wave,
+        route=pl.route,
+        sla_minutes=pl.sla_minutes,
+        age_minutes=aging["age_minutes"],
+        is_aging=aging["is_aging"],
         items=items,
         progress=progress,
     )
@@ -738,7 +895,8 @@ async def list_pick_lists(
         None, description="Filter by SAP invoice reference"
     ),
     sort_by: str = Query(
-        "created_at", description="Sort field: created_at, pick_list_no, status"
+        "created_at",
+        description="Sort field: created_at, pick_list_no, status, priority",
     ),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -800,6 +958,7 @@ async def list_pick_lists(
                 continue
 
             progress = _compute_progress(pl)
+            aging = _pick_list_aging(pl, db)
             result_items.append(
                 {
                     "id": str(pl.id),
@@ -815,6 +974,14 @@ async def list_pick_lists(
                     if pl.completed_at
                     else None,
                     "created_at": pl.created_at.isoformat() if pl.created_at else None,
+                    "priority": pl.priority or 0,
+                    "dispatch_cutoff": pl.dispatch_cutoff.isoformat()
+                    if pl.dispatch_cutoff
+                    else None,
+                    "wave": pl.wave,
+                    "route": pl.route,
+                    "age_minutes": aging["age_minutes"],
+                    "is_aging": aging["is_aging"],
                     "progress": progress,
                 }
             )
@@ -906,6 +1073,39 @@ async def assign_pick_list_worker(
 
 
 @router.post(
+    "/{pick_list_id}/accept",
+    response_model=OutboundPickListResponse,
+    summary="Accept a pick task",
+    description="Record the worker accepting the pick task and start the timer (WF-010)",
+)
+async def accept_pick_list(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Accept a pick task (WF-010).
+
+    Records ``accepted_at``/``accepted_by`` (idempotent on the first accept)
+    and moves a ``draft`` pick list to ``in_progress``.
+
+    **Path Parameters:**
+    - **pick_list_id**: UUID of the pick list to accept
+
+    **Returns:** Updated pick list with the accept timestamp
+
+    Requirements: WF-010
+    """
+    service = PickListService(db)
+    pick_list = service.accept_task(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        worker_id=current_user.id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
     "/{pick_list_id}/scan",
     response_model=PickScanResult,
     status_code=status.HTTP_201_CREATED,
@@ -945,7 +1145,9 @@ async def record_pick_scan(
     org_id = current_user.organization_id
 
     key = idempotency_key or PickIdempotencyService.derive_key(
-        OPERATION_SCAN, pick_list_id, data.qr_data
+        OPERATION_SCAN,
+        pick_list_id,
+        f"{data.qr_data}|bin={data.bin_location_id}|reason={data.reason_code}",
     )
     replay = idempotency.get_replay(org_id, OPERATION_SCAN, key)
     if replay is not None:
@@ -956,6 +1158,9 @@ async def record_pick_scan(
         qr_data=data.qr_data,
         worker_id=current_user.id,
         org_id=org_id,
+        bin_location_id=data.bin_location_id,
+        reason_code=data.reason_code,
+        reason_quantity=data.reason_quantity,
     )
 
     response = PickScanResult(**result)
@@ -964,7 +1169,9 @@ async def record_pick_scan(
         OPERATION_SCAN,
         key,
         pick_list_id,
-        PickIdempotencyService.request_hash(data.qr_data),
+        PickIdempotencyService.request_hash(
+            f"{data.qr_data}|bin={data.bin_location_id}|reason={data.reason_code}"
+        ),
         response.model_dump(mode="json"),
     )
     return response
@@ -1014,6 +1221,21 @@ async def complete_pick_list(
         pick_list_id=pick_list_id,
         org_id=org_id,
     )
+
+    # Enqueue the outbound status-update for ERP sync (WF-022). Best-effort:
+    # a queue failure must never break pick completion.
+    try:
+        ErpSyncService(db).enqueue(
+            org_id=org_id,
+            entity_type="pick_list",
+            entity_id=pick_list_id,
+            operation="status_update",
+            payload={"status": "completed"},
+            user_id=current_user.id,
+            pick_list_id=pick_list_id,
+        )
+    except Exception:  # pragma: no cover - defensive
+        pass
 
     response = _pick_list_to_response(pick_list, db)
     idempotency.record(
@@ -1082,3 +1304,125 @@ async def cancel_pick_list(
         response.model_dump(mode="json"),
     )
     return response
+
+
+@router.post(
+    "/{pick_list_id}/stage-transfer",
+    response_model=OutboundPickListResponse,
+    summary="Transfer pick list to a staging lane",
+    description="Assign a staging lane and move picked stock to in-transit-to-stage",
+)
+async def stage_transfer_pick_list(
+    pick_list_id: UUID,
+    data: StageTransferRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Transfer a pick list to a staging lane (WF-019).
+
+    Validates the staging lane, assigns it to the pick list, and transitions
+    the picked bin stock ``picked → in_transit_to_stage``.
+
+    Requirements: WF-019, EX-019/020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_transfer(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/stage-scan",
+    response_model=OutboundPickListResponse,
+    summary="Validate staging lane scan",
+    description="Validate the scanned staging lane and mark the pick list staged",
+)
+async def stage_scan_pick_list(
+    pick_list_id: UUID,
+    data: StageScanRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate a staging lane scan and mark the pick list staged (WF-020).
+
+    Rejects a wrong staging lane with a hard stop (ALT-008).
+
+    Requirements: WF-020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_scan(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/items/{pick_list_item_id}/handling-unit",
+    response_model=HandlingUnitAssignmentResponse,
+    summary="Associate a handling unit with a pick list item",
+    description="Link a trolley/carton/pallet handling unit to a pick line (WF-018)",
+)
+async def assign_handling_unit(
+    pick_list_id: UUID,
+    pick_list_item_id: UUID,
+    data: AssignHandlingUnitRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Associate a handling unit (trolley/carton/pallet) with a pick list item.
+
+    When ``pick.enable_handling_unit`` is enabled, a handling unit already
+    assigned to another pick item is rejected.
+
+    Requirements: WF-018
+    """
+    service = PickListService(db)
+    pick_item = service.assign_handling_unit(
+        pick_list_item_id=pick_list_item_id,
+        handling_unit_id=data.handling_unit_id,
+        org_id=current_user.organization_id,
+    )
+    return HandlingUnitAssignmentResponse(
+        pick_list_item_id=str(pick_item.id),
+        handling_unit_id=str(pick_item.handling_unit_id),
+    )
+
+
+@router.patch(
+    "/{pick_list_id}/priority",
+    response_model=OutboundPickListResponse,
+    summary="Set task prioritization fields",
+    description="Set manual priority, dispatch cutoff, wave, route, or SLA on a pick list (WF-007)",
+)
+async def update_pick_list_priority(
+    pick_list_id: UUID,
+    data: UpdatePriorityRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Set task prioritization fields on a pick list (WF-007).
+
+    Only the supplied (non-null) fields are updated. ``priority`` is the
+    manual override (higher = more urgent); ``dispatch_cutoff``/``wave``/
+    ``route`` mirror SAP-supplied dispatch data; ``sla_minutes`` overrides
+    the org aging threshold for this task (ALT-011).
+
+    Requirements: WF-007, ALT-011
+    """
+    service = PickListService(db)
+    pick_list = service.update_priority(
+        pick_list_id=pick_list_id,
+        data=data.model_dump(exclude_unset=True),
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+

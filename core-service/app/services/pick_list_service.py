@@ -23,13 +23,18 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import PickListStatus
 from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
+from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
 from app.models.qr_scan_event import QRScanEvent
-from app.models.warehouse_location import WarehouseLocation
+from app.models.serial_no import SerialNo
+from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
 from app.services.bin_reservation_service import BinReservationService
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+
+#: Serial statuses that must NOT be picked (WF-014 / EX-005 / EX-006 / ALT-003).
+UNAVAILABLE_SERIAL_STATUSES: frozenset[str] = frozenset({"consumed", "blocked"})
 
 
 @dataclass
@@ -114,7 +119,12 @@ class PickListService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(x) for x in items], pagination
+        aging_threshold = self._pick_config(organization_id).get_int(
+            "aging_threshold_minutes"
+        )
+        return [
+            self._to_list_item(x, aging_threshold) for x in items
+        ], pagination
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -399,12 +409,208 @@ class PickListService:
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
     # ------------------------------------------------------------------
 
+    def validate_bin(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+        bin_location_id: UUID | None,
+    ) -> None:
+        """Enforce the wrong-bin hard stop (WF-012 / ALT-001 / EX-003).
+
+        When ``pick.require_bin_scan`` is enabled (default ``true``), a picker
+        must scan the source bin and it must match the bin assigned to the
+        pick line. When the flag is off, legacy behaviour (no bin validation)
+        is preserved.
+
+        Raises:
+            ValidationError: if a bin scan is required but missing, or the
+                scanned bin does not match the line's assigned bin.
+        """
+        from app.services.pick_settings_service import PickConfigResolver
+
+        require_bin_scan = PickConfigResolver.from_org(self.db, org_id).get_bool(
+            "require_bin_scan"
+        )
+        if not require_bin_scan:
+            return
+
+        # No source bin assigned to the line — nothing to validate against.
+        if pick_item.bin_location_id is None:
+            return
+
+        if bin_location_id is None:
+            raise ValidationError(
+                "Bin scan required: scan the source bin before scanning the item"
+            )
+
+        if bin_location_id != pick_item.bin_location_id:
+            raise ValidationError(
+                f"Wrong bin: expected bin {pick_item.bin_location_id}, "
+                f"scanned bin {bin_location_id}"
+            )
+
+    def validate_serial(
+        self,
+        org_id: UUID,
+        item: Item,
+        serial_no: str | None,
+    ) -> None:
+        """Enforce serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
+
+        Policy is driven by ``pick.require_serial``:
+        - ``never`` → skip.
+        - ``per_item`` (default) → validate only serialized items
+          (``item.has_serial_no``).
+        - ``always`` → validate every scan.
+
+        When enforced, the scanned serial must exist against ``serial_nos``
+        for the scanned SKU (belongs-to-SKU) and must not be consumed or
+        blocked. Raises ``ValidationError`` otherwise.
+        """
+        from app.services.pick_settings_service import PickConfigResolver
+
+        policy = PickConfigResolver.from_org(self.db, org_id).get_enum(
+            "require_serial"
+        )
+        if policy == "never":
+            return
+        if policy == "per_item" and not item.has_serial_no:
+            return
+
+        if not serial_no:
+            raise ValidationError(
+                f"Serial scan required for item '{item.item_code}'"
+            )
+
+        serial_row = (
+            self.db.query(SerialNo)
+            .filter(
+                SerialNo.organization_id == org_id,
+                SerialNo.serial_no == serial_no,
+                SerialNo.item_id == item.id,
+            )
+            .first()
+        )
+        if serial_row is None:
+            raise ValidationError(
+                f"Serial '{serial_no}' is not valid for item '{item.item_code}'"
+            )
+
+        status = (serial_row.status or "").strip().lower()
+        if status in UNAVAILABLE_SERIAL_STATUSES:
+            raise ValidationError(
+                f"Serial '{serial_no}' is {status} and cannot be picked"
+            )
+
+    def _pick_config(self, org_id: UUID):
+        """Return a read-once snapshot of effective pick settings for an org."""
+        from app.services.pick_settings_service import PickConfigResolver
+
+        return PickConfigResolver.from_org(self.db, org_id)
+
+    def validate_over_pick(
+        self,
+        org_id: UUID,
+        required_qty: Decimal,
+        new_picked: Decimal,
+    ) -> None:
+        """Enforce the over-pick tolerance (EX-021).
+
+        A scan is blocked only when it exceeds the required quantity *plus*
+        ``pick.over_pick_tolerance`` (default ``0`` → no over-pick allowed).
+        """
+        tolerance = Decimal(
+            str(self._pick_config(org_id).get_numeric("over_pick_tolerance"))
+        )
+        if new_picked > required_qty + tolerance:
+            raise ValidationError(
+                f"Over-picking: scanning would result in {new_picked} picked, "
+                f"but only {required_qty} required (tolerance {tolerance})"
+            )
+
+    def validate_short_pick(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+    ) -> Decimal | None:
+        """Evaluate short-pick policy for a line (EX-002 / ALT-004).
+
+        Returns the shortfall to record as an exception, or ``None`` when the
+        line is fully picked. Raises ``ValidationError`` when short-picking is
+        disabled (``pick.allow_short_pick``) or the shortfall exceeds
+        ``pick.short_pick_approval_threshold`` (requires supervisor approval).
+        """
+        shortfall = Decimal(str(pick_item.qty)) - Decimal(
+            str(pick_item.picked_qty or 0)
+        )
+        if shortfall <= 0:
+            return None
+
+        config = self._pick_config(org_id)
+        if not config.get_bool("allow_short_pick"):
+            raise ValidationError(
+                f"Short-pick of {shortfall} on item {pick_item.id} is not allowed"
+            )
+        threshold = Decimal(
+            str(config.get_numeric("short_pick_approval_threshold"))
+        )
+        if shortfall > threshold:
+            raise ValidationError(
+                f"Short-pick of {shortfall} on item {pick_item.id} exceeds the "
+                f"approval threshold {threshold}"
+            )
+        return shortfall
+
+    def _capture_short_pick_exception(
+        self,
+        org_id: UUID,
+        pick_item: PickListItem,
+        shortfall: Decimal,
+    ) -> None:
+        """Record a short-pick exception (EX-002 / ALT-004) via PR-03."""
+        from app.services.pick_exception_service import PickExceptionService
+
+        PickExceptionService(self.db).capture(
+            org_id,
+            {
+                "pick_list_item_id": pick_item.id,
+                "reason_code": "insufficient_quantity",
+                "severity": "warning",
+                "quantity": shortfall,
+            },
+        )
+
+    def _capture_scan_exception(
+        self,
+        org_id: UUID,
+        pick_list_item_id: UUID,
+        reason_code: str,
+        quantity: Decimal,
+        worker_id: UUID,
+    ) -> None:
+        """Record a reason-coded exception raised during a scan (EX-007)."""
+        from app.services.pick_exception_service import PickExceptionService
+
+        PickExceptionService(self.db).capture(
+            org_id,
+            {
+                "pick_list_item_id": pick_list_item_id,
+                "reason_code": reason_code,
+                "severity": "warning",
+                "quantity": quantity,
+            },
+            reported_by=worker_id,
+        )
+
     def record_pick_scan(  # noqa: C901
         self,
         pick_list_id: UUID,
         qr_data: str,
         worker_id: UUID,
         org_id: UUID,
+        bin_location_id: UUID | None = None,
+        reason_code: str | None = None,
+        reason_quantity: Decimal | None = None,
     ) -> dict:
         """Record a pick scan against a pick list.
 
@@ -417,6 +623,8 @@ class PickListService:
             qr_data: Raw QR payload JSON string.
             worker_id: The worker performing the scan.
             org_id: Organization ID for scoping.
+            bin_location_id: Scanned source bin (wrong-bin hard stop when
+                ``pick.require_bin_scan`` is enabled; WF-012 / ALT-001).
 
         Returns:
             Dict with scan result details.
@@ -424,9 +632,10 @@ class PickListService:
         Raises:
             ResourceNotFoundException: If pick list not found.
             ValidationError: If pick list is not in a scannable state,
-                item not on pick list, or over-picking would occur.
+                item not on pick list, wrong bin scanned, or over-picking
+                would occur.
 
-        Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 11.2
+        Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 11.2; WF-012, ALT-001
         """
         pick_list = self.repo.get_by_id(pick_list_id, org_id)
         if not pick_list:
@@ -443,8 +652,6 @@ class PickListService:
         payload = decode_qr_payload(qr_data)
 
         # Find matching pick list item by SKU (item_code)
-        from app.models.item import Item
-
         item = (
             self.db.query(Item)
             .filter(
@@ -475,28 +682,30 @@ class PickListService:
                 f"Item '{payload.sku}' is not on the pick list or has already been fully picked"
             )
 
-        # Check for over-picking
+        # Wrong-bin hard stop (WF-012 / ALT-001 / EX-003).
+        self.validate_bin(org_id, matching_pick_item, bin_location_id)
+
+        # Serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
+        self.validate_serial(org_id, item, payload.id)
+
+        # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))
         current_picked = Decimal(str(matching_pick_item.picked_qty or 0))
         required_qty = Decimal(str(matching_pick_item.qty))
         new_picked = current_picked + scanned_qty
 
-        if new_picked > required_qty:
-            raise ValidationError(
-                f"Over-picking: scanning {payload.qty} would result in "
-                f"{new_picked} picked, but only {required_qty} required "
-                f"for item '{payload.sku}'"
-            )
+        self.validate_over_pick(org_id, required_qty, new_picked)
 
         # Increment picked_qty
         matching_pick_item.picked_qty = new_picked
 
         # Decrement bin stock if bin_location_id is set
         if matching_pick_item.bin_location_id:
+            from app.models.bin_stock_level import InventoryStatus
             from app.services.bin_stock_service import BinStockService
 
             bin_stock_service = BinStockService(self.db)
-            bin_stock_service.remove_stock(
+            bin_stock = bin_stock_service.remove_stock(
                 bin_id=matching_pick_item.bin_location_id,
                 item_id=item.id,
                 quantity=scanned_qty,
@@ -505,8 +714,14 @@ class PickListService:
             )
 
             # Once this pick line is fully satisfied, release the worker's
-            # reservation on the bin so it is available to others (FR-CW).
+            # reservation and advance the source bin stock to 'picked' (WF-016).
             if new_picked >= required_qty:
+                bin_stock_service.transition_status(
+                    bin_stock,
+                    InventoryStatus.PICKED.value,
+                    user_id=worker_id,
+                    commit=False,
+                )
                 self.reservation_service.release(
                     bin_id=matching_pick_item.bin_location_id,
                     worker_id=worker_id,
@@ -537,9 +752,34 @@ class PickListService:
         )
         self.db.add(scan_event)
 
+        # Movement ledger (WF-016) — idempotent posting via PR-04 replay guard.
+        if matching_pick_item.bin_location_id:
+            from app.services.bin_stock_service import BinStockService
+
+            BinStockService(self.db).record_pick_movement(
+                org_id=org_id,
+                product_id=item.id,
+                warehouse_id=matching_pick_item.warehouse_id,
+                quantity=scanned_qty,
+                reference_type="pick_scan",
+                reference_id=scan_event.id,
+                performed_by=worker_id,
+                notes=f"Pick from bin {matching_pick_item.bin_location_id}",
+            )
+
         self.db.commit()
         self.db.refresh(matching_pick_item)
         self.db.refresh(pick_list)
+
+        # Damage/hold reason capture at scan (EX-007 / ALT-005).
+        if reason_code:
+            self._capture_scan_exception(
+                org_id,
+                matching_pick_item.id,
+                reason_code,
+                reason_quantity if reason_quantity is not None else scanned_qty,
+                worker_id,
+            )
 
         return {
             "pick_list_id": str(pick_list_id),
@@ -547,6 +787,7 @@ class PickListService:
             "pick_list_item_id": str(matching_pick_item.id),
             "item_id": str(item.id),
             "sku": payload.sku,
+            "serial_no": payload.id,
             "scanned_qty": payload.qty,
             "picked_qty": float(matching_pick_item.picked_qty),
             "required_qty": float(matching_pick_item.qty),
@@ -557,8 +798,10 @@ class PickListService:
     def complete_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
         """Mark a pick list as COMPLETED.
 
-        Validates that all items have been fully picked before allowing
-        completion.
+        Validates every line against the short-pick policy (``allow_short_pick``
+        + ``short_pick_approval_threshold``): fully-picked lines pass; within-
+        policy short lines record an ``insufficient_quantity`` exception and
+        complete; disallowed / over-threshold short lines block completion.
 
         Args:
             pick_list_id: The pick list to complete.
@@ -569,10 +812,10 @@ class PickListService:
 
         Raises:
             ResourceNotFoundException: If pick list not found.
-            ValidationError: If not all items are fully picked or
-                pick list is not in a completable state.
+            ValidationError: If a short-pick is disallowed or over-threshold,
+                or the pick list is not in a completable state.
 
-        Requirements: 10.6, 10.7, 11.1
+        Requirements: 10.6, 10.7, 11.1; WF-015, EX-002, ALT-004
         """
         pick_list = self.repo.get_by_id(pick_list_id, org_id)
         if not pick_list:
@@ -584,15 +827,11 @@ class PickListService:
                 f"Pick list must be in 'draft' or 'in_progress' status."
             )
 
-        # Validate all items are fully picked
+        # Validate all items are fully picked (short-pick policy, EX-002 / ALT-004).
         for item in pick_list.items:
-            picked = Decimal(str(item.picked_qty or 0))
-            required = Decimal(str(item.qty))
-            if picked < required:
-                raise ValidationError(
-                    f"Cannot complete pick list: item {item.id} has "
-                    f"{picked} picked out of {required} required"
-                )
+            shortfall = self.validate_short_pick(org_id, item)
+            if shortfall is not None:
+                self._capture_short_pick_exception(org_id, item, shortfall)
 
         pick_list.status = PickListStatus.COMPLETED
         pick_list.completed_at = datetime.now(UTC)
@@ -669,6 +908,356 @@ class PickListService:
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
+
+    # ------------------------------------------------------------------
+    # TASK ACCEPT (PR-14 / T-14, WF-010)
+    # ------------------------------------------------------------------
+
+    def accept_task(
+        self,
+        pick_list_id: UUID,
+        org_id: UUID,
+        worker_id: UUID,
+    ) -> PickList:
+        """Record a worker accepting the pick task (WF-010).
+
+        Sets ``accepted_at``/``accepted_by`` (idempotent on the first accept)
+        and moves a ``draft`` pick list to ``in_progress``.
+
+        Raises:
+            ResourceNotFoundException: pick list not found.
+            ValidationError: pick list not in an acceptable state.
+        """
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id == pick_list_id,
+                PickList.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+            raise ValidationError(
+                f"Cannot accept pick list with status '{pick_list.status.value}'"
+            )
+
+        if pick_list.accepted_at is None:
+            pick_list.accepted_at = datetime.now(UTC)
+        pick_list.accepted_by = worker_id
+        pick_list.assigned_to = worker_id
+        if pick_list.status == PickListStatus.DRAFT:
+            pick_list.status = PickListStatus.IN_PROGRESS
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
+    # PRIORITIZATION + TASK AGING (PR-12 / T-12, WF-007, ALT-011)
+    # ------------------------------------------------------------------
+
+    def update_priority(
+        self,
+        pick_list_id: UUID,
+        data: dict,
+        org_id: UUID,
+    ) -> PickList:
+        """Set manual priority/cutoff/wave/route/SLA on a pick list (WF-007).
+
+        Only the fields present (and non-null) in ``data`` are updated.
+        """
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id == pick_list_id,
+                PickList.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        for field in (
+            "priority",
+            "dispatch_cutoff",
+            "wave",
+            "route",
+            "sla_minutes",
+        ):
+            if field in data and data[field] is not None:
+                setattr(pick_list, field, data[field])
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    @staticmethod
+    def priority_sort_key(priority_fields: list[str], pl) -> tuple:
+        """Canonical task-prioritization sort key (WF-007).
+
+        Manual ``priority`` (higher = more urgent) is always first. The
+        configured ``priority_fields`` then refine the order:
+
+        - ``cutoff`` → earlier dispatch cutoff first (``None`` last)
+        - ``wave`` → wave sequence ascending
+        - ``route`` → route code ascending
+
+        Falls back to ``created_at`` ascending (oldest task first).
+        """
+        key: list = [-1 * int(pl.priority or 0)]
+        for field in priority_fields:
+            if field == "cutoff":
+                cutoff = getattr(pl, "dispatch_cutoff", None)
+                key.append(cutoff.timestamp() if cutoff is not None else float("inf"))
+            elif field == "wave":
+                key.append(getattr(pl, "wave", None) or "\uffff")
+            elif field == "route":
+                key.append(getattr(pl, "route", None) or "\uffff")
+        created = getattr(pl, "created_at", None)
+        key.append(created.timestamp() if created is not None else float("inf"))
+        return tuple(key)
+
+    @staticmethod
+    def aging_info(
+        pl,
+        threshold_minutes: int,
+        now: datetime | None = None,
+    ) -> dict:
+        """Compute task-aging status (ALT-011).
+
+        Aging is measured from ``created_at`` (falling back to ``pick_date``)
+        against the effective SLA: ``sla_minutes`` on the pick list if set,
+        otherwise ``pick.aging_threshold_minutes``.
+
+        Returns ``{"age_minutes": int, "is_aging": bool}``.
+        """
+        created = getattr(pl, "created_at", None) or getattr(pl, "pick_date", None)
+        if created is None:
+            return {"age_minutes": 0, "is_aging": False}
+
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+
+        sla = getattr(pl, "sla_minutes", None)
+        effective = sla if sla is not None else threshold_minutes
+
+        current = now or datetime.now(UTC)
+        age_minutes = max(0, int((current - created).total_seconds() // 60))
+        return {
+            "age_minutes": age_minutes,
+            "is_aging": age_minutes >= effective,
+        }
+
+    # ------------------------------------------------------------------
+    # STAGING (PR-10 / T-10, WF-019/020)
+    # ------------------------------------------------------------------
+
+    def validate_staging_lane(
+        self,
+        org_id: UUID,
+        staging_location_id: UUID,
+    ) -> WarehouseLocation:
+        """Return the staging lane, or raise (EX-019/020 — staging unavailable).
+
+        A staging lane is a ``warehouse_locations`` row with
+        ``location_type = 'staging'``.
+        """
+        location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == staging_location_id,
+                WarehouseLocation.organization_id == org_id,
+            )
+            .first()
+        )
+        if location is None:
+            raise ValidationError(
+                f"Staging lane {staging_location_id} not found"
+            )
+        if location.location_type != LocationType.STAGING.value:
+            raise ValidationError(
+                f"Location {staging_location_id} is not a staging lane "
+                f"(type '{location.location_type}')"
+            )
+        return location
+
+    def stage_transfer(
+        self,
+        pick_list_id: UUID,
+        staging_location_id: UUID,
+        org_id: UUID,
+    ) -> PickList:
+        """Assign a staging lane and move picked stock to ``in_transit_to_stage``.
+
+        Raises:
+            ValidationError: invalid staging lane, or pick list not in a
+                stageable state.
+        """
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+            raise ValidationError(
+                f"Cannot stage pick list with status '{pick_list.status.value}'"
+            )
+
+        self.validate_staging_lane(org_id, staging_location_id)
+
+        pick_list.staging_location_id = staging_location_id
+
+        # Move each picked bin-stock record to in_transit_to_stage (WF-016).
+        from app.models.bin_stock_level import BinStockLevel, InventoryStatus
+        from app.services.bin_stock_service import BinStockService
+
+        bin_stock_service = BinStockService(self.db)
+        bin_ids = {
+            item.bin_location_id for item in pick_list.items if item.bin_location_id
+        }
+        for bin_id in bin_ids:
+            records = (
+                self.db.query(BinStockLevel)
+                .filter(
+                    BinStockLevel.bin_location_id == bin_id,
+                    BinStockLevel.organization_id == org_id,
+                    BinStockLevel.inventory_status == InventoryStatus.PICKED.value,
+                )
+                .all()
+            )
+            for record in records:
+                bin_stock_service.transition_status(
+                    record,
+                    InventoryStatus.IN_TRANSIT_TO_STAGE.value,
+                    commit=False,
+                )
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    def validate_stage_scan(
+        self,
+        pick_list: PickList,
+        staging_location_id: UUID,
+    ) -> None:
+        """Raise if the scanned lane is wrong or no lane is assigned (ALT-008)."""
+        if pick_list.staging_location_id is None:
+            raise ValidationError(
+                "Pick list has not been transferred to a staging lane"
+            )
+        if staging_location_id != pick_list.staging_location_id:
+            raise ValidationError(
+                f"Wrong staging lane: expected {pick_list.staging_location_id}, "
+                f"scanned {staging_location_id}"
+            )
+
+    def stage_scan(
+        self,
+        pick_list_id: UUID,
+        staging_location_id: UUID,
+        org_id: UUID,
+    ) -> PickList:
+        """Validate the scanned staging lane and mark the pick list staged.
+
+        Raises:
+            ValidationError: wrong lane scanned (ALT-008), or the pick list
+                has not been transferred to a staging lane.
+        """
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        self.validate_stage_scan(pick_list, staging_location_id)
+
+        if pick_list.staged_at is None:
+            pick_list.staged_at = datetime.now(UTC)
+            self.db.commit()
+            self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
+    # HANDLING UNITS (PR-11 / T-11, WF-018)
+    # ------------------------------------------------------------------
+
+    def validate_handling_unit_assignment(
+        self,
+        org_id: UUID,
+        pick_list_item_id: UUID,
+        handling_unit_id: UUID,
+    ) -> None:
+        """Enforce handling-unit rules when ``pick.enable_handling_unit`` is on.
+
+        - Flag off → skip (legacy).
+        - Unknown handling unit → ResourceNotFoundException.
+        - Handling unit already assigned to another pick item → ValidationError
+          (duplicate HU rejected).
+        """
+        from app.models.handling_unit import HandlingUnit
+        from app.services.pick_settings_service import PickConfigResolver
+
+        if not PickConfigResolver.from_org(self.db, org_id).get_bool(
+            "enable_handling_unit"
+        ):
+            return
+
+        hu = (
+            self.db.query(HandlingUnit)
+            .filter(
+                HandlingUnit.id == handling_unit_id,
+                HandlingUnit.organization_id == org_id,
+            )
+            .first()
+        )
+        if hu is None:
+            raise ResourceNotFoundException(
+                f"Handling unit {handling_unit_id} not found"
+            )
+
+        other = (
+            self.db.query(PickListItem)
+            .filter(
+                PickListItem.organization_id == org_id,
+                PickListItem.handling_unit_id == handling_unit_id,
+                PickListItem.id != pick_list_item_id,
+            )
+            .first()
+        )
+        if other is not None:
+            raise ValidationError(
+                f"Handling unit {handling_unit_id} is already assigned to "
+                f"another pick item"
+            )
+
+    def assign_handling_unit(
+        self,
+        pick_list_item_id: UUID,
+        handling_unit_id: UUID,
+        org_id: UUID,
+    ) -> PickListItem:
+        """Associate a handling unit with a pick list item (WF-018)."""
+        pick_item = (
+            self.db.query(PickListItem)
+            .filter(
+                PickListItem.id == pick_list_item_id,
+                PickListItem.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_item is None:
+            raise ResourceNotFoundException(
+                f"Pick list item {pick_list_item_id} not found"
+            )
+
+        self.validate_handling_unit_assignment(
+            org_id, pick_list_item_id, handling_unit_id
+        )
+        pick_item.handling_unit_id = handling_unit_id
+        self.db.commit()
+        self.db.refresh(pick_item)
+        return pick_item
 
     def _apply_routing_optimization(self, pick_list: PickList) -> None:
         """Apply RoutingOptimizer to sort pick list items by optimal traversal order.
@@ -859,7 +1448,12 @@ class PickListService:
         }
 
     @staticmethod
-    def _to_list_item(pl) -> dict:
+    def _to_list_item(pl, aging_threshold: int | None = None) -> dict:
+        aging = (
+            PickListService.aging_info(pl, aging_threshold)
+            if aging_threshold is not None
+            else {"age_minutes": 0, "is_aging": False}
+        )
         return {
             "id": pl.id,
             "organization_id": pl.organization_id,
@@ -872,4 +1466,11 @@ class PickListService:
             "assigned_to": pl.assigned_to,
             "items_count": len(pl.items) if pl.items else 0,
             "created_at": pl.created_at,
+            "priority": pl.priority,
+            "dispatch_cutoff": pl.dispatch_cutoff,
+            "wave": pl.wave,
+            "route": pl.route,
+            "sla_minutes": pl.sla_minutes,
+            "age_minutes": aging["age_minutes"],
+            "is_aging": aging["is_aging"],
         }

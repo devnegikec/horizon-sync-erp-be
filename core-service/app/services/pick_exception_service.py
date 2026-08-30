@@ -14,6 +14,7 @@ model and ``_append_audit`` helper already support those event types.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -227,6 +228,134 @@ class PickExceptionService:
             .order_by(PickExceptionAudit.created_at.asc())
             .all()
         )
+
+    # -- supervisor actions (PR-09 / T-03) -----------------------------------
+
+    def resolve(
+        self,
+        organization_id: UUID,
+        exception_id: UUID,
+        resolution: str,
+        resolved_by: UUID | None = None,
+    ) -> PickException:
+        """Resolve an open/approved exception with a recorded resolution.
+
+        Writes an immutable RESOLVED audit row and best-effort in-app alert to
+        the reporter (Q11).
+
+        Raises:
+            ValidationError: if the exception is already resolved/cancelled.
+        """
+        exception = self.get(organization_id, exception_id)
+        if exception.status in {
+            PickExceptionStatus.RESOLVED.value,
+            PickExceptionStatus.CANCELLED.value,
+        }:
+            raise ValidationError(
+                f"Cannot resolve pick exception with status '{exception.status}'"
+            )
+
+        from_state = exception.status
+        exception.status = PickExceptionStatus.RESOLVED.value
+        exception.resolution = resolution
+
+        self._append_audit(
+            exception,
+            PickExceptionAuditEvent.RESOLVED,
+            actor_id=resolved_by,
+            from_state=from_state,
+            to_state=PickExceptionStatus.RESOLVED.value,
+            details={"resolution": resolution},
+        )
+        self.db.commit()
+        self.db.refresh(exception)
+        self._notify_reporter(exception, "resolved", resolved_by)
+        return exception
+
+    def approve(
+        self,
+        organization_id: UUID,
+        exception_id: UUID,
+        approver: UUID | None,
+        decision: str,
+    ) -> PickException:
+        """Approve or reject an exception (supervisor decision).
+
+        Sets the approver + approved_at and moves the status to
+        ``approved``/``rejected``, writing an immutable audit row and a
+        best-effort in-app alert to the reporter (Q11).
+
+        Raises:
+            ValidationError: invalid decision, or exception already
+                resolved/cancelled.
+        """
+        exception = self.get(organization_id, exception_id)
+
+        if decision not in {
+            PickExceptionStatus.APPROVED.value,
+            PickExceptionStatus.REJECTED.value,
+        }:
+            raise ValidationError(
+                f"Invalid decision {decision!r}; must be 'approved' or 'rejected'"
+            )
+        if exception.status in {
+            PickExceptionStatus.RESOLVED.value,
+            PickExceptionStatus.CANCELLED.value,
+        }:
+            raise ValidationError(
+                f"Cannot {decision} pick exception with status '{exception.status}'"
+            )
+
+        from_state = exception.status
+        exception.approver = approver
+        exception.approved_at = datetime.now(UTC)
+        exception.status = decision
+        self._append_audit(
+            exception,
+            PickExceptionAuditEvent(decision),
+            actor_id=approver,
+            from_state=from_state,
+            to_state=decision,
+        )
+        self.db.commit()
+        self.db.refresh(exception)
+        self._notify_reporter(exception, decision, approver)
+        return exception
+
+    def _notify_reporter(
+        self,
+        exception: PickException,
+        event: str,
+        actor_id: UUID | None,
+    ) -> None:
+        """Best-effort in-app alert to the reporter (Q11, email/notification).
+
+        Never raises: alert delivery must not break the queue workflow.
+        """
+        if exception.reported_by is None:
+            return
+        try:
+            from app.models.base import NotificationType
+            from app.services.notification_service import NotificationService
+
+            NotificationService(self.db).create(
+                organization_id=exception.organization_id,
+                user_id=exception.reported_by,
+                type=NotificationType.PICK_EXCEPTION.value,
+                title=f"Pick exception {event}",
+                message=(
+                    f"Your pick exception '{exception.reason_code}' was {event}."
+                ),
+                entity_type="pick_exception",
+                entity_id=exception.id,
+                sender_id=actor_id,
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to deliver in-app alert for pick exception %s",
+                exception.id,
+                exc_info=True,
+            )
 
     # -- audit helper (append-only) -----------------------------------------
 

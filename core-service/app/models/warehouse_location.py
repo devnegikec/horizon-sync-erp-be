@@ -32,6 +32,7 @@ class LocationType(str, enum.Enum):
     BAY = "bay"
     LEVEL = "level"
     BIN = "bin"
+    STAGING = "staging"
 
 
 class PutAwayListStatus(str, enum.Enum):
