@@ -369,19 +369,10 @@ class PutAwayService:
                 )
                 continue
 
-            # Resolve item from SKU — match by item_code, sku or gtin.
-            # QR-product-linked slip items may store the GTIN in the sku field,
-            # so gtin is included for defensive/backward compatibility.
-            item = (
-                self.db.query(Item)
-                .filter(
-                    (Item.item_code == slip_item.sku)
-                    | (Item.sku == slip_item.sku)
-                    | (Item.gtin == slip_item.sku),
-                    Item.organization_id == org_id,
-                )
-                .first()
-            )
+            # Resolve item from SKU with deterministic priority (item_code →
+            # sku → gtin). QR-product-linked slip items may store the GTIN in
+            # the sku field, so gtin remains included for compatibility.
+            item = self._resolve_item_by_sku(slip_item.sku, org_id)
 
             if item is None:
                 # If item not found by code, skip this item
@@ -551,18 +542,7 @@ class PutAwayService:
         if duplicate is not None:
             return existing_list
 
-        item = (
-            self.db.query(Item)
-            .filter(
-                Item.organization_id == org_id,
-                (
-                    (Item.item_code == slip_item.sku)
-                    | (Item.sku == slip_item.sku)
-                    | (Item.gtin == slip_item.sku)
-                ),
-            )
-            .first()
-        )
+        item = self._resolve_item_by_sku(slip_item.sku, org_id)
         if item is None:
             raise ValidationError(
                 f"Released SKU '{slip_item.sku}' no longer resolves to an active item"
@@ -780,6 +760,23 @@ class PutAwayService:
     # ------------------------------------------------------------------
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
+
+    def _resolve_item_by_sku(self, sku_value: str, org_id: UUID) -> Item | None:
+        """Resolve an Item deterministically by item_code → sku → gtin.
+
+        The same value can be one item's GTIN while also being another item's
+        code or SKU, so the previous OR-filtered ``.first()`` could return an
+        arbitrary match. Explicit priority makes the resolution stable.
+        """
+        for column in (Item.item_code, Item.sku, Item.gtin):
+            item = (
+                self.db.query(Item)
+                .filter(column == sku_value, Item.organization_id == org_id)
+                .first()
+            )
+            if item is not None:
+                return item
+        return None
 
     def _assign_bins(
         self,

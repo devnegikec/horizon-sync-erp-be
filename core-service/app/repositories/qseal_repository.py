@@ -45,18 +45,6 @@ class QSealRepository:
             .first()
         )
 
-    def get_by_serial_global(self, serial_number: str) -> QSealTrack | None:
-        """Resolve a QSeal parent by serial alone (serials are globally unique)."""
-        return (
-            self.db.query(QSealTrack)
-            .filter(QSealTrack.serial_number == serial_number)
-            .first()
-        )
-
-    def get_by_id_global(self, node_id: UUID) -> QSealTrack | None:
-        """Resolve a QSeal parent by ID alone."""
-        return self.db.query(QSealTrack).filter(QSealTrack.id == node_id).first()
-
     def list_roots(
         self,
         organization_id: UUID,

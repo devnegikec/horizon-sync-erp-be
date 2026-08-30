@@ -164,7 +164,9 @@ class ScannedItemTrackingService:
         """
         from app.services.qr_decoder import decode_qr_payload
 
-        payload = decode_qr_payload(qr_data, db=self.db)
+        payload = decode_qr_payload(
+            qr_data, db=self.db, organization_id=organization_id
+        )
 
         existing = self.get_by_qr(payload.id)
         if existing is not None:

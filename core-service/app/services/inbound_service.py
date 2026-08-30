@@ -79,6 +79,7 @@ class InboundService:
                     AsnOrder.id == asn_order_id,
                     AsnOrder.organization_id == organization_id,
                 )
+                .with_for_update()
                 .first()
             )
             if asn_order is None:
@@ -283,8 +284,12 @@ class InboundService:
                 required_state=["open"],
             )
 
-        # Decode QR payload — supports both JSON and URL format QR codes
-        payload = decode_qr_payload(qr_data, db=self.db)
+        # Decode QR payload — supports both JSON and URL format QR codes.
+        # Organization scoping prevents a foreign tenant's ProductItem serial
+        # from being decoded here and then matching a same-SKU local Item.
+        payload = decode_qr_payload(
+            qr_data, db=self.db, organization_id=organization_id
+        )
 
         # Check for duplicate qr_identifier within this session
         existing_items = self.session_repo.get_items(session_id)
@@ -670,7 +675,50 @@ class InboundService:
             )
 
         cancelled_session = self.session_repo.cancel_session(session_id)
+        if cancelled_session is None:
+            raise StateError(
+                message="Session was closed concurrently and cannot be cancelled",
+                current_state="closed",
+                required_state=["open"],
+            )
+
+        # Discard the session's scanned items (documented discard behavior).
+        self._discard_session_scans(session_id)
+
         return self._session_to_dict(cancelled_session)
+
+    def _discard_session_scans(self, session_id: UUID) -> None:
+        """Delete scanned items for a cancelled session.
+
+        Removes ScanSessionItem rows plus their pending ScannedItemTracking
+        rows. Tracking rows that already entered stock (e.g. HOLD) are left
+        intact so managers can still disposition them; their scan items are
+        therefore kept as well (the tracking FK references them).
+        """
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        # Remove pending dual-axis tracking rows (nothing entered into stock).
+        self.db.query(ScannedItemTracking).filter(
+            ScannedItemTracking.scan_session_id == session_id,
+            ScannedItemTracking.receiving_status == "scanned",
+            ScannedItemTracking.stock_entered == False,  # noqa: E712
+        ).delete(synchronize_session=False)
+
+        # Delete scan items no longer referenced by a retained tracking row.
+        retained_tracking_item_ids = (
+            self.db.query(ScannedItemTracking.scan_session_item_id)
+            .filter(
+                ScannedItemTracking.scan_session_id == session_id,
+                ScannedItemTracking.scan_session_item_id.isnot(None),
+            )
+            .subquery()
+        )
+        self.db.query(ScanSessionItem).filter(
+            ScanSessionItem.session_id == session_id,
+            ~ScanSessionItem.id.in_(retained_tracking_item_ids),
+        ).delete(synchronize_session=False)
+
+        self.db.commit()
 
     # ------------------------------------------------------------------
     # GET SESSION SUMMARY

@@ -195,36 +195,68 @@ class AsnOrderRepository:
             }.get(flag or "", "accepted")
             receiving_agg[sku][category] += quantity
 
-        result = []
+        # Group ASN lines by SKU so aggregated receipt quantities can be
+        # distributed across duplicate-SKU lines instead of being duplicated.
+        category_keys = ("accepted", "rejected", "short", "excess", "damaged", "hold")
+        line_rows: list[dict] = []
+        sku_line_indices: dict[str, list[int]] = {}
         for asn_item in asn_items:
             sku = asn_item.item.sku if asn_item.item else None
-            agg = receiving_agg.get(
-                sku,
+            expected = int(asn_item.qty) if asn_item.qty else 0
+            idx = len(line_rows)
+            line_rows.append(
                 {
-                    "accepted": 0,
-                    "rejected": 0,
-                    "short": 0,
-                    "excess": 0,
-                    "damaged": 0,
-                    "hold": 0,
-                },
+                    "asn_item_id": str(asn_item.id),
+                    "item_id": str(asn_item.item_id),
+                    "sku": sku,
+                    "item_name": asn_item.item.item_name if asn_item.item else None,
+                    "expected_qty": expected,
+                    "allocated": dict.fromkeys(category_keys, 0),
+                }
             )
+            if sku:
+                sku_line_indices.setdefault(sku, []).append(idx)
+
+        for sku, totals in receiving_agg.items():
+            indices = sku_line_indices.get(sku)
+            if not indices:
+                continue
+            for category in category_keys:
+                remaining = totals.get(category, 0)
+                if remaining <= 0:
+                    continue
+                # Fill each duplicate line up to its expected quantity, then
+                # attach any surplus to the last line (single overage).
+                for idx in indices:
+                    if remaining <= 0:
+                        break
+                    allocated = sum(line_rows[idx]["allocated"].values())
+                    outstanding = max(0, line_rows[idx]["expected_qty"] - allocated)
+                    take = min(outstanding, remaining)
+                    line_rows[idx]["allocated"][category] += take
+                    remaining -= take
+                if remaining > 0:
+                    line_rows[indices[-1]]["allocated"][category] += remaining
+
+        result = []
+        for row in line_rows:
+            agg = row["allocated"]
             accepted = agg["accepted"]
             rejected = agg["rejected"]
             short = agg["short"]
             excess = agg["excess"]
             damaged = agg["damaged"]
             hold = agg["hold"]
-            expected = int(asn_item.qty) if asn_item.qty else 0
+            expected = row["expected_qty"]
             resolved = accepted + rejected + excess + damaged + hold
             pending = expected - resolved
 
             result.append(
                 {
-                    "asn_item_id": str(asn_item.id),
-                    "item_id": str(asn_item.item_id),
-                    "sku": sku,
-                    "item_name": asn_item.item.item_name if asn_item.item else None,
+                    "asn_item_id": row["asn_item_id"],
+                    "item_id": row["item_id"],
+                    "sku": row["sku"],
+                    "item_name": row["item_name"],
                     "expected_qty": expected,
                     "accepted_qty": accepted,
                     "rejected_qty": rejected,

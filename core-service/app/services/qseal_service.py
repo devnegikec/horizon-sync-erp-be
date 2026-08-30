@@ -190,22 +190,12 @@ class QSealService:
     # ── QSeal Scan ────────────────────────────────────────────────────────────
 
     def record_scan(self, req: QSealScanRequest, organization_id: UUID):
-        # 1. Try QSealTrack (parent nodes), org-scoped first, then globally.
-        #    QSeal serials are globally unique and this endpoint is public, so
-        #    a global fallback keeps parent scans working when the device's
-        #    organization_id doesn't exactly match the node's org.
+        # Resolve the QSealTrack parent strictly within the supplied tenant.
+        # The /scan endpoint is public and organization_id is caller-supplied,
+        # so a global fallback here would let a caller resolve (and expose)
+        # another tenant's QSeal node.
         node = self.repo.get_by_serial(req.serial_number, organization_id)
         is_parent = True
-        if not node:
-            node = self.repo.get_by_serial_global(req.serial_number)
-            if node:
-                logger.warning(
-                    "[QSEAL] record_scan resolved parent serial=%s globally "
-                    "(requested org=%s, stored org=%s)",
-                    req.serial_number,
-                    organization_id,
-                    node.organization_id,
-                )
 
         # 2. Fallback: try QSealParameters (child units from ProductItems)
         if not node:
@@ -374,23 +364,13 @@ class QSealService:
 
         parent = self.repo.get_by_id(parent_id, organization_id)
         if not parent:
-            parent = self.repo.get_by_id_global(parent_id)
-            if parent:
-                logger.warning(
-                    "[QSEAL] linked-units resolved parent=%s globally "
-                    "(requested org=%s, stored org=%s)",
-                    parent_id,
-                    organization_id,
-                    parent.organization_id,
-                )
-        if not parent:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Parent QSeal node not found",
             )
 
-        # Scope child lookup to the parent's own organization so linked units
-        # resolve even when the caller's org differs from the parent's.
+        # The parent is already org-scoped, so linked units are resolved within
+        # the same organization.
         parent_org = parent.organization_id or organization_id
 
         # Fetch linked QSealParameters with ProductItem + QRProduct joins
@@ -673,6 +653,7 @@ class QSealService:
                 QRBlock.id == block_id,
                 QRBlock.organization_id == organization_id,
             )
+            .with_for_update()
             .first()
         )
         if not block:

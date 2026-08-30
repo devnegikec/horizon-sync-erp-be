@@ -158,17 +158,25 @@ class ScanSessionRepository:
         Returns:
             Updated ScanSession or None if not found.
         """
-        session = (
-            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
+        # Conditional update: only cancel sessions that are still open. If a
+        # concurrent end_session closed the session (and generated its
+        # receiving slip) between the caller's open-check and this update, the
+        # WHERE clause prevents overwriting 'closed' with 'cancelled'.
+        updated = (
+            self.db.query(ScanSession)
+            .filter(ScanSession.id == session_id, ScanSession.status == "open")
+            .update(
+                {
+                    ScanSession.status: "cancelled",
+                    ScanSession.ended_at: datetime.now(UTC),
+                },
+                synchronize_session=False,
+            )
         )
-        if session is None:
-            return None
-
-        session.status = "cancelled"
-        session.ended_at = datetime.now(UTC)
         self.db.commit()
-        self.db.refresh(session)
-        return session
+        if updated == 0:
+            return None
+        return self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
 
     # ------------------------------------------------------------------
     # SET ASN ORDER

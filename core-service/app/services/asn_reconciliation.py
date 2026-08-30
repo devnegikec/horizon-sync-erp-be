@@ -45,10 +45,55 @@ def compute_asn_reconciliation(
     """
     scans = active_scans_by_sku or {}
 
+    # Pre-compute finalized physical quantities per line.
+    base: list[dict[str, Any]] = []
+    for li in line_items_data:
+        base.append(
+            {
+                "li": li,
+                "expected": li["expected_qty"],
+                "finalized": li["accepted_qty"]
+                + li["rejected_qty"]
+                + li["excess_qty"]
+                + li["damaged_qty"]
+                + li["hold_qty"],
+            }
+        )
+
+    # Distribute active-session scans across lines sharing the same SKU so a
+    # duplicate-SKU ASN doesn't credit the whole scan quantity to every line.
+    sku_indices: dict[str, list[int]] = {}
+    for idx, b in enumerate(base):
+        sku = b["li"]["sku"]
+        if sku:
+            sku_indices.setdefault(sku, []).append(idx)
+
+    scan_alloc = [0] * len(base)
+    for sku, qty in scans.items():
+        if not qty:
+            continue
+        indices = sku_indices.get(sku, [])
+        if not indices:
+            continue
+        remaining = qty
+        # Fill each duplicate line up to its outstanding expected quantity.
+        for idx in indices:
+            if remaining <= 0:
+                break
+            outstanding = max(0, base[idx]["expected"] - base[idx]["finalized"])
+            alloc = min(outstanding, remaining)
+            scan_alloc[idx] = alloc
+            remaining -= alloc
+        # Surplus beyond every line's expectation is over-receipt; attach it to
+        # the last matching line so it surfaces as an overage exactly once.
+        if remaining > 0:
+            scan_alloc[indices[-1]] += remaining
+
     line_items: list[dict[str, Any]] = []
     matched = partial = not_received = over = 0
 
-    for li in line_items_data:
+    for idx, b in enumerate(base):
+        li = b["li"]
         expected = li["expected_qty"]
         accepted = li["accepted_qty"]
         rejected_q = li["rejected_qty"]
@@ -58,8 +103,8 @@ def compute_asn_reconciliation(
         hold_q = li["hold_qty"]
         pending_q = li["pending_qty"]
 
-        finalized_physical_qty = accepted + rejected_q + excess_q + damaged_q + hold_q
-        scanned_q = finalized_physical_qty + scans.get(li["sku"], 0)
+        finalized_physical_qty = b["finalized"]
+        scanned_q = finalized_physical_qty + scan_alloc[idx]
         short_q = max(short_q, expected - scanned_q, 0)
         over_q = max(li["over_qty"], scanned_q - expected, 0)
         has_exception = any((rejected_q, excess_q, damaged_q, hold_q))

@@ -95,6 +95,22 @@ class TestLiveAsnReconciliation:
         assert line["pending_qty"] == 6
         assert result["reconciliation_status"] == "partial"
 
+    def test_active_scans_are_distributed_across_duplicate_sku_lines(self):
+        lines = [
+            _line(asn_item_id="ai-1", sku="SKU-A", expected=10),
+            _line(asn_item_id="ai-2", sku="SKU-A", expected=10),
+        ]
+        result = compute_asn_reconciliation(
+            lines,
+            active_scans_by_sku={"SKU-A": 12},
+            include_active_session=True,
+        )
+
+        by_id = {li["asn_item_id"]: li for li in result["line_items"]}
+        assert by_id["ai-1"]["scanned_qty"] == 10
+        assert by_id["ai-2"]["scanned_qty"] == 2
+        assert result["scanned_total_qty"] == 12
+
 
 class TestMatchReceipt:
     """IN-WF-012 — fully matched receipt becomes reconciled / ready."""

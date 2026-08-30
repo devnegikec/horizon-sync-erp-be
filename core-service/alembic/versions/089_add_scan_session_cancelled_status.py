@@ -28,6 +28,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Roll cancelled sessions back to 'closed' first — otherwise rows with
+    # status='cancelled' would violate the recreated ('open','closed') check.
+    op.execute("UPDATE scan_sessions SET status = 'closed' WHERE status = 'cancelled'")
     op.drop_constraint("chk_session_status", "scan_sessions", type_="check")
     op.create_check_constraint(
         "chk_session_status",

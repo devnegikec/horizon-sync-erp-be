@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.schemas.qseal import (
     QSealAggregationResponse,
     QSealAutoLinkRequest,
@@ -264,7 +264,7 @@ def auto_link_block(
     block_id: UUID,
     data: QSealAutoLinkRequest | None = Body(default=None),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission("qr_product.create")),
 ):
     """Automatically group a block's generated units into master packs.
 
