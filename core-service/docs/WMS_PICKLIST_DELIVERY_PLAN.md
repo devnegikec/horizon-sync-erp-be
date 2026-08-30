@@ -171,7 +171,7 @@ Covers: **WF-022**, ALT-009.
 - **E2E:** simulate outage → retry shown → alert raised.
 
 **Open questions**
-- **Q8 — ERP integration mode:** real-time sync or async queue? **Answer:** _(pending)_
+- **Q8 — ERP integration mode:** real-time sync or async queue? **Answer:** Async queue. A new `erp_sync_messages` outbound queue decouples pick completion/dispatch from ERP delivery (WF-022). Messages are enqueued on pick-list completion (`status_update`) and dispatch creation (`dispatch_created`), delivered by a flush step with exponential-backoff retry (`pick.erp_sync_max_retries` / `pick.erp_sync_retry_backoff_minutes`), and — once retries are exhausted — a failure alert is raised in-app (`NotificationType.ERP_SYNC_FAILED`, ALT-009). The transport is a pluggable callable; the real SAP transport is the documented extension point (default logs + dequeues as a no-op).
 
 ### PR-14 — Task accept + login session controls (T-14)
 Covers: **WF-009/010**, flags `login_lockout_attempts`, `session_timeout_minutes`.

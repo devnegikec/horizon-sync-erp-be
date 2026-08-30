@@ -124,6 +124,18 @@ PICK_CONFIG_CATALOG: dict[str, dict[str, Any]] = {
         "label": "Priority fields",
         "description": "Fields that drive task prioritization (cutoff/wave/route, WF-007).",
     },
+    "erp_sync_max_retries": {
+        "type": INT,
+        "default": 3,
+        "label": "ERP sync max retries",
+        "description": "Outbound ERP sync delivery attempts before a failure alert (WF-022 / ALT-009).",
+    },
+    "erp_sync_retry_backoff_minutes": {
+        "type": INT,
+        "default": 5,
+        "label": "ERP sync retry backoff (minutes)",
+        "description": "Base exponential backoff between ERP sync retries (WF-022 / ALT-009).",
+    },
     "backorder_rule": {
         "type": ENUM,
         "default": "partial",
