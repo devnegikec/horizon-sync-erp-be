@@ -161,7 +161,7 @@ Covers: **WF-007**, ALT-011, flags `priority_fields`, `aging_threshold_minutes`.
 - **E2E:** set priority → list reorders; aged task shows warning.
 
 **Open questions**
-- **Q7 — Prioritization/wave:** orders arrive with dispatch cutoff/wave/route from SAP, or manual priority only? **Answer:** _(pending)_
+- **Q7 — Prioritization/wave:** orders arrive with dispatch cutoff/wave/route from SAP, or manual priority only? **Answer:** Both. SAP-supplied `dispatch_cutoff`/`wave`/`route` pass through on the pick list (available on `create_from_invoice`/import), and a manual `priority` override is set via `PATCH /outbound/{id}/priority`. The `pick.priority_fields` config list selects which fields drive ordering (cutoff/wave/route); manual `priority` always sorts first (higher = more urgent). Task aging (ALT-011) is computed from `created_at` age vs `pick.aging_threshold_minutes`, overridable per task via `sla_minutes`.
 
 ### PR-13 — ERP sync queue + retry + alert (T-13)
 Covers: **WF-022**, ALT-009.

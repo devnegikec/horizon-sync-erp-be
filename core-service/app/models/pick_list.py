@@ -66,6 +66,14 @@ class PickList(Base):
     )
     staged_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Columns added by migration 097 for prioritization + task aging
+    # (PR-12 / T-12, WF-007, ALT-011).
+    priority = Column(Integer, default=0, nullable=False)
+    dispatch_cutoff = Column(DateTime(timezone=True), nullable=True)
+    wave = Column(String(100), nullable=True)
+    route = Column(String(100), nullable=True)
+    sla_minutes = Column(Integer, nullable=True)
+
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

@@ -119,7 +119,12 @@ class PickListService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(x) for x in items], pagination
+        aging_threshold = self._pick_config(organization_id).get_int(
+            "aging_threshold_minutes"
+        )
+        return [
+            self._to_list_item(x, aging_threshold) for x in items
+        ], pagination
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -905,6 +910,102 @@ class PickListService:
         return pick_list
 
     # ------------------------------------------------------------------
+    # PRIORITIZATION + TASK AGING (PR-12 / T-12, WF-007, ALT-011)
+    # ------------------------------------------------------------------
+
+    def update_priority(
+        self,
+        pick_list_id: UUID,
+        data: dict,
+        org_id: UUID,
+    ) -> PickList:
+        """Set manual priority/cutoff/wave/route/SLA on a pick list (WF-007).
+
+        Only the fields present (and non-null) in ``data`` are updated.
+        """
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id == pick_list_id,
+                PickList.organization_id == org_id,
+            )
+            .first()
+        )
+        if pick_list is None:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        for field in (
+            "priority",
+            "dispatch_cutoff",
+            "wave",
+            "route",
+            "sla_minutes",
+        ):
+            if field in data and data[field] is not None:
+                setattr(pick_list, field, data[field])
+
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    @staticmethod
+    def priority_sort_key(priority_fields: list[str], pl) -> tuple:
+        """Canonical task-prioritization sort key (WF-007).
+
+        Manual ``priority`` (higher = more urgent) is always first. The
+        configured ``priority_fields`` then refine the order:
+
+        - ``cutoff`` → earlier dispatch cutoff first (``None`` last)
+        - ``wave`` → wave sequence ascending
+        - ``route`` → route code ascending
+
+        Falls back to ``created_at`` ascending (oldest task first).
+        """
+        key: list = [-1 * int(pl.priority or 0)]
+        for field in priority_fields:
+            if field == "cutoff":
+                cutoff = getattr(pl, "dispatch_cutoff", None)
+                key.append(cutoff.timestamp() if cutoff is not None else float("inf"))
+            elif field == "wave":
+                key.append(getattr(pl, "wave", None) or "\uffff")
+            elif field == "route":
+                key.append(getattr(pl, "route", None) or "\uffff")
+        created = getattr(pl, "created_at", None)
+        key.append(created.timestamp() if created is not None else float("inf"))
+        return tuple(key)
+
+    @staticmethod
+    def aging_info(
+        pl,
+        threshold_minutes: int,
+        now: datetime | None = None,
+    ) -> dict:
+        """Compute task-aging status (ALT-011).
+
+        Aging is measured from ``created_at`` (falling back to ``pick_date``)
+        against the effective SLA: ``sla_minutes`` on the pick list if set,
+        otherwise ``pick.aging_threshold_minutes``.
+
+        Returns ``{"age_minutes": int, "is_aging": bool}``.
+        """
+        created = getattr(pl, "created_at", None) or getattr(pl, "pick_date", None)
+        if created is None:
+            return {"age_minutes": 0, "is_aging": False}
+
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+
+        sla = getattr(pl, "sla_minutes", None)
+        effective = sla if sla is not None else threshold_minutes
+
+        current = now or datetime.now(UTC)
+        age_minutes = max(0, int((current - created).total_seconds() // 60))
+        return {
+            "age_minutes": age_minutes,
+            "is_aging": age_minutes >= effective,
+        }
+
+    # ------------------------------------------------------------------
     # STAGING (PR-10 / T-10, WF-019/020)
     # ------------------------------------------------------------------
 
@@ -1301,7 +1402,12 @@ class PickListService:
         }
 
     @staticmethod
-    def _to_list_item(pl) -> dict:
+    def _to_list_item(pl, aging_threshold: int | None = None) -> dict:
+        aging = (
+            PickListService.aging_info(pl, aging_threshold)
+            if aging_threshold is not None
+            else {"age_minutes": 0, "is_aging": False}
+        )
         return {
             "id": pl.id,
             "organization_id": pl.organization_id,
@@ -1314,4 +1420,11 @@ class PickListService:
             "assigned_to": pl.assigned_to,
             "items_count": len(pl.items) if pl.items else 0,
             "created_at": pl.created_at,
+            "priority": pl.priority,
+            "dispatch_cutoff": pl.dispatch_cutoff,
+            "wave": pl.wave,
+            "route": pl.route,
+            "sla_minutes": pl.sla_minutes,
+            "age_minutes": aging["age_minutes"],
+            "is_aging": aging["is_aging"],
         }

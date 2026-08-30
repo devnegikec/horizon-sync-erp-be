@@ -27,7 +27,16 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -62,9 +71,10 @@ from app.schemas.outbound import (
     SAPInvoicePayload,
     StageScanRequest,
     StageTransferRequest,
+    UpdatePriorityRequest,
 )
 from app.services.gate_verification_service import GateVerificationService
-from app.services.order_import_service import ImportResult, OrderImportService
+from app.services.order_import_service import OrderImportService
 from app.services.outbound_service import OutboundService
 from app.services.pick_idempotency_service import (
     OPERATION_CANCEL,
@@ -526,6 +536,21 @@ def _resolve_worker_name(worker_id, db) -> str | None:
     return str(worker_id)
 
 
+def _pick_list_aging(pl, db) -> dict:
+    """Compute task-aging status (ALT-011) using the org's aging threshold."""
+    threshold = 120
+    if db is not None:
+        try:
+            from app.services.pick_settings_service import PickConfigResolver
+
+            threshold = PickConfigResolver.from_org(db, pl.organization_id).get_int(
+                "aging_threshold_minutes"
+            )
+        except Exception:
+            pass
+    return PickListService.aging_info(pl, threshold)
+
+
 def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     """Convert a PickList model to an OutboundPickListResponse."""
     progress = _compute_progress(pl)
@@ -594,6 +619,7 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         )
 
     worker_name = _resolve_worker_name(pl.assigned_to, db)
+    aging = _pick_list_aging(pl, db)
 
     return OutboundPickListResponse(
         id=str(pl.id),
@@ -609,6 +635,13 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
         created_at=pl.created_at.isoformat() if pl.created_at else None,
         updated_at=pl.updated_at.isoformat() if pl.updated_at else None,
+        priority=pl.priority or 0,
+        dispatch_cutoff=pl.dispatch_cutoff.isoformat() if pl.dispatch_cutoff else None,
+        wave=pl.wave,
+        route=pl.route,
+        sla_minutes=pl.sla_minutes,
+        age_minutes=aging["age_minutes"],
+        is_aging=aging["is_aging"],
         items=items,
         progress=progress,
     )
@@ -745,7 +778,8 @@ async def list_pick_lists(
         None, description="Filter by SAP invoice reference"
     ),
     sort_by: str = Query(
-        "created_at", description="Sort field: created_at, pick_list_no, status"
+        "created_at",
+        description="Sort field: created_at, pick_list_no, status, priority",
     ),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -807,6 +841,7 @@ async def list_pick_lists(
                 continue
 
             progress = _compute_progress(pl)
+            aging = _pick_list_aging(pl, db)
             result_items.append(
                 {
                     "id": str(pl.id),
@@ -822,6 +857,14 @@ async def list_pick_lists(
                     if pl.completed_at
                     else None,
                     "created_at": pl.created_at.isoformat() if pl.created_at else None,
+                    "priority": pl.priority or 0,
+                    "dispatch_cutoff": pl.dispatch_cutoff.isoformat()
+                    if pl.dispatch_cutoff
+                    else None,
+                    "wave": pl.wave,
+                    "route": pl.route,
+                    "age_minutes": aging["age_minutes"],
+                    "is_aging": aging["is_aging"],
                     "progress": progress,
                 }
             )
@@ -1186,3 +1229,35 @@ async def assign_handling_unit(
         pick_list_item_id=str(pick_item.id),
         handling_unit_id=str(pick_item.handling_unit_id),
     )
+
+
+@router.patch(
+    "/{pick_list_id}/priority",
+    response_model=OutboundPickListResponse,
+    summary="Set task prioritization fields",
+    description="Set manual priority, dispatch cutoff, wave, route, or SLA on a pick list (WF-007)",
+)
+async def update_pick_list_priority(
+    pick_list_id: UUID,
+    data: UpdatePriorityRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Set task prioritization fields on a pick list (WF-007).
+
+    Only the supplied (non-null) fields are updated. ``priority`` is the
+    manual override (higher = more urgent); ``dispatch_cutoff``/``wave``/
+    ``route`` mirror SAP-supplied dispatch data; ``sla_minutes`` overrides
+    the org aging threshold for this task (ALT-011).
+
+    Requirements: WF-007, ALT-011
+    """
+    service = PickListService(db)
+    pick_list = service.update_priority(
+        pick_list_id=pick_list_id,
+        data=data.model_dump(exclude_unset=True),
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+

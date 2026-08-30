@@ -12,6 +12,7 @@ Requirements: 9.1, 10.1, 11.3, 11.4
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -80,6 +81,22 @@ class AssignHandlingUnitRequest(BaseModel):
     """Request schema for associating a handling unit with a pick item (WF-018)."""
 
     handling_unit_id: UUID = Field(..., description="Handling unit UUID")
+
+
+class UpdatePriorityRequest(BaseModel):
+    """Request schema for setting task prioritization fields (WF-007)."""
+
+    priority: int | None = Field(
+        None, ge=0, description="Manual priority (higher = more urgent)"
+    )
+    dispatch_cutoff: datetime | None = Field(
+        None, description="Dispatch cutoff time (SAP-supplied or manual)"
+    )
+    wave: str | None = Field(None, max_length=100, description="Wave sequence")
+    route: str | None = Field(None, max_length=100, description="Route code")
+    sla_minutes: int | None = Field(
+        None, gt=0, description="Per-task SLA in minutes (overrides aging threshold)"
+    )
 
 
 class HandlingUnitAssignmentResponse(BaseModel):
@@ -220,6 +237,13 @@ class OutboundPickListResponse(BaseModel):
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    priority: int = 0
+    dispatch_cutoff: str | None = None
+    wave: str | None = None
+    route: str | None = None
+    sla_minutes: int | None = None
+    age_minutes: int = 0
+    is_aging: bool = False
     items: list[PickListItemResponse] = []
     progress: PickListProgress | None = None
 
@@ -257,6 +281,12 @@ class OutboundPickListListItem(BaseModel):
     pick_date: str | None = None
     completed_at: str | None = None
     created_at: str | None = None
+    priority: int = 0
+    dispatch_cutoff: str | None = None
+    wave: str | None = None
+    route: str | None = None
+    age_minutes: int = 0
+    is_aging: bool = False
     progress: PickListProgress | None = None
 
 
