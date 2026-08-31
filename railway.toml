@@ -37,6 +37,19 @@ healthcheckPath = "/health"
 restartPolicyMaxRetries = 3
 
 # ============================================
+# QR Worker (Celery — processes async QR block generation)
+# ============================================
+[services.qr-worker]
+source = "core-service/"
+startCommand = "celery -A app.celery_app:celery_app worker --loglevel=INFO --queues=qr-generation --concurrency=2"
+
+[services.qr-worker.build]
+dockerfilePath = "Dockerfile.worker"
+
+[services.qr-worker.deploy]
+restartPolicyMaxRetries = 3
+
+# ============================================
 # Search Service
 # ============================================
 [services.search-service]

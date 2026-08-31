@@ -1038,7 +1038,7 @@ class QRProductService:
         suffix = f" and {remaining} more" if remaining > 0 else ""
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=("Serial numbers already exist: " f"{preview}{suffix}"),
+            detail=(f"Serial numbers already exist: {preview}{suffix}"),
         )
 
     @staticmethod
@@ -1312,12 +1312,15 @@ class QRProductService:
         block: QRBlock,
         generated_items: list[dict],
     ) -> str | None:
-        """Build and privately store the completed workbook when S3 is configured."""
+        """Build and store the completed workbook.
+
+        Stores to private S3 when configured. Otherwise returns ``None`` — the
+        workbook is regenerated on demand from ProductItems at download time
+        and cached on the local volume (core-service-volume).
+        """
         from app.services import storage_service
 
         if not settings.aws_s3_bucket:
-            if settings.environment.lower() == "production":
-                raise RuntimeError("AWS_S3_BUCKET is required for QR artifacts")
             return None
 
         rows = self._items_to_excel_rows(generated_items)
@@ -1499,6 +1502,26 @@ class QRProductService:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Download file not available",
+        )
+
+    def get_block_local_artifact_path(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+    ):
+        """Return the local volume path used to cache a block's workbook."""
+        from app.services import storage_service
+
+        block = self.get_block(block_id, organization_id)
+        if block.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Block is not ready (status: {block.status})",
+            )
+        return storage_service.build_qr_artifact_local_path(
+            block.organization_id,
+            block.product_id,
+            block.id,
         )
 
     def get_block_excel_stream(

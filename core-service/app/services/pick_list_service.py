@@ -642,19 +642,15 @@ class PickListService:
                 f"Pick list must be in 'draft' or 'in_progress' status."
             )
 
-        # Decode QR payload. Pass the tenant DB session + org_id so serial-only
-        # and URL payloads resolve against product_items (mirrors inbound's
-        # decode_qr_payload(db=..., organization_id=...) call).
+        # Decode QR payload — pass the db session and org scope so bare-serial
+        # and URL QR codes can be resolved against ProductItem (mirrors the
+        # inbound scan path). Without the db, serial-only payloads fail with
+        # "cannot resolve serial without database".
         payload = decode_qr_payload(qr_data, db=self.db, organization_id=org_id)
 
-        # Resolve the inventory Item for this scan:
-        # - Unit/serial scans: payload.id is the ProductItem serial → resolve
-        #   via ProductItem → Item.qr_product_id.
-        # - JSON box labels: payload.sku is the real SKU → fall back to
-        #   SKU / GTIN / item_code matching.
-        item = None
-        product_item = (
-            self.db.query(ProductItem)
+        # Find matching pick list item by SKU (item_code)
+        item = (
+            self.db.query(Item)
             .filter(
                 ProductItem.serial_number == payload.id,
                 ProductItem.organization_id == org_id,
