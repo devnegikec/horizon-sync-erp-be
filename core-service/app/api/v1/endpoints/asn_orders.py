@@ -118,6 +118,28 @@ async def get_asn_order_serials(
     return svc.get_serial_lines(asn_order_id, current_user.organization_id)
 
 
+@router.get("/{asn_order_id}/asn-856")
+async def export_asn_856(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EDI-856-style serialized ASN export (SKU + serials + SSCC). Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.serialized_asn_856(asn_order_id, current_user.organization_id)
+
+
+@router.get("/{asn_order_id}/epcis")
+async def export_asn_epcis(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EPCIS 2.0-style event stream for the ASN's serials. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.epcis_events(asn_order_id, current_user.organization_id)
+
+
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)
 async def update_asn_order(
     asn_order_id: UUID,

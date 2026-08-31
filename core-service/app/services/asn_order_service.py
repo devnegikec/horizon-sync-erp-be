@@ -159,6 +159,132 @@ class AsnOrderService:
             ],
         }
 
+    def serialized_asn_856(
+        self, asn_order_id: UUID, organization_id: UUID
+    ) -> dict:
+        """EDI-856-style serialized ASN export (SKU + unit-level serials + SSCC)."""
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+        from app.services.gs1_service import generate_sscc
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order_id)
+            .all()
+        )
+        serials_by_item: dict[str, list[str]] = {}
+        for line in serial_lines:
+            serials_by_item.setdefault(str(line.item_id), []).append(line.serial_no)
+
+        items = []
+        for item in asn_order.items:
+            serials = serials_by_item.get(str(item.item_id), [])
+            items.append(
+                {
+                    "sku": (item.item.sku or item.item.item_code)
+                    if item.item
+                    else None,
+                    "gtin": item.item.gtin if item.item else None,
+                    "description": item.item.item_name if item.item else None,
+                    "quantity": float(item.shipped_qty or item.qty),
+                    "uom": item.uom,
+                    "serial_numbers": serials,
+                }
+            )
+
+        # One SSCC per shipment (logistics unit), derived from the ASN id.
+        serial_ref = str(asn_order.id.int)[:12] if getattr(asn_order.id, "int", None) else "1"
+        sscc = generate_sscc(serial_ref)
+
+        return {
+            "transaction_set": "856",
+            "asn_number": asn_order.asn_order_no,
+            "asn_type": asn_order.asn_type or "purchase",
+            "ship_from": (
+                asn_order.from_warehouse.name if asn_order.from_warehouse else None
+            ),
+            "ship_to": (
+                asn_order.to_warehouse.name if asn_order.to_warehouse else None
+            ),
+            "order_date": asn_order.order_date,
+            "delivery_date": asn_order.delivery_date,
+            "sscc": sscc,
+            "items": items,
+        }
+
+    def epcis_events(self, asn_order_id: UUID, organization_id: UUID) -> dict:
+        """EPCIS 2.0-style event stream for a transfer ASN's serials."""
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+        from app.models.serial_no import SerialNo, SerialNoHistory
+        from app.services.epcis_service import build_events_for_serial
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order_id)
+            .all()
+        )
+        serial_nos = [line.serial_no for line in serial_lines]
+
+        histories = (
+            self.db.query(SerialNoHistory)
+            .filter(
+                SerialNoHistory.organization_id == organization_id,
+                SerialNoHistory.transaction_id == asn_order_id,
+            )
+            .order_by(SerialNoHistory.transaction_date.asc())
+            .all()
+        )
+
+        serial_map: dict = {}
+        serial_ids = {h.serial_no_id for h in histories}
+        if serial_ids:
+            serial_map = {
+                s.id: s.serial_no
+                for s in self.db.query(SerialNo)
+                .filter(SerialNo.id.in_(serial_ids))
+                .all()
+            }
+
+        by_serial: dict[str, list] = {}
+        for h in histories:
+            sn = serial_map.get(h.serial_no_id)
+            if sn is None:
+                continue
+            by_serial.setdefault(sn, []).append(h)
+
+        events: list[dict] = []
+        for sn in serial_nos:
+            events.extend(build_events_for_serial(sn, by_serial.get(sn, [])))
+
+        return {
+            "context": {
+                "schema": "EPCIS 2.0 (simplified JSON)",
+                "asn_number": asn_order.asn_order_no,
+            },
+            "events": events,
+        }
+
     def get_list(
         self,
         organization_id: UUID,
