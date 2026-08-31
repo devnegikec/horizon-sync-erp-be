@@ -37,6 +37,7 @@ class AsnOrderItemBase(BaseModel):
     qty: Decimal | float = Field(..., gt=0)
     uom: str = Field(..., min_length=1, max_length=50)
     sort_order: int = 0
+    serial_nos: list[str] | None = None
 
 
 class AsnOrderItemCreate(AsnOrderItemBase):
@@ -50,6 +51,8 @@ class AsnOrderItemResponse(AsnOrderItemBase):
     item_code: str | None = None
     item_name: str | None = None
     delivered_qty: Decimal | float = 0
+    shipped_qty: Decimal | float = 0
+    received_qty: Decimal | float = 0
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
@@ -69,6 +72,9 @@ class AsnOrderBase(BaseModel):
     reference_type: str | None = None
     reference_id: UUID | None = None
     reference_no: str | None = None
+    asn_type: str | None = Field(
+        None, pattern="^(purchase|internal_transfer)$"
+    )
     remarks: str | None = Field(None, max_length=1000)
 
 
@@ -84,6 +90,9 @@ class AsnOrderUpdate(BaseModel):
     status: str | None = Field(
         None,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
+    )
+    asn_type: str | None = Field(
+        None, pattern="^(purchase|internal_transfer)$"
     )
     remarks: str | None = Field(None, max_length=1000)
     items: list[AsnOrderItemCreate] | None = None
@@ -112,6 +121,7 @@ class AsnOrderListItem(BaseModel):
     order_date: datetime
     delivery_date: datetime | None = None
     grand_total: Decimal | float = 0
+    asn_type: str | None = None
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
     vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []

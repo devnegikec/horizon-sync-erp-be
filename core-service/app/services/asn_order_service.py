@@ -34,6 +34,18 @@ class AsnOrderService:
         if payload.get("status"):
             payload["status"] = AsnOrderStatus(payload["status"])
 
+        # Default ASN type; internal transfers require a source warehouse.
+        if not payload.get("asn_type"):
+            payload["asn_type"] = "purchase"
+        if (
+            payload["asn_type"] == "internal_transfer"
+            and not payload.get("warehouse_id_from")
+        ):
+            raise ValueError(
+                "warehouse_id_from (source warehouse) is required for an "
+                "internal transfer ASN"
+            )
+
         # Extract items
         items_data = payload.pop("items", [])
 
@@ -66,6 +78,9 @@ class AsnOrderService:
                 "qty": Decimal(str(item_data["qty"])),
                 "uom": item_data.get("uom", "pcs"),
                 "sort_order": item_data.get("sort_order", 0),
+                "serial_nos": item_data.get("serial_nos") or None,
+                "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
+                "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
             }
             grand_total += item_payload["qty"]
             self.db.add(AsnOrderItem(**item_payload))
@@ -132,7 +147,7 @@ class AsnOrderService:
         }
         return [self._to_list_item(x) for x in items], pagination
 
-    def update(
+    def update(  # noqa: C901
         self, asn_order_id: UUID, data: dict, organization_id: UUID, user_id: UUID
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
@@ -184,6 +199,9 @@ class AsnOrderService:
                     "qty": Decimal(str(item_data["qty"])),
                     "uom": item_data.get("uom", "pcs"),
                     "sort_order": item_data.get("sort_order", 0),
+                    "serial_nos": item_data.get("serial_nos") or None,
+                    "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
+                    "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
                 }
                 grand_total += item_payload["qty"]
                 self.db.add(AsnOrderItem(**item_payload))
@@ -272,6 +290,13 @@ class AsnOrderService:
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
 
+        # Internal transfer: confirming the ASN drives the source pick list.
+        if (
+            new_status_enum == AsnOrderStatus.CONFIRMED
+            and asn_order.asn_type == "internal_transfer"
+        ):
+            self._create_transfer_pick_list(asn_order, user_id)
+
         # Emit notifications based on status change
         if new_status_enum == AsnOrderStatus.CONFIRMED:
             self._emit_asn_notification(
@@ -311,6 +336,58 @@ class AsnOrderService:
             )
 
         return self._to_response(asn_order)
+
+    # ── internal-transfer fulfilment ──────────────────────────────────
+
+    def _create_transfer_pick_list(
+        self, asn_order: AsnOrder, user_id: UUID
+    ) -> None:
+        """Auto-create the source warehouse's pick list for an internal transfer.
+
+        Mirrors each ASN line into a pick list at ``warehouse_id_from`` with
+        ``reference_type='asn_order'`` so the normal outbound flow can fulfil it.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if not asn_order.warehouse_id_from:
+            raise ValueError("Source warehouse is required to create a pick list")
+
+        if not asn_order.items:
+            raise ValueError("Internal transfer ASN has no line items to pick")
+
+        from app.services.pick_list_service import PickListService
+
+        items = [
+            {
+                "item_id": item.item_id,
+                "warehouse_id": asn_order.warehouse_id_from,
+                "qty": float(item.qty),
+                "uom": item.uom,
+                "sort_order": item.sort_order or 0,
+            }
+            for item in asn_order.items
+        ]
+
+        PickListService(self.db).create(
+            {
+                "warehouse_id": asn_order.warehouse_id_from,
+                "status": "draft",
+                "reference_type": "asn_order",
+                "reference_id": str(asn_order.id),
+                "remarks": (
+                    f"Internal transfer from ASN {asn_order.asn_order_no}"
+                ),
+                "items": items,
+            },
+            asn_order.organization_id,
+            user_id,
+        )
+        logger.info(
+            "Created source pick list for internal transfer ASN '%s'",
+            asn_order.asn_order_no,
+        )
 
     # ── notification helpers ─────────────────────────────────────────
 
@@ -512,6 +589,9 @@ class AsnOrderService:
                 "uom": item.uom,
                 "sort_order": item.sort_order,
                 "delivered_qty": float(item.delivered_qty) if item.delivered_qty else 0,
+                "serial_nos": item.serial_nos or [],
+                "shipped_qty": float(item.shipped_qty) if item.shipped_qty else 0,
+                "received_qty": float(item.received_qty) if item.received_qty else 0,
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
             }
@@ -530,6 +610,7 @@ class AsnOrderService:
             "reference_type": asn_order.reference_type,
             "reference_id": asn_order.reference_id,
             "reference_no": asn_order.reference_no,
+            "asn_type": asn_order.asn_type or "purchase",
             "remarks": asn_order.remarks,
             "submitted_at": asn_order.submitted_at,
             "created_by": asn_order.created_by,
@@ -567,6 +648,7 @@ class AsnOrderService:
             "order_date": asn_order.order_date,
             "delivery_date": asn_order.delivery_date,
             "grand_total": float(asn_order.grand_total) if asn_order.grand_total else 0,
+            "asn_type": asn_order.asn_type or "purchase",
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
             "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
