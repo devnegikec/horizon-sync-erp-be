@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -25,6 +26,7 @@ from app.models.base import PickListStatus
 from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
+from app.models.product_item import ProductItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
 from app.models.warehouse_location import LocationType, WarehouseLocation
@@ -650,11 +652,37 @@ class PickListService:
         item = (
             self.db.query(Item)
             .filter(
-                Item.item_code == payload.sku,
-                Item.organization_id == org_id,
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == org_id,
+                ProductItem.deleted_at.is_(None),
             )
             .first()
         )
+        if product_item is not None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.qr_product_id == product_item.product_id,
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                )
+                .first()
+            )
+
+        if item is None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.item_code == payload.sku,
+                        Item.sku == payload.sku,
+                        Item.gtin == payload.sku,
+                    ),
+                )
+                .first()
+            )
 
         if not item:
             raise ValidationError(

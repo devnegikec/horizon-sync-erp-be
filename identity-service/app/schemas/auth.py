@@ -143,6 +143,13 @@ class QRCodeLoginRequest(BaseModel):
     barcode: str | None = None
 
 
+class WorkerLoginRequest(BaseModel):
+    """Schema for warehouse worker username + password login (mobile/device fallback)."""
+
+    login_username: str
+    password: str
+
+
 class QRCodeLoginResponse(BaseModel):
     """Schema for QR code login response (returns JWT tokens + user info)"""
 
