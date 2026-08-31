@@ -680,10 +680,17 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     bin_map: dict[str, str] = {}
     if item_ids and db:
         from app.models.item import Item
-        rows = db.query(Item.id, Item.item_name, Item.sku).filter(
+        rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
             Item.id.in_(item_ids)
         ).all()
-        item_map = {str(r.id): {"item_name": r.item_name, "sku": r.sku} for r in rows}
+        item_map = {
+            str(r.id): {
+                "item_name": r.item_name,
+                "item_code": r.item_code,
+                "sku": r.sku or r.item_code,
+            }
+            for r in rows
+        }
 
     # Batch-fetch bin full paths
     bin_ids = [item.bin_location_id for item in (pl.items or []) if item.bin_location_id]

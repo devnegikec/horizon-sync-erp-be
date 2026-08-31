@@ -50,6 +50,7 @@ class AsnOrderItemResponse(AsnOrderItemBase):
     asn_order_id: UUID
     item_code: str | None = None
     item_name: str | None = None
+    sku: str | None = None
     delivered_qty: Decimal | float = 0
     shipped_qty: Decimal | float = 0
     received_qty: Decimal | float = 0

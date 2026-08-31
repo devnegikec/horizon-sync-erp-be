@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.pick_config import catalog_entries
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, get_current_active_user, require_permission
 from app.schemas.pick_settings import (
     PickConfigCatalogResponse,
     PickSettingsResponse,
@@ -45,6 +45,30 @@ async def get_pick_config_catalog(
 ) -> PickConfigCatalogResponse:
     """Return the full catalog of pick.* keys for the settings editor."""
     return PickConfigCatalogResponse(config=catalog_entries())
+
+
+@router.get(
+    "/runtime",
+    response_model=PickSettingsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get effective pick settings for pick execution (any authenticated user)",
+)
+async def get_pick_settings_runtime(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> PickSettingsResponse:
+    """Return defaults merged with this organization's overrides.
+
+    Read-only endpoint used to gate pick-execution UI (e.g. handling units).
+    Unlike the settings editor routes, this does not require
+    ``organization.update``.
+    """
+    org_id = _org_id(current_user)
+    svc = PickSettingsService(db)
+    return PickSettingsResponse(
+        organization_id=str(org_id),
+        settings=svc.get_settings(org_id),
+    )
 
 
 @router.get(

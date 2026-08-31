@@ -53,12 +53,23 @@ def _get_org_id(current_user: CurrentUser, db: Session) -> str | None:
     return str(uor.organization_id) if uor else None
 
 
+VALID_WORKER_ROLES = ("warehouse_work_user", "wms_operator", "asn_coordinator")
+
+# Legacy warehouse_users.role values still present from earlier seeds.
+LEGACY_ROLE_MAP = {
+    "operator": "warehouse_work_user",
+    "manager": "wms_operator",
+    "supervisor": "asn_coordinator",
+}
+
+
 def _wh_role_for(worker_role: str | None) -> str:
-    if worker_role in ("warehouse_supervisor", "supervisor"):
-        return "supervisor"
-    if worker_role == "manager":
-        return "manager"
-    return "operator"
+    """Normalize a worker role to one of the canonical worker role codes."""
+    if worker_role in VALID_WORKER_ROLES:
+        return worker_role
+    if worker_role in LEGACY_ROLE_MAP:
+        return LEGACY_ROLE_MAP[worker_role]
+    return "warehouse_work_user"
 
 
 def _user_row_to_dict(user: User, warehouse_id: str | None, wh_role: str | None) -> dict:
@@ -70,7 +81,7 @@ def _user_row_to_dict(user: User, warehouse_id: str | None, wh_role: str | None)
         "display_name": user.display_name or f"{user.first_name} {user.last_name}",
         "phone": user.phone or "",
         "user_type": "warehouse_worker",
-        "role": wh_role or "operator",
+        "role": _wh_role_for(wh_role),
         "status": user.status.value if user.status else "active",
         "is_active": bool(user.is_active),
         "qr_code": user.qr_code or "",
@@ -192,7 +203,7 @@ async def create_worker(
     password = body.get("password") or ""
     login_username = body.get("login_username")
     employee_id = body.get("employee_id")
-    role = body.get("role") or body.get("warehouse_role") or "warehouse_worker"
+    role = body.get("role") or body.get("warehouse_role") or "warehouse_work_user"
 
     wids = body.get("warehouse_ids") or []
     if body.get("warehouse_id") and body["warehouse_id"] not in wids:
@@ -355,7 +366,7 @@ async def update_worker(
 
     if body.get("warehouse_id"):
         wh = body["warehouse_id"]
-        role = body.get("role") or body.get("warehouse_role") or "warehouse_worker"
+        role = body.get("role") or body.get("warehouse_role") or "warehouse_work_user"
         _ensure_warehouse_assignment(db, user, _primary_org_id(user, db) or "", [str(wh)], role)
 
     db.commit()

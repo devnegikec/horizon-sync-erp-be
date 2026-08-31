@@ -328,7 +328,13 @@ class AsnOrderService:
         return [self._to_list_item(x) for x in items], pagination
 
     def update(  # noqa: C901
-        self, asn_order_id: UUID, data: dict, organization_id: UUID, user_id: UUID
+        self,
+        asn_order_id: UUID,
+        data: dict,
+        organization_id: UUID,
+        user_id: UUID,
+        user_type: str | None = None,
+        permissions: list[str] | None = None,
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
@@ -394,6 +400,33 @@ class AsnOrderService:
         # Emit notifications when status changes via the general update endpoint
         new_status = asn_order.status
         if old_status != new_status:
+            # Internal transfer side-effects (the dialog confirms through this
+            # endpoint, not the dedicated status endpoint).
+            if (
+                new_status == AsnOrderStatus.CONFIRMED
+                and asn_order.asn_type == "internal_transfer"
+            ):
+                created_pick_list = self._create_transfer_pick_list(
+                    asn_order, user_id
+                )
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="transfer_pick_created",
+                    title="Transfer Pick List Created",
+                    message=(
+                        f"Pick list {created_pick_list.get('pick_list_no')} was "
+                        f"created at the source warehouse for ASN "
+                        f"{asn_order.asn_order_no}."
+                    ),
+                    warehouse_id=asn_order.warehouse_id_to,
+                    sender_id=user_id,
+                )
+            elif (
+                new_status == AsnOrderStatus.CANCELLED
+                and asn_order.asn_type == "internal_transfer"
+            ):
+                self._reverse_transfer(asn_order)
+
             if new_status == AsnOrderStatus.CONFIRMED:
                 self._emit_asn_notification(
                     asn_order=asn_order,
@@ -445,6 +478,8 @@ class AsnOrderService:
         new_status: str,
         organization_id: UUID,
         user_id: UUID,
+        user_type: str | None = None,
+        permissions: list[str] | None = None,
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
@@ -475,7 +510,19 @@ class AsnOrderService:
             new_status_enum == AsnOrderStatus.CONFIRMED
             and asn_order.asn_type == "internal_transfer"
         ):
-            self._create_transfer_pick_list(asn_order, user_id)
+            created_pick_list = self._create_transfer_pick_list(asn_order, user_id)
+            # Notify the destination (creation side) that fulfilment started.
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="transfer_pick_created",
+                title="Transfer Pick List Created",
+                message=(
+                    f"Pick list {created_pick_list.get('pick_list_no')} was created "
+                    f"at the source warehouse for ASN {asn_order.asn_order_no}."
+                ),
+                warehouse_id=asn_order.warehouse_id_to,
+                sender_id=user_id,
+            )
 
         # Internal transfer: cancelling reverses in-transit serials + pick list.
         if (
@@ -528,15 +575,24 @@ class AsnOrderService:
 
     def _create_transfer_pick_list(
         self, asn_order: AsnOrder, user_id: UUID
-    ) -> None:
+    ) -> dict:
         """Auto-create the source warehouse's pick list for an internal transfer.
 
         Mirrors each ASN line into a pick list at ``warehouse_id_from`` with
         ``reference_type='asn_order'`` so the normal outbound flow can fulfil it.
+        Returns the created pick list dict and links it back onto the ASN.
         """
         import logging
 
         logger = logging.getLogger(__name__)
+
+        # Idempotency: never create a second pick list for the same ASN.
+        if asn_order.linked_pick_list_id:
+            from app.models.pick_list import PickList
+
+            existing = self.db.get(PickList, asn_order.linked_pick_list_id)
+            if existing:
+                return {"id": existing.id, "pick_list_no": existing.pick_list_no}
 
         if not asn_order.warehouse_id_from:
             raise ValueError("Source warehouse is required to create a pick list")
@@ -557,7 +613,7 @@ class AsnOrderService:
             for item in asn_order.items
         ]
 
-        PickListService(self.db).create(
+        created = PickListService(self.db).create(
             {
                 "warehouse_id": asn_order.warehouse_id_from,
                 "status": "draft",
@@ -571,10 +627,17 @@ class AsnOrderService:
             asn_order.organization_id,
             user_id,
         )
+
+        asn_order.linked_pick_list_id = created.get("id")
+        self.db.flush()
+        self.db.commit()
+
         logger.info(
-            "Created source pick list for internal transfer ASN '%s'",
+            "Created source pick list '%s' for internal transfer ASN '%s'",
+            created.get("pick_list_no"),
             asn_order.asn_order_no,
         )
+        return created
 
     def _reverse_transfer(self, asn_order: AsnOrder) -> None:
         """Reverse an internal transfer on cancel.
@@ -715,6 +778,13 @@ class AsnOrderService:
                 exc,
                 exc_info=True,
             )
+            # A failed notification flush leaves the session in a
+            # rolled-back state, which would poison any subsequent reads
+            # (e.g. _to_response) with a 503. Discard the broken transaction.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
 
     # ── validation helpers ─────────────────────────────────────────────
 
@@ -814,6 +884,33 @@ class AsnOrderService:
             for arrival in asn_order.vehicle_arrivals
         ]
 
+    def _linked_pick_list_no(self, asn_order: AsnOrder) -> str | None:
+        """Resolve the linked pick list number (if any) for the ASN."""
+        if not asn_order.linked_pick_list_id:
+            return None
+        from app.models.pick_list import PickList
+
+        pl = self.db.get(PickList, asn_order.linked_pick_list_id)
+        return pl.pick_list_no if pl else None
+
+    def _transfer_progress(self, asn_order: AsnOrder) -> dict | None:
+        """Serial-level transfer progress for internal-transfer ASNs."""
+        if asn_order.asn_type != "internal_transfer":
+            return None
+        from app.models.asn_order import AsnOrderSerialLine
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        received = sum(1 for line in lines if line.received)
+        return {
+            "total_serials": len(lines),
+            "received_serials": received,
+            "in_transit_serials": len(lines) - received,
+        }
+
     def _to_response(self, asn_order: AsnOrder) -> dict:
         from_warehouse = None
         if asn_order.from_warehouse:
@@ -839,6 +936,7 @@ class AsnOrderService:
                 "asn_order_id": item.asn_order_id,
                 "item_id": item.item_id,
                 "item_code": item.item.item_code if item.item else None,
+                "sku": (item.item.sku or item.item.item_code) if item.item else None,
                 "item_name": item.item.item_name if item.item else None,
                 "qty": float(item.qty) if item.qty else 0,
                 "uom": item.uom,
@@ -866,6 +964,13 @@ class AsnOrderService:
             "reference_id": asn_order.reference_id,
             "reference_no": asn_order.reference_no,
             "asn_type": asn_order.asn_type or "purchase",
+            "linked_pick_list_id": (
+                str(asn_order.linked_pick_list_id)
+                if asn_order.linked_pick_list_id
+                else None
+            ),
+            "linked_pick_list_no": self._linked_pick_list_no(asn_order),
+            "transfer_progress": self._transfer_progress(asn_order),
             "remarks": asn_order.remarks,
             "submitted_at": asn_order.submitted_at,
             "created_by": asn_order.created_by,
@@ -904,6 +1009,11 @@ class AsnOrderService:
             "delivery_date": asn_order.delivery_date,
             "grand_total": float(asn_order.grand_total) if asn_order.grand_total else 0,
             "asn_type": asn_order.asn_type or "purchase",
+            "linked_pick_list_id": (
+                str(asn_order.linked_pick_list_id)
+                if asn_order.linked_pick_list_id
+                else None
+            ),
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
             "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),

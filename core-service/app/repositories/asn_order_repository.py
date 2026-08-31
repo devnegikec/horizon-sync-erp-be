@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
@@ -79,9 +80,19 @@ class AsnOrderRepository:
         if status is not None:
             q = q.filter(AsnOrder.status == status)
         if warehouse_id is not None:
-            # Filter by target (to) warehouse only — the warehouse a user
-            # selects is the one receiving the goods.
-            q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
+            # A selected warehouse sees its inbound ASNs (target) AND its
+            # outgoing internal transfers (source). Both warehouses in an
+            # internal transfer are owned by the organization, so the source
+            # side also needs visibility of the transfer it is fulfilling.
+            q = q.filter(
+                or_(
+                    AsnOrder.warehouse_id_to == warehouse_id,
+                    and_(
+                        AsnOrder.asn_type == "internal_transfer",
+                        AsnOrder.warehouse_id_from == warehouse_id,
+                    ),
+                )
+            )
         if source_warehouse_id is not None:
             q = q.filter(AsnOrder.warehouse_id_from == source_warehouse_id)
         if asn_type is not None:

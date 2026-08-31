@@ -154,6 +154,8 @@ async def update_asn_order(
         body.model_dump(exclude_unset=True),
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 
@@ -184,6 +186,27 @@ async def update_asn_order_status(
         body.status,
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
+    )
+    return AsnOrderResponse.model_validate(data)
+
+
+@router.post("/{asn_order_id}/confirm", response_model=AsnOrderResponse)
+async def confirm_asn_order(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Confirm an ASN order (approve + auto-create source pick list for transfers). Requires asn_order.update."""
+    svc = AsnOrderService(db)
+    data = svc.update_status(
+        asn_order_id,
+        "confirmed",
+        current_user.organization_id,
+        current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 

@@ -62,6 +62,11 @@ class AsnOrder(Base):
     # ``purchase`` | ``internal_transfer`` — internal transfers drive a source
     # pick list and carry unit-level serials on their line items.
     asn_type = Column(String(20), nullable=True)
+    # Auto-created source pick list for an internal-transfer ASN (visibility
+    # for the destination/creation side).
+    linked_pick_list_id = Column(UUID(as_uuid=True), nullable=True)
+    # MATERIAL_TRANSFER stock entry created at dispatch (accounting traceability).
+    linked_stock_entry_id = Column(UUID(as_uuid=True), nullable=True)
     remarks = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)

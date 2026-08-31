@@ -154,32 +154,53 @@ faster.
 
 ## 6. End-to-end lifecycle (state machine)
 
+The ASN's own status uses the existing enum:
+
+```
+draft → confirmed → partially_delivered → delivered → closed
+                              └────────────┘
+                                 (cancelled)
+```
+
+The intermediate steps are tracked on **separate entities** (not ASN status):
+
 ```mermaid
 stateDiagram-v2
     [*] --> DRAFT: ecity creates internal-transfer ASN
-    DRAFT --> CONFIRMED: submitted/approved
-    CONFIRMED --> PICKING: mother auto-creates pick list
-    PICKING --> PICKED: serials captured at unit level
-    PICKED --> DISPATCHED: gate out + dispatch record
-    DISPATCHED --> IN_TRANSIT: stock moved out of mother
-    IN_TRANSIT --> PARTIALLY_RECEIVED: ecity receives some serials
-    IN_TRANSIT --> RECEIVED: all serials verified
-    PARTIALLY_RECEIVED --> RECEIVED: remaining serials received
-    RECEIVED --> CLOSED: stock booked into ecity + putaway
+    DRAFT --> CONFIRMED: confirmed by source (mother) — pick list auto-created
+    CONFIRMED --> CONFIRMED: pick (pick_lists.status draft→completed)
+    CONFIRMED --> CONFIRMED: dispatch (dispatch_records) + serials in_transit
+    CONFIRMED --> PARTIALLY_RECEIVED: ecity receives some serials
+    CONFIRMED --> DELIVERED: all serials verified
+    PARTIALLY_RECEIVED --> DELIVERED: remaining serials received
+    DELIVERED --> CLOSED: stock booked + putaway
     DRAFT --> CANCELLED
-    CONFIRMED --> CANCELLED
+    CONFIRMED --> CANCELLED: reverse serials + cancel pick list
 ```
+
+> **Important:** `picking / picked / dispatched / in_transit` are **not** ASN
+> statuses. They live on `pick_lists.status`, `dispatch_records`, and
+> `serial_nos.status='in_transit'` respectively. The ASN stays `confirmed`
+> through the whole outbound phase until inbound receipt starts.
 
 ### Serial chain of custody (EPCIS-style)
 
+Implemented history events (written to `SerialNoHistory`):
+
 ```mermaid
 flowchart TD
-    A["object_event: created @ mother"] --> B["transaction_event: pick (mother)"]
-    B --> C["transaction_event: transfer_out (mother)"]
-    C --> D["observation_event: in_transit"]
-    D --> E["transaction_event: transfer_in (ecity)"]
-    E --> F["transaction_event: putaway (ecity)"]
+    A["transfer_out (mother)"] --> B["transfer_in (ecity)"]
+    A -. cancelled .-> C["transfer_cancelled (back to mother)"]
 ```
+
+| Event | Status |
+|---|---|
+| `transfer_out` (dispatch) | ✅ implemented |
+| `transfer_in` (receive) | ✅ implemented |
+| `transfer_cancelled` (cancel) | ✅ implemented |
+| `pick` (pick-scan) | ⏳ pending |
+| `putaway` (destination) | ⏳ pending |
+| `in_transit` observation | ⏳ represented by `transfer_out` disposition, no separate row |
 
 Each event maps to a `SerialNoHistory.transaction_type` row carrying
 `from_warehouse_id` / `to_warehouse_id` / `transaction_id`.
@@ -188,24 +209,28 @@ Each event maps to a `SerialNoHistory.transaction_type` row carrying
 
 ## 7. API surface
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/v1/asn-orders` | Create internal transfer ASN (`asn_type=internal_transfer`, from=mother, to=ecity) — shape already supported |
-| POST | `/api/v1/asn-orders/{id}/confirm` | Approve + auto-create source pick list |
-| GET | `/api/v1/asn-orders/{id}/serials` | Serialized unit lines (downstream consumers) |
-| POST | `/api/v1/inbound/.../record_scan` | Extended to verify each serial against the ASN serial line |
-| GET | `/api/v1/stock/transfers?status=in_transit` | In-transit visibility |
+| Method | Path | Purpose | Status |
+|---|---|---|---|
+| POST | `/api/v1/asn-orders` | Create ASN (`asn_type=internal_transfer`, from=mother, to=ecity) | ✅ |
+| POST | `/api/v1/asn-orders/{id}/confirm` | Approve + auto-create source pick list | ✅ |
+| PUT | `/api/v1/asn-orders/{id}/status` | Generic status transition (also triggers confirm/cancel effects) | ✅ |
+| PUT | `/api/v1/asn-orders/{id}` | Full update (also triggers confirm/cancel effects) | ✅ |
+| GET | `/api/v1/asn-orders/{id}/serials` | Serialized unit lines (received/in-transit) | ✅ |
+| GET | `/api/v1/asn-orders/{id}/asn-856` | EDI-856 serialized ASN export | ✅ |
+| GET | `/api/v1/asn-orders/{id}/epcis` | EPCIS event stream | ✅ |
+| POST | `/api/v1/inbound/.../record_scan` | Verify each serial against the ASN serial line | ✅ |
+| GET | `/api/v1/stock/transfers?status=in_transit` | In-transit visibility | ⏳ pending |
 
 ---
 
 ## 8. Inventory / accounting
 
-- **Dispatch (source):** decrease mother `stock_level`, write `StockMovement`
-  (`transfer`, from=mother, to=in_transit) and `StockEntry` (`MATERIAL_TRANSFER`,
-  `status=submitted`).
-- **Receipt (destination):** increase ecity `stock_level`, write `StockMovement`
-  (`transfer`, from=in_transit, to=ecity), update `StockEntry`
-  (`status=completed`), update `StockEntryItem.serial_nos`.
+- **Dispatch (source):** decrease mother `stock_level` (existing outbound logic),
+  write `transfer_out` serial history, and create a **`MATERIAL_TRANSFER`
+  `StockEntry` (status=submitted)** linked via `asn_orders.linked_stock_entry_id`. ✅
+- **Receipt (destination):** increase ecity `stock_level` (existing inbound flow),
+  write `transfer_in` serial history. ⏳ `StockMovement` transfer rows and an
+  in-transit `stock_level` bucket are **not yet implemented**.
 
 ---
 

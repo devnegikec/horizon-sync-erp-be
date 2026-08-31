@@ -248,9 +248,78 @@ SYNCABLE_FEATURES = [
         "label": "Tenant Feature Flags",
         "description": "Product/item dual-mode feature flags with safe defaults",
     },
+    {
+        "key": "items",
+        "label": "Sample Items",
+        "description": "Sample items (incl. serialized units) for testing transfers",
+    },
+    {
+        "key": "stock",
+        "label": "Sample Stock",
+        "description": "Seed stock for sample items into a selected warehouse",
+    },
 ]
 
 SYNCABLE_FEATURE_KEYS = {feature["key"] for feature in SYNCABLE_FEATURES}
+
+# Canonical sample items seeded by the ``items`` data-sync feature. Idempotent
+# on ``item_code`` then ``sku`` (skips rows that already exist).
+SAMPLE_ITEMS = [
+    {
+        "item_code": "SMPL-SMART-X1",
+        "name": "Smartphone X1 (serialized)",
+        "sku": "SMART-X1",
+        "gtin": "8900000000012",
+        "uom": "Nos",
+        "item_type": "stock",
+        "has_serial_no": True,
+    },
+    {
+        "item_code": "SMPL-LAPTOP-14",
+        "name": "Laptop Pro 14 (serialized)",
+        "sku": "LAPTOP-PRO-14",
+        "gtin": "8900000000029",
+        "uom": "Nos",
+        "item_type": "stock",
+        "has_serial_no": True,
+    },
+    {
+        "item_code": "SMPL-COOKER",
+        "name": "Cooker",
+        "sku": "COOKER-001",
+        "gtin": None,
+        "uom": "Unit",
+        "item_type": "stock",
+        "has_serial_no": False,
+    },
+    {
+        "item_code": "SMPL-GRINDER",
+        "name": "Grinder",
+        "sku": "GRINDER-002",
+        "gtin": None,
+        "uom": "Piece",
+        "item_type": "stock",
+        "has_serial_no": False,
+    },
+    {
+        "item_code": "SMPL-INDUCTION",
+        "name": "Induction Cooktop 2000W",
+        "sku": "PIC-2000-BK",
+        "gtin": None,
+        "uom": "Piece",
+        "item_type": "stock",
+        "has_serial_no": False,
+    },
+    {
+        "item_code": "SMPL-KETTLE",
+        "name": "Prestige Digi Kettle 2.0 Litre with 6 Preset Modes",
+        "sku": "PPI-SKO-89",
+        "gtin": "234234237",
+        "uom": "PC",
+        "item_type": "stock",
+        "has_serial_no": False,
+    },
+]
 
 
 class OrganizationOnboardingService:
@@ -337,6 +406,7 @@ class OrganizationOnboardingService:
         features: list[str],
         created_by: str,
         base_currency: str = "USD",
+        warehouse_id: UUID | None = None,
     ) -> dict:
         """Seed the requested default data categories on demand.
 
@@ -348,6 +418,7 @@ class OrganizationOnboardingService:
             features: List of feature keys (see ``SYNCABLE_FEATURES``)
             created_by: User identifier (UUID string)
             base_currency: ISO currency code used when seeding currencies
+            warehouse_id: Optional target warehouse for stock seeding
 
         Returns:
             Per-feature summary dict with created/skipped counts.
@@ -358,7 +429,7 @@ class OrganizationOnboardingService:
         summary: dict = {"organization_id": str(organization_id)}
         for key in features:
             summary[key] = self._sync_feature(
-                key, organization_id, user_id, now, base_currency
+                key, organization_id, user_id, now, base_currency, warehouse_id
             )
 
         self.db.commit()
@@ -381,6 +452,7 @@ class OrganizationOnboardingService:
         user_id: UUID,
         now: datetime,
         base_currency: str,
+        warehouse_id: UUID | None = None,
     ) -> dict:
         """Dispatch a single feature key to its idempotent seed routine."""
         if key == "currencies":
@@ -393,6 +465,10 @@ class OrganizationOnboardingService:
             return self._seed_item_groups(organization_id, user_id, now)
         if key == "feature_flags":
             return self._seed_dual_mode_flags(organization_id, user_id, now)
+        if key == "items":
+            return self._seed_items(organization_id, user_id, now)
+        if key == "stock":
+            return self._seed_stock(organization_id, user_id, now, warehouse_id)
         return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
 
     # ------------------------------------------------------------------
@@ -739,6 +815,177 @@ class OrganizationOnboardingService:
     # ------------------------------------------------------------------
     # Item Groups
     # ------------------------------------------------------------------
+
+    def _seed_items(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+    ) -> dict:
+        """Seed a canonical set of sample items (incl. serialized units).
+
+        Idempotent on ``item_code`` then ``sku`` — items that already exist are
+        skipped so the data-sync button can be pressed repeatedly.
+        """
+        from app.models.base import ItemStatus, ItemType, ValuationMethod
+        from app.models.item import Item
+
+        created = 0
+        skipped = 0
+
+        existing_codes = {
+            c
+            for (c,) in self.db.query(Item.item_code)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.deleted_at.is_(None),
+            )
+            .all()
+        }
+        existing_skus = {
+            s
+            for (s,) in self.db.query(Item.sku)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.deleted_at.is_(None),
+                Item.sku.isnot(None),
+            )
+            .all()
+        }
+
+        for item_data in SAMPLE_ITEMS:
+            code = item_data["item_code"]
+            sku = item_data.get("sku")
+            if (code and code in existing_codes) or (sku and sku in existing_skus):
+                skipped += 1
+                continue
+
+            item = Item(
+                id=uuid.uuid4(),
+                organization_id=organization_id,
+                item_code=code,
+                item_name=item_data["name"],
+                sku=sku,
+                gtin=item_data.get("gtin"),
+                uom=item_data.get("uom", "Nos"),
+                item_type=ItemType(item_data.get("item_type", "stock")),
+                status=ItemStatus.ACTIVE,
+                maintain_stock=True,
+                valuation_method=ValuationMethod.FIFO,
+                has_serial_no=item_data.get("has_serial_no", False),
+                has_batch_no=item_data.get("has_batch_no", False),
+                created_by=user_id,
+                updated_by=user_id,
+                created_at=now,
+                updated_at=now,
+            )
+            self.db.add(item)
+            self.db.flush()
+            existing_codes.add(code)
+            if sku:
+                existing_skus.add(sku)
+            created += 1
+
+        logger.debug(
+            "Sample item seed: %s created, %s skipped for org %s",
+            created,
+            skipped,
+            organization_id,
+        )
+        return {"created": created, "skipped": skipped}
+
+    def _seed_stock(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        warehouse_id: UUID | None,
+    ) -> dict:
+        """Seed stock for the sample items into the selected warehouse.
+
+        Idempotent: creates missing ``stock_levels`` rows and tops up existing
+        rows that are below the target quantity (50 regular / 20 serialized).
+        """
+        from app.models.item import Item
+        from app.models.stock_level import StockLevel
+        from app.models.warehouse import Warehouse
+
+        if warehouse_id is None:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "warehouse_id is required for stock seeding",
+            }
+
+        warehouse = (
+            self.db.query(Warehouse)
+            .filter(
+                Warehouse.id == warehouse_id,
+                Warehouse.organization_id == organization_id,
+            )
+            .first()
+        )
+        if warehouse is None:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "Warehouse not found in organization",
+            }
+
+        skus = [item_data["sku"] for item_data in SAMPLE_ITEMS if item_data.get("sku")]
+        items = (
+            self.db.query(Item)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.sku.in_(skus),
+                Item.deleted_at.is_(None),
+            )
+            .all()
+        )
+
+        created = 0
+        skipped = 0
+        for item in items:
+            target_qty = 20 if item.has_serial_no else 50
+            level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.organization_id == organization_id,
+                    StockLevel.product_id == item.id,
+                    StockLevel.warehouse_id == warehouse_id,
+                )
+                .first()
+            )
+            if level is None:
+                self.db.add(
+                    StockLevel(
+                        id=uuid.uuid4(),
+                        organization_id=organization_id,
+                        product_id=item.id,
+                        warehouse_id=warehouse_id,
+                        quantity_on_hand=target_qty,
+                        quantity_reserved=0,
+                        quantity_available=target_qty,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                created += 1
+            else:
+                if (level.quantity_on_hand or 0) < target_qty:
+                    level.quantity_on_hand = target_qty
+                    level.quantity_available = target_qty
+                    level.updated_at = now
+                skipped += 1
+
+        logger.debug(
+            "Sample stock seed: %s created, %s skipped for org %s warehouse %s",
+            created,
+            skipped,
+            organization_id,
+            warehouse_id,
+        )
+        return {"created": created, "skipped": skipped}
 
     def _seed_item_groups(
         self,

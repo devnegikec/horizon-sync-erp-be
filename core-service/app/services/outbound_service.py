@@ -232,6 +232,70 @@ class OutboundService:
             asn_order.asn_order_no,
         )
 
+        # Accounting traceability: a MATERIAL_TRANSFER stock entry for the move.
+        self._create_transfer_stock_entry(asn_order, org_id)
+
+    def _create_transfer_stock_entry(self, asn_order, org_id: UUID) -> None:
+        """Create a submitted MATERIAL_TRANSFER stock entry at dispatch (idempotent)."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if asn_order.linked_stock_entry_id:
+            return
+
+        from datetime import UTC, datetime
+
+        from app.models.asn_order import AsnOrderSerialLine
+        from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+        from app.services.stock_entry_service import StockEntryService
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        serials_by_item: dict = {}
+        for line in serial_lines:
+            serials_by_item.setdefault(line.item_id, []).append(line.serial_no)
+
+        items = []
+        for item in asn_order.items:
+            items.append(
+                StockEntryItemCreate(
+                    item_id=item.item_id,
+                    qty=float(item.shipped_qty or item.qty),
+                    uom=item.uom,
+                    serial_nos=serials_by_item.get(item.item_id) or None,
+                )
+            )
+        if not items:
+            return
+
+        entry = StockEntryService(self.db).create(
+            StockEntryCreate(
+                stock_entry_type="material_transfer",
+                from_warehouse_id=asn_order.warehouse_id_from,
+                to_warehouse_id=asn_order.warehouse_id_to,
+                posting_date=datetime.now(UTC),
+                status="submitted",
+                reference_type="asn_order",
+                reference_id=asn_order.id,
+                remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
+                items=items,
+            ),
+            org_id,
+            asn_order.created_by,
+        )
+        entry.submitted_at = datetime.now(UTC)
+        asn_order.linked_stock_entry_id = entry.id
+        self.db.commit()
+        logger.info(
+            "Created MATERIAL_TRANSFER stock entry %s for ASN '%s'",
+            entry.stock_entry_no,
+            asn_order.asn_order_no,
+        )
+
     # ------------------------------------------------------------------
     # LIST DISPATCHES
     # ------------------------------------------------------------------
