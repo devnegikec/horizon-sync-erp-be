@@ -64,6 +64,9 @@ async def list_asn_orders(
     ),
     vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
+    asn_type: str | None = Query(
+        None, pattern="^(purchase|internal_transfer)$", description="Filter by ASN type"
+    ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
@@ -82,6 +85,7 @@ async def list_asn_orders(
         delivery_date_to=delivery_date_to,
         vehicle_no=vehicle_no,
         search=search,
+        asn_type=asn_type,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -101,6 +105,17 @@ async def get_asn_order(
     svc = AsnOrderService(db)
     data = svc.get_by_id(asn_order_id, current_user.organization_id)
     return AsnOrderResponse.model_validate(data)
+
+
+@router.get("/{asn_order_id}/serials")
+async def get_asn_order_serials(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """Get unit-level serial lines (received/in-transit) for an ASN. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.get_serial_lines(asn_order_id, current_user.organization_id)
 
 
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)

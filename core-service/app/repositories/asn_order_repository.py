@@ -61,6 +61,7 @@ class AsnOrderRepository:
         delivery_date_to=None,
         vehicle_no: str | None = None,
         search: str | None = None,
+        asn_type: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[AsnOrder], int]:
@@ -83,6 +84,8 @@ class AsnOrderRepository:
             q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
         if source_warehouse_id is not None:
             q = q.filter(AsnOrder.warehouse_id_from == source_warehouse_id)
+        if asn_type is not None:
+            q = q.filter(AsnOrder.asn_type == asn_type)
         if delivery_date_from is not None:
             q = q.filter(AsnOrder.delivery_date >= delivery_date_from)
         if delivery_date_to is not None:

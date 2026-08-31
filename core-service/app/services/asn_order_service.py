@@ -107,6 +107,58 @@ class AsnOrderService:
             raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
         return self._to_response(asn_order)
 
+    def get_serial_lines(self, asn_order_id: UUID, organization_id: UUID) -> dict:
+        """Return unit-level serial lines for an internal-transfer ASN.
+
+        Includes received/not-received counts for in-transit visibility.
+        """
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(
+                AsnOrderSerialLine.asn_order_id == asn_order_id,
+                AsnOrderSerialLine.organization_id == organization_id,
+            )
+            .order_by(AsnOrderSerialLine.created_at.asc())
+            .all()
+        )
+        received = sum(1 for line in lines if line.received)
+        return {
+            "asn_order_id": str(asn_order_id),
+            "asn_order_no": asn_order.asn_order_no,
+            "asn_type": asn_order.asn_type or "purchase",
+            "status": asn_order.status.value if asn_order.status else "draft",
+            "total_serials": len(lines),
+            "received_serials": received,
+            "in_transit_serials": len(lines) - received,
+            "serials": [
+                {
+                    "id": str(line.id),
+                    "item_id": str(line.item_id),
+                    "serial_no": line.serial_no,
+                    "bin_location_id": str(line.bin_location_id)
+                    if line.bin_location_id
+                    else None,
+                    "received": bool(line.received),
+                    "received_at": line.received_at,
+                    "received_by": str(line.received_by) if line.received_by else None,
+                }
+                for line in lines
+            ],
+        }
+
     def get_list(
         self,
         organization_id: UUID,
@@ -119,6 +171,7 @@ class AsnOrderService:
         delivery_date_to=None,
         vehicle_no: str | None = None,
         search: str | None = None,
+        asn_type: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[dict], dict]:
@@ -133,6 +186,7 @@ class AsnOrderService:
             delivery_date_to=delivery_date_to,
             vehicle_no=vehicle_no,
             search=search,
+            asn_type=asn_type,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -297,6 +351,13 @@ class AsnOrderService:
         ):
             self._create_transfer_pick_list(asn_order, user_id)
 
+        # Internal transfer: cancelling reverses in-transit serials + pick list.
+        if (
+            new_status_enum == AsnOrderStatus.CANCELLED
+            and asn_order.asn_type == "internal_transfer"
+        ):
+            self._reverse_transfer(asn_order)
+
         # Emit notifications based on status change
         if new_status_enum == AsnOrderStatus.CONFIRMED:
             self._emit_asn_notification(
@@ -386,6 +447,74 @@ class AsnOrderService:
         )
         logger.info(
             "Created source pick list for internal transfer ASN '%s'",
+            asn_order.asn_order_no,
+        )
+
+    def _reverse_transfer(self, asn_order: AsnOrder) -> None:
+        """Reverse an internal transfer on cancel.
+
+        Restores not-yet-received serials to the source warehouse (``in_stock``)
+        with a ``transfer_cancelled`` history row, and cancels the linked pick
+        list if it hasn't been dispatched yet.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        from app.models.asn_order import AsnOrderSerialLine
+        from app.models.pick_list import PickList, PickListStatus
+        from app.models.serial_no import SerialNo, SerialNoHistory
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        for line in lines:
+            if line.received:
+                continue
+            serial_row = (
+                self.db.query(SerialNo)
+                .filter(
+                    SerialNo.organization_id == asn_order.organization_id,
+                    SerialNo.serial_no == line.serial_no,
+                    SerialNo.item_id == line.item_id,
+                )
+                .first()
+            )
+            if serial_row is not None:
+                serial_row.warehouse_id = asn_order.warehouse_id_from
+                serial_row.status = "in_stock"
+                self.db.add(
+                    SerialNoHistory(
+                        organization_id=asn_order.organization_id,
+                        serial_no_id=serial_row.id,
+                        transaction_type="transfer_cancelled",
+                        transaction_id=asn_order.id,
+                        from_warehouse_id=asn_order.warehouse_id_to,
+                        to_warehouse_id=asn_order.warehouse_id_from,
+                        remarks=f"Cancelled transfer ASN {asn_order.asn_order_no}",
+                    )
+                )
+
+        pick_list = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == asn_order.organization_id,
+                PickList.reference_type == "asn_order",
+                PickList.reference_id == asn_order.id,
+            )
+            .first()
+        )
+        if (
+            pick_list is not None
+            and pick_list.status not in (PickListStatus.COMPLETED, PickListStatus.CANCELLED)
+            and pick_list.dispatch_record_id is None
+        ):
+            pick_list.status = PickListStatus.CANCELLED
+
+        logger.info(
+            "Reversed in-transit serials for cancelled transfer ASN '%s'",
             asn_order.asn_order_no,
         )
 
