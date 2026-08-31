@@ -25,7 +25,7 @@ class User(Base):
 
     __tablename__ = "users"
     __audited__ = True
-    __audit_exclude__ = {"password_hash"}
+    __audit_exclude__ = {"password_hash", "login_password"}
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
@@ -66,6 +66,13 @@ class User(Base):
 
     # QR code login (for warehouse workers)
     qr_code = Column(String(100), unique=True, index=True, nullable=True)
+
+    # Warehouse worker fields (consolidated from the retired wms_workers table)
+    employee_id = Column(String(100), nullable=True, index=True)
+    login_username = Column(String(100), nullable=True, unique=True, index=True)
+    # Recoverable login password, managed by owner/admin/manager and shown
+    # (masked) in the worker details UI. Also hashed into password_hash.
+    login_password = Column(String(255), nullable=True)
 
     # User preferences
     preferences = Column(JSON, default={})

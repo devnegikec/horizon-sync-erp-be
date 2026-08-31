@@ -252,7 +252,6 @@ from app.models.warehouse_user import WarehouseUser
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.wms_device import WMSDevice, WMSDeviceStatus
-from app.models.wms_worker import WMSWorker, WMSWorkerStatus
 from app.models.worker_session import WorkerSession, WorkerSessionStatus
 from app.models.worker_task import WorkerTask
 
@@ -440,8 +439,6 @@ __all__ = [
     "NotificationType",
     "WarehouseUser",
     "WarehouseUserRole",
-    "WMSWorker",
-    "WMSWorkerStatus",
     "WMSDevice",
     "WMSDeviceStatus",
     # Audit Trail module

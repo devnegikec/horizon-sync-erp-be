@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -42,7 +42,6 @@ class WMSDevice(Base):
 
     assigned_to_worker_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("wms_workers.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -66,7 +65,6 @@ class WMSDevice(Base):
 
     # Relationships
     warehouse = relationship("Warehouse")
-    assigned_worker = relationship("WMSWorker", back_populates="devices", foreign_keys=[assigned_to_worker_id])
 
     def __repr__(self):
         return f"<WMSDevice(id={self.id}, code={self.device_code}, name={self.name})>"
