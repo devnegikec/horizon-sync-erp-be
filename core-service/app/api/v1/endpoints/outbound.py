@@ -37,6 +37,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -631,21 +632,24 @@ def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
 
 
 def _resolve_worker_name(worker_id, db) -> str | None:
-    """Resolve a human-readable worker name for a pick list's assigned worker."""
+    """Resolve a human-readable worker name for a pick list's assigned worker.
+
+    Workers live in the shared ``users`` table (user_type=warehouse_worker).
+    """
     if not worker_id:
         return None
     if db is not None:
         try:
-            from app.models.wms_worker import WMSWorker
-
-            worker = db.query(WMSWorker).filter(WMSWorker.id == worker_id).first()
-            if worker:
-                return (
-                    worker.display_name
-                    or f"{worker.first_name} {worker.last_name}".strip()
-                    or worker.barcode
-                    or str(worker_id)
-                )
+            row = db.execute(
+                text(
+                    "SELECT display_name, first_name, last_name "
+                    "FROM users WHERE id=:id"
+                ),
+                {"id": worker_id},
+            ).fetchone()
+            if row:
+                display_name, first_name, last_name = row
+                return display_name or f"{first_name} {last_name}".strip() or str(worker_id)
         except Exception:
             pass
     return str(worker_id)
