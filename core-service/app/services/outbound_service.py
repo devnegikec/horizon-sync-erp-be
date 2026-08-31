@@ -121,10 +121,116 @@ class OutboundService:
         # Decrement warehouse stock levels for all dispatched items (Requirement 13.4)
         self._decrement_stock_levels(pick_list, org_id)
 
+        # Propagate picked serials into the internal-transfer ASN (P1).
+        self._propagate_transfer_serials(pick_list, org_id)
+
         self.db.commit()
         self.db.refresh(dispatch_record)
 
         return self._to_response(dispatch_record)
+
+    def _propagate_transfer_serials(self, pick_list: PickList, org_id: UUID) -> None:
+        """Propagate picked serials into the internal-transfer ASN at dispatch.
+
+        When the pick list fulfils an internal-transfer ASN
+        (``reference_type == 'asn_order'``), copy each line's ``serial_nos``
+        into the ASN items + ``asn_order_serial_lines`` and write
+        ``SerialNoHistory`` (``transfer_out``) rows for chain of custody.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if pick_list.reference_type != "asn_order" or not pick_list.reference_id:
+            return
+
+        from app.models.asn_order import AsnOrder, AsnOrderItem, AsnOrderSerialLine
+        from app.models.serial_no import SerialNo, SerialNoHistory
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == pick_list.reference_id,
+                AsnOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if asn_order is None or asn_order.asn_type != "internal_transfer":
+            return
+
+        dest_warehouse_id = asn_order.warehouse_id_to
+        source_warehouse_id = pick_list.warehouse_id
+
+        # Keep the operation idempotent across repeat dispatch calls.
+        existing = set(
+            self.db.query(AsnOrderSerialLine.serial_no)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .scalars()
+            .all()
+        )
+
+        for line in pick_list.items:
+            serials = [s for s in (line.serial_nos or []) if s]
+            if not serials:
+                continue
+
+            asn_item = (
+                self.db.query(AsnOrderItem)
+                .filter(
+                    AsnOrderItem.asn_order_id == asn_order.id,
+                    AsnOrderItem.item_id == line.item_id,
+                )
+                .first()
+            )
+            if asn_item is not None:
+                merged = list(dict.fromkeys((asn_item.serial_nos or []) + serials))
+                asn_item.serial_nos = merged
+                asn_item.shipped_qty = line.picked_qty or line.qty
+
+            for serial_no in serials:
+                if serial_no in existing:
+                    continue
+                self.db.add(
+                    AsnOrderSerialLine(
+                        organization_id=org_id,
+                        asn_order_id=asn_order.id,
+                        asn_item_id=asn_item.id if asn_item else None,
+                        item_id=line.item_id,
+                        serial_no=serial_no,
+                        bin_location_id=line.bin_location_id,
+                    )
+                )
+                existing.add(serial_no)
+
+                serial_row = (
+                    self.db.query(SerialNo)
+                    .filter(
+                        SerialNo.organization_id == org_id,
+                        SerialNo.item_id == line.item_id,
+                        SerialNo.serial_no == serial_no,
+                    )
+                    .first()
+                )
+                if serial_row is not None:
+                    serial_row.status = "in_transit"
+                    self.db.add(
+                        SerialNoHistory(
+                            organization_id=org_id,
+                            serial_no_id=serial_row.id,
+                            transaction_type="transfer_out",
+                            transaction_id=asn_order.id,
+                            from_warehouse_id=source_warehouse_id,
+                            to_warehouse_id=dest_warehouse_id,
+                            remarks=(
+                                f"Internal transfer ASN {asn_order.asn_order_no}"
+                            ),
+                        )
+                    )
+
+        logger.info(
+            "Propagated transfer serials for ASN '%s' at dispatch",
+            asn_order.asn_order_no,
+        )
 
     # ------------------------------------------------------------------
     # LIST DISPATCHES
