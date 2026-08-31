@@ -122,9 +122,7 @@ class PickListService:
         aging_threshold = self._pick_config(organization_id).get_int(
             "aging_threshold_minutes"
         )
-        return [
-            self._to_list_item(x, aging_threshold) for x in items
-        ], pagination
+        return [self._to_list_item(x, aging_threshold) for x in items], pagination
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -469,18 +467,14 @@ class PickListService:
         """
         from app.services.pick_settings_service import PickConfigResolver
 
-        policy = PickConfigResolver.from_org(self.db, org_id).get_enum(
-            "require_serial"
-        )
+        policy = PickConfigResolver.from_org(self.db, org_id).get_enum("require_serial")
         if policy == "never":
             return
         if policy == "per_item" and not item.has_serial_no:
             return
 
         if not serial_no:
-            raise ValidationError(
-                f"Serial scan required for item '{item.item_code}'"
-            )
+            raise ValidationError(f"Serial scan required for item '{item.item_code}'")
 
         serial_row = (
             self.db.query(SerialNo)
@@ -551,9 +545,7 @@ class PickListService:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} is not allowed"
             )
-        threshold = Decimal(
-            str(config.get_numeric("short_pick_approval_threshold"))
-        )
+        threshold = Decimal(str(config.get_numeric("short_pick_approval_threshold")))
         if shortfall > threshold:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} exceeds the "
@@ -648,8 +640,11 @@ class PickListService:
                 f"Pick list must be in 'draft' or 'in_progress' status."
             )
 
-        # Decode QR payload
-        payload = decode_qr_payload(qr_data)
+        # Decode QR payload — pass the db session and org scope so bare-serial
+        # and URL QR codes can be resolved against ProductItem (mirrors the
+        # inbound scan path). Without the db, serial-only payloads fail with
+        # "cannot resolve serial without database".
+        payload = decode_qr_payload(qr_data, db=self.db, organization_id=org_id)
 
         # Find matching pick list item by SKU (item_code)
         item = (
@@ -1074,9 +1069,7 @@ class PickListService:
             .first()
         )
         if location is None:
-            raise ValidationError(
-                f"Staging lane {staging_location_id} not found"
-            )
+            raise ValidationError(f"Staging lane {staging_location_id} not found")
         if location.location_type != LocationType.STAGING.value:
             raise ValidationError(
                 f"Location {staging_location_id} is not a staging lane "
