@@ -234,7 +234,7 @@ class InboundService:
     # RECORD SCAN
     # ------------------------------------------------------------------
 
-    def record_scan(
+    def record_scan(  # noqa: C901
         self,
         session_id: UUID,
         qr_data: str,
@@ -433,6 +433,21 @@ class InboundService:
                 # disposition before becoming normal receiving inventory.
                 pending_asn_exception_type = "unexpected_known_sku"
 
+            # ── Internal transfer: verify + receive the scanned serial ──
+            if (
+                asn_order.asn_type == "internal_transfer"
+                and product_item is not None
+                and item is not None
+            ):
+                self._verify_and_receive_transfer_serial(
+                    asn_order=asn_order,
+                    serial_no=payload.id,
+                    item=item,
+                    session=session,
+                    worker_id=worker_id,
+                    organization_id=organization_id,
+                )
+
         # Resolve packaging unit from QR payload (best-effort — null if not found)
         packaging_unit_id = None
         if payload.packaging_unit_qr_id:
@@ -564,6 +579,116 @@ class InboundService:
             "exception_id": exception_id,
             "exception_status": "pending_approval" if exception_id else None,
         }
+
+    # ------------------------------------------------------------------
+    # INTERNAL TRANSFER — SERIAL VERIFICATION
+    # ------------------------------------------------------------------
+
+    def _verify_and_receive_transfer_serial(
+        self,
+        asn_order,
+        serial_no: str,
+        item,
+        session,
+        worker_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        """Verify a scanned serial against an internal-transfer ASN and mark it received.
+
+        Only runs when the ASN already carries serial lines (serialized transfer).
+        A serial not listed on the ASN is recorded as an inbound exception and the
+        scan is hard-stopped; a duplicate is rejected. On success the serial line
+        is marked received and a ``transfer_in`` SerialNoHistory row is written.
+        """
+        from app.models.asn_order import AsnOrderSerialLine
+        from app.models.serial_no import SerialNo, SerialNoHistory
+        from app.services.inbound_exception_service import InboundExceptionService
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(
+                AsnOrderSerialLine.asn_order_id == asn_order.id,
+                AsnOrderSerialLine.organization_id == organization_id,
+            )
+            .all()
+        )
+        if not serial_lines:
+            # Non-serialized transfer — nothing to verify.
+            return
+
+        line = next((sl for sl in serial_lines if sl.serial_no == serial_no), None)
+        if line is None:
+            exception = InboundExceptionService(self.db).create_scan_exception(
+                organization_id=organization_id,
+                warehouse_id=session.warehouse_id,
+                session_id=session.id,
+                asn_order_id=asn_order.id,
+                exception_type="serial_not_in_asn",
+                reason_code="EXCESS",
+                qr_identifier=serial_no,
+                sku=item.sku or item.item_code,
+                batch_number=None,
+                quantity=1,
+                raw_qr_data=serial_no,
+                actor_id=worker_id,
+                item_id=item.id,
+            )
+            self.db.commit()
+            raise ValidationError(
+                message=(
+                    "Serial not expected on this transfer ASN: "
+                    "scan stopped and exception recorded"
+                ),
+                details=[
+                    {
+                        "field": "qr_data",
+                        "reason": (
+                            f"Exception {exception.id}: serial '{serial_no}' "
+                            f"is not in ASN {asn_order.asn_order_no}"
+                        ),
+                    }
+                ],
+            )
+
+        if line.received:
+            raise ValidationError(
+                message="Duplicate serial: unit already received for this transfer",
+                details=[
+                    {
+                        "field": "qr_data",
+                        "reason": f"Serial '{serial_no}' already received",
+                    }
+                ],
+            )
+
+        line.received = True
+        line.received_at = datetime.now(UTC)
+        line.received_by = worker_id
+
+        # Chain of custody: transfer_in at the destination warehouse.
+        serial_row = (
+            self.db.query(SerialNo)
+            .filter(
+                SerialNo.organization_id == organization_id,
+                SerialNo.serial_no == serial_no,
+                SerialNo.item_id == line.item_id,
+            )
+            .first()
+        )
+        if serial_row is not None:
+            serial_row.warehouse_id = asn_order.warehouse_id_to
+            serial_row.status = "in_stock"
+            self.db.add(
+                SerialNoHistory(
+                    organization_id=organization_id,
+                    serial_no_id=serial_row.id,
+                    transaction_type="transfer_in",
+                    transaction_id=asn_order.id,
+                    from_warehouse_id=asn_order.warehouse_id_from,
+                    to_warehouse_id=asn_order.warehouse_id_to,
+                    remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
+                )
+            )
 
     # ------------------------------------------------------------------
     # END SESSION
