@@ -2313,6 +2313,10 @@ class InboundService:
             exception.slip_id = slip.id
             exception.slip_item_id = line.id
 
+        # Persist the hold/excess classification and exception linkage before
+        # any downstream queries or a request-level rollback can discard it.
+        self.db.flush()
+
         # Flow B: link items already put away via direct put-away (match by QR)
         from app.services.put_away_service import PutAwayService
 
@@ -2338,6 +2342,7 @@ class InboundService:
             if slip is not None:
                 self._create_receiving_stock_entry(slip, organization_id)
 
+        self.db.commit()
         return slip
 
     def _session_to_dict(self, session) -> dict:

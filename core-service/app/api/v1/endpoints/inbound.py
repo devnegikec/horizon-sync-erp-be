@@ -793,6 +793,11 @@ async def assign_bin_to_slip_item(
         slip = db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
         if slip:
             slip.status = "putaway_complete"
+            db.flush()
+            if slip.asn_order_id:
+                InboundService(db)._sync_asn_delivered_qty(
+                    slip.asn_order_id, current_user.organization_id
+                )
 
     db.commit()
 
