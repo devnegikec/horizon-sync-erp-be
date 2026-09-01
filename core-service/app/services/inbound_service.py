@@ -721,6 +721,131 @@ class InboundService:
         self.db.commit()
 
     # ------------------------------------------------------------------
+    # REMOVE SCAN ITEMS
+    # ------------------------------------------------------------------
+
+    def remove_scan_items(
+        self,
+        session_id: UUID,
+        organization_id: UUID,
+        qr_identifiers: list[str],
+    ) -> dict:
+        """Remove scanned items from an open session by QR identifier.
+
+        Used when a worker accidentally scans the wrong parent QR: the parent's
+        child serials are removed so they no longer appear in the summary or the
+        generated receiving slip. Any HOLD stock entered by those scans is
+        reversed and the associated tracking / exception rows are dropped.
+
+        Args:
+            session_id: UUID of the open scan session.
+            organization_id: Organization UUID for tenant isolation.
+            qr_identifiers: QR identifiers (serials) of the items to remove.
+
+        Returns:
+            Dict with ``removed`` count and updated ``total_boxes_scanned``.
+
+        Raises:
+            NotFoundError: If the session is not found.
+            StateError: If the session is not in OPEN status.
+        """
+        from decimal import Decimal
+
+        from app.models.inbound_exception import InboundException
+        from app.services.bin_stock_service import BinStockService
+
+        session = self.session_repo.get_by_id(session_id, organization_id)
+        if session is None:
+            raise NotFoundError(
+                message="Scan session not found",
+                entity_type="ScanSession",
+                entity_id=str(session_id),
+            )
+
+        if session.status != "open":
+            raise StateError(
+                message="Cannot remove scans from a closed session",
+                current_state=session.status,
+                required_state=["open"],
+            )
+
+        identifiers = {s.strip() for s in qr_identifiers if s and s.strip()}
+        if not identifiers:
+            return {
+                "session_id": str(session_id),
+                "removed": 0,
+                "total_boxes_scanned": session.total_boxes_scanned or 0,
+            }
+
+        items = (
+            self.db.query(ScanSessionItem)
+            .filter(
+                ScanSessionItem.session_id == session_id,
+                ScanSessionItem.qr_identifier.in_(identifiers),
+            )
+            .all()
+        )
+
+        bin_stock_service = BinStockService(self.db)
+        removed = 0
+        for item in items:
+            tracking = (
+                self.db.query(ScannedItemTracking)
+                .filter(ScannedItemTracking.scan_session_item_id == item.id)
+                .first()
+            )
+
+            # Reverse any HOLD stock this scan entered before dropping the rows.
+            if (
+                tracking is not None
+                and tracking.stock_entered
+                and tracking.stock_location_id
+            ):
+                try:
+                    bin_stock_service.remove_stock(
+                        bin_id=tracking.stock_location_id,
+                        item_id=tracking.item_id,
+                        quantity=Decimal(str(tracking.quantity or 1)),
+                        org_id=organization_id,
+                        batch_number=tracking.batch_number,
+                        commit=False,
+                    )
+                except Exception:  # noqa: BLE001 - stock may already be dispositioned
+                    logger.warning(
+                        "Could not reverse HOLD stock for qr=%s item=%s",
+                        item.qr_identifier,
+                        item.id,
+                    )
+
+            # Drop exception rows (evidence/events cascade with the ORM delete).
+            exceptions = (
+                self.db.query(InboundException)
+                .filter(InboundException.scan_session_item_id == item.id)
+                .all()
+            )
+            for exc in exceptions:
+                self.db.delete(exc)
+
+            if tracking is not None:
+                self.db.delete(tracking)
+
+            self.db.delete(item)
+            removed += 1
+
+        if removed:
+            session.total_boxes_scanned = max(
+                0, (session.total_boxes_scanned or 0) - removed
+            )
+
+        self.db.commit()
+
+        return {
+            "session_id": str(session_id),
+            "removed": removed,
+            "total_boxes_scanned": session.total_boxes_scanned or 0,
+        }
+
+    # ------------------------------------------------------------------
     # GET SESSION SUMMARY
     # ------------------------------------------------------------------
 

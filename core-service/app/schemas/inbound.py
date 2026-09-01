@@ -35,6 +35,25 @@ class RecordScanRequest(BaseModel):
     os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
+class RemoveScansRequest(BaseModel):
+    """Schema for removing one or more scanned items from an open session."""
+
+    qr_identifiers: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="QR identifiers (serials) of the scanned items to remove",
+    )
+
+
+class RemoveScansResponse(BaseModel):
+    """Result of removing scanned items from an open session."""
+
+    session_id: UUID
+    removed: int
+    total_boxes_scanned: int
+
+
 class EndSessionRejection(BaseModel):
     """A single item rejection submitted when ending a scan session."""
 

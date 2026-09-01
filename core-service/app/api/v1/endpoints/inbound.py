@@ -45,6 +45,8 @@ from app.schemas.inbound import (
     RejectedItemResponse,
     RejectSlipItemRequest,
     RejectSlipRequest,
+    RemoveScansRequest,
+    RemoveScansResponse,
     ResolveFloatingItemRequest,
     ScanResult,
     SessionResponse,
@@ -123,6 +125,39 @@ async def cancel_session(
         organization_id=current_user.organization_id,
     )
     return SessionResponse(**result)
+
+
+@router.post(
+    "/sessions/{session_id}/remove-scan",
+    response_model=RemoveScansResponse,
+    summary="Remove scanned items",
+    description="Remove one or more scanned items from an open session (e.g. a wrong parent QR)",
+)
+async def remove_scans(
+    session_id: UUID,
+    data: RemoveScansRequest,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove previously scanned items from an open session.
+
+    Deletes the matching ScanSessionItem rows plus their dual-axis tracking
+    and exception records, reversing any HOLD stock they entered.
+
+    **Path Parameters:**
+    - **session_id**: UUID of the open scan session
+
+    **Request Body:**
+    - **qr_identifiers**: Serial numbers (QR identifiers) of the items to remove
+    """
+    service = InboundService(db)
+    result = service.remove_scan_items(
+        session_id=session_id,
+        organization_id=current_user.organization_id,
+        qr_identifiers=data.qr_identifiers,
+    )
+    return RemoveScansResponse(**result)
 
 
 @router.post(
