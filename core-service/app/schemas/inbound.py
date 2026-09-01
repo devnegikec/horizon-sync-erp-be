@@ -225,6 +225,7 @@ class ReceivingSlipItemData(BaseModel):
     """Individual line item inside a QSeal group — merged child detail + slip item."""
 
     id: str
+    name: str | None = None
     serial_number: str | None = None
     sku: str
     batch_number: str | None = None
@@ -236,6 +237,8 @@ class ReceivingSlipItemData(BaseModel):
     condition_code: str | None = None
     exception_status: str | None = None
     exception_destination_location_id: str | None = None
+    rejection_reason: str | None = None
+    reason_code: str | None = None
     notes: str | None = None
 
 
@@ -309,7 +312,9 @@ class InboundExceptionResponse(BaseModel):
     destination: str | None = None
     destination_location_id: str | None = None
     qr_identifier: str | None = None
+    serial_number: str | None = None
     sku: str | None = None
+    item_name: str | None = None
     batch_number: str | None = None
     quantity: int
     note: str | None = None

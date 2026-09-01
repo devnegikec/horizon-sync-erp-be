@@ -2390,6 +2390,53 @@ class InboundService:
             for prod in products:
                 product_map[prod.id] = prod.name
 
+        # Pre-load catalog Item names for rejected / exception line detail.
+        # ReceivingSlipItem.sku may hold an sku, item_code, or gtin.
+        item_name_map: dict[str, str] = {}
+        all_skus = list({item.sku for item in slip.items if item.sku})
+        if all_skus:
+            from sqlalchemy import or_
+
+            from app.models.item import Item
+
+            catalog_items = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == slip.organization_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.sku.in_(all_skus),
+                        Item.item_code.in_(all_skus),
+                        Item.gtin.in_(all_skus),
+                    ),
+                )
+                .all()
+            )
+            for catalog_item in catalog_items:
+                for key in (
+                    catalog_item.sku,
+                    catalog_item.item_code,
+                    catalog_item.gtin,
+                ):
+                    if key:
+                        item_name_map.setdefault(key, catalog_item.item_name)
+
+        # Pre-load linked inbound exceptions so exception lines can surface the
+        # reason code (why it was held / quarantined / rejected).
+        exception_by_line: dict = {}
+        line_ids = [item.id for item in slip.items]
+        if line_ids:
+            from app.models.inbound_exception import InboundException
+
+            linked_exceptions = (
+                self.db.query(InboundException)
+                .filter(InboundException.slip_item_id.in_(line_ids))
+                .order_by(InboundException.created_at.desc())
+                .all()
+            )
+            for exc in linked_exceptions:
+                exception_by_line.setdefault(exc.slip_item_id, exc)
+
         # Pre-load parent QSealTracks
         parent_ids = list(
             {p.parent_id for p in qseal_params_map.values() if p.parent_id}
@@ -2471,6 +2518,7 @@ class InboundService:
             groups[parent_key]["items"].append(
                 {
                     "id": str(item.id),
+                    "name": item_name_map.get(item.sku),
                     "serial_number": item.batch_number,
                     "sku": item.sku,
                     "batch_number": real_batch,  # actual dispatch_batch, not serial
@@ -2486,6 +2534,12 @@ class InboundService:
                     )
                     if item.exception_destination_location_id
                     else None,
+                    "rejection_reason": item.rejection_reason,
+                    "reason_code": (
+                        exception_by_line[item.id].reason_code
+                        if item.id in exception_by_line
+                        else None
+                    ),
                     "notes": item.notes,
                 }
             )

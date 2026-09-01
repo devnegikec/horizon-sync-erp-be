@@ -468,6 +468,13 @@ class InboundExceptionService:
         return evidence
 
     def serialize(self, exception: InboundException) -> dict:
+        item_name = None
+        if exception.item_id:
+            item = self.db.get(Item, exception.item_id)
+            item_name = item.item_name if item else None
+        elif exception.sku:
+            item = self._resolve_item(exception.organization_id, exception.sku)
+            item_name = item.item_name if item else None
         return {
             "id": str(exception.id),
             "warehouse_id": str(exception.warehouse_id),
@@ -484,7 +491,9 @@ class InboundExceptionService:
             if exception.destination_location_id
             else None,
             "qr_identifier": exception.qr_identifier,
+            "serial_number": exception.qr_identifier,
             "sku": exception.sku,
+            "item_name": item_name,
             "batch_number": exception.batch_number,
             "quantity": exception.quantity,
             "note": exception.note,

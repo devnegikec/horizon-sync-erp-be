@@ -17,7 +17,9 @@ class QRProductPackagingDetails(BaseModel):
     unit_name: str = Field("Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(Decimal("1"), gt=0)
     items_per_master_pack: int | None = Field(
-        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+        None,
+        gt=0,
+        description="Items per master pack (used for QR master pack grouping)",
     )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
@@ -116,6 +118,7 @@ class QRProductResponse(QRProductBase):
 class QRProductListItem(BaseModel):
     id: UUID
     name: str
+    sku: str | None = None
     generic_name: str | None
     gtin: str | None
     industry: str | None
@@ -282,13 +285,8 @@ class QRBlockCreate(BaseModel):
                 raise ValueError("starting_serial must contain digits only")
             max_length = 8 if self.sr_number_type == SerialNumberType.S8DN else 10
             if len(self.starting_serial) > max_length:
-                raise ValueError(
-                    f"starting_serial must be at most {max_length} digits"
-                )
-        elif (
-            self.sr_number_type is not None
-            and self.starting_serial is not None
-        ):
+                raise ValueError(f"starting_serial must be at most {max_length} digits")
+        elif self.sr_number_type is not None and self.starting_serial is not None:
             raise ValueError(
                 "starting_serial is only valid for sequential serial numbers"
             )
@@ -326,9 +324,9 @@ class QRBlockResponse(BaseModel):
     download_url: str | None
     download_available: bool = False
     artifact_generated_at: datetime | None = None
-    activation_status: Literal[
-        "activated", "deactivated", "partially_activated"
-    ] | None = None
+    activation_status: (
+        Literal["activated", "deactivated", "partially_activated"] | None
+    ) = None
     activated_count: int = 0
     deactivated_count: int = 0
     completed_at: datetime | None
