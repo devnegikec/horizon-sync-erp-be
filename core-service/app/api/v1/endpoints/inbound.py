@@ -693,16 +693,14 @@ async def bulk_dispose_inbound_exceptions(
     db: Session = Depends(get_db),
 ):
     service = InboundExceptionService(db)
-    # Fail fast: validate each exception exists and the caller may manage it.
-    for exception_id in data.exception_ids:
-        exception = service.get_exception(exception_id, current_user.organization_id)
-        service.assert_manager(current_user, exception.warehouse_id)
+    items = [item.model_dump() for item in data.items]
     result = service.dispose_many(
-        exception_ids=data.exception_ids,
+        items=items,
         organization_id=current_user.organization_id,
         actor_id=current_user.id,
         action=data.action,
         note=data.note,
+        user=current_user,
     )
     return InboundExceptionBulkDispositionResponse(**result)
 

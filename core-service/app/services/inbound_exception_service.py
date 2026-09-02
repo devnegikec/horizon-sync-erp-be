@@ -143,7 +143,8 @@ class InboundExceptionService:
         scan_session_item_id: UUID | None = None,
         tracking_id: UUID | None = None,
     ) -> InboundException:
-        self._validate_reason(reason_code, organization_id)
+        reason = self._validate_reason(reason_code, organization_id)
+        destination = (reason.default_destination or "QUARANTINE").upper()
         exception = InboundException(
             organization_id=organization_id,
             warehouse_id=warehouse_id,
@@ -155,12 +156,8 @@ class InboundExceptionService:
             exception_type=exception_type,
             reason_code=reason_code,
             status="pending_approval",
-            condition_code="HOLD"
-            if exception_type in {"unexpected_known_sku", "unknown_identity"}
-            else "QUARANTINE",
-            destination="HOLD"
-            if exception_type in {"unexpected_known_sku", "unknown_identity"}
-            else "QUARANTINE",
+            condition_code=destination,
+            destination=destination,
             qr_identifier=qr_identifier,
             sku=sku,
             batch_number=batch_number,
@@ -436,11 +433,12 @@ class InboundExceptionService:
     def dispose_many(
         self,
         *,
-        exception_ids: list[UUID],
+        items: list[dict],
         organization_id: UUID,
         actor_id: UUID,
         action: str,
         note: str | None = None,
+        user=None,
     ) -> dict:
         """Dispose many exceptions with the same action, isolating per-item failures."""
         if action not in self.FINAL_DISPOSITIONS:
@@ -448,14 +446,20 @@ class InboundExceptionService:
 
         results: list[dict] = []
         succeeded: list[InboundException] = []
-        for exception_id in exception_ids:
+        for entry in items:
+            exception_id = entry["exception_id"]
+            item_id = entry.get("item_id")
             try:
+                exception = self.get_exception(exception_id, organization_id)
+                if user is not None:
+                    self.assert_manager(user, exception.warehouse_id)
                 exception = self.dispose(
                     exception_id=exception_id,
                     organization_id=organization_id,
                     actor_id=actor_id,
                     action=action,
                     note=note,
+                    item_id=item_id,
                 )
                 succeeded.append(exception)
                 results.append(
@@ -631,7 +635,9 @@ class InboundExceptionService:
             for exception in exceptions
         ]
 
-    def _validate_reason(self, code: str, organization_id: UUID) -> None:
+    def _validate_reason(
+        self, code: str, organization_id: UUID
+    ) -> InboundExceptionReason:
         reason = (
             self.db.query(InboundExceptionReason)
             .filter(
@@ -646,6 +652,7 @@ class InboundExceptionService:
             raise ValidationError(
                 f"Unknown or inactive inbound exception reason code: {code}"
             )
+        return reason
 
     def _resolve_item(self, organization_id: UUID, sku: str | None) -> Item | None:
         if not sku:

@@ -157,11 +157,21 @@ class InboundExceptionDispositionRequest(BaseModel):
     )
 
 
+class InboundExceptionBulkDispositionItem(BaseModel):
+    """One exception in a bulk disposition request."""
+
+    exception_id: UUID
+    item_id: UUID | None = Field(
+        None,
+        description="Corrected SKU's item ID — required when releasing an unknown-SKU exception",
+    )
+
+
 class InboundExceptionBulkDispositionRequest(BaseModel):
     """Bulk manager disposition for multiple inbound exceptions."""
 
-    exception_ids: list[UUID] = Field(
-        ..., min_length=1, max_length=200, description="Exception IDs to dispose"
+    items: list[InboundExceptionBulkDispositionItem] = Field(
+        ..., min_length=1, max_length=200
     )
     action: str = Field(
         ...,
