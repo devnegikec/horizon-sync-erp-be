@@ -84,7 +84,9 @@ class InboundExceptionService:
         warehouse_id: UUID | None = None,
         destination: str | None = None,
         status: str | None = None,
-    ) -> list[InboundException]:
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[InboundException], int]:
         query = self.db.query(InboundException).filter(
             InboundException.organization_id == organization_id
         )
@@ -94,7 +96,14 @@ class InboundExceptionService:
             query = query.filter(InboundException.destination == destination.upper())
         if status:
             query = query.filter(InboundException.status == status)
-        return query.order_by(InboundException.created_at.desc()).all()
+        total = query.count()
+        items = (
+            query.order_by(InboundException.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return items, total
 
     def get_exception(
         self, exception_id: UUID, organization_id: UUID
@@ -147,10 +156,10 @@ class InboundExceptionService:
             reason_code=reason_code,
             status="pending_approval",
             condition_code="HOLD"
-            if exception_type == "unexpected_known_sku"
+            if exception_type in {"unexpected_known_sku", "unknown_identity"}
             else "QUARANTINE",
             destination="HOLD"
-            if exception_type == "unexpected_known_sku"
+            if exception_type in {"unexpected_known_sku", "unknown_identity"}
             else "QUARANTINE",
             qr_identifier=qr_identifier,
             sku=sku,
@@ -423,6 +432,54 @@ class InboundExceptionService:
             self.db.commit()
         self.db.refresh(exception)
         return exception
+
+    def dispose_many(
+        self,
+        *,
+        exception_ids: list[UUID],
+        organization_id: UUID,
+        actor_id: UUID,
+        action: str,
+        note: str | None = None,
+    ) -> dict:
+        """Dispose many exceptions with the same action, isolating per-item failures."""
+        if action not in self.FINAL_DISPOSITIONS:
+            raise ValidationError(f"Invalid exception disposition: {action}")
+
+        results: list[dict] = []
+        succeeded: list[InboundException] = []
+        for exception_id in exception_ids:
+            try:
+                exception = self.dispose(
+                    exception_id=exception_id,
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    action=action,
+                    note=note,
+                )
+                succeeded.append(exception)
+                results.append(
+                    {"id": str(exception_id), "status": "disposed", "error": None}
+                )
+            except Exception as err:  # noqa: BLE001 - isolate per-item failures
+                self.db.rollback()
+                message = getattr(err, "message", None) or str(err)
+                results.append(
+                    {"id": str(exception_id), "status": "failed", "error": message}
+                )
+
+        serialized_by_id = {d["id"]: d for d in self.serialize_many(succeeded)}
+        for result in results:
+            if result["status"] == "disposed":
+                result["exception"] = serialized_by_id.get(result["id"])
+            else:
+                result["exception"] = None
+
+        return {
+            "results": results,
+            "disposed_count": len(succeeded),
+            "failed_count": len(results) - len(succeeded),
+        }
 
     def add_evidence(
         self,

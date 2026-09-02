@@ -33,8 +33,12 @@ from app.schemas.inbound import (
     EndSessionRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
+    InboundExceptionBulkDispositionRequest,
+    InboundExceptionBulkDispositionResponse,
     InboundExceptionClassifyRequest,
     InboundExceptionDispositionRequest,
+    InboundExceptionListResponse,
+    InboundExceptionPagination,
     InboundExceptionReasonResponse,
     InboundExceptionResponse,
     InboundShortBalanceResponse,
@@ -555,27 +559,42 @@ async def classify_inbound_exception(
 
 @router.get(
     "/exceptions",
-    response_model=list[InboundExceptionResponse],
+    response_model=InboundExceptionListResponse,
     summary="List inbound exception and hold/quarantine queue",
 )
 async def list_inbound_exceptions(
     warehouse_id: UUID | None = Query(None),
     destination: str | None = Query(None),
     exception_status: str | None = Query(None, alias="status"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_READ)),
     db: Session = Depends(get_db),
 ):
     service = InboundExceptionService(db)
-    exceptions = service.list_exceptions(
+    exceptions, total = service.list_exceptions(
         current_user.organization_id,
         warehouse_id=warehouse_id,
         destination=destination,
         status=exception_status,
+        page=page,
+        page_size=page_size,
     )
-    return [
-        InboundExceptionResponse(**serialized)
-        for serialized in service.serialize_many(exceptions)
-    ]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return InboundExceptionListResponse(
+        exceptions=[
+            InboundExceptionResponse(**serialized)
+            for serialized in service.serialize_many(exceptions)
+        ],
+        pagination=InboundExceptionPagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1,
+        ),
+    )
 
 
 @router.get(
@@ -661,6 +680,31 @@ async def dispose_inbound_exception(
         item_id=data.item_id,
     )
     return InboundExceptionResponse(**service.serialize(exception))
+
+
+@router.post(
+    "/exceptions/bulk-disposition",
+    response_model=InboundExceptionBulkDispositionResponse,
+    summary="Bulk manager disposition for multiple inbound exceptions",
+)
+async def bulk_dispose_inbound_exceptions(
+    data: InboundExceptionBulkDispositionRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_DISPOSE)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    # Fail fast: validate each exception exists and the caller may manage it.
+    for exception_id in data.exception_ids:
+        exception = service.get_exception(exception_id, current_user.organization_id)
+        service.assert_manager(current_user, exception.warehouse_id)
+    result = service.dispose_many(
+        exception_ids=data.exception_ids,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action=data.action,
+        note=data.note,
+    )
+    return InboundExceptionBulkDispositionResponse(**result)
 
 
 # ------------------------------------------------------------------

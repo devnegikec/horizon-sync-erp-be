@@ -157,6 +157,19 @@ class InboundExceptionDispositionRequest(BaseModel):
     )
 
 
+class InboundExceptionBulkDispositionRequest(BaseModel):
+    """Bulk manager disposition for multiple inbound exceptions."""
+
+    exception_ids: list[UUID] = Field(
+        ..., min_length=1, max_length=200, description="Exception IDs to dispose"
+    )
+    action: str = Field(
+        ...,
+        description="release_to_receiving, move_to_hold, move_to_quarantine, return_to_sender, or dispose",
+    )
+    note: str | None = Field(None, max_length=2000)
+
+
 # ===========================================
 # RESPONSE SCHEMAS
 # ===========================================
@@ -343,6 +356,41 @@ class InboundExceptionResponse(BaseModel):
     approved_at: str | None = None
     disposed_at: str | None = None
     evidence: list[InboundEvidenceResponse] = []
+
+
+class InboundExceptionPagination(BaseModel):
+    """Pagination metadata for the inbound exception queue."""
+
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class InboundExceptionListResponse(BaseModel):
+    """Paginated inbound exception queue."""
+
+    exceptions: list[InboundExceptionResponse]
+    pagination: InboundExceptionPagination
+
+
+class InboundExceptionBulkResult(BaseModel):
+    """Per-exception outcome for a bulk disposition."""
+
+    id: str
+    status: str
+    error: str | None = None
+    exception: InboundExceptionResponse | None = None
+
+
+class InboundExceptionBulkDispositionResponse(BaseModel):
+    """Result of a bulk disposition operation."""
+
+    results: list[InboundExceptionBulkResult]
+    disposed_count: int
+    failed_count: int
 
 
 class InboundShortBalanceResponse(BaseModel):
