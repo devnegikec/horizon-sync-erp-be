@@ -64,6 +64,9 @@ async def list_asn_orders(
     ),
     vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
+    asn_type: str | None = Query(
+        None, pattern="^(purchase|internal_transfer)$", description="Filter by ASN type"
+    ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
@@ -82,6 +85,7 @@ async def list_asn_orders(
         delivery_date_to=delivery_date_to,
         vehicle_no=vehicle_no,
         search=search,
+        asn_type=asn_type,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -103,6 +107,39 @@ async def get_asn_order(
     return AsnOrderResponse.model_validate(data)
 
 
+@router.get("/{asn_order_id}/serials")
+async def get_asn_order_serials(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """Get unit-level serial lines (received/in-transit) for an ASN. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.get_serial_lines(asn_order_id, current_user.organization_id)
+
+
+@router.get("/{asn_order_id}/asn-856")
+async def export_asn_856(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EDI-856-style serialized ASN export (SKU + serials + SSCC). Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.serialized_asn_856(asn_order_id, current_user.organization_id)
+
+
+@router.get("/{asn_order_id}/epcis")
+async def export_asn_epcis(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EPCIS 2.0-style event stream for the ASN's serials. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.epcis_events(asn_order_id, current_user.organization_id)
+
+
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)
 async def update_asn_order(
     asn_order_id: UUID,
@@ -117,6 +154,8 @@ async def update_asn_order(
         body.model_dump(exclude_unset=True),
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 
@@ -147,6 +186,27 @@ async def update_asn_order_status(
         body.status,
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
+    )
+    return AsnOrderResponse.model_validate(data)
+
+
+@router.post("/{asn_order_id}/confirm", response_model=AsnOrderResponse)
+async def confirm_asn_order(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Confirm an ASN order (approve + auto-create source pick list for transfers). Requires asn_order.update."""
+    svc = AsnOrderService(db)
+    data = svc.update_status(
+        asn_order_id,
+        "confirmed",
+        current_user.organization_id,
+        current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 

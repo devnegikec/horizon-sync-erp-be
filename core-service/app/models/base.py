@@ -511,6 +511,7 @@ class NotificationType(str, enum.Enum):
     PICK_LIST_CREATED = "pick_list_created"
     PICK_EXCEPTION = "pick_exception"
     ERP_SYNC_FAILED = "erp_sync_failed"
+    TRANSFER_PICK_CREATED = "transfer_pick_created"
 
 
 class WarehouseUserRole(str, enum.Enum):

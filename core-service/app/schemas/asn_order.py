@@ -37,6 +37,7 @@ class AsnOrderItemBase(BaseModel):
     qty: Decimal | float = Field(..., gt=0)
     uom: str = Field(..., min_length=1, max_length=50)
     sort_order: int = 0
+    serial_nos: list[str] | None = None
 
 
 class AsnOrderItemCreate(AsnOrderItemBase):
@@ -49,10 +50,21 @@ class AsnOrderItemResponse(AsnOrderItemBase):
     asn_order_id: UUID
     item_code: str | None = None
     item_name: str | None = None
+    sku: str | None = None
     delivered_qty: Decimal | float = 0
+    shipped_qty: Decimal | float = 0
+    received_qty: Decimal | float = 0
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class AsnOrderTransferProgress(BaseModel):
+    """Serial-level transfer progress for internal-transfer ASNs."""
+
+    total_serials: int
+    received_serials: int
+    in_transit_serials: int
 
 
 class AsnOrderBase(BaseModel):
@@ -69,6 +81,9 @@ class AsnOrderBase(BaseModel):
     reference_type: str | None = None
     reference_id: UUID | None = None
     reference_no: str | None = None
+    asn_type: str | None = Field(
+        None, pattern="^(purchase|internal_transfer)$"
+    )
     remarks: str | None = Field(None, max_length=1000)
 
 
@@ -85,6 +100,9 @@ class AsnOrderUpdate(BaseModel):
         None,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     )
+    asn_type: str | None = Field(
+        None, pattern="^(purchase|internal_transfer)$"
+    )
     remarks: str | None = Field(None, max_length=1000)
     items: list[AsnOrderItemCreate] | None = None
 
@@ -98,6 +116,9 @@ class AsnOrderResponse(AsnOrderBase):
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
+    linked_pick_list_id: UUID | None = None
+    linked_pick_list_no: str | None = None
+    transfer_progress: AsnOrderTransferProgress | None = None
     created_at: datetime
     updated_at: datetime
     items: list[AsnOrderItemResponse] = []
@@ -112,6 +133,8 @@ class AsnOrderListItem(BaseModel):
     order_date: datetime
     delivery_date: datetime | None = None
     grand_total: Decimal | float = 0
+    asn_type: str | None = None
+    linked_pick_list_id: UUID | None = None
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
     vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []

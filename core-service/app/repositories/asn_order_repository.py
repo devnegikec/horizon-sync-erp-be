@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.asn_order import AsnOrder, AsnOrderItem
@@ -61,6 +62,7 @@ class AsnOrderRepository:
         delivery_date_to=None,
         vehicle_no: str | None = None,
         search: str | None = None,
+        asn_type: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[AsnOrder], int]:
@@ -78,11 +80,23 @@ class AsnOrderRepository:
         if status is not None:
             q = q.filter(AsnOrder.status == status)
         if warehouse_id is not None:
-            # Filter by target (to) warehouse only — the warehouse a user
-            # selects is the one receiving the goods.
-            q = q.filter(AsnOrder.warehouse_id_to == warehouse_id)
+            # A selected warehouse sees its inbound ASNs (target) AND its
+            # outgoing internal transfers (source). Both warehouses in an
+            # internal transfer are owned by the organization, so the source
+            # side also needs visibility of the transfer it is fulfilling.
+            q = q.filter(
+                or_(
+                    AsnOrder.warehouse_id_to == warehouse_id,
+                    and_(
+                        AsnOrder.asn_type == "internal_transfer",
+                        AsnOrder.warehouse_id_from == warehouse_id,
+                    ),
+                )
+            )
         if source_warehouse_id is not None:
             q = q.filter(AsnOrder.warehouse_id_from == source_warehouse_id)
+        if asn_type is not None:
+            q = q.filter(AsnOrder.asn_type == asn_type)
         if delivery_date_from is not None:
             q = q.filter(AsnOrder.delivery_date >= delivery_date_from)
         if delivery_date_to is not None:

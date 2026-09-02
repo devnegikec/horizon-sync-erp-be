@@ -173,6 +173,52 @@ Covers: **WF-022**, ALT-009.
 **Open questions**
 - **Q8 — ERP integration mode:** real-time sync or async queue? **Answer:** Async queue. A new `erp_sync_messages` outbound queue decouples pick completion/dispatch from ERP delivery (WF-022). Messages are enqueued on pick-list completion (`status_update`) and dispatch creation (`dispatch_created`), delivered by a flush step with exponential-backoff retry (`pick.erp_sync_max_retries` / `pick.erp_sync_retry_backoff_minutes`), and — once retries are exhausted — a failure alert is raised in-app (`NotificationType.ERP_SYNC_FAILED`, ALT-009). The transport is a pluggable callable; the real SAP transport is the documented extension point (default logs + dequeues as a no-op).
 
+**Delivered implementation**
+
+*Why an async queue* — completing a pick list or creating a dispatch must never block on a slow
+or failing ERP call. The queue decouples the WMS action from ERP delivery: events are recorded
+immediately and delivered out-of-band.
+
+- **Trigger points** (`app/api/v1/endpoints/outbound.py`): enqueue hooks in pick-list
+  `complete` → `status_update` and `create_dispatch` → `dispatch_created` (best-effort).
+- **Model** (`app/models/erp_sync_message.py`): `ErpSyncMessage` + `ErpSyncStatus`
+  (`pending`/`sent`/`failed`). Columns: `entity_type`, `entity_id`, `operation`, `status`,
+  `payload`, `attempt_count`, `max_attempts`, `last_error`, `next_attempt_at`, `created_by`,
+  plus `pick_list_id`/`dispatch_record_id` as plain UUID references (no FK).
+- **Service** (`app/services/erp_sync_service.py`):
+  - `enqueue(...)` — queues a message, **deduping** against an existing `pending` message for the
+    same `(entity_type, entity_id, operation)` so repeated triggers don't duplicate the queue.
+  - `flush_pending(now=None)` — delivers only *due* pending messages; success → `sent`,
+    transient failure → `attempt_count++` + exponential backoff (`base * 2^(n-1)`), exhausted
+    budget → `failed` + in-app alert (`NotificationType.ERP_SYNC_FAILED`).
+  - `_alert(...)` — raises the failure notification via `NotificationService`; never raises.
+  - Transport is an injectable callable (`ErpTransport`); the default `_noop_transport` logs and
+    dequeues — the real SAP transport is the documented extension point.
+- **Config** (`app/core/pick_config.py`): `pick.erp_sync_max_retries` (default 3) +
+  `pick.erp_sync_retry_backoff_minutes` (default 5), per-organization via `PickConfigResolver`.
+- **Endpoints** (`app/api/v1/endpoints/outbound.py`): `GET /erp-sync` (list, paged) and
+  `POST /erp-sync/flush` (deliver due messages) — declared as literal routes **before**
+  `/{pick_list_id}`.
+- **Frontend** (`apps/inventory/.../PickListView.tsx` → `ErpSyncPanel`): a collapsible footer
+  panel below the pick-list table showing **ERP Sync Queue** with a `failed` count badge and two
+  actions — **Refresh** (re-fetch) and **Flush retries** (call the flush endpoint, toast shows
+  `{sent} sent, {retried} retried, {failed} failed`). Expanded view lists each message's entity,
+  operation, status badge (`Pending`/`Sent`/`Failed`), `attempt_count/max_attempts`, and last error.
+- **API client / hooks:** `utility/api/wms.ts` (`erpSyncApi`), `hooks/useWMS.ts`
+  (`useErpSyncQueue` → `{ data, refetch, flush }`); types in `types/wms.types.ts`.
+- **Tests:** `tests/test_erp_sync.py` (5 tests: enqueue dedup, flush success, retry/backoff,
+  exhaustion → failed + alert, list).
+
+**Gotchas**
+- `enqueue` dedup uses `==` on `status` (not `.in_()`) — fake-session tests only handle `eq`/`ne`.
+- `_alert` skips with a warning when `created_by` is `None` (`Notification.user_id` is non-nullable).
+- `ErpSyncService.__init__` accepts `max_retries`/`backoff_minutes` overrides so tests are
+  deterministic without seeding `PickSetting`.
+- Adding config keys requires updating `tests/test_pick_settings.py::test_all_plan_keys_present`
+  (asserts the exact catalog key set).
+- ⚠️ Transport is a **no-op by default** — "Sent" means "flushed through the queue", not
+  "confirmed received by SAP". SAP wire-up is a documented extension point.
+
 ### PR-14 — Task accept + login session controls (T-14)
 Covers: **WF-009/010**, flags `login_lockout_attempts`, `session_timeout_minutes`.
 - Backend accept endpoint with start timestamp; lock-after-failures + session timeout;

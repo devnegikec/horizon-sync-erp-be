@@ -9,6 +9,7 @@ POST /api/v1/data-sync/sync
 """
 
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -53,6 +54,10 @@ class DataSyncRequest(BaseModel):
         default="USD",
         max_length=3,
         description="ISO 4217 currency code used for currency/chart-of-accounts seeding",
+    )
+    warehouse_id: UUID | None = Field(
+        default=None,
+        description="Target warehouse for the 'stock' feature",
     )
 
 
@@ -118,6 +123,7 @@ async def sync_data_features(
         features=features,
         created_by=str(current_user.id),
         base_currency=request.base_currency.strip().upper() or "USD",
+        warehouse_id=request.warehouse_id,
     )
 
     logger.info(

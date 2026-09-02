@@ -121,10 +121,195 @@ class OutboundService:
         # Decrement warehouse stock levels for all dispatched items (Requirement 13.4)
         self._decrement_stock_levels(pick_list, org_id)
 
+        # Propagate picked serials into the internal-transfer ASN (P1).
+        self._propagate_transfer_serials(pick_list, org_id)
+
         self.db.commit()
         self.db.refresh(dispatch_record)
 
         return self._to_response(dispatch_record)
+
+    def _propagate_transfer_serials(self, pick_list: PickList, org_id: UUID) -> None:
+        """Propagate picked serials into the internal-transfer ASN at dispatch.
+
+        When the pick list fulfils an internal-transfer ASN
+        (``reference_type == 'asn_order'``), copy each line's ``serial_nos``
+        into the ASN items + ``asn_order_serial_lines`` and write
+        ``SerialNoHistory`` (``transfer_out``) rows for chain of custody.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if pick_list.reference_type != "asn_order" or not pick_list.reference_id:
+            return
+
+        from app.models.asn_order import AsnOrder, AsnOrderItem, AsnOrderSerialLine
+        from app.models.serial_no import SerialNo, SerialNoHistory
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == pick_list.reference_id,
+                AsnOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if asn_order is None or asn_order.asn_type != "internal_transfer":
+            return
+
+        # Serialize concurrent dispatches for the same ASN: lock the ASN row so
+        # two simultaneous dispatches cannot both build the same "existing"
+        # snapshot and insert duplicate serial lines / transfer_out history.
+        self.db.query(AsnOrder).filter(AsnOrder.id == asn_order.id).with_for_update().first()
+
+        dest_warehouse_id = asn_order.warehouse_id_to
+        source_warehouse_id = pick_list.warehouse_id
+
+        # Keep the operation idempotent across repeat dispatch calls.
+        existing = set(
+            self.db.query(AsnOrderSerialLine.serial_no)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .scalars()
+            .all()
+        )
+
+        for line in pick_list.items:
+            asn_item = (
+                self.db.query(AsnOrderItem)
+                .filter(
+                    AsnOrderItem.asn_order_id == asn_order.id,
+                    AsnOrderItem.item_id == line.item_id,
+                )
+                .first()
+            )
+            # Record the quantity actually dispatched (picked) for both
+            # serialized and non-serialized lines, so the transfer stock entry
+            # doesn't fall back to the full ordered quantity.
+            if asn_item is not None:
+                asn_item.shipped_qty = line.picked_qty or line.qty
+
+            serials = [s for s in (line.serial_nos or []) if s]
+            if not serials:
+                continue
+
+            if asn_item is not None:
+                merged = list(dict.fromkeys((asn_item.serial_nos or []) + serials))
+                asn_item.serial_nos = merged
+
+            for serial_no in serials:
+                if serial_no in existing:
+                    continue
+                self.db.add(
+                    AsnOrderSerialLine(
+                        organization_id=org_id,
+                        asn_order_id=asn_order.id,
+                        asn_item_id=asn_item.id if asn_item else None,
+                        item_id=line.item_id,
+                        serial_no=serial_no,
+                        bin_location_id=line.bin_location_id,
+                    )
+                )
+                existing.add(serial_no)
+
+                serial_row = (
+                    self.db.query(SerialNo)
+                    .filter(
+                        SerialNo.organization_id == org_id,
+                        SerialNo.item_id == line.item_id,
+                        SerialNo.serial_no == serial_no,
+                    )
+                    .first()
+                )
+                if serial_row is not None:
+                    serial_row.status = "in_transit"
+                    self.db.add(
+                        SerialNoHistory(
+                            organization_id=org_id,
+                            serial_no_id=serial_row.id,
+                            transaction_type="transfer_out",
+                            transaction_id=asn_order.id,
+                            from_warehouse_id=source_warehouse_id,
+                            to_warehouse_id=dest_warehouse_id,
+                            remarks=(
+                                f"Internal transfer ASN {asn_order.asn_order_no}"
+                            ),
+                        )
+                    )
+
+        logger.info(
+            "Propagated transfer serials for ASN '%s' at dispatch",
+            asn_order.asn_order_no,
+        )
+
+        # Accounting traceability: a MATERIAL_TRANSFER stock entry for the move.
+        self._create_transfer_stock_entry(asn_order, org_id)
+
+    def _create_transfer_stock_entry(self, asn_order, org_id: UUID) -> None:
+        """Create a submitted MATERIAL_TRANSFER stock entry at dispatch (idempotent)."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if asn_order.linked_stock_entry_id:
+            return
+
+        from datetime import UTC, datetime
+
+        from app.models.asn_order import AsnOrderSerialLine
+        from app.schemas.stock_entry import StockEntryCreate, StockEntryItemCreate
+        from app.services.stock_entry_service import StockEntryService
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        serials_by_item: dict = {}
+        for line in serial_lines:
+            serials_by_item.setdefault(line.item_id, []).append(line.serial_no)
+
+        items = []
+        for item in asn_order.items:
+            shipped_qty = float(item.shipped_qty or 0)
+            if shipped_qty <= 0:
+                continue
+            items.append(
+                StockEntryItemCreate(
+                    item_id=item.item_id,
+                    qty=shipped_qty,
+                    uom=item.uom,
+                    serial_nos=serials_by_item.get(item.item_id) or None,
+                )
+            )
+        if not items:
+            return
+
+        # Create as a DRAFT and submit it so stock levels are updated and the
+        # movement audit rows are written. Creating it directly "submitted"
+        # only persists the header without ever moving stock.
+        entry = StockEntryService(self.db).create(
+            StockEntryCreate(
+                stock_entry_type="material_transfer",
+                from_warehouse_id=asn_order.warehouse_id_from,
+                to_warehouse_id=asn_order.warehouse_id_to,
+                posting_date=datetime.now(UTC),
+                reference_type="asn_order",
+                reference_id=asn_order.id,
+                remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
+                items=items,
+            ),
+            org_id,
+            asn_order.created_by,
+        )
+        asn_order.linked_stock_entry_id = entry.id
+        self.db.flush()
+        StockEntryService(self.db).submit(entry.id, org_id, asn_order.created_by)
+        logger.info(
+            "Created MATERIAL_TRANSFER stock entry %s for ASN '%s'",
+            entry.stock_entry_no,
+            asn_order.asn_order_no,
+        )
 
     # ------------------------------------------------------------------
     # LIST DISPATCHES
