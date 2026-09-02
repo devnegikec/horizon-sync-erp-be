@@ -72,7 +72,28 @@ def _wh_role_for(worker_role: str | None) -> str:
     return "warehouse_work_user"
 
 
-def _user_row_to_dict(user: User, warehouse_id: str | None, wh_role: str | None) -> dict:
+# Values accepted by the ``warehouse_users.role`` enum column (see core-service
+# migrations). Canonical worker role codes must be mapped back to these before
+# writing to the DB.
+WAREHOUSE_ROLE_ENUM_VALUES = ("operator", "manager", "supervisor", "coordinator")
+
+CANONICAL_TO_WAREHOUSE_ROLE = {
+    "warehouse_work_user": "operator",
+    "wms_operator": "manager",
+    "asn_coordinator": "supervisor",
+}
+
+
+def _warehouse_enum_role(worker_role: str | None) -> str:
+    """Map a worker role to a valid ``warehouse_users.role`` enum value."""
+    if worker_role in WAREHOUSE_ROLE_ENUM_VALUES:
+        return worker_role
+    return CANONICAL_TO_WAREHOUSE_ROLE.get(worker_role, "operator")
+
+
+def _user_row_to_dict(
+    user: User, warehouse_id: str | None, wh_role: str | None
+) -> dict:
     return {
         "id": str(user.id),
         "email": user.email or "",
@@ -155,13 +176,17 @@ def _ensure_org_role(db: Session, user: User, org_id: str) -> None:
         )
 
 
-def _ensure_warehouse_assignment(db: Session, user: User, org_id: str, warehouse_ids: list[str], role: str) -> None:
-    wh_role = _wh_role_for(role)
+def _ensure_warehouse_assignment(
+    db: Session, user: User, org_id: str, warehouse_ids: list[str], role: str
+) -> None:
+    wh_role = _warehouse_enum_role(role)
     for wh in warehouse_ids:
         if not wh:
             continue
         exists = db.execute(
-            sa_text("SELECT 1 FROM warehouse_users WHERE user_id=:u AND warehouse_id=:wh"),
+            sa_text(
+                "SELECT 1 FROM warehouse_users WHERE user_id=:u AND warehouse_id=:wh"
+            ),
             {"u": str(user.id), "wh": wh},
         ).fetchone()
         if exists:
@@ -208,7 +233,11 @@ async def create_worker(
 
     fn, ln = body.get("first_name", ""), body.get("last_name", "")
     dn = body.get("display_name") or f"{fn} {ln}"
-    qr = body.get("qr_code") or body.get("barcode") or f"WRK-{secrets.token_hex(6).upper()}"
+    qr = (
+        body.get("qr_code")
+        or body.get("barcode")
+        or f"WRK-{secrets.token_hex(6).upper()}"
+    )
     email = body.get("email") or f"{qr}@warehouse.local"
     password = body.get("password") or ""
     login_username = body.get("login_username")
@@ -223,7 +252,10 @@ async def create_worker(
         raise HTTPException(409, f"Email {email} already exists")
     if db.query(User).filter(User.qr_code == qr).first():
         raise HTTPException(409, f"QR code {qr} already in use")
-    if login_username and db.query(User).filter(User.login_username == login_username).first():
+    if (
+        login_username
+        and db.query(User).filter(User.login_username == login_username).first()
+    ):
         raise HTTPException(409, f"Login username {login_username} already in use")
 
     user = User(
@@ -293,9 +325,7 @@ async def list_workers(
         where.append("u.is_active=false")
 
     wc = " AND ".join(where)
-    total = db.execute(
-        sa_text(f"SELECT count(*) FROM users u WHERE {wc}"), p
-    ).scalar()
+    total = db.execute(sa_text(f"SELECT count(*) FROM users u WHERE {wc}"), p).scalar()
     rows = db.execute(
         sa_text(
             f"SELECT u.id FROM users u WHERE {wc} ORDER BY u.first_name, u.last_name "
@@ -448,4 +478,3 @@ async def import_workers(
         "total": len(workers),
         "errors": errors,
     }
-
