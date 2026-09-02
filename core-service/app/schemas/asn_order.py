@@ -59,6 +59,14 @@ class AsnOrderItemResponse(AsnOrderItemBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AsnOrderTransferProgress(BaseModel):
+    """Serial-level transfer progress for internal-transfer ASNs."""
+
+    total_serials: int
+    received_serials: int
+    in_transit_serials: int
+
+
 class AsnOrderBase(BaseModel):
     asn_order_no: str | None = Field(None, min_length=1, max_length=100)
     warehouse_id_from: UUID | None = None
@@ -108,6 +116,9 @@ class AsnOrderResponse(AsnOrderBase):
     submitted_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
+    linked_pick_list_id: UUID | None = None
+    linked_pick_list_no: str | None = None
+    transfer_progress: AsnOrderTransferProgress | None = None
     created_at: datetime
     updated_at: datetime
     items: list[AsnOrderItemResponse] = []
@@ -123,6 +134,7 @@ class AsnOrderListItem(BaseModel):
     delivery_date: datetime | None = None
     grand_total: Decimal | float = 0
     asn_type: str | None = None
+    linked_pick_list_id: UUID | None = None
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
     vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []

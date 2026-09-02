@@ -46,13 +46,26 @@ def _action(transaction_type: str) -> str:
     return "OBSERVE"
 
 
-def serial_epc(serial_no: str) -> str:
-    """Return an EPCIS-style URN for a unit serial.
+# Vendor-neutral GS1 placeholders so the URN parses as a valid SGTIN class URN
+# (``urn:epc:id:sgtin:<CompanyPrefix>.<ItemReference>.<Serial>``). Downstream
+# consumers should substitute a real company prefix / item reference when a
+# GTIN is available; the unit serial is preserved verbatim as the final part.
+NEUTRAL_COMPANY_PREFIX = "0000000"
+NEUTRAL_ITEM_REFERENCE = "0"
 
-    Uses a vendor-neutral ``urn:epc:id:sgtin`` class URN. If a real GTIN is
-    available it should be substituted; the serial is preserved verbatim.
+
+def serial_epc(serial_no: str) -> str:
+    """Return a valid EPCIS SGTIN URN for a unit serial.
+
+    Uses vendor-neutral company-prefix/item-reference placeholders to produce
+    the three dot-separated SGTIN components. If a real GTIN is available it
+    should be substituted; the serial is preserved verbatim as the serial
+    component.
     """
-    return f"urn:epc:id:sgtin:{serial_no}"
+    return (
+        f"urn:epc:id:sgtin:{NEUTRAL_COMPANY_PREFIX}."
+        f"{NEUTRAL_ITEM_REFERENCE}.{serial_no}"
+    )
 
 
 def build_events_for_serial(serial_no: str, history_rows: list) -> list[dict]:

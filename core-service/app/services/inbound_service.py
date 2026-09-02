@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -434,11 +434,7 @@ class InboundService:
                 pending_asn_exception_type = "unexpected_known_sku"
 
             # ── Internal transfer: verify + receive the scanned serial ──
-            if (
-                asn_order.asn_type == "internal_transfer"
-                and product_item is not None
-                and item is not None
-            ):
+            if asn_order.asn_type == "internal_transfer" and item is not None:
                 self._verify_and_receive_transfer_serial(
                     asn_order=asn_order,
                     serial_no=payload.id,
@@ -650,7 +646,19 @@ class InboundService:
                 ],
             )
 
-        if line.received:
+        # Atomically claim the serial line so concurrent scans of the same
+        # serial cannot both mark it received and write duplicate
+        # ``transfer_in`` history rows.
+        now = datetime.now(UTC)
+        result = self.db.execute(
+            text(
+                "UPDATE asn_order_serial_lines "
+                "SET received = true, received_at = :now, received_by = :worker "
+                "WHERE id = :line_id AND received = false"
+            ),
+            {"line_id": str(line.id), "now": now, "worker": str(worker_id)},
+        )
+        if result.rowcount == 0:
             raise ValidationError(
                 message="Duplicate serial: unit already received for this transfer",
                 details=[
@@ -660,10 +668,6 @@ class InboundService:
                     }
                 ],
             )
-
-        line.received = True
-        line.received_at = datetime.now(UTC)
-        line.received_by = worker_id
 
         # Chain of custody: transfer_in at the destination warehouse.
         serial_row = (

@@ -426,8 +426,14 @@ class OrganizationOnboardingService:
         now = datetime.now(UTC)
         user_id = self._parse_user_id(created_by, organization_id)
 
+        # Seed order matters: stock depends on sample items existing, so run
+        # items (and its item_groups dependency) before stock regardless of the
+        # order the client requested them in.
+        _dependency_rank = {"item_groups": 0, "items": 1, "stock": 2}
+        ordered_features = sorted(features, key=lambda k: _dependency_rank.get(k, 10))
+
         summary: dict = {"organization_id": str(organization_id)}
-        for key in features:
+        for key in ordered_features:
             summary[key] = self._sync_feature(
                 key, organization_id, user_id, now, base_currency, warehouse_id
             )
@@ -973,8 +979,9 @@ class OrganizationOnboardingService:
                 created += 1
             else:
                 if (level.quantity_on_hand or 0) < target_qty:
+                    reserved = level.quantity_reserved or 0
                     level.quantity_on_hand = target_qty
-                    level.quantity_available = target_qty
+                    level.quantity_available = target_qty - reserved
                     level.updated_at = now
                 skipped += 1
 

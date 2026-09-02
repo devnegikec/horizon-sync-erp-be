@@ -203,7 +203,13 @@ class AsnOrderService:
             )
 
         # One SSCC per shipment (logistics unit), derived from the ASN id.
-        serial_ref = str(asn_order.id.int)[:12] if getattr(asn_order.id, "int", None) else "1"
+        # The serial reference must fit the 17-digit SSCC body given the
+        # default 7-digit company prefix: 17 - 1 (extension) - 7 = 9 digits.
+        serial_ref = (
+            str(asn_order.id.int % 1_000_000_000).rjust(9, "0")
+            if getattr(asn_order.id, "int", None)
+            else "1"
+        )
         sscc = generate_sscc(serial_ref)
 
         return {
@@ -359,6 +365,18 @@ class AsnOrderService:
         if "warehouse_id_to" in payload and payload["warehouse_id_to"]:
             self._validate_warehouse_organization(
                 payload["warehouse_id_to"], organization_id
+            )
+
+        # An internal-transfer ASN must always have a source warehouse. The
+        # update may set asn_type to internal_transfer without a source, which
+        # would otherwise fail later when the confirmation tries to create the
+        # source pick list.
+        effective_asn_type = payload.get("asn_type", asn_order.asn_type)
+        effective_from = payload.get("warehouse_id_from", asn_order.warehouse_id_from)
+        if effective_asn_type == "internal_transfer" and not effective_from:
+            raise ValueError(
+                "warehouse_id_from (source warehouse) is required for an "
+                "internal transfer ASN"
             )
 
         # Handle items update if provided
@@ -586,11 +604,21 @@ class AsnOrderService:
 
         logger = logging.getLogger(__name__)
 
+        # Serialize concurrent confirmations: take a row lock on the ASN so two
+        # simultaneous confirms cannot both observe a missing linked pick list
+        # and create duplicate pick lists. (FOR UPDATE is a no-op on SQLite.)
+        linked_pick_list_id = (
+            self.db.query(AsnOrder.linked_pick_list_id)
+            .filter(AsnOrder.id == asn_order.id)
+            .with_for_update()
+            .scalar()
+        )
+
         # Idempotency: never create a second pick list for the same ASN.
-        if asn_order.linked_pick_list_id:
+        if linked_pick_list_id:
             from app.models.pick_list import PickList
 
-            existing = self.db.get(PickList, asn_order.linked_pick_list_id)
+            existing = self.db.get(PickList, linked_pick_list_id)
             if existing:
                 return {"id": existing.id, "pick_list_no": existing.pick_list_no}
 

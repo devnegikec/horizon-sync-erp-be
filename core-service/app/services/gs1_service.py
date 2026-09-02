@@ -45,12 +45,23 @@ def generate_sscc(
     prefix = (company_prefix or DEFAULT_COMPANY_PREFIX).strip()
     if not prefix.isdigit():
         raise ValueError("company_prefix must be numeric")
+    if len(extension_digit) != 1 or not extension_digit.isdigit():
+        raise ValueError("extension_digit must be a single digit")
     serial = serial_reference.strip() or "0"
     if not serial.isdigit():
         raise ValueError("serial_reference must be numeric")
 
-    body = extension_digit + prefix + serial
-    if len(body) > 17:
-        body = body[:17]
-    body = body.ljust(17, "0")
+    # The SSCC body (everything before the check digit) is exactly 17 digits:
+    # 1 extension digit + company prefix + serial reference. Reject inputs
+    # that would overflow rather than silently truncating them (truncation
+    # makes distinct inputs collide on the same SSCC).
+    serial_len = 17 - len(extension_digit) - len(prefix)
+    if serial_len < 1:
+        raise ValueError("company_prefix is too long to form an 18-digit SSCC")
+    if len(serial) > serial_len:
+        raise ValueError(
+            f"serial_reference must be at most {serial_len} digits for this "
+            f"company prefix (got {len(serial)})"
+        )
+    body = extension_digit + prefix + serial.rjust(serial_len, "0")
     return body + calculate_check_digit(body)

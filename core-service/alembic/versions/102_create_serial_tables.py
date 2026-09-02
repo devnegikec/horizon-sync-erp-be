@@ -39,5 +39,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Mirror upgrade's checkfirst behavior: only drop tables that actually
+    # exist, and never CASCADE (which would silently delete pre-existing
+    # serial data and dependent objects created before this migration ran).
+    from sqlalchemy import inspect
+
+    existing = set(inspect(op.get_bind()).get_table_names())
     for name in reversed(TABLES):
-        op.execute(f'DROP TABLE IF EXISTS "{name}" CASCADE')
+        if name in existing:
+            op.drop_table(name)

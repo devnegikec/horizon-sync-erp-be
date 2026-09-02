@@ -164,7 +164,17 @@ def _ensure_warehouse_assignment(db: Session, user: User, org_id: str, warehouse
             sa_text("SELECT 1 FROM warehouse_users WHERE user_id=:u AND warehouse_id=:wh"),
             {"u": str(user.id), "wh": wh},
         ).fetchone()
-        if not exists:
+        if exists:
+            # Update the role on an existing assignment (e.g. a role-only
+            # worker update) instead of ignoring it.
+            db.execute(
+                sa_text(
+                    "UPDATE warehouse_users SET role=:r, updated_at=NOW() "
+                    "WHERE user_id=:u AND warehouse_id=:wh"
+                ),
+                {"u": str(user.id), "wh": wh, "r": wh_role},
+            )
+        else:
             db.execute(
                 sa_text(
                     "INSERT INTO warehouse_users (id, organization_id, user_id, "
@@ -364,10 +374,17 @@ async def update_worker(
     if password:
         _set_password(user, password)
 
-    if body.get("warehouse_id"):
-        wh = body["warehouse_id"]
-        role = body.get("role") or body.get("warehouse_role") or "warehouse_work_user"
-        _ensure_warehouse_assignment(db, user, _primary_org_id(user, db) or "", [str(wh)], role)
+    role = body.get("role") or body.get("warehouse_role")
+    if body.get("warehouse_id") or role:
+        wh = body.get("warehouse_id") or _warehouse_for(str(user.id), db)[0]
+        if wh:
+            _ensure_warehouse_assignment(
+                db,
+                user,
+                _primary_org_id(user, db) or "",
+                [str(wh)],
+                role or "warehouse_work_user",
+            )
 
     db.commit()
     db.refresh(user)

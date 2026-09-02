@@ -158,6 +158,11 @@ class OutboundService:
         if asn_order is None or asn_order.asn_type != "internal_transfer":
             return
 
+        # Serialize concurrent dispatches for the same ASN: lock the ASN row so
+        # two simultaneous dispatches cannot both build the same "existing"
+        # snapshot and insert duplicate serial lines / transfer_out history.
+        self.db.query(AsnOrder).filter(AsnOrder.id == asn_order.id).with_for_update().first()
+
         dest_warehouse_id = asn_order.warehouse_id_to
         source_warehouse_id = pick_list.warehouse_id
 
@@ -170,10 +175,6 @@ class OutboundService:
         )
 
         for line in pick_list.items:
-            serials = [s for s in (line.serial_nos or []) if s]
-            if not serials:
-                continue
-
             asn_item = (
                 self.db.query(AsnOrderItem)
                 .filter(
@@ -182,10 +183,19 @@ class OutboundService:
                 )
                 .first()
             )
+            # Record the quantity actually dispatched (picked) for both
+            # serialized and non-serialized lines, so the transfer stock entry
+            # doesn't fall back to the full ordered quantity.
+            if asn_item is not None:
+                asn_item.shipped_qty = line.picked_qty or line.qty
+
+            serials = [s for s in (line.serial_nos or []) if s]
+            if not serials:
+                continue
+
             if asn_item is not None:
                 merged = list(dict.fromkeys((asn_item.serial_nos or []) + serials))
                 asn_item.serial_nos = merged
-                asn_item.shipped_qty = line.picked_qty or line.qty
 
             for serial_no in serials:
                 if serial_no in existing:
@@ -261,10 +271,13 @@ class OutboundService:
 
         items = []
         for item in asn_order.items:
+            shipped_qty = float(item.shipped_qty or 0)
+            if shipped_qty <= 0:
+                continue
             items.append(
                 StockEntryItemCreate(
                     item_id=item.item_id,
-                    qty=float(item.shipped_qty or item.qty),
+                    qty=shipped_qty,
                     uom=item.uom,
                     serial_nos=serials_by_item.get(item.item_id) or None,
                 )
@@ -272,13 +285,15 @@ class OutboundService:
         if not items:
             return
 
+        # Create as a DRAFT and submit it so stock levels are updated and the
+        # movement audit rows are written. Creating it directly "submitted"
+        # only persists the header without ever moving stock.
         entry = StockEntryService(self.db).create(
             StockEntryCreate(
                 stock_entry_type="material_transfer",
                 from_warehouse_id=asn_order.warehouse_id_from,
                 to_warehouse_id=asn_order.warehouse_id_to,
                 posting_date=datetime.now(UTC),
-                status="submitted",
                 reference_type="asn_order",
                 reference_id=asn_order.id,
                 remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
@@ -287,9 +302,9 @@ class OutboundService:
             org_id,
             asn_order.created_by,
         )
-        entry.submitted_at = datetime.now(UTC)
         asn_order.linked_stock_entry_id = entry.id
-        self.db.commit()
+        self.db.flush()
+        StockEntryService(self.db).submit(entry.id, org_id, asn_order.created_by)
         logger.info(
             "Created MATERIAL_TRANSFER stock entry %s for ASN '%s'",
             entry.stock_entry_no,
