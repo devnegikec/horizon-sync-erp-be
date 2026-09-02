@@ -20,6 +20,7 @@ from app.services.qr_product_service import QRProductService
 def make_service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()
+    service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.block_repo = Mock()
     service.item_repo = Mock()
@@ -71,9 +72,7 @@ def test_static_block_requires_quantity_one():
         ("S10DN", "12345678901", "at most 10 digits"),
     ],
 )
-def test_sequential_starting_serial_validation(
-    serial_type, starting_serial, message
-):
+def test_sequential_starting_serial_validation(serial_type, starting_serial, message):
     with pytest.raises(ValidationError, match=message):
         QRBlockCreate(
             batch="BATCH-001",
@@ -104,9 +103,7 @@ def test_generate_block_rejects_duplicate_batch_in_same_organization():
         )
 
     assert exc_info.value.status_code == 409
-    service.block_repo.batch_exists.assert_called_once_with(
-        "Existing", organization_id
-    )
+    service.block_repo.batch_exists.assert_called_once_with("Existing", organization_id)
     service.block_repo.create.assert_not_called()
 
 
@@ -137,9 +134,7 @@ def test_generate_block_rejects_sku_from_another_product_or_tenant():
         )
 
     assert exc_info.value.status_code == 404
-    service.sku_repo.get_by_id.assert_called_once_with(
-        sku_id, organization_id
-    )
+    service.sku_repo.get_by_id.assert_called_once_with(sku_id, organization_id)
     service.block_repo.create.assert_not_called()
 
 
@@ -244,9 +239,7 @@ def test_generate_block_persists_failed_status_after_generation_error():
     assert block.error_code == "generation_failed"
     assert block.error_message == "QR block generation failed"
     service.db.rollback.assert_called_once()
-    service.block_repo.get_by_id.assert_called_once_with(
-        block.id, organization_id
-    )
+    service.block_repo.get_by_id.assert_called_once_with(block.id, organization_id)
 
 
 def test_product_items_use_starting_serial_prefix_and_sku():
@@ -336,9 +329,7 @@ def test_sequential_generation_rejects_existing_serial_range():
         sr_number_type="S8DN",
         activation_method="pre",
     )
-    service.item_repo.get_existing_serials_global.return_value = {
-        "MODEL-00000001"
-    }
+    service.item_repo.get_existing_serials_global.return_value = {"MODEL-00000001"}
 
     with pytest.raises(HTTPException) as exc_info:
         service._generate_product_items(block, product, uuid4(), uuid4())

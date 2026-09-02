@@ -45,6 +45,8 @@ from app.schemas.inbound import (
     RejectedItemResponse,
     RejectSlipItemRequest,
     RejectSlipRequest,
+    RemoveScansRequest,
+    RemoveScansResponse,
     ResolveFloatingItemRequest,
     ScanResult,
     SessionResponse,
@@ -123,6 +125,39 @@ async def cancel_session(
         organization_id=current_user.organization_id,
     )
     return SessionResponse(**result)
+
+
+@router.post(
+    "/sessions/{session_id}/remove-scan",
+    response_model=RemoveScansResponse,
+    summary="Remove scanned items",
+    description="Remove one or more scanned items from an open session (e.g. a wrong parent QR)",
+)
+async def remove_scans(
+    session_id: UUID,
+    data: RemoveScansRequest,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove previously scanned items from an open session.
+
+    Deletes the matching ScanSessionItem rows plus their dual-axis tracking
+    and exception records, reversing any HOLD stock they entered.
+
+    **Path Parameters:**
+    - **session_id**: UUID of the open scan session
+
+    **Request Body:**
+    - **qr_identifiers**: Serial numbers (QR identifiers) of the items to remove
+    """
+    service = InboundService(db)
+    result = service.remove_scan_items(
+        session_id=session_id,
+        organization_id=current_user.organization_id,
+        qr_identifiers=data.qr_identifiers,
+    )
+    return RemoveScansResponse(**result)
 
 
 @router.post(
@@ -531,14 +566,15 @@ async def list_inbound_exceptions(
     db: Session = Depends(get_db),
 ):
     service = InboundExceptionService(db)
+    exceptions = service.list_exceptions(
+        current_user.organization_id,
+        warehouse_id=warehouse_id,
+        destination=destination,
+        status=exception_status,
+    )
     return [
-        InboundExceptionResponse(**service.serialize(exception))
-        for exception in service.list_exceptions(
-            current_user.organization_id,
-            warehouse_id=warehouse_id,
-            destination=destination,
-            status=exception_status,
-        )
+        InboundExceptionResponse(**serialized)
+        for serialized in service.serialize_many(exceptions)
     ]
 
 
@@ -758,6 +794,11 @@ async def assign_bin_to_slip_item(
         slip = db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
         if slip:
             slip.status = "putaway_complete"
+            db.flush()
+            if slip.asn_order_id:
+                InboundService(db)._sync_asn_delivered_qty(
+                    slip.asn_order_id, current_user.organization_id
+                )
 
     db.commit()
 

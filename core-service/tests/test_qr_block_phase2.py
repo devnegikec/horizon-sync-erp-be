@@ -14,6 +14,7 @@ from app.services.qr_product_service import QRProductService
 def make_service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()
+    service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
     service.block_repo = Mock()
@@ -74,9 +75,7 @@ def test_block_persists_organization_scoped_channel_and_destination():
         channel.id,
         organization_id,
     )
-    service.credit_service.check_balance.assert_called_once_with(
-        organization_id, 10
-    )
+    service.credit_service.check_balance.assert_called_once_with(organization_id, 10)
     service.credit_service.reserve_credits.assert_called_once_with(
         organization_id,
         block.id,

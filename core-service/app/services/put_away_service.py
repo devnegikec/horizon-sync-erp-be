@@ -251,6 +251,14 @@ class PutAwayService:
         slip.status = "putaway_complete"
         slip.updated_at = datetime.now(UTC)
         self.db.flush()
+        # Put-away is the terminal step of receiving — refresh ASN delivered
+        # quantities and delivery status so the ASN closes out correctly.
+        if slip.asn_order_id:
+            from app.services.inbound_service import InboundService
+
+            InboundService(self.db)._sync_asn_delivered_qty(
+                slip.asn_order_id, slip.organization_id
+            )
         return True
 
     def generate_from_slip(
@@ -1262,3 +1270,12 @@ class PutAwayService:
                 if slip and slip.status == "pending_putaway":
                     slip.status = "putaway_complete"
                     self.db.flush()
+                    # Put-away is the terminal receiving step — refresh ASN
+                    # delivered quantities and delivery status so the ASN
+                    # closes out as delivered / partially_delivered.
+                    if slip.asn_order_id:
+                        from app.services.inbound_service import InboundService
+
+                        InboundService(self.db)._sync_asn_delivered_qty(
+                            slip.asn_order_id, slip.organization_id
+                        )

@@ -10,6 +10,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -662,6 +663,12 @@ class QRProductService:
                 detail=f"Batch '{data.batch}' already exists",
             )
 
+        self._validate_batch_product_mapping(
+            data.batch,
+            product_id,
+            organization_id,
+        )
+
         sku = self._get_block_sku(
             data.sku_id,
             product_id,
@@ -752,6 +759,51 @@ class QRProductService:
                 detail=f"Batch '{data.batch}' already exists",
             ) from exc
         return block
+
+    def _validate_batch_product_mapping(
+        self,
+        batch_no: str,
+        product_id: UUID,
+        organization_id: UUID,
+    ) -> None:
+        """Reject a block whose batch label already belongs to another product.
+
+        QR block batch names are free-form labels, but when the same label has
+        already been created as a WMS batch for an item that is linked to a
+        different QR product, generating codes under this product would cross
+        product boundaries.
+        """
+        from app.models.batch import Batch
+        from app.models.item import Item
+
+        linked_batches = (
+            self.db.query(Batch)
+            .join(Item, Item.id == Batch.item_id)
+            .filter(
+                Batch.organization_id == organization_id,
+                func.lower(Batch.batch_no) == batch_no.lower(),
+            )
+            .all()
+        )
+        for batch in linked_batches:
+            item = batch.item
+            if item is None or item.qr_product_id is None:
+                # Not linked to a QR product — nothing to compare against.
+                continue
+            if item.qr_product_id == product_id:
+                continue
+
+            other_product = self.db.get(QRProduct, item.qr_product_id)
+            other_name = (
+                other_product.name if other_product else str(item.qr_product_id)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Batch '{batch_no}' belongs to product '{other_name}'. "
+                    "Select a batch for the product you are generating codes for."
+                ),
+            )
 
     def _get_block_sku(
         self,

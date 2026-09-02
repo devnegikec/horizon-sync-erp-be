@@ -23,6 +23,7 @@ from app.services.qr_product_service import QRProductService, _build_excel
 def make_service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()
+    service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
     service.block_repo = Mock()
@@ -54,12 +55,14 @@ def test_excel_contains_signed_urls_and_optional_qr_images():
 
 def test_dual_excel_keeps_overt_and_covert_urls_separate():
     data = _build_excel(
-        [{
-            "serial": "PRO-ABC12345",
-            "primary_url": "https://qr.test/overt",
-            "overt_url": "https://qr.test/overt",
-            "covert_url": "https://qr.test/covert",
-        }],
+        [
+            {
+                "serial": "PRO-ABC12345",
+                "primary_url": "https://qr.test/overt",
+                "overt_url": "https://qr.test/overt",
+                "covert_url": "https://qr.test/covert",
+            }
+        ],
         "dual",
     )
 
@@ -125,10 +128,12 @@ def test_post_activation_uses_standard_gtin_long_url(monkeypatch):
     service.key_service.sign_message.return_value = "signed-value"
     monkeypatch.setattr(
         "app.repositories.brand_repository.BrandRepository.get_by_id",
-        Mock(return_value=SimpleNamespace(
-            private_key_encrypted="encrypted",
-            short_code="demo",
-        )),
+        Mock(
+            return_value=SimpleNamespace(
+                private_key_encrypted="encrypted",
+                short_code="demo",
+            )
+        ),
     )
     block = SimpleNamespace(
         id=uuid4(),
@@ -189,13 +194,9 @@ def test_activation_summary_query_is_organization_scoped():
     ) == (2, 1)
     filters = query.filter.call_args.args
     assert any(
-        "product_items.organization_id" in str(expression)
-        for expression in filters
+        "product_items.organization_id" in str(expression) for expression in filters
     )
-    assert any(
-        "product_items.block_id" in str(expression)
-        for expression in filters
-    )
+    assert any("product_items.block_id" in str(expression) for expression in filters)
 
 
 def test_activation_updates_all_item_state_flags():
@@ -272,8 +273,11 @@ def test_artifact_failure_marks_block_failed_without_deducting_credits():
         id=uuid4(), qr_type="dynamic", sr_number_type="R8DAN", serial_prefix="PRO"
     )
     block = SimpleNamespace(
-        id=uuid4(), status="pending", task_status="pending",
-        error_code=None, error_message=None,
+        id=uuid4(),
+        status="pending",
+        task_status="pending",
+        error_code=None,
+        error_message=None,
     )
     service.product_repo.get_by_id.return_value = product
     service.block_repo.batch_exists.return_value = False
@@ -308,8 +312,11 @@ def test_credit_failure_cleans_up_uploaded_artifact(monkeypatch):
         id=uuid4(), qr_type="dynamic", sr_number_type="R8DAN", serial_prefix="PRO"
     )
     block = SimpleNamespace(
-        id=uuid4(), status="pending", task_status="pending",
-        error_code=None, error_message=None,
+        id=uuid4(),
+        status="pending",
+        task_status="pending",
+        error_code=None,
+        error_message=None,
     )
     service.product_repo.get_by_id.return_value = product
     service.block_repo.batch_exists.return_value = False
