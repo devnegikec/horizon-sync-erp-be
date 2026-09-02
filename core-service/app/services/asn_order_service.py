@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundException
+from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.asn_order import AsnOrder, AsnOrderItem
 from app.models.base import AsnOrderStatus
 from app.repositories.asn_order_repository import AsnOrderRepository
@@ -374,9 +374,20 @@ class AsnOrderService:
         effective_asn_type = payload.get("asn_type", asn_order.asn_type)
         effective_from = payload.get("warehouse_id_from", asn_order.warehouse_id_from)
         if effective_asn_type == "internal_transfer" and not effective_from:
-            raise ValueError(
-                "warehouse_id_from (source warehouse) is required for an "
-                "internal transfer ASN"
+            raise ValidationError(
+                message=(
+                    "warehouse_id_from (source warehouse) is required for an "
+                    "internal transfer ASN"
+                ),
+                details=[
+                    {
+                        "field": "warehouse_id_from",
+                        "reason": (
+                            "A source warehouse is required when asn_type is "
+                            "internal_transfer"
+                        ),
+                    }
+                ],
             )
 
         # Handle items update if provided
