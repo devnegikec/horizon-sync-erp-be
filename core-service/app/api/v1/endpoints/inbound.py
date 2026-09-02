@@ -566,14 +566,15 @@ async def list_inbound_exceptions(
     db: Session = Depends(get_db),
 ):
     service = InboundExceptionService(db)
+    exceptions = service.list_exceptions(
+        current_user.organization_id,
+        warehouse_id=warehouse_id,
+        destination=destination,
+        status=exception_status,
+    )
     return [
-        InboundExceptionResponse(**service.serialize(exception))
-        for exception in service.list_exceptions(
-            current_user.organization_id,
-            warehouse_id=warehouse_id,
-            destination=destination,
-            status=exception_status,
-        )
+        InboundExceptionResponse(**serialized)
+        for serialized in service.serialize_many(exceptions)
     ]
 
 

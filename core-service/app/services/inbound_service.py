@@ -22,7 +22,7 @@ from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.qr_scan_event import QRScanEvent
 from app.models.receiving_slip import ReceivingSlipItem
-from app.models.scan_session import ScanSessionItem
+from app.models.scan_session import ScanSession, ScanSessionItem
 from app.models.scanned_item_tracking import ScannedItemTracking
 from app.repositories.receiving_slip_repository import ReceivingSlipRepository
 from app.repositories.scan_session_repository import ScanSessionRepository
@@ -754,7 +754,15 @@ class InboundService:
         from app.models.inbound_exception import InboundException
         from app.services.bin_stock_service import BinStockService
 
-        session = self.session_repo.get_by_id(session_id, organization_id)
+        session = (
+            self.db.query(ScanSession)
+            .filter(
+                ScanSession.id == session_id,
+                ScanSession.organization_id == organization_id,
+            )
+            .with_for_update()
+            .first()
+        )
         if session is None:
             raise NotFoundError(
                 message="Scan session not found",
@@ -801,21 +809,16 @@ class InboundService:
                 and tracking.stock_entered
                 and tracking.stock_location_id
             ):
-                try:
-                    bin_stock_service.remove_stock(
-                        bin_id=tracking.stock_location_id,
-                        item_id=tracking.item_id,
-                        quantity=Decimal(str(tracking.quantity or 1)),
-                        org_id=organization_id,
-                        batch_number=tracking.batch_number,
-                        commit=False,
-                    )
-                except Exception:  # noqa: BLE001 - stock may already be dispositioned
-                    logger.warning(
-                        "Could not reverse HOLD stock for qr=%s item=%s",
-                        item.qr_identifier,
-                        item.id,
-                    )
+                # Fail loudly: if HOLD stock cannot be reversed, abort instead
+                # of deleting the tracking / scan rows while stock stays held.
+                bin_stock_service.remove_stock(
+                    bin_id=tracking.stock_location_id,
+                    item_id=tracking.item_id,
+                    quantity=Decimal(str(tracking.quantity or 1)),
+                    org_id=organization_id,
+                    batch_number=tracking.batch_number,
+                    commit=False,
+                )
 
             # Drop exception rows (evidence/events cascade with the ORM delete).
             exceptions = (

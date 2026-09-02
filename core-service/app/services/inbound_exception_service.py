@@ -467,14 +467,26 @@ class InboundExceptionService:
         self.db.refresh(evidence)
         return evidence
 
-    def serialize(self, exception: InboundException) -> dict:
+    def serialize(
+        self,
+        exception: InboundException,
+        *,
+        item_names_by_id: dict[UUID, str] | None = None,
+        item_names_by_sku: dict[str, str] | None = None,
+    ) -> dict:
         item_name = None
         if exception.item_id:
-            item = self.db.get(Item, exception.item_id)
-            item_name = item.item_name if item else None
+            if item_names_by_id is not None:
+                item_name = item_names_by_id.get(exception.item_id)
+            else:
+                item = self.db.get(Item, exception.item_id)
+                item_name = item.item_name if item else None
         elif exception.sku:
-            item = self._resolve_item(exception.organization_id, exception.sku)
-            item_name = item.item_name if item else None
+            if item_names_by_sku is not None:
+                item_name = item_names_by_sku.get(exception.sku)
+            else:
+                item = self._resolve_item(exception.organization_id, exception.sku)
+                item_name = item.item_name if item else None
         return {
             "id": str(exception.id),
             "warehouse_id": str(exception.warehouse_id),
@@ -518,6 +530,49 @@ class InboundExceptionService:
                 for e in exception.evidence
             ],
         }
+
+    def serialize_many(self, exceptions: list[InboundException]) -> list[dict]:
+        """Serialize exceptions with item lookups batched to avoid N+1 queries."""
+        from sqlalchemy import or_
+
+        item_names_by_id: dict[UUID, str] = {}
+        item_names_by_sku: dict[str, str] = {}
+
+        item_ids = {e.item_id for e in exceptions if e.item_id}
+        skus = {e.sku for e in exceptions if e.sku and not e.item_id}
+
+        if item_ids:
+            items = self.db.query(Item).filter(Item.id.in_(item_ids)).all()
+            item_names_by_id = {item.id: item.item_name for item in items}
+
+        if skus:
+            for org_id in {e.organization_id for e in exceptions}:
+                items = (
+                    self.db.query(Item)
+                    .filter(
+                        Item.organization_id == org_id,
+                        Item.deleted_at.is_(None),
+                        or_(
+                            Item.sku.in_(skus),
+                            Item.gtin.in_(skus),
+                            Item.item_code.in_(skus),
+                        ),
+                    )
+                    .all()
+                )
+                for item in items:
+                    for key in (item.sku, item.gtin, item.item_code):
+                        if key and key not in item_names_by_sku:
+                            item_names_by_sku[key] = item.item_name
+
+        return [
+            self.serialize(
+                exception,
+                item_names_by_id=item_names_by_id,
+                item_names_by_sku=item_names_by_sku,
+            )
+            for exception in exceptions
+        ]
 
     def _validate_reason(self, code: str, organization_id: UUID) -> None:
         reason = (

@@ -10,6 +10,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -780,7 +781,7 @@ class QRProductService:
             .join(Item, Item.id == Batch.item_id)
             .filter(
                 Batch.organization_id == organization_id,
-                Batch.batch_no == batch_no,
+                func.lower(Batch.batch_no) == batch_no.lower(),
             )
             .all()
         )
