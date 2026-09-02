@@ -82,7 +82,7 @@ class AsnOrderBase(BaseModel):
     reference_id: UUID | None = None
     reference_no: str | None = None
     asn_type: str | None = Field(
-        None, pattern="^(purchase|internal_transfer)$"
+        None, pattern="^(purchase|internal_transfer|stock_receipt)$"
     )
     remarks: str | None = Field(None, max_length=1000)
 
@@ -101,7 +101,7 @@ class AsnOrderUpdate(BaseModel):
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
     )
     asn_type: str | None = Field(
-        None, pattern="^(purchase|internal_transfer)$"
+        None, pattern="^(purchase|internal_transfer|stock_receipt)$"
     )
     remarks: str | None = Field(None, max_length=1000)
     items: list[AsnOrderItemCreate] | None = None

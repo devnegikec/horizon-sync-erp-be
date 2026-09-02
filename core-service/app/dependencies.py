@@ -264,6 +264,10 @@ def require_permission(*permissions: str):
         # Note: Do NOT annotate current_user with CurrentUser type hint.
         # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
         # and tries to read them as query params instead of resolving Depends().
+        # System admins and organization admins (owners) bypass RBAC — they
+        # implicitly hold every permission.
+        if current_user.user_type in ("system_admin", "organization_admin"):
+            return current_user
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -65,7 +65,7 @@ async def list_asn_orders(
     vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
     asn_type: str | None = Query(
-        None, pattern="^(purchase|internal_transfer)$", description="Filter by ASN type"
+        None, pattern="^(purchase|internal_transfer|stock_receipt)$", description="Filter by ASN type"
     ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),

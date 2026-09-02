@@ -37,7 +37,17 @@ class AsnOrderService:
         # Default ASN type; internal transfers require a source warehouse.
         if not payload.get("asn_type"):
             payload["asn_type"] = "purchase"
-        if (
+
+        # Stock Receipt ASNs arrive from manufacturing units (which are not
+        # warehouses in the system), so they only carry a target warehouse.
+        if payload["asn_type"] == "stock_receipt":
+            payload["warehouse_id_from"] = None
+            if not payload.get("warehouse_id_to"):
+                raise ValueError(
+                    "warehouse_id_to (target warehouse) is required for a "
+                    "stock receipt ASN"
+                )
+        elif (
             payload["asn_type"] == "internal_transfer"
             and not payload.get("warehouse_id_from")
         ):
@@ -373,6 +383,30 @@ class AsnOrderService:
         # source pick list.
         effective_asn_type = payload.get("asn_type", asn_order.asn_type)
         effective_from = payload.get("warehouse_id_from", asn_order.warehouse_id_from)
+
+        # Stock Receipt ASNs never carry a source warehouse (stock arrives from
+        # manufacturing units, not another warehouse), but they always need a
+        # target (mother) warehouse.
+        if effective_asn_type == "stock_receipt":
+            payload["warehouse_id_from"] = None
+            effective_to = payload.get("warehouse_id_to", asn_order.warehouse_id_to)
+            if not effective_to:
+                raise ValidationError(
+                    message=(
+                        "warehouse_id_to (target warehouse) is required for a "
+                        "stock receipt ASN"
+                    ),
+                    details=[
+                        {
+                            "field": "warehouse_id_to",
+                            "reason": (
+                                "A target warehouse is required when asn_type "
+                                "is stock_receipt"
+                            ),
+                        }
+                    ],
+                )
+
         if effective_asn_type == "internal_transfer" and not effective_from:
             raise ValidationError(
                 message=(
