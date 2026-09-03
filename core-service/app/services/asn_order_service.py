@@ -37,9 +37,18 @@ class AsnOrderService:
         # Default ASN type; internal transfers require a source warehouse.
         if not payload.get("asn_type"):
             payload["asn_type"] = "purchase"
-        if (
-            payload["asn_type"] == "internal_transfer"
-            and not payload.get("warehouse_id_from")
+
+        # Stock Receipt ASNs arrive from manufacturing units (which are not
+        # warehouses in the system), so they only carry a target warehouse.
+        if payload["asn_type"] == "stock_receipt":
+            payload["warehouse_id_from"] = None
+            if not payload.get("warehouse_id_to"):
+                raise ValueError(
+                    "warehouse_id_to (target warehouse) is required for a "
+                    "stock receipt ASN"
+                )
+        elif payload["asn_type"] == "internal_transfer" and not payload.get(
+            "warehouse_id_from"
         ):
             raise ValueError(
                 "warehouse_id_from (source warehouse) is required for an "
@@ -159,9 +168,7 @@ class AsnOrderService:
             ],
         }
 
-    def serialized_asn_856(
-        self, asn_order_id: UUID, organization_id: UUID
-    ) -> dict:
+    def serialized_asn_856(self, asn_order_id: UUID, organization_id: UUID) -> dict:
         """EDI-856-style serialized ASN export (SKU + unit-level serials + SSCC)."""
         from app.models.asn_order import AsnOrder, AsnOrderSerialLine
         from app.services.gs1_service import generate_sscc
@@ -373,6 +380,30 @@ class AsnOrderService:
         # source pick list.
         effective_asn_type = payload.get("asn_type", asn_order.asn_type)
         effective_from = payload.get("warehouse_id_from", asn_order.warehouse_id_from)
+
+        # Stock Receipt ASNs never carry a source warehouse (stock arrives from
+        # manufacturing units, not another warehouse), but they always need a
+        # target (mother) warehouse.
+        if effective_asn_type == "stock_receipt":
+            payload["warehouse_id_from"] = None
+            effective_to = payload.get("warehouse_id_to", asn_order.warehouse_id_to)
+            if not effective_to:
+                raise ValidationError(
+                    message=(
+                        "warehouse_id_to (target warehouse) is required for a "
+                        "stock receipt ASN"
+                    ),
+                    details=[
+                        {
+                            "field": "warehouse_id_to",
+                            "reason": (
+                                "A target warehouse is required when asn_type "
+                                "is stock_receipt"
+                            ),
+                        }
+                    ],
+                )
+
         if effective_asn_type == "internal_transfer" and not effective_from:
             raise ValidationError(
                 message=(
@@ -435,9 +466,7 @@ class AsnOrderService:
                 new_status == AsnOrderStatus.CONFIRMED
                 and asn_order.asn_type == "internal_transfer"
             ):
-                created_pick_list = self._create_transfer_pick_list(
-                    asn_order, user_id
-                )
+                created_pick_list = self._create_transfer_pick_list(asn_order, user_id)
                 self._emit_asn_notification(
                     asn_order=asn_order,
                     notif_type="transfer_pick_created",
@@ -462,7 +491,7 @@ class AsnOrderService:
                     notif_type="asn_confirmed",
                     title="ASN Confirmed",
                     message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.PARTIALLY_DELIVERED:
@@ -471,7 +500,7 @@ class AsnOrderService:
                     notif_type="fulfillment_partially_completed",
                     title="ASN Partially Delivered",
                     message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.DELIVERED:
@@ -480,7 +509,7 @@ class AsnOrderService:
                     notif_type="fulfillment_completed",
                     title="ASN Fully Delivered",
                     message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.CANCELLED:
@@ -567,7 +596,7 @@ class AsnOrderService:
                 notif_type="asn_confirmed",
                 title="ASN Confirmed",
                 message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.PARTIALLY_DELIVERED:
@@ -576,7 +605,7 @@ class AsnOrderService:
                 notif_type="fulfillment_partially_completed",
                 title="ASN Partially Delivered",
                 message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.DELIVERED:
@@ -585,7 +614,7 @@ class AsnOrderService:
                 notif_type="fulfillment_completed",
                 title="ASN Fully Delivered",
                 message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.CANCELLED:
@@ -602,9 +631,7 @@ class AsnOrderService:
 
     # ── internal-transfer fulfilment ──────────────────────────────────
 
-    def _create_transfer_pick_list(
-        self, asn_order: AsnOrder, user_id: UUID
-    ) -> dict:
+    def _create_transfer_pick_list(self, asn_order: AsnOrder, user_id: UUID) -> dict:
         """Auto-create the source warehouse's pick list for an internal transfer.
 
         Mirrors each ASN line into a pick list at ``warehouse_id_from`` with
@@ -658,9 +685,7 @@ class AsnOrderService:
                 "status": "draft",
                 "reference_type": "asn_order",
                 "reference_id": str(asn_order.id),
-                "remarks": (
-                    f"Internal transfer from ASN {asn_order.asn_order_no}"
-                ),
+                "remarks": (f"Internal transfer from ASN {asn_order.asn_order_no}"),
                 "items": items,
             },
             asn_order.organization_id,
@@ -736,7 +761,8 @@ class AsnOrderService:
         )
         if (
             pick_list is not None
-            and pick_list.status not in (PickListStatus.COMPLETED, PickListStatus.CANCELLED)
+            and pick_list.status
+            not in (PickListStatus.COMPLETED, PickListStatus.CANCELLED)
             and pick_list.dispatch_record_id is None
         ):
             pick_list.status = PickListStatus.CANCELLED
@@ -747,6 +773,15 @@ class AsnOrderService:
         )
 
     # ── notification helpers ─────────────────────────────────────────
+
+    def _fulfillment_warehouse(self, asn_order: AsnOrder) -> UUID | None:
+        """Warehouse to notify for fulfilment progress.
+
+        Stock receipts have no source warehouse (manufacturing units are not
+        warehouses), so fall back to the target warehouse instead of passing
+        ``None`` — which broadcasts to every org user.
+        """
+        return asn_order.warehouse_id_from or asn_order.warehouse_id_to
 
     def _emit_asn_notification(
         self,

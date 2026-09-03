@@ -100,6 +100,7 @@ class UOMService:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        uom_type: str | None = None,
     ) -> tuple[list[UOM], dict]:
         """
         Get paginated list of UOMs.
@@ -111,11 +112,18 @@ class UOMService:
             search: Optional search term for name or abbreviation
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            uom_type: Optional comma-separated UOM types to filter by
 
         Returns:
             Tuple of (list of UOMs, pagination metadata dict)
         """
         page_size = min(page_size, 100)
+
+        uom_types = None
+        if uom_type:
+            uom_types = [
+                t.strip() for t in uom_type.split(",") if t.strip()
+            ] or None
 
         uoms, total_count = self.uom_repo.list(
             organization_id=organization_id,
@@ -124,6 +132,7 @@ class UOMService:
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
+            uom_types=uom_types,
         )
 
         total_pages = (total_count + page_size - 1) // page_size if page_size else 0
