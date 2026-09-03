@@ -29,6 +29,11 @@ class GeneratePutAwayRequest(BaseModel):
     worker_id: UUID | None = Field(
         None, description="Optional worker UUID to assign the put-away task to"
     )
+    mode: str | None = Field(
+        None,
+        pattern="^(auto|manual)$",
+        description="auto = server assigns bins intelligently; manual = items are grouped by SKU without bin assignment. Omit to use the organization's putaway_mode setting.",
+    )
 
 
 class CompletePutAwayItemRequest(BaseModel):

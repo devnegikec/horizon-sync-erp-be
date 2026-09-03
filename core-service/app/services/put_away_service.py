@@ -262,19 +262,28 @@ class PutAwayService:
         return True
 
     def generate_from_slip(
-        self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
+        self,
+        slip_id: UUID,
+        org_id: UUID,
+        worker_id: UUID | None = None,
+        mode: str | None = None,
     ) -> PutAwayList:
         """Generate a put-away list from an approved receiving slip.
 
-        Assigns bins respecting allocations (exclusive first, then preferred,
-        then unallocated) and capacity. Groups items by zone/aisle and sorts
-        by optimal traversal order. Creates a worker task via TaskService
-        if a worker_id is provided.
+        ``mode='auto'`` (default) assigns bins respecting allocations (exclusive
+        first, then preferred, then unallocated) and capacity, groups items by
+        zone/aisle and sorts by optimal traversal order. ``mode='manual'``
+        creates the list with items grouped by SKU but leaves ``bin_location_id``
+        empty so workers assign bins themselves during completion.
+
+        Creates a worker task via TaskService if a worker_id is provided.
 
         Args:
             slip_id: The receiving slip ID to generate put-away from.
             org_id: Organization ID for scoping.
             worker_id: Optional worker ID to assign the put-away task to.
+            mode: 'auto' or 'manual'; None falls back to the organization's
+                ``putaway_mode`` setting.
 
         Returns:
             The created PutAwayList with items assigned to bins.
@@ -285,6 +294,13 @@ class PutAwayService:
 
         Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
         """
+        if mode is None:
+            from app.services.pick_settings_service import PickSettingsService
+
+            mode = str(PickSettingsService(self.db).get_value(org_id, "putaway_mode"))
+        if mode not in {"auto", "manual"}:
+            raise ValidationError(f"Invalid put-away generation mode: {mode}")
+
         # Validate the receiving slip
         slip = (
             self.db.query(ReceivingSlip)
@@ -392,6 +408,24 @@ class PutAwayService:
             quantity = Decimal(str(slip_item.quantity))
             item_group_id = item.item_group_id
 
+            # Manual mode: leave bin assignment to the worker. One list item
+            # per slip line (no auto-splitting across bins).
+            if mode == "manual":
+                put_away_item = PutAwayListItem(
+                    organization_id=org_id,
+                    put_away_list_id=put_away_list.id,
+                    item_id=item.id,
+                    sku=slip_item.sku,
+                    batch_number=slip_item.batch_number,
+                    quantity=quantity,
+                    bin_location_id=None,
+                    sort_order=len(put_away_items),
+                    status="pending",
+                )
+                self.db.add(put_away_item)
+                put_away_items.append(put_away_item)
+                continue
+
             # Assign bins for this item
             bin_assignments = self._assign_bins(
                 item_id=item.id,
@@ -444,18 +478,19 @@ class PutAwayService:
 
         self.db.flush()
 
-        # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
-        volumetric_service = VolumetricAssignmentService()
-        volumetric_service.assign_bins(
-            put_away_list_items=put_away_list.items,
-            warehouse_id=slip.warehouse_id,
-            org_id=org_id,
-            db=self.db,
-        )
-        self.db.flush()
+        if mode == "auto":
+            # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
+            volumetric_service = VolumetricAssignmentService()
+            volumetric_service.assign_bins(
+                put_away_list_items=put_away_list.items,
+                warehouse_id=slip.warehouse_id,
+                org_id=org_id,
+                db=self.db,
+            )
+            self.db.flush()
 
-        # Optimize routing order for all put-away items
-        self._optimize_item_routing(put_away_items)
+            # Optimize routing order for all put-away items
+            self._optimize_item_routing(put_away_items)
 
         # Assign worker if provided
         if worker_id is not None:

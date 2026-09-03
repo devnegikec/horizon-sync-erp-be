@@ -137,7 +137,9 @@ def _resolve_references(
     return slip_no_map, worker_name_map
 
 
-def _build_item_response(item: PutAwayListItem, serial_meta: dict | None = None) -> PutAwayListItemResponse:
+def _build_item_response(
+    item: PutAwayListItem, serial_meta: dict | None = None
+) -> PutAwayListItemResponse:
     """Build a PutAwayListItemResponse from a PutAwayListItem model."""
     bin_location_code = None
     if item.bin_location:
@@ -231,11 +233,13 @@ async def generate_put_away_from_slip(
     Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
     """
     worker_id = data.worker_id if data else None
+    mode = data.mode if data else None
     service = PutAwayService(db)
     put_away_list = service.generate_from_slip(
         slip_id=slip_id,
         org_id=current_user.organization_id,
         worker_id=worker_id,
+        mode=mode,
     )
 
     # Build item responses with bin location codes
