@@ -19,9 +19,9 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "106_backfill_uom_type"
-down_revision: str | Sequence[str] | None = (
-    "105_add_transfer_pick_created_notification_type"
-)
+down_revision: str | Sequence[
+    str
+] | None = "105_add_transfer_pick_created_notification_type"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
