@@ -828,7 +828,7 @@ async def create_direct_putaway_list(
 )
 async def complete_putaway_by_qr(
     data: "CompletePutawayByQrRequest",
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Complete put-away for a tracked item by scanning its QR code."""
@@ -882,7 +882,7 @@ async def complete_putaway_by_qr(
 )
 async def scan_item_for_putaway(
     data: "ScanItemForPutawayRequest",
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Scan a QR during direct put-away and ensure a tracking row exists."""
