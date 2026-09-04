@@ -149,6 +149,13 @@ PICK_CONFIG_CATALOG: dict[str, dict[str, Any]] = {
         "label": "Pickable inventory statuses",
         "description": "Bin-stock statuses eligible for FEFO/FIFO allocation (WF-003).",
     },
+    "putaway_mode": {
+        "type": ENUM,
+        "default": "auto",
+        "allowed": ["auto", "manual"],
+        "label": "Put-away generation mode",
+        "description": "auto = server assigns bins and optimizes routing; manual = worker assigns bins during put-away.",
+    },
 }
 
 
@@ -161,7 +168,7 @@ def normalize_key(key: str) -> str:
     """Strip the ``pick.`` prefix if present and validate the key exists."""
     key = key.strip()
     if key.startswith(PICK_KEY_PREFIX):
-        key = key[len(PICK_KEY_PREFIX):]
+        key = key[len(PICK_KEY_PREFIX) :]
     return key
 
 
@@ -228,9 +235,7 @@ def _validate_enum(key: str, value: Any, allowed: list[str]) -> None:
 
 
 def _validate_list(key: str, value: Any) -> None:
-    if not isinstance(value, list) or not all(
-        isinstance(item, str) for item in value
-    ):
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError(f"pick.{key} must be a list of strings")
 
 

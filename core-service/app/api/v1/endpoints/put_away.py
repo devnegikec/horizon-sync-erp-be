@@ -28,6 +28,7 @@ from app.schemas.put_away import (
     CompletePutAwayItemRequest,
     CreateDirectPutAwayListRequest,
     GeneratePutAwayRequest,
+    PutAwayListBatchResponse,
     PutAwayListItemResponse,
     PutAwayListListResponse,
     PutAwayListResponse,
@@ -137,7 +138,9 @@ def _resolve_references(
     return slip_no_map, worker_name_map
 
 
-def _build_item_response(item: PutAwayListItem, serial_meta: dict | None = None) -> PutAwayListItemResponse:
+def _build_item_response(
+    item: PutAwayListItem, serial_meta: dict | None = None
+) -> PutAwayListItemResponse:
     """Build a PutAwayListItemResponse from a PutAwayListItem model."""
     bin_location_code = None
     if item.bin_location:
@@ -198,47 +201,8 @@ def _build_list_response(
     )
 
 
-@router.post(
-    "/generate-from-slip/{slip_id}",
-    response_model=PutAwayListResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Generate put-away list from receiving slip",
-    description="Generate a put-away list with bin assignments from an approved receiving slip",
-)
-async def generate_put_away_from_slip(
-    slip_id: UUID,
-    data: GeneratePutAwayRequest | None = None,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
-    db: Session = Depends(get_db),
-):
-    """
-    Generate a put-away list from an approved receiving slip.
-
-    The receiving slip must be in `pending_putaway` status. This endpoint
-    creates a PutAwayList with items assigned to bins respecting location
-    allocations (exclusive → preferred → unallocated), runs volumetric
-    optimization, sorts by optimal traversal order, and optionally assigns
-    a worker task.
-
-    **Path Parameters:**
-    - **slip_id**: UUID of the receiving slip (must be pending_putaway)
-
-    **Request Body (optional):**
-    - **worker_id**: Optional UUID of the worker to assign the put-away task to
-
-    **Returns:** The created PutAwayList with items assigned to bins
-
-    Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
-    """
-    worker_id = data.worker_id if data else None
-    service = PutAwayService(db)
-    put_away_list = service.generate_from_slip(
-        slip_id=slip_id,
-        org_id=current_user.organization_id,
-        worker_id=worker_id,
-    )
-
-    # Build item responses with bin location codes
+def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListResponse:
+    """Build a PutAwayListResponse with resolved item/bin details."""
     serial_meta = _serial_meta_map(
         db, {it.batch_number for it in put_away_list.items if it.batch_number}
     )
@@ -247,7 +211,6 @@ async def generate_put_away_from_slip(
     ]
     item_responses.sort(key=lambda x: x.sort_order)
 
-    # Compute counts
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
     completed_qty = sum(
         int(it.quantity) for it in put_away_list.items if it.status == "completed"
@@ -256,7 +219,6 @@ async def generate_put_away_from_slip(
         int(it.quantity) for it in put_away_list.items if it.status == "pending"
     )
 
-    # Resolve receiving slip number
     slip_no = None
     if put_away_list.receiving_slip and put_away_list.receiving_slip.slip_number:
         slip_no = put_away_list.receiving_slip.slip_number
@@ -295,6 +257,67 @@ async def generate_put_away_from_slip(
         else None,
         items=item_responses,
     )
+
+
+@router.post(
+    "/generate-from-slip/{slip_id}",
+    response_model=PutAwayListResponse | PutAwayListBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate put-away list from receiving slip",
+    description=(
+        "Generate one or more put-away lists with bin assignments from an "
+        "approved receiving slip. Pass ``worker_ids`` to split the work into "
+        "one list per worker."
+    ),
+)
+async def generate_put_away_from_slip(
+    slip_id: UUID,
+    data: GeneratePutAwayRequest | None = None,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a put-away list from an approved receiving slip.
+
+    The receiving slip must be in `pending_putaway` status. This endpoint
+    creates a PutAwayList with items assigned to bins respecting location
+    allocations (exclusive → preferred → unallocated), runs volumetric
+    optimization, sorts by optimal traversal order, and optionally assigns
+    a worker task.
+
+    **Path Parameters:**
+    - **slip_id**: UUID of the receiving slip (must be pending_putaway)
+
+    **Request Body (optional):**
+    - **worker_id**: Optional UUID of the worker to assign the put-away task to
+
+    **Returns:** The created PutAwayList with items assigned to bins
+
+    Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
+    """
+    worker_id = data.worker_id if data else None
+    worker_ids = data.worker_ids if data else None
+    mode = data.mode if data else None
+    service = PutAwayService(db)
+
+    if worker_ids:
+        lists = service.generate_from_slip_for_workers(
+            slip_id=slip_id,
+            org_id=current_user.organization_id,
+            worker_ids=worker_ids,
+            mode=mode,
+        )
+        return PutAwayListBatchResponse(
+            put_away_lists=[_build_response(db, pal) for pal in lists]
+        )
+
+    put_away_list = service.generate_from_slip(
+        slip_id=slip_id,
+        org_id=current_user.organization_id,
+        worker_id=worker_id,
+        mode=mode,
+    )
+    return _build_response(db, put_away_list)
 
 
 @router.get(
