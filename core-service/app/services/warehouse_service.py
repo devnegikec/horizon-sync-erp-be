@@ -286,8 +286,12 @@ class WarehouseService:
         )
 
         # Get status and type counts (scoped to warehouse_ids if provided)
-        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id, warehouse_ids=warehouse_ids)
-        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id, warehouse_ids=warehouse_ids)
+        status_counts = self.warehouse_repo.get_warehouse_status_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
+        type_counts = self.warehouse_repo.get_warehouse_type_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
 
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size
@@ -308,8 +312,9 @@ class WarehouseService:
         """Populate each warehouse's total capacity and UOM from its active bins.
 
         Warehouse capacity is modelled as a roll-up of the active bin locations
-        (the layout is the source of truth). Only warehouses with bins get a
-        derived value; warehouses without a layout keep their stored value.
+        (the layout is the source of truth). Only warehouses whose active bins
+        all share the same UOM get a derived total; warehouses without a layout
+        (or with mixed-UOM bins) keep their stored value.
         """
         if not warehouses:
             return

@@ -170,9 +170,9 @@ WAREHOUSE_MANAGE = "warehouse.manage"
 
 # Fixed permission set embedded in a WMS worker's barcode-login token.
 # Workers are API-only mobile clients: they scan QR codes and create/update
-# receiving slips (Inbound), read/update pick lists (Outbound), read ASN orders,
-# and execute put-away. They can NOT create pick lists, manage workers/devices,
-# or access anything else.
+# receiving slips (Inbound), read/update pick lists (Outbound), and read ASN
+# orders. They can NOT create pick lists, manage workers/devices, edit
+# warehouse records, or access anything else.
 WMS_WORKER_PERMISSIONS = [
     WMS_SCAN,
     WAREHOUSE_READ,

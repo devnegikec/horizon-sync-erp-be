@@ -16,12 +16,12 @@ Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9
 """
 
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.models.item import Item
 from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.put_away_list import PutAwayListItem
 from app.models.warehouse_location import WarehouseLocation
@@ -90,7 +90,7 @@ class VolumetricAssignmentService:
         self,
         item: PutAwayListItem,
         db: Session,
-    ) -> Optional[ItemPackagingUnit]:
+    ) -> ItemPackagingUnit | None:
         """Fetch the ItemPackagingUnit for a put-away item, if present.
 
         Args:
@@ -109,8 +109,8 @@ class VolumetricAssignmentService:
     def _calc_volume(
         self,
         quantity: Decimal,
-        pu: Optional[ItemPackagingUnit],
-    ) -> Optional[Decimal]:
+        pu: ItemPackagingUnit | None,
+    ) -> Decimal | None:
         """Calculate the required volume in cubic centimetres (cc).
 
         Converts mm³ to cc by dividing by 1000.  Returns None (unconstrained)
@@ -137,8 +137,8 @@ class VolumetricAssignmentService:
     def _calc_weight(
         self,
         quantity: Decimal,
-        pu: Optional[ItemPackagingUnit],
-    ) -> Optional[Decimal]:
+        pu: ItemPackagingUnit | None,
+    ) -> Decimal | None:
         """Calculate the required weight in grams.
 
         Returns None (unconstrained) when weight_grams is null or when no
@@ -158,13 +158,13 @@ class VolumetricAssignmentService:
     def _find_best_bin(
         self,
         item_id: UUID,
-        batch_number: Optional[str],
+        batch_number: str | None,
         warehouse_id: UUID,
         org_id: UUID,
-        required_volume_cc: Optional[Decimal],
-        required_weight_g: Optional[Decimal],
+        required_volume_cc: Decimal | None,
+        required_weight_g: Decimal | None,
         db: Session,
-    ) -> Optional[WarehouseLocation]:
+    ) -> WarehouseLocation | None:
         """Find the best available bin for the given item using volumetric SQL.
 
         The query uses two CTEs:
@@ -196,6 +196,11 @@ class VolumetricAssignmentService:
         Returns:
             The best WarehouseLocation (bin), or None if no suitable bin exists.
         """
+        item_group_id = None
+        item = db.get(Item, item_id)
+        if item is not None:
+            item_group_id = item.item_group_id
+
         sql = text(
             """
             WITH bin_usage AS (
@@ -220,11 +225,24 @@ class VolumetricAssignmentService:
                   AND batch_number IS NOT DISTINCT FROM :batch_number
                   AND organization_id = :org_id
                   AND quantity_on_hand > 0
+            ),
+            alloc_rank AS (
+                SELECT la.location_id,
+                       MIN(CASE la.allocation_type
+                           WHEN 'exclusive' THEN 0
+                           WHEN 'preferred' THEN 1
+                           ELSE 2 END) AS rank
+                FROM location_allocations la
+                WHERE la.organization_id = :org_id
+                  AND la.is_active = TRUE
+                  AND la.item_group_id = :item_group_id
+                GROUP BY la.location_id
             )
             SELECT wl.id
             FROM warehouse_locations wl
             LEFT JOIN bin_usage bu ON bu.bin_location_id = wl.id
             LEFT JOIN consolidation c ON c.bin_location_id = wl.id
+            LEFT JOIN alloc_rank ar ON ar.location_id = wl.id
             WHERE wl.organization_id = :org_id
               AND wl.warehouse_id    = :warehouse_id
               AND wl.location_type   = 'bin'
@@ -240,6 +258,7 @@ class VolumetricAssignmentService:
                   OR (wl.max_weight_grams - COALESCE(bu.occupied_weight_g, 0)) >= :required_weight_g
               )
             ORDER BY
+                COALESCE(ar.rank, 2) ASC,
                 COALESCE(c.has_same_item, FALSE) DESC,
                 (wl.max_volume_cc - COALESCE(bu.occupied_volume_cc, 0)) ASC
             LIMIT 1
@@ -252,6 +271,7 @@ class VolumetricAssignmentService:
             "warehouse_id": str(warehouse_id),
             "item_id": str(item_id),
             "batch_number": batch_number,
+            "item_group_id": str(item_group_id) if item_group_id else None,
             "required_volume_cc": (
                 float(required_volume_cc) if required_volume_cc is not None else None
             ),

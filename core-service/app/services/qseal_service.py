@@ -498,8 +498,8 @@ class QSealService:
     ) -> tuple[bytes, str]:
         """Generate an Excel file with parent QSeal QR codes for a block.
 
-        Includes embedded QR code images for mobile app scanning.
-        Returns (excel_bytes, filename).
+        Embeds QR code images for mobile app scanning only when the block's
+        ``qr_image`` flag is enabled. Returns (excel_bytes, filename).
         """
         from io import BytesIO
 
@@ -578,13 +578,18 @@ class QSealService:
             .all()
         )
 
-        # Build Excel with embedded QR codes
+        # Build Excel — embed QR code images only when the block requested them
+        include_images = bool(block.qr_image)
         wb = Workbook()
         ws = wb.active
         ws.title = "QSeal Parent QR Codes"
 
-        # Headers: QR URL, QR Code image, Serial, Name, Capacity
-        headers = ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+        # Headers: QR URL, [QR Code image], Serial, Name, Capacity
+        headers = (
+            ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+            if include_images
+            else ["QR URL", "Serial Number", "Name", "Capacity"]
+        )
         bold_font = Font(bold=True)
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -593,10 +598,14 @@ class QSealService:
 
         # Column widths
         ws.column_dimensions[get_column_letter(1)].width = 55  # QR URL
-        ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
-        ws.column_dimensions[get_column_letter(3)].width = 18  # Serial
-        ws.column_dimensions[get_column_letter(4)].width = 25  # Name
-        ws.column_dimensions[get_column_letter(5)].width = 15  # Capacity
+        if include_images:
+            ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
+        serial_col = 3 if include_images else 2
+        name_col = 4 if include_images else 3
+        capacity_col = 5 if include_images else 4
+        ws.column_dimensions[get_column_letter(serial_col)].width = 18  # Serial
+        ws.column_dimensions[get_column_letter(name_col)].width = 25  # Name
+        ws.column_dimensions[get_column_letter(capacity_col)].width = 15  # Capacity
 
         qr_size = 150
         base_url = settings.qr_base_url or f"https://{settings.qr_domain}"
@@ -605,14 +614,16 @@ class QSealService:
             serial = parent.serial_number or ""
             qr_url = f"{base_url}/qseal/{serial}" if serial else ""
 
-            # Row height for QR image
-            ws.row_dimensions[row_idx].height = 115
+            if include_images:
+                # Row height for QR image
+                ws.row_dimensions[row_idx].height = 115
 
             ws.cell(row=row_idx, column=1, value=qr_url)  # QR URL
-            _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
-            ws.cell(row=row_idx, column=3, value=serial)  # Serial Number
-            ws.cell(row=row_idx, column=4, value=parent.name or "")
-            ws.cell(row=row_idx, column=5, value=parent.capacity or 0)
+            if include_images:
+                _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
+            ws.cell(row=row_idx, column=serial_col, value=serial)  # Serial Number
+            ws.cell(row=row_idx, column=name_col, value=parent.name or "")
+            ws.cell(row=row_idx, column=capacity_col, value=parent.capacity or 0)
 
         # Save
         buf = BytesIO()
@@ -621,9 +632,10 @@ class QSealService:
 
         filename = f"qseal_parents_{block.batch}.xlsx"
         logger.info(
-            "[QSEAL] parent excel with QR images generated block=%s parents=%d",
+            "[QSEAL] parent excel generated block=%s parents=%d images=%s",
             block_id,
             len(parents),
+            include_images,
         )
         return buf.getvalue(), filename
 
