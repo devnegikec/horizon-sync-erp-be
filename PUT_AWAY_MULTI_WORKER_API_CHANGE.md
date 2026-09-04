@@ -19,10 +19,10 @@ The endpoint now accepts an optional **`worker_ids`** array. When provided, the
 API generates **one put-away list per worker** and distributes the slip's items
 across them (round-robin). The existing single-worker behavior is unchanged.
 
-| Mode | Request field | Response shape |
-|------|---------------|----------------|
-| Single worker (unchanged) | `worker_id` or nothing | `PutAwayListResponse` (single object) |
-| Multiple workers (NEW) | `worker_ids` | `PutAwayListBatchResponse` (object with `put_away_lists` array) |
+| Mode                      | Request field          | Response shape                                                  |
+| ------------------------- | ---------------------- | --------------------------------------------------------------- |
+| Single worker (unchanged) | `worker_id` or nothing | `PutAwayListResponse` (single object)                           |
+| Multiple workers (NEW)    | `worker_ids`           | `PutAwayListBatchResponse` (object with `put_away_lists` array) |
 
 ---
 
@@ -75,7 +75,7 @@ Same object as before:
   "completed_items": 0,
   "pending_items": 24,
   "warnings": null,
-  "items": [ "... PutAwayListItemResponse ..." ]
+  "items": ["... PutAwayListItemResponse ..."]
 }
 ```
 
@@ -134,7 +134,7 @@ The top level becomes a wrapper object — each entry in `put_away_lists` has th
       "put_away_list_no": "PA-2026-00087",
       "assigned_to": "869674d6-886a-4736-956b-48a77dff78e1",
       "total_items": 12,
-      "items": [ "... PutAwayListItemResponse ..." ]
+      "items": ["... PutAwayListItemResponse ..."]
     }
   ]
 }
@@ -158,11 +158,11 @@ The top level becomes a wrapper object — each entry in `put_away_lists` has th
 
 ## Errors (unchanged)
 
-| Case | Behavior |
-|------|----------|
-| Slip not `pending_putaway` | 400 — "Receiving slip must be in pending_putaway status…" |
+| Case                                        | Behavior                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| Slip not `pending_putaway`                  | 400 — "Receiving slip must be in pending_putaway status…"           |
 | A put-away list already exists for the slip | 409/422 — "Put-away list '…' already exists for receiving slip '…'" |
-| Missing permission | 403 — "Permission denied. Required one of: warehouse.create" |
+| Missing permission                          | 403 — "Permission denied. Required one of: warehouse.create"        |
 
 Note: one put-away generation is allowed per slip. To split across workers you
 must pass `worker_ids` on the **first** generate call for that slip.
