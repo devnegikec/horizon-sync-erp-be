@@ -29,6 +29,10 @@ class GeneratePutAwayRequest(BaseModel):
     worker_id: UUID | None = Field(
         None, description="Optional worker UUID to assign the put-away task to"
     )
+    worker_ids: list[UUID] | None = Field(
+        None,
+        description="Optional worker UUIDs to split the put-away work across — one put-away list is generated per worker",
+    )
     mode: str | None = Field(
         None,
         pattern="^(auto|manual)$",
@@ -107,6 +111,12 @@ class PutAwayListResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     items: list[PutAwayListItemResponse] = []
+
+
+class PutAwayListBatchResponse(BaseModel):
+    """Response when put-away is distributed across multiple workers."""
+
+    put_away_lists: list[PutAwayListResponse] = []
 
 
 class PutAwayListSummaryResponse(BaseModel):

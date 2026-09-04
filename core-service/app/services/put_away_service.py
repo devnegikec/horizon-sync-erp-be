@@ -294,14 +294,130 @@ class PutAwayService:
 
         Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
         """
+        mode = self._resolve_putaway_mode(org_id, mode)
+        slip = self._get_pending_putaway_slip(slip_id, org_id)
+        self._ensure_no_existing_list(slip)
+        item_specs, warnings_parts = self._build_put_away_specs(slip, org_id, mode)
+
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        put_away_number = DocumentNumberingService(self.db).get_next_number(
+            org_id, "put_away_list"
+        )
+        return self._create_list_from_specs(
+            slip=slip,
+            org_id=org_id,
+            mode=mode,
+            item_specs=item_specs,
+            worker_id=worker_id,
+            warnings_parts=warnings_parts,
+            put_away_number=put_away_number,
+        )
+
+    def generate_from_slip_for_workers(
+        self,
+        slip_id: UUID,
+        org_id: UUID,
+        worker_ids: list[UUID],
+        mode: str | None = None,
+    ) -> list[PutAwayList]:
+        """Generate one put-away list per worker, distributing slip items.
+
+        Splits the eligible slip lines across the given workers (round-robin)
+        and creates a separate PutAwayList for each worker, each assigned to
+        that worker and accompanied by a worker task.
+
+        Args:
+            slip_id: The receiving slip ID to generate put-away from.
+            org_id: Organization ID for scoping.
+            worker_ids: Workers to distribute the put-away work across.
+            mode: 'auto' or 'manual'; None falls back to the organization's
+                ``putaway_mode`` setting.
+
+        Returns:
+            One PutAwayList per worker that received at least one item.
+        """
+        mode = self._resolve_putaway_mode(org_id, mode)
+        slip = self._get_pending_putaway_slip(slip_id, org_id)
+        self._ensure_no_existing_list(slip)
+        item_specs, warnings_parts = self._build_put_away_specs(slip, org_id, mode)
+
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        numbering = DocumentNumberingService(self.db)
+        workers = [w for w in worker_ids if w is not None]
+
+        # No workers supplied → fall back to a single unassigned list.
+        if not workers:
+            number = numbering.get_next_number(org_id, "put_away_list")
+            return [
+                self._create_list_from_specs(
+                    slip=slip,
+                    org_id=org_id,
+                    mode=mode,
+                    item_specs=item_specs,
+                    worker_id=None,
+                    warnings_parts=warnings_parts,
+                    put_away_number=number,
+                )
+            ]
+
+        chunks = self._distribute_round_robin(item_specs, len(workers))
+        lists: list[PutAwayList] = []
+        for worker_id, chunk in zip(workers, chunks):
+            if not chunk:
+                # More workers than items — skip empty chunks.
+                continue
+            number = numbering.get_next_number(org_id, "put_away_list")
+            lists.append(
+                self._create_list_from_specs(
+                    slip=slip,
+                    org_id=org_id,
+                    mode=mode,
+                    item_specs=chunk,
+                    worker_id=worker_id,
+                    warnings_parts=warnings_parts,
+                    put_away_number=number,
+                )
+            )
+
+        # Nothing eligible (all lines skipped) — still return a single list so
+        # the caller sees the warnings, mirroring single-worker behaviour.
+        if not lists:
+            number = numbering.get_next_number(org_id, "put_away_list")
+            lists.append(
+                self._create_list_from_specs(
+                    slip=slip,
+                    org_id=org_id,
+                    mode=mode,
+                    item_specs=[],
+                    worker_id=None,
+                    warnings_parts=warnings_parts,
+                    put_away_number=number,
+                )
+            )
+        return lists
+
+    # ── Put-away generation helpers ─────────────────────────────────────────
+
+    @staticmethod
+    def _distribute_round_robin(items: list, count: int) -> list[list]:
+        """Distribute items across ``count`` buckets round-robin."""
+        buckets: list[list] = [[] for _ in range(count)]
+        for idx, item in enumerate(items):
+            buckets[idx % count].append(item)
+        return buckets
+
+    def _resolve_putaway_mode(self, org_id: UUID, mode: str | None) -> str:
         if mode is None:
             from app.services.pick_settings_service import PickSettingsService
 
             mode = str(PickSettingsService(self.db).get_value(org_id, "putaway_mode"))
         if mode not in {"auto", "manual"}:
             raise ValidationError(f"Invalid put-away generation mode: {mode}")
+        return mode
 
-        # Validate the receiving slip
+    def _get_pending_putaway_slip(self, slip_id: UUID, org_id: UUID) -> ReceivingSlip:
         slip = (
             self.db.query(ReceivingSlip)
             .filter(
@@ -310,29 +426,26 @@ class PutAwayService:
             )
             .first()
         )
-
         if slip is None:
             raise NotFoundError(
                 message="Receiving slip not found",
                 entity_type="ReceivingSlip",
                 entity_id=str(slip_id),
             )
-
         if slip.status != "pending_putaway":
             raise StateError(
                 message="Receiving slip must be in pending_putaway status to generate put-away list",
                 current_state=slip.status,
                 required_state=["pending_putaway"],
             )
+        return slip
 
-        # Prevent duplicate put-away lists for the same receiving slip.
-        # Only lists generated FROM the slip count as duplicates — direct
-        # put-away lists (reference_type='direct_putaway') get linked to the
-        # slip during reconciliation and must not block generation.
+    def _ensure_no_existing_list(self, slip: ReceivingSlip) -> None:
+        """Reject generation when a put-away list already exists for the slip."""
         existing = (
             self.db.query(PutAwayList)
             .filter(
-                PutAwayList.receiving_slip_id == slip_id,
+                PutAwayList.receiving_slip_id == slip.id,
                 PutAwayList.reference_type == "receiving_slip",
             )
             .first()
@@ -343,32 +456,20 @@ class PutAwayService:
                 f"for receiving slip '{slip.slip_number}'"
             )
 
-        # Generate unique put-away list number
-        from app.services.document_numbering_service import DocumentNumberingService
+    def _build_put_away_specs(
+        self, slip: ReceivingSlip, org_id: UUID, mode: str
+    ) -> tuple[list[dict], list[str]]:
+        """Resolve eligible slip lines into put-away item specs (no ORM yet).
 
-        put_away_number = DocumentNumberingService(self.db).get_next_number(
-            org_id, "put_away_list"
-        )
-
-        # Create the put-away list
-        put_away_list = PutAwayList(
-            organization_id=org_id,
-            warehouse_id=slip.warehouse_id,
-            put_away_list_no=put_away_number,
-            status="pending",
-            reference_type="receiving_slip",
-            reference_id=slip_id,
-            receiving_slip_id=slip_id,
-        )
-        self.db.add(put_away_list)
-        self.db.flush()
-
-        # Process each receiving slip item and assign bins
-        put_away_items = []
+        Returns (item_specs, warnings_parts) where each spec is a dict with
+        keys item_id, sku, batch_number, quantity, bin_location_id.
+        """
+        item_specs: list[dict] = []
         skipped_damaged: list[str] = []
         skipped_rejected: list[str] = []
         skipped_exception: list[str] = []
         skipped_unresolved: list[str] = []
+
         for slip_item in slip.items:
             # Only fully accepted, good receipt lines enter normal put-away.
             # HOLD, QUARANTINE, and EXCESS are physically segregated and
@@ -397,61 +498,46 @@ class PutAwayService:
             # sku → gtin). QR-product-linked slip items may store the GTIN in
             # the sku field, so gtin remains included for compatibility.
             item = self._resolve_item_by_sku(slip_item.sku, org_id)
-
             if item is None:
-                # If item not found by code, skip this item
                 skipped_unresolved.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number})"
                 )
                 continue
 
             quantity = Decimal(str(slip_item.quantity))
-            item_group_id = item.item_group_id
 
             # Manual mode: leave bin assignment to the worker. One list item
             # per slip line (no auto-splitting across bins).
             if mode == "manual":
-                put_away_item = PutAwayListItem(
-                    organization_id=org_id,
-                    put_away_list_id=put_away_list.id,
-                    item_id=item.id,
-                    sku=slip_item.sku,
-                    batch_number=slip_item.batch_number,
-                    quantity=quantity,
-                    bin_location_id=None,
-                    sort_order=len(put_away_items),
-                    status="pending",
+                item_specs.append(
+                    {
+                        "item_id": item.id,
+                        "sku": slip_item.sku,
+                        "batch_number": slip_item.batch_number,
+                        "quantity": quantity,
+                        "bin_location_id": None,
+                    }
                 )
-                self.db.add(put_away_item)
-                put_away_items.append(put_away_item)
                 continue
 
-            # Assign bins for this item
             bin_assignments = self._assign_bins(
                 item_id=item.id,
-                item_group_id=item_group_id,
+                item_group_id=item.item_group_id,
                 quantity=quantity,
                 warehouse_id=slip.warehouse_id,
                 org_id=org_id,
             )
-
-            # Create put-away list items from bin assignments
             for assignment in bin_assignments:
-                put_away_item = PutAwayListItem(
-                    organization_id=org_id,
-                    put_away_list_id=put_away_list.id,
-                    item_id=item.id,
-                    sku=slip_item.sku,
-                    batch_number=slip_item.batch_number,
-                    quantity=assignment["quantity"],
-                    bin_location_id=assignment["bin_location_id"],
-                    sort_order=0,  # Will be set by routing optimizer
-                    status="pending",
+                item_specs.append(
+                    {
+                        "item_id": item.id,
+                        "sku": slip_item.sku,
+                        "batch_number": slip_item.batch_number,
+                        "quantity": assignment["quantity"],
+                        "bin_location_id": assignment["bin_location_id"],
+                    }
                 )
-                self.db.add(put_away_item)
-                put_away_items.append(put_away_item)
 
-        # Build warnings for skipped items (stored in remarks as JSON)
         warnings_parts: list[str] = []
         if skipped_damaged:
             warnings_parts.append(
@@ -473,6 +559,48 @@ class PutAwayService:
                 f"Skipped {len(skipped_unresolved)} item(s) with unknown SKU (no matching Item found): "
                 + "; ".join(skipped_unresolved)
             )
+
+        return item_specs, warnings_parts
+
+    def _create_list_from_specs(
+        self,
+        slip: ReceivingSlip,
+        org_id: UUID,
+        mode: str,
+        item_specs: list[dict],
+        worker_id: UUID | None,
+        warnings_parts: list[str],
+        put_away_number: str,
+    ) -> PutAwayList:
+        """Persist one PutAwayList and its items from pre-built specs."""
+        put_away_list = PutAwayList(
+            organization_id=org_id,
+            warehouse_id=slip.warehouse_id,
+            put_away_list_no=put_away_number,
+            status="pending",
+            reference_type="receiving_slip",
+            reference_id=slip.id,
+            receiving_slip_id=slip.id,
+        )
+        self.db.add(put_away_list)
+        self.db.flush()
+
+        put_away_items: list[PutAwayListItem] = []
+        for idx, spec in enumerate(item_specs):
+            put_away_item = PutAwayListItem(
+                organization_id=org_id,
+                put_away_list_id=put_away_list.id,
+                item_id=spec["item_id"],
+                sku=spec["sku"],
+                batch_number=spec["batch_number"],
+                quantity=spec["quantity"],
+                bin_location_id=spec["bin_location_id"],
+                sort_order=idx if mode == "manual" else 0,
+                status="pending",
+            )
+            self.db.add(put_away_item)
+            put_away_items.append(put_away_item)
+
         if warnings_parts:
             put_away_list.remarks = json.dumps({"warnings": warnings_parts})
 
