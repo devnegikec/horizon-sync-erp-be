@@ -758,10 +758,14 @@ class FloorPlanGeneratorService:
     def _deactivate_existing(
         self, warehouse_id: UUID, org_id: UUID
     ) -> int:
-        """Soft-deactivate ALL existing active locations for this warehouse.
+        """Soft-deactivate existing *pickable* locations for this warehouse.
 
         Renames full_path to avoid unique-constraint collisions with
         newly generated locations, and sets is_active=False.
+
+        Non-pickable system bins (RECEIVING-STAGE, HOLD, QUARANTINE, ...) are
+        deliberately preserved — they are logical staging locations, not part of
+        the physical layout, and must keep receiving stock after a layout apply.
 
         Previously this method hard-deleted locations without stock, but that
         caused IntegrityError when other tables (pick_list_items,
@@ -770,13 +774,14 @@ class FloorPlanGeneratorService:
         """
         from sqlalchemy import func
 
-        # Count total active locations
+        # Count total active, pickable locations
         count = (
             self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.is_active.is_(True),
+                WarehouseLocation.is_pickable.is_(True),
             )
             .count()
         )
@@ -784,13 +789,14 @@ class FloorPlanGeneratorService:
         if count == 0:
             return 0
 
-        # Soft-deactivate ALL locations (rename full_path + set inactive)
+        # Soft-deactivate pickable locations (rename full_path + set inactive)
         # This avoids FK violations from pick_list_items, put_away_items,
         # bin_reservations, and location_allocations.
         self.db.query(WarehouseLocation).filter(
             WarehouseLocation.warehouse_id == warehouse_id,
             WarehouseLocation.organization_id == org_id,
             WarehouseLocation.is_active.is_(True),
+            WarehouseLocation.is_pickable.is_(True),
         ).update(
             {
                 "is_active": False,

@@ -418,7 +418,13 @@ class ScannedItemTrackingService:
     def _get_or_create_system_bin(
         self, warehouse_id: UUID, organization_id: UUID, code: str
     ):
-        """Return a standard non-pickable WMS bin, creating it for new warehouses."""
+        """Return a standard non-pickable WMS bin, creating it for new warehouses.
+
+        System bins (RECEIVING-STAGE, HOLD, QUARANTINE, ...) must survive floor-plan
+        regeneration. If an apply deactivated one (renaming full_path with an
+        ``_inactive_`` prefix), reactivate it in place instead of returning a
+        deactivated bin — stock operations on inactive bins fail with a 409.
+        """
         from app.models.warehouse_location import WarehouseLocation
 
         location = (
@@ -427,23 +433,44 @@ class ScannedItemTrackingService:
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == organization_id,
                 WarehouseLocation.code == code,
+                WarehouseLocation.is_active.is_(True),
             )
             .first()
         )
+
         if location is None:
-            location = WarehouseLocation(
-                organization_id=organization_id,
-                warehouse_id=warehouse_id,
-                location_type="bin",
-                code=code,
-                full_path=code,
-                name=code.replace("-", " ").title(),
-                is_pickable=False,
-                is_available=True,
-                is_active=True,
+            # Look for a deactivated copy (e.g. after floor-plan regeneration).
+            location = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.warehouse_id == warehouse_id,
+                    WarehouseLocation.organization_id == organization_id,
+                    WarehouseLocation.code == code,
+                )
+                .first()
             )
-            self.db.add(location)
-            self.db.flush()
+            if location is not None:
+                # Reactivate the system bin and restore its display path/name.
+                location.is_active = True
+                location.is_available = True
+                if location.full_path and "_inactive_" in location.full_path:
+                    location.full_path = code
+                    location.name = code.replace("-", " ").title()
+                self.db.flush()
+            else:
+                location = WarehouseLocation(
+                    organization_id=organization_id,
+                    warehouse_id=warehouse_id,
+                    location_type="bin",
+                    code=code,
+                    full_path=code,
+                    name=code.replace("-", " ").title(),
+                    is_pickable=False,
+                    is_available=True,
+                    is_active=True,
+                )
+                self.db.add(location)
+                self.db.flush()
         return location
 
     def stage_tracking(self, tracking: ScannedItemTracking) -> None:
