@@ -1,7 +1,9 @@
 """Warehouse service with business logic"""
 
+from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -11,6 +13,7 @@ from app.core.exceptions import (
 )
 from app.models.base import WarehouseType
 from app.models.warehouse import Warehouse
+from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.warehouse_repository import WarehouseRepository
 from app.schemas.warehouse import WarehouseCreate, WarehouseTreeNode, WarehouseUpdate
 from app.services.document_numbering_service import DocumentNumberingService
@@ -117,6 +120,7 @@ class WarehouseService:
             raise WarehouseNotFoundException(
                 f"Warehouse with ID {warehouse_id} not found"
             )
+        self._apply_derived_capacity([warehouse])
         return warehouse
 
     def update_warehouse(
@@ -296,7 +300,49 @@ class WarehouseService:
             "has_prev": page > 1,
         }
 
+        self._apply_derived_capacity(warehouses)
+
         return warehouses, pagination, status_counts, type_counts
+
+    def _apply_derived_capacity(self, warehouses: list[Warehouse]) -> None:
+        """Populate each warehouse's total capacity and UOM from its active bins.
+
+        Warehouse capacity is modelled as a roll-up of the active bin locations
+        (the layout is the source of truth). Only warehouses with bins get a
+        derived value; warehouses without a layout keep their stored value.
+        """
+        if not warehouses:
+            return
+
+        ids = [w.id for w in warehouses]
+        rows = (
+            self.db.query(
+                WarehouseLocation.warehouse_id,
+                func.sum(WarehouseLocation.capacity),
+                func.max(WarehouseLocation.capacity_uom),
+            )
+            .filter(
+                WarehouseLocation.warehouse_id.in_(ids),
+                WarehouseLocation.location_type == LocationType.BIN.value,
+                WarehouseLocation.is_active.is_(True),
+            )
+            .group_by(WarehouseLocation.warehouse_id)
+            .all()
+        )
+
+        capacity_map: dict[UUID, tuple[Decimal | None, str | None]] = {
+            row[0]: (row[1], row[2]) for row in rows
+        }
+
+        for warehouse in warehouses:
+            row = capacity_map.get(warehouse.id)
+            if row is None:
+                continue
+            total, uom = row
+            if total is not None:
+                warehouse.total_capacity = int(total)
+            if warehouse.capacity_uom is None and uom:
+                warehouse.capacity_uom = uom
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """
