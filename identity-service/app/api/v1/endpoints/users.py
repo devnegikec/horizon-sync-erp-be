@@ -789,23 +789,36 @@ def _upsert_user_custom_permissions(
             ).update({"is_active": False})
         return
 
-    # Only active, assignable permissions can be granted. Reserved codes such as
-    # ``system_admin.master`` / ``system_admin.*`` and the ``*.*`` wildcard grant
-    # unrestricted administrative access and must never be assignable through the
-    # fine-grained permission path (a caller with only user.update could otherwise
-    # escalate a target user to full admin).
-    valid_ids = {
-        row[0]
-        for row in db.query(Permission.id)
+    # Only active, non-wildcard, non-platform permissions can be granted through
+    # the fine-grained path. A caller with only user.update must not be able to
+    # escalate a target (e.g. grant ``system_admin.master``, ``*.*``, or a
+    # resource wildcard like ``user.*``).
+    existing = {
+        pid: code
+        for pid, code in db.query(Permission.id, Permission.code)
         .filter(
             Permission.id.in_(permission_ids),
             Permission.is_active == True,  # noqa: E712
-            Permission.code != "*.*",
-            ~Permission.code.like("system_admin.%"),
         )
         .all()
-    )
-    valid_ids = {row[0] for row in existing}
+    }
+
+    privileged = [
+        code
+        for code in existing.values()
+        if code
+        and (code == "*.*" or code.endswith(".*") or code.startswith("system_admin."))
+    ]
+    if privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Custom permissions cannot include platform-level or wildcard "
+                f"permissions: {sorted(privileged)}"
+            ),
+        )
+
+    valid_ids = set(existing.keys())
     missing = set(permission_ids) - valid_ids
     if missing:
         raise HTTPException(
@@ -813,18 +826,6 @@ def _upsert_user_custom_permissions(
             detail=(
                 "Invalid or restricted permission IDs: "
                 f"{[str(m) for m in sorted(missing)]}"
-            ),
-        )
-
-    privileged = [
-        code for _, code in existing if code and code.startswith("system_admin.")
-    ]
-    if privileged:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Custom permissions cannot include platform-level permissions: "
-                f"{sorted(privileged)}"
             ),
         )
 

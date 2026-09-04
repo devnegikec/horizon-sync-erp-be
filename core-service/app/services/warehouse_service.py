@@ -311,10 +311,10 @@ class WarehouseService:
     def _apply_derived_capacity(self, warehouses: list[Warehouse]) -> None:
         """Populate each warehouse's total capacity and UOM from its active bins.
 
-        Warehouse capacity is modelled as a roll-up of the active bin locations
-        (the layout is the source of truth). Only warehouses whose active bins
-        all share the same UOM get a derived total; warehouses without a layout
-        (or with mixed-UOM bins) keep their stored value.
+        Warehouse capacity is a roll-up of the active bin locations (the layout
+        is the source of truth). Warehouses without bins keep their stored value.
+        The UOM is reported only when all active bins agree on one unit; mixed or
+        unknown units clear the label so a summed total is never mislabelled.
         """
         if not warehouses:
             return
@@ -351,13 +351,16 @@ class WarehouseService:
             if row is None:
                 continue
             total, bin_count, uom_count, distinct_uoms, uom = row
-            if total is not None:
-                warehouse.total_capacity = float(total)
-            # Only report a single UOM when every active bin carries a non-null
-            # UOM and they all agree. Mixed or unknown units are left alone
-            # rather than labelling a summed capacity with one arbitrary unit.
+            if total is None:
+                continue
+            warehouse.total_capacity = float(total)
+            # Report a single UOM only when every active bin carries a non-null
+            # unit and they all agree. Otherwise clear the label so the derived
+            # total is never paired with a stale or arbitrary unit.
             if uom_count == bin_count and distinct_uoms == 1 and uom:
                 warehouse.capacity_uom = uom
+            else:
+                warehouse.capacity_uom = None
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """

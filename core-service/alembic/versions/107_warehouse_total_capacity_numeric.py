@@ -29,6 +29,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Narrowing back to integer would silently drop fractional capacity values.
+    # Fail loudly when any fractional data exists instead of corrupting totals.
+    op.execute(
+        "DO $$ "
+        "BEGIN "
+        "IF EXISTS ("
+        "  SELECT 1 FROM warehouses_extended "
+        "  WHERE total_capacity IS NOT NULL "
+        "    AND total_capacity <> ROUND(total_capacity)"
+        ") THEN "
+        "RAISE EXCEPTION 'downgrade would lose fractional warehouse capacities'; "
+        "END IF; "
+        "END $$;"
+    )
     op.execute(
         "ALTER TABLE warehouses_extended "
         "ALTER COLUMN total_capacity TYPE integer "

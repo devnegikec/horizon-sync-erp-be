@@ -459,26 +459,29 @@ class ScannedItemTrackingService:
                     location.name = code.replace("-", " ").title()
                 self.db.flush()
             else:
-                location = WarehouseLocation(
-                    organization_id=organization_id,
-                    warehouse_id=warehouse_id,
-                    location_type="bin",
-                    code=code,
-                    full_path=code,
-                    name=code.replace("-", " ").title(),
-                    is_pickable=False,
-                    is_available=True,
-                    is_active=True,
-                )
-                self.db.add(location)
+                # Add inside the savepoint: begin_nested() flushes pending
+                # objects on entry, so adding first would surface the unique-key
+                # race outside the savepoint and leave the session in a failed
+                # (PendingRollbackError) state.
                 try:
                     with self.db.begin_nested():
+                        location = WarehouseLocation(
+                            organization_id=organization_id,
+                            warehouse_id=warehouse_id,
+                            location_type="bin",
+                            code=code,
+                            full_path=code,
+                            name=code.replace("-", " ").title(),
+                            is_pickable=False,
+                            is_available=True,
+                            is_active=True,
+                        )
+                        self.db.add(location)
                         self.db.flush()
                 except IntegrityError:
                     # A concurrent request inserted the same system bin first
-                    # (unique constraint on warehouse_id + full_path). Reuse the
-                    # winner instead of failing the whole transaction.
-                    self.db.expunge(location)
+                    # (unique constraint on warehouse_id + full_path). The
+                    # savepoint rolled back cleanly, so reuse the winner.
                     location = (
                         self.db.query(WarehouseLocation)
                         .filter(
