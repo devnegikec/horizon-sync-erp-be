@@ -150,14 +150,25 @@ def upgrade():
 def downgrade():
     session = Session(bind=op.get_bind())
     try:
+        # Remove only the role assignments this migration created (for the
+        # preloaded roles in ASSIGNMENTS). Deleting every grant for these
+        # permission codes would also wipe grants made by later migrations or
+        # admins after this migration ran.
+        for permission_code, role_codes in ASSIGNMENTS.items():
+            for role_code in role_codes:
+                session.execute(
+                    text(
+                        """
+                        DELETE FROM role_permissions
+                        WHERE role_id IN (SELECT id FROM roles WHERE code = :role_code)
+                          AND permission_id IN
+                              (SELECT id FROM permissions WHERE code = :permission_code)
+                        """
+                    ),
+                    {"role_code": role_code, "permission_code": permission_code},
+                )
+
         codes = [row[0] for row in PERMISSIONS]
-        session.execute(
-            text(
-                "DELETE FROM role_permissions WHERE permission_id IN "
-                "(SELECT id FROM permissions WHERE code = ANY(:codes))"
-            ),
-            {"codes": codes},
-        )
         session.execute(
             text("DELETE FROM permissions WHERE code = ANY(:codes)"),
             {"codes": codes},

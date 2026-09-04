@@ -286,8 +286,12 @@ class WarehouseService:
         )
 
         # Get status and type counts (scoped to warehouse_ids if provided)
-        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id, warehouse_ids=warehouse_ids)
-        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id, warehouse_ids=warehouse_ids)
+        status_counts = self.warehouse_repo.get_warehouse_status_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
+        type_counts = self.warehouse_repo.get_warehouse_type_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
 
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size
@@ -308,8 +312,9 @@ class WarehouseService:
         """Populate each warehouse's total capacity and UOM from its active bins.
 
         Warehouse capacity is modelled as a roll-up of the active bin locations
-        (the layout is the source of truth). Only warehouses with bins get a
-        derived value; warehouses without a layout keep their stored value.
+        (the layout is the source of truth). Only warehouses whose active bins
+        all share the same UOM get a derived total; warehouses without a layout
+        (or with mixed-UOM bins) keep their stored value.
         """
         if not warehouses:
             return
@@ -319,6 +324,7 @@ class WarehouseService:
             self.db.query(
                 WarehouseLocation.warehouse_id,
                 func.sum(WarehouseLocation.capacity),
+                func.min(WarehouseLocation.capacity_uom),
                 func.max(WarehouseLocation.capacity_uom),
             )
             .filter(
@@ -330,19 +336,21 @@ class WarehouseService:
             .all()
         )
 
-        capacity_map: dict[UUID, tuple[Decimal | None, str | None]] = {
-            row[0]: (row[1], row[2]) for row in rows
+        capacity_map: dict[UUID, tuple[Decimal | None, str | None, str | None]] = {
+            row[0]: (row[1], row[2], row[3]) for row in rows
         }
 
         for warehouse in warehouses:
             row = capacity_map.get(warehouse.id)
             if row is None:
                 continue
-            total, uom = row
-            if total is not None:
-                warehouse.total_capacity = int(total)
-            if warehouse.capacity_uom is None and uom:
-                warehouse.capacity_uom = uom
+            total, min_uom, max_uom = row
+            # Mixing units makes a single summed total meaningless; only derive
+            # when every active bin reports the same UOM.
+            if total is None or min_uom != max_uom:
+                continue
+            warehouse.total_capacity = int(round(total))
+            warehouse.capacity_uom = min_uom
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """
