@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 import requests
+from qr_helpers import login
 
 # API Endpoints
 BASE_URL = "http://localhost:8001/api/v1"
@@ -10,20 +11,17 @@ BASE_URL = "http://localhost:8001/api/v1"
 ITEMS_URL = f"{BASE_URL}/items"
 BATCHES_URL = f"{BASE_URL}/batches"
 
-# JWT Authorization Token
-AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Mzk3YWQ4My0xYzJjLTQyM2EtYmQ1Mi00ZTI1NTA5MjkxNjYiLCJlbWFpbCI6InR0a3dtc21hbmFnZXJAcHJlc3RpZ2UuY29tIiwidXNlcl90eXBlIjoidXNlciIsImV4cCI6MTc4ODcxMzE0NiwiaWF0IjoxNzg4NDUzOTQ2LCJ0eXBlIjoiYWNjZXNzIn0.o8tDd90ZLMTzqKvCG0zaFbNWOPocBmiOhAN159nrnFo"
-
-HEADERS = {
+BASE_HEADERS = {
     "Accept": "*/*",
     "Content-Type": "application/json",
-    "Authorization": f"Bearer {AUTH_TOKEN}",
     "ngrok-skip-browser-warning": "true",
     "Origin": "http://localhost:4200",
 }
 
 
-def get_all_products(page_size=20):
+def get_all_products(page_size=20, headers=None):
     """Fetches all product IDs across paginated pages."""
+    headers = headers or BASE_HEADERS
     product_ids = []
     page = 1
     has_next = True
@@ -39,7 +37,7 @@ def get_all_products(page_size=20):
         }
 
         try:
-            response = requests.get(ITEMS_URL, headers=HEADERS, params=params)
+            response = requests.get(ITEMS_URL, headers=headers, params=params)
 
             if response.status_code == 200:
                 res_data = response.json()
@@ -71,7 +69,12 @@ def generate_unique_batch_payload(item_id: str, index: int):
     now = datetime.now(UTC)
 
     mfg_date = now.strftime("%Y-%m-%dT00:00:00Z")
-    exp_date = now.replace(year=now.year + 4).strftime("%Y-%m-%dT00:00:00Z")
+    try:
+        exp = now.replace(year=now.year + 4)
+    except ValueError:
+        # Feb 29 in a leap year — the target year is not a leap year.
+        exp = now.replace(year=now.year + 4, month=2, day=28)
+    exp_date = exp.strftime("%Y-%m-%dT00:00:00Z")
 
     # Format: BATCH-<YYYYMMDD>-P<INDEX>-<UNIQUE_UUID_4CHAR>
     # e.g., BATCH-20260903-P001-A9F2
@@ -90,7 +93,9 @@ def generate_unique_batch_payload(item_id: str, index: int):
 
 
 def create_one_unique_batch_per_product():
-    product_ids = get_all_products(page_size=20)
+    token = login()
+    headers = {**BASE_HEADERS, "Authorization": f"Bearer {token}"}
+    product_ids = get_all_products(page_size=20, headers=headers)
 
     if not product_ids:
         print("[WARN] No product IDs found. Exiting batch creation.")
@@ -111,7 +116,7 @@ def create_one_unique_batch_per_product():
         )
 
         try:
-            response = requests.post(BATCHES_URL, headers=HEADERS, json=payload)
+            response = requests.post(BATCHES_URL, headers=headers, json=payload)
 
             if response.status_code in (200, 201):
                 print(f"  └─ SUCCESS: Batch '{batch_no}' created successfully.\n")

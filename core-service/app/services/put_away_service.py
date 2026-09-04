@@ -297,6 +297,8 @@ class PutAwayService:
         mode = self._resolve_putaway_mode(org_id, mode)
         slip = self._get_pending_putaway_slip(slip_id, org_id)
         self._ensure_no_existing_list(slip)
+        if worker_id is not None:
+            self._validate_worker(worker_id, slip.warehouse_id, org_id)
         item_specs, warnings_parts = self._build_put_away_specs(slip, org_id, mode)
 
         from app.services.document_numbering_service import DocumentNumberingService
@@ -346,6 +348,8 @@ class PutAwayService:
 
         numbering = DocumentNumberingService(self.db)
         workers = [w for w in worker_ids if w is not None]
+        for worker_id in workers:
+            self._validate_worker(worker_id, slip.warehouse_id, org_id)
 
         # No workers supplied → fall back to a single unassigned list.
         if not workers:
@@ -424,6 +428,7 @@ class PutAwayService:
                 ReceivingSlip.id == slip_id,
                 ReceivingSlip.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
         if slip is None:
@@ -456,6 +461,28 @@ class PutAwayService:
                 f"for receiving slip '{slip.slip_number}'"
             )
 
+    def _validate_worker(
+        self, worker_id: UUID, warehouse_id: UUID, org_id: UUID
+    ) -> None:
+        """Reject workers that are nonexistent, inactive, cross-org, or not
+        assigned to this warehouse before they are persisted on a list/task."""
+        from app.models.warehouse_user import WarehouseUser
+
+        assignment = (
+            self.db.query(WarehouseUser)
+            .filter(
+                WarehouseUser.user_id == worker_id,
+                WarehouseUser.organization_id == org_id,
+                WarehouseUser.warehouse_id == warehouse_id,
+                WarehouseUser.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if assignment is None:
+            raise ValidationError(
+                f"Worker '{worker_id}' is not an active member of this warehouse"
+            )
+
     def _build_put_away_specs(
         self, slip: ReceivingSlip, org_id: UUID, mode: str
     ) -> tuple[list[dict], list[str]]:
@@ -465,6 +492,7 @@ class PutAwayService:
         keys item_id, sku, batch_number, quantity, bin_location_id.
         """
         item_specs: list[dict] = []
+        manual_grouped: dict[tuple[str, str | None], dict] = {}
         skipped_damaged: list[str] = []
         skipped_rejected: list[str] = []
         skipped_exception: list[str] = []
@@ -506,18 +534,22 @@ class PutAwayService:
 
             quantity = Decimal(str(slip_item.quantity))
 
-            # Manual mode: leave bin assignment to the worker. One list item
-            # per slip line (no auto-splitting across bins).
+            # Manual mode: leave bin assignment to the worker. Items are
+            # grouped by (SKU, batch) so repeated slip lines merge into one
+            # list item instead of producing duplicate rows.
             if mode == "manual":
-                item_specs.append(
-                    {
+                key = (slip_item.sku, slip_item.batch_number)
+                existing = manual_grouped.get(key)
+                if existing is not None:
+                    existing["quantity"] += quantity
+                else:
+                    manual_grouped[key] = {
                         "item_id": item.id,
                         "sku": slip_item.sku,
                         "batch_number": slip_item.batch_number,
                         "quantity": quantity,
                         "bin_location_id": None,
                     }
-                )
                 continue
 
             bin_assignments = self._assign_bins(
@@ -537,6 +569,9 @@ class PutAwayService:
                         "bin_location_id": assignment["bin_location_id"],
                     }
                 )
+
+        if manual_grouped:
+            item_specs.extend(manual_grouped.values())
 
         warnings_parts: list[str] = []
         if skipped_damaged:
@@ -1219,7 +1254,22 @@ class PutAwayService:
             .scalar()
         ) or Decimal("0")
 
-        return bin_capacity - Decimal(str(current_stock))
+        # Subtract quantities already promised to pending put-away items so a
+        # batch of assignments cannot over-allocate the same bin.
+        pending_put_away = (
+            self.db.query(
+                func.coalesce(func.sum(PutAwayListItem.quantity), Decimal("0"))
+            )
+            .filter(
+                PutAwayListItem.bin_location_id == bin_loc.id,
+                PutAwayListItem.status.in_(["pending", "in_progress"]),
+            )
+            .scalar()
+        ) or Decimal("0")
+
+        return (
+            bin_capacity - Decimal(str(current_stock)) - Decimal(str(pending_put_away))
+        )
 
     def _optimize_item_routing(self, put_away_items: list[PutAwayListItem]) -> None:
         """Optimize the routing order for put-away items using the RoutingOptimizer.

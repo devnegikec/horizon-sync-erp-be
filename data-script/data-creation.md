@@ -3,9 +3,9 @@ Read [](file:///Users/devnegi/Documents/www/erpproject/horizon-sync-be/core-serv
 Read [](file:///Users/devnegi/Documents/www/erpproject/horizon-sync-be/core-service/app/models/scan_session.py#1-1), lines 1 to 110
 
 Ran terminal command:  cd /Users/devnegi/Documents/www/erpproject/horizon-sync-be
-docker exec -e PGPASSWORD=horizon_pass horizon_postgres psql -U horizon_user -d railway -c "SELECT id, name, code, warehouse_type FROM warehouses_extended WHERE organization_id='147f3b9d-77fd-432f-8d91-e5559af9d897' LIMIT 10;"
+docker exec -e PGPASSWORD="$PGPASSWORD" horizon_postgres psql -U horizon_user -d railway -c "SELECT id, name, code, warehouse_type FROM warehouses_extended WHERE organization_id='147f3b9d-77fd-432f-8d91-e5559af9d897' LIMIT 10;"
 echo "=== existing ASN statuses ==="
-docker exec -e PGPASSWORD=horizon_pass horizon_postgres psql -U horizon_user -d railway -c "SELECT id, asn_order_no, status, asn_type, warehouse_id_to FROM asn_orders WHERE organization_id='147f3b9d-77fd-432f-8d91-e5559af9d897' ORDER BY created_at DESC LIMIT 5;"
+docker exec -e PGPASSWORD="$PGPASSWORD" horizon_postgres psql -U horizon_user -d railway -c "SELECT id, asn_order_no, status, asn_type, warehouse_id_to FROM asn_orders WHERE organization_id='147f3b9d-77fd-432f-8d91-e5559af9d897' ORDER BY created_at DESC LIMIT 5;"
 
 Searched for regex `def create|asn_order_no|warehouse_id_to|def update_status|serial_nos|AsnOrderItem` (`**/core-service/app/services/asn_order_service.py`), 54 results
 

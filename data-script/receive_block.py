@@ -32,7 +32,7 @@ DEFAULT_WAREHOUSE_ID = os.environ.get(
 def find_item_by_qr_product(product_id: str, token: str) -> dict | None:
     """Resolve the WMS item linked to a QR product by paging the item list."""
     page = 1
-    while page <= 20:
+    while True:
         data = api_get("/items", token, {"page": page, "page_size": 100})
         rows = (data or {}).get("items", [])
         if not rows:
@@ -42,7 +42,6 @@ def find_item_by_qr_product(product_id: str, token: str) -> dict | None:
             if detail.get("qr_product_id") == product_id:
                 return detail
         page += 1
-    return None
 
 
 def main() -> None:
@@ -95,47 +94,58 @@ def main() -> None:
     uom = item.get("uom") or "pcs"
     print(f"[3/6] Item {item['item_code']} sku={sku} uom={uom}")
 
-    # 4. Create + confirm ASN
-    asn_payload = {
-        "order_date": datetime.now(UTC).isoformat(),
-        "delivery_date": datetime.now(UTC).isoformat(),
-        "warehouse_id_to": args.warehouse_id,
-        "asn_type": "purchase",
-        "items": [
+    session_id = None
+    try:
+        # 4. Create + confirm ASN
+        asn_payload = {
+            "order_date": datetime.now(UTC).isoformat(),
+            "delivery_date": datetime.now(UTC).isoformat(),
+            "warehouse_id_to": args.warehouse_id,
+            "asn_type": "purchase",
+            "items": [
+                {
+                    "item_id": item["id"],
+                    "qty": len(child_serials),
+                    "uom": uom,
+                    "serial_nos": child_serials,
+                }
+            ],
+        }
+        asn = api_post("/asn-orders", token, asn_payload)
+        api_post(f"/asn-orders/{asn['id']}/confirm", token, {})
+        print(f"[4/6] ASN {asn['asn_order_no']} (id={asn['id']}) created + confirmed")
+
+        # 5. Start scan session + scan every child serial
+        session = api_post(
+            "/inbound/sessions",
+            token,
             {
-                "item_id": item["id"],
-                "qty": len(child_serials),
-                "uom": uom,
-                "serial_nos": child_serials,
-            }
-        ],
-    }
-    asn = api_post("/asn-orders", token, asn_payload)
-    api_post(f"/asn-orders/{asn['id']}/confirm", token, {})
-    print(f"[4/6] ASN {asn['asn_order_no']} (id={asn['id']}) created + confirmed")
+                "warehouse_id": args.warehouse_id,
+                "asn_order_id": asn["id"],
+                "dock_location": "DOCK-A",
+            },
+        )
+        session_id = session["id"]
+        print(f"[5/6] Scan session {session_id} started")
+        for i, serial in enumerate(child_serials, 1):
+            # Scan the bare child serial. The decoder resolves it to the WMS item
+            # and sets batch_number = child serial, which is what the receiving-slip
+            # builder keys on to group children under their QSeal parent and pull
+            # the real dispatch batch / dates from QSealParameters.
+            api_post(f"/inbound/sessions/{session_id}/scan", token, {"qr_data": serial})
+            print(f"    scanned {i}/{len(child_serials)}: {serial}")
 
-    # 5. Start scan session + scan every child serial
-    session = api_post(
-        "/inbound/sessions",
-        token,
-        {
-            "warehouse_id": args.warehouse_id,
-            "asn_order_id": asn["id"],
-            "dock_location": "DOCK-A",
-        },
-    )
-    session_id = session["id"]
-    print(f"[5/6] Scan session {session_id} started")
-    for i, serial in enumerate(child_serials, 1):
-        # Scan the bare child serial. The decoder resolves it to the WMS item
-        # and sets batch_number = child serial, which is what the receiving-slip
-        # builder keys on to group children under their QSeal parent and pull
-        # the real dispatch batch / dates from QSealParameters.
-        api_post(f"/inbound/sessions/{session_id}/scan", token, {"qr_data": serial})
-        print(f"    scanned {i}/{len(child_serials)}: {serial}")
-
-    # 6. End session → receiving slip
-    slip = api_post(f"/inbound/sessions/{session_id}/end", token, {})
+        # 6. End session → receiving slip
+        slip = api_post(f"/inbound/sessions/{session_id}/end", token, {})
+    except Exception as exc:
+        print(f"[ERROR] Receiving flow failed: {exc}")
+        if session_id is not None:
+            try:
+                api_post(f"/inbound/sessions/{session_id}/cancel", token, {})
+                print(f"[CLEANUP] Cancelled scan session {session_id}")
+            except Exception as cancel_exc:
+                print(f"[CLEANUP] Could not cancel session {session_id}: {cancel_exc}")
+        sys.exit(1)
     print(
         f"[6/6] Receiving slip {slip.get('slip_number')} (id={slip.get('id')}) "
         f"status={slip.get('status')} boxes={slip.get('total_boxes')} items={slip.get('total_items')}"

@@ -2,15 +2,14 @@ import json
 import random
 
 import requests
+from qr_helpers import login
 
 # API Configuration
 URL = "http://localhost:8001/api/v1/qr-products"
-AUTH_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Mzk3YWQ4My0xYzJjLTQyM2EtYmQ1Mi00ZTI1NTA5MjkxNjYiLCJlbWFpbCI6InR0a3dtc21hbmFnZXJAcHJlc3RpZ2UuY29tIiwidXNlcl90eXBlIjoidXNlciIsImV4cCI6MTc4ODcxMTcwMSwiaWF0IjoxNzg4NDUyNTAxLCJ0eXBlIjoiYWNjZXNzIn0.tyr87gmgoXzeqhs67xeqy4ibz1f3x9Kvl5PbGhgEOxw"
 
 HEADERS = {
     "Accept": "*/*",
     "Content-Type": "application/json",
-    "Authorization": f"Bearer {AUTH_TOKEN}",
     "ngrok-skip-browser-warning": "true",
     "Origin": "http://localhost:4200",
 }
@@ -66,11 +65,15 @@ def generate_sample_products(count=10):
 
 
 def create_products():
+    token = login()
+    headers = {**HEADERS, "Authorization": f"Bearer {token}"}
     sample_products = generate_sample_products(10)
 
     for index, product in enumerate(sample_products, 1):
         try:
-            response = requests.post(URL, headers=HEADERS, data=json.dumps(product))
+            response = requests.post(
+                URL, headers=headers, data=json.dumps(product), timeout=30
+            )
 
             if response.status_code in (200, 201):
                 print(

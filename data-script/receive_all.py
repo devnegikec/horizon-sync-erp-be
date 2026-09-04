@@ -67,7 +67,7 @@ def wait_for_completion(block_id: str, token: str) -> dict:
 def find_item_by_qr_product(product_id: str, token: str) -> dict | None:
     """Resolve the WMS item linked to a QR product by paging the item list."""
     page = 1
-    while page <= 20:
+    while True:
         data = api_get("/items", token, {"page": page, "page_size": 100})
         rows = (data or {}).get("items", [])
         if not rows:
@@ -77,7 +77,6 @@ def find_item_by_qr_product(product_id: str, token: str) -> dict | None:
             if detail.get("qr_product_id") == product_id:
                 return detail
         page += 1
-    return None
 
 
 def resolve_block_children(block: dict, token: str) -> tuple[dict, list[str]]:
@@ -165,7 +164,7 @@ def main() -> None:
                 continue
             try:
                 block = create_block_for_item(qr_product_id, idx, token)
-            except RuntimeError as exc:
+            except (RuntimeError, TimeoutError) as exc:
                 print(f"    ↳ FAILED: {exc}")
                 continue
             print(f"    ↳ DONE status={block['status']}")

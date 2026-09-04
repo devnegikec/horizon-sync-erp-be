@@ -101,7 +101,7 @@ def main() -> None:
             block_id = block["id"]
             print(f"    ↳ block {block_id} queued (batch={batch})")
             block = wait_for_completion(block_id, token)
-        except RuntimeError as exc:
+        except (RuntimeError, TimeoutError) as exc:
             print(f"    ↳ FAILED: {exc}")
             continue
 

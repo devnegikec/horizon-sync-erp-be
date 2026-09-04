@@ -160,7 +160,7 @@ The top level becomes a wrapper object — each entry in `put_away_lists` has th
 
 | Case                                        | Behavior                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------- |
-| Slip not `pending_putaway`                  | 400 — "Receiving slip must be in pending_putaway status…"           |
+| Slip not `pending_putaway`                  | 409 — "Receiving slip must be in pending_putaway status…"           |
 | A put-away list already exists for the slip | 409/422 — "Put-away list '…' already exists for receiving slip '…'" |
 | Missing permission                          | 403 — "Permission denied. Required one of: warehouse.create"        |
 
