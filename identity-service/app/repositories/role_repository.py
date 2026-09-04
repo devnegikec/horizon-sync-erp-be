@@ -140,6 +140,10 @@ class RoleRepository:
 
         query = self.db.query(Role)
 
+        # Per-user custom roles (code `custom_<user_id>`) are an internal
+        # implementation detail and must never appear in role lists.
+        query = query.filter(Role.code.notlike("custom_%"))
+
         if organization_ids:
             query = query.filter(Role.organization_id.in_(organization_ids))
 

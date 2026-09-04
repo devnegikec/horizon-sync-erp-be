@@ -133,8 +133,9 @@ class UserRolesUpdate(BaseModel):
 
     organization_id: UUID
     role_ids: list[UUID] = Field(default_factory=list)
+    custom_permission_ids: list[UUID] = Field(default_factory=list)
 
-    @field_validator("role_ids", mode="before")
+    @field_validator("role_ids", "custom_permission_ids", mode="before")
     @classmethod
     def coerce_role_ids(cls, v):
         if v is None:

@@ -214,6 +214,7 @@ async def list_users(
                     UOR.user_id.in_(user_ids),
                     UOR.is_active == True,  # noqa: E712
                     Role.is_active == True,  # noqa: E712
+                    Role.code.notlike("custom_%"),
                 )
             )
             # Scope to the same orgs the list was filtered by
@@ -333,7 +334,7 @@ async def get_my_permissions(
         .all()
     )
 
-    role_names = [role.name for role in user_roles]
+    role_names = [role.name for role in user_roles if role.code != f"custom_{current_user.id}"]
 
     # Get all permissions for these roles
     permission_codes = (
@@ -507,7 +508,18 @@ async def get_user_permissions(
         .all()
     )
 
-    role_names = [role.name for role in user_roles]
+    custom_code = f"custom_{user_id}"
+    role_names = [role.name for role in user_roles if role.code != custom_code]
+
+    # Custom (fine-grained) permissions come from the per-user custom role.
+    custom_role_ids = [r.id for r in user_roles if r.code == custom_code]
+    custom_permission_codes = (
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .filter(RolePermission.role_id.in_(custom_role_ids))
+        .all()
+    ) if custom_role_ids else []
+    custom_permissions = [code for (code,) in custom_permission_codes if code]
 
     # Get all permissions for these roles
     permission_codes = (
@@ -538,6 +550,7 @@ async def get_user_permissions(
         "organization_id": str(organization_id),
         "permissions": permissions,
         "roles": role_names,
+        "custom_permissions": custom_permissions,
         "has_access": len(permissions) > 0 or len(role_names) > 0,
     }
 
@@ -723,6 +736,91 @@ async def delete_user(
         raise
 
 
+def _upsert_user_custom_permissions(
+    db: Session, user_id: UUID, organization_id: UUID, permission_ids: list[UUID]
+) -> None:
+    """Store a user's fine-grained (custom) permissions on a per-user role.
+
+    Mirrors the invitation flow: custom permissions live on a dedicated role
+    with code ``custom_{user_id}``. An empty permission list deactivates the
+    custom role (i.e. clears any custom permissions).
+    """
+    from app.models.role import Permission, RolePermission
+
+    custom_code = f"custom_{user_id}"
+    custom_role = (
+        db.query(Role)
+        .filter(Role.organization_id == organization_id, Role.code == custom_code)
+        .first()
+    )
+
+    if not permission_ids:
+        if custom_role is not None:
+            custom_role.is_active = False
+            db.query(UserOrganizationRole).filter(
+                UserOrganizationRole.role_id == custom_role.id,
+                UserOrganizationRole.user_id == user_id,
+            ).update({"is_active": False})
+        return
+
+    valid_ids = {
+        row[0]
+        for row in db.query(Permission.id)
+        .filter(Permission.id.in_(permission_ids))
+        .all()
+    }
+    missing = set(permission_ids) - valid_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid permission IDs: {[str(m) for m in sorted(missing)]}",
+        )
+
+    if custom_role is None:
+        custom_role = Role(
+            organization_id=organization_id,
+            name="Custom Permissions",
+            code=custom_code,
+            description="Fine-grained permissions assigned per user",
+            is_system=False,
+            is_default=False,
+            is_active=True,
+        )
+        db.add(custom_role)
+        db.flush()
+    else:
+        custom_role.is_active = True
+        db.query(RolePermission).filter(
+            RolePermission.role_id == custom_role.id
+        ).delete(synchronize_session=False)
+
+    for pid in permission_ids:
+        db.add(RolePermission(role_id=custom_role.id, permission_id=pid))
+
+    assignment = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.role_id == custom_role.id,
+        )
+        .first()
+    )
+    if assignment is not None:
+        assignment.is_active = True
+    else:
+        db.add(
+            UserOrganizationRole(
+                user_id=user_id,
+                organization_id=organization_id,
+                role_id=custom_role.id,
+                is_primary=False,
+                is_active=True,
+                status="active",
+            )
+        )
+
+
 @router.put(
     "/users/{user_id}/roles",
     response_model=UserRolesResponse,
@@ -847,6 +945,11 @@ async def update_user_roles(
                     is_active=True,
                 )
             )
+
+    # Apply fine-grained (custom) permissions via the per-user custom role.
+    _upsert_user_custom_permissions(
+        db, user_id, body.organization_id, body.custom_permission_ids
+    )
 
     db.commit()
 

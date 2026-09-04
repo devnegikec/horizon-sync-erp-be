@@ -568,6 +568,12 @@ class FloorPlanGeneratorService:
                     aisle_cx, aisle_cy, rows,
                 )
 
+        # Capacity is a per-bin attribute. Carry the layout's capacity UOM
+        # (units vs volume) onto every bin so the warehouse roll-up is meaningful.
+        for loc in locs:
+            if loc.location_type == "bin":
+                loc.capacity_uom = config.capacity_uom
+
         return locs
 
     def _build_corridor_bays(
