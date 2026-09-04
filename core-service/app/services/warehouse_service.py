@@ -311,10 +311,10 @@ class WarehouseService:
     def _apply_derived_capacity(self, warehouses: list[Warehouse]) -> None:
         """Populate each warehouse's total capacity and UOM from its active bins.
 
-        Warehouse capacity is modelled as a roll-up of the active bin locations
-        (the layout is the source of truth). Only warehouses whose active bins
-        all share the same UOM get a derived total; warehouses without a layout
-        (or with mixed-UOM bins) keep their stored value.
+        Warehouse capacity is a roll-up of the active bin locations (the layout
+        is the source of truth). Warehouses without bins keep their stored value.
+        The UOM is reported only when all active bins agree on one unit; mixed or
+        unknown units clear the label so a summed total is never mislabelled.
         """
         if not warehouses:
             return
@@ -324,8 +324,12 @@ class WarehouseService:
             self.db.query(
                 WarehouseLocation.warehouse_id,
                 func.sum(WarehouseLocation.capacity),
-                func.min(WarehouseLocation.capacity_uom),
-                func.max(WarehouseLocation.capacity_uom),
+                func.count().label("bin_count"),
+                func.count(WarehouseLocation.capacity_uom).label("uom_count"),
+                func.count(func.distinct(WarehouseLocation.capacity_uom)).label(
+                    "distinct_uoms"
+                ),
+                func.max(WarehouseLocation.capacity_uom).label("uom"),
             )
             .filter(
                 WarehouseLocation.warehouse_id.in_(ids),
@@ -336,21 +340,27 @@ class WarehouseService:
             .all()
         )
 
-        capacity_map: dict[UUID, tuple[Decimal | None, str | None, str | None]] = {
-            row[0]: (row[1], row[2], row[3]) for row in rows
+        capacity_map: dict[
+            UUID, tuple[Decimal | None, int, int, int, str | None]
+        ] = {
+            row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in rows
         }
 
         for warehouse in warehouses:
             row = capacity_map.get(warehouse.id)
             if row is None:
                 continue
-            total, min_uom, max_uom = row
-            # Mixing units makes a single summed total meaningless; only derive
-            # when every active bin reports the same UOM.
-            if total is None or min_uom != max_uom:
+            total, bin_count, uom_count, distinct_uoms, uom = row
+            if total is None:
                 continue
-            warehouse.total_capacity = int(round(total))
-            warehouse.capacity_uom = min_uom
+            warehouse.total_capacity = float(total)
+            # Report a single UOM only when every active bin carries a non-null
+            # unit and they all agree. Otherwise clear the label so the derived
+            # total is never paired with a stale or arbitrary unit.
+            if uom_count == bin_count and distinct_uoms == 1 and uom:
+                warehouse.capacity_uom = uom
+            else:
+                warehouse.capacity_uom = None
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """

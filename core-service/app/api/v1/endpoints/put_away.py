@@ -17,7 +17,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.authorization import WAREHOUSE_CREATE, WAREHOUSE_READ, WAREHOUSE_UPDATE
+from app.core.authorization import (
+    WAREHOUSE_CREATE,
+    WAREHOUSE_READ,
+    WAREHOUSE_UPDATE,
+    WMS_SCAN,
+)
 from app.core.exceptions import NotFoundError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -472,7 +477,7 @@ async def list_available_for_putaway(
 )
 async def direct_putaway(
     body: dict,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -630,7 +635,7 @@ async def complete_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
     data: CompletePutAwayItemRequest = CompletePutAwayItemRequest(),
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -716,7 +721,7 @@ async def skip_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
     data: SkipPutAwayItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -828,7 +833,7 @@ async def create_direct_putaway_list(
 )
 async def complete_putaway_by_qr(
     data: "CompletePutawayByQrRequest",
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """Complete put-away for a tracked item by scanning its QR code."""
@@ -882,7 +887,7 @@ async def complete_putaway_by_qr(
 )
 async def scan_item_for_putaway(
     data: "ScanItemForPutawayRequest",
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """Scan a QR during direct put-away and ensure a tracking row exists."""

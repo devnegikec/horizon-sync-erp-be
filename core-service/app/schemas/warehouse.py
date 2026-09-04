@@ -51,7 +51,7 @@ class WarehouseBase(BaseModel):
     contact_email: str | None = Field(None, max_length=255)
 
     # Capacity
-    total_capacity: int | None = Field(None, ge=0)
+    total_capacity: float | None = Field(None, ge=0)
     capacity_uom: str | None = Field(None, max_length=50)
 
     # Accounting
@@ -95,7 +95,7 @@ class WarehouseUpdate(BaseModel):
     contact_email: str | None = Field(None, max_length=255)
 
     # Capacity
-    total_capacity: int | None = Field(None, ge=0)
+    total_capacity: float | None = Field(None, ge=0)
     capacity_uom: str | None = Field(None, max_length=50)
 
     # Accounting
@@ -147,7 +147,7 @@ class WarehouseResponse(BaseModel):
     contact_email: str | None = None
 
     # Capacity
-    total_capacity: int | None = None
+    total_capacity: float | None = None
     capacity_uom: str | None = None
 
     # Accounting
@@ -192,7 +192,7 @@ class WarehouseListItem(BaseModel):
     contact_email: str | None = None
 
     # Capacity fields
-    total_capacity: int | None = None
+    total_capacity: float | None = None
     capacity_uom: str | None = None
 
     # Accounting

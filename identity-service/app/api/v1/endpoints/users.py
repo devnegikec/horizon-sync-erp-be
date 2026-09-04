@@ -518,18 +518,14 @@ async def get_user_permissions(
     # Custom (fine-grained) permissions come from the per-user custom role.
     custom_role_ids = [r.id for r in user_roles if r.code == custom_code]
     custom_permission_codes = (
-        (
-            db.query(Permission.code)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .filter(
-                RolePermission.role_id.in_(custom_role_ids),
-                Permission.is_active == True,  # noqa: E712
-            )
-            .all()
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .filter(
+            RolePermission.role_id.in_(custom_role_ids),
+            Permission.is_active == True,  # noqa: E712
         )
-        if custom_role_ids
-        else []
-    )
+        .all()
+    ) if custom_role_ids else []
     custom_permissions = [code for (code,) in custom_permission_codes if code]
 
     # Get all permissions for these roles
@@ -793,28 +789,43 @@ def _upsert_user_custom_permissions(
             ).update({"is_active": False})
         return
 
-    existing = (
-        db.query(Permission.id, Permission.code)
-        .filter(Permission.id.in_(permission_ids))
-        .all()
-    )
-    valid_ids = {row[0] for row in existing}
-    missing = set(permission_ids) - valid_ids
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid permission IDs: {[str(m) for m in sorted(missing)]}",
+    # Only active, non-wildcard, non-platform permissions can be granted through
+    # the fine-grained path. A caller with only user.update must not be able to
+    # escalate a target (e.g. grant ``system_admin.master``, ``*.*``, or a
+    # resource wildcard like ``user.*``).
+    existing = {
+        pid: code
+        for pid, code in db.query(Permission.id, Permission.code)
+        .filter(
+            Permission.id.in_(permission_ids),
+            Permission.is_active == True,  # noqa: E712
         )
+        .all()
+    }
 
     privileged = [
-        code for _, code in existing if code and code.startswith("system_admin.")
+        code
+        for code in existing.values()
+        if code
+        and (code == "*.*" or code.endswith(".*") or code.startswith("system_admin."))
     ]
     if privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "Custom permissions cannot include platform-level permissions: "
-                f"{sorted(privileged)}"
+                "Custom permissions cannot include platform-level or wildcard "
+                f"permissions: {sorted(privileged)}"
+            ),
+        )
+
+    valid_ids = set(existing.keys())
+    missing = set(permission_ids) - valid_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid or restricted permission IDs: "
+                f"{[str(m) for m in sorted(missing)]}"
             ),
         )
 
