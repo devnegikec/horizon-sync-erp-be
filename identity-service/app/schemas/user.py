@@ -142,7 +142,7 @@ class UserRolesUpdate(BaseModel):
             return []
         if isinstance(v, list):
             return v
-        return []
+        raise ValueError("must be a list of UUIDs")
 
 
 class UserRolesResponse(BaseModel):

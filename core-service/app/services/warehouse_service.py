@@ -319,7 +319,12 @@ class WarehouseService:
             self.db.query(
                 WarehouseLocation.warehouse_id,
                 func.sum(WarehouseLocation.capacity),
-                func.max(WarehouseLocation.capacity_uom),
+                func.count().label("bin_count"),
+                func.count(WarehouseLocation.capacity_uom).label("uom_count"),
+                func.count(func.distinct(WarehouseLocation.capacity_uom)).label(
+                    "distinct_uoms"
+                ),
+                func.max(WarehouseLocation.capacity_uom).label("uom"),
             )
             .filter(
                 WarehouseLocation.warehouse_id.in_(ids),
@@ -330,18 +335,23 @@ class WarehouseService:
             .all()
         )
 
-        capacity_map: dict[UUID, tuple[Decimal | None, str | None]] = {
-            row[0]: (row[1], row[2]) for row in rows
+        capacity_map: dict[
+            UUID, tuple[Decimal | None, int, int, int, str | None]
+        ] = {
+            row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in rows
         }
 
         for warehouse in warehouses:
             row = capacity_map.get(warehouse.id)
             if row is None:
                 continue
-            total, uom = row
+            total, bin_count, uom_count, distinct_uoms, uom = row
             if total is not None:
-                warehouse.total_capacity = int(total)
-            if warehouse.capacity_uom is None and uom:
+                warehouse.total_capacity = float(total)
+            # Only report a single UOM when every active bin carries a non-null
+            # UOM and they all agree. Mixed or unknown units are left alone
+            # rather than labelling a summed capacity with one arbitrary unit.
+            if uom_count == bin_count and distinct_uoms == 1 and uom:
                 warehouse.capacity_uom = uom
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:

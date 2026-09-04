@@ -516,7 +516,10 @@ async def get_user_permissions(
     custom_permission_codes = (
         db.query(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .filter(RolePermission.role_id.in_(custom_role_ids))
+        .filter(
+            RolePermission.role_id.in_(custom_role_ids),
+            Permission.is_active == True,  # noqa: E712
+        )
         .all()
     ) if custom_role_ids else []
     custom_permissions = [code for (code,) in custom_permission_codes if code]
@@ -763,17 +766,30 @@ def _upsert_user_custom_permissions(
             ).update({"is_active": False})
         return
 
+    # Only active, assignable permissions can be granted. Reserved codes such as
+    # ``system_admin.master`` / ``system_admin.*`` and the ``*.*`` wildcard grant
+    # unrestricted administrative access and must never be assignable through the
+    # fine-grained permission path (a caller with only user.update could otherwise
+    # escalate a target user to full admin).
     valid_ids = {
         row[0]
         for row in db.query(Permission.id)
-        .filter(Permission.id.in_(permission_ids))
+        .filter(
+            Permission.id.in_(permission_ids),
+            Permission.is_active == True,  # noqa: E712
+            Permission.code != "*.*",
+            ~Permission.code.like("system_admin.%"),
+        )
         .all()
     }
     missing = set(permission_ids) - valid_ids
     if missing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid permission IDs: {[str(m) for m in sorted(missing)]}",
+            detail=(
+                "Invalid or restricted permission IDs: "
+                f"{[str(m) for m in sorted(missing)]}"
+            ),
         )
 
     if custom_role is None:

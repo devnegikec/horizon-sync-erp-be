@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.scanned_item_tracking import ScannedItemTracking
@@ -470,7 +471,24 @@ class ScannedItemTrackingService:
                     is_active=True,
                 )
                 self.db.add(location)
-                self.db.flush()
+                try:
+                    with self.db.begin_nested():
+                        self.db.flush()
+                except IntegrityError:
+                    # A concurrent request inserted the same system bin first
+                    # (unique constraint on warehouse_id + full_path). Reuse the
+                    # winner instead of failing the whole transaction.
+                    self.db.expunge(location)
+                    location = (
+                        self.db.query(WarehouseLocation)
+                        .filter(
+                            WarehouseLocation.warehouse_id == warehouse_id,
+                            WarehouseLocation.organization_id == organization_id,
+                            WarehouseLocation.code == code,
+                            WarehouseLocation.is_active.is_(True),
+                        )
+                        .first()
+                    )
         return location
 
     def stage_tracking(self, tracking: ScannedItemTracking) -> None:

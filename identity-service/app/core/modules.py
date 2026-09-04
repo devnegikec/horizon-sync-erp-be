@@ -127,7 +127,7 @@ MODULES: list[ModuleDefinition] = [
             ModuleResource(
                 "receiving_slip",
                 "Receiving Slips",
-                ["read", "create", "update", "delete"],
+                ["read", "create", "update"],
             ),
             ModuleResource(
                 "inbound_exception",
@@ -410,7 +410,6 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         hierarchy_level=5,
         permission_codes=[
             "warehouse.read",
-            "warehouse.update",
             "wms.scan",
             "receiving_slip.create",
             "receiving_slip.read",

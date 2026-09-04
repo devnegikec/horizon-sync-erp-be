@@ -151,15 +151,34 @@ def downgrade():
     session = Session(bind=op.get_bind())
     try:
         codes = [row[0] for row in PERMISSIONS]
+
+        # Remove only the assignments this migration targeted (the preloaded WMS
+        # roles listed in ASSIGNMENTS). Grants created by other migrations or by
+        # admins on other roles are left intact.
+        role_codes = sorted(
+            {rc for role_codes_ in ASSIGNMENTS.values() for rc in role_codes_}
+        )
+        for role_code in role_codes:
+            session.execute(
+                text(
+                    "DELETE FROM role_permissions "
+                    "WHERE role_id IN (SELECT id FROM roles WHERE code = :role_code) "
+                    "AND permission_id IN "
+                    "(SELECT id FROM permissions WHERE code = ANY(:codes))"
+                ),
+                {"role_code": role_code, "codes": codes},
+            )
+
+        # Delete the permissions themselves only when they are no longer
+        # referenced by any role assignment.
         session.execute(
             text(
-                "DELETE FROM role_permissions WHERE permission_id IN "
-                "(SELECT id FROM permissions WHERE code = ANY(:codes))"
+                "DELETE FROM permissions WHERE code = ANY(:codes) "
+                "AND NOT EXISTS ("
+                "  SELECT 1 FROM role_permissions rp "
+                "  WHERE rp.permission_id = permissions.id"
+                ")"
             ),
-            {"codes": codes},
-        )
-        session.execute(
-            text("DELETE FROM permissions WHERE code = ANY(:codes)"),
             {"codes": codes},
         )
         session.commit()
