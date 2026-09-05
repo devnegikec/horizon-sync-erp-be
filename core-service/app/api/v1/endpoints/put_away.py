@@ -81,25 +81,53 @@ def _serial_meta_map(db: Session, batch_numbers: set[str]) -> dict[str, dict]:
     return meta
 
 
-def _resolve_worker_name(worker_id: UUID | None, db: Session) -> str | None:
-    """Resolve a human-readable worker name from the shared ``users`` table."""
-    if not worker_id:
+def _identity_engine():
+    """Return a read-only engine to the identity database, or None if unset."""
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
         return None
+    return create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+
+
+def _resolve_worker_names(user_ids: set[UUID]) -> dict[str, str]:
+    """Batch-resolve worker UUIDs to names from the identity database."""
+    if not user_ids:
+        return {}
+    engine = _identity_engine()
+    if engine is None:
+        return {}
     try:
-        row = db.execute(
-            text(
-                "SELECT display_name, first_name, last_name FROM users WHERE id = :id"
-            ),
-            {"id": worker_id},
-        ).fetchone()
-        if row:
-            display_name, first_name, last_name = row
+        uid_list = [str(u) for u in user_ids]
+        placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+        params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id::text, display_name, first_name, last_name "
+                    f"FROM users WHERE id::text IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        name_by_id: dict[str, str] = {}
+        for uid, display_name, first_name, last_name in rows:
             name = display_name or f"{first_name or ''} {last_name or ''}".strip()
             if name:
-                return name
+                name_by_id[uid] = name
+        return name_by_id
     except Exception:
-        pass
-    return str(worker_id)
+        return {}
+    finally:
+        engine.dispose()
+
+
+def _resolve_worker_name(worker_id: UUID | None) -> str | None:
+    """Resolve a human-readable worker name, falling back to the UUID."""
+    if not worker_id:
+        return None
+    return _resolve_worker_names({worker_id}).get(str(worker_id)) or str(worker_id)
 
 
 def _resolve_references(
@@ -138,29 +166,12 @@ def _resolve_references(
             worker_ids.add(assigned_to)
             worker_name_map[pal_id] = str(assigned_to)  # fallback
 
-    # Resolve human-readable worker names from the shared `users` table.
+    # Resolve human-readable worker names from the identity database.
     if worker_ids:
-        try:
-            worker_id_list = list(worker_ids)
-            placeholders = ", ".join(f":w{i}" for i in range(len(worker_id_list)))
-            params = {f"w{i}": w for i, w in enumerate(worker_id_list)}
-            user_rows = db.execute(
-                text(
-                    f"SELECT id, display_name, first_name, last_name FROM users "
-                    f"WHERE id IN ({placeholders})"
-                ),
-                params,
-            ).fetchall()
-            name_by_id: dict = {}
-            for uid, display_name, first_name, last_name in user_rows:
-                name_by_id[uid] = (
-                    display_name or f"{first_name or ''} {last_name or ''}".strip()
-                )
-            for pal_id, _slip_id, assigned_to, _slip_no in rows:
-                if assigned_to in name_by_id:
-                    worker_name_map[pal_id] = name_by_id[assigned_to]
-        except Exception:
-            pass
+        name_by_id = _resolve_worker_names(worker_ids)
+        for pal_id, _slip_id, assigned_to, _slip_no in rows:
+            if assigned_to and str(assigned_to) in name_by_id:
+                worker_name_map[pal_id] = name_by_id[str(assigned_to)]
 
     return slip_no_map, worker_name_map
 
@@ -274,7 +285,7 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         if put_away_list.assigned_to
         else None,
         worker_id=str(put_away_list.assigned_to) if put_away_list.assigned_to else None,
-        worker_name=_resolve_worker_name(put_away_list.assigned_to, db),
+        worker_name=_resolve_worker_name(put_away_list.assigned_to),
         completed_at=put_away_list.completed_at.isoformat()
         if put_away_list.completed_at
         else None,
