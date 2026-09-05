@@ -124,10 +124,10 @@ class FlagLineItemRequest(BaseModel):
 
 
 class ApproveSlipRequest(BaseModel):
-    """Schema for approving a receiving slip with optional worker assignment."""
+    """Schema for approving a receiving slip with optional approving user."""
 
     worker_id: UUID | None = Field(
-        None, description="Optional worker UUID to assign the put-away task to"
+        None, description="Optional UUID of the user performing the approval"
     )
 
 

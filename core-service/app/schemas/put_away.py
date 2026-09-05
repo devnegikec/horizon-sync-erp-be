@@ -103,6 +103,7 @@ class PutAwayListResponse(BaseModel):
     remarks: str | None = None
     warnings: list[str] | None = None
     assigned_to: str | None = None
+    worker_id: str | None = None
     worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0
@@ -133,6 +134,7 @@ class PutAwayListSummaryResponse(BaseModel):
     receiving_slip_no: str | None = None
     remarks: str | None = None
     assigned_to: str | None = None
+    worker_id: str | None = None
     worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0

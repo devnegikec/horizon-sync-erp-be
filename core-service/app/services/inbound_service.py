@@ -1162,8 +1162,9 @@ class InboundService:
         with the converted Eaches quantities. Rejected items are preserved
         and excluded from put-away and ASN delivered_qty updates.
 
-        After transitioning, triggers put-away list generation via
-        PutAwayService for accepted items only.
+        Approval only transitions the slip status. Put-away list generation
+        is a separate step, performed via
+        ``/put-away/generate-from-slip/{slip_id}``.
 
         Args:
             slip_id: UUID of the receiving slip to approve.
@@ -1386,9 +1387,6 @@ class InboundService:
             updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
         else:
             updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
-            put_away_service.generate_from_slip(
-                slip_id, organization_id, worker_id=worker_id
-            )
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status
