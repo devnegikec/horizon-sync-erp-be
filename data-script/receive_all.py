@@ -37,7 +37,7 @@ from qr_helpers import api_get, api_post, login
 DEFAULT_WAREHOUSE_ID = os.environ.get(
     "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
 )
-ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "20"))
+ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "10"))
 QUANTITY = int(os.environ.get("BLOCK_QUANTITY", "18"))
 MASTER_PACK_SIZE = int(os.environ.get("MASTER_PACK_SIZE", "6"))
 QR_TYPE = os.environ.get("QR_TYPE", "dynamic")
