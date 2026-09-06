@@ -15,7 +15,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.base import MovementType
@@ -615,6 +615,7 @@ class BinStockService:
 
         return (
             self.db.query(BinStockLevel)
+            .options(joinedload(BinStockLevel.item))
             .filter(
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
@@ -632,6 +633,22 @@ class BinStockService:
         the individual child units nested inside.
         """
         from app.models.qseal import QSealParameters, QSealTrack
+
+        # Validate the bin exists for this organization.
+        bin_location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == bin_id,
+                WarehouseLocation.organization_id == org_id,
+            )
+            .first()
+        )
+        if bin_location is None:
+            raise NotFoundError(
+                f"Bin location with ID '{bin_id}' not found",
+                entity_type="WarehouseLocation",
+                entity_id=str(bin_id),
+            )
 
         rows = (
             self.db.query(
@@ -657,6 +674,8 @@ class BinStockService:
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
                 BinStockLevel.quantity_on_hand > 0,
+                QSealParameters.organization_id == org_id,
+                QSealTrack.organization_id == org_id,
             )
             .order_by(
                 QSealTrack.name,

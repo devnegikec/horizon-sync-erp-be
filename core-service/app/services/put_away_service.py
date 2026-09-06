@@ -368,7 +368,7 @@ class PutAwayService:
 
         # Keep all children of the same master-pack (parent) on one worker so a
         # physical carton is not split across multiple put-away lists.
-        groups = self._group_specs_by_parent(item_specs)
+        groups = self._group_specs_by_parent(item_specs, org_id)
         chunks = self._distribute_round_robin(groups, len(workers))
         lists: list[PutAwayList] = []
         for worker_id, chunk in zip(workers, chunks):
@@ -416,7 +416,9 @@ class PutAwayService:
             buckets[idx % count].append(item)
         return buckets
 
-    def _group_specs_by_parent(self, item_specs: list[dict]) -> list[list[dict]]:
+    def _group_specs_by_parent(
+        self, item_specs: list[dict], org_id: UUID
+    ) -> list[list[dict]]:
         """Group put-away specs so children of the same master-pack stay together.
 
         Child serials are stored in each spec's ``batch_number``; their shared
@@ -433,7 +435,10 @@ class PutAwayService:
         if batch_numbers:
             rows = (
                 self.db.query(QSealParameters.serial_number, QSealParameters.parent_id)
-                .filter(QSealParameters.serial_number.in_(batch_numbers))
+                .filter(
+                    QSealParameters.serial_number.in_(batch_numbers),
+                    QSealParameters.organization_id == org_id,
+                )
                 .all()
             )
             parent_by_batch = {sn: pid for sn, pid in rows if pid}

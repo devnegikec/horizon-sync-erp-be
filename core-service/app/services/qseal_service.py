@@ -868,7 +868,7 @@ class QSealService:
                 ProductItem.created_at.asc(),
                 ProductItem.serial_number.asc(),
             ).all()
-            return self._build_grouped_aggregation(rows)
+            return self._build_grouped_aggregation(rows, page, page_size)
 
         rows = (
             q.order_by(
@@ -924,11 +924,11 @@ class QSealService:
             "pagination": self._paginate(rows, total, page, page_size),
         }
 
-    def _build_grouped_aggregation(self, rows) -> dict:
+    def _build_grouped_aggregation(self, rows, page=1, page_size=50) -> dict:
         """Group aggregation rows by parent (master-pack) box.
 
         Children are nested under their parent; units without a parent are
-        returned in ``unlinked``.
+        returned in ``unlinked``. Pagination applies to the parent groups.
         """
         groups: dict[UUID, dict] = {}
         unlinked: list[dict] = []
@@ -983,16 +983,12 @@ class QSealService:
             group["linked_count"] = len(group["children"])
             groups_list.append(group)
 
-        total_rows = len(groups_list) + len(unlinked)
+        total_groups = len(groups_list)
+        start = (page - 1) * page_size
+        page_groups = groups_list[start : start + page_size]
+
         return {
-            "groups": groups_list,
+            "groups": page_groups,
             "unlinked": unlinked,
-            "pagination": {
-                "page": 1,
-                "page_size": max(total_rows, 1),
-                "total_items": total_rows,
-                "total_pages": 1,
-                "has_next": False,
-                "has_prev": False,
-            },
+            "pagination": self._paginate(page_groups, total_groups, page, page_size),
         }
