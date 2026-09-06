@@ -301,6 +301,18 @@ class PickListService:
         # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
         reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
 
+        # Serialized (unit-level) items capture their serials during pick scans;
+        # only batch-tracked items use the bin-stock batch as the line's serial.
+        serialized_item_ids = {
+            item_id
+            for (item_id,) in self.db.query(Item.id)
+            .filter(
+                Item.id.in_([it.item_id for it in pick_list.items]),
+                Item.has_serial_no == True,  # noqa: E712
+            )
+            .all()
+        }
+
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
 
@@ -359,7 +371,12 @@ class PickListService:
                 item.bin_location_id = bin_location_id
                 # Keep the packing-slip batch number; store the bin-stock serial(s)
                 # separately so the batch column matches the uploaded PDF.
-                item.serial_nos = [batch_number] if batch_number else None
+                # Serialized items capture unit serials on scan instead.
+                item.serial_nos = (
+                    None
+                    if item.item_id in serialized_item_ids
+                    else ([batch_number] if batch_number else None)
+                )
                 resolved_items.append(item)
             else:
                 # Need to split across multiple bins
@@ -382,7 +399,11 @@ class PickListService:
                         case_qty=item.case_qty if split_idx == 0 else None,
                         loose_qty=item.loose_qty if split_idx == 0 else None,
                         batch_no=item.batch_no,
-                        serial_nos=[batch_number] if batch_number else None,
+                        serial_nos=(
+                            None
+                            if item.item_id in serialized_item_ids
+                            else ([batch_number] if batch_number else None)
+                        ),
                         bin_location_id=bin_location_id,
                         sort_order=0,
                     )
@@ -648,9 +669,12 @@ class PickListService:
         # "cannot resolve serial without database".
         payload = decode_qr_payload(qr_data, db=self.db, organization_id=org_id)
 
-        # Find matching pick list item by SKU (item_code)
-        item = (
-            self.db.query(Item)
+        # Resolve the inventory Item for this scan. Unit/serial scans carry the
+        # ProductItem serial in payload.id (ProductItem → QRProduct → Item);
+        # box labels fall back to SKU/GTIN/item_code matching.
+        item = None
+        product_item = (
+            self.db.query(ProductItem)
             .filter(
                 ProductItem.serial_number == payload.id,
                 ProductItem.organization_id == org_id,
@@ -710,6 +734,15 @@ class PickListService:
 
         # Serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
         self.validate_serial(org_id, item, payload.id)
+
+        # Capture the scanned unit serial on the pick line so it propagates into
+        # the internal-transfer ASN at dispatch (unit-level chain of custody).
+        # Batch-tracked items keep the bin-stock batch already stored on the line.
+        if item.has_serial_no and payload.id:
+            current = list(matching_pick_item.serial_nos or [])
+            if payload.id not in current:
+                current.append(payload.id)
+                matching_pick_item.serial_nos = current
 
         # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))

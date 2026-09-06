@@ -675,11 +675,15 @@ class AsnOrderService:
                 "qty": float(item.qty),
                 "uom": item.uom,
                 "sort_order": item.sort_order or 0,
+                # Carry over any unit-level serials the ASN already specifies;
+                # bin resolution below fills batch-level serials from stock.
+                "serial_nos": list(item.serial_nos) if item.serial_nos else None,
             }
             for item in asn_order.items
         ]
 
-        created = PickListService(self.db).create(
+        pick_list_service = PickListService(self.db)
+        created = pick_list_service.create(
             {
                 "warehouse_id": asn_order.warehouse_id_from,
                 "status": "draft",
@@ -690,6 +694,12 @@ class AsnOrderService:
             },
             asn_order.organization_id,
             user_id,
+        )
+
+        # Resolve source bins (FIFO) and batch serials so the pick lines carry
+        # bin details and are immediately actionable by the source warehouse.
+        pick_list_service.resolve_bin_locations(
+            created.get("id"), asn_order.organization_id
         )
 
         asn_order.linked_pick_list_id = created.get("id")

@@ -838,6 +838,13 @@ class PutAwayService:
                 entity_id=str(put_away_item_id),
             )
 
+        if put_away_item.status == "completed":
+            # Idempotent retry: the item was already completed (e.g. a retried
+            # batch, double-tap, or a stale client retrying against a different
+            # bin). Return the existing record so clients converge on server
+            # state instead of surfacing a misleading 409.
+            return put_away_item
+
         if put_away_item.status != "pending":
             raise StateError(
                 message="Put-away item must be in pending status to complete",
@@ -1407,6 +1414,7 @@ class PutAwayService:
                         BinStockLevel.organization_id == org_id,
                         BinStockLevel.batch_number == put_away_item.batch_number,
                     )
+                    .with_for_update()
                     .first()
                 )
                 if staged_stock is not None:

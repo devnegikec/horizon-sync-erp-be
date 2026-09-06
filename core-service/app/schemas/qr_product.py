@@ -129,6 +129,8 @@ class QRProductListItem(BaseModel):
     qr_type: str | None
     is_active: bool
     created_at: datetime
+    # Resolved from the linked item's base packaging unit (QR master pack grouping)
+    items_per_master_pack: int | None = None
 
     model_config = {"from_attributes": True}
 
