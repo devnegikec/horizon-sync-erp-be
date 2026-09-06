@@ -524,9 +524,12 @@ async def get_user_permissions(
             RolePermission.role_id.in_(custom_role_ids),
             Permission.is_active == True,  # noqa: E712
         )
+        .distinct()
         .all()
     ) if custom_role_ids else []
-    custom_permissions = [code for (code,) in custom_permission_codes if code]
+    custom_permissions = list(
+        dict.fromkeys(code for (code,) in custom_permission_codes if code)
+    )
 
     # Get all permissions for these roles
     permission_codes = (

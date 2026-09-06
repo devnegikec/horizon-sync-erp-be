@@ -1,6 +1,6 @@
 # Internal Warehouse Stock Transfer — Serialized ASN Design
 
-**Status:** Design proposal (not yet implemented)
+**Status:** Implemented — P0, P1 and P2 are live; P3 (in-transit `stock_level` bucket) is still pending.
 **Scope:** `core-service` (WMS) + minimal frontend (`horizon-sync/apps/inventory`)
 **Date:** 2026-08-31
 
@@ -198,9 +198,30 @@ flowchart TD
 | `transfer_out` (dispatch) | ✅ implemented |
 | `transfer_in` (receive) | ✅ implemented |
 | `transfer_cancelled` (cancel) | ✅ implemented |
-| `pick` (pick-scan) | ⏳ pending |
+| `pick` (pick-scan) | ✅ implemented (unit serials captured on `PickListItem.serial_nos`) |
 | `putaway` (destination) | ⏳ pending |
 | `in_transit` observation | ⏳ represented by `transfer_out` disposition, no separate row |
+
+### Serial capture wiring (unit-level, P1)
+
+Unit-level serials are captured at three touch points:
+
+1. **Pick-list creation** — `AsnOrderService._create_transfer_pick_list` copies
+   any serials already on the ASN line and then calls
+   `PickListService.resolve_bin_locations`, which FIFO-assigns
+   `bin_location_id`. For **batch-tracked** items it stores the bin-stock
+   batch as the line's serial (`serial_nos = [batch]`); for **serialized**
+   items (`item.has_serial_no`) it leaves `serial_nos` empty so batch
+   placeholders never pollute the unit-serial chain.
+2. **Pick scan** — `PickListService.record_pick_scan` appends each scanned unit
+   serial (`payload.id`) to `PickListItem.serial_nos` (deduplicated) for
+   serialized items, after `validate_serial` confirms the serial belongs to the
+   SKU and is not consumed/blocked.
+3. **Dispatch** — `OutboundService._propagate_transfer_serials` copies each
+   line's `serial_nos` into `asn_order_items.serial_nos` and
+   `asn_order_serial_lines`, sets each serial to `in_transit`, writes
+   `SerialNoHistory(transaction_type='transfer_out')`, and creates the
+   `MATERIAL_TRANSFER` stock entry.
 
 Each event maps to a `SerialNoHistory.transaction_type` row carrying
 `from_warehouse_id` / `to_warehouse_id` / `transaction_id`.
@@ -242,12 +263,14 @@ Each event maps to a `SerialNoHistory.transaction_type` row carrying
 - Files: `app/models/asn_order.py`, `app/api/v1/endpoints/asn_orders.py`,
   `app/services/asn_order_service.py`, `app/services/pick_list_service.py`, migration.
 
-### P1 — Serial capture & propagation (the core ask)
+### P1 — Serial capture & propagation (the core ask) ✅ implemented
+- At pick scan, append the scanned unit serial to `PickListItem.serial_nos`
+  (`PickListService.record_pick_scan`).
 - At outbound dispatch, copy `PickListItem.serial_nos` → `asn_order_items.serial_nos`
-  and `asn_order_serial_lines`.
+  and `asn_order_serial_lines` (`OutboundService._propagate_transfer_serials`).
 - Write `SerialNoHistory` rows: `transfer_out` (from mother) at dispatch.
-- Files: `app/services/outbound_service.py`, `app/api/v1/endpoints/outbound.py`,
-  `app/services/serial_no_service.py`, `app/models/dispatch_record.py`.
+- Files: `app/services/pick_list_service.py`, `app/services/outbound_service.py`,
+  `app/api/v1/endpoints/outbound.py`, `app/models/dispatch_record.py`.
 
 ### P2 — Inbound serial verification + stock booking
 - Extend `InboundService.record_scan` to validate each scanned serial against ASN

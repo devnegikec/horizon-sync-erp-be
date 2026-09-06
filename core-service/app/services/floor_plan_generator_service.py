@@ -101,6 +101,7 @@ class FloorPlanGeneratorService:
         locations = self._build_locations(
             warehouse_id, org_id, config, warehouse_code
         )
+        self._assign_bin_qr_codes(locations)
         for loc in locations:
             self.db.add(loc)
 
@@ -167,6 +168,7 @@ class FloorPlanGeneratorService:
         locations = self._build_locations(
             floor_plan.warehouse_id, org_id, config, warehouse_code
         )
+        self._assign_bin_qr_codes(locations)
         for loc in locations:
             self.db.add(loc)
 
@@ -710,6 +712,65 @@ class FloorPlanGeneratorService:
     # ------------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------------
+
+    def _assign_bin_qr_codes(self, locations: list[WarehouseLocation]) -> None:
+        """Assign a unique 5-char short code to every generated bin.
+
+        Layout-generated bins previously had no ``qr_code`` — the 5-char code
+        was only auto-generated for manually created bins (LayoutService). The
+        mobile app and ``/warehouse-locations/by-qr`` lookup rely on the short
+        code, so every physical bin must carry one.
+        """
+        import random
+
+        from sqlalchemy import text
+
+        bins = [loc for loc in locations if loc.location_type == "bin"]
+        if not bins:
+            return
+
+        # Serialize concurrent layout generation with a transaction-scoped
+        # advisory lock (per org and per warehouse). Without it, two simultaneous
+        # applies both read the same "existing codes" snapshot and can pick the
+        # same 5-char code, failing the unique constraint at commit with no retry.
+        lock_keys = {
+            f"qr:{k}"
+            for k in [
+                *(loc.organization_id for loc in bins if loc.organization_id),
+                *(loc.warehouse_id for loc in bins if loc.warehouse_id),
+            ]
+        }
+        for key in lock_keys:
+            try:
+                self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                    {"key": key},
+                )
+            except Exception:
+                # Non-Postgres backends (e.g. SQLite tests) have no advisory
+                # locks — degrade to the snapshot approach.
+                pass
+
+        # Load existing non-null codes once (instead of one query per bin).
+        existing = {
+            row[0]
+            for row in self.db.query(WarehouseLocation.qr_code)
+            .filter(WarehouseLocation.qr_code.isnot(None))
+            .all()
+        }
+
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        for loc in bins:
+            for _ in range(10):
+                code = "".join(random.choices(chars, k=5))
+                if code not in existing:
+                    existing.add(code)
+                    loc.qr_code = code
+                    break
+            else:
+                raise RuntimeError(
+                    "Failed to generate a unique QR code after 10 attempts"
+                )
 
     @staticmethod
     def _make_loc(
