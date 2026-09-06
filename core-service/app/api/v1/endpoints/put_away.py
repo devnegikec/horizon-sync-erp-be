@@ -14,7 +14,7 @@ import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -86,6 +86,55 @@ def _serial_meta_map(db: Session, batch_numbers: set[str]) -> dict[str, dict]:
     return meta
 
 
+def _identity_engine():
+    """Return a read-only engine to the identity database, or None if unset."""
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
+        return None
+    return create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+
+
+def _resolve_worker_names(user_ids: set[UUID]) -> dict[str, str]:
+    """Batch-resolve worker UUIDs to names from the identity database."""
+    if not user_ids:
+        return {}
+    engine = _identity_engine()
+    if engine is None:
+        return {}
+    try:
+        uid_list = [str(u) for u in user_ids]
+        placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+        params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id::text, display_name, first_name, last_name "
+                    f"FROM users WHERE id::text IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        name_by_id: dict[str, str] = {}
+        for uid, display_name, first_name, last_name in rows:
+            name = display_name or f"{first_name or ''} {last_name or ''}".strip()
+            if name:
+                name_by_id[uid] = name
+        return name_by_id
+    except Exception:
+        return {}
+    finally:
+        engine.dispose()
+
+
+def _resolve_worker_name(worker_id: UUID | None) -> str | None:
+    """Resolve a human-readable worker name, falling back to the UUID."""
+    if not worker_id:
+        return None
+    return _resolve_worker_names({worker_id}).get(str(worker_id)) or str(worker_id)
+
+
 def _resolve_references(
     db: Session, pal_ids: list[UUID]
 ) -> tuple[dict[UUID, str], dict[UUID, str]]:
@@ -122,23 +171,12 @@ def _resolve_references(
             worker_ids.add(assigned_to)
             worker_name_map[pal_id] = str(assigned_to)  # fallback
 
-    # Try resolving worker UUIDs to names from warehouse_users
+    # Resolve human-readable worker names from the identity database.
     if worker_ids:
-        try:
-            from app.models.warehouse_user import WarehouseUser
-
-            wu_rows = (
-                db.query(WarehouseUser.user_id, WarehouseUser.user_id)
-                .filter(
-                    WarehouseUser.user_id.in_(worker_ids),
-                    WarehouseUser.is_active == True,
-                )
-                .all()
-            )
-            # warehouse_users just confirms they exist; names are in identity service
-            # For now, keep UUID as identifier
-        except Exception:
-            pass
+        name_by_id = _resolve_worker_names(worker_ids)
+        for pal_id, _slip_id, assigned_to, _slip_no in rows:
+            if assigned_to and str(assigned_to) in name_by_id:
+                worker_name_map[pal_id] = name_by_id[str(assigned_to)]
 
     return slip_no_map, worker_name_map
 
@@ -196,6 +234,7 @@ def _build_list_response(
         receiving_slip_no=slip_no_map.get(pal.id),
         remarks=pal.remarks,
         assigned_to=str(pal.assigned_to) if pal.assigned_to else None,
+        worker_id=str(pal.assigned_to) if pal.assigned_to else None,
         worker_name=worker_name_map.get(pal.id),
         total_items=c["total"],
         completed_items=c["completed"],
@@ -250,7 +289,8 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         assigned_to=str(put_away_list.assigned_to)
         if put_away_list.assigned_to
         else None,
-        worker_name=None,
+        worker_id=str(put_away_list.assigned_to) if put_away_list.assigned_to else None,
+        worker_name=_resolve_worker_name(put_away_list.assigned_to),
         completed_at=put_away_list.completed_at.isoformat()
         if put_away_list.completed_at
         else None,
@@ -566,63 +606,7 @@ async def get_put_away_list(
             entity_id=str(put_away_list_id),
         )
 
-    # Build item responses with bin location codes
-    serial_meta = _serial_meta_map(
-        db, {it.batch_number for it in put_away_list.items if it.batch_number}
-    )
-    item_responses = [
-        _build_item_response(item, serial_meta) for item in put_away_list.items
-    ]
-    item_responses.sort(key=lambda x: x.sort_order)
-
-    # Compute counts from items
-    total_qty = sum(int(it.quantity) for it in put_away_list.items)
-    completed_qty = sum(
-        int(it.quantity) for it in put_away_list.items if it.status == "completed"
-    )
-    pending_qty = sum(
-        int(it.quantity) for it in put_away_list.items if it.status == "pending"
-    )
-
-    # Resolve receiving slip number and worker
-    slip_no = None
-    if put_away_list.receiving_slip and put_away_list.receiving_slip.slip_number:
-        slip_no = put_away_list.receiving_slip.slip_number
-
-    return PutAwayListResponse(
-        id=str(put_away_list.id),
-        organization_id=str(put_away_list.organization_id),
-        warehouse_id=str(put_away_list.warehouse_id),
-        put_away_list_no=put_away_list.put_away_list_no,
-        status=put_away_list.status,
-        reference_type=put_away_list.reference_type,
-        reference_id=str(put_away_list.reference_id)
-        if put_away_list.reference_id
-        else None,
-        receiving_slip_id=str(put_away_list.receiving_slip_id)
-        if put_away_list.receiving_slip_id
-        else None,
-        receiving_slip_no=slip_no,
-        total_items=total_qty,
-        completed_items=completed_qty,
-        pending_items=pending_qty,
-        remarks=put_away_list.remarks,
-        warnings=_extract_warnings(put_away_list.remarks),
-        assigned_to=str(put_away_list.assigned_to)
-        if put_away_list.assigned_to
-        else None,
-        worker_name=None,
-        completed_at=put_away_list.completed_at.isoformat()
-        if put_away_list.completed_at
-        else None,
-        created_at=put_away_list.created_at.isoformat()
-        if put_away_list.created_at
-        else None,
-        updated_at=put_away_list.updated_at.isoformat()
-        if put_away_list.updated_at
-        else None,
-        items=item_responses,
-    )
+    return _build_response(db, put_away_list)
 
 
 @router.post(

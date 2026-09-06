@@ -12,7 +12,7 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -22,6 +22,7 @@ from app.core.authorization import (
     RECEIVING_SLIP_CREATE,
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
+    WMS_SCAN,
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -391,26 +392,27 @@ async def get_receiving_slip(
     "/receiving-slips/{slip_id}/approve",
     response_model=ReceivingSlipResponse,
     summary="Approve receiving slip",
-    description="Approve a receiving slip, transitioning it to PENDING_PUTAWAY and triggering put-away list generation",
+    description="Approve a receiving slip, transitioning it to PENDING_PUTAWAY",
 )
 async def approve_slip(
     slip_id: UUID,
     data: ApproveSlipRequest | None = None,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
     Approve a receiving slip.
 
-    Transitions the slip from PENDING_REVIEW to PENDING_PUTAWAY, generates
-    a put-away list with bin assignments respecting allocations and routing,
-    and optionally creates a worker task if worker_id is provided.
+    Transitions the slip from PENDING_REVIEW to PENDING_PUTAWAY (or directly
+    to PUTAWAY_COMPLETE when every item was already binned via direct
+    put-away). Put-away list generation is a separate step via
+    ``/put-away/generate-from-slip/{slip_id}``.
 
     **Path Parameters:**
     - **slip_id**: UUID of the receiving slip to approve
 
     **Request Body (optional):**
-    - **worker_id**: Optional UUID of the worker to assign the put-away task to
+    - **worker_id**: Optional UUID of the user performing the approval
 
     **Returns:** Updated receiving slip details
 
@@ -435,7 +437,7 @@ async def approve_slip(
 async def reject_slip(
     slip_id: UUID,
     data: RejectSlipRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -472,7 +474,7 @@ async def flag_line_item(
     slip_id: UUID,
     item_id: UUID,
     data: FlagLineItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1016,7 +1018,7 @@ async def reject_slip_item(
     slip_id: UUID,
     item_id: UUID,
     data: RejectSlipItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1058,7 +1060,7 @@ async def reject_slip_item(
 async def update_slip_items_status(
     slip_id: UUID,
     data: BulkItemStatusUpdateRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """Bulk update item statuses on a receiving slip.
@@ -1167,7 +1169,7 @@ async def list_floating_items(
 async def resolve_floating_item(
     item_id: UUID,
     data: ResolveFloatingItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
