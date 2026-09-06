@@ -408,8 +408,7 @@ class BinStockService:
 
         if not can_transition_inventory_status(current, new_status):
             raise ValidationError(
-                f"Invalid inventory status transition: "
-                f"'{current}' -> '{new_status}'"
+                f"Invalid inventory status transition: '{current}' -> '{new_status}'"
             )
 
         bin_stock.inventory_status = new_status
@@ -622,6 +621,86 @@ class BinStockService:
             )
             .all()
         )
+
+    def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
+        """Return the parent (master-pack) boxes present in a bin, with children.
+
+        Child units are stored in ``bin_stock_levels`` with ``batch_number`` set
+        to the child serial. Each child links to its parent box through
+        ``qseal_parameters.parent_id`` → ``qseal_tracks``. Children are grouped
+        under their parent so the warehouse manager gets a box-level view with
+        the individual child units nested inside.
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        rows = (
+            self.db.query(
+                QSealTrack.id,
+                QSealTrack.serial_number,
+                QSealTrack.name,
+                QSealTrack.capacity,
+                QSealParameters.serial_number,
+                QSealParameters.manufacturing_date,
+                QSealParameters.expiry_date,
+                QSealParameters.dispatch_batch,
+                BinStockLevel.item_id,
+                BinStockLevel.quantity_on_hand,
+                BinStockLevel.inventory_status,
+                BinStockLevel.batch_number,
+            )
+            .join(QSealParameters, QSealParameters.parent_id == QSealTrack.id)
+            .join(
+                BinStockLevel,
+                BinStockLevel.batch_number == QSealParameters.serial_number,
+            )
+            .filter(
+                BinStockLevel.bin_location_id == bin_id,
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .order_by(
+                QSealTrack.name,
+                QSealTrack.serial_number,
+                QSealParameters.serial_number,
+            )
+            .all()
+        )
+
+        parents: dict[UUID, dict] = {}
+        for row in rows:
+            parent_id = row[0]
+            parent = parents.get(parent_id)
+            if parent is None:
+                parent = {
+                    "parent_id": row[0],
+                    "parent_serial": row[1],
+                    "parent_name": row[2],
+                    "capacity": row[3],
+                    "quantity_on_hand": Decimal("0"),
+                    "children": [],
+                }
+                parents[parent_id] = parent
+
+            qty = Decimal(str(row[9])) if row[9] is not None else Decimal("0")
+            parent["quantity_on_hand"] += qty
+            parent["children"].append(
+                {
+                    "serial_number": row[4],
+                    "manufacturing_date": row[5],
+                    "expiry_date": row[6],
+                    "dispatch_batch": row[7],
+                    "item_id": row[8],
+                    "quantity_on_hand": qty,
+                    "inventory_status": row[10],
+                    "batch_number": row[11],
+                }
+            )
+
+        result = []
+        for parent in parents.values():
+            parent["child_units_in_bin"] = len(parent["children"])
+            result.append(parent)
+        return result
 
     # ------------------------------------------------------------------
     # PRIVATE HELPERS

@@ -829,12 +829,13 @@ class QSealService:
         block_id: UUID | None = None,
         page: int = 1,
         page_size: int = 50,
+        grouped: bool = False,
     ) -> dict:
-        """List the aggregation (cascading) log — one row per child unit.
+        """List the aggregation (cascading) log.
 
-        Every generated ProductItem is shown with its parent QSealTrack (if
-        linked), activation state and scan count, so wrong or missing links
-        are easy to spot. Unlinked units have ``linked=False``.
+        Flat mode (default) returns one row per child unit. Grouped mode nests
+        each child under its parent (master-pack) box so the parent-child link
+        is visible at a glance; unlinked units are returned separately.
         """
         from sqlalchemy import func
 
@@ -860,6 +861,15 @@ class QSealService:
             q = q.filter(ProductItem.block_id == block_id)
 
         total = q.count()
+
+        if grouped:
+            rows = q.order_by(
+                QSealTrack.serial_number.asc(),
+                ProductItem.created_at.asc(),
+                ProductItem.serial_number.asc(),
+            ).all()
+            return self._build_grouped_aggregation(rows)
+
         rows = (
             q.order_by(
                 ProductItem.created_at.asc(),
@@ -912,4 +922,77 @@ class QSealService:
         return {
             "items": items,
             "pagination": self._paginate(rows, total, page, page_size),
+        }
+
+    def _build_grouped_aggregation(self, rows) -> dict:
+        """Group aggregation rows by parent (master-pack) box.
+
+        Children are nested under their parent; units without a parent are
+        returned in ``unlinked``.
+        """
+        groups: dict[UUID, dict] = {}
+        unlinked: list[dict] = []
+
+        for item, qsp, parent, blk in rows:
+            linked = bool(qsp and qsp.parent_id and parent is not None)
+            if linked:
+                group = groups.get(parent.id)
+                if group is None:
+                    group = {
+                        "parent_id": parent.id,
+                        "parent_serial": parent.serial_number,
+                        "parent_name": parent.name,
+                        "parent_type": parent.qseal_type,
+                        "parent_capacity": parent.capacity,
+                        "children": [],
+                    }
+                    groups[parent.id] = group
+                group["children"].append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "created_at": item.created_at,
+                    }
+                )
+            else:
+                unlinked.append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "linked": False,
+                        "parent_id": None,
+                        "parent_serial": None,
+                        "parent_name": None,
+                        "parent_type": None,
+                        "parent_capacity": None,
+                        "parent_linked_count": None,
+                        "created_at": item.created_at,
+                    }
+                )
+
+        groups_list = []
+        for group in groups.values():
+            group["linked_count"] = len(group["children"])
+            groups_list.append(group)
+
+        total_rows = len(groups_list) + len(unlinked)
+        return {
+            "groups": groups_list,
+            "unlinked": unlinked,
+            "pagination": {
+                "page": 1,
+                "page_size": max(total_rows, 1),
+                "total_items": total_rows,
+                "total_pages": 1,
+                "has_next": False,
+                "has_prev": False,
+            },
         }

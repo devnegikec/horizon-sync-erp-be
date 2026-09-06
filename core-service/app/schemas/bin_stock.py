@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -74,6 +74,8 @@ class BinStockLevelResponse(BaseModel):
     organization_id: UUID
     bin_location_id: UUID
     item_id: UUID
+    item_name: str | None = None
+    sku: str | None = None
     quantity_on_hand: Decimal = Decimal("0")
     inventory_status: str = "available"
     batch_number: str | None = None
@@ -104,6 +106,39 @@ class BinStockListResponse(BaseModel):
     """Response schema for listing bin stock levels"""
 
     bin_stock_levels: list[BinStockLevelResponse]
+
+
+class BinStockChildResponse(BaseModel):
+    """A child unit within a parent (master-pack) box in a bin."""
+
+    serial_number: str | None = None
+    batch_number: str | None = None
+    item_id: UUID | None = None
+    quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
+    manufacturing_date: date | None = None
+    expiry_date: date | None = None
+    dispatch_batch: str | None = None
+
+
+class BinStockParentResponse(BaseModel):
+    """A parent (master-pack) box present in a bin."""
+
+    parent_id: UUID
+    parent_serial: str | None = None
+    parent_name: str | None = None
+    capacity: int | None = None
+    child_units_in_bin: int = 0
+    quantity_on_hand: Decimal = Decimal("0")
+    children: list[BinStockChildResponse] = []
+
+
+class BinStockParentsResponse(BaseModel):
+    """Response schema for parent (box) aggregation in a bin."""
+
+    bin_id: UUID
+    total_parent_boxes: int = 0
+    parents: list[BinStockParentResponse] = []
 
 
 class BulkAddStockItemResult(BaseModel):
