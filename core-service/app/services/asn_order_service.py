@@ -652,13 +652,29 @@ class AsnOrderService:
             .scalar()
         )
 
+        from app.models.pick_list import PickList
+
         # Idempotency: never create a second pick list for the same ASN.
         if linked_pick_list_id:
-            from app.models.pick_list import PickList
-
             existing = self.db.get(PickList, linked_pick_list_id)
             if existing:
                 return {"id": existing.id, "pick_list_no": existing.pick_list_no}
+
+        # Guard a prior partial creation that committed the pick list but failed
+        # before persisting the ASN link: reuse that pick list instead of
+        # creating a duplicate.
+        existing = (
+            self.db.query(PickList)
+            .filter(
+                PickList.reference_type == "asn_order",
+                PickList.reference_id == asn_order.id,
+            )
+            .first()
+        )
+        if existing is not None:
+            asn_order.linked_pick_list_id = existing.id
+            self.db.commit()
+            return {"id": existing.id, "pick_list_no": existing.pick_list_no}
 
         if not asn_order.warehouse_id_from:
             raise ValueError("Source warehouse is required to create a pick list")
@@ -696,14 +712,19 @@ class AsnOrderService:
             user_id,
         )
 
+        # Link the ASN to the pick list *before* resolving bins.
+        # resolve_bin_locations issues its own commit, so the link and the
+        # resolved bins are persisted atomically — a later failure can't leave
+        # an actionable pick list without linked ASN state.
+        asn_order.linked_pick_list_id = created.get("id")
+        self.db.flush()
+
         # Resolve source bins (FIFO) and batch serials so the pick lines carry
         # bin details and are immediately actionable by the source warehouse.
         pick_list_service.resolve_bin_locations(
             created.get("id"), asn_order.organization_id
         )
 
-        asn_order.linked_pick_list_id = created.get("id")
-        self.db.flush()
         self.db.commit()
 
         logger.info(

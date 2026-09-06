@@ -22,7 +22,6 @@ from app.core.authorization import (
     RECEIVING_SLIP_CREATE,
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
-    WMS_SCAN,
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -397,7 +396,7 @@ async def get_receiving_slip(
 async def approve_slip(
     slip_id: UUID,
     data: ApproveSlipRequest | None = None,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -436,7 +435,7 @@ async def approve_slip(
 async def reject_slip(
     slip_id: UUID,
     data: RejectSlipRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -473,7 +472,7 @@ async def flag_line_item(
     slip_id: UUID,
     item_id: UUID,
     data: FlagLineItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1017,7 +1016,7 @@ async def reject_slip_item(
     slip_id: UUID,
     item_id: UUID,
     data: RejectSlipItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1059,7 +1058,7 @@ async def reject_slip_item(
 async def update_slip_items_status(
     slip_id: UUID,
     data: BulkItemStatusUpdateRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Bulk update item statuses on a receiving slip.
@@ -1168,7 +1167,7 @@ async def list_floating_items(
 async def resolve_floating_item(
     item_id: UUID,
     data: ResolveFloatingItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """

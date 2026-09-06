@@ -371,12 +371,12 @@ class PickListService:
                 item.bin_location_id = bin_location_id
                 # Keep the packing-slip batch number; store the bin-stock serial(s)
                 # separately so the batch column matches the uploaded PDF.
-                # Serialized items capture unit serials on scan instead.
-                item.serial_nos = (
-                    None
-                    if item.item_id in serialized_item_ids
-                    else ([batch_number] if batch_number else None)
-                )
+                if item.item_id in serialized_item_ids:
+                    # Serialized items keep any ASN-provided unit serials; the
+                    # remaining units are captured on pick scan.
+                    pass
+                else:
+                    item.serial_nos = [batch_number] if batch_number else None
                 resolved_items.append(item)
             else:
                 # Need to split across multiple bins
@@ -385,6 +385,13 @@ class PickListService:
                 for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(
                     allocations
                 ):
+                    if item.item_id in serialized_item_ids:
+                        # Serialized items keep any ASN-provided unit serials on
+                        # the first split; the rest are captured on pick scan.
+                        split_serial_nos = item.serial_nos if split_idx == 0 else None
+                    else:
+                        split_serial_nos = [batch_number] if batch_number else None
+
                     split_item = PickListItem(
                         organization_id=org_id,
                         pick_list_id=pick_list.id,
@@ -399,11 +406,7 @@ class PickListService:
                         case_qty=item.case_qty if split_idx == 0 else None,
                         loose_qty=item.loose_qty if split_idx == 0 else None,
                         batch_no=item.batch_no,
-                        serial_nos=(
-                            None
-                            if item.item_id in serialized_item_ids
-                            else ([batch_number] if batch_number else None)
-                        ),
+                        serial_nos=split_serial_nos,
                         bin_location_id=bin_location_id,
                         sort_order=0,
                     )
@@ -740,9 +743,14 @@ class PickListService:
         # Batch-tracked items keep the bin-stock batch already stored on the line.
         if item.has_serial_no and payload.id:
             current = list(matching_pick_item.serial_nos or [])
-            if payload.id not in current:
-                current.append(payload.id)
-                matching_pick_item.serial_nos = current
+            if payload.id in current:
+                # Duplicate serial scan: hard stop before picked_qty/stock are
+                # touched so the same unit can't be picked twice.
+                raise ValidationError(
+                    f"Serial '{payload.id}' has already been picked for this line"
+                )
+            current.append(payload.id)
+            matching_pick_item.serial_nos = current
 
         # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))

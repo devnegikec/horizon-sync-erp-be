@@ -723,9 +723,33 @@ class FloorPlanGeneratorService:
         """
         import random
 
+        from sqlalchemy import text
+
         bins = [loc for loc in locations if loc.location_type == "bin"]
         if not bins:
             return
+
+        # Serialize concurrent layout generation with a transaction-scoped
+        # advisory lock (per org and per warehouse). Without it, two simultaneous
+        # applies both read the same "existing codes" snapshot and can pick the
+        # same 5-char code, failing the unique constraint at commit with no retry.
+        lock_keys = {
+            f"qr:{k}"
+            for k in [
+                *(loc.organization_id for loc in bins if loc.organization_id),
+                *(loc.warehouse_id for loc in bins if loc.warehouse_id),
+            ]
+        }
+        for key in lock_keys:
+            try:
+                self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                    {"key": key},
+                )
+            except Exception:
+                # Non-Postgres backends (e.g. SQLite tests) have no advisory
+                # locks — degrade to the snapshot approach.
+                pass
 
         # Load existing non-null codes once (instead of one query per bin).
         existing = {
