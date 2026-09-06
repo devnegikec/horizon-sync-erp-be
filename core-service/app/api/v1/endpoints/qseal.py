@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_permission
 from app.schemas.qseal import (
+    QSealAggregationGroupedResponse,
     QSealAggregationResponse,
     QSealAutoLinkRequest,
     QSealAutoLinkResponse,
@@ -285,12 +286,16 @@ def auto_link_block(
 
 @router.get(
     "/aggregation",
-    response_model=QSealAggregationResponse,
+    response_model=QSealAggregationResponse | QSealAggregationGroupedResponse,
     summary="List QSeal aggregation (cascading) log",
 )
 def list_aggregation(
     block_id: UUID | None = Query(
         None, description="Filter the log to a specific QR block/batch"
+    ),
+    grouped: bool = Query(
+        False,
+        description="Group child units under their parent (master-pack) box",
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -299,7 +304,7 @@ def list_aggregation(
 ):
     """Return one row per generated unit with its parent link + activation.
 
-    Lets operators spot wrong links or missing aggregations at batch level.
+    Pass ``grouped=true`` to nest child units under their parent box.
     """
     org_id = current_user.organization_id
-    return service.list_aggregation(org_id, block_id, page, page_size)
+    return service.list_aggregation(org_id, block_id, page, page_size, grouped)

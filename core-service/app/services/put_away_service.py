@@ -366,19 +366,23 @@ class PutAwayService:
                 )
             ]
 
-        chunks = self._distribute_round_robin(item_specs, len(workers))
+        # Keep all children of the same master-pack (parent) on one worker so a
+        # physical carton is not split across multiple put-away lists.
+        groups = self._group_specs_by_parent(item_specs, org_id)
+        chunks = self._distribute_round_robin(groups, len(workers))
         lists: list[PutAwayList] = []
         for worker_id, chunk in zip(workers, chunks):
             if not chunk:
-                # More workers than items — skip empty chunks.
+                # More workers than groups — skip empty chunks.
                 continue
+            worker_specs = [spec for group in chunk for spec in group]
             number = numbering.get_next_number(org_id, "put_away_list")
             lists.append(
                 self._create_list_from_specs(
                     slip=slip,
                     org_id=org_id,
                     mode=mode,
-                    item_specs=chunk,
+                    item_specs=worker_specs,
                     worker_id=worker_id,
                     warnings_parts=warnings_parts,
                     put_away_number=number,
@@ -411,6 +415,45 @@ class PutAwayService:
         for idx, item in enumerate(items):
             buckets[idx % count].append(item)
         return buckets
+
+    def _group_specs_by_parent(
+        self, item_specs: list[dict], org_id: UUID
+    ) -> list[list[dict]]:
+        """Group put-away specs so children of the same master-pack stay together.
+
+        Child serials are stored in each spec's ``batch_number``; their shared
+        parent box is resolved via ``qseal_parameters.parent_id``. Specs without
+        a parent (or without a resolvable child serial) are each treated as an
+        individual group so they can still be distributed across workers.
+        """
+        from app.models.qseal import QSealParameters
+
+        batch_numbers = {
+            s.get("batch_number") for s in item_specs if s.get("batch_number")
+        }
+        parent_by_batch: dict[str, UUID | None] = {}
+        if batch_numbers:
+            rows = (
+                self.db.query(QSealParameters.serial_number, QSealParameters.parent_id)
+                .filter(
+                    QSealParameters.serial_number.in_(batch_numbers),
+                    QSealParameters.organization_id == org_id,
+                )
+                .all()
+            )
+            parent_by_batch = {sn: pid for sn, pid in rows if pid}
+
+        groups: dict[str, list[dict]] = {}
+        for spec in item_specs:
+            batch = spec.get("batch_number")
+            parent_id = parent_by_batch.get(batch) if batch else None
+            if parent_id:
+                key = f"parent:{parent_id}"
+            else:
+                key = f"item:{batch or id(spec)}"
+            groups.setdefault(key, []).append(spec)
+
+        return list(groups.values())
 
     def _resolve_putaway_mode(self, org_id: UUID, mode: str | None) -> str:
         if mode is None:
