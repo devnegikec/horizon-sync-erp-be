@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from qr_helpers import api_get, api_post, login
 
 DEFAULT_WAREHOUSE_ID = os.environ.get(
-    "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
+    "WAREHOUSE_ID", "8bc22a62-9e7a-4839-8f39-e58f6087d25e"
 )
 ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "10"))
 QUANTITY = int(os.environ.get("BLOCK_QUANTITY", "12"))

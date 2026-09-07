@@ -313,7 +313,7 @@ class AsnOrderService:
         asn_type: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[dict], dict]:
+    ) -> tuple[list[dict], dict, dict]:
         items, total = self.repo.list_asn_orders(
             organization_id=organization_id,
             page=page,
@@ -338,7 +338,8 @@ class AsnOrderService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(x) for x in items], pagination
+        status_counts = self.repo.get_status_counts(organization_id)
+        return [self._to_list_item(x) for x in items], pagination, status_counts
 
     def update(  # noqa: C901
         self,
@@ -1134,9 +1135,7 @@ class AsnOrderService:
             ),
             "linked_pick_list_no": self._linked_pick_list_no(asn_order),
             "linked_order_id": (
-                str(asn_order.linked_order_id)
-                if asn_order.linked_order_id
-                else None
+                str(asn_order.linked_order_id) if asn_order.linked_order_id else None
             ),
             "linked_order_no": self._linked_order_no(asn_order),
             "transfer_progress": self._transfer_progress(asn_order),
@@ -1184,9 +1183,7 @@ class AsnOrderService:
                 else None
             ),
             "linked_order_id": (
-                str(asn_order.linked_order_id)
-                if asn_order.linked_order_id
-                else None
+                str(asn_order.linked_order_id) if asn_order.linked_order_id else None
             ),
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,

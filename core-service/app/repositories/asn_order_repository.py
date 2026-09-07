@@ -129,6 +129,33 @@ class AsnOrderRepository:
         items = q.offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 
+    def get_status_counts(self, organization_id: UUID) -> dict:
+        """Count ASN orders by status for the organization."""
+        from sqlalchemy import func
+
+        rows = (
+            self.db.query(AsnOrder.status, func.count(AsnOrder.id))
+            .filter(AsnOrder.organization_id == organization_id)
+            .group_by(AsnOrder.status)
+            .all()
+        )
+
+        counts = {
+            "total": 0,
+            "draft": 0,
+            "confirmed": 0,
+            "partially_delivered": 0,
+            "delivered": 0,
+            "closed": 0,
+            "cancelled": 0,
+        }
+        for status, count in rows:
+            key = status.value if hasattr(status, "value") else str(status)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
+
     def update(self, asn_order: AsnOrder, data: dict) -> AsnOrder:
         for k, v in data.items():
             if hasattr(asn_order, k):
