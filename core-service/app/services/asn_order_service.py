@@ -466,14 +466,14 @@ class AsnOrderService:
                 new_status == AsnOrderStatus.CONFIRMED
                 and asn_order.asn_type == "internal_transfer"
             ):
-                created_pick_list = self._create_transfer_pick_list(asn_order, user_id)
+                created_order = self._create_transfer_order(asn_order, user_id)
                 self._emit_asn_notification(
                     asn_order=asn_order,
                     notif_type="transfer_pick_created",
-                    title="Transfer Pick List Created",
+                    title="ASN Order Created",
                     message=(
-                        f"Pick list {created_pick_list.get('pick_list_no')} was "
-                        f"created at the source warehouse for ASN "
+                        f"Order {created_order.get('order_no')} was "
+                        f"created at the target warehouse for ASN "
                         f"{asn_order.asn_order_no}."
                     ),
                     warehouse_id=asn_order.warehouse_id_to,
@@ -563,20 +563,20 @@ class AsnOrderService:
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
 
-        # Internal transfer: confirming the ASN drives the source pick list.
+        # Internal transfer: confirming the ASN drives the source outbound order.
         if (
             new_status_enum == AsnOrderStatus.CONFIRMED
             and asn_order.asn_type == "internal_transfer"
         ):
-            created_pick_list = self._create_transfer_pick_list(asn_order, user_id)
+            created_order = self._create_transfer_order(asn_order, user_id)
             # Notify the destination (creation side) that fulfilment started.
             self._emit_asn_notification(
                 asn_order=asn_order,
                 notif_type="transfer_pick_created",
-                title="Transfer Pick List Created",
+                title="ASN Order Created",
                 message=(
-                    f"Pick list {created_pick_list.get('pick_list_no')} was created "
-                    f"at the source warehouse for ASN {asn_order.asn_order_no}."
+                    f"Order {created_order.get('order_no')} was created "
+                    f"at the target warehouse for ASN {asn_order.asn_order_no}."
                 ),
                 warehouse_id=asn_order.warehouse_id_to,
                 sender_id=user_id,
@@ -631,108 +631,107 @@ class AsnOrderService:
 
     # ── internal-transfer fulfilment ──────────────────────────────────
 
-    def _create_transfer_pick_list(self, asn_order: AsnOrder, user_id: UUID) -> dict:
-        """Auto-create the source warehouse's pick list for an internal transfer.
+    def _create_transfer_order(self, asn_order: AsnOrder, user_id: UUID) -> dict:
+        """Auto-create the target warehouse's outbound order for an internal transfer.
 
-        Mirrors each ASN line into a pick list at ``warehouse_id_from`` with
-        ``reference_type='asn_order'`` so the normal outbound flow can fulfil it.
-        Returns the created pick list dict and links it back onto the ASN.
+        Mirrors each ASN line into an ``OutboundOrder`` (type ``asn``) at
+        ``warehouse_id_to`` with ``reference_type='asn_order'`` so the
+        order-driven outbound flow (order → pick lists → dispatch) can fulfil
+        it. Returns the created order dict and links it back onto the ASN.
         """
         import logging
 
         logger = logging.getLogger(__name__)
 
         # Serialize concurrent confirmations: take a row lock on the ASN so two
-        # simultaneous confirms cannot both observe a missing linked pick list
-        # and create duplicate pick lists. (FOR UPDATE is a no-op on SQLite.)
-        linked_pick_list_id = (
-            self.db.query(AsnOrder.linked_pick_list_id)
+        # simultaneous confirms cannot both create a duplicate order.
+        linked_order_id = (
+            self.db.query(AsnOrder.linked_order_id)
             .filter(AsnOrder.id == asn_order.id)
             .with_for_update()
             .scalar()
         )
 
-        from app.models.pick_list import PickList
+        from app.models.outbound_order import OutboundOrder, OutboundOrderItem
 
-        # Idempotency: never create a second pick list for the same ASN.
-        if linked_pick_list_id:
-            existing = self.db.get(PickList, linked_pick_list_id)
+        # Idempotency: never create a second order for the same ASN.
+        if linked_order_id:
+            existing = self.db.get(OutboundOrder, linked_order_id)
             if existing:
-                return {"id": existing.id, "pick_list_no": existing.pick_list_no}
+                return {"id": existing.id, "order_no": existing.order_no}
 
-        # Guard a prior partial creation that committed the pick list but failed
-        # before persisting the ASN link: reuse that pick list instead of
-        # creating a duplicate.
+        # Guard a prior partial creation that committed the order but failed
+        # before persisting the ASN link: reuse that order instead.
         existing = (
-            self.db.query(PickList)
+            self.db.query(OutboundOrder)
             .filter(
-                PickList.reference_type == "asn_order",
-                PickList.reference_id == asn_order.id,
+                OutboundOrder.reference_type == "asn_order",
+                OutboundOrder.reference_id == asn_order.id,
             )
             .first()
         )
         if existing is not None:
-            asn_order.linked_pick_list_id = existing.id
+            asn_order.linked_order_id = existing.id
             self.db.commit()
-            return {"id": existing.id, "pick_list_no": existing.pick_list_no}
+            return {"id": existing.id, "order_no": existing.order_no}
 
-        if not asn_order.warehouse_id_from:
-            raise ValueError("Source warehouse is required to create a pick list")
+        if not asn_order.warehouse_id_to:
+            raise ValueError("Target warehouse is required to create an order")
 
         if not asn_order.items:
-            raise ValueError("Internal transfer ASN has no line items to pick")
+            raise ValueError("Internal transfer ASN has no line items to order")
 
-        from app.services.pick_list_service import PickListService
+        from app.models.base import OutboundOrderStatus, OutboundOrderType
+        from app.services.document_numbering_service import DocumentNumberingService
+        from app.services.outbound_order_service import OutboundOrderService
 
-        items = [
-            {
-                "item_id": item.item_id,
-                "warehouse_id": asn_order.warehouse_id_from,
-                "qty": float(item.qty),
-                "uom": item.uom,
-                "sort_order": item.sort_order or 0,
-                # Carry over any unit-level serials the ASN already specifies;
-                # bin resolution below fills batch-level serials from stock.
-                "serial_nos": list(item.serial_nos) if item.serial_nos else None,
-            }
-            for item in asn_order.items
-        ]
-
-        pick_list_service = PickListService(self.db)
-        created = pick_list_service.create(
-            {
-                "warehouse_id": asn_order.warehouse_id_from,
-                "status": "draft",
-                "reference_type": "asn_order",
-                "reference_id": str(asn_order.id),
-                "remarks": (f"Internal transfer from ASN {asn_order.asn_order_no}"),
-                "items": items,
-            },
-            asn_order.organization_id,
-            user_id,
+        order = OutboundOrder(
+            organization_id=asn_order.organization_id,
+            order_no=DocumentNumberingService(self.db).get_next_number(
+                asn_order.organization_id, "outbound_order"
+            ),
+            order_type=OutboundOrderType.ASN,
+            warehouse_id=asn_order.warehouse_id_from,
+            status=OutboundOrderStatus.DRAFT,
+            invoice_reference=asn_order.asn_order_no,
+            reference_type="asn_order",
+            reference_id=asn_order.id,
+            reference_no=asn_order.asn_order_no,
+            remarks=f"Internal transfer from ASN {asn_order.asn_order_no}",
+            created_by=user_id,
         )
-
-        # Link the ASN to the pick list *before* resolving bins.
-        # resolve_bin_locations issues its own commit, so the link and the
-        # resolved bins are persisted atomically — a later failure can't leave
-        # an actionable pick list without linked ASN state.
-        asn_order.linked_pick_list_id = created.get("id")
+        self.db.add(order)
         self.db.flush()
 
-        # Resolve source bins (FIFO) and batch serials so the pick lines carry
-        # bin details and are immediately actionable by the source warehouse.
-        pick_list_service.resolve_bin_locations(
-            created.get("id"), asn_order.organization_id
-        )
+        for item in asn_order.items:
+            self.db.add(
+                OutboundOrderItem(
+                    organization_id=asn_order.organization_id,
+                    outbound_order_id=order.id,
+                    item_id=item.item_id,
+                    warehouse_id=asn_order.warehouse_id_from,
+                    qty=item.qty,
+                    uom=item.uom,
+                    sku=(item.item.sku or item.item.item_code) if item.item else None,
+                )
+            )
+
+        # Link the ASN to the order before computing stock status.
+        asn_order.linked_order_id = order.id
+        self.db.flush()
+
+        # Compute per-line stock availability so the order shows fulfilment
+        # status in the Orders tab immediately.
+        OutboundOrderService(self.db).refresh_stock_status(order)
 
         self.db.commit()
 
         logger.info(
-            "Created source pick list '%s' for internal transfer ASN '%s'",
-            created.get("pick_list_no"),
+            "Created target order '%s' for internal transfer ASN '%s'",
+            order.order_no,
             asn_order.asn_order_no,
         )
-        return created
+        return {"id": order.id, "order_no": order.order_no}
 
     def _reverse_transfer(self, asn_order: AsnOrder) -> None:
         """Reverse an internal transfer on cancel.
@@ -781,7 +780,53 @@ class AsnOrderService:
                     )
                 )
 
-        pick_list = (
+        # Cancel the linked source order (order-driven flow) and any pick lists
+        # generated from it; also handle legacy pick lists linked directly to
+        # the ASN (created before the order-driven flow).
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        terminal_pick_statuses = (
+            PickListStatus.COMPLETED,
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+            PickListStatus.CANCELLED,
+        )
+
+        order = None
+        if asn_order.linked_order_id:
+            order = self.db.get(OutboundOrder, asn_order.linked_order_id)
+        else:
+            order = (
+                self.db.query(OutboundOrder)
+                .filter(
+                    OutboundOrder.reference_type == "asn_order",
+                    OutboundOrder.reference_id == asn_order.id,
+                )
+                .first()
+            )
+
+        pick_list_ids: list = []
+        if order is not None:
+            if order.status not in (
+                OutboundOrderStatus.CANCELLED,
+                OutboundOrderStatus.COMPLETED,
+            ):
+                order.status = OutboundOrderStatus.CANCELLED
+            pick_list_ids = [
+                row[0]
+                for row in self.db.query(PickList.id)
+                .filter(
+                    PickList.organization_id == asn_order.organization_id,
+                    PickList.reference_type == "outbound_order",
+                    PickList.reference_id == order.id,
+                )
+                .all()
+            ]
+
+        legacy = (
             self.db.query(PickList)
             .filter(
                 PickList.organization_id == asn_order.organization_id,
@@ -790,13 +835,17 @@ class AsnOrderService:
             )
             .first()
         )
-        if (
-            pick_list is not None
-            and pick_list.status
-            not in (PickListStatus.COMPLETED, PickListStatus.CANCELLED)
-            and pick_list.dispatch_record_id is None
-        ):
-            pick_list.status = PickListStatus.CANCELLED
+        if legacy is not None:
+            pick_list_ids.append(legacy.id)
+
+        for pick_list_id in pick_list_ids:
+            pl = self.db.get(PickList, pick_list_id)
+            if (
+                pl is not None
+                and pl.status not in terminal_pick_statuses
+                and pl.dispatch_record_id is None
+            ):
+                pl.status = PickListStatus.CANCELLED
 
         logger.info(
             "Reversed in-transit serials for cancelled transfer ASN '%s'",
@@ -998,6 +1047,15 @@ class AsnOrderService:
         pl = self.db.get(PickList, asn_order.linked_pick_list_id)
         return pl.pick_list_no if pl else None
 
+    def _linked_order_no(self, asn_order: AsnOrder) -> str | None:
+        """Resolve the linked outbound order number (if any) for the ASN."""
+        if not asn_order.linked_order_id:
+            return None
+        from app.models.outbound_order import OutboundOrder
+
+        order = self.db.get(OutboundOrder, asn_order.linked_order_id)
+        return order.order_no if order else None
+
     def _transfer_progress(self, asn_order: AsnOrder) -> dict | None:
         """Serial-level transfer progress for internal-transfer ASNs."""
         if asn_order.asn_type != "internal_transfer":
@@ -1075,6 +1133,12 @@ class AsnOrderService:
                 else None
             ),
             "linked_pick_list_no": self._linked_pick_list_no(asn_order),
+            "linked_order_id": (
+                str(asn_order.linked_order_id)
+                if asn_order.linked_order_id
+                else None
+            ),
+            "linked_order_no": self._linked_order_no(asn_order),
             "transfer_progress": self._transfer_progress(asn_order),
             "remarks": asn_order.remarks,
             "submitted_at": asn_order.submitted_at,
@@ -1117,6 +1181,11 @@ class AsnOrderService:
             "linked_pick_list_id": (
                 str(asn_order.linked_pick_list_id)
                 if asn_order.linked_pick_list_id
+                else None
+            ),
+            "linked_order_id": (
+                str(asn_order.linked_order_id)
+                if asn_order.linked_order_id
                 else None
             ),
             "from_warehouse": from_warehouse,

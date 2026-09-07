@@ -45,6 +45,7 @@ from app.core.authorization import (
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
 )
+from app.models.base import PickListStatus
 from app.core.exceptions import ValidationError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -68,7 +69,11 @@ from app.schemas.gate_verification import (
 from app.schemas.outbound import (
     AssignHandlingUnitRequest,
     AssignWorkerRequest,
+    CreatePickListFromOrderRequest,
     HandlingUnitAssignmentResponse,
+    OutboundOrderItemResponse,
+    OutboundOrderListResponse,
+    OutboundOrderResponse,
     OutboundPickListListResponse,
     OutboundPickListResponse,
     PickListProgress,
@@ -82,6 +87,7 @@ from app.schemas.outbound import (
 from app.services.erp_sync_service import ErpSyncService
 from app.services.gate_verification_service import GateVerificationService
 from app.services.order_import_service import OrderImportService
+from app.services.outbound_order_service import OutboundOrderService
 from app.services.outbound_service import OutboundService
 from app.services.pick_idempotency_service import (
     OPERATION_CANCEL,
@@ -631,13 +637,62 @@ def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
     return result
 
 
-def _resolve_worker_name(worker_id, db) -> str | None:
+def _identity_engine():
+    """Return a read-only engine to the identity database, or None if unset."""
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
+        return None
+    return create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+
+
+def _resolve_worker_names(user_ids: set[UUID]) -> dict[str, str]:
+    """Batch-resolve worker UUIDs to names from the identity database."""
+    if not user_ids:
+        return {}
+    engine = _identity_engine()
+    if engine is None:
+        return {}
+    try:
+        uid_list = [str(u) for u in user_ids]
+        placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+        params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id::text, display_name, first_name, last_name "
+                    f"FROM users WHERE id::text IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        name_by_id: dict[str, str] = {}
+        for uid, display_name, first_name, last_name in rows:
+            name = display_name or f"{first_name or ''} {last_name or ''}".strip()
+            if name:
+                name_by_id[uid] = name
+        return name_by_id
+    except Exception:
+        return {}
+    finally:
+        engine.dispose()
+
+
+def _resolve_worker_name(worker_id, db=None) -> str | None:
     """Resolve a human-readable worker name for a pick list's assigned worker.
 
-    Workers live in the shared ``users`` table (user_type=warehouse_worker).
+    Workers live in the identity database's ``users`` table
+    (user_type=warehouse_worker). Falls back to the core ``users`` table when
+    the identity database is unavailable, then to the raw UUID.
     """
     if not worker_id:
         return None
+
+    name = _resolve_worker_names({worker_id}).get(str(worker_id))
+    if name:
+        return name
+
     if db is not None:
         try:
             row = db.execute(
@@ -755,6 +810,7 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         status=pl.status.value if pl.status else "draft",
         pick_date=pl.pick_date.isoformat() if pl.pick_date else None,
         reference_type=pl.reference_type,
+        reference_id=str(pl.reference_id) if pl.reference_id else None,
         invoice_reference=pl.invoice_reference,
         assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
         worker_name=worker_name,
@@ -837,33 +893,36 @@ async def create_from_invoice(
     "/import",
     response_model=dict,
     status_code=status.HTTP_201_CREATED,
-    summary="Import orders from PDF/CSV and generate pick lists",
-    description="Upload a PDF packing slip or CSV order file to auto-generate pick lists",
+    summary="Import orders from PDF/CSV and create outbound orders",
+    description="Upload a PDF packing slip or CSV order file to create outbound orders",
 )
 async def import_orders(
     file: UploadFile = File(..., description="PDF or CSV order file"),
     warehouse_id: UUID = Query(..., description="Target warehouse UUID"),
+    order_type: str = Query("sap", description="Order type: 'sap' or 'asn'"),
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
-    Import orders from a PDF or CSV file and automatically generate pick lists.
+    Import orders from a PDF or CSV file and create outbound orders.
 
     Supported formats:
     - **PDF**: Packing slips / invoice PDFs with machine-readable text
     - **CSV**: Structured order data with columns for invoice, SKU, quantity, etc.
 
     The service extracts invoice references, line items, and quantities,
-    then creates a pick list for each order found in the file.
+    then creates an outbound order for each order found in the file. Pick
+    lists are generated later from a confirmed order.
 
     **Query Parameters:**
-    - **warehouse_id**: Target warehouse UUID for all generated pick lists
+    - **warehouse_id**: Target warehouse UUID for all created orders
+    - **order_type**: 'sap' (default) or 'asn'
 
     **Request Body:** Multipart file upload (PDF or CSV)
 
     **Returns:**
-    - pick_lists_created: Number of pick lists generated
-    - total_items: Total items across all pick lists
+    - orders_created: Number of outbound orders created
+    - total_items: Total items across all orders
     - errors: Any parsing or creation errors encountered
     """
     if not file.filename:
@@ -879,14 +938,224 @@ async def import_orders(
         filename=file.filename,
         org_id=current_user.organization_id,
         warehouse_id=warehouse_id,
+        order_type=order_type,
     )
 
     return {
-        "pick_lists_created": result.pick_lists_created,
+        "orders_created": result.orders_created,
         "total_items": result.total_items,
         "errors": result.errors,
         "orders_parsed": len(result.parsed_orders),
     }
+
+
+# =============================================================================
+# OUTBOUND ORDER ENDPOINTS
+# =============================================================================
+# NOTE: literal-path routes ("/orders") must be registered before /{pick_list_id}
+# routes. They use a distinct first path segment so UUID capture is unaffected.
+
+
+def _order_to_response(order, db) -> OutboundOrderResponse:
+    """Convert an OutboundOrder model to an OutboundOrderResponse."""
+    item_ids = [item.item_id for item in (order.items or [])]
+    item_map: dict[str, dict] = {}
+    if item_ids and db:
+        from app.models.item import Item
+
+        rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
+            Item.id.in_(item_ids)
+        ).all()
+        item_map = {
+            str(r.id): {
+                "item_name": r.item_name,
+                "item_code": r.item_code,
+                "sku": r.sku or r.item_code,
+            }
+            for r in rows
+        }
+
+    items = []
+    for item in order.items or []:
+        info = item_map.get(str(item.item_id), {})
+        items.append(
+            OutboundOrderItemResponse(
+                id=str(item.id),
+                item_id=str(item.item_id),
+                item_name=info.get("item_name"),
+                sku=item.sku or info.get("sku"),
+                qty=float(item.qty),
+                uom=item.uom,
+                per_case_qty=float(item.per_case_qty)
+                if item.per_case_qty is not None
+                else None,
+                case_qty=float(item.case_qty) if item.case_qty is not None else None,
+                loose_qty=float(item.loose_qty)
+                if item.loose_qty is not None
+                else None,
+                batch_no=item.batch_no,
+                stock_status=item.stock_status.value,
+                available_qty=float(item.available_qty)
+                if item.available_qty is not None
+                else None,
+            )
+        )
+
+    from app.models.pick_list import PickList
+
+    pick_list_ids = [
+        str(r[0])
+        for r in db.query(PickList.id)
+        .filter(PickList.reference_id == order.id)
+        .all()
+    ]
+
+    return OutboundOrderResponse(
+        id=str(order.id),
+        organization_id=str(order.organization_id),
+        order_no=order.order_no,
+        order_type=order.order_type.value,
+        warehouse_id=str(order.warehouse_id),
+        status=order.status.value,
+        invoice_reference=order.invoice_reference,
+        source_filename=order.source_filename,
+        remarks=order.remarks,
+        reference_type=order.reference_type,
+        reference_id=str(order.reference_id) if order.reference_id else None,
+        reference_no=order.reference_no,
+        created_at=order.created_at.isoformat() if order.created_at else None,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        pick_list_ids=pick_list_ids,
+        items=items,
+    )
+
+
+@router.get(
+    "/orders",
+    response_model=OutboundOrderListResponse,
+    summary="List outbound orders",
+    description="List outbound orders (ASN/SAP) with optional filters",
+)
+async def list_orders(
+    warehouse_id: UUID | None = Query(None, description="Filter by warehouse ID"),
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by order status"
+    ),
+    order_type: str | None = Query(
+        None, alias="order_type", description="Filter by order type: asn or sap"
+    ),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    orders, pagination = service.list_orders(
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        status=status_filter,
+        order_type=order_type,
+        page=page,
+        page_size=page_size,
+    )
+    return OutboundOrderListResponse(
+        orders=[_order_to_response(o, db) for o in orders],
+        pagination=pagination,
+    )
+
+
+@router.post(
+    "/orders",
+    response_model=OutboundOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an outbound order manually",
+    description="Create a draft outbound order from an invoice-style payload",
+)
+async def create_order(
+    data: SAPInvoicePayload,
+    order_type: str = Query("sap", description="Order type: 'sap' or 'asn'"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    order = service.create_order(
+        org_id=current_user.organization_id,
+        warehouse_id=data.warehouse_id,
+        order_type=order_type,
+        invoice_reference=data.invoice_reference,
+        items=[
+            {
+                "item_id": item.item_id,
+                "sku": item.sku,
+                "quantity": item.quantity,
+                "uom": item.uom,
+                "per_case_qty": item.per_case_qty,
+                "case_qty": item.case_qty,
+                "loose_qty": item.loose_qty,
+                "batch_no": item.batch_no,
+            }
+            for item in data.items
+        ],
+        created_by=current_user.id,
+    )
+    return _order_to_response(order, db)
+
+
+@router.get(
+    "/orders/{order_id}",
+    response_model=OutboundOrderResponse,
+    summary="Get outbound order detail",
+    description="Get an outbound order with its line items and stock status",
+)
+async def get_order(
+    order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
+    db: Session = Depends(get_db),
+):
+    order = OutboundOrderService(db).get_order(order_id, current_user.organization_id)
+    return _order_to_response(order, db)
+
+
+@router.post(
+    "/orders/{order_id}/confirm",
+    response_model=OutboundOrderResponse,
+    summary="Confirm an outbound order",
+    description="Confirm an outbound order after reviewing line stock availability",
+)
+async def confirm_order(
+    order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    order = OutboundOrderService(db).confirm_order(
+        order_id, current_user.organization_id
+    )
+    return _order_to_response(order, db)
+
+
+@router.post(
+    "/orders/{order_id}/generate-pick-lists",
+    response_model=list[OutboundPickListResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate pick lists from an outbound order",
+    description=(
+        "Generate one or more pick lists from a confirmed order. Pass worker_ids "
+        "to split the order lines into one pick list per worker."
+    ),
+)
+async def generate_pick_lists_from_order(
+    order_id: UUID,
+    data: CreatePickListFromOrderRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    pick_lists = service.create_pick_lists_from_order(
+        order_id=order_id,
+        org_id=current_user.organization_id,
+        worker_ids=data.worker_ids,
+    )
+    return [_pick_list_to_response(pl, db) for pl in pick_lists]
 
 
 @router.get(
@@ -950,6 +1219,14 @@ async def list_pick_lists(
     # The service returns dicts from _to_list_item, so we need to get full objects
     from app.models.pick_list import PickList
 
+    # Batch-resolve worker names from the identity database.
+    assigned_ids = {
+        pl_data.get("assigned_to")
+        for pl_data in pick_lists_data
+        if pl_data.get("assigned_to")
+    }
+    worker_name_map = _resolve_worker_names(assigned_ids)
+
     result_items = []
     for pl_data in pick_lists_data:
         pl_id = pl_data["id"]
@@ -979,7 +1256,9 @@ async def list_pick_lists(
                     "status": pl.status.value if pl.status else "draft",
                     "invoice_reference": pl.invoice_reference,
                     "assigned_to": str(pl.assigned_to) if pl.assigned_to else None,
-                    "worker_name": _resolve_worker_name(pl.assigned_to, db),
+                    "worker_name": (
+                        worker_name_map.get(str(pl.assigned_to)) or str(pl.assigned_to)
+                    ) if pl.assigned_to else None,
                     "pick_date": pl.pick_date.isoformat() if pl.pick_date else None,
                     "completed_at": pl.completed_at.isoformat()
                     if pl.completed_at
@@ -1112,6 +1391,91 @@ async def accept_pick_list(
         pick_list_id=pick_list_id,
         org_id=current_user.organization_id,
         worker_id=current_user.id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/confirm",
+    response_model=OutboundPickListResponse,
+    summary="Confirm a pick list",
+    description="Move a draft pick list to confirmed status",
+)
+async def confirm_pick_list(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).confirm_pick_list(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-ready",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list ready for dispatch",
+    description="Move a pick-complete pick list to ready_for_dispatch",
+)
+async def mark_pick_list_ready(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.READY_FOR_DISPATCH,
+        allowed_from=(
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+        ),
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-in-transit",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list in transit",
+    description="Move a ready-for-dispatch pick list to in_transit",
+)
+async def mark_pick_list_in_transit(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.IN_TRANSIT,
+        allowed_from=(
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+        ),
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-delivered",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list delivered",
+    description="Move an in-transit pick list to delivered",
+)
+async def mark_pick_list_delivered(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.DELIVERED,
+        allowed_from=(PickListStatus.IN_TRANSIT, PickListStatus.DELIVERED),
     )
     return _pick_list_to_response(pick_list, db)
 

@@ -1,10 +1,10 @@
-"""Order import service for parsing PDF/CSV order files and generating pick lists.
+"""Order import service for parsing PDF/CSV order files and creating outbound orders.
 
 Handles:
 - PDF parsing: extracts items, quantities, invoice references from packing slips
 - CSV parsing: imports structured order data
-- Pick list generation: creates pick lists from parsed order data using existing
-  PickListService.create_from_invoice() workflow
+- Order creation: creates ``OutboundOrder`` rows from parsed order data (the
+  upstream document that pick lists are generated from).
 """
 
 import csv
@@ -12,17 +12,11 @@ import io
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from PyPDF2 import PdfReader
 
 from app.core.exceptions import ValidationError
-from app.services.pick_list_service import (
-    PickListService,
-    SAPInvoiceItem,
-    SAPInvoicePayload,
-)
 
 
 @dataclass
@@ -52,7 +46,7 @@ class ParsedOrder:
 class ImportResult:
     """Result of an order import operation."""
 
-    pick_lists_created: int = 0
+    orders_created: int = 0
     total_items: int = 0
     errors: list[str] = field(default_factory=list)
     parsed_orders: list[ParsedOrder] = field(default_factory=list)
@@ -99,7 +93,6 @@ class OrderImportService:
 
     def __init__(self, db):
         self.db = db
-        self.pick_list_service = PickListService(db)
 
     # ------------------------------------------------------------------
     # PUBLIC API
@@ -111,22 +104,24 @@ class OrderImportService:
         filename: str,
         org_id: UUID,
         warehouse_id: UUID,
+        order_type: str = "sap",
     ) -> ImportResult:
-        """Import an order file (PDF or CSV) and generate pick lists.
+        """Import an order file (PDF or CSV) and create outbound orders.
 
         Args:
             file_content: Raw bytes of the uploaded file.
             filename: Original filename (used to detect format).
             org_id: Organization UUID.
-            warehouse_id: Warehouse UUID to create pick lists for.
+            warehouse_id: Warehouse UUID to create orders for.
+            order_type: Order type ("sap" or "asn").
 
         Returns:
             ImportResult with counts and any errors.
         """
         if filename.lower().endswith('.pdf'):
-            return self._import_pdf(file_content, org_id, warehouse_id)
+            return self._import_pdf(file_content, org_id, warehouse_id, order_type)
         elif filename.lower().endswith('.csv'):
-            return self._import_csv(file_content, org_id, warehouse_id)
+            return self._import_csv(file_content, org_id, warehouse_id, order_type)
         else:
             raise ValidationError(
                 "Unsupported file format. Please upload a PDF or CSV file."
@@ -141,8 +136,9 @@ class OrderImportService:
         content: bytes,
         org_id: UUID,
         warehouse_id: UUID,
+        order_type: str = "sap",
     ) -> ImportResult:
-        """Parse a PDF packing slip and create pick lists."""
+        """Parse a PDF packing slip and create outbound orders."""
         result = ImportResult()
 
         try:
@@ -190,9 +186,11 @@ class OrderImportService:
                 continue
 
             try:
-                action = self._create_pick_list_from_order(order, org_id, warehouse_id)
+                action = self._create_order_from_parsed(
+                    order, org_id, warehouse_id, order_type
+                )
                 if action == "created":
-                    result.pick_lists_created += 1
+                    result.orders_created += 1
                     result.total_items += len(order.items)
                 elif action == "overwritten":
                     overwritten_count += 1
@@ -206,11 +204,11 @@ class OrderImportService:
 
         if overwritten_count:
             result.errors.append(
-                f"{overwritten_count} existing draft pick list(s) were overwritten with new data."
+                f"{overwritten_count} existing draft order(s) were overwritten with new data."
             )
         if skipped_count:
             result.errors.append(
-                f"{skipped_count} order(s) skipped — pick list already exists in non-draft status."
+                f"{skipped_count} order(s) skipped — an order with pick lists already exists."
             )
 
         return result
@@ -412,8 +410,9 @@ class OrderImportService:
         content: bytes,
         org_id: UUID,
         warehouse_id: UUID,
+        order_type: str = "sap",
     ) -> ImportResult:
-        """Parse a CSV order file and create pick lists."""
+        """Parse a CSV order file and create outbound orders."""
         result = ImportResult()
 
         try:
@@ -504,9 +503,11 @@ class OrderImportService:
                 continue
 
             try:
-                action = self._create_pick_list_from_order(order, org_id, warehouse_id)
+                action = self._create_order_from_parsed(
+                    order, org_id, warehouse_id, order_type
+                )
                 if action == "created":
-                    result.pick_lists_created += 1
+                    result.orders_created += 1
                     result.total_items += len(order.items)
                 elif action == "overwritten":
                     overwritten_count += 1
@@ -518,53 +519,114 @@ class OrderImportService:
 
         if overwritten_count:
             result.errors.append(
-                f"{overwritten_count} existing draft pick list(s) were overwritten."
+                f"{overwritten_count} existing draft order(s) were overwritten."
             )
         if skipped_count:
             result.errors.append(
-                f"{skipped_count} order(s) skipped — pick list already exists in non-draft status."
+                f"{skipped_count} order(s) skipped — an order with pick lists already exists."
             )
 
         return result
 
     # ------------------------------------------------------------------
-    # PICK LIST CREATION
+    # ORDER CREATION
     # ------------------------------------------------------------------
 
-    def _create_pick_list_from_order(
+    def _create_order_from_parsed(
         self,
         order: ParsedOrder,
         org_id: UUID,
         warehouse_id: UUID,
+        order_type: str = "sap",
     ) -> str:
-        """Create or overwrite a pick list from a parsed order. Returns action: created/overwritten/skipped."""
-        from sqlalchemy import text
+        """Create (or overwrite a draft) outbound order from a parsed order.
 
-        # Check for existing pick list with same invoice reference
-        from app.models.pick_list import PickList
-        from app.models.base import PickListStatus
+        Returns action: created/overwritten/skipped.
+        """
+        from app.models.base import OutboundOrderStatus, OutboundOrderType
+        from app.models.outbound_order import OutboundOrder, OutboundOrderItem
+        from app.services.document_numbering_service import DocumentNumberingService
+        from app.services.outbound_order_service import OutboundOrderService
 
         existing = (
-            self.db.query(PickList)
+            self.db.query(OutboundOrder)
             .filter(
-                PickList.organization_id == org_id,
-                PickList.invoice_reference == order.invoice_reference,
+                OutboundOrder.organization_id == org_id,
+                OutboundOrder.invoice_reference == order.invoice_reference,
             )
-            .order_by(PickList.created_at.desc())
+            .order_by(OutboundOrder.created_at.desc())
             .first()
         )
 
         if existing:
-            if existing.status == PickListStatus.DRAFT:
-                # Overwrite the existing draft pick list
-                self._update_pick_list_items(existing, order, org_id, warehouse_id)
+            if existing.status == OutboundOrderStatus.DRAFT:
+                self._replace_order_items(existing, order, org_id, warehouse_id)
                 return "overwritten"
-            else:
-                # Non-draft exists — skip
-                return "skipped"
+            return "skipped"
 
-        # Create new pick list
-        sap_items: list[SAPInvoiceItem] = []
+        resolved, unresolved = self._resolve_item_ids(order, org_id)
+        if unresolved:
+            raise ValidationError(
+                f"Items not found in item master: {', '.join(unresolved[:5])}"
+                f"{'...' if len(unresolved) > 5 else ''}. "
+                f"Import the items CSV first."
+            )
+
+        try:
+            parsed_type = OutboundOrderType(order_type)
+        except ValueError:
+            raise ValidationError(
+                f"Invalid order type '{order_type}' (expected 'sap' or 'asn')"
+            )
+
+        order_no = DocumentNumberingService(self.db).get_next_number(
+            org_id, "outbound_order"
+        )
+        outbound_order = OutboundOrder(
+            organization_id=org_id,
+            order_no=order_no,
+            order_type=parsed_type,
+            warehouse_id=warehouse_id,
+            status=OutboundOrderStatus.DRAFT,
+            invoice_reference=order.invoice_reference,
+        )
+        self.db.add(outbound_order)
+        self.db.flush()
+
+        for parsed_item, item_id in resolved:
+            self.db.add(
+                OutboundOrderItem(
+                    organization_id=org_id,
+                    outbound_order_id=outbound_order.id,
+                    item_id=item_id,
+                    warehouse_id=warehouse_id,
+                    qty=parsed_item.quantity,
+                    uom=parsed_item.uom or 'pcs',
+                    sku=parsed_item.sku,
+                    description=parsed_item.description,
+                    per_case_qty=parsed_item.per_case_qty,
+                    case_qty=parsed_item.case_qty,
+                    loose_qty=parsed_item.loose_qty,
+                    batch_no=parsed_item.batch_no,
+                )
+            )
+
+        self.db.commit()
+        self.db.refresh(outbound_order)
+
+        # Compute per-line stock availability immediately.
+        OutboundOrderService(self.db).refresh_stock_status(outbound_order)
+        return "created"
+
+    def _resolve_item_ids(
+        self,
+        order: ParsedOrder,
+        org_id: UUID,
+    ) -> tuple[list[tuple[ParsedOrderItem, UUID]], list[str]]:
+        """Resolve each parsed order item to its item-master UUID."""
+        from sqlalchemy import text
+
+        resolved: list[tuple[ParsedOrderItem, UUID]] = []
         unresolved: list[str] = []
 
         for item in order.items:
@@ -581,94 +643,49 @@ class OrderImportService:
             if item_row:
                 raw_id = item_row[0]
                 item_uuid = raw_id if isinstance(raw_id, UUID) else UUID(raw_id)
-                sap_items.append(
-                    SAPInvoiceItem(
-                        item_id=item_uuid,
-                        sku=item.sku,
-                        quantity=item.quantity,
-                        uom=item.uom or 'pcs',
-                        per_case_qty=item.per_case_qty,
-                        case_qty=item.case_qty,
-                        loose_qty=item.loose_qty,
-                        batch_no=item.batch_no,
-                    )
-                )
+                resolved.append((item, item_uuid))
             else:
                 unresolved.append(item.sku)
 
-        if unresolved:
-            raise ValidationError(
-                f"Items not found in item master: {', '.join(unresolved[:5])}"
-                f"{'...' if len(unresolved) > 5 else ''}. "
-                f"Import the items CSV first."
-            )
+        return resolved, unresolved
 
-        payload = SAPInvoicePayload(
-            invoice_reference=order.invoice_reference,
-            warehouse_id=warehouse_id,
-            items=sap_items,
-        )
-
-        self.pick_list_service.create_from_invoice(payload, org_id)
-        return "created"
-
-    def _update_pick_list_items(
+    def _replace_order_items(
         self,
-        pick_list,
+        existing_order,
         order: ParsedOrder,
         org_id: UUID,
         warehouse_id: UUID,
     ) -> None:
-        """Replace items on an existing draft pick list with new order data."""
-        from sqlalchemy import text
-        from app.models.pick_list import PickListItem
+        """Replace items on an existing draft order with new order data."""
+        from app.models.outbound_order import OutboundOrderItem
+        from app.services.outbound_order_service import OutboundOrderService
 
-        # Remove existing items
-        self.db.query(PickListItem).filter(
-            PickListItem.pick_list_id == pick_list.id
+        self.db.query(OutboundOrderItem).filter(
+            OutboundOrderItem.outbound_order_id == existing_order.id
         ).delete()
 
-        # Add new items
-        for item in order.items:
-            item_row = self.db.execute(
-                text(
-                    "SELECT id FROM items "
-                    "WHERE (sku = :sku OR item_code = :sku) "
-                    "AND organization_id = :org_id "
-                    "LIMIT 1"
-                ),
-                {"sku": item.sku, "org_id": str(org_id)},
-            ).fetchone()
-
-            if not item_row:
-                continue
-
-            raw_id = item_row[0]
-            item_uuid = raw_id if isinstance(raw_id, UUID) else UUID(raw_id)
-
-            pl_item = PickListItem(
-                organization_id=org_id,
-                pick_list_id=pick_list.id,
-                item_id=item_uuid,
-                warehouse_id=warehouse_id,
-                qty=item.quantity,
-                picked_qty=Decimal("0"),
-                uom=item.uom or 'pcs',
-                per_case_qty=item.per_case_qty,
-                case_qty=item.case_qty,
-                loose_qty=item.loose_qty,
-                batch_no=item.batch_no,
-                sort_order=0,
+        resolved, _ = self._resolve_item_ids(order, org_id)
+        for parsed_item, item_id in resolved:
+            self.db.add(
+                OutboundOrderItem(
+                    organization_id=org_id,
+                    outbound_order_id=existing_order.id,
+                    item_id=item_id,
+                    warehouse_id=warehouse_id,
+                    qty=parsed_item.quantity,
+                    uom=parsed_item.uom or 'pcs',
+                    sku=parsed_item.sku,
+                    description=parsed_item.description,
+                    per_case_qty=parsed_item.per_case_qty,
+                    case_qty=parsed_item.case_qty,
+                    loose_qty=parsed_item.loose_qty,
+                    batch_no=parsed_item.batch_no,
+                )
             )
-            self.db.add(pl_item)
 
         self.db.commit()
-
-        # Re-resolve bin locations
-        from app.models.pick_list import PickList as PL
-        pick_list = self.db.query(PL).filter(PL.id == pick_list.id).first()
-        if pick_list:
-            self.pick_list_service.resolve_bin_locations(pick_list.id, org_id)
+        self.db.refresh(existing_order)
+        OutboundOrderService(self.db).refresh_stock_status(existing_order)
 
     @staticmethod
     def _find_column(headers: list[str], candidates: list[str]) -> str:

@@ -118,6 +118,8 @@ class AsnOrderResponse(AsnOrderBase):
     updated_by: UUID | None = None
     linked_pick_list_id: UUID | None = None
     linked_pick_list_no: str | None = None
+    linked_order_id: UUID | None = None
+    linked_order_no: str | None = None
     transfer_progress: AsnOrderTransferProgress | None = None
     created_at: datetime
     updated_at: datetime
@@ -135,6 +137,7 @@ class AsnOrderListItem(BaseModel):
     grand_total: Decimal | float = 0
     asn_type: str | None = None
     linked_pick_list_id: UUID | None = None
+    linked_order_id: UUID | None = None
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
     vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []
