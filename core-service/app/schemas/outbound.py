@@ -65,6 +65,19 @@ class AssignWorkerRequest(BaseModel):
     worker_id: UUID = Field(..., description="Worker UUID to assign")
 
 
+class CreatePickListFromOrderRequest(BaseModel):
+    """Request schema for generating pick lists from a confirmed order.
+
+    Mirrors the inbound put-away generation dialog: select one or more workers
+    and the order lines are split into one pick list per worker. Leave
+    ``worker_ids`` empty to create a single unassigned pick list.
+    """
+
+    worker_ids: list[UUID] = Field(
+        default_factory=list, description="Workers to split the pick work across"
+    )
+
+
 class StageTransferRequest(BaseModel):
     """Request schema for transferring a pick list to a staging lane (WF-019)."""
 
@@ -148,7 +161,10 @@ class PickListFilters(BaseModel):
 
     status: str | None = Field(
         None,
-        description="Filter by status: draft, in_progress, completed, cancelled",
+        description=(
+            "Filter by status: draft, confirmed, pending_picking, in_progress, "
+            "pick_complete, ready_for_dispatch, in_transit, delivered, cancelled"
+        ),
     )
     warehouse_id: UUID | None = Field(None, description="Filter by warehouse ID")
     invoice_reference: str | None = Field(
@@ -231,6 +247,7 @@ class OutboundPickListResponse(BaseModel):
     status: str
     pick_date: str | None = None
     reference_type: str | None = None
+    reference_id: str | None = None
     invoice_reference: str | None = None
     assigned_to: str | None = None
     worker_name: str | None = None
@@ -299,4 +316,54 @@ class OutboundPickListListResponse(BaseModel):
     """
 
     pick_lists: list[OutboundPickListListItem]
+    pagination: PaginationMeta
+
+
+# ===========================================
+# OUTBOUND ORDER SCHEMAS
+# ===========================================
+
+
+class OutboundOrderItemResponse(BaseModel):
+    """Response schema for an outbound order line item."""
+
+    id: str
+    item_id: str
+    item_name: str | None = None
+    sku: str | None = None
+    qty: float
+    uom: str
+    per_case_qty: float | None = None
+    case_qty: float | None = None
+    loose_qty: float | None = None
+    batch_no: str | None = None
+    stock_status: str
+    available_qty: float | None = None
+
+
+class OutboundOrderResponse(BaseModel):
+    """Response schema for an outbound order."""
+
+    id: str
+    organization_id: str
+    order_no: str
+    order_type: str
+    warehouse_id: str
+    status: str
+    invoice_reference: str | None = None
+    source_filename: str | None = None
+    remarks: str | None = None
+    reference_type: str | None = None
+    reference_id: str | None = None
+    reference_no: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    pick_list_ids: list[str] = []
+    items: list[OutboundOrderItemResponse] = []
+
+
+class OutboundOrderListResponse(BaseModel):
+    """Paginated list response for outbound orders."""
+
+    orders: list[OutboundOrderResponse]
     pagination: PaginationMeta

@@ -39,6 +39,9 @@ from app.models.base import (
     MaterialRequestStatus,
     MovementType,
     NotificationType,
+    OutboundOrderItemStockStatus,
+    OutboundOrderStatus,
+    OutboundOrderType,
     PaymentAuditAction,
     PaymentEntryStatus,
     PaymentEntryType,
@@ -147,6 +150,7 @@ from app.models.messaging import (
     WhatsAppReport,
 )
 from app.models.notification import Notification
+from app.models.outbound_order import OutboundOrder, OutboundOrderItem
 from app.models.packaging_types import PackagingType
 from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog

@@ -227,8 +227,9 @@ async def upload_asn_csv(
 ):
     """Upload ASN order via CSV file.
 
-    Expected CSV columns: Item Name, Item Code, Quantity, UOM
-    Items are matched by item_code within the user's organization.
+    Expected CSV columns: Item Name, SKU, Quantity, UOM
+    Items are matched by SKU within the user's organization. Item IDs are
+    internal and must not be part of the import contract.
     """
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
@@ -242,12 +243,12 @@ async def upload_asn_csv(
 
     # Normalize headers (case-insensitive, strip whitespace)
     headers = {h.strip().lower(): h.strip() for h in reader.fieldnames}
-    required = {"item code", "quantity"}
+    required = {"sku", "quantity"}
     missing = required - set(headers.keys())
     if missing:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required columns: {', '.join(missing)}. Expected: Item Code, Quantity",
+            detail=f"Missing required columns: {', '.join(missing)}. Expected: SKU, Quantity",
         )
 
     # Parse rows
@@ -258,12 +259,12 @@ async def upload_asn_csv(
 
     for row in reader:
         row_num += 1
-        item_code = (row.get(headers.get("item code", "")) or "").strip()
+        sku = (row.get(headers.get("sku", "")) or "").strip()
         qty_str = (row.get(headers.get("quantity", "")) or "0").strip()
         uom = (row.get(headers.get("uom", "")) or "Piece").strip()
 
-        if not item_code:
-            errors.append(f"Row {row_num}: empty Item Code")
+        if not sku:
+            errors.append(f"Row {row_num}: empty SKU")
             continue
 
         try:
@@ -275,18 +276,18 @@ async def upload_asn_csv(
             errors.append(f"Row {row_num}: invalid Quantity '{qty_str}'")
             continue
 
-        # Look up item by item_code
+        # Look up item strictly by SKU
         item = (
             db.query(Item)
             .filter(
-                Item.item_code == item_code,
+                Item.sku == sku,
                 Item.organization_id == org_id,
                 Item.deleted_at.is_(None),
             )
             .first()
         )
         if not item:
-            errors.append(f"Row {row_num}: Item '{item_code}' not found")
+            errors.append(f"Row {row_num}: Item with SKU '{sku}' not found")
             continue
 
         items_payload.append(

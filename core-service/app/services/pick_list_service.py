@@ -377,6 +377,10 @@ class PickListService:
                     pass
                 else:
                     item.serial_nos = [batch_number] if batch_number else None
+                # Backfill the batch/lot from the source bin when the upstream
+                # document (ASN order flow) didn't supply a batch number.
+                if item.batch_no is None and batch_number:
+                    item.batch_no = batch_number
                 resolved_items.append(item)
             else:
                 # Need to split across multiple bins
@@ -405,7 +409,7 @@ class PickListService:
                         per_case_qty=item.per_case_qty if split_idx == 0 else None,
                         case_qty=item.case_qty if split_idx == 0 else None,
                         loose_qty=item.loose_qty if split_idx == 0 else None,
-                        batch_no=item.batch_no,
+                        batch_no=item.batch_no or batch_number,
                         serial_nos=split_serial_nos,
                         bin_location_id=bin_location_id,
                         sort_order=0,
@@ -659,11 +663,17 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        # Only allow scanning on DRAFT (OPEN) or IN_PROGRESS pick lists
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        # Only allow scanning on a pick list that hasn't reached a terminal state.
+        scannable = (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        )
+        if pick_list.status not in scannable:
             raise ValidationError(
                 f"Cannot scan items on pick list with status '{pick_list.status.value}'. "
-                f"Pick list must be in 'draft' or 'in_progress' status."
+                f"Pick list must be in draft, confirmed, pending_picking or in_progress status."
             )
 
         # Decode QR payload — pass the db session and org scope so bare-serial
@@ -792,8 +802,12 @@ class PickListService:
                     org_id=org_id,
                 )
 
-        # Transition to IN_PROGRESS on first scan
-        if pick_list.status == PickListStatus.DRAFT:
+        # Transition to IN_PROGRESS on first scan (from any pre-picking state).
+        if pick_list.status in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+        ):
             pick_list.status = PickListStatus.IN_PROGRESS
 
         # Record scan event in qr_scan_events
@@ -885,10 +899,15 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        if pick_list.status not in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        ):
             raise ValidationError(
                 f"Cannot complete pick list with status '{pick_list.status.value}'. "
-                f"Pick list must be in 'draft' or 'in_progress' status."
+                f"Pick list must be in draft, confirmed, pending_picking or in_progress status."
             )
 
         # Validate all items are fully picked (short-pick policy, EX-002 / ALT-004).
@@ -897,7 +916,7 @@ class PickListService:
             if shortfall is not None:
                 self._capture_short_pick_exception(org_id, item, shortfall)
 
-        pick_list.status = PickListStatus.COMPLETED
+        pick_list.status = PickListStatus.PICK_COMPLETE
         pick_list.completed_at = datetime.now(UTC)
 
         self.db.commit()
@@ -927,8 +946,17 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status == PickListStatus.COMPLETED:
-            raise ValidationError("Cannot cancel a completed pick list")
+        terminal = (
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+        )
+        if pick_list.status in terminal:
+            raise ValidationError(
+                f"Cannot cancel a pick list in '{pick_list.status.value}' status"
+            )
 
         if pick_list.status == PickListStatus.CANCELLED:
             raise ValidationError("Pick list is already cancelled")
@@ -974,6 +1002,52 @@ class PickListService:
         return pick_list
 
     # ------------------------------------------------------------------
+    # STATUS LIFECYCLE TRANSITIONS (order-driven outbound flow)
+    # ------------------------------------------------------------------
+
+    def confirm_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
+        """Move a draft pick list to ``confirmed`` (order-driven lifecycle)."""
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status in (PickListStatus.CANCELLED,):
+            raise ValidationError("Cannot confirm a cancelled pick list")
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.CONFIRMED):
+            raise ValidationError(
+                f"Cannot confirm pick list with status '{pick_list.status.value}'"
+            )
+
+        pick_list.status = PickListStatus.CONFIRMED
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    def transition_status(
+        self,
+        pick_list_id: UUID,
+        org_id: UUID,
+        target: PickListStatus,
+        allowed_from: tuple[PickListStatus, ...] = (),
+    ) -> PickList:
+        """Transition a pick list to ``target`` from one of ``allowed_from``."""
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if allowed_from and pick_list.status not in allowed_from:
+            allowed = ", ".join(s.value for s in allowed_from)
+            raise ValidationError(
+                f"Cannot move pick list from '{pick_list.status.value}' to "
+                f"'{target.value}' (expected one of: {allowed})"
+            )
+
+        pick_list.status = target
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
     # TASK ACCEPT (PR-14 / T-14, WF-010)
     # ------------------------------------------------------------------
 
@@ -1003,7 +1077,13 @@ class PickListService:
         if pick_list is None:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        acceptable = (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        )
+        if pick_list.status not in acceptable:
             raise ValidationError(
                 f"Cannot accept pick list with status '{pick_list.status.value}'"
             )
@@ -1012,7 +1092,11 @@ class PickListService:
             pick_list.accepted_at = datetime.now(UTC)
         pick_list.accepted_by = worker_id
         pick_list.assigned_to = worker_id
-        if pick_list.status == PickListStatus.DRAFT:
+        if pick_list.status in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+        ):
             pick_list.status = PickListStatus.IN_PROGRESS
 
         self.db.commit()

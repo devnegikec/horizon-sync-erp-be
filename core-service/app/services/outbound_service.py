@@ -118,6 +118,15 @@ class OutboundService:
         # Update pick list with dispatch record reference (Requirement 13.2)
         pick_list.dispatch_record_id = dispatch_record.id
 
+        # Advance the pick list along the order-driven lifecycle to in_transit.
+        from app.models.base import PickListStatus
+
+        if pick_list.status not in (
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+        ):
+            pick_list.status = PickListStatus.IN_TRANSIT
+
         # Decrement warehouse stock levels for all dispatched items (Requirement 13.4)
         self._decrement_stock_levels(pick_list, org_id)
 
@@ -129,32 +138,58 @@ class OutboundService:
 
         return self._to_response(dispatch_record)
 
+    def _resolve_transfer_asn(self, pick_list: PickList, org_id: UUID):
+        """Resolve the internal-transfer ASN a pick list fulfils.
+
+        Supports both the legacy direct link (``reference_type='asn_order'``)
+        and the order-driven flow (``reference_type='outbound_order'`` whose
+        order references an ASN).
+        """
+        from app.models.asn_order import AsnOrder
+
+        asn_order_id = None
+        if pick_list.reference_type == "asn_order" and pick_list.reference_id:
+            asn_order_id = pick_list.reference_id
+        elif pick_list.reference_type == "outbound_order" and pick_list.reference_id:
+            from app.models.outbound_order import OutboundOrder
+
+            order = self.db.get(OutboundOrder, pick_list.reference_id)
+            if (
+                order is not None
+                and order.reference_type == "asn_order"
+                and order.reference_id
+            ):
+                asn_order_id = order.reference_id
+
+        if asn_order_id is None:
+            return None
+
+        return (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == org_id,
+            )
+            .first()
+        )
+
     def _propagate_transfer_serials(self, pick_list: PickList, org_id: UUID) -> None:
         """Propagate picked serials into the internal-transfer ASN at dispatch.
 
-        When the pick list fulfils an internal-transfer ASN
-        (``reference_type == 'asn_order'``), copy each line's ``serial_nos``
-        into the ASN items + ``asn_order_serial_lines`` and write
-        ``SerialNoHistory`` (``transfer_out``) rows for chain of custody.
+        The pick list either references the ASN directly (legacy) or references
+        an outbound order that in turn references the ASN (order-driven flow).
+        In both cases, copy each line's ``serial_nos`` into the ASN items +
+        ``asn_order_serial_lines`` and write ``SerialNoHistory``
+        (``transfer_out``) rows for chain of custody.
         """
         import logging
 
         logger = logging.getLogger(__name__)
 
-        if pick_list.reference_type != "asn_order" or not pick_list.reference_id:
-            return
-
         from app.models.asn_order import AsnOrder, AsnOrderItem, AsnOrderSerialLine
         from app.models.serial_no import SerialNo, SerialNoHistory
 
-        asn_order = (
-            self.db.query(AsnOrder)
-            .filter(
-                AsnOrder.id == pick_list.reference_id,
-                AsnOrder.organization_id == org_id,
-            )
-            .first()
-        )
+        asn_order = self._resolve_transfer_asn(pick_list, org_id)
         if asn_order is None or asn_order.asn_type != "internal_transfer":
             return
 
@@ -164,7 +199,7 @@ class OutboundService:
         self.db.query(AsnOrder).filter(AsnOrder.id == asn_order.id).with_for_update().first()
 
         dest_warehouse_id = asn_order.warehouse_id_to
-        source_warehouse_id = pick_list.warehouse_id
+        source_warehouse_id = asn_order.warehouse_id_from or pick_list.warehouse_id
 
         # Keep the operation idempotent across repeat dispatch calls.
         existing = set(
