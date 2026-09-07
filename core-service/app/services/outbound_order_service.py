@@ -98,10 +98,6 @@ class OutboundOrderService:
             .all()
         )
 
-        for order in orders:
-            self.refresh_stock_status(order, commit=False)
-        self.db.commit()
-
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
             "page": page,
@@ -124,7 +120,7 @@ class OutboundOrderService:
         )
         if order is None:
             raise ResourceNotFoundException(f"Outbound order {order_id} not found")
-        return self.refresh_stock_status(order)
+        return order
 
     # ------------------------------------------------------------------
     # MUTATIONS
@@ -167,6 +163,21 @@ class OutboundOrderService:
             raise ValidationError("Invoice reference is required")
         if not items:
             raise ValidationError("Order must contain at least one line item")
+
+        from app.models.warehouse import Warehouse
+
+        warehouse = (
+            self.db.query(Warehouse)
+            .filter(
+                Warehouse.id == warehouse_id,
+                Warehouse.organization_id == org_id,
+            )
+            .first()
+        )
+        if warehouse is None:
+            raise ValidationError(
+                f"Warehouse {warehouse_id} not found in organization"
+            )
 
         from app.services.document_numbering_service import DocumentNumberingService
 
@@ -221,21 +232,18 @@ class OutboundOrderService:
         """
         order = self.get_order(order_id, org_id)
 
-        if order.status == OutboundOrderStatus.CANCELLED:
-            raise ValidationError("Cannot pick from a cancelled order")
-        if order.status in (
-            OutboundOrderStatus.PENDING_PICKING,
-            OutboundOrderStatus.COMPLETED,
-        ):
+        if order.status != OutboundOrderStatus.CONFIRMED:
             raise ValidationError(
-                f"Pick lists were already created for this order "
-                f"('{order.status.value}')"
+                f"Order must be confirmed before generating pick lists "
+                f"(current status: '{order.status.value}')"
             )
 
         if not order.items:
             raise ValidationError("Order has no line items")
 
         workers = worker_ids or []
+        for worker_id in workers:
+            self._validate_worker(worker_id, order.warehouse_id, org_id)
         bucket_count = len(workers) if workers else 1
 
         from app.services.document_numbering_service import DocumentNumberingService
@@ -301,3 +309,25 @@ class OutboundOrderService:
             pick_list = pick_service.resolve_bin_locations(pick_list.id, org_id)
 
         return pick_lists
+
+    def _validate_worker(
+        self, worker_id: UUID, warehouse_id: UUID, org_id: UUID
+    ) -> None:
+        """Reject workers that are inactive, cross-org, or not assigned to the
+        order's warehouse before they are persisted on a pick list."""
+        from app.models.warehouse_user import WarehouseUser
+
+        assignment = (
+            self.db.query(WarehouseUser)
+            .filter(
+                WarehouseUser.user_id == worker_id,
+                WarehouseUser.organization_id == org_id,
+                WarehouseUser.warehouse_id == warehouse_id,
+                WarehouseUser.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if assignment is None:
+            raise ValidationError(
+                f"Worker '{worker_id}' is not an active member of this warehouse"
+            )

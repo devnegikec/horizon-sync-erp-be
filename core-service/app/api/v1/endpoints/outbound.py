@@ -956,24 +956,55 @@ async def import_orders(
 # routes. They use a distinct first path segment so UUID capture is unaffected.
 
 
-def _order_to_response(order, db) -> OutboundOrderResponse:
-    """Convert an OutboundOrder model to an OutboundOrderResponse."""
-    item_ids = [item.item_id for item in (order.items or [])]
-    item_map: dict[str, dict] = {}
-    if item_ids and db:
-        from app.models.item import Item
+def _order_item_map(db, item_ids) -> dict[str, dict]:
+    """Batch-fetch item display fields for a set of item UUIDs."""
+    if not item_ids or db is None:
+        return {}
+    from app.models.item import Item
 
-        rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
-            Item.id.in_(item_ids)
-        ).all()
-        item_map = {
-            str(r.id): {
-                "item_name": r.item_name,
-                "item_code": r.item_code,
-                "sku": r.sku or r.item_code,
-            }
-            for r in rows
+    rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
+        Item.id.in_(item_ids)
+    ).all()
+    return {
+        str(r.id): {
+            "item_name": r.item_name,
+            "item_code": r.item_code,
+            "sku": r.sku or r.item_code,
         }
+        for r in rows
+    }
+
+
+def _order_pick_list_map(db, order_ids) -> dict[str, list[str]]:
+    """Batch-fetch pick list IDs referencing each outbound order."""
+    if not order_ids or db is None:
+        return {}
+    from app.models.pick_list import PickList
+
+    rows = (
+        db.query(PickList.id, PickList.reference_id)
+        .filter(PickList.reference_id.in_(order_ids))
+        .all()
+    )
+    result: dict[str, list[str]] = {}
+    for pick_id, order_id in rows:
+        result.setdefault(str(order_id), []).append(str(pick_id))
+    return result
+
+
+def _order_to_response(
+    order,
+    db,
+    item_map: dict[str, dict] | None = None,
+    pick_list_ids: list[str] | None = None,
+) -> OutboundOrderResponse:
+    """Convert an OutboundOrder model to an OutboundOrderResponse.
+
+    ``item_map`` and ``pick_list_ids`` may be pre-computed by the caller to
+    avoid N+1 queries when serializing a list of orders.
+    """
+    if item_map is None:
+        item_map = _order_item_map(db, [item.item_id for item in (order.items or [])])
 
     items = []
     for item in order.items or []:
@@ -1001,14 +1032,15 @@ def _order_to_response(order, db) -> OutboundOrderResponse:
             )
         )
 
-    from app.models.pick_list import PickList
+    if pick_list_ids is None:
+        from app.models.pick_list import PickList
 
-    pick_list_ids = [
-        str(r[0])
-        for r in db.query(PickList.id)
-        .filter(PickList.reference_id == order.id)
-        .all()
-    ]
+        pick_list_ids = [
+            str(r[0])
+            for r in db.query(PickList.id)
+            .filter(PickList.reference_id == order.id)
+            .all()
+        ]
 
     return OutboundOrderResponse(
         id=str(order.id),
@@ -1058,8 +1090,25 @@ async def list_orders(
         page=page,
         page_size=page_size,
     )
+
+    # Batch-fetch item display fields and pick-list references once, rather
+    # than issuing two queries per order.
+    all_item_ids = {
+        item.item_id for order in orders for item in (order.items or [])
+    }
+    item_map = _order_item_map(db, all_item_ids)
+    pick_map = _order_pick_list_map(db, [order.id for order in orders])
+
     return OutboundOrderListResponse(
-        orders=[_order_to_response(o, db) for o in orders],
+        orders=[
+            _order_to_response(
+                order,
+                db,
+                item_map=item_map,
+                pick_list_ids=pick_map.get(str(order.id), []),
+            )
+            for order in orders
+        ],
         pagination=pagination,
     )
 

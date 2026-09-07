@@ -675,8 +675,8 @@ class AsnOrderService:
             self.db.commit()
             return {"id": existing.id, "order_no": existing.order_no}
 
-        if not asn_order.warehouse_id_to:
-            raise ValueError("Target warehouse is required to create an order")
+        if not asn_order.warehouse_id_from:
+            raise ValueError("Source warehouse is required to create an order")
 
         if not asn_order.items:
             raise ValueError("Internal transfer ASN has no line items to order")
@@ -727,7 +727,7 @@ class AsnOrderService:
         self.db.commit()
 
         logger.info(
-            "Created target order '%s' for internal transfer ASN '%s'",
+            "Created source order '%s' for internal transfer ASN '%s'",
             order.order_no,
             asn_order.asn_order_no,
         )

@@ -548,11 +548,22 @@ class OrderImportService:
         from app.services.document_numbering_service import DocumentNumberingService
         from app.services.outbound_order_service import OutboundOrderService
 
+        try:
+            parsed_type = OutboundOrderType(order_type)
+        except ValueError:
+            raise ValidationError(
+                f"Invalid order type '{order_type}' (expected 'sap' or 'asn')"
+            )
+
+        # Duplicate detection is scoped to (org, warehouse, type) so the same
+        # invoice imported for another warehouse or type doesn't collide.
         existing = (
             self.db.query(OutboundOrder)
             .filter(
                 OutboundOrder.organization_id == org_id,
                 OutboundOrder.invoice_reference == order.invoice_reference,
+                OutboundOrder.warehouse_id == warehouse_id,
+                OutboundOrder.order_type == parsed_type,
             )
             .order_by(OutboundOrder.created_at.desc())
             .first()
@@ -570,13 +581,6 @@ class OrderImportService:
                 f"Items not found in item master: {', '.join(unresolved[:5])}"
                 f"{'...' if len(unresolved) > 5 else ''}. "
                 f"Import the items CSV first."
-            )
-
-        try:
-            parsed_type = OutboundOrderType(order_type)
-        except ValueError:
-            raise ValidationError(
-                f"Invalid order type '{order_type}' (expected 'sap' or 'asn')"
             )
 
         order_no = DocumentNumberingService(self.db).get_next_number(
@@ -660,11 +664,20 @@ class OrderImportService:
         from app.models.outbound_order import OutboundOrderItem
         from app.services.outbound_order_service import OutboundOrderService
 
+        # Resolve before deleting anything: a failed/partial import must not
+        # leave the existing order with an incomplete item set.
+        resolved, unresolved = self._resolve_item_ids(order, org_id)
+        if unresolved:
+            raise ValidationError(
+                f"Items not found in item master: {', '.join(unresolved[:5])}"
+                f"{'...' if len(unresolved) > 5 else ''}. "
+                f"Import the items CSV first."
+            )
+
         self.db.query(OutboundOrderItem).filter(
             OutboundOrderItem.outbound_order_id == existing_order.id
         ).delete()
 
-        resolved, _ = self._resolve_item_ids(order, org_id)
         for parsed_item, item_id in resolved:
             self.db.add(
                 OutboundOrderItem(
