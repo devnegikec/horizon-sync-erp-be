@@ -14,11 +14,20 @@ import urllib.parse
 import urllib.request
 
 # ── Config ────────────────────────────────────────────────────────────────────
-IDENTITY_URL = os.environ.get("IDENTITY_URL", "http://localhost:8000")
-CORE_URL = os.environ.get("CORE_URL", "http://localhost:8001")
+IDENTITY_URL = os.environ.get(
+    "IDENTITY_URL", "https://identity-service-production-a1eb.up.railway.app"
+)
+# https://identity-service-production-a1eb.up.railway.app
+# http://localhost:8000
+CORE_URL = os.environ.get(
+    "CORE_URL", "https://core-service-production-66e9.up.railway.app"
+)
+
+# https://core-service-production-66e9.up.railway.app
+# http://localhost:8001
 
 EMAIL = os.environ.get("WMS_EMAIL", "ttkwmsmanager@prestige.com")
-PASSWORD = os.environ.get("WMS_PASSWORD", "")
+PASSWORD = os.environ.get("WMS_PASSWORD", "Test@123")
 
 
 def _request(method: str, url: str, token: str | None = None, body=None):
