@@ -18,7 +18,7 @@ IDENTITY_URL = os.environ.get("IDENTITY_URL", "http://localhost:8000")
 CORE_URL = os.environ.get("CORE_URL", "http://localhost:8001")
 
 EMAIL = os.environ.get("WMS_EMAIL", "ttkwmsmanager@prestige.com")
-PASSWORD = os.environ.get("WMS_PASSWORD", "Test@123")
+PASSWORD = os.environ.get("WMS_PASSWORD", "")
 
 
 def _request(method: str, url: str, token: str | None = None, body=None):

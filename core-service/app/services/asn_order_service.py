@@ -3,6 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -314,6 +315,9 @@ class AsnOrderService:
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[dict], dict, dict]:
+        # Read the page and its status totals from one repeatable-read snapshot
+        # so concurrent ASN writes cannot split the two results.
+        self.db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
         items, total = self.repo.list_asn_orders(
             organization_id=organization_id,
             page=page,
