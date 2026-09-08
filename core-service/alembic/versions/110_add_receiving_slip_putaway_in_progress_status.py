@@ -31,6 +31,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Rows still in `putaway_in_progress` would violate the restored
+    # constraint, so move them back to the closest legacy state first.
+    op.execute(
+        "UPDATE receiving_slips SET status = 'pending_putaway' "
+        "WHERE status = 'putaway_in_progress'"
+    )
     op.execute("ALTER TABLE receiving_slips DROP CONSTRAINT IF EXISTS chk_slip_status")
     op.execute(
         "ALTER TABLE receiving_slips ADD CONSTRAINT chk_slip_status "

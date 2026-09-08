@@ -38,8 +38,8 @@ from qr_helpers import api_get, api_post, login
 DEFAULT_WAREHOUSE_ID = os.environ.get(
     "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
 )
-ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "10"))
-MASTER_BOX_COUNT = int(os.environ.get("MASTER_BOX_COUNT", "3"))
+ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "5"))
+MASTER_BOX_COUNT = int(os.environ.get("MASTER_BOX_COUNT", "2"))
 QR_TYPE = os.environ.get("QR_TYPE", "dynamic")
 POLL_TIMEOUT_S = int(os.environ.get("BLOCK_POLL_TIMEOUT_S", "180"))
 
@@ -100,11 +100,16 @@ def resolve_block_children(block: dict, token: str) -> tuple[dict, list[str]]:
 
 
 def get_items_per_master_pack(item: dict) -> int | None:
-    """Return ``items_per_master_pack`` from the item's packaging units."""
-    for pu in item.get("packaging_units") or []:
-        value = pu.get("items_per_master_pack")
-        if value:
-            return int(value)
+    """Return ``items_per_master_pack`` from the item's base packaging unit."""
+    units = item.get("packaging_units") or []
+    # Prefer the base unit (Each), which carries the master-pack grouping;
+    # fall back to any unit that has the value set.
+    for pu in units:
+        if pu.get("is_base_unit") and pu.get("items_per_master_pack"):
+            return int(pu["items_per_master_pack"])
+    for pu in units:
+        if pu.get("items_per_master_pack"):
+            return int(pu["items_per_master_pack"])
     return None
 
 
@@ -120,7 +125,7 @@ def create_block_for_item(
         "batch": unique_batch(index),
         "quantity": quantity,
         "qr_type": QR_TYPE,
-        "qr_image": False,
+        "qr_image": True,
         "master_pack_enabled": True,
         "master_pack_size": master_pack_size,
     }

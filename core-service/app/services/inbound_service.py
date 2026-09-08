@@ -2303,7 +2303,9 @@ class InboundService:
         )
 
         # Batch-load tracking rows and catalog items to avoid per-line queries.
-        trackings_by_qr: dict[str, list[ScannedItemTracking]] = defaultdict(list)
+        # Trackings are matched to slip lines by batch_number (not the QR
+        # identifier), which is how the slip lines were aggregated.
+        trackings_by_batch: dict[str, list[ScannedItemTracking]] = defaultdict(list)
         if lines:
             session_trackings = (
                 self.db.query(ScannedItemTracking)
@@ -2311,7 +2313,7 @@ class InboundService:
                 .all()
             )
             for tracking in session_trackings:
-                trackings_by_qr[tracking.qr_identifier].append(tracking)
+                trackings_by_batch[tracking.batch_number].append(tracking)
 
         items_by_key: dict[str, Item] = {}
         skus = [line.sku for line in lines if line.sku]
@@ -2340,7 +2342,7 @@ class InboundService:
 
         bin_stock_service = BinStockService(self.db)
         for line in lines:
-            trackings = trackings_by_qr.get(line.batch_number, [])
+            trackings = trackings_by_batch.get(line.batch_number, [])
             if trackings and all(t.putaway_status == "completed" for t in trackings):
                 continue
             item = items_by_key.get(line.sku)

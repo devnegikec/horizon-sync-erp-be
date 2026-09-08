@@ -705,9 +705,10 @@ class PutAwayService:
         if worker_id is not None:
             put_away_list.assigned_to = worker_id
 
-        # The list is now in the warehouse: move the slip from pending_putaway
-        # into putaway_in_progress so managers can see work has started.
-        slip.status = "putaway_in_progress"
+        # Move the slip out of pending_putaway. With items to work it becomes
+        # putaway_in_progress; with nothing eligible it is already complete so
+        # it does not stay stuck with no pending item to trigger completion.
+        slip.status = "putaway_in_progress" if put_away_items else "putaway_complete"
         slip.updated_at = datetime.now(UTC)
 
         self.db.commit()
@@ -1518,6 +1519,18 @@ class PutAwayService:
         if put_away_list is None:
             return
 
+        # Lock the slip row so concurrent completions of different lists for
+        # the same slip serialize here. Without it, two workers can each see
+        # the other's list still pending and both skip marking the slip done.
+        slip = None
+        if put_away_list.receiving_slip_id:
+            slip = (
+                self.db.query(ReceivingSlip)
+                .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
+                .with_for_update()
+                .first()
+            )
+
         # Count pending items
         pending_count = (
             self.db.query(func.count(PutAwayListItem.id))
@@ -1536,15 +1549,14 @@ class PutAwayService:
 
             # Update receiving slip to PUTAWAY_COMPLETE only once every
             # put-away list for the slip is complete (multi-worker splits).
-            if put_away_list.receiving_slip_id:
+            if slip is not None:
                 remaining = (
                     self.db.query(func.count(PutAwayListItem.id))
                     .join(
                         PutAwayList, PutAwayList.id == PutAwayListItem.put_away_list_id
                     )
                     .filter(
-                        PutAwayList.receiving_slip_id
-                        == put_away_list.receiving_slip_id,
+                        PutAwayList.receiving_slip_id == slip.id,
                         PutAwayList.reference_type == "receiving_slip",
                         PutAwayListItem.status == "pending",
                     )
@@ -1552,12 +1564,7 @@ class PutAwayService:
                 ) or 0
 
                 if remaining == 0:
-                    slip = (
-                        self.db.query(ReceivingSlip)
-                        .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
-                        .first()
-                    )
-                    if slip and slip.status in (
+                    if slip.status in (
                         "pending_putaway",
                         "putaway_in_progress",
                     ):
