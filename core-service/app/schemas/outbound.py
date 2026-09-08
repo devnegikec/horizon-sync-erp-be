@@ -76,6 +76,14 @@ class CreatePickListFromOrderRequest(BaseModel):
     worker_ids: list[UUID] = Field(
         default_factory=list, description="Workers to split the pick work across"
     )
+    mode: str | None = Field(
+        None,
+        description=(
+            "Generation mode: 'auto' assigns bin locations (FIFO/FEFO), "
+            "'manual' leaves bin assignment to the worker. None defaults to "
+            "the organization setting (auto unless overridden)."
+        ),
+    )
 
 
 class StageTransferRequest(BaseModel):

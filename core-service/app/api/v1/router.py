@@ -52,6 +52,7 @@ from app.api.v1.endpoints import (
     notifications,
     organization_onboarding,
     outbound,
+    packing_slips,
     payments,
     pick_exceptions,
     pick_lists,
@@ -207,6 +208,11 @@ api_router.include_router(
 api_router.include_router(
     outbound.router,
     prefix="/outbound",
+    tags=["Outbound"],
+)
+api_router.include_router(
+    packing_slips.router,
+    prefix="/outbound/packing-slips",
     tags=["Outbound"],
 )
 # Put-Away (put-away lists and items)

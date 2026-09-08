@@ -221,6 +221,7 @@ class OutboundOrderService:
         order_id: UUID,
         org_id: UUID,
         worker_ids: list[UUID] | None = None,
+        mode: str | None = None,
     ) -> list[PickList]:
         """Generate one or more pick lists from a confirmed order.
 
@@ -229,6 +230,10 @@ class OutboundOrderService:
         inbound put-away generation flow). An empty list creates a single
         unassigned pick list. Every generated pick list starts in
         ``pending_picking`` status and references the order.
+
+        ``mode`` mirrors the put-away generation contract: ``auto`` (default)
+        assigns bin locations via FIFO/FEFO resolution; ``manual`` leaves bin
+        assignment to the worker.
         """
         order = self.get_order(order_id, org_id)
 
@@ -240,6 +245,10 @@ class OutboundOrderService:
 
         if not order.items:
             raise ValidationError("Order has no line items")
+
+        effective_mode = mode or "auto"
+        if effective_mode not in {"auto", "manual"}:
+            raise ValidationError(f"Invalid pick generation mode: {effective_mode}")
 
         workers = worker_ids or []
         for worker_id in workers:
@@ -280,6 +289,14 @@ class OutboundOrderService:
             self.db.flush()
 
             for item in bucket:
+                per_case, case_qty, loose_qty = self._resolve_packaging(
+                    item.item_id,
+                    org_id,
+                    item.per_case_qty,
+                    item.case_qty,
+                    item.loose_qty,
+                    item.qty,
+                )
                 self.db.add(
                     PickListItem(
                         organization_id=org_id,
@@ -289,9 +306,9 @@ class OutboundOrderService:
                         qty=item.qty,
                         picked_qty=Decimal("0"),
                         uom=item.uom,
-                        per_case_qty=item.per_case_qty,
-                        case_qty=item.case_qty,
-                        loose_qty=item.loose_qty,
+                        per_case_qty=per_case,
+                        case_qty=case_qty,
+                        loose_qty=loose_qty,
                         batch_no=item.batch_no,
                         sort_order=0,
                     )
@@ -301,14 +318,67 @@ class OutboundOrderService:
         order.status = OutboundOrderStatus.PENDING_PICKING
         self.db.commit()
 
-        # Resolve bin locations for each generated pick list.
-        from app.services.pick_list_service import PickListService
+        # Resolve bin locations only in automatic mode. In manual mode the
+        # worker assigns bins during picking.
+        if effective_mode == "auto":
+            from app.services.pick_list_service import PickListService
 
-        pick_service = PickListService(self.db)
-        for pick_list in pick_lists:
-            pick_list = pick_service.resolve_bin_locations(pick_list.id, org_id)
+            pick_service = PickListService(self.db)
+            for pick_list in pick_lists:
+                pick_list = pick_service.resolve_bin_locations(pick_list.id, org_id)
+                pick_service.reserve_pick_bins(pick_list, org_id)
 
         return pick_lists
+
+    def _resolve_packaging(
+        self,
+        item_id: UUID,
+        org_id: UUID,
+        per_case_qty,
+        case_qty,
+        loose_qty,
+        qty,
+    ):
+        """Derive the per-case/loose (master/child) breakdown for a pick line.
+
+        When the imported order line omits ``per_case_qty`` (master pack size),
+        fall back to the item's active packaging unit that defines
+        ``items_per_master_pack`` (or ``conversion_factor``). ``case_qty`` and
+        ``loose_qty`` are then computed from ``qty`` when missing so the picker
+        surfaces the master/child split (requirement A2).
+        """
+        effective_per_case = per_case_qty
+        if effective_per_case is None or Decimal(str(effective_per_case)) <= 0:
+            from app.models.item_packaging_unit import ItemPackagingUnit
+
+            master = (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item_id,
+                    ItemPackagingUnit.organization_id == org_id,
+                    ItemPackagingUnit.is_active.is_(True),
+                    ItemPackagingUnit.is_base_unit.is_(False),
+                )
+                .order_by(ItemPackagingUnit.conversion_factor.asc())
+                .first()
+            )
+            if master is not None:
+                if master.items_per_master_pack is not None:
+                    effective_per_case = Decimal(str(master.items_per_master_pack))
+                elif master.conversion_factor is not None:
+                    effective_per_case = Decimal(str(master.conversion_factor))
+
+        effective_case = case_qty
+        effective_loose = loose_qty
+        if effective_per_case is not None and Decimal(str(effective_per_case)) > 0:
+            q = Decimal(str(qty))
+            pc = Decimal(str(effective_per_case))
+            if effective_case is None:
+                effective_case = q // pc
+            if effective_loose is None:
+                effective_loose = q % pc
+
+        return effective_per_case, effective_case, effective_loose
 
     def _validate_worker(
         self, worker_id: UUID, warehouse_id: UUID, org_id: UUID

@@ -37,6 +37,7 @@ DOCUMENT_TYPES = [
     "dispatch",
     "asn_order",
     "outbound_order",
+    "packing_slip",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -63,6 +64,7 @@ DEFAULT_PREFIXES = {
     "dispatch": "DSP",
     "asn_order": "ASN",
     "outbound_order": "ORD",
+    "packing_slip": "PKSL",
 }
 
 

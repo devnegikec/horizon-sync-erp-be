@@ -300,6 +300,15 @@ class OutboundOrderItemStockStatus(str, enum.Enum):
     OUT_OF_STOCK = "out_of_stock"
 
 
+class PackingSlipStatus(str, enum.Enum):
+    """Lifecycle of a packing slip (internal staging of picked goods)."""
+
+    DRAFT = "draft"
+    LOADING = "loading"
+    DISPATCHED = "dispatched"
+    CANCELLED = "cancelled"
+
+
 class QuotationStatus(str, enum.Enum):
     """Quotation status enumeration"""
 

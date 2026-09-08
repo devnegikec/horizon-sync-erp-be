@@ -202,12 +202,12 @@ class OutboundService:
         source_warehouse_id = asn_order.warehouse_id_from or pick_list.warehouse_id
 
         # Keep the operation idempotent across repeat dispatch calls.
-        existing = set(
-            self.db.query(AsnOrderSerialLine.serial_no)
+        existing = {
+            row[0]
+            for row in self.db.query(AsnOrderSerialLine.serial_no)
             .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
-            .scalars()
             .all()
-        )
+        }
 
         for line in pick_list.items:
             asn_item = (
@@ -519,8 +519,21 @@ class OutboundService:
             "id": str(dispatch_record.id),
             "organization_id": str(dispatch_record.organization_id),
             "dispatch_number": dispatch_record.dispatch_number,
-            "pick_list_id": str(dispatch_record.pick_list_id),
-            "gate_session_id": str(dispatch_record.gate_session_id),
+            "pick_list_id": (
+                str(dispatch_record.pick_list_id)
+                if dispatch_record.pick_list_id
+                else None
+            ),
+            "gate_session_id": (
+                str(dispatch_record.gate_session_id)
+                if dispatch_record.gate_session_id
+                else None
+            ),
+            "packing_slip_id": (
+                str(dispatch_record.packing_slip_id)
+                if dispatch_record.packing_slip_id
+                else None
+            ),
             "invoice_reference": dispatch_record.invoice_reference,
             "vehicle_number": dispatch_record.vehicle_number,
             "driver_name": dispatch_record.driver_name,
