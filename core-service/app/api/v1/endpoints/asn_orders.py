@@ -21,6 +21,7 @@ from app.schemas.asn_order import (
     AsnOrderListItem,
     AsnOrderListResponse,
     AsnOrderResponse,
+    AsnOrderStatusCounts,
     AsnOrderStatusUpdate,
     AsnOrderUpdate,
 )
@@ -65,7 +66,9 @@ async def list_asn_orders(
     vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
     asn_type: str | None = Query(
-        None, pattern="^(purchase|internal_transfer|stock_receipt)$", description="Filter by ASN type"
+        None,
+        pattern="^(purchase|internal_transfer|stock_receipt)$",
+        description="Filter by ASN type",
     ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -74,7 +77,7 @@ async def list_asn_orders(
 ):
     """List ASN orders. Requires asn_order.read."""
     svc = AsnOrderService(db)
-    items, pagination = svc.get_list(
+    items, pagination, status_counts = svc.get_list(
         organization_id=current_user.organization_id,
         page=page,
         page_size=page_size,
@@ -92,6 +95,7 @@ async def list_asn_orders(
     return AsnOrderListResponse(
         asn_orders=[AsnOrderListItem.model_validate(x) for x in items],
         pagination=PaginationMeta(**pagination),
+        status_counts=AsnOrderStatusCounts(**status_counts),
     )
 
 

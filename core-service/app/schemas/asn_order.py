@@ -145,9 +145,22 @@ class AsnOrderListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AsnOrderStatusCounts(BaseModel):
+    """Summary counts of ASN orders by status for the organization."""
+
+    total: int = 0
+    draft: int = 0
+    confirmed: int = 0
+    partially_delivered: int = 0
+    delivered: int = 0
+    closed: int = 0
+    cancelled: int = 0
+
+
 class AsnOrderListResponse(BaseModel):
     asn_orders: list[AsnOrderListItem]
     pagination: PaginationMeta
+    status_counts: AsnOrderStatusCounts
 
 
 class AsnOrderStatusUpdate(BaseModel):
