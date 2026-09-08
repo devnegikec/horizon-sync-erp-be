@@ -46,6 +46,7 @@ class PackingSlipService:
                 OutboundOrder.id.in_(unique_ids),
                 OutboundOrder.organization_id == org_id,
             )
+            .with_for_update()
             .all()
         )
         if len(orders) != len(unique_ids):
@@ -210,7 +211,7 @@ class PackingSlipService:
         from app.services.document_numbering_service import DocumentNumberingService
         from app.services.outbound_service import OutboundService
 
-        slip = self._get(slip_id, org_id)
+        slip = self._get(slip_id, org_id, for_update=True)
         if slip.status != PackingSlipStatus.LOADING:
             raise ValidationError(
                 f"Cannot dispatch packing slip with status '{slip.status.value}' "
@@ -246,17 +247,15 @@ class PackingSlipService:
                     StockLevel.product_id == item.item_id,
                     StockLevel.warehouse_id == slip.warehouse_id,
                 )
+                .with_for_update()
                 .first()
             )
             if stock_level is not None:
-                qty_int = int(qty)
-                stock_level.quantity_on_hand = max(
-                    0, (stock_level.quantity_on_hand or 0) - qty_int
-                )
+                on_hand = Decimal(str(stock_level.quantity_on_hand or 0))
+                reserved = Decimal(str(stock_level.quantity_reserved or 0))
+                stock_level.quantity_on_hand = max(Decimal("0"), on_hand - qty)
                 stock_level.quantity_available = max(
-                    0,
-                    (stock_level.quantity_on_hand or 0)
-                    - (stock_level.quantity_reserved or 0),
+                    Decimal("0"), stock_level.quantity_on_hand - reserved
                 )
 
         # Propagate transfer serials and advance source pick lists to in_transit.
@@ -284,15 +283,16 @@ class PackingSlipService:
     # RESPONSE HELPERS
     # ------------------------------------------------------------------
 
-    def _get(self, slip_id: UUID, org_id: UUID) -> PackingSlip:
-        slip = (
-            self.db.query(PackingSlip)
-            .filter(
-                PackingSlip.id == slip_id,
-                PackingSlip.organization_id == org_id,
-            )
-            .first()
+    def _get(
+        self, slip_id: UUID, org_id: UUID, for_update: bool = False
+    ) -> PackingSlip:
+        query = self.db.query(PackingSlip).filter(
+            PackingSlip.id == slip_id,
+            PackingSlip.organization_id == org_id,
         )
+        if for_update:
+            query = query.with_for_update()
+        slip = query.first()
         if slip is None:
             raise ResourceNotFoundException(f"Packing slip {slip_id} not found")
         return slip

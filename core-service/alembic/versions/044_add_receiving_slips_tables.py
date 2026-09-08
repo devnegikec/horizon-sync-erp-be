@@ -18,9 +18,12 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "044_add_receiving_slips_tables"
-down_revision = "043_add_bin_stock_levels_and_location_allocations"
+down_revision = (
+    "043_add_bin_stock_levels_and_location_allocations",
+    "042_add_scan_sessions_tables",
+)
 branch_labels = None
-depends_on = ("042_add_scan_sessions_tables",)
+depends_on = None
 
 
 def upgrade() -> None:

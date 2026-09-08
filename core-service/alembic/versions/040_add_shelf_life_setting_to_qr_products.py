@@ -1,7 +1,7 @@
 """Add Shelf Life setting reference to QR Products.
 
 Revision ID: 040_add_product_shelf_life
-Revises: 0167307b0bd5
+Revises: 043_add_sku_layer
 Create Date: 2026-07-25
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "040_add_product_shelf_life"
-down_revision = "0167307b0bd5"
+down_revision = "043_add_sku_layer"
 branch_labels = None
 depends_on = None
 

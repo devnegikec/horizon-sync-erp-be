@@ -40,6 +40,13 @@ def upgrade() -> None:
         "dispatch_records",
         sa.Column("packing_slip_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
+    op.create_foreign_key(
+        "dispatch_records_packing_slip_id_fkey",
+        "dispatch_records",
+        "packing_slips",
+        ["packing_slip_id"],
+        ["id"],
+    )
     op.create_index(
         "ix_dispatch_records_packing_slip_id",
         "dispatch_records",
@@ -48,8 +55,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "ALTER TABLE dispatch_records "
+        "DROP CONSTRAINT IF EXISTS dispatch_records_packing_slip_id_fkey"
+    )
     op.drop_index(
         "ix_dispatch_records_packing_slip_id", table_name="dispatch_records"
+    )
+    # Packing-slip dispatches leave pick_list_id/gate_session_id NULL, so
+    # remove them before restoring the legacy columns' NOT NULL constraints.
+    op.execute(
+        "DELETE FROM dispatch_records "
+        "WHERE pick_list_id IS NULL OR gate_session_id IS NULL"
     )
     op.drop_column("dispatch_records", "packing_slip_id")
     op.alter_column(
