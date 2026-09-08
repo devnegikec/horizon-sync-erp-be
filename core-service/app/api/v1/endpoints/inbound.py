@@ -44,8 +44,10 @@ from app.schemas.inbound import (
     InboundExceptionResponse,
     InboundShortBalanceResponse,
     LinkAsnToSessionRequest,
+    ReceivingSlipListItem,
     ReceivingSlipListResponse,
     ReceivingSlipResponse,
+    ReceivingSlipStatusCounts,
     RecordScanRequest,
     RejectedItemResponse,
     RejectSlipItemRequest,
@@ -297,7 +299,7 @@ async def list_receiving_slips(
     session_id: UUID | None = Query(None, description="Filter by scan session UUID"),
     status: str | None = Query(
         None,
-        description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected",
+        description="Filter by status: pending_review, pending_putaway, putaway_in_progress, putaway_complete, rejected",
     ),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -310,11 +312,11 @@ async def list_receiving_slips(
     **Query Parameters:**
     - **warehouse_id**: Filter by warehouse UUID
     - **session_id**: Filter by scan session UUID
-    - **status**: Filter by status (pending_review, pending_putaway, putaway_complete, rejected)
+    - **status**: Filter by status (pending_review, pending_putaway, putaway_in_progress, putaway_complete, rejected)
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 20)
 
-    **Returns:** Paginated list of receiving slips with line items
+    **Returns:** Paginated list of receiving slips (summary only, no item groups) with status statistics
     """
     from app.schemas.inbound import ReceivingSlipPagination
 
@@ -333,11 +335,15 @@ async def list_receiving_slips(
         page=page,
         page_size=page_size,
     )
+    status_counts = service.slip_repo.get_status_counts(
+        org_id=current_user.organization_id,
+        filters=filters,
+    )
 
     total_pages = max(1, (total + page_size - 1) // page_size)
 
     slip_responses = [
-        ReceivingSlipResponse(**service._slip_to_dict(slip)) for slip in slips
+        ReceivingSlipListItem(**service._slip_to_summary_dict(slip)) for slip in slips
     ]
 
     return ReceivingSlipListResponse(
@@ -350,6 +356,7 @@ async def list_receiving_slips(
             has_next=page < total_pages,
             has_prev=page > 1,
         ),
+        status_counts=ReceivingSlipStatusCounts(**status_counts),
     )
 
 
