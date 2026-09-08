@@ -1,7 +1,7 @@
 """add_sku_layer
 
-Revision ID: 0167307b0bd5
-Revises: a62c68164442
+Revision ID: 043_add_sku_layer
+Revises: 042_add_audit_fields_to_qr_activation
 Create Date: 2026-06-24 01:52:23.513451
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 import app.models.types
 from alembic import op
 
-revision: str = '0167307b0bd5'
-down_revision: str | None = 'a62c68164442'
+revision: str = '043_add_sku_layer'
+down_revision: str | None = '042_add_audit_fields_to_qr_activation'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
