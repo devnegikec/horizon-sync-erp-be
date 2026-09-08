@@ -29,32 +29,57 @@ def _bind_engine(bind):
     return getattr(bind, "engine", bind)
 
 
+_UPDATE_INBOUND_EXCEPTION = (
+    "UPDATE permissions SET resource = 'inbound_exception'::resourcetype "
+    "WHERE code LIKE 'inbound_exception.%' AND resource::text = 'warehouse'"
+)
+
+
 def upgrade():
-    # ALTER TYPE ... ADD VALUE must be committed before the new value can be
-    # used, so run both statements on an AUTOCOMMIT connection.
     bind = op.get_bind()
     engine = _bind_engine(bind)
-    with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
-        conn.execute(
-            text(
-                "ALTER TYPE resourcetype ADD VALUE IF NOT EXISTS 'inbound_exception'"
-            )
+
+    # ``resourcetype`` is created by migration 001.  On a fresh database the
+    # entire migration chain runs inside a single open transaction, so the type
+    # (and every value added to it) is not yet committed and is therefore
+    # invisible to a separate connection.  On an existing database that is
+    # already stamped at 019, the type is committed.
+    #
+    # These two cases need different handling because PostgreSQL forbids using
+    # a newly added enum value in the same transaction it was added *unless*
+    # the type itself was also created in that same transaction.
+    with engine.connect() as probe:
+        type_committed = (
+            probe.execute(
+                text("SELECT 1 FROM pg_type WHERE typname = 'resourcetype'")
+            ).scalar()
+            is not None
         )
-        conn.execute(
-            text(
-                "UPDATE permissions SET resource = 'inbound_exception'::resourcetype "
-                "WHERE code LIKE 'inbound_exception.%' AND resource::text = 'warehouse'"
+
+    if type_committed:
+        # Existing DB: add the value on an AUTOCOMMIT connection so it is
+        # committed before the UPDATE tries to use it.
+        with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
+            conn.execute(
+                text(
+                    "ALTER TYPE resourcetype ADD VALUE IF NOT EXISTS 'inbound_exception'"
+                )
             )
+        op.execute(text(_UPDATE_INBOUND_EXCEPTION))
+    else:
+        # Fresh DB: both statements must run on the main migration connection.
+        op.execute(
+            text("ALTER TYPE resourcetype ADD VALUE IF NOT EXISTS 'inbound_exception'")
         )
+        op.execute(text(_UPDATE_INBOUND_EXCEPTION))
 
 
 def downgrade():
-    bind = op.get_bind()
-    engine = _bind_engine(bind)
-    with engine.execution_options(isolation_level="AUTOCOMMIT").connect() as conn:
-        conn.execute(
-            text(
-                "UPDATE permissions SET resource = 'warehouse'::resourcetype "
-                "WHERE code LIKE 'inbound_exception.%' AND resource::text = 'inbound_exception'"
-            )
+    # Only casts back to 'warehouse', a pre-existing value, so it is safe on
+    # the main migration connection in both fresh and existing databases.
+    op.execute(
+        text(
+            "UPDATE permissions SET resource = 'warehouse'::resourcetype "
+            "WHERE code LIKE 'inbound_exception.%' AND resource::text = 'inbound_exception'"
         )
+    )

@@ -271,6 +271,16 @@ SYNCABLE_FEATURES = [
         "label": "Sample Stock",
         "description": "Seed stock for sample items into a selected warehouse",
     },
+    {
+        "key": "stock_boost",
+        "label": "Increase Item Stock",
+        "description": "Add a fixed quantity to every item's stock level (test helper)",
+    },
+    {
+        "key": "receive_asn",
+        "label": "Receive from ASN",
+        "description": "Create one ASN + one receiving slip from QR blocks (latest items or existing block IDs)",
+    },
 ]
 
 SYNCABLE_FEATURE_KEYS = {feature["key"] for feature in SYNCABLE_FEATURES}
@@ -420,6 +430,8 @@ class OrganizationOnboardingService:
         created_by: str,
         base_currency: str = "USD",
         warehouse_id: UUID | None = None,
+        stock_boost_qty: int | None = None,
+        receive_asn_options: dict | None = None,
     ) -> dict:
         """Seed the requested default data categories on demand.
 
@@ -442,13 +454,14 @@ class OrganizationOnboardingService:
         # Seed order matters: stock depends on sample items existing, so run
         # items (and its item_groups dependency) before stock regardless of the
         # order the client requested them in.
-        _dependency_rank = {"item_groups": 0, "items": 1, "stock": 2}
+        _dependency_rank = {"item_groups": 0, "items": 1, "stock": 2, "receive_asn": 3}
         ordered_features = sorted(features, key=lambda k: _dependency_rank.get(k, 10))
 
         summary: dict = {"organization_id": str(organization_id)}
         for key in ordered_features:
             summary[key] = self._sync_feature(
-                key, organization_id, user_id, now, base_currency, warehouse_id
+                key, organization_id, user_id, now, base_currency, warehouse_id,
+                stock_boost_qty, receive_asn_options,
             )
 
         self.db.commit()
@@ -472,6 +485,8 @@ class OrganizationOnboardingService:
         now: datetime,
         base_currency: str,
         warehouse_id: UUID | None = None,
+        stock_boost_qty: int | None = None,
+        receive_asn_options: dict | None = None,
     ) -> dict:
         """Dispatch a single feature key to its idempotent seed routine."""
         if key == "currencies":
@@ -488,6 +503,14 @@ class OrganizationOnboardingService:
             return self._seed_items(organization_id, user_id, now)
         if key == "stock":
             return self._seed_stock(organization_id, user_id, now, warehouse_id)
+        if key == "stock_boost":
+            return self._seed_stock_boost(
+                organization_id, user_id, now, stock_boost_qty or 0
+            )
+        if key == "receive_asn":
+            return self._seed_receive_asn(
+                organization_id, user_id, now, warehouse_id, receive_asn_options
+            )
         return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
 
     # ------------------------------------------------------------------
@@ -1011,6 +1034,358 @@ class OrganizationOnboardingService:
             warehouse_id,
         )
         return {"created": created, "skipped": skipped}
+
+    def _seed_stock_boost(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        qty: int,
+    ) -> dict:
+        """Increase item stock levels by a fixed amount (test helper).
+
+        Adds ``qty`` to the warehouse-level ``stock_levels`` aggregate and, for
+        per-bin ``bin_stock_levels``, adds up to ``qty`` per bin but never past
+        the bin's capacity, so the capacity model stays consistent and later
+        put-away/pick flows don't fail on over-full bins.
+        """
+        from collections import defaultdict
+
+        from app.models.bin_stock_level import BinStockLevel
+        from app.models.stock_level import StockLevel
+        from app.models.warehouse_location import WarehouseLocation
+
+        if qty <= 0:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "Quantity must be a positive integer",
+            }
+
+        stock_updated = 0
+        for level in (
+            self.db.query(StockLevel)
+            .filter(StockLevel.organization_id == organization_id)
+            .all()
+        ):
+            level.quantity_on_hand = (level.quantity_on_hand or 0) + qty
+            level.quantity_available = (level.quantity_available or 0) + qty
+            level.updated_at = now
+            stock_updated += 1
+
+        bin_updated = 0
+        bin_levels = (
+            self.db.query(BinStockLevel)
+            .filter(BinStockLevel.organization_id == organization_id)
+            .all()
+        )
+        if bin_levels:
+            bin_ids = {level.bin_location_id for level in bin_levels}
+            capacities = {
+                wl.id: Decimal(str(wl.capacity or 0))
+                for wl in self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.id.in_(bin_ids))
+                .all()
+            }
+            bin_totals: dict = defaultdict(lambda: Decimal("0"))
+            for level in bin_levels:
+                bin_totals[level.bin_location_id] += Decimal(
+                    str(level.quantity_on_hand or 0)
+                )
+
+            qty_dec = Decimal(str(qty))
+            for level in bin_levels:
+                capacity = capacities.get(level.bin_location_id, Decimal("0"))
+                if capacity <= 0:
+                    # Unlimited capacity — add the full amount.
+                    level.quantity_on_hand = (level.quantity_on_hand or 0) + qty
+                    bin_totals[level.bin_location_id] += qty_dec
+                    bin_updated += 1
+                    continue
+                available = capacity - bin_totals[level.bin_location_id]
+                if available <= 0:
+                    continue  # bin already at/over capacity — leave it alone
+                add = min(qty_dec, available)
+                level.quantity_on_hand = (level.quantity_on_hand or 0) + add
+                bin_totals[level.bin_location_id] += add
+                bin_updated += 1
+
+        logger.info(
+            "Stock boost: +%s on %s stock_levels and %s bin_stock_levels for org %s",
+            qty,
+            stock_updated,
+            bin_updated,
+            organization_id,
+        )
+        return {"created": stock_updated + bin_updated, "skipped": 0, "quantity": qty}
+
+    def _seed_receive_asn(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        warehouse_id: UUID | None,
+        options: dict | None,
+    ) -> dict:
+        """Create ONE ASN + ONE receiving slip from QR blocks (test helper).
+
+        Replicates the ``data-script/receive_all.py`` flow server-side:
+        - ``items`` mode: create a QR block for each configured item line
+          (batch sequence auto-incremented), waiting for each to complete.
+        - ``block_ids`` mode: receive already-completed blocks.
+        Then: resolve child serials → build ONE ASN → confirm → start ONE
+        inbound scan session → scan every child serial → end the session to
+        produce ONE receiving slip.
+        """
+        from uuid import uuid4
+
+        from app.schemas.qr_product import QRBlockCreate
+        from app.services.asn_order_service import AsnOrderService
+        from app.services.inbound_service import InboundService
+        from app.services.qr_block_queue import enqueue_qr_block
+        from app.services.qr_product_service import QRProductService
+
+        options = options or {}
+        mode = options.get("mode") or "items"
+        qr_type = options.get("qr_type") or "dynamic"
+        item_configs = options.get("items") or []
+        block_ids = [b for b in (options.get("block_ids") or []) if b]
+        asn_type = options.get("asn_type") or "purchase"
+        target_warehouse_id = options.get("target_warehouse_id") or warehouse_id
+        source_warehouse_id = options.get("source_warehouse_id")
+
+        if target_warehouse_id is None:
+            return {"created": 0, "skipped": 0, "error": "target_warehouse_id is required"}
+        if asn_type == "internal_transfer" and source_warehouse_id is None:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "source_warehouse_id is required for an internal transfer ASN",
+            }
+
+        qr_svc = QRProductService(self.db)
+        blocks: list = []
+
+        if mode == "block_ids":
+            for raw_id in block_ids:
+                try:
+                    block_id = UUID(raw_id)
+                except ValueError:
+                    return {
+                        "created": 0,
+                        "skipped": 0,
+                        "error": f"Invalid block id: {raw_id}",
+                    }
+                block = qr_svc.get_block(block_id, organization_id)
+                if block.status != "completed":
+                    return {
+                        "created": 0,
+                        "skipped": 0,
+                        "error": f"Block {raw_id} is not completed (status={block.status})",
+                    }
+                blocks.append(block)
+        else:
+            for cfg in item_configs:
+                item = self._resolve_receive_item(cfg, organization_id)
+                if item is None or not getattr(item, "qr_product_id", None):
+                    continue
+                base_batch = (cfg.get("batch") or "").strip()
+                if not base_batch:
+                    base_batch = f"BATCH-{now.strftime('%Y%m%d')}"
+                batch = self._next_batch_number(base_batch, organization_id)
+                quantity = max(1, int(cfg.get("quantity") or 10))
+                master_pack_size = max(1, int(cfg.get("master_pack_size") or 2))
+                try:
+                    block = qr_svc.create_block_job(
+                        item.qr_product_id,
+                        QRBlockCreate(
+                            batch=batch,
+                            quantity=quantity,
+                            qr_type=qr_type,
+                            qr_image=False,
+                            master_pack_enabled=True,
+                            master_pack_size=master_pack_size,
+                        ),
+                        organization_id,
+                        user_id,
+                    )
+                    task_id = str(uuid4())
+                    block = qr_svc.assign_block_task(block.id, organization_id, task_id)
+                    enqueue_qr_block(block.id, organization_id, task_id)
+                except Exception:
+                    continue
+                try:
+                    block = self._wait_for_receive_block(block.id, organization_id)
+                except (RuntimeError, TimeoutError):
+                    continue
+                blocks.append(block)
+
+        if not blocks:
+            return {"created": 0, "skipped": 0, "error": "No blocks to receive"}
+
+        aggregated: dict = {}
+        for block in blocks:
+            item_id, serials = self._resolve_receive_block_children(block, organization_id)
+            if item_id is None:
+                continue
+            bucket = aggregated.setdefault(str(item_id), {"item_id": item_id, "serials": []})
+            bucket["serials"].extend(serials)
+            bucket["serials"] = list(dict.fromkeys(bucket["serials"]))
+
+        if not aggregated:
+            return {"created": 0, "skipped": 0, "error": "No child serials resolved from blocks"}
+
+        asn_svc = AsnOrderService(self.db)
+        asn_payload = {
+            "order_date": now,
+            "delivery_date": now,
+            "warehouse_id_to": target_warehouse_id,
+            "asn_type": asn_type,
+            "items": [
+                {
+                    "item_id": bucket["item_id"],
+                    "qty": len(bucket["serials"]),
+                    "uom": "pcs",
+                    "serial_nos": bucket["serials"],
+                }
+                for bucket in aggregated.values()
+            ],
+        }
+        if asn_type == "internal_transfer":
+            asn_payload["warehouse_id_from"] = source_warehouse_id
+        asn = asn_svc.create(asn_payload, organization_id, user_id)
+        asn_id = UUID(str(asn["id"]))
+        asn_svc.update_status(asn_id, "confirmed", organization_id, user_id)
+
+        inbound = InboundService(self.db)
+        session = inbound.start_session(
+            worker_id=user_id,
+            organization_id=organization_id,
+            warehouse_id=target_warehouse_id,
+            dock_location="DOCK-A",
+            asn_order_id=asn_id,
+        )
+        session_id = UUID(session["id"])
+        all_serials = [s for bucket in aggregated.values() for s in bucket["serials"]]
+        for serial in all_serials:
+            inbound.record_scan(session_id, serial, user_id, organization_id)
+        slip = inbound.end_session(session_id, user_id, organization_id)
+
+        return {
+            "created": len(aggregated),
+            "skipped": 0,
+            "received_serial_count": len(all_serials),
+            "asn_no": asn.get("asn_order_no"),
+            "slip_number": slip.get("slip_number"),
+        }
+
+    def _wait_for_receive_block(
+        self, block_id: UUID, organization_id: UUID, timeout_s: int = 180
+    ):
+        """Poll a queued QR block until it completes or fails."""
+        import time
+
+        from app.services.qr_product_service import QRProductService
+
+        svc = QRProductService(self.db)
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            self.db.expire_all()
+            block = svc.get_block(block_id, organization_id)
+            if block.status == "completed":
+                return block
+            if block.status == "failed":
+                raise RuntimeError(
+                    f"Block {block_id} failed: {getattr(block, 'error_message', None)}"
+                )
+            time.sleep(3)
+        raise TimeoutError(f"Block {block_id} did not complete within {timeout_s}s")
+
+    def _resolve_receive_block_children(self, block, organization_id):
+        """Return (item_id, child_serials) for a completed QR block."""
+        from app.models.item import Item
+        from app.services.qseal_service import QSealService
+
+        qseal = QSealService(self.db)
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.organization_id == organization_id,
+                Item.qr_product_id == block.product_id,
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if item is None:
+            return None, []
+
+        parents = qseal.get_parents_by_block(block.id, organization_id, 1, 100)
+        serials: list[str] = []
+        for node in (parents or {}).get("nodes", []):
+            # _to_response_dict may return node ids as UUID objects — normalize.
+            parent_id = UUID(str(node["id"]))
+            detail = qseal.get_parent_with_linked_units(parent_id, organization_id)
+            for unit in detail.get("linked_units", []):
+                serial = unit.get("serial_number")
+                if serial:
+                    serials.append(serial)
+        return item.id, list(dict.fromkeys(serials))
+
+    def _resolve_receive_item(self, cfg: dict, organization_id: UUID):
+        """Resolve a configured item line to an Item (by id, then sku/code)."""
+        from sqlalchemy import or_
+
+        from app.models.item import Item
+
+        item = None
+        if cfg.get("item_id"):
+            try:
+                # model_dump() keeps item_id as a UUID, but it may also arrive
+                # as a string — normalize before constructing the UUID.
+                item_id = UUID(str(cfg["item_id"]))
+                item = (
+                    self.db.query(Item)
+                    .filter(
+                        Item.organization_id == organization_id,
+                        Item.deleted_at.is_(None),
+                        Item.id == item_id,
+                    )
+                    .first()
+                )
+            except (ValueError, AttributeError, TypeError):
+                item = None
+        if item is None and cfg.get("sku"):
+            sku = str(cfg["sku"]).strip()
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                    or_(Item.sku == sku, Item.item_code == sku),
+                )
+                .first()
+            )
+        return item
+
+    def _next_batch_number(self, base: str, organization_id: UUID) -> str:
+        """Append the next sequence to a base batch (e.g. BASE-1, BASE-2)."""
+        from app.models.qr_block import QRBlock
+
+        prefix = f"{base}-"
+        rows = (
+            self.db.query(QRBlock.batch)
+            .filter(
+                QRBlock.organization_id == organization_id,
+                QRBlock.batch.like(f"{prefix}%"),
+            )
+            .all()
+        )
+        max_seq = 0
+        for (batch,) in rows:
+            suffix = (batch or "").removeprefix(prefix)
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+        return f"{base}-{max_seq + 1}"
 
     def _seed_item_groups(
         self,

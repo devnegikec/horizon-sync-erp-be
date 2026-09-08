@@ -42,6 +42,44 @@ class FeatureCatalogResponse(BaseModel):
     features: list[FeatureCatalogItem]
 
 
+class ReceiveAsnItemConfig(BaseModel):
+    """A single item line for the 'receive_asn' feature."""
+
+    item_id: UUID | None = Field(
+        default=None, description="Item UUID (resolved by sku if omitted)"
+    )
+    sku: str | None = Field(
+        default=None, description="Item SKU/code used to resolve the item"
+    )
+    batch: str = Field(
+        default="", description="Base batch number; a sequence suffix is appended automatically"
+    )
+    quantity: int = Field(default=10, ge=1, le=5000)
+    master_pack_size: int = Field(default=2, ge=1)
+
+
+class ReceiveAsnOptions(BaseModel):
+    """Options for the 'receive_asn' data-sync feature (receive_all flow)."""
+
+    mode: str = Field(
+        default="items",
+        description="'items' uses configured item lines; 'block_ids' receives existing blocks",
+    )
+    items: list[ReceiveAsnItemConfig] = Field(default_factory=list)
+    block_ids: list[str] = Field(default_factory=list)
+    qr_type: str = Field(default="dynamic", description="'dynamic' or 'static'")
+    asn_type: str = Field(
+        default="purchase",
+        description="'purchase' | 'stock_receipt' | 'internal_transfer'",
+    )
+    source_warehouse_id: UUID | None = Field(
+        default=None, description="Source warehouse (required for internal_transfer)"
+    )
+    target_warehouse_id: UUID | None = Field(
+        default=None, description="Target warehouse"
+    )
+
+
 class DataSyncRequest(BaseModel):
     """Request body for on-demand data sync."""
 
@@ -58,6 +96,15 @@ class DataSyncRequest(BaseModel):
     warehouse_id: UUID | None = Field(
         default=None,
         description="Target warehouse for the 'stock' feature",
+    )
+    stock_boost_qty: int | None = Field(
+        default=None,
+        gt=0,
+        description="Quantity to add to every item's stock level ('stock_boost' feature)",
+    )
+    receive_asn: ReceiveAsnOptions | None = Field(
+        default=None,
+        description="Options for the 'receive_asn' feature (create ASN + receiving slip from QR blocks)",
     )
 
 
@@ -124,6 +171,10 @@ async def sync_data_features(
         created_by=str(current_user.id),
         base_currency=request.base_currency.strip().upper() or "USD",
         warehouse_id=request.warehouse_id,
+        stock_boost_qty=request.stock_boost_qty,
+        receive_asn_options=(
+            request.receive_asn.model_dump() if request.receive_asn else None
+        ),
     )
 
     logger.info(

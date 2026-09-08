@@ -31,12 +31,18 @@ from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
 from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
-from app.services.bin_reservation_service import BinReservationService
+from app.services.bin_reservation_service import (
+    DEFAULT_TTL_SECONDS,
+    BinReservationService,
+)
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 
 #: Serial statuses that must NOT be picked (WF-014 / EX-005 / EX-006 / ALT-003).
 UNAVAILABLE_SERIAL_STATUSES: frozenset[str] = frozenset({"consumed", "blocked"})
+
+#: Short TTL (seconds) for unassigned (worker-less) pick-list bin reservations.
+UNASSIGNED_RESERVATION_TTL_SECONDS: int = 60
 
 
 @dataclass
@@ -433,6 +439,87 @@ class PickListService:
         self.db.refresh(pick_list)
         return pick_list
 
+    def reserve_pick_bins(self, pick_list: PickList, org_id: UUID) -> int:
+        """Reserve the resolved bins of a pick list for its assigned worker.
+
+        Order-driven pick lists reserve each assigned bin so two pick lists
+        (or workers) cannot be directed to the same bin. Assigned workers hold
+        the default TTL; unassigned pick lists hold a short TTL with no worker
+        so the bin is not silently double-allocated while the task is being
+        claimed (requirement A1). Returns the number of bins reserved.
+        """
+        from app.core.exceptions import StateError
+
+        worker_id = pick_list.assigned_to
+        ttl = (
+            DEFAULT_TTL_SECONDS
+            if worker_id is not None
+            else UNASSIGNED_RESERVATION_TTL_SECONDS
+        )
+        reserved = 0
+        seen: set[UUID] = set()
+        for item in pick_list.items:
+            if item.bin_location_id is None or item.bin_location_id in seen:
+                continue
+            seen.add(item.bin_location_id)
+            try:
+                self.reservation_service.reserve(
+                    bin_id=item.bin_location_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                    task_id=pick_list.id,
+                    task_type="pick",
+                    ttl_seconds=ttl,
+                )
+                reserved += 1
+            except StateError:
+                # Bin was claimed concurrently; keep the item as-is and let the
+                # scan flow re-validate the bin assignment.
+                continue
+        return reserved
+
+    def release_pick_reservations(self, pick_list: PickList, org_id: UUID) -> int:
+        """Release all active bin reservations held for a pick list (A1)."""
+        return self.reservation_service.release_for_task(
+            task_id=pick_list.id, org_id=org_id
+        )
+
+    def _reconcile_order(self, order_id: UUID, org_id: UUID) -> None:
+        """Mark an outbound order completed once all its pick lists are in a
+        successful terminal state (requirement A4)."""
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        successful = {
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+        }
+        siblings = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id == order_id,
+            )
+            .all()
+        )
+        if not siblings or not all(pl.status in successful for pl in siblings):
+            return
+
+        order = (
+            self.db.query(OutboundOrder)
+            .filter(
+                OutboundOrder.id == order_id,
+                OutboundOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
+            order.status = OutboundOrderStatus.COMPLETED
+
     # ------------------------------------------------------------------
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
     # ------------------------------------------------------------------
@@ -796,7 +883,7 @@ class PickListService:
                     user_id=worker_id,
                     commit=False,
                 )
-                self.reservation_service.release(
+                self.reservation_service.release_bin(
                     bin_id=matching_pick_item.bin_location_id,
                     worker_id=worker_id,
                     org_id=org_id,
@@ -919,6 +1006,14 @@ class PickListService:
         pick_list.status = PickListStatus.PICK_COMPLETE
         pick_list.completed_at = datetime.now(UTC)
 
+        # Reconcile the upstream order when every pick list is in a successful
+        # terminal state (requirement A4).
+        if pick_list.reference_type == "outbound_order" and pick_list.reference_id:
+            self._reconcile_order(pick_list.reference_id, org_id)
+
+        # Release bin reservations for this pick list (requirement A1).
+        self.release_pick_reservations(pick_list, org_id)
+
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
@@ -980,6 +1075,9 @@ class PickListService:
             item.picked_qty = Decimal("0")
 
         pick_list.status = PickListStatus.CANCELLED
+
+        # Release bin reservations for this pick list (requirement A1).
+        self.release_pick_reservations(pick_list, org_id)
 
         self.db.commit()
         self.db.refresh(pick_list)
@@ -1194,9 +1292,25 @@ class PickListService:
 
         current = now or datetime.now(UTC)
         age_minutes = max(0, int((current - created).total_seconds() // 60))
+
+        # "Aged" only applies to open, actionable tasks. A pick list that has
+        # reached a terminal status is never flagged, regardless of how long
+        # it took to complete.
+        terminal = (
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+            PickListStatus.CANCELLED,
+        )
+        is_aging = (
+            age_minutes >= effective
+            and getattr(pl, "status", None) not in terminal
+        )
         return {
             "age_minutes": age_minutes,
-            "is_aging": age_minutes >= effective,
+            "is_aging": is_aging,
         }
 
     # ------------------------------------------------------------------
