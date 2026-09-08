@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 
 from qr_helpers import api_get, api_post, login
 
+# Default receiving warehouse (EcityTTK_prestige for the TTK-Prestige org),
+# kept in sync with receive_block.py.
 DEFAULT_WAREHOUSE_ID = os.environ.get(
     "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
 )
