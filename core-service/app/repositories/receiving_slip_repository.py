@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+from app.models.vehicle import VehicleArrival
 
 
 class ReceivingSlipRepository:
@@ -89,7 +90,9 @@ class ReceivingSlipRepository:
     # ADD ITEM
     # ------------------------------------------------------------------
 
-    def add_item(self, slip_id: UUID, item_data: dict) -> ReceivingSlipItem:
+    def add_item(
+        self, slip_id: UUID, item_data: dict, *, commit: bool = True
+    ) -> ReceivingSlipItem:
         """
         Add a line item to a receiving slip.
 
@@ -98,14 +101,17 @@ class ReceivingSlipRepository:
             item_data: Dictionary containing item fields
                        (organization_id, sku, batch_number, quantity,
                         box_count, flag, notes).
+            commit: When False, the item is only staged (no commit/refresh) so
+                callers can batch many line inserts into a single transaction.
 
         Returns:
             Created ReceivingSlipItem object.
         """
         item = ReceivingSlipItem(slip_id=slip_id, **item_data)
         self.db.add(item)
-        self.db.commit()
-        self.db.refresh(item)
+        if commit:
+            self.db.commit()
+            self.db.refresh(item)
         return item
 
     # ------------------------------------------------------------------
@@ -331,7 +337,9 @@ class ReceivingSlipRepository:
             self.db.query(ReceivingSlip)
             .options(
                 joinedload(ReceivingSlip.asn_order),
-                joinedload(ReceivingSlip.items),  # Eager-load to prevent N+1
+                joinedload(ReceivingSlip.vehicle_arrival).joinedload(
+                    VehicleArrival.vehicle
+                ),
             )
             .filter(
                 ReceivingSlip.organization_id == org_id,
@@ -359,3 +367,41 @@ class ReceivingSlipRepository:
         )
 
         return slips, total
+
+    def get_status_counts(
+        self,
+        org_id: UUID,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """Count receiving slips by status, scoped to the same filters as the
+        list query (excluding ``status`` itself so every bucket is populated).
+        """
+        from sqlalchemy import func
+
+        query = self.db.query(
+            ReceivingSlip.status, func.count(ReceivingSlip.id)
+        ).filter(ReceivingSlip.organization_id == org_id)
+        if filters:
+            if filters.get("warehouse_id"):
+                query = query.filter(
+                    ReceivingSlip.warehouse_id == filters["warehouse_id"]
+                )
+            if filters.get("session_id"):
+                query = query.filter(ReceivingSlip.session_id == filters["session_id"])
+
+        rows = query.group_by(ReceivingSlip.status).all()
+
+        counts = {
+            "total": 0,
+            "pending_review": 0,
+            "pending_putaway": 0,
+            "putaway_in_progress": 0,
+            "putaway_complete": 0,
+            "rejected": 0,
+        }
+        for status_value, count in rows:
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts

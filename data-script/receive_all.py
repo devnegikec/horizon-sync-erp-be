@@ -17,10 +17,9 @@ Usage:
     python3 data-script/receive_all.py --block-ids <uuid1>,<uuid2>,...
 
 Config (env vars, all optional):
-    BLOCK_ITEM_COUNT    number of latest items to process   (default 10)
-    BLOCK_QUANTITY      units per block                    (default 12)
-    MASTER_PACK_SIZE    units per master-pack parent       (default 4)
-    BLOCK_POLL_TIMEOUT_S seconds to wait per block         (default 180)
+    BLOCK_ITEM_COUNT      number of latest items to process   (default 10)
+    MASTER_BOX_COUNT      number of master boxes per item     (default 3)
+    BLOCK_POLL_TIMEOUT_S  seconds to wait per block           (default 180)
 """
 
 from __future__ import annotations
@@ -40,8 +39,7 @@ DEFAULT_WAREHOUSE_ID = os.environ.get(
     "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
 )
 ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "10"))
-QUANTITY = int(os.environ.get("BLOCK_QUANTITY", "12"))
-MASTER_PACK_SIZE = int(os.environ.get("MASTER_PACK_SIZE", "4"))
+MASTER_BOX_COUNT = int(os.environ.get("MASTER_BOX_COUNT", "3"))
 QR_TYPE = os.environ.get("QR_TYPE", "dynamic")
 POLL_TIMEOUT_S = int(os.environ.get("BLOCK_POLL_TIMEOUT_S", "180"))
 
@@ -101,18 +99,38 @@ def resolve_block_children(block: dict, token: str) -> tuple[dict, list[str]]:
     return item, child_serials
 
 
-def create_block_for_item(qr_product_id: str, index: int, token: str) -> dict:
+def get_items_per_master_pack(item: dict) -> int | None:
+    """Return ``items_per_master_pack`` from the item's packaging units."""
+    for pu in item.get("packaging_units") or []:
+        value = pu.get("items_per_master_pack")
+        if value:
+            return int(value)
+    return None
+
+
+def create_block_for_item(
+    qr_product_id: str, index: int, token: str, item: dict
+) -> dict:
+    items_per_pack = get_items_per_master_pack(item)
+    if not items_per_pack:
+        raise RuntimeError("item has no items_per_master_pack on its packaging units")
+    master_pack_size = items_per_pack
+    quantity = MASTER_BOX_COUNT * master_pack_size
     payload = {
         "batch": unique_batch(index),
-        "quantity": QUANTITY,
+        "quantity": quantity,
         "qr_type": QR_TYPE,
         "qr_image": False,
         "master_pack_enabled": True,
-        "master_pack_size": MASTER_PACK_SIZE,
+        "master_pack_size": master_pack_size,
     }
     block = api_post(f"/qr-products/{qr_product_id}/blocks", token, payload)
     block_id = block["id"]
-    print(f"    ↳ block {block_id} queued (batch={payload['batch']})")
+    print(
+        f"    ↳ block {block_id} queued "
+        f"(batch={payload['batch']} boxes={MASTER_BOX_COUNT} "
+        f"per_pack={master_pack_size} qty={quantity})"
+    )
     return wait_for_completion(block_id, token)
 
 
@@ -165,7 +183,7 @@ def main() -> None:
                 print("    ↳ SKIP: no linked QR product")
                 continue
             try:
-                block = create_block_for_item(qr_product_id, idx, token)
+                block = create_block_for_item(qr_product_id, idx, token, detail)
             except (RuntimeError, TimeoutError) as exc:
                 print(f"    ↳ FAILED: {exc}")
                 continue

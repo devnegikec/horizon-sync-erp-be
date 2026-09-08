@@ -314,6 +314,27 @@ class ReceivingSlipResponse(BaseModel):
     updated_at: str | None = None
 
 
+class ReceivingSlipListItem(BaseModel):
+    """Lightweight receiving slip entry for list responses (no item groups)."""
+
+    id: str
+    organization_id: str
+    slip_number: str
+    session_id: str
+    warehouse_id: str
+    asn_order_id: str | None = None
+    asn_order_no: str | None = None
+    vehicle_arrival_id: str | None = None
+    vehicle_no: str | None = None
+    status: str
+    total_boxes: int
+    total_items: int
+    rejection_reason: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class FlaggedItemResponse(BaseModel):
     """Response schema for a flagged receiving slip line item."""
 
@@ -428,11 +449,23 @@ class ReceivingSlipPagination(BaseModel):
     has_prev: bool
 
 
-class ReceivingSlipListResponse(BaseModel):
-    """Paginated list of receiving slips."""
+class ReceivingSlipStatusCounts(BaseModel):
+    """Status distribution for receiving slips in the current scope."""
 
-    receiving_slips: list[ReceivingSlipResponse]
+    total: int = 0
+    pending_review: int = 0
+    pending_putaway: int = 0
+    putaway_in_progress: int = 0
+    putaway_complete: int = 0
+    rejected: int = 0
+
+
+class ReceivingSlipListResponse(BaseModel):
+    """Paginated list of receiving slips with status statistics."""
+
+    receiving_slips: list[ReceivingSlipListItem]
     pagination: ReceivingSlipPagination
+    status_counts: ReceivingSlipStatusCounts
 
 
 # ------------------------------------------------------------------
