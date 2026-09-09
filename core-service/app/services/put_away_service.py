@@ -63,9 +63,12 @@ class PutAwayService:
         )
 
     def mark_slip_putaway_complete(self, slip_id: UUID) -> bool:
-        """Advance a pending_putaway receiving slip to putaway_complete."""
+        """Advance a pending_putaway / putaway_in_progress slip to putaway_complete."""
         slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
-        if slip is None or slip.status != "pending_putaway":
+        if slip is None or slip.status not in (
+            "pending_putaway",
+            "putaway_in_progress",
+        ):
             return False
         slip.status = "putaway_complete"
         slip.updated_at = datetime.now(UTC)
@@ -521,6 +524,12 @@ class PutAwayService:
         if worker_id is not None:
             put_away_list.assigned_to = worker_id
 
+        # Move the slip out of pending_putaway. With items to work it becomes
+        # putaway_in_progress; with nothing eligible it is already complete so
+        # it does not stay stuck with no pending item to trigger completion.
+        slip.status = "putaway_in_progress" if put_away_items else "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+
         self.db.commit()
 
         # Create a worker task via TaskService if worker_id is provided
@@ -648,7 +657,9 @@ class PutAwayService:
         existing_list.completed_at = None
         if worker_id is not None:
             existing_list.assigned_to = worker_id
-        slip.status = "pending_putaway"
+        # A list now exists with pending work again — the slip is back in
+        # progress rather than awaiting list generation.
+        slip.status = "putaway_in_progress"
         self.db.flush()
         self._optimize_item_routing(new_items)
         self.db.commit()
@@ -1266,6 +1277,18 @@ class PutAwayService:
         if put_away_list is None:
             return
 
+        # Lock the slip row so concurrent completions of different lists for
+        # the same slip serialize here. Without it, two workers can each see
+        # the other's list still pending and both skip marking the slip done.
+        slip = None
+        if put_away_list.receiving_slip_id:
+            slip = (
+                self.db.query(ReceivingSlip)
+                .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
+                .with_for_update()
+                .first()
+            )
+
         # Count pending items
         pending_count = (
             self.db.query(func.count(PutAwayListItem.id))
@@ -1282,22 +1305,35 @@ class PutAwayService:
             put_away_list.completed_at = datetime.now(UTC)
             self.db.flush()
 
-            # Update receiving slip to PUTAWAY_COMPLETE
-            if put_away_list.receiving_slip_id:
-                slip = (
-                    self.db.query(ReceivingSlip)
-                    .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
-                    .first()
-                )
-                if slip and slip.status == "pending_putaway":
-                    slip.status = "putaway_complete"
-                    self.db.flush()
-                    # Put-away is the terminal receiving step — refresh ASN
-                    # delivered quantities and delivery status so the ASN
-                    # closes out as delivered / partially_delivered.
-                    if slip.asn_order_id:
-                        from app.services.inbound_service import InboundService
+            # Update receiving slip to PUTAWAY_COMPLETE only once every
+            # put-away list for the slip is complete (multi-worker splits).
+            if slip is not None:
+                remaining = (
+                    self.db.query(func.count(PutAwayListItem.id))
+                    .join(
+                        PutAwayList, PutAwayList.id == PutAwayListItem.put_away_list_id
+                    )
+                    .filter(
+                        PutAwayList.receiving_slip_id == slip.id,
+                        PutAwayList.reference_type == "receiving_slip",
+                        PutAwayListItem.status == "pending",
+                    )
+                    .scalar()
+                ) or 0
 
-                        InboundService(self.db)._sync_asn_delivered_qty(
-                            slip.asn_order_id, slip.organization_id
-                        )
+                if remaining == 0:
+                    if slip.status in (
+                        "pending_putaway",
+                        "putaway_in_progress",
+                    ):
+                        slip.status = "putaway_complete"
+                        self.db.flush()
+                        # Put-away is the terminal receiving step — refresh ASN
+                        # delivered quantities and delivery status so the ASN
+                        # closes out as delivered / partially_delivered.
+                        if slip.asn_order_id:
+                            from app.services.inbound_service import InboundService
+
+                            InboundService(self.db)._sync_asn_delivered_qty(
+                                slip.asn_order_id, slip.organization_id
+                            )
