@@ -830,7 +830,7 @@ class FloorPlanGeneratorService:
         Renames full_path to avoid unique-constraint collisions with
         newly generated locations, and sets is_active=False.
 
-        Non-pickable system bins (RECEIVING-STAGE, HOLD, QUARANTINE, ...) are
+        Non-pickable system bins (HOLD, QUARANTINE, ...) are
         deliberately preserved — they are logical staging locations, not part of
         the physical layout, and must keep receiving stock after a layout apply.
 

@@ -10,6 +10,7 @@ from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.asn_order import AsnOrder, AsnOrderItem
 from app.models.base import AsnOrderStatus
 from app.repositories.asn_order_repository import AsnOrderRepository
+from app.constants.constants_asn_orders import STOCK_RECEIPT, ASN_ORDER, INTERNAL_TRANSFER
 
 
 class AsnOrderService:
@@ -28,27 +29,27 @@ class AsnOrderService:
             from app.services.document_numbering_service import DocumentNumberingService
 
             payload["asn_order_no"] = DocumentNumberingService(self.db).get_next_number(
-                organization_id, "asn_order"
+                organization_id, ASN_ORDER
             )
 
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = AsnOrderStatus(payload["status"])
 
-        # Default ASN type; internal transfers require a source warehouse.
+        # Default the ASN type to a stock receipt (purchase) when omitted.
         if not payload.get("asn_type"):
-            payload["asn_type"] = "purchase"
+            payload["asn_type"] = STOCK_RECEIPT
 
         # Stock Receipt ASNs arrive from manufacturing units (which are not
         # warehouses in the system), so they only carry a target warehouse.
-        if payload["asn_type"] == "stock_receipt":
+        if payload["asn_type"] == STOCK_RECEIPT:
             payload["warehouse_id_from"] = None
             if not payload.get("warehouse_id_to"):
                 raise ValueError(
                     "warehouse_id_to (target warehouse) is required for a "
                     "stock receipt ASN"
                 )
-        elif payload["asn_type"] == "internal_transfer" and not payload.get(
+        elif payload["asn_type"] == INTERNAL_TRANSFER and not payload.get(
             "warehouse_id_from"
         ):
             raise ValueError(

@@ -37,6 +37,8 @@ from app.services.bin_reservation_service import (
 )
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+from app.constants.constants_global import *
+from app.constants.constants_pick_list_service import PICK_LIST_NO
 
 #: Serial statuses that must NOT be picked (WF-014 / EX-005 / EX-006 / ALT-003).
 UNAVAILABLE_SERIAL_STATUSES: frozenset[str] = frozenset({"consumed", "blocked"})
@@ -75,20 +77,20 @@ class PickListService:
         self.reservation_service = BinReservationService(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
-        payload = {k: v for k, v in data.items() if k != "items"}
-        payload["organization_id"] = organization_id
-        payload["created_by"] = user_id
-        payload["updated_by"] = user_id
+        payload = {k: v for k, v in data.items() if k != ITEMS}
+        payload[ORGANIZATION_ID] = organization_id
+        payload[CREATED_BY] = user_id
+        payload[UPDATED_BY] = user_id
         # Auto-generate pick_list_no if not provided
-        if not payload.get("pick_list_no"):
+        if not payload.get(PICK_LIST_NO):
             from app.services.document_numbering_service import DocumentNumberingService
 
-            payload["pick_list_no"] = DocumentNumberingService(self.db).get_next_number(
+            payload[PICK_LIST_NO] = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "pick_list"
             )
-        if payload.get("status"):
-            payload["status"] = PickListStatus(payload["status"])
-        items = data.get("items") or []
+        if payload.get(STATUS):
+            payload[STATUS] = PickListStatus(payload[STATUS])
+        items = data.get(ITEMS) or []
         item_list = [dict(it) for it in items]
         pl = self.repo.create(payload, item_list)
         return self._to_response(pl)
@@ -120,12 +122,12 @@ class PickListService:
         )
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
-            "page": page,
-            "page_size": page_size,
-            "total_items": total,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
+            PAGE: page,
+            PAGE_SIZE: page_size,
+            TOTAL_ITEMS: total,
+            TOTAL_PAGES: total_pages,
+            HAS_NEXT: page < total_pages,
+            HAS_PREV: page > 1,
         }
         aging_threshold = self._pick_config(organization_id).get_int(
             "aging_threshold_minutes"
@@ -139,9 +141,9 @@ class PickListService:
         if not pl:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
         payload = {k: v for k, v in data.items() if v is not None}
-        if payload.get("status"):
-            payload["status"] = PickListStatus(payload["status"])
-        payload["updated_by"] = user_id
+        if payload.get(STATUS):
+            payload[STATUS] = PickListStatus(payload[STATUS])
+        payload[UPDATED_BY] = user_id
         self.repo.update(pl, payload)
         self.db.refresh(pl)
         return self._to_response(pl)

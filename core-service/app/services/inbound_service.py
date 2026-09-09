@@ -1378,9 +1378,8 @@ class InboundService:
                 synchronize_session="fetch",
             )
         )
-        # Approve them — stock enters for items already binned
+        # Approve them — stock enters at put-away completion, not here.
         stock_entered = tracking_svc.approve_items(slip_id, approved_by=worker_id)
-        self._stage_approved_receipt_lines(slip, organization_id)
         logger.info(
             "Tracking: %d records linked to slip %s, %d entered stock",
             trackings_updated,
@@ -1394,19 +1393,22 @@ class InboundService:
         # before the slip was generated), go straight to PUTAWAY_COMPLETE and
         # skip generating a duplicate put-away list.
         # ------------------------------------------------------------------
-        from app.services.put_away_service import PutAwayService
-
-        put_away_service = PutAwayService(self.db)
-        # approve_slip deletes and recreates receiving_slip_items (Step 3),
-        # which resets put_away_status to "pending". Re-run reconciliation so
-        # items already binned via direct put-away are linked again before we
-        # decide the slip status.
-        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
-
-        if put_away_service.all_slip_items_put_away(slip_id):
-            updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
-        else:
-            updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
+        # Direct put-away is removed. A slip with accepted (ok) lines enters
+        # pending_putaway for list-based put-away; a slip with no accepted
+        # lines has nothing to put away and goes straight to complete so it
+        # cannot get stuck pending.
+        has_putaway_lines = (
+            self.db.query(ReceivingSlipItem.id)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .first()
+            is not None
+        )
+        updated_slip = self.slip_repo.update_status(
+            slip_id, "pending_putaway" if has_putaway_lines else "putaway_complete"
+        )
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status
@@ -2517,31 +2519,6 @@ class InboundService:
         # Persist the hold/excess classification and exception linkage before
         # any downstream queries or a request-level rollback can discard it.
         self.db.flush()
-
-        # Flow B: link items already put away via direct put-away (match by QR)
-        from app.services.put_away_service import PutAwayService
-
-        put_away_service = PutAwayService(self.db)
-        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
-
-        # ── Direct put-away already completed before receiving? ──
-        # If every accepted item is already binned, skip the review/approve
-        # cycle entirely: mark the slip PUTAWAY_COMPLETE and advance the ASN so
-        # the flow ends at the expected terminal state immediately.
-        if put_away_service.all_slip_items_put_away(slip.id):
-            slip = self.slip_repo.update_status(slip.id, "putaway_complete")
-            if slip is not None and slip.asn_order_id:
-                self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
-                from app.services.inbound_short_balance_service import (
-                    InboundShortBalanceService,
-                )
-
-                InboundShortBalanceService(self.db).refresh_for_asn(
-                    slip.asn_order_id, organization_id, slip.id
-                )
-            # Create a material_receipt stock entry for ERP traceability.
-            if slip is not None:
-                self._create_receiving_stock_entry(slip, organization_id)
 
         self.db.commit()
         return slip
