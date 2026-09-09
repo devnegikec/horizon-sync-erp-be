@@ -1249,9 +1249,24 @@ class InboundService:
             lambda: {"eaches_qty": 0, "box_count": 0}
         )
 
+        # Batch-load packaging units referenced by this slip's scan items.
+        packaging_unit_ids = {
+            scan_item.packaging_unit_id
+            for scan_item in scan_items
+            if scan_item.packaging_unit_id is not None
+        }
+        packaging_units: dict[UUID, ItemPackagingUnit] = {}
+        if packaging_unit_ids:
+            packaging_units = {
+                pu.id: pu
+                for pu in self.db.query(ItemPackagingUnit)
+                .filter(ItemPackagingUnit.id.in_(packaging_unit_ids))
+                .all()
+            }
+
         for scan_item in scan_items:
             if scan_item.packaging_unit_id is not None:
-                pu = self.db.get(ItemPackagingUnit, scan_item.packaging_unit_id)
+                pu = packaging_units.get(scan_item.packaging_unit_id)
                 if pu is None or not pu.is_active:
                     raise HTTPException(
                         status_code=422,
@@ -1290,7 +1305,7 @@ class InboundService:
                 "box_count": agg["box_count"],
                 "flag": "ok",
             }
-            self.slip_repo.add_item(slip_id, item_data)
+            self.slip_repo.add_item(slip_id, item_data, commit=False)
             total_eaches += agg["eaches_qty"]
 
         # Re-add protected items exactly as they were before conversion.
@@ -1302,10 +1317,15 @@ class InboundService:
                     "organization_id": organization_id,
                     **protected,
                 },
+                commit=False,
             )
             replacement_items[
                 (replacement.sku, replacement.batch_number, replacement.flag)
             ] = replacement
+
+        # Flush the regenerated lines so their new primary keys are available
+        # for the exception-link repair below (single flush for all inserts).
+        self.db.flush()
 
         # The line rows have new primary keys after regeneration.  Repair
         # exception foreign keys so evidence, audit events and disposition
@@ -1466,22 +1486,36 @@ class InboundService:
             .all()
         )
 
+        # Batch-load catalog items once instead of querying per slip line.
+        skus = [slip_item.sku for slip_item in slip_items if slip_item.flag == "ok"]
+        items_by_key: dict[str, Item] = {}
+        if skus:
+            catalog_items = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == organization_id,
+                    or_(
+                        Item.item_code.in_(skus),
+                        Item.sku.in_(skus),
+                        Item.gtin.in_(skus),
+                    ),
+                )
+                .all()
+            )
+            for catalog_item in catalog_items:
+                for key in (
+                    catalog_item.item_code,
+                    catalog_item.sku,
+                    catalog_item.gtin,
+                ):
+                    if key:
+                        items_by_key.setdefault(key, catalog_item)
+
         resolved: list[tuple[UUID, Decimal, str | None, str | None]] = []
         for slip_item in slip_items:
             if slip_item.flag != "ok":
                 continue
-            item = (
-                self.db.query(Item)
-                .filter(
-                    (
-                        (Item.item_code == slip_item.sku)
-                        | (Item.sku == slip_item.sku)
-                        | (Item.gtin == slip_item.sku)
-                    ),
-                    Item.organization_id == organization_id,
-                )
-                .first()
-            )
+            item = items_by_key.get(slip_item.sku)
             if item is None:
                 logger.warning(
                     "Receiving slip %s: no item matched for sku %s; skipping stock entry line.",
@@ -1579,7 +1613,13 @@ class InboundService:
             .filter(
                 ReceivingSlip.asn_order_id == asn_order_id,
                 ReceivingSlip.organization_id == organization_id,
-                ReceivingSlip.status.in_(["pending_putaway", "putaway_complete"]),
+                ReceivingSlip.status.in_(
+                    [
+                        "pending_putaway",
+                        "putaway_in_progress",
+                        "putaway_complete",
+                    ]
+                ),
             )
             .all()
         )
@@ -1665,7 +1705,13 @@ class InboundService:
             .filter(
                 ReceivingSlip.asn_order_id == asn_order_id,
                 ReceivingSlip.organization_id == organization_id,
-                ReceivingSlip.status.in_(["pending_putaway", "putaway_complete"]),
+                ReceivingSlip.status.in_(
+                    [
+                        "pending_putaway",
+                        "putaway_in_progress",
+                        "putaway_complete",
+                    ]
+                ),
             )
             .count()
         )
@@ -2230,6 +2276,92 @@ class InboundService:
                 note=payload.get("note"),
             )
 
+    def _stage_approved_receipt_lines(self, slip, organization_id: UUID) -> None:
+        """Book normal approved receipt quantities into RECEIVING-STAGE.
+
+        This deliberately uses the regenerated receipt-line quantity (Eaches),
+        not the raw scanner quantity. Direct put-away rows are already in a
+        final bin and are therefore excluded.
+        """
+        from decimal import Decimal
+
+        from app.models.item import Item
+        from app.services.bin_stock_service import BinStockService
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        stage = ScannedItemTrackingService(self.db)._get_or_create_system_bin(
+            slip.warehouse_id, organization_id, "RECEIVING-STAGE"
+        )
+
+        lines = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip.id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        )
+
+        # Batch-load tracking rows and catalog items to avoid per-line queries.
+        # Trackings are matched to slip lines by batch_number (not the QR
+        # identifier), which is how the slip lines were aggregated.
+        trackings_by_batch: dict[str, list[ScannedItemTracking]] = defaultdict(list)
+        if lines:
+            session_trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(ScannedItemTracking.scan_session_id == slip.session_id)
+                .all()
+            )
+            for tracking in session_trackings:
+                trackings_by_batch[tracking.batch_number].append(tracking)
+
+        items_by_key: dict[str, Item] = {}
+        skus = [line.sku for line in lines if line.sku]
+        if skus:
+            catalog_items = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.sku.in_(skus),
+                        Item.gtin.in_(skus),
+                        Item.item_code.in_(skus),
+                    ),
+                )
+                .all()
+            )
+            for catalog_item in catalog_items:
+                for key in (
+                    catalog_item.sku,
+                    catalog_item.gtin,
+                    catalog_item.item_code,
+                ):
+                    if key:
+                        items_by_key.setdefault(key, catalog_item)
+
+        bin_stock_service = BinStockService(self.db)
+        for line in lines:
+            trackings = trackings_by_batch.get(line.batch_number, [])
+            if trackings and all(t.putaway_status == "completed" for t in trackings):
+                continue
+            item = items_by_key.get(line.sku)
+            if item is None:
+                raise ValidationError(
+                    f"Cannot stage approved receipt line '{line.sku}': no active item master record"
+                )
+            bin_stock_service.add_stock(
+                stage.id,
+                item.id,
+                Decimal(str(line.quantity)),
+                organization_id,
+                line.batch_number,
+                commit=False,
+            )
+        self.db.commit()
+
     def _generate_receiving_slip(
         self,
         session,
@@ -2419,6 +2551,39 @@ class InboundService:
             "created_at": session.created_at.isoformat()
             if session.created_at
             else None,
+        }
+
+    def _slip_to_summary_dict(self, slip) -> dict:
+        """Convert a ReceivingSlip to a lightweight list-item dict (no groups).
+
+        Relies on the ``asn_order`` and ``vehicle_arrival.vehicle`` relationships
+        eager-loaded by ``ReceivingSlipRepository.list_slips``.
+        """
+        vehicle_no = None
+        if slip.vehicle_arrival_id:
+            vehicle_arrival = slip.vehicle_arrival
+            if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
+                vehicle_no = vehicle_arrival.vehicle.vehicle_no
+
+        return {
+            "id": str(slip.id),
+            "organization_id": str(slip.organization_id),
+            "slip_number": slip.slip_number,
+            "session_id": str(slip.session_id),
+            "warehouse_id": str(slip.warehouse_id),
+            "asn_order_id": str(slip.asn_order_id) if slip.asn_order_id else None,
+            "asn_order_no": slip.asn_order.asn_order_no if slip.asn_order else None,
+            "vehicle_arrival_id": str(slip.vehicle_arrival_id)
+            if slip.vehicle_arrival_id
+            else None,
+            "vehicle_no": vehicle_no,
+            "status": slip.status,
+            "total_boxes": slip.total_boxes,
+            "total_items": slip.total_items,
+            "rejection_reason": slip.rejection_reason,
+            "notes": slip.notes,
+            "created_at": slip.created_at.isoformat() if slip.created_at else None,
+            "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }
 
     def _slip_base_dict(self, slip, groups: list) -> dict:
@@ -2625,29 +2790,29 @@ class InboundService:
             for t in tracks:
                 qseal_track_map[t.id] = t
 
-        # Pre-load children per parent
+        # Pre-load children per parent (single query — avoids N+1 per parent).
         parent_children_map: dict = {}
-        for pid in parent_ids:
+        if parent_ids:
             children = (
                 self.db.query(QSealParameters)
                 .filter(
-                    QSealParameters.parent_id == pid,
+                    QSealParameters.parent_id.in_(parent_ids),
                     QSealParameters.organization_id == slip.organization_id,
                 )
                 .all()
             )
-            parent_children_map[pid] = [
-                {
-                    "id": str(c.id),
-                    "serial_number": c.serial_number,
-                    "dispatch_batch": c.dispatch_batch,
-                    "manufacturing_date": str(c.manufacturing_date)
-                    if c.manufacturing_date
-                    else None,
-                    "expiry_date": str(c.expiry_date) if c.expiry_date else None,
-                }
-                for c in children
-            ]
+            for c in children:
+                parent_children_map.setdefault(c.parent_id, []).append(
+                    {
+                        "id": str(c.id),
+                        "serial_number": c.serial_number,
+                        "dispatch_batch": c.dispatch_batch,
+                        "manufacturing_date": str(c.manufacturing_date)
+                        if c.manufacturing_date
+                        else None,
+                        "expiry_date": str(c.expiry_date) if c.expiry_date else None,
+                    }
+                )
 
         # Build lookup: serial_number → child detail (for merging into items)
         child_detail_map = {}
