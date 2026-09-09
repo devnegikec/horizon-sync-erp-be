@@ -25,6 +25,7 @@ from app.schemas.packing_slip import (
     CreatePackingSlipRequest,
     PackingSlipListResponse,
     PackingSlipResponse,
+    PackingSlipStatusCounts,
 )
 from app.services.packing_slip_service import PackingSlipService
 
@@ -70,7 +71,15 @@ async def list_packing_slips(
         warehouse_id=warehouse_id,
         status=status_filter,
     )
-    return {"packing_slips": items, "pagination": pagination}
+    status_counts = service.get_status_counts(
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+    )
+    return {
+        "packing_slips": items,
+        "pagination": pagination,
+        "status_counts": PackingSlipStatusCounts(**status_counts),
+    }
 
 
 @router.get(

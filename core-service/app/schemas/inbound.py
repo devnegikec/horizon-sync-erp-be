@@ -131,6 +131,15 @@ class ApproveSlipRequest(BaseModel):
     )
 
 
+class ReceivingSlipActionResponse(BaseModel):
+    """Minimal success/failure acknowledgement for slip actions (approve/reject)."""
+
+    success: bool
+    slip_id: UUID
+    status: str
+    message: str
+
+
 class InboundExceptionClassifyRequest(BaseModel):
     """Reason-coded exception classification for a receiving-slip line."""
 

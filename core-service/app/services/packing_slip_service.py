@@ -10,6 +10,7 @@ Lifecycle: draft → loading → dispatched (plus cancelled).
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -176,6 +177,31 @@ class PackingSlipService:
             "has_prev": page > 1,
         }
         return [self._to_list_item(s) for s in slips], pagination
+
+    def get_status_counts(
+        self,
+        org_id: UUID,
+        warehouse_id: UUID | None = None,
+    ) -> dict:
+        """Return per-status counts for packing slips (unfiltered by status)."""
+        query = (
+            self.db.query(PackingSlip.status, func.count(PackingSlip.id))
+            .filter(PackingSlip.organization_id == org_id)
+        )
+        if warehouse_id is not None:
+            query = query.filter(PackingSlip.warehouse_id == warehouse_id)
+        rows = query.group_by(PackingSlip.status).all()
+        counts = {
+            (row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in rows
+        }
+        return {
+            "total": sum(counts.values()),
+            "draft": counts.get("draft", 0),
+            "loading": counts.get("loading", 0),
+            "dispatched": counts.get("dispatched", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
 
     # ------------------------------------------------------------------
     # LIFECYCLE

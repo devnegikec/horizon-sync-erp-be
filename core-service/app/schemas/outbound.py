@@ -317,6 +317,22 @@ class OutboundPickListListItem(BaseModel):
     progress: PickListProgress | None = None
 
 
+class OutboundPickListStatusCounts(BaseModel):
+    """Status distribution for outbound pick lists."""
+
+    total: int = 0
+    draft: int = 0
+    confirmed: int = 0
+    pending_picking: int = 0
+    in_progress: int = 0
+    pick_complete: int = 0
+    completed: int = 0
+    ready_for_dispatch: int = 0
+    in_transit: int = 0
+    delivered: int = 0
+    cancelled: int = 0
+
+
 class OutboundPickListListResponse(BaseModel):
     """Paginated list response for outbound pick lists.
 
@@ -325,6 +341,7 @@ class OutboundPickListListResponse(BaseModel):
 
     pick_lists: list[OutboundPickListListItem]
     pagination: PaginationMeta
+    status_counts: OutboundPickListStatusCounts | None = None
 
 
 # ===========================================
@@ -370,8 +387,40 @@ class OutboundOrderResponse(BaseModel):
     items: list[OutboundOrderItemResponse] = []
 
 
+class OutboundOrderStatusCounts(BaseModel):
+    """Status distribution for outbound orders."""
+
+    total: int = 0
+    draft: int = 0
+    confirmed: int = 0
+    pending_picking: int = 0
+    completed: int = 0
+    cancelled: int = 0
+
+
+class OutboundOrderListItem(BaseModel):
+    """Lightweight list item for an outbound order (no line items).
+
+    Line-item detail is served on demand by ``GET /outbound/orders/{order_id}``.
+    """
+
+    id: str
+    organization_id: str
+    order_no: str
+    order_type: str
+    warehouse_id: str
+    status: str
+    invoice_reference: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    item_count: int = 0
+    in_stock_count: int = 0
+    out_of_stock_count: int = 0
+
+
 class OutboundOrderListResponse(BaseModel):
     """Paginated list response for outbound orders."""
 
-    orders: list[OutboundOrderResponse]
+    orders: list[OutboundOrderListItem]
     pagination: PaginationMeta
+    status_counts: OutboundOrderStatusCounts | None = None

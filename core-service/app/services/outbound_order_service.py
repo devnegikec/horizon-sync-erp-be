@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -108,6 +109,35 @@ class OutboundOrderService:
             "has_prev": page > 1,
         }
         return orders, pagination
+
+    def get_status_counts(
+        self,
+        org_id: UUID,
+        warehouse_id: UUID | None = None,
+        order_type: str | None = None,
+    ) -> dict:
+        """Return per-status counts for outbound orders (unfiltered by status)."""
+        query = (
+            self.db.query(OutboundOrder.status, func.count(OutboundOrder.id))
+            .filter(OutboundOrder.organization_id == org_id)
+        )
+        if warehouse_id:
+            query = query.filter(OutboundOrder.warehouse_id == warehouse_id)
+        if order_type:
+            query = query.filter(OutboundOrder.order_type == OutboundOrderType(order_type))
+        rows = query.group_by(OutboundOrder.status).all()
+        counts = {
+            (row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in rows
+        }
+        return {
+            "total": sum(counts.values()),
+            "draft": counts.get("draft", 0),
+            "confirmed": counts.get("confirmed", 0),
+            "pending_picking": counts.get("pending_picking", 0),
+            "completed": counts.get("completed", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
 
     def get_order(self, order_id: UUID, org_id: UUID) -> OutboundOrder:
         order = (

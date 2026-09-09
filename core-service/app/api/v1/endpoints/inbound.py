@@ -46,6 +46,7 @@ from app.schemas.inbound import (
     LinkAsnToSessionRequest,
     ReceivingSlipListItem,
     ReceivingSlipListResponse,
+    ReceivingSlipActionResponse,
     ReceivingSlipResponse,
     ReceivingSlipStatusCounts,
     RecordScanRequest,
@@ -397,7 +398,7 @@ async def get_receiving_slip(
 
 @router.post(
     "/receiving-slips/{slip_id}/approve",
-    response_model=ReceivingSlipResponse,
+    response_model=ReceivingSlipActionResponse,
     summary="Approve receiving slip",
     description="Approve a receiving slip, transitioning it to PENDING_PUTAWAY",
 )
@@ -421,7 +422,7 @@ async def approve_slip(
     **Request Body (optional):**
     - **worker_id**: Optional UUID of the user performing the approval
 
-    **Returns:** Updated receiving slip details
+    **Returns:** Success/failure status and the slip's resulting state
 
     Requirements: 7.1, 7.3, 8.1
     """
@@ -432,12 +433,17 @@ async def approve_slip(
         organization_id=current_user.organization_id,
         worker_id=worker_id,
     )
-    return ReceivingSlipResponse(**result)
+    return ReceivingSlipActionResponse(
+        success=True,
+        slip_id=slip_id,
+        status=result.get("status", ""),
+        message="Receiving slip approved",
+    )
 
 
 @router.post(
     "/receiving-slips/{slip_id}/reject",
-    response_model=ReceivingSlipResponse,
+    response_model=ReceivingSlipActionResponse,
     summary="Reject receiving slip",
     description="Reject a receiving slip with a reason",
 )
@@ -458,7 +464,7 @@ async def reject_slip(
     **Request Body:**
     - **reason**: Reason for rejection
 
-    **Returns:** Updated receiving slip details
+    **Returns:** Success/failure status and the slip's resulting state
 
     Requirements: 7.4
     """
@@ -468,7 +474,12 @@ async def reject_slip(
         reason=data.reason,
         organization_id=current_user.organization_id,
     )
-    return ReceivingSlipResponse(**result)
+    return ReceivingSlipActionResponse(
+        success=True,
+        slip_id=slip_id,
+        status=result.get("status", ""),
+        message="Receiving slip rejected",
+    )
 
 
 @router.post(
