@@ -129,10 +129,21 @@ async def _get_user_org_and_permissions(token: str) -> tuple[UUID | None, list[s
                     timeout=5.0,
                 )
 
-                if response.status_code != 200:
+                if response.status_code in (401, 403):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Unable to get user context from identity service",
+                    )
+
+                if response.status_code != 200:
+                    # Transient identity-service error (5xx etc.) — retry on
+                    # the next attempt instead of surfacing a false 401.
+                    if attempt < 2:
+                        await asyncio.sleep(0.2 * (attempt + 1))
+                        continue
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Identity service unavailable",
                     )
 
                 data = response.json()

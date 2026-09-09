@@ -690,6 +690,7 @@ class PutAwayService:
                 PutAwayListItem.id == put_away_item_id,
                 PutAwayListItem.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
 

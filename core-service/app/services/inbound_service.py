@@ -1373,9 +1373,22 @@ class InboundService:
         # before the slip was generated), go straight to PUTAWAY_COMPLETE and
         # skip generating a duplicate put-away list.
         # ------------------------------------------------------------------
-        # Direct put-away is removed — an approved slip always enters
-        # pending_putaway, ready for normal list-based put-away.
-        updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
+        # Direct put-away is removed. A slip with accepted (ok) lines enters
+        # pending_putaway for list-based put-away; a slip with no accepted
+        # lines has nothing to put away and goes straight to complete so it
+        # cannot get stuck pending.
+        has_putaway_lines = (
+            self.db.query(ReceivingSlipItem.id)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .first()
+            is not None
+        )
+        updated_slip = self.slip_repo.update_status(
+            slip_id, "pending_putaway" if has_putaway_lines else "putaway_complete"
+        )
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status

@@ -37,12 +37,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if not has_table("warehouse_locations"):
-        return
-    op.get_bind().execute(
-        sa.text(
-            "UPDATE warehouse_locations "
-            "SET is_active = true, is_available = true "
-            "WHERE code = 'RECEIVING-STAGE'"
-        )
-    )
+    # Intentionally a no-op: RECEIVING-STAGE is permanently deprecated. We do
+    # not reactivate rows on downgrade, because some of them may have been
+    # inactive before this migration and we cannot restore their prior state.
+    return

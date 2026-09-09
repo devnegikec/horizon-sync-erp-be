@@ -36,12 +36,9 @@ class AsnOrderService:
         if payload.get("status"):
             payload["status"] = AsnOrderStatus(payload["status"])
 
-        # Default ASN type; internal transfers require a source warehouse.
+        # Default the ASN type to a stock receipt (purchase) when omitted.
         if not payload.get("asn_type"):
-            raise ValueError(
-                "asn_type is required for a "
-                "stock receipt ASN"
-            )
+            payload["asn_type"] = STOCK_RECEIPT
 
         # Stock Receipt ASNs arrive from manufacturing units (which are not
         # warehouses in the system), so they only carry a target warehouse.
