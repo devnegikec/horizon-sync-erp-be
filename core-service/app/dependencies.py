@@ -1,5 +1,6 @@
 """Dependency injection for FastAPI"""
 
+import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -118,38 +119,44 @@ async def _get_user_org_and_permissions(token: str) -> tuple[UUID | None, list[s
     Raises:
         HTTPException: If identity service unavailable or returns error
     """
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.identity_service_url}/api/v1/identity/me",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5.0,
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Unable to get user context from identity service",
+    last_error: httpx.RequestError | None = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{settings.identity_service_url}/api/v1/identity/me",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5.0,
                 )
 
-            data = response.json()
-            org_id_str = data.get("organization_id")
-            organization_id = None
-            if org_id_str:
-                try:
-                    organization_id = UUID(org_id_str)
-                except ValueError:
-                    pass
-            permissions = data.get("permissions") or []
-            if not isinstance(permissions, list):
-                permissions = []
-            return organization_id, permissions
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Unable to get user context from identity service",
+                    )
 
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Identity service unavailable",
-        ) from e
+                data = response.json()
+                org_id_str = data.get("organization_id")
+                organization_id = None
+                if org_id_str:
+                    try:
+                        organization_id = UUID(org_id_str)
+                    except ValueError:
+                        pass
+                permissions = data.get("permissions") or []
+                if not isinstance(permissions, list):
+                    permissions = []
+                return organization_id, permissions
+
+        except httpx.RequestError as exc:
+            last_error = exc
+            if attempt < 2:
+                await asyncio.sleep(0.2 * (attempt + 1))
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Identity service unavailable",
+    ) from last_error
 
 
 async def get_current_active_user(

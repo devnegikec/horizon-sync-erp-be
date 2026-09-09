@@ -89,6 +89,12 @@ services:
     ports:
       - "8000:8000"
       - "5678:5678"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -159,7 +165,7 @@ services:
       redis:
         condition: service_healthy
       identity-service:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./core-service/app:/app/app
       - ./core-service/alembic:/app/alembic

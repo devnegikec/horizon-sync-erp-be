@@ -1358,9 +1358,8 @@ class InboundService:
                 synchronize_session="fetch",
             )
         )
-        # Approve them — stock enters for items already binned
+        # Approve them — stock enters at put-away completion, not here.
         stock_entered = tracking_svc.approve_items(slip_id, approved_by=worker_id)
-        self._stage_approved_receipt_lines(slip, organization_id)
         logger.info(
             "Tracking: %d records linked to slip %s, %d entered stock",
             trackings_updated,
@@ -1374,19 +1373,9 @@ class InboundService:
         # before the slip was generated), go straight to PUTAWAY_COMPLETE and
         # skip generating a duplicate put-away list.
         # ------------------------------------------------------------------
-        from app.services.put_away_service import PutAwayService
-
-        put_away_service = PutAwayService(self.db)
-        # approve_slip deletes and recreates receiving_slip_items (Step 3),
-        # which resets put_away_status to "pending". Re-run reconciliation so
-        # items already binned via direct put-away are linked again before we
-        # decide the slip status.
-        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
-
-        if put_away_service.all_slip_items_put_away(slip_id):
-            updated_slip = self.slip_repo.update_status(slip_id, "putaway_complete")
-        else:
-            updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
+        # Direct put-away is removed — an approved slip always enters
+        # pending_putaway, ready for normal list-based put-away.
+        updated_slip = self.slip_repo.update_status(slip_id, "pending_putaway")
 
         # ------------------------------------------------------------------
         # Step 5: Update ASN delivered_qty and status
@@ -2227,67 +2216,6 @@ class InboundService:
                 destination=payload.get("destination"),
                 note=payload.get("note"),
             )
-
-    def _stage_approved_receipt_lines(self, slip, organization_id: UUID) -> None:
-        """Book normal approved receipt quantities into RECEIVING-STAGE.
-
-        This deliberately uses the regenerated receipt-line quantity (Eaches),
-        not the raw scanner quantity. Direct put-away rows are already in a
-        final bin and are therefore excluded.
-        """
-        from decimal import Decimal
-
-        from app.models.item import Item
-        from app.services.bin_stock_service import BinStockService
-        from app.services.scanned_item_tracking_service import (
-            ScannedItemTrackingService,
-        )
-
-        stage = ScannedItemTrackingService(self.db)._get_or_create_system_bin(
-            slip.warehouse_id, organization_id, "RECEIVING-STAGE"
-        )
-        for line in (
-            self.db.query(ReceivingSlipItem)
-            .filter(
-                ReceivingSlipItem.slip_id == slip.id,
-                ReceivingSlipItem.flag == "ok",
-            )
-            .all()
-        ):
-            trackings = (
-                self.db.query(ScannedItemTracking)
-                .filter(
-                    ScannedItemTracking.scan_session_id == slip.session_id,
-                    ScannedItemTracking.qr_identifier == line.batch_number,
-                )
-                .all()
-            )
-            if trackings and all(t.putaway_status == "completed" for t in trackings):
-                continue
-            item = (
-                self.db.query(Item)
-                .filter(
-                    Item.organization_id == organization_id,
-                    Item.deleted_at.is_(None),
-                    (Item.sku == line.sku)
-                    | (Item.gtin == line.sku)
-                    | (Item.item_code == line.sku),
-                )
-                .first()
-            )
-            if item is None:
-                raise ValidationError(
-                    f"Cannot stage approved receipt line '{line.sku}': no active item master record"
-                )
-            BinStockService(self.db).add_stock(
-                stage.id,
-                item.id,
-                Decimal(str(line.quantity)),
-                organization_id,
-                line.batch_number,
-                commit=False,
-            )
-        self.db.commit()
 
     def _generate_receiving_slip(
         self,
