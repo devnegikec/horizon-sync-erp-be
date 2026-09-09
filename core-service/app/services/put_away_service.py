@@ -730,7 +730,7 @@ class PutAwayService:
             put_away_item.bin_location_id = bin_id_override
 
         # Stock enters the final bin directly when the put-away item is
-        # completed (receiving no longer stages into RECEIVING-STAGE).
+        # completed.
         bin_stock = self.bin_stock_service.add_stock(
             bin_id=target_bin_id,
             item_id=put_away_item.item_id,

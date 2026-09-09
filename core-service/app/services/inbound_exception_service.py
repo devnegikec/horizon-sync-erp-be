@@ -354,7 +354,7 @@ class InboundExceptionService:
         if action == "release_to_receiving":
             if item is None:
                 raise ValidationError(
-                    "A valid, active SKU must be added or selected before release to RECEIVING-STAGE"
+                    "A valid, active SKU must be added or selected before release"
                 )
             if tracking is None:
                 tracking = self._materialize_now_active_unknown(
@@ -362,13 +362,13 @@ class InboundExceptionService:
                 )
                 exception.tracking_id = tracking.id
                 exception.scan_session_item_id = tracking.scan_session_item_id
-            stage = self._system_location(
-                exception.warehouse_id, organization_id, "RECEIVING-STAGE"
-            )
-            self._move_or_enter(exception, tracking, item, stage.id)
+            # Release no longer stages anywhere. Remove any segregated stock
+            # (HOLD/QUARANTINE) so normal put-away enters the quantity into
+            # the final bin exactly once.
+            self._remove_segregated_stock(exception, tracking, item)
             exception.status = "released"
-            exception.destination = "RECEIVING-STAGE"
-            exception.destination_location_id = stage.id
+            exception.destination = "released"
+            exception.destination_location_id = None
             exception.condition_code = "GOOD"
             if tracking:
                 tracking.item_id = item.id
@@ -691,7 +691,7 @@ class InboundExceptionService:
 
         The identity was intentionally not counted when it was unknown. Once a
         manager supplies an active SKU, it is registered exactly once on the
-        still-open receiving session and then released into RECEIVING-STAGE.
+        still-open receiving session and then released for normal put-away.
         A closed session is never silently rewritten; the manager must create
         a new receipt flow in that case.
         """

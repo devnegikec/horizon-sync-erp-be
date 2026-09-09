@@ -206,10 +206,10 @@ class ScannedItemTrackingService:
     # ── Receiving Axis ────────────────────────────────────────────────────
 
     def approve_items(self, slip_id: UUID, approved_by: UUID) -> int:
-        """Approve normal receipt rows and enter them into RECEIVING-STAGE.
+        """Approve normal receipt rows.
 
-        A completed direct put-away still enters directly into its final bin;
-        ordinary receipt approval enters the non-pickable staging bin first.
+        Stock is no longer entered here; it enters the final bin when the
+        put-away item is completed.
         """
         trackings = (
             self.db.query(ScannedItemTracking)
@@ -302,9 +302,7 @@ class ScannedItemTrackingService:
         tracking.put_away_item_id = put_away_item_id
         self.db.flush()
 
-        # A normal approved receipt is staged at the receipt-line level. Move
-        # a matching unit from RECEIVING-STAGE when this QR-driven path is
-        # used; direct put-away retains the legacy receive-then-enter flow.
+        # Move already-entered stock to the newly scanned bin when it differs.
         if (
             tracking.stock_entered
             and tracking.stock_location_id
@@ -321,36 +319,6 @@ class ScannedItemTrackingService:
                 batch_number=tracking.batch_number,
             )
             tracking.stock_location_id = bin_location_id
-        elif tracking.receiving_status == "approved" and tracking.receiving_slip_id:
-            stage = self._get_or_create_system_bin(
-                tracking.warehouse_id, tracking.organization_id, "RECEIVING-STAGE"
-            )
-            from app.models.bin_stock_level import BinStockLevel
-            from app.services.bin_stock_service import BinStockService
-
-            staged = (
-                self.db.query(BinStockLevel)
-                .filter(
-                    BinStockLevel.bin_location_id == stage.id,
-                    BinStockLevel.item_id == tracking.item_id,
-                    BinStockLevel.organization_id == tracking.organization_id,
-                    BinStockLevel.batch_number == tracking.batch_number,
-                    BinStockLevel.quantity_on_hand >= tracking.quantity,
-                )
-                .first()
-            )
-            if staged is not None:
-                BinStockService(self.db).transfer_stock(
-                    from_bin_id=stage.id,
-                    to_bin_id=bin_location_id,
-                    item_id=tracking.item_id,
-                    quantity=tracking.quantity,
-                    org_id=tracking.organization_id,
-                    batch_number=tracking.batch_number,
-                )
-                tracking.stock_entered = True
-                tracking.stock_entered_at = datetime.now(UTC)
-                tracking.stock_location_id = bin_location_id
         elif self._should_enter_stock(tracking):
             self._enter_stock(tracking)
 
@@ -421,7 +389,7 @@ class ScannedItemTrackingService:
     ):
         """Return a standard non-pickable WMS bin, creating it for new warehouses.
 
-        System bins (RECEIVING-STAGE, HOLD, QUARANTINE, ...) must survive floor-plan
+        System bins (HOLD, QUARANTINE, ...) must survive floor-plan
         regeneration. If an apply deactivated one (renaming full_path with an
         ``_inactive_`` prefix), reactivate it in place instead of returning a
         deactivated bin — stock operations on inactive bins fail with a 409.
@@ -493,13 +461,6 @@ class ScannedItemTrackingService:
                         .first()
                     )
         return location
-
-    def stage_tracking(self, tracking: ScannedItemTracking) -> None:
-        """Put approved normal receipt inventory in RECEIVING-STAGE."""
-        stage = self._get_or_create_system_bin(
-            tracking.warehouse_id, tracking.organization_id, "RECEIVING-STAGE"
-        )
-        self._enter_stock(tracking, target_bin_id=stage.id)
 
     def approve_tracking_row(
         self, tracking: ScannedItemTracking, approved_by: UUID | None = None

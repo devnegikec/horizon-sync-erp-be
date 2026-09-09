@@ -486,8 +486,8 @@ class BinStockService:
         """Atomically move physical stock between bins without changing on-hand.
 
         Availability changes only when the source and destination have different
-        pickability. This is the receiving-stage → storage and hold/quarantine
-        → receiving-stage primitive used by inbound exception disposition.
+        pickability. This is the hold/quarantine → storage primitive used by
+        inbound exception disposition.
         """
         if from_bin_id == to_bin_id:
             existing = self._get_bin_stock_record(

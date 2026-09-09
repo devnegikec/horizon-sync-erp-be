@@ -2375,31 +2375,6 @@ class InboundService:
         # any downstream queries or a request-level rollback can discard it.
         self.db.flush()
 
-        # Flow B: link items already put away via direct put-away (match by QR)
-        from app.services.put_away_service import PutAwayService
-
-        put_away_service = PutAwayService(self.db)
-        put_away_service.reconcile_slip_with_completed_putaway(slip, organization_id)
-
-        # ── Direct put-away already completed before receiving? ──
-        # If every accepted item is already binned, skip the review/approve
-        # cycle entirely: mark the slip PUTAWAY_COMPLETE and advance the ASN so
-        # the flow ends at the expected terminal state immediately.
-        if put_away_service.all_slip_items_put_away(slip.id):
-            slip = self.slip_repo.update_status(slip.id, "putaway_complete")
-            if slip is not None and slip.asn_order_id:
-                self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
-                from app.services.inbound_short_balance_service import (
-                    InboundShortBalanceService,
-                )
-
-                InboundShortBalanceService(self.db).refresh_for_asn(
-                    slip.asn_order_id, organization_id, slip.id
-                )
-            # Create a material_receipt stock entry for ERP traceability.
-            if slip is not None:
-                self._create_receiving_stock_entry(slip, organization_id)
-
         self.db.commit()
         return slip
 
