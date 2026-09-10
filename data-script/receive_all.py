@@ -36,9 +36,9 @@ from qr_helpers import api_get, api_post, login
 # Default receiving warehouse (EcityTTK_prestige for the TTK-Prestige org),
 # kept in sync with receive_block.py.
 DEFAULT_WAREHOUSE_ID = os.environ.get(
-    "WAREHOUSE_ID", "f0099ec7-0364-416c-9806-22fe38a4c56c"
+    "WAREHOUSE_ID", "8bc22a62-9e7a-4839-8f39-e58f6087d25e"
 )
-ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "5"))
+ITEM_COUNT = int(os.environ.get("BLOCK_ITEM_COUNT", "2"))
 MASTER_BOX_COUNT = int(os.environ.get("MASTER_BOX_COUNT", "2"))
 QR_TYPE = os.environ.get("QR_TYPE", "dynamic")
 POLL_TIMEOUT_S = int(os.environ.get("BLOCK_POLL_TIMEOUT_S", "180"))

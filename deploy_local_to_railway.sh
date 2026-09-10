@@ -5,8 +5,11 @@
 # Each service is built from its own source directory using its own Dockerfile.
 #
 # Migrations run automatically on deploy via each service's start command
-# (see railway.toml): `scripts/normalize_alembic_version.py && alembic upgrade`.
-# Pass --migrate to explicitly re-trigger migrations after deploy.
+# (see railway.toml):
+#   identity-service: `python scripts/normalize_alembic_version.py && alembic upgrade head`
+#   core-service:     `alembic upgrade heads`  (plural — core has multiple
+#                     migration heads, e.g. 114_remove_receiving_stage_bins)
+# Pass --migrate to explicitly re-trigger migrations after deploy (via redeploy).
 #
 # Usage:
 #   ./deploy_local_to_railway.sh [service] ["deploy message"] [--migrate]
