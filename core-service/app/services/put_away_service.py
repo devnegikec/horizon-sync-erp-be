@@ -421,13 +421,18 @@ class PutAwayService:
 
             resolved_lines.append({"item": item, "slip_item": slip_item})
 
-        # Step 1: group serialized lines into master packs.
+        # Step 1: group serialized lines into master packs, preserving the
+        # order items first appear on the slip.
         by_item: dict[UUID, list[dict]] = {}
+        item_order: list[UUID] = []
         for line in resolved_lines:
+            if line["item"].id not in by_item:
+                item_order.append(line["item"].id)
             by_item.setdefault(line["item"].id, []).append(line)
 
         source_lines: list[dict] = []
-        for item_id, lines in by_item.items():
+        for item_id in item_order:
+            lines = by_item[item_id]
             item = lines[0]["item"]
             pack_size = self._items_per_master_pack(item_id, org_id)
             if pack_size:
@@ -492,15 +497,23 @@ class PutAwayService:
                 warehouse_id=slip.warehouse_id,
                 org_id=org_id,
             )
-            for idx, assignment in enumerate(bin_assignments):
+            serial_cursor = 0
+            for assignment in bin_assignments:
+                qty = int(assignment["quantity"])
+                split_serials = (
+                    serial_nos[serial_cursor : serial_cursor + qty]
+                    if serial_nos
+                    else None
+                )
+                serial_cursor += qty
                 item_specs.append(
                     {
                         "item_id": item.id,
                         "sku": line["sku"],
-                        "batch_number": batch_number,
+                        "batch_number": split_serials[0] if split_serials else batch_number,
                         "quantity": assignment["quantity"],
                         "bin_location_id": assignment["bin_location_id"],
-                        "serial_nos": list(serial_nos) if serial_nos and idx == 0 else None,
+                        "serial_nos": split_serials or None,
                     }
                 )
 
@@ -576,6 +589,10 @@ class PutAwayService:
 
         self.db.flush()
 
+        # Bind each put-away item to its pending tracking rows by ID so
+        # completion updates exactly those rows (not value-matched duplicates).
+        self._link_tracking_to_items(slip, put_away_items)
+
         if mode == "auto":
             # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
             volumetric_service = VolumetricAssignmentService()
@@ -616,6 +633,38 @@ class PutAwayService:
 
         self.db.refresh(put_away_list)
         return put_away_list
+
+    def _link_tracking_to_items(
+        self, slip: ReceivingSlip, put_away_items: list[PutAwayListItem]
+    ) -> None:
+        """Bind pending tracking rows to their put-away item (by ID).
+
+        Serialized packs bind by their exact serial list; batch lines bind by
+        batch number. Each row is linked at most once so a batch split across
+        bins is not double-linked.
+        """
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        for item in put_away_items:
+            serial_nos = item.serial_nos or []
+            query = self.db.query(ScannedItemTracking).filter(
+                ScannedItemTracking.receiving_slip_id == slip.id,
+                ScannedItemTracking.item_id == item.item_id,
+                ScannedItemTracking.putaway_status == "pending",
+                ScannedItemTracking.put_away_item_id.is_(None),
+            )
+            if serial_nos:
+                query = query.filter(
+                    ScannedItemTracking.batch_number.in_(serial_nos)
+                )
+            else:
+                query = query.filter(
+                    ScannedItemTracking.batch_number == item.batch_number
+                )
+            for t in query.all():
+                t.put_away_list_id = item.put_away_list_id
+                t.put_away_item_id = item.id
+        self.db.flush()
 
     def enqueue_released_slip_item(
         self,
@@ -1307,22 +1356,37 @@ class PutAwayService:
             return
 
         serial_nos = getattr(put_away_item, "serial_nos", None) or []
-        batch_filter = (
-            ScannedItemTracking.batch_number.in_(serial_nos)
-            if serial_nos
-            else ScannedItemTracking.batch_number == put_away_item.batch_number
-        )
         trackings = (
             self.db.query(ScannedItemTracking)
             .filter(
                 ScannedItemTracking.receiving_slip_id
                 == put_away_list.receiving_slip_id,
                 ScannedItemTracking.item_id == put_away_item.item_id,
-                batch_filter,
+                ScannedItemTracking.put_away_item_id == put_away_item.id,
                 ScannedItemTracking.putaway_status == "pending",
             )
             .all()
         )
+
+        if not trackings:
+            # Fallback for legacy put-away items created before tracking rows
+            # were linked by ID: value-match by serial list or batch number.
+            batch_filter = (
+                ScannedItemTracking.batch_number.in_(serial_nos)
+                if serial_nos
+                else ScannedItemTracking.batch_number == put_away_item.batch_number
+            )
+            trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.receiving_slip_id
+                    == put_away_list.receiving_slip_id,
+                    ScannedItemTracking.item_id == put_away_item.item_id,
+                    batch_filter,
+                    ScannedItemTracking.putaway_status == "pending",
+                )
+                .all()
+            )
 
         if not trackings:
             return

@@ -64,20 +64,39 @@ class PackingSlipService:
                     f"(current status: '{order.status.value}')"
                 )
 
-        already = (
-            self.db.query(PackingSlipItem)
-            .join(PackingSlip, PackingSlip.id == PackingSlipItem.packing_slip_id)
+        # Lock the pick lists for these orders so order-based packing serializes
+        # with pick-list-based packing (both target the same pick-list rows) and
+        # cannot double-pack the same picked goods.
+        pick_lists_by_order: dict[UUID, list[PickList]] = {}
+        all_pick_lists = (
+            self.db.query(PickList)
             .filter(
-                PackingSlipItem.organization_id == org_id,
-                PackingSlipItem.order_id.in_(unique_ids),
-                PackingSlip.status != PackingSlipStatus.CANCELLED,
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id.in_(unique_ids),
             )
-            .first()
+            .with_for_update()
+            .all()
         )
-        if already is not None:
-            raise ValidationError(
-                "One or more orders are already packed on an active packing slip"
+        for pl in all_pick_lists:
+            pick_lists_by_order.setdefault(pl.reference_id, []).append(pl)
+
+        pick_list_ids = [pl.id for pl in all_pick_lists]
+        if pick_list_ids:
+            already = (
+                self.db.query(PackingSlipItem)
+                .join(PackingSlip, PackingSlip.id == PackingSlipItem.packing_slip_id)
+                .filter(
+                    PackingSlipItem.organization_id == org_id,
+                    PackingSlipItem.pick_list_id.in_(pick_list_ids),
+                    PackingSlip.status != PackingSlipStatus.CANCELLED,
+                )
+                .first()
             )
+            if already is not None:
+                raise ValidationError(
+                    "One or more pick lists are already packed on an active packing slip"
+                )
 
         numbering = DocumentNumberingService(self.db)
         slip = PackingSlip(
@@ -93,16 +112,7 @@ class PackingSlipService:
 
         sort_order = 0
         for order in orders:
-            pick_lists = (
-                self.db.query(PickList)
-                .filter(
-                    PickList.organization_id == org_id,
-                    PickList.reference_type == "outbound_order",
-                    PickList.reference_id == order.id,
-                )
-                .all()
-            )
-            for pl in pick_lists:
+            for pl in pick_lists_by_order.get(order.id, []):
                 for pli in pl.items:
                     picked = Decimal(str(pli.picked_qty or 0))
                     if picked <= 0:
