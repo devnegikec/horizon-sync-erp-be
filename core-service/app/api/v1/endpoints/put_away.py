@@ -36,6 +36,7 @@ from app.schemas.put_away import (
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
+    PutAwayStatusCounts,
     SkipPutAwayItemRequest,
 )
 from app.services.put_away_service import PutAwayService
@@ -456,6 +457,25 @@ async def list_put_away_lists(
         for pal in put_away_lists
     ]
 
+    # Status distribution scoped to the same warehouse filter, but not the
+    # status filter itself, so every bucket is always populated.
+    counts_query = db.query(PutAwayList.status, func.count(PutAwayList.id)).filter(
+        PutAwayList.organization_id == current_user.organization_id
+    )
+    if warehouse_id:
+        counts_query = counts_query.filter(PutAwayList.warehouse_id == warehouse_id)
+    counts_raw = {
+        "total": 0,
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+    }
+    for status_value, count in counts_query.group_by(PutAwayList.status).all():
+        key = str(status_value)
+        if key in counts_raw:
+            counts_raw[key] = count
+        counts_raw["total"] += count
+
     pagination = PaginationMeta(
         page=page,
         page_size=page_size,
@@ -468,6 +488,7 @@ async def list_put_away_lists(
     return PutAwayListListResponse(
         put_away_lists=summaries,
         pagination=pagination,
+        status_counts=PutAwayStatusCounts(**counts_raw),
     )
 
 
@@ -681,5 +702,3 @@ async def skip_put_away_item(
         if skipped_item.created_at
         else None,
     )
-
-

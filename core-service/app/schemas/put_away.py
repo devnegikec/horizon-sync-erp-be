@@ -145,11 +145,21 @@ class PutAwayListSummaryResponse(BaseModel):
     updated_at: str | None = None
 
 
+class PutAwayStatusCounts(BaseModel):
+    """Status distribution for put-away lists in the current scope."""
+
+    total: int = 0
+    pending: int = 0
+    in_progress: int = 0
+    completed: int = 0
+
+
 class PutAwayListListResponse(BaseModel):
     """Paginated list of put-away lists."""
 
     put_away_lists: list[PutAwayListSummaryResponse]
     pagination: PaginationMeta
+    status_counts: PutAwayStatusCounts = PutAwayStatusCounts()
 
 
 # ===========================================
