@@ -348,13 +348,33 @@ class PutAwayService:
                 f"Worker '{worker_id}' is not an active member of this warehouse"
             )
 
+    def _items_per_master_pack(self, item_id: UUID, org_id: UUID) -> int | None:
+        """Return the item's master-pack size (items per pack), or None."""
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        row = (
+            self.db.query(ItemPackagingUnit.items_per_master_pack)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.organization_id == org_id,
+                ItemPackagingUnit.is_active.is_(True),
+                ItemPackagingUnit.items_per_master_pack.isnot(None),
+                ItemPackagingUnit.items_per_master_pack > 1,
+            )
+            .first()
+        )
+        return row[0] if row else None
+
     def _build_put_away_specs(
         self, slip: ReceivingSlip, org_id: UUID, mode: str
     ) -> tuple[list[dict], list[str]]:
         """Resolve eligible slip lines into put-away item specs (no ORM yet).
 
-        Returns (item_specs, warnings_parts) where each spec is a dict with
-        keys item_id, sku, batch_number, quantity, bin_location_id.
+        Serialized lines are grouped into master packs of
+        ``items_per_master_pack`` — one spec per pack carrying the unit serials
+        in ``serial_nos``. Returns (item_specs, warnings_parts) where each spec
+        has keys item_id, sku, batch_number, quantity, bin_location_id,
+        serial_nos.
         """
         item_specs: list[dict] = []
         manual_grouped: dict[tuple[str, str | None], dict] = {}
@@ -363,6 +383,8 @@ class PutAwayService:
         skipped_exception: list[str] = []
         skipped_unresolved: list[str] = []
 
+        # Step 0: filter + resolve eligible lines (keeps original order).
+        resolved_lines: list[dict] = []
         for slip_item in slip.items:
             # Only fully accepted, good receipt lines enter normal put-away.
             # HOLD, QUARANTINE, and EXCESS are physically segregated and
@@ -397,23 +419,69 @@ class PutAwayService:
                 )
                 continue
 
-            quantity = Decimal(str(slip_item.quantity))
+            resolved_lines.append({"item": item, "slip_item": slip_item})
+
+        # Step 1: group serialized lines into master packs.
+        by_item: dict[UUID, list[dict]] = {}
+        for line in resolved_lines:
+            by_item.setdefault(line["item"].id, []).append(line)
+
+        source_lines: list[dict] = []
+        for item_id, lines in by_item.items():
+            item = lines[0]["item"]
+            pack_size = self._items_per_master_pack(item_id, org_id)
+            if pack_size:
+                serials = [ln["slip_item"].batch_number for ln in lines]
+                for i in range(0, len(serials), pack_size):
+                    chunk = serials[i : i + pack_size]
+                    source_lines.append(
+                        {
+                            "item": item,
+                            "sku": lines[0]["slip_item"].sku,
+                            "quantity": Decimal(len(chunk)),
+                            "batch_number": chunk[0],
+                            "serial_nos": chunk,
+                        }
+                    )
+            else:
+                for ln in lines:
+                    si = ln["slip_item"]
+                    source_lines.append(
+                        {
+                            "item": item,
+                            "sku": si.sku,
+                            "quantity": Decimal(str(si.quantity)),
+                            "batch_number": si.batch_number,
+                            "serial_nos": None,
+                        }
+                    )
+
+        # Step 2: build specs (manual grouping vs auto bin assignment).
+        for line in source_lines:
+            item = line["item"]
+            quantity = line["quantity"]
+            batch_number = line["batch_number"]
+            serial_nos = line.get("serial_nos")
 
             # Manual mode: leave bin assignment to the worker. Items are
             # grouped by (SKU, batch) so repeated slip lines merge into one
             # list item instead of producing duplicate rows.
             if mode == "manual":
-                key = (slip_item.sku, slip_item.batch_number)
+                key = (line["sku"], batch_number)
                 existing = manual_grouped.get(key)
                 if existing is not None:
                     existing["quantity"] += quantity
+                    if serial_nos:
+                        existing_serials = existing.setdefault("serial_nos", [])
+                        existing_serials.extend(serial_nos)
                 else:
                     manual_grouped[key] = {
                         "item_id": item.id,
-                        "sku": slip_item.sku,
-                        "batch_number": slip_item.batch_number,
+                        "sku": line["sku"],
+                        "batch_number": batch_number,
                         "quantity": quantity,
                         "bin_location_id": None,
+                        "serial_nos": list(serial_nos) if serial_nos else None,
                     }
                 continue
 
@@ -424,14 +492,15 @@ class PutAwayService:
                 warehouse_id=slip.warehouse_id,
                 org_id=org_id,
             )
-            for assignment in bin_assignments:
+            for idx, assignment in enumerate(bin_assignments):
                 item_specs.append(
                     {
                         "item_id": item.id,
-                        "sku": slip_item.sku,
-                        "batch_number": slip_item.batch_number,
+                        "sku": line["sku"],
+                        "batch_number": batch_number,
                         "quantity": assignment["quantity"],
                         "bin_location_id": assignment["bin_location_id"],
+                        "serial_nos": list(serial_nos) if serial_nos and idx == 0 else None,
                     }
                 )
 
@@ -493,6 +562,7 @@ class PutAwayService:
                 item_id=spec["item_id"],
                 sku=spec["sku"],
                 batch_number=spec["batch_number"],
+                serial_nos=spec.get("serial_nos"),
                 quantity=spec["quantity"],
                 bin_location_id=spec["bin_location_id"],
                 sort_order=idx if mode == "manual" else 0,
@@ -742,14 +812,27 @@ class PutAwayService:
             put_away_item.bin_location_id = bin_id_override
 
         # Stock enters the final bin directly when the put-away item is
-        # completed.
-        bin_stock = self.bin_stock_service.add_stock(
-            bin_id=target_bin_id,
-            item_id=put_away_item.item_id,
-            quantity=Decimal(str(put_away_item.quantity)),
-            org_id=org_id,
-            batch_number=put_away_item.batch_number,
-        )
+        # completed. Master-pack lines add one stock row per unit serial.
+        serial_nos = put_away_item.serial_nos or []
+        bin_stock = None
+        if serial_nos:
+            for serial in serial_nos:
+                self.bin_stock_service.add_stock(
+                    bin_id=target_bin_id,
+                    item_id=put_away_item.item_id,
+                    quantity=Decimal("1"),
+                    org_id=org_id,
+                    batch_number=serial,
+                    commit=False,
+                )
+        else:
+            bin_stock = self.bin_stock_service.add_stock(
+                bin_id=target_bin_id,
+                item_id=put_away_item.item_id,
+                quantity=Decimal(str(put_away_item.quantity)),
+                org_id=org_id,
+                batch_number=put_away_item.batch_number,
+            )
 
         # If the put-away item carries a packaging_unit_id, propagate it to the
         # BinStockLevel row as metadata (Req 3.3).
@@ -1223,13 +1306,19 @@ class PutAwayService:
         if not put_away_list or not put_away_list.receiving_slip_id:
             return
 
+        serial_nos = getattr(put_away_item, "serial_nos", None) or []
+        batch_filter = (
+            ScannedItemTracking.batch_number.in_(serial_nos)
+            if serial_nos
+            else ScannedItemTracking.batch_number == put_away_item.batch_number
+        )
         trackings = (
             self.db.query(ScannedItemTracking)
             .filter(
                 ScannedItemTracking.receiving_slip_id
                 == put_away_list.receiving_slip_id,
                 ScannedItemTracking.item_id == put_away_item.item_id,
-                ScannedItemTracking.batch_number == put_away_item.batch_number,
+                batch_filter,
                 ScannedItemTracking.putaway_status == "pending",
             )
             .all()

@@ -327,22 +327,39 @@ class OutboundOrderService:
                     item.loose_qty,
                     item.qty,
                 )
-                self.db.add(
-                    PickListItem(
-                        organization_id=org_id,
-                        pick_list_id=pick_list.id,
-                        item_id=item.item_id,
-                        warehouse_id=order.warehouse_id,
-                        qty=item.qty,
-                        picked_qty=Decimal("0"),
-                        uom=item.uom,
-                        per_case_qty=per_case,
-                        case_qty=case_qty,
-                        loose_qty=loose_qty,
-                        batch_no=item.batch_no,
-                        sort_order=0,
+
+                # Split into master-pack-sized pick lines when a pack size is
+                # known — one line per full master pack plus a loose remainder.
+                pack_size = per_case
+                if pack_size is not None and Decimal(str(pack_size)) > 1:
+                    q = Decimal(str(item.qty))
+                    pc = Decimal(str(pack_size))
+                    split_lines = []
+                    for _ in range(int(q // pc)):
+                        split_lines.append((pc, pc, Decimal("1"), Decimal("0")))
+                    remainder = q % pc
+                    if remainder > 0:
+                        split_lines.append((remainder, pc, Decimal("0"), remainder))
+                else:
+                    split_lines = [(item.qty, per_case, case_qty, loose_qty)]
+
+                for line_qty, line_per_case, line_case, line_loose in split_lines:
+                    self.db.add(
+                        PickListItem(
+                            organization_id=org_id,
+                            pick_list_id=pick_list.id,
+                            item_id=item.item_id,
+                            warehouse_id=order.warehouse_id,
+                            qty=line_qty,
+                            picked_qty=Decimal("0"),
+                            uom=item.uom,
+                            per_case_qty=line_per_case,
+                            case_qty=line_case,
+                            loose_qty=line_loose,
+                            batch_no=item.batch_no,
+                            sort_order=0,
+                        )
                     )
-                )
             pick_lists.append(pick_list)
 
         order.status = OutboundOrderStatus.PENDING_PICKING

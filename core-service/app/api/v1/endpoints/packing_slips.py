@@ -23,6 +23,7 @@ from app.dependencies import CurrentUser, require_permission
 from app.schemas.dispatch import DispatchResponse
 from app.schemas.packing_slip import (
     CreatePackingSlipRequest,
+    PackPickListsRequest,
     PackingSlipListResponse,
     PackingSlipResponse,
     PackingSlipStatusCounts,
@@ -46,6 +47,27 @@ async def create_packing_slip(
     service = PackingSlipService(db)
     slip = service.create_from_orders(
         data.order_ids, current_user.organization_id, current_user.id
+    )
+    return service._to_response(slip)
+
+
+@router.post(
+    "/pick-lists",
+    response_model=PackingSlipResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Pack completed pick list(s) into a new or existing packing slip",
+)
+async def pack_pick_lists(
+    data: PackPickListsRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = PackingSlipService(db)
+    slip = service.pack_pick_lists(
+        data.pick_list_ids,
+        current_user.organization_id,
+        current_user.id,
+        data.packing_slip_id,
     )
     return service._to_response(slip)
 
