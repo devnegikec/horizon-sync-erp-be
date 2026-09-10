@@ -72,10 +72,13 @@ from app.schemas.outbound import (
     CreatePickListFromOrderRequest,
     HandlingUnitAssignmentResponse,
     OutboundOrderItemResponse,
+    OutboundOrderListItem,
     OutboundOrderListResponse,
     OutboundOrderResponse,
+    OutboundOrderStatusCounts,
     OutboundPickListListResponse,
     OutboundPickListResponse,
+    OutboundPickListStatusCounts,
     PickListProgress,
     PickScanRequest,
     PickScanResult,
@@ -881,6 +884,64 @@ def _order_pick_list_map(db, order_ids) -> dict[str, list[str]]:
     return result
 
 
+def _order_item_counts(db, order_ids) -> dict[str, tuple[int, int]]:
+    """Return {order_id: (total_items, in_stock_items)} via one aggregate query.
+
+    Avoids loading the full line-item rows for list serialization.
+    """
+    if not order_ids or db is None:
+        return {}
+    from sqlalchemy import case, func
+
+    from app.models.base import OutboundOrderItemStockStatus
+    from app.models.outbound_order import OutboundOrderItem
+
+    rows = (
+        db.query(
+            OutboundOrderItem.outbound_order_id,
+            func.count(OutboundOrderItem.id),
+            func.sum(
+                case(
+                    (
+                        OutboundOrderItem.stock_status
+                        == OutboundOrderItemStockStatus.IN_STOCK,
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+        )
+        .filter(OutboundOrderItem.outbound_order_id.in_(order_ids))
+        .group_by(OutboundOrderItem.outbound_order_id)
+        .all()
+    )
+    return {
+        str(r[0]): (int(r[1] or 0), int(r[2] or 0))
+        for r in rows
+    }
+
+
+def _order_to_list_item(
+    order, item_counts: dict[str, tuple[int, int]]
+) -> OutboundOrderListItem:
+    """Convert an OutboundOrder to a lightweight list item (no line items)."""
+    total_items, in_stock = item_counts.get(str(order.id), (0, 0))
+    return OutboundOrderListItem(
+        id=str(order.id),
+        organization_id=str(order.organization_id),
+        order_no=order.order_no,
+        order_type=order.order_type.value,
+        warehouse_id=str(order.warehouse_id),
+        status=order.status.value,
+        invoice_reference=order.invoice_reference,
+        created_at=order.created_at.isoformat() if order.created_at else None,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        item_count=total_items,
+        in_stock_count=in_stock,
+        out_of_stock_count=total_items - in_stock,
+    )
+
+
 def _order_to_response(
     order,
     db,
@@ -980,25 +1041,21 @@ async def list_orders(
         page_size=page_size,
     )
 
-    # Batch-fetch item display fields and pick-list references once, rather
-    # than issuing two queries per order.
-    all_item_ids = {
-        item.item_id for order in orders for item in (order.items or [])
-    }
-    item_map = _order_item_map(db, all_item_ids)
-    pick_map = _order_pick_list_map(db, [order.id for order in orders])
+    # Lightweight list: don't serialize per-order line items. Item counts and
+    # stock availability are aggregated with a single query; full line-item
+    # detail is fetched on demand via GET /outbound/orders/{order_id}.
+    item_counts = _order_item_counts(db, [order.id for order in orders])
+
+    status_counts = service.get_status_counts(
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        order_type=order_type,
+    )
 
     return OutboundOrderListResponse(
-        orders=[
-            _order_to_response(
-                order,
-                db,
-                item_map=item_map,
-                pick_list_ids=pick_map.get(str(order.id), []),
-            )
-            for order in orders
-        ],
+        orders=[_order_to_list_item(order, item_counts) for order in orders],
         pagination=pagination,
+        status_counts=OutboundOrderStatusCounts(**status_counts),
     )
 
 
@@ -1154,6 +1211,12 @@ async def list_pick_lists(
         sort_order=sort_order,
     )
 
+    status_counts = service.get_status_counts(
+        organization_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        invoice_reference=invoice_reference,
+    )
+
     # For the list view, we need to fetch full pick list objects to compute progress
     # The service returns dicts from _to_list_item, so we need to get full objects
     from app.models.pick_list import PickList
@@ -1218,6 +1281,7 @@ async def list_pick_lists(
     return OutboundPickListListResponse(
         pick_lists=result_items,
         pagination=pagination,
+        status_counts=OutboundPickListStatusCounts(**status_counts),
     )
 
 
@@ -1535,21 +1599,6 @@ async def complete_pick_list(
         pick_list_id=pick_list_id,
         org_id=org_id,
     )
-
-    # Enqueue the outbound status-update for ERP sync (WF-022). Best-effort:
-    # a queue failure must never break pick completion.
-    try:
-        ErpSyncService(db).enqueue(
-            org_id=org_id,
-            entity_type="pick_list",
-            entity_id=pick_list_id,
-            operation="status_update",
-            payload={"status": "completed"},
-            user_id=current_user.id,
-            pick_list_id=pick_list_id,
-        )
-    except Exception:  # pragma: no cover - defensive
-        pass
 
     response = _pick_list_to_response(pick_list, db)
     idempotency.record(

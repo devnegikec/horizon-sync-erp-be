@@ -64,8 +64,19 @@ class PackingSlipListItem(BaseModel):
     created_at: str | None = None
 
 
+class PackingSlipStatusCounts(BaseModel):
+    """Status distribution for packing slips."""
+
+    total: int = 0
+    draft: int = 0
+    loading: int = 0
+    dispatched: int = 0
+    cancelled: int = 0
+
+
 class PackingSlipListResponse(BaseModel):
     """Paginated list response for packing slips."""
 
     packing_slips: list[PackingSlipListItem]
     pagination: PaginationMeta
+    status_counts: PackingSlipStatusCounts | None = None

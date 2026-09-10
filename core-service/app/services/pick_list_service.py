@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -133,6 +133,40 @@ class PickListService:
             "aging_threshold_minutes"
         )
         return [self._to_list_item(x, aging_threshold) for x in items], pagination
+
+    def get_status_counts(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID | None = None,
+        invoice_reference: str | None = None,
+    ) -> dict:
+        """Return per-status counts for outbound pick lists (unfiltered by status)."""
+        query = (
+            self.db.query(PickList.status, func.count(PickList.id))
+            .filter(PickList.organization_id == organization_id)
+        )
+        if warehouse_id:
+            query = query.filter(PickList.warehouse_id == warehouse_id)
+        if invoice_reference:
+            query = query.filter(PickList.invoice_reference == invoice_reference)
+        rows = query.group_by(PickList.status).all()
+        counts = {
+            (row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in rows
+        }
+        return {
+            "total": sum(counts.values()),
+            "draft": counts.get("draft", 0),
+            "confirmed": counts.get("confirmed", 0),
+            "pending_picking": counts.get("pending_picking", 0),
+            "in_progress": counts.get("in_progress", 0),
+            "pick_complete": counts.get("pick_complete", 0),
+            "completed": counts.get("completed", 0),
+            "ready_for_dispatch": counts.get("ready_for_dispatch", 0),
+            "in_transit": counts.get("in_transit", 0),
+            "delivered": counts.get("delivered", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID

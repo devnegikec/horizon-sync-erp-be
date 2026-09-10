@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
+from app.core.authorization import has_permission
 from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
@@ -32,7 +33,9 @@ async def require_worker_manager(
 ) -> CurrentUser:
     if current_user.user_type in (UserType.SYSTEM_ADMIN, UserType.ORGANIZATION_ADMIN):
         return current_user
-    if "warehouse.manage" in current_user.permissions:
+    # Wildcard-aware check: grants exact 'warehouse.manage', resource wildcard
+    # 'warehouse.*', or full wildcard '*.*' (organization owner).
+    if has_permission(current_user.permissions, "warehouse.manage"):
         return current_user
     raise HTTPException(
         status_code=403,
