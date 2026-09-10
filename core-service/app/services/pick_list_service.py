@@ -138,6 +138,7 @@ class PickListService:
         self,
         organization_id: UUID,
         warehouse_id: UUID | None = None,
+        invoice_reference: str | None = None,
     ) -> dict:
         """Return per-status counts for outbound pick lists (unfiltered by status)."""
         query = (
@@ -146,6 +147,8 @@ class PickListService:
         )
         if warehouse_id:
             query = query.filter(PickList.warehouse_id == warehouse_id)
+        if invoice_reference:
+            query = query.filter(PickList.invoice_reference == invoice_reference)
         rows = query.group_by(PickList.status).all()
         counts = {
             (row[0].value if hasattr(row[0], "value") else row[0]): row[1]

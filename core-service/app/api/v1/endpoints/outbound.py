@@ -1214,6 +1214,7 @@ async def list_pick_lists(
     status_counts = service.get_status_counts(
         organization_id=current_user.organization_id,
         warehouse_id=warehouse_id,
+        invoice_reference=invoice_reference,
     )
 
     # For the list view, we need to fetch full pick list objects to compute progress
@@ -1598,21 +1599,6 @@ async def complete_pick_list(
         pick_list_id=pick_list_id,
         org_id=org_id,
     )
-
-    # Enqueue the outbound status-update for ERP sync (WF-022). Best-effort:
-    # a queue failure must never break pick completion.
-    try:
-        ErpSyncService(db).enqueue(
-            org_id=org_id,
-            entity_type="pick_list",
-            entity_id=pick_list_id,
-            operation="status_update",
-            payload={"status": "completed"},
-            user_id=current_user.id,
-            pick_list_id=pick_list_id,
-        )
-    except Exception:  # pragma: no cover - defensive
-        pass
 
     response = _pick_list_to_response(pick_list, db)
     idempotency.record(
