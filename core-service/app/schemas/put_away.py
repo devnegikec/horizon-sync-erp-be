@@ -75,6 +75,7 @@ class PutAwayListItemResponse(BaseModel):
     item_name: str | None = None
     batch_number: str | None = None
     serial_number: str | None = None
+    serial_nos: list[str] | None = None
     manufacturing_date: str | None = None
     expiry_date: str | None = None
     quantity: float

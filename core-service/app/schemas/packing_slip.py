@@ -17,6 +17,18 @@ class CreatePackingSlipRequest(BaseModel):
     )
 
 
+class PackPickListsRequest(BaseModel):
+    """Request schema for packing completed pick list(s) into a packing slip."""
+
+    pick_list_ids: list[UUID] = Field(
+        ..., min_length=1, description="Completed pick list UUIDs to pack"
+    )
+    packing_slip_id: UUID | None = Field(
+        None,
+        description="Optional draft packing slip to append to (creates a new one when omitted)",
+    )
+
+
 class PackingSlipItemResponse(BaseModel):
     """Response schema for a packing slip line item."""
 

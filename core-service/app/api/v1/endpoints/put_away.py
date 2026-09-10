@@ -199,6 +199,7 @@ def _build_item_response(
         item_name=item_name,
         batch_number=item.batch_number,
         serial_number=item.batch_number,
+        serial_nos=item.serial_nos,
         manufacturing_date=meta.get("manufacturing_date"),
         expiry_date=meta.get("expiry_date"),
         quantity=float(item.quantity),
@@ -579,6 +580,7 @@ async def complete_put_away_item(
         item_id=str(completed_item.item_id),
         sku=completed_item.sku,
         batch_number=completed_item.batch_number,
+        serial_nos=completed_item.serial_nos,
         quantity=float(completed_item.quantity),
         bin_location_id=str(completed_item.bin_location_id)
         if completed_item.bin_location_id
@@ -663,6 +665,7 @@ async def skip_put_away_item(
         item_id=str(skipped_item.item_id),
         sku=skipped_item.sku,
         batch_number=skipped_item.batch_number,
+        serial_nos=skipped_item.serial_nos,
         quantity=float(skipped_item.quantity),
         bin_location_id=str(skipped_item.bin_location_id)
         if skipped_item.bin_location_id

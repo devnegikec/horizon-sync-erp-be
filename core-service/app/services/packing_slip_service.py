@@ -14,7 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
-from app.models.base import OutboundOrderStatus, PackingSlipStatus
+from app.models.base import OutboundOrderStatus, PackingSlipStatus, PickListStatus
 from app.models.item import Item
 from app.models.outbound_order import OutboundOrder
 from app.models.packing_slip import PackingSlip, PackingSlipItem
@@ -64,20 +64,39 @@ class PackingSlipService:
                     f"(current status: '{order.status.value}')"
                 )
 
-        already = (
-            self.db.query(PackingSlipItem)
-            .join(PackingSlip, PackingSlip.id == PackingSlipItem.packing_slip_id)
+        # Lock the pick lists for these orders so order-based packing serializes
+        # with pick-list-based packing (both target the same pick-list rows) and
+        # cannot double-pack the same picked goods.
+        pick_lists_by_order: dict[UUID, list[PickList]] = {}
+        all_pick_lists = (
+            self.db.query(PickList)
             .filter(
-                PackingSlipItem.organization_id == org_id,
-                PackingSlipItem.order_id.in_(unique_ids),
-                PackingSlip.status != PackingSlipStatus.CANCELLED,
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id.in_(unique_ids),
             )
-            .first()
+            .with_for_update()
+            .all()
         )
-        if already is not None:
-            raise ValidationError(
-                "One or more orders are already packed on an active packing slip"
+        for pl in all_pick_lists:
+            pick_lists_by_order.setdefault(pl.reference_id, []).append(pl)
+
+        pick_list_ids = [pl.id for pl in all_pick_lists]
+        if pick_list_ids:
+            already = (
+                self.db.query(PackingSlipItem)
+                .join(PackingSlip, PackingSlip.id == PackingSlipItem.packing_slip_id)
+                .filter(
+                    PackingSlipItem.organization_id == org_id,
+                    PackingSlipItem.pick_list_id.in_(pick_list_ids),
+                    PackingSlip.status != PackingSlipStatus.CANCELLED,
+                )
+                .first()
             )
+            if already is not None:
+                raise ValidationError(
+                    "One or more pick lists are already packed on an active packing slip"
+                )
 
         numbering = DocumentNumberingService(self.db)
         slip = PackingSlip(
@@ -93,16 +112,7 @@ class PackingSlipService:
 
         sort_order = 0
         for order in orders:
-            pick_lists = (
-                self.db.query(PickList)
-                .filter(
-                    PickList.organization_id == org_id,
-                    PickList.reference_type == "outbound_order",
-                    PickList.reference_id == order.id,
-                )
-                .all()
-            )
-            for pl in pick_lists:
+            for pl in pick_lists_by_order.get(order.id, []):
                 for pli in pl.items:
                     picked = Decimal(str(pli.picked_qty or 0))
                     if picked <= 0:
@@ -131,6 +141,127 @@ class PackingSlipService:
         if sort_order == 0:
             raise ValidationError(
                 "No picked items found to pack for the selected order(s)"
+            )
+
+        self.db.commit()
+        self.db.refresh(slip)
+        return slip
+
+    def pack_pick_lists(
+        self,
+        pick_list_ids: list[UUID],
+        org_id: UUID,
+        user_id: UUID,
+        packing_slip_id: UUID | None = None,
+    ) -> PackingSlip:
+        """Pack one or more completed pick lists into a packing slip.
+
+        Creates a new draft packing slip when ``packing_slip_id`` is None, or
+        appends the pick lists' picked items to the existing draft slip. Pick
+        lists may come from different orders, so multiple orders can share one
+        slip and an order can be spread across multiple slips.
+        """
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        unique_ids = list(dict.fromkeys(pick_list_ids))
+        pick_lists = (
+            self.db.query(PickList)
+            .filter(
+                PickList.id.in_(unique_ids),
+                PickList.organization_id == org_id,
+            )
+            .with_for_update()
+            .all()
+        )
+        if len(pick_lists) != len(unique_ids):
+            raise ResourceNotFoundException("One or more pick lists not found")
+
+        packable = {
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+        }
+        for pl in pick_lists:
+            if pl.status not in packable:
+                raise ValidationError(
+                    f"Pick list '{pl.pick_list_no}' is not completed "
+                    f"(current status: '{pl.status.value}')"
+                )
+
+        warehouses = {pl.warehouse_id for pl in pick_lists}
+        if len(warehouses) != 1:
+            raise ValidationError("All pick lists must belong to the same warehouse")
+        warehouse_id = warehouses.pop()
+
+        already = (
+            self.db.query(PackingSlipItem)
+            .join(PackingSlip, PackingSlip.id == PackingSlipItem.packing_slip_id)
+            .filter(
+                PackingSlipItem.organization_id == org_id,
+                PackingSlipItem.pick_list_id.in_(unique_ids),
+                PackingSlip.status != PackingSlipStatus.CANCELLED,
+            )
+            .first()
+        )
+        if already is not None:
+            raise ValidationError(
+                "One or more pick lists are already packed on an active packing slip"
+            )
+
+        if packing_slip_id is not None:
+            slip = self._get(packing_slip_id, org_id, for_update=True)
+            if slip.status != PackingSlipStatus.DRAFT:
+                raise ValidationError("Can only add items to a draft packing slip")
+            if slip.warehouse_id != warehouse_id:
+                raise ValidationError("Packing slip belongs to a different warehouse")
+        else:
+            numbering = DocumentNumberingService(self.db)
+            slip = PackingSlip(
+                organization_id=org_id,
+                packing_slip_no=numbering.get_next_number(org_id, "packing_slip"),
+                warehouse_id=warehouse_id,
+                status=PackingSlipStatus.DRAFT,
+                created_by=user_id,
+                updated_by=user_id,
+            )
+            self.db.add(slip)
+            self.db.flush()
+
+        sort_order = (
+            max((i.sort_order or 0) for i in slip.items) + 1 if slip.items else 0
+        )
+        added = 0
+        for pl in pick_lists:
+            order_id = pl.reference_id if pl.reference_type == "outbound_order" else None
+            for pli in pl.items:
+                picked = Decimal(str(pli.picked_qty or 0))
+                if picked <= 0:
+                    continue
+                self.db.add(
+                    PackingSlipItem(
+                        organization_id=org_id,
+                        packing_slip_id=slip.id,
+                        order_id=order_id,
+                        pick_list_id=pl.id,
+                        item_id=pli.item_id,
+                        qty=picked,
+                        uom=pli.uom,
+                        per_case_qty=pli.per_case_qty,
+                        case_qty=pli.case_qty,
+                        loose_qty=pli.loose_qty,
+                        batch_no=pli.batch_no,
+                        serial_nos=pli.serial_nos,
+                        bin_location_id=pli.bin_location_id,
+                        handling_unit_id=pli.handling_unit_id,
+                        sort_order=sort_order,
+                    )
+                )
+                sort_order += 1
+                added += 1
+
+        if added == 0:
+            raise ValidationError(
+                "No picked items found to pack for the selected pick list(s)"
             )
 
         self.db.commit()
