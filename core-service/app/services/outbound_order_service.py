@@ -252,6 +252,7 @@ class OutboundOrderService:
         org_id: UUID,
         worker_ids: list[UUID] | None = None,
         mode: str | None = None,
+        exclude_out_of_stock: bool = True,
     ) -> list[PickList]:
         """Generate one or more pick lists from a confirmed order.
 
@@ -264,6 +265,10 @@ class OutboundOrderService:
         ``mode`` mirrors the put-away generation contract: ``auto`` (default)
         assigns bin locations via FIFO/FEFO resolution; ``manual`` leaves bin
         assignment to the worker.
+
+        When ``exclude_out_of_stock`` is true (default), order lines with no
+        available stock are skipped so the generated pick lists only carry
+        fulfillable items (partial order).
         """
         order = self.get_order(order_id, org_id)
 
@@ -275,6 +280,23 @@ class OutboundOrderService:
 
         if not order.items:
             raise ValidationError("Order has no line items")
+
+        # Recompute per-line availability so out-of-stock lines are excluded
+        # from pick generation (partial order support).
+        self.refresh_stock_status(order, commit=False)
+
+        pickable_items = list(order.items)
+        if exclude_out_of_stock:
+            pickable_items = [
+                item
+                for item in order.items
+                if Decimal(str(item.available_qty or 0)) > 0
+            ]
+            if not pickable_items:
+                raise ValidationError(
+                    "No items have available stock to pick; "
+                    "nothing was generated for this order"
+                )
 
         effective_mode = mode or "auto"
         if effective_mode not in {"auto", "manual"}:
@@ -291,7 +313,7 @@ class OutboundOrderService:
 
         # Split order items round-robin across buckets (worker count).
         buckets: list[list[OutboundOrderItem]] = [[] for _ in range(bucket_count)]
-        for idx, item in enumerate(order.items):
+        for idx, item in enumerate(pickable_items):
             buckets[idx % bucket_count].append(item)
 
         pick_lists: list[PickList] = []

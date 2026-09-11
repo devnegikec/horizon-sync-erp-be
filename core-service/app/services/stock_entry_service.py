@@ -394,7 +394,7 @@ class StockEntryService:
                     f"Item {item.item_id}: source warehouse is required for material issue"
                 )
             sl = self._get_or_create_stock_level(item.item_id, wh, organization_id)
-            sl.quantity_on_hand = (sl.quantity_on_hand or 0) - qty_base
+            sl.quantity_on_hand = max(0, (sl.quantity_on_hand or 0) - qty_base)
             sl.quantity_available = max(
                 0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0)
             )
@@ -414,7 +414,7 @@ class StockEntryService:
                     f"Item {item.item_id}: both source and target warehouses are required for transfer"
                 )
             sl_src = self._get_or_create_stock_level(item.item_id, src, organization_id)
-            sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
+            sl_src.quantity_on_hand = max(0, (sl_src.quantity_on_hand or 0) - qty_base)
             sl_src.quantity_available = max(
                 0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
             )
@@ -439,7 +439,7 @@ class StockEntryService:
                 sl_src = self._get_or_create_stock_level(
                     item.item_id, src, organization_id
                 )
-                sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
+                sl_src.quantity_on_hand = max(0, (sl_src.quantity_on_hand or 0) - qty_base)
                 sl_src.quantity_available = max(
                     0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
                 )

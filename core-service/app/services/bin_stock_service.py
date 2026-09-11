@@ -336,6 +336,7 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
         )
 
         if bin_stock is None:
@@ -818,8 +819,14 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
     ) -> BinStockLevel | None:
-        """Get a specific BinStockLevel record."""
+        """Get a specific BinStockLevel record.
+
+        When ``for_update`` is true the row is locked (SELECT ... FOR UPDATE)
+        so the caller can read-modify-write without losing a concurrent
+        update (e.g. two simultaneous pick scans of the same bin).
+        """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
@@ -830,6 +837,9 @@ class BinStockService:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if for_update:
+            query = query.with_for_update()
 
         return query.first()
 
@@ -854,7 +864,9 @@ class BinStockService:
         quantity_available_delta: Availability impact. Stock in non-pickable
             bins changes on-hand but not ATP.
         """
-        # Get or create the warehouse-level stock record
+        # Get or create the warehouse-level stock record. FOR UPDATE serializes
+        # concurrent bin-level changes to the same (item, warehouse) aggregate
+        # so the read-modify-write below can't lose updates.
         stock_level = (
             self.db.query(StockLevel)
             .filter(
@@ -862,6 +874,7 @@ class BinStockService:
                 StockLevel.warehouse_id == warehouse_id,
                 StockLevel.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
 
@@ -881,7 +894,7 @@ class BinStockService:
         int_delta = int(quantity_delta)
         current_on_hand = stock_level.quantity_on_hand or 0
 
-        new_on_hand = current_on_hand + int_delta
+        new_on_hand = max(0, current_on_hand + int_delta)
         available_delta = int(
             quantity_available_delta
             if quantity_available_delta is not None

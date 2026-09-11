@@ -1150,6 +1150,7 @@ async def generate_pick_lists_from_order(
         org_id=current_user.organization_id,
         worker_ids=data.worker_ids,
         mode=data.mode,
+        exclude_out_of_stock=data.exclude_out_of_stock,
     )
     return [_pick_list_to_response(pl, db) for pl in pick_lists]
 

@@ -84,6 +84,14 @@ class CreatePickListFromOrderRequest(BaseModel):
             "the organization setting (auto unless overridden)."
         ),
     )
+    exclude_out_of_stock: bool = Field(
+        default=True,
+        description=(
+            "When true (default), order lines with no available stock are "
+            "skipped so the generated pick lists only contain fulfillable "
+            "items (partial order)."
+        ),
+    )
 
 
 class StageTransferRequest(BaseModel):
