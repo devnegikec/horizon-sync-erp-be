@@ -67,7 +67,7 @@ class PackingSlipGroupItem(BaseModel):
     batch_number: str | None = None
     manufacturing_date: str | None = None
     expiry_date: str | None = None
-    quantity: int = 1
+    quantity: float = 1.0
     box_count: int = 1
 
 
