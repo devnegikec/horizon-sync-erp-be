@@ -14,7 +14,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import (
@@ -68,6 +68,53 @@ class OutboundOrderService:
             self.db.refresh(order)
         return order
 
+    def refresh_stock_status_batch(
+        self, orders: list[OutboundOrder], commit: bool = False
+    ) -> None:
+        """Recompute per-line stock status for many orders with one query.
+
+        Used by the list endpoint so the in-stock/out-of-stock counts reflect
+        live availability rather than the last persisted snapshot.
+        """
+        if not orders:
+            return
+
+        item_ids = {
+            item.item_id for order in orders for item in (order.items or [])
+        }
+        if not item_ids:
+            return
+
+        levels = (
+            self.db.query(StockLevel)
+            .filter(
+                StockLevel.organization_id == orders[0].organization_id,
+                StockLevel.product_id.in_(item_ids),
+            )
+            .all()
+        )
+        available_by_key = {
+            (level.warehouse_id, level.product_id): level for level in levels
+        }
+
+        for order in orders:
+            for item in order.items or []:
+                level = available_by_key.get((order.warehouse_id, item.item_id))
+                available = (
+                    Decimal(str(level.quantity_available or 0))
+                    if level
+                    else Decimal("0")
+                )
+                item.available_qty = available
+                item.stock_status = (
+                    OutboundOrderItemStockStatus.IN_STOCK
+                    if available >= Decimal(str(item.qty))
+                    else OutboundOrderItemStockStatus.OUT_OF_STOCK
+                )
+
+        if commit:
+            self.db.commit()
+
     # ------------------------------------------------------------------
     # QUERIES
     # ------------------------------------------------------------------
@@ -81,8 +128,10 @@ class OutboundOrderService:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[OutboundOrder], dict]:
-        query = self.db.query(OutboundOrder).filter(
-            OutboundOrder.organization_id == org_id
+        query = (
+            self.db.query(OutboundOrder)
+            .filter(OutboundOrder.organization_id == org_id)
+            .options(selectinload(OutboundOrder.items))
         )
         if warehouse_id:
             query = query.filter(OutboundOrder.warehouse_id == warehouse_id)
@@ -98,6 +147,10 @@ class OutboundOrderService:
             .limit(page_size)
             .all()
         )
+
+        # Keep per-line availability live for the list's in-stock/out-of-stock
+        # counts (in-memory only; no write on read).
+        self.refresh_stock_status_batch(orders, commit=False)
 
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
@@ -150,6 +203,8 @@ class OutboundOrderService:
         )
         if order is None:
             raise ResourceNotFoundException(f"Outbound order {order_id} not found")
+        # Keep per-line availability fresh for the detail view (read-only).
+        self.refresh_stock_status(order, commit=False)
         return order
 
     # ------------------------------------------------------------------
@@ -167,10 +222,22 @@ class OutboundOrderService:
             raise ValidationError(
                 f"Order is already in '{order.status.value}' status"
             )
+
+        # get_order() already refreshed per-line availability. Reject confirm
+        # when no line can be fulfilled (soft check — the authoritative,
+        # locked reservation still happens at pick-list creation).
+        if not any(
+            item.stock_status == OutboundOrderItemStockStatus.IN_STOCK
+            for item in (order.items or [])
+        ):
+            raise ValidationError(
+                "Cannot confirm order: none of its line items are in stock"
+            )
+
         order.status = OutboundOrderStatus.CONFIRMED
         self.db.commit()
         self.db.refresh(order)
-        return self.refresh_stock_status(order)
+        return order
 
     def create_order(
         self,
@@ -281,22 +348,47 @@ class OutboundOrderService:
         if not order.items:
             raise ValidationError("Order has no line items")
 
-        # Recompute per-line availability so out-of-stock lines are excluded
-        # from pick generation (partial order support).
-        self.refresh_stock_status(order, commit=False)
-
-        pickable_items = list(order.items)
-        if exclude_out_of_stock:
-            pickable_items = [
-                item
-                for item in order.items
-                if Decimal(str(item.available_qty or 0)) > 0
-            ]
-            if not pickable_items:
-                raise ValidationError(
-                    "No items have available stock to pick; "
-                    "nothing was generated for this order"
+        # Atomically reserve stock per line so concurrent pick-list generations
+        # cannot over-promise the same availability (race-condition guard).
+        pickable_items: list[OutboundOrderItem] = []
+        for item in order.items:
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == item.item_id,
+                    StockLevel.warehouse_id == order.warehouse_id,
+                    StockLevel.organization_id == org_id,
                 )
+                .with_for_update()
+                .first()
+            )
+            available = int(stock_level.quantity_available or 0) if stock_level else 0
+            reserved = int(stock_level.quantity_reserved or 0) if stock_level else 0
+            qty = int(item.qty or 0)
+
+            if available < qty:
+                # Not fully fulfillable → out of stock.
+                item.stock_status = OutboundOrderItemStockStatus.OUT_OF_STOCK
+                item.available_qty = available
+                if exclude_out_of_stock:
+                    # Partial order: skip out-of-stock lines entirely.
+                    continue
+                # Full-order mode: keep the line, reserve only what exists.
+                reserve_qty = available
+            else:
+                item.stock_status = OutboundOrderItemStockStatus.IN_STOCK
+                item.available_qty = available
+                reserve_qty = qty
+
+            if stock_level is not None and reserve_qty > 0:
+                stock_level.quantity_reserved = reserved + reserve_qty
+                stock_level.quantity_available = available - reserve_qty
+            pickable_items.append(item)
+
+        if not pickable_items:
+            raise ValidationError(
+                "No items are in stock to pick; nothing was generated for this order"
+            )
 
         effective_mode = mode or "auto"
         if effective_mode not in {"auto", "manual"}:

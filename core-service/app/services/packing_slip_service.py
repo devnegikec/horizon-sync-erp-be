@@ -411,8 +411,10 @@ class PackingSlipService:
                 on_hand = Decimal(str(stock_level.quantity_on_hand or 0))
                 reserved = Decimal(str(stock_level.quantity_reserved or 0))
                 stock_level.quantity_on_hand = max(Decimal("0"), on_hand - qty)
+                stock_level.quantity_reserved = max(Decimal("0"), reserved - qty)
                 stock_level.quantity_available = max(
-                    Decimal("0"), stock_level.quantity_on_hand - reserved
+                    Decimal("0"),
+                    stock_level.quantity_on_hand - stock_level.quantity_reserved,
                 )
 
         # Propagate transfer serials and advance source pick lists to in_transit.

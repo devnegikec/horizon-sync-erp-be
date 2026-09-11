@@ -79,6 +79,7 @@ from app.schemas.outbound import (
     OutboundPickListListResponse,
     OutboundPickListResponse,
     OutboundPickListStatusCounts,
+    PickListAcceptResponse,
     PickListProgress,
     PickScanRequest,
     PickScanResult,
@@ -884,43 +885,6 @@ def _order_pick_list_map(db, order_ids) -> dict[str, list[str]]:
     return result
 
 
-def _order_item_counts(db, order_ids) -> dict[str, tuple[int, int]]:
-    """Return {order_id: (total_items, in_stock_items)} via one aggregate query.
-
-    Avoids loading the full line-item rows for list serialization.
-    """
-    if not order_ids or db is None:
-        return {}
-    from sqlalchemy import case, func
-
-    from app.models.base import OutboundOrderItemStockStatus
-    from app.models.outbound_order import OutboundOrderItem
-
-    rows = (
-        db.query(
-            OutboundOrderItem.outbound_order_id,
-            func.count(OutboundOrderItem.id),
-            func.sum(
-                case(
-                    (
-                        OutboundOrderItem.stock_status
-                        == OutboundOrderItemStockStatus.IN_STOCK,
-                        1,
-                    ),
-                    else_=0,
-                )
-            ),
-        )
-        .filter(OutboundOrderItem.outbound_order_id.in_(order_ids))
-        .group_by(OutboundOrderItem.outbound_order_id)
-        .all()
-    )
-    return {
-        str(r[0]): (int(r[1] or 0), int(r[2] or 0))
-        for r in rows
-    }
-
-
 def _order_to_list_item(
     order, item_counts: dict[str, tuple[int, int]]
 ) -> OutboundOrderListItem:
@@ -1041,10 +1005,19 @@ async def list_orders(
         page_size=page_size,
     )
 
-    # Lightweight list: don't serialize per-order line items. Item counts and
-    # stock availability are aggregated with a single query; full line-item
-    # detail is fetched on demand via GET /outbound/orders/{order_id}.
-    item_counts = _order_item_counts(db, [order.id for order in orders])
+    # The service refreshed per-line availability in-memory, so compute the
+    # in-stock/out-of-stock counts from live values instead of a stale snapshot.
+    from app.models.base import OutboundOrderItemStockStatus
+
+    item_counts: dict[str, tuple[int, int]] = {}
+    for order in orders:
+        items = order.items or []
+        in_stock = sum(
+            1
+            for it in items
+            if it.stock_status == OutboundOrderItemStockStatus.IN_STOCK
+        )
+        item_counts[str(order.id)] = (len(items), in_stock)
 
     status_counts = service.get_status_counts(
         org_id=current_user.organization_id,
@@ -1368,7 +1341,7 @@ async def assign_pick_list_worker(
 
 @router.post(
     "/{pick_list_id}/accept",
-    response_model=OutboundPickListResponse,
+    response_model=PickListAcceptResponse,
     summary="Accept a pick task",
     description="Record the worker accepting the pick task and start the timer (WF-010)",
 )
@@ -1386,7 +1359,7 @@ async def accept_pick_list(
     **Path Parameters:**
     - **pick_list_id**: UUID of the pick list to accept
 
-    **Returns:** Updated pick list with the accept timestamp
+    **Returns:** The pick list's identity, status and acceptance info.
 
     Requirements: WF-010
     """
@@ -1396,7 +1369,13 @@ async def accept_pick_list(
         org_id=current_user.organization_id,
         worker_id=current_user.id,
     )
-    return _pick_list_to_response(pick_list, db)
+    return PickListAcceptResponse(
+        id=str(pick_list.id),
+        pick_list_no=pick_list.pick_list_no,
+        status=pick_list.status.value if pick_list.status else "draft",
+        accepted_at=pick_list.accepted_at.isoformat() if pick_list.accepted_at else None,
+        accepted_by=str(pick_list.accepted_by) if pick_list.accepted_by else None,
+    )
 
 
 @router.post(

@@ -506,7 +506,9 @@ class OutboundService:
                 stock_level.quantity_on_hand = max(
                     0, (stock_level.quantity_on_hand or 0) - dispatch_qty_int
                 )
-                # Also update available quantity
+                stock_level.quantity_reserved = max(
+                    0, (stock_level.quantity_reserved or 0) - dispatch_qty_int
+                )
                 stock_level.quantity_available = max(
                     0,
                     (stock_level.quantity_on_hand or 0)

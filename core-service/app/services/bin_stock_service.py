@@ -48,6 +48,7 @@ class BinStockService:
         batch_number: str | None = None,
         *,
         commit: bool = True,
+        sync_warehouse: bool = True,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -116,16 +117,18 @@ class BinStockService:
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=quantity,
-            quantity_available_delta=quantity
-            if bin_location.is_pickable
-            else Decimal("0"),
-        )
+        # Sync warehouse-level stock_levels (skipped when the caller manages
+        # warehouse on_hand itself, e.g. pick-cancel add-back).
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=quantity,
+                quantity_available_delta=quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
@@ -296,6 +299,7 @@ class BinStockService:
         batch_number: str | None = None,
         *,
         commit: bool = True,
+        sync_warehouse: bool = True,
     ) -> BinStockLevel:
         """Remove stock from a bin location.
 
@@ -363,16 +367,18 @@ class BinStockService:
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels (negative delta)
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=-quantity,
-            quantity_available_delta=-quantity
-            if bin_location.is_pickable
-            else Decimal("0"),
-        )
+        # Sync warehouse-level stock_levels (negative delta). Skipped for pick
+        # scans so warehouse on_hand is decremented exactly once, at dispatch.
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=-quantity,
+                quantity_available_delta=-quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)

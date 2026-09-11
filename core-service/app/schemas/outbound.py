@@ -283,6 +283,20 @@ class OutboundPickListResponse(BaseModel):
     progress: PickListProgress | None = None
 
 
+class PickListAcceptResponse(BaseModel):
+    """Minimal response for accepting a pick task (WF-010).
+
+    Returns only the pick list's identity, state and acceptance info — item
+    lines and progress detail are intentionally omitted.
+    """
+
+    id: str
+    pick_list_no: str
+    status: str
+    accepted_at: str | None = None
+    accepted_by: str | None = None
+
+
 class PickScanResult(BaseModel):
     """Response schema for a recorded pick scan.
 
