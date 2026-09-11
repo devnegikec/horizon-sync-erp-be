@@ -31,11 +31,14 @@ from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
     CompletePutAwayItemRequest,
     GeneratePutAwayRequest,
+    PutAwayItemGroup,
+    PutAwayItemGroupItem,
     PutAwayListBatchResponse,
     PutAwayListItemResponse,
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
+    PutAwayParentInfo,
     PutAwayStatusCounts,
     SkipPutAwayItemRequest,
 )
@@ -215,6 +218,105 @@ def _build_item_response(
     )
 
 
+def _build_groups(db: Session, put_away_list: PutAwayList) -> list[PutAwayItemGroup]:
+    """Group put-away items by their QSeal parent (master pack).
+
+    Mirrors the receiving-slip ``groups`` shape so the same view component can
+    render both documents consistently.
+    """
+    serials = {
+        s for item in put_away_list.items for s in (item.serial_nos or []) if s
+    }
+    if not serials:
+        return []
+
+    from app.models.qseal import QSealParameters, QSealTrack
+
+    params = (
+        db.query(
+            QSealParameters.serial_number,
+            QSealParameters.parent_id,
+            QSealParameters.dispatch_batch,
+            QSealParameters.manufacturing_date,
+            QSealParameters.expiry_date,
+        )
+        .filter(QSealParameters.serial_number.in_(serials))
+        .all()
+    )
+    param_by_serial = {p.serial_number: p for p in params}
+
+    parent_ids = {p.parent_id for p in params if p.parent_id}
+    tracks = (
+        db.query(QSealTrack).filter(QSealTrack.id.in_(parent_ids)).all()
+        if parent_ids
+        else []
+    )
+    track_by_id = {t.id: t for t in tracks}
+
+    groups: dict = {}
+    order = 0
+    for item in put_away_list.items:
+        child_serials = [s for s in (item.serial_nos or []) if s]
+
+        parent_id = None
+        for serial in child_serials:
+            param = param_by_serial.get(serial)
+            if param and param.parent_id:
+                parent_id = param.parent_id
+                break
+
+        parent_key = str(parent_id) if parent_id else f"__item__{item.id}"
+        if parent_key not in groups:
+            parent_info = None
+            track = track_by_id.get(parent_id) if parent_id else None
+            if track is not None:
+                parent_info = PutAwayParentInfo(
+                    id=str(track.id),
+                    serial_number=track.serial_number,
+                    name=track.name,
+                    qseal_type=track.qseal_type,
+                    capacity=track.capacity,
+                )
+            bin_code = None
+            if item.bin_location is not None:
+                bin_code = item.bin_location.full_path or item.bin_location.code
+            groups[parent_key] = {
+                "parent_qseal": parent_info,
+                "product_name": item.item.item_name if item.item else None,
+                "bin_location_id": str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                "bin_location_code": bin_code,
+                "status": item.status,
+                "sort_order": order,
+                "items": [],
+            }
+            order += 1
+
+        for serial in child_serials:
+            param = param_by_serial.get(serial)
+            batch = (param.dispatch_batch if param else None) or item.batch_number
+            groups[parent_key]["items"].append(
+                PutAwayItemGroupItem(
+                    serial_number=serial,
+                    sku=item.sku,
+                    batch_number=batch or serial,
+                    manufacturing_date=(
+                        str(param.manufacturing_date)
+                        if param and param.manufacturing_date
+                        else None
+                    ),
+                    expiry_date=(
+                        str(param.expiry_date) if param and param.expiry_date else None
+                    ),
+                    quantity=1,
+                    box_count=1,
+                )
+            )
+
+    return [PutAwayItemGroup(**group) for group in groups.values()]
+
+
 def _build_list_response(
     pal: PutAwayList, counts: dict, slip_no_map: dict, worker_name_map: dict
 ) -> PutAwayListSummaryResponse:
@@ -252,6 +354,7 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         _build_item_response(item, serial_meta) for item in put_away_list.items
     ]
     item_responses.sort(key=lambda x: x.sort_order)
+    groups = _build_groups(db, put_away_list)
 
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
     completed_qty = sum(
@@ -299,6 +402,7 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         if put_away_list.updated_at
         else None,
         items=item_responses,
+        groups=groups,
     )
 
 

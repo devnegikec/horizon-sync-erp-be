@@ -89,6 +89,40 @@ class PutAwayListItemResponse(BaseModel):
     created_at: str | None = None
 
 
+class PutAwayParentInfo(BaseModel):
+    """QSeal parent (master pack) info attached to a put-away group."""
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class PutAwayItemGroupItem(BaseModel):
+    """Individual unit inside a master-pack put-away group."""
+
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: int = 1
+    box_count: int = 1
+
+
+class PutAwayItemGroup(BaseModel):
+    """A group of put-away units under the same QSeal parent (master pack)."""
+
+    parent_qseal: PutAwayParentInfo | None = None
+    product_name: str | None = None
+    bin_location_id: str | None = None
+    bin_location_code: str | None = None
+    status: str | None = None
+    sort_order: int = 0
+    items: list[PutAwayItemGroupItem] = []
+
+
 class PutAwayListResponse(BaseModel):
     """Response schema for a put-away list."""
 
@@ -112,7 +146,7 @@ class PutAwayListResponse(BaseModel):
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    items: list[PutAwayListItemResponse] = []
+    groups: list[PutAwayItemGroup] = []
 
 
 class PutAwayListBatchResponse(BaseModel):
