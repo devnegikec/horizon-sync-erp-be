@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.alembic_guards import has_column, has_constraint, has_index, has_table
 
 revision = "043_qr_credit_management"
 down_revision = "042_product_serial_config"
@@ -18,50 +19,56 @@ depends_on = None
 
 def upgrade() -> None:
     for column_name in ("channel_setting_id", "destination_setting_id"):
-        op.add_column(
-            "qr_blocks",
-            sa.Column(
-                column_name,
-                postgresql.UUID(as_uuid=True),
-                nullable=True,
-            ),
-        )
-        op.create_index(
-            f"ix_qr_blocks_{column_name}",
-            "qr_blocks",
-            [column_name],
-        )
-        op.create_foreign_key(
-            f"fk_qr_blocks_{column_name}",
-            "qr_blocks",
-            "qr_product_settings",
-            [column_name],
-            ["id"],
-            ondelete="RESTRICT",
-        )
+        if has_table("qr_blocks") and not has_column("qr_blocks", column_name):
+            op.add_column(
+                "qr_blocks",
+                sa.Column(
+                    column_name,
+                    postgresql.UUID(as_uuid=True),
+                    nullable=True,
+                ),
+            )
+        if (
+            has_table("qr_blocks")
+            and has_column("qr_blocks", column_name)
+            and not has_index("qr_blocks", f"ix_qr_blocks_{column_name}")
+        ):
+            op.create_index(
+                f"ix_qr_blocks_{column_name}",
+                "qr_blocks",
+                [column_name],
+            )
+        if (
+            has_table("qr_blocks")
+            and has_table("qr_product_settings")
+            and has_column("qr_blocks", column_name)
+            and not has_constraint("qr_blocks", f"fk_qr_blocks_{column_name}")
+        ):
+            op.create_foreign_key(
+                f"fk_qr_blocks_{column_name}",
+                "qr_blocks",
+                "qr_product_settings",
+                [column_name],
+                ["id"],
+                ondelete="RESTRICT",
+            )
 
-    op.alter_column(
-        "qr_credit_ledger",
-        "quantity_deducted",
-        new_column_name="amount",
-        existing_type=sa.Integer(),
-    )
-    op.add_column(
-        "qr_credit_ledger",
-        sa.Column("transaction_type", sa.String(length=30), nullable=True),
-    )
-    op.add_column(
-        "qr_credit_ledger",
-        sa.Column("reason", sa.Text(), nullable=True),
-    )
-    op.add_column(
-        "qr_credit_ledger",
-        sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
-    )
-    op.add_column(
-        "qr_credit_ledger",
-        sa.Column("reference_id", postgresql.UUID(as_uuid=True), nullable=True),
-    )
+    if has_table("qr_credit_ledger"):
+        if has_column("qr_credit_ledger", "quantity_deducted") and not has_column("qr_credit_ledger", "amount"):
+            op.alter_column(
+                "qr_credit_ledger",
+                "quantity_deducted",
+                new_column_name="amount",
+                existing_type=sa.Integer(),
+            )
+        for name, column_type in (
+            ("transaction_type", sa.String(length=30)),
+            ("reason", sa.Text()),
+            ("created_by", postgresql.UUID(as_uuid=True)),
+            ("reference_id", postgresql.UUID(as_uuid=True)),
+        ):
+            if not has_column("qr_credit_ledger", name):
+                op.add_column("qr_credit_ledger", sa.Column(name, column_type, nullable=True))
 
     op.execute(
         """
@@ -71,33 +78,37 @@ def upgrade() -> None:
             reason = COALESCE(reason, 'QR Block generation')
         """
     )
-    op.alter_column(
-        "qr_credit_ledger",
-        "transaction_type",
-        existing_type=sa.String(length=30),
-        nullable=False,
-    )
-    op.create_check_constraint(
-        "ck_qr_credit_ledger_amount_nonzero",
-        "qr_credit_ledger",
-        "amount <> 0",
-    )
-    op.create_index(
-        "uq_qr_credit_ledger_org_reference",
-        "qr_credit_ledger",
-        ["organization_id", "reference_id"],
-        unique=True,
-        postgresql_where=sa.text("reference_id IS NOT NULL"),
-    )
-    op.create_index(
-        "uq_qr_credit_ledger_block_consumption",
-        "qr_credit_ledger",
-        ["block_id"],
-        unique=True,
-        postgresql_where=sa.text(
-            "block_id IS NOT NULL AND transaction_type = 'block_consumption'"
-        ),
-    )
+    if has_table("qr_credit_ledger") and has_column("qr_credit_ledger", "transaction_type"):
+        op.alter_column(
+            "qr_credit_ledger",
+            "transaction_type",
+            existing_type=sa.String(length=30),
+            nullable=False,
+        )
+    if has_table("qr_credit_ledger") and not has_constraint("qr_credit_ledger", "ck_qr_credit_ledger_amount_nonzero"):
+        op.create_check_constraint(
+            "ck_qr_credit_ledger_amount_nonzero",
+            "qr_credit_ledger",
+            "amount <> 0",
+        )
+    if has_table("qr_credit_ledger") and not has_index("qr_credit_ledger", "uq_qr_credit_ledger_org_reference"):
+        op.create_index(
+            "uq_qr_credit_ledger_org_reference",
+            "qr_credit_ledger",
+            ["organization_id", "reference_id"],
+            unique=True,
+            postgresql_where=sa.text("reference_id IS NOT NULL"),
+        )
+    if has_table("qr_credit_ledger") and not has_index("qr_credit_ledger", "uq_qr_credit_ledger_block_consumption"):
+        op.create_index(
+            "uq_qr_credit_ledger_block_consumption",
+            "qr_credit_ledger",
+            ["block_id"],
+            unique=True,
+            postgresql_where=sa.text(
+                "block_id IS NOT NULL AND transaction_type = 'block_consumption'"
+            ),
+        )
 
 
 def downgrade() -> None:

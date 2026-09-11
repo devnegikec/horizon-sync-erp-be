@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.alembic_guards import has_column, has_constraint, has_index, has_table
 
 revision = "042_product_serial_config"
 down_revision = "041_qr_block_integrity"
@@ -17,27 +18,39 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "qr_products",
-        sa.Column(
-            "serial_prefix_setting_id",
-            postgresql.UUID(as_uuid=True),
-            nullable=True,
-        ),
-    )
-    op.create_index(
-        "ix_qr_products_serial_prefix_setting_id",
-        "qr_products",
-        ["serial_prefix_setting_id"],
-    )
-    op.create_foreign_key(
-        "fk_qr_products_serial_prefix_setting_id",
-        "qr_products",
-        "qr_product_settings",
-        ["serial_prefix_setting_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
+    if has_table("qr_products") and not has_column("qr_products", "serial_prefix_setting_id"):
+        op.add_column(
+            "qr_products",
+            sa.Column(
+                "serial_prefix_setting_id",
+                postgresql.UUID(as_uuid=True),
+                nullable=True,
+            ),
+        )
+    if (
+        has_table("qr_products")
+        and has_column("qr_products", "serial_prefix_setting_id")
+        and not has_index("qr_products", "ix_qr_products_serial_prefix_setting_id")
+    ):
+        op.create_index(
+            "ix_qr_products_serial_prefix_setting_id",
+            "qr_products",
+            ["serial_prefix_setting_id"],
+        )
+    if (
+        has_table("qr_products")
+        and has_table("qr_product_settings")
+        and has_column("qr_products", "serial_prefix_setting_id")
+        and not has_constraint("qr_products", "fk_qr_products_serial_prefix_setting_id")
+    ):
+        op.create_foreign_key(
+            "fk_qr_products_serial_prefix_setting_id",
+            "qr_products",
+            "qr_product_settings",
+            ["serial_prefix_setting_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
 
     # Normalize legacy Product form values to the generation contract. Prefixes
     # are intentionally not backfilled because the correct setting cannot be

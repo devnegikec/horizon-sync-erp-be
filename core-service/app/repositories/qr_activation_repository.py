@@ -69,7 +69,7 @@ class QRActivationRepository:
                 QRActivationParameters.product_id == product_id,
                 QRActivationParameters.qr_settings.is_(True),
                 QRActivationParameters.organization_id == organization_id,
-              #  QRActivationParameters.history.is_(False),
+                QRActivationParameters.history.is_(False),
             )
             .order_by(QRActivationParameters.created_at.desc())
             .first()
@@ -82,6 +82,7 @@ class QRActivationRepository:
                 QRActivationParameters.product_id.in_(product_ids),
                 QRActivationParameters.organization_id == organization_id,
                 QRActivationParameters.qr_settings.is_(True),
+                QRActivationParameters.history.is_(False),
             )
             .all()
         )
@@ -96,7 +97,7 @@ class QRActivationRepository:
                 QRActivationParameters.product_id == product_id,
                 QRActivationParameters.qr_settings.is_(True),
                 QRActivationParameters.organization_id == organization_id,
-               # QRActivationParameters.history.is_(False),
+                QRActivationParameters.history.is_(False),
             )
             .first()
         )

@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.alembic_guards import has_column, has_constraint, has_index, has_table
 
 revision = "040_add_product_shelf_life"
 down_revision = "0167307b0bd5"
@@ -17,27 +18,39 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "qr_products",
-        sa.Column(
-            "shelf_life_setting_id",
-            postgresql.UUID(as_uuid=True),
-            nullable=True,
-        ),
-    )
-    op.create_index(
-        "ix_qr_products_shelf_life_setting_id",
-        "qr_products",
-        ["shelf_life_setting_id"],
-    )
-    op.create_foreign_key(
-        "fk_qr_products_shelf_life_setting_id",
-        "qr_products",
-        "qr_product_settings",
-        ["shelf_life_setting_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
+    if has_table("qr_products") and not has_column("qr_products", "shelf_life_setting_id"):
+        op.add_column(
+            "qr_products",
+            sa.Column(
+                "shelf_life_setting_id",
+                postgresql.UUID(as_uuid=True),
+                nullable=True,
+            ),
+        )
+    if (
+        has_table("qr_products")
+        and has_column("qr_products", "shelf_life_setting_id")
+        and not has_index("qr_products", "ix_qr_products_shelf_life_setting_id")
+    ):
+        op.create_index(
+            "ix_qr_products_shelf_life_setting_id",
+            "qr_products",
+            ["shelf_life_setting_id"],
+        )
+    if (
+        has_table("qr_products")
+        and has_table("qr_product_settings")
+        and has_column("qr_products", "shelf_life_setting_id")
+        and not has_constraint("qr_products", "fk_qr_products_shelf_life_setting_id")
+    ):
+        op.create_foreign_key(
+            "fk_qr_products_shelf_life_setting_id",
+            "qr_products",
+            "qr_product_settings",
+            ["shelf_life_setting_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
 
     # Preserve legacy Product form values when they match an organization-scoped
     # Shelf Life setting. Unmatched products intentionally remain NULL.

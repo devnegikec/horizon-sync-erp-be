@@ -1,11 +1,11 @@
 """merge_multiple_heads
 
 Revision ID: 048_merge_multiple_heads
-Revises: 042_add_scan_sessions_tables, 042_bulk_import, 047_extend_pick_lists_and_create_put_away_lists
+Revises: 042_bulk_import, 047_extend_pick_lists_and_create_put_away_lists
 Create Date: 2026-05-16 00:53:21.673446
 
-Merges three parallel branches that all diverged from 041_create_core_tables_baseline:
-  - 042_add_scan_sessions_tables  (WMS inbound scan sessions)
+Merges the two independent branches that remain after the WMS warehouse
+locations chain (which already depends on the scan-session migration):
   - 042_bulk_import               (bulk import jobs table)
   - 047_extend_pick_lists_and_create_put_away_lists  (end of WMS warehouse locations chain)
 """
@@ -15,7 +15,6 @@ from collections.abc import Sequence
 # revision identifiers, used by Alembic.
 revision: str = "048_merge_multiple_heads"
 down_revision: tuple = (
-    "042_add_scan_sessions_tables",
     "042_bulk_import",
     "047_extend_pick_lists_and_create_put_away_lists",
 )

@@ -19,7 +19,31 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TYPE communicationdoctype ADD VALUE 'asn';")
+    # Some installations never created the legacy communicationdoctype enum.
+    # In that case there is nothing to extend; later migrations do not depend
+    # on this enum being present.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_type
+                WHERE typnamespace = 'public'::regnamespace
+                  AND typname = 'communicationdoctype'
+            ) AND NOT EXISTS (
+                SELECT 1
+                FROM pg_enum e
+                JOIN pg_type t ON t.oid = e.enumtypid
+                WHERE t.typnamespace = 'public'::regnamespace
+                  AND t.typname = 'communicationdoctype'
+                  AND e.enumlabel = 'asn'
+            ) THEN
+                ALTER TYPE public.communicationdoctype ADD VALUE 'asn';
+            END IF;
+        END $$;
+        """
+    )
 
 
 def downgrade() -> None:

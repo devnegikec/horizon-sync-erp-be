@@ -5,16 +5,15 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 from uuid import UUID
 
-#import validators
-import requests
-from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.product_item import ProductItem
 from app.models.qr_activation import QRActivationParameters
 from app.models.qr_product import QRProduct
+from app.models.qr_product_setting import QRProductSetting
 from app.repositories.qr_activation_repository import (
     DestinationMarketRepository,
     ProductItemRepository,
@@ -22,6 +21,10 @@ from app.repositories.qr_activation_repository import (
 )
 from app.repositories.qr_product_repository import QRProductRepository
 from app.schemas.qr_activation import QRScanRequest, QRSettingsCreateRequest
+from app.services.activation_expiry import (
+    calculate_shelf_life_expiry,
+    resolve_shelf_life_months,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,43 @@ class QRActivationService:
         items, total = self.market_repo.list_all(
             organization_id, page, page_size, search
         )
+        # Destination values are also maintained in the QR Product Settings
+        # screen. Keep the activation form compatible with those existing
+        # organization-scoped options when the dedicated market table has no
+        # records yet.
+        if not items:
+            query = self.db.query(QRProductSetting).filter(
+                QRProductSetting.organization_id == organization_id,
+                QRProductSetting.setting_type == "destination",
+                QRProductSetting.is_active.is_(True),
+                QRProductSetting.deleted_at.is_(None),
+            )
+            if search:
+                query = query.filter(
+                    QRProductSetting.label.ilike(f"%{search}%")
+                    | QRProductSetting.value.ilike(f"%{search}%")
+                )
+            total = query.count()
+            settings = (
+                query.order_by(QRProductSetting.sort_order.asc(), QRProductSetting.label.asc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+                .all()
+            )
+            items = [
+                {
+                    "id": setting.id,
+                    "name": setting.label or setting.value,
+                    "code": setting.value,
+                    "country": None,
+                    "currency_code": (
+                        (setting.extra_data or {}).get("currency_code")
+                        or (setting.extra_data or {}).get("currency")
+                    ),
+                    "is_active": setting.is_active,
+                }
+                for setting in settings
+            ]
         return items, self._build_pagination(total, page, page_size)
 
     def get_currency_by_market(
@@ -110,14 +150,15 @@ class QRActivationService:
         manufacturing_date,
     ):
         product = self.get_product(product_id, organization_id)
-        if not product.warranty_period_months:
+        shelf_life_months = resolve_shelf_life_months(
+            self.db, product.shelf_life_setting_id, organization_id
+        )
+        if shelf_life_months is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Warranty period not configured for this product",
+                detail="Shelf life not configured or invalid for this product",
             )
-        return manufacturing_date + relativedelta(
-            months=product.warranty_period_months
-        )
+        return calculate_shelf_life_expiry(manufacturing_date, shelf_life_months)
 
     # ── QR Scan ───────────────────────────────────────────────────────────────
 
@@ -128,7 +169,7 @@ class QRActivationService:
         tenant_schema: str,
     ) -> dict:
         # Extract serial number from URL
-        sr_number = self._extract_serial_from_url(req.url, tenant_schema)
+        sr_number = self._extract_serial_from_url(req.url, tenant_schema, organization_id)
 
         # scoped to organization
         item = self.item_repo.get_by_serial(sr_number, organization_id)
@@ -180,49 +221,53 @@ class QRActivationService:
             "product_id": item.product_id,
         }
 
-    def _extract_serial_from_url(self, url: str, tenant_schema: str) -> str:
-        """Extract serial number from QR URL with validation"""
-        try:
-            # Validate URL format
-            parsed = urlparse(url)
-            if not parsed.scheme or not parsed.netloc:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid URL format",
-                )
-
-            # Follow redirects to get the long URL
-            response = requests.head(url, allow_redirects=True, timeout=5)
-
-            # Find the redirect URL containing tenant schema
-            tenant = f"{tenant_schema}.{settings.domain}"
-            long_url = next(
-                (i.url for i in response.history if tenant in i.url), None
-            )
-            if not long_url:
-                # If no redirect history, check final URL
-                if tenant in response.url:
-                    long_url = response.url
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid QR URL - tenant not found in redirect chain",
-                    )
-
-            # Extract serial number from path (second-to-last segment)
-            path_parts = urlparse(long_url).path.strip("/").split("/")
-            if len(path_parts) < 2:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid QR URL structure",
-                )
-            return path_parts[-2]
-
-        except requests.RequestException:
+    def _extract_serial_from_url(
+        self, url: str, tenant_schema: str, organization_id: UUID
+    ) -> str:
+        """Resolve a QR URL locally without blocking on an external redirect."""
+        parsed = urlparse(url)
+        trusted_hosts = {
+            host.lower()
+            for host in (settings.qr_domain, settings.qr_shortener_cdn_prefix)
+            if host
+        }
+        if not parsed.scheme or not parsed.netloc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to validate QR URL",
+                detail="Invalid URL format",
             )
+        if not parsed.hostname or parsed.hostname.lower() not in trusted_hosts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid QR URL domain",
+            )
+
+        # Generated short URLs are stored on the item, so this is one indexed
+        # database lookup and avoids a slow/unsafe requests.head redirect.
+        item = self.db.query(ProductItem).filter(
+            ProductItem.organization_id == organization_id,
+            ProductItem.token_id.in_({url, url.rstrip("/")}),
+            ProductItem.deleted_at.is_(None),
+        ).first()
+        if item:
+            return item.serial_number
+
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if not path_parts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid QR URL structure",
+            )
+        if len(path_parts) == 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Short QR URL could not be resolved locally; send the serial number",
+            )
+        if "s" in path_parts:
+            serial_index = path_parts.index("s") + 1
+            if serial_index < len(path_parts):
+                return path_parts[serial_index]
+        return path_parts[-1]
 
     # ── Product Activation ────────────────────────────────────────────────────
 
@@ -345,14 +390,17 @@ class QRActivationService:
     ) -> None:
         product = self.get_product(data.product, organization_id)
 
-        if not product.warranty_period_months:
+        shelf_life_months = resolve_shelf_life_months(
+            self.db, product.shelf_life_setting_id, organization_id
+        )
+        if shelf_life_months is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Warranty period not configured for this product",
+                detail="Shelf life not configured or invalid for this product",
             )
 
-        expiry_date = data.manufacturing_date + relativedelta(
-            months=product.warranty_period_months
+        expiry_date = calculate_shelf_life_expiry(
+            data.manufacturing_date, shelf_life_months
         )
 
         market = self.market_repo.get_active_by_name(
