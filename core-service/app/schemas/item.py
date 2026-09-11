@@ -301,6 +301,10 @@ class ItemListItem(BaseModel):
     image_url: str | None = None
     created_at: datetime | None = None
 
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

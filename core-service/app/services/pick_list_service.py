@@ -908,6 +908,7 @@ class PickListService:
                 quantity=scanned_qty,
                 org_id=org_id,
                 batch_number=payload.batch,
+                sync_warehouse=False,
             )
 
             # Once this pick line is fully satisfied, release the worker's
@@ -1106,9 +1107,42 @@ class PickListService:
                     quantity=picked,
                     org_id=org_id,
                     batch_number=item.batch_no,
+                    sync_warehouse=False,
                 )
             # Reset picked_qty
             item.picked_qty = Decimal("0")
+
+        # Release the warehouse-level reservation taken at pick-list creation.
+        # Only order-driven pick lists reserve warehouse stock; legacy/invoice
+        # pick lists never did, so releasing for them would consume another
+        # pick list's reservation.
+        if pick_list.reference_type == "outbound_order":
+            from app.models.stock_level import StockLevel
+
+            for item in pick_list.items:
+                reserved_qty = int(item.qty or 0)
+                if reserved_qty <= 0:
+                    continue
+                stock_level = (
+                    self.db.query(StockLevel)
+                    .filter(
+                        StockLevel.organization_id == org_id,
+                        StockLevel.product_id == item.item_id,
+                        StockLevel.warehouse_id == item.warehouse_id,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                if stock_level is None:
+                    continue
+                stock_level.quantity_reserved = max(
+                    0, (stock_level.quantity_reserved or 0) - reserved_qty
+                )
+                stock_level.quantity_available = max(
+                    0,
+                    (stock_level.quantity_on_hand or 0)
+                    - (stock_level.quantity_reserved or 0),
+                )
 
         pick_list.status = PickListStatus.CANCELLED
 

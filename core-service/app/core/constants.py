@@ -59,6 +59,9 @@ AUTO_CREATE_VARIANT_AXES = "auto_create_variant_axes"
 REQUIRE_ITEM_APPROVAL = "require_item_approval"
 AUTO_APPROVE_SINGLE_CREATE = "auto_approve_single_create"
 
+# QSeal QR block generation
+QR_AUTO_LINK_PARENT_CHILD = "qr_auto_link_parent_child"
+
 # ── Error codes ─────────────────────────────────────────────────────
 FEATURE_DISABLED_CODE = "FEATURE_DISABLED"
 

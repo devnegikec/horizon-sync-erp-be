@@ -84,6 +84,14 @@ class CreatePickListFromOrderRequest(BaseModel):
             "the organization setting (auto unless overridden)."
         ),
     )
+    exclude_out_of_stock: bool = Field(
+        default=True,
+        description=(
+            "When true (default), order lines with no available stock are "
+            "skipped so the generated pick lists only contain fulfillable "
+            "items (partial order)."
+        ),
+    )
 
 
 class StageTransferRequest(BaseModel):
@@ -273,6 +281,20 @@ class OutboundPickListResponse(BaseModel):
     is_aging: bool = False
     items: list[PickListItemResponse] = []
     progress: PickListProgress | None = None
+
+
+class PickListAcceptResponse(BaseModel):
+    """Minimal response for accepting a pick task (WF-010).
+
+    Returns only the pick list's identity, state and acceptance info — item
+    lines and progress detail are intentionally omitted.
+    """
+
+    id: str
+    pick_list_no: str
+    status: str
+    accepted_at: str | None = None
+    accepted_by: str | None = None
 
 
 class PickScanResult(BaseModel):

@@ -48,6 +48,7 @@ class BinStockService:
         batch_number: str | None = None,
         *,
         commit: bool = True,
+        sync_warehouse: bool = True,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -102,6 +103,7 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -116,16 +118,18 @@ class BinStockService:
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=quantity,
-            quantity_available_delta=quantity
-            if bin_location.is_pickable
-            else Decimal("0"),
-        )
+        # Sync warehouse-level stock_levels (skipped when the caller manages
+        # warehouse on_hand itself, e.g. pick-cancel add-back).
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=quantity,
+                quantity_available_delta=quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
@@ -296,6 +300,7 @@ class BinStockService:
         batch_number: str | None = None,
         *,
         commit: bool = True,
+        sync_warehouse: bool = True,
     ) -> BinStockLevel:
         """Remove stock from a bin location.
 
@@ -336,6 +341,7 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
         )
 
         if bin_stock is None:
@@ -362,16 +368,18 @@ class BinStockService:
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels (negative delta)
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=-quantity,
-            quantity_available_delta=-quantity
-            if bin_location.is_pickable
-            else Decimal("0"),
-        )
+        # Sync warehouse-level stock_levels (negative delta). Skipped for pick
+        # scans so warehouse on_hand is decremented exactly once, at dispatch.
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=-quantity,
+                quantity_available_delta=-quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
@@ -783,8 +791,13 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
     ) -> BinStockLevel:
-        """Get an existing BinStockLevel or create a new one."""
+        """Get an existing BinStockLevel or create a new one.
+
+        When ``for_update`` is true the existing row is locked so concurrent
+        add/remove operations serialize instead of overwriting each other.
+        """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
@@ -795,6 +808,9 @@ class BinStockService:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if for_update:
+            query = query.with_for_update()
 
         bin_stock = query.first()
 
@@ -818,8 +834,14 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
     ) -> BinStockLevel | None:
-        """Get a specific BinStockLevel record."""
+        """Get a specific BinStockLevel record.
+
+        When ``for_update`` is true the row is locked (SELECT ... FOR UPDATE)
+        so the caller can read-modify-write without losing a concurrent
+        update (e.g. two simultaneous pick scans of the same bin).
+        """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
@@ -830,6 +852,9 @@ class BinStockService:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if for_update:
+            query = query.with_for_update()
 
         return query.first()
 
@@ -854,7 +879,9 @@ class BinStockService:
         quantity_available_delta: Availability impact. Stock in non-pickable
             bins changes on-hand but not ATP.
         """
-        # Get or create the warehouse-level stock record
+        # Get or create the warehouse-level stock record. FOR UPDATE serializes
+        # concurrent bin-level changes to the same (item, warehouse) aggregate
+        # so the read-modify-write below can't lose updates.
         stock_level = (
             self.db.query(StockLevel)
             .filter(
@@ -862,26 +889,47 @@ class BinStockService:
                 StockLevel.warehouse_id == warehouse_id,
                 StockLevel.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
 
         if stock_level is None:
-            stock_level = StockLevel(
-                organization_id=org_id,
-                product_id=item_id,
-                warehouse_id=warehouse_id,
-                quantity_on_hand=0,
-                quantity_reserved=0,
-                quantity_available=0,
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            # INSERT ... ON CONFLICT DO NOTHING so two concurrent first-time
+            # syncs don't both try to create the row and fail the unique key.
+            self.db.execute(
+                pg_insert(StockLevel)
+                .values(
+                    organization_id=org_id,
+                    product_id=item_id,
+                    warehouse_id=warehouse_id,
+                    quantity_on_hand=0,
+                    quantity_reserved=0,
+                    quantity_available=0,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[StockLevel.product_id, StockLevel.warehouse_id]
+                )
             )
-            self.db.add(stock_level)
             self.db.flush()
+            # Re-fetch under lock (the row may have been inserted concurrently).
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == item_id,
+                    StockLevel.warehouse_id == warehouse_id,
+                    StockLevel.organization_id == org_id,
+                )
+                .with_for_update()
+                .first()
+            )
 
         # Apply the delta
         int_delta = int(quantity_delta)
         current_on_hand = stock_level.quantity_on_hand or 0
 
-        new_on_hand = current_on_hand + int_delta
+        new_on_hand = max(0, current_on_hand + int_delta)
         available_delta = int(
             quantity_available_delta
             if quantity_available_delta is not None

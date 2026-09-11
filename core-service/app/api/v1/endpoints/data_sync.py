@@ -12,7 +12,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -59,11 +59,22 @@ class ReceiveAsnItemConfig(BaseModel):
 
 
 class ReceiveAsnOptions(BaseModel):
-    """Options for the 'receive_asn' data-sync feature (receive_all flow)."""
+    """Options for the 'receive_asn' data-sync feature (Inbound Automation)."""
 
     mode: str = Field(
         default="items",
         description="'items' uses configured item lines; 'block_ids' receives existing blocks",
+    )
+    steps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Inbound Automation steps to run, in dependency order. One or more of "
+            "'qr_blocks', 'asn', 'receiving_slip', 'put_away'. Each later step "
+            "depends on the previous. Empty defaults to qr_blocks+asn+receiving_slip."
+        ),
+    )
+    qr_image: bool = Field(
+        default=True, description="Whether to generate QR images for step 1 blocks"
     )
     items: list[ReceiveAsnItemConfig] = Field(default_factory=list)
     block_ids: list[str] = Field(default_factory=list)
@@ -78,6 +89,25 @@ class ReceiveAsnOptions(BaseModel):
     target_warehouse_id: UUID | None = Field(
         default=None, description="Target warehouse"
     )
+    put_away_worker_ids: list[UUID] = Field(
+        default_factory=list,
+        description=(
+            "Worker user IDs to distribute the put-away work across "
+            "(step 'put_away'). Populated from the target warehouse's workers."
+        ),
+    )
+
+    @field_validator("steps")
+    @classmethod
+    def _validate_steps(cls, value: list[str]) -> list[str]:
+        valid = {"qr_blocks", "asn", "receiving_slip", "put_away"}
+        for step in value:
+            if step not in valid:
+                raise ValueError(
+                    f"Unknown inbound automation step: {step}. "
+                    f"Expected one of: {', '.join(sorted(valid))}"
+                )
+        return value
 
 
 class DataSyncRequest(BaseModel):

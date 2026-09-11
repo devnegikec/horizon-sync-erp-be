@@ -132,6 +132,34 @@ async def list_items(
     # Convert to response schema
     item_items = [ItemListItem.model_validate(item) for item in items]
 
+    # Attach each item's master-pack size (items per master pack) from its
+    # base packaging unit in a single query, so callers (e.g. the Inbound
+    # Automation data-sync flow) can auto-populate the master-pack field
+    # without N+1 lookups.
+    if item_items:
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        pack_rows = (
+            db.query(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.items_per_master_pack,
+            )
+            .filter(
+                ItemPackagingUnit.organization_id == current_user.organization_id,
+                ItemPackagingUnit.item_id.in_([it.id for it in item_items]),
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .all()
+        )
+        pack_map = {
+            item_id: items_per_master_pack
+            for item_id, items_per_master_pack in pack_rows
+            if items_per_master_pack is not None
+        }
+        for item_dto in item_items:
+            item_dto.items_per_master_pack = pack_map.get(item_dto.id)
+
     return ItemListResponse(items=item_items, pagination=PaginationMeta(**pagination))
 
 

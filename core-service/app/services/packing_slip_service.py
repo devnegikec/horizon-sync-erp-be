@@ -393,6 +393,18 @@ class PackingSlipService:
         self.db.flush()
 
         # Single stock decrement for packing-slip items (final reconciliation).
+        reserved_pick_list_ids = {
+            row[0]
+            for row in self.db.query(PickList.id)
+            .filter(
+                PickList.id.in_(
+                    {i.pick_list_id for i in slip.items if i.pick_list_id}
+                ),
+                PickList.reference_type == "outbound_order",
+            )
+            .all()
+        }
+
         for item in slip.items:
             qty = Decimal(str(item.qty or 0))
             if qty <= 0:
@@ -409,10 +421,17 @@ class PackingSlipService:
             )
             if stock_level is not None:
                 on_hand = Decimal(str(stock_level.quantity_on_hand or 0))
-                reserved = Decimal(str(stock_level.quantity_reserved or 0))
                 stock_level.quantity_on_hand = max(Decimal("0"), on_hand - qty)
+                # Only consume the reservation for order-driven pick lists.
+                if item.pick_list_id in reserved_pick_list_ids:
+                    reserved = Decimal(str(stock_level.quantity_reserved or 0))
+                    stock_level.quantity_reserved = max(
+                        Decimal("0"), reserved - qty
+                    )
                 stock_level.quantity_available = max(
-                    Decimal("0"), stock_level.quantity_on_hand - reserved
+                    Decimal("0"),
+                    stock_level.quantity_on_hand
+                    - (stock_level.quantity_reserved or 0),
                 )
 
         # Propagate transfer serials and advance source pick lists to in_transit.
