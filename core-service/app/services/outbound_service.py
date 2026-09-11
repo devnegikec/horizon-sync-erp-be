@@ -498,6 +498,7 @@ class OutboundService:
                     StockLevel.product_id == item.item_id,
                     StockLevel.warehouse_id == item.warehouse_id,
                 )
+                .with_for_update()
                 .first()
             )
 
@@ -506,9 +507,11 @@ class OutboundService:
                 stock_level.quantity_on_hand = max(
                     0, (stock_level.quantity_on_hand or 0) - dispatch_qty_int
                 )
-                stock_level.quantity_reserved = max(
-                    0, (stock_level.quantity_reserved or 0) - dispatch_qty_int
-                )
+                # Only order-driven pick lists reserve warehouse stock.
+                if pick_list.reference_type == "outbound_order":
+                    stock_level.quantity_reserved = max(
+                        0, (stock_level.quantity_reserved or 0) - dispatch_qty_int
+                    )
                 stock_level.quantity_available = max(
                     0,
                     (stock_level.quantity_on_hand or 0)

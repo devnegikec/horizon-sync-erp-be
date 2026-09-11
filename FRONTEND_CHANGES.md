@@ -56,8 +56,10 @@ timestamps, priority, etc.
 
 - If all lines are `out_of_stock`, the API returns a validation error
   (`"Cannot confirm order: none of its line items are in stock"`).
-- Hide/disable the **Confirm** button when `out_of_stock_count > 0` in the list,
-  or when every line's `stock_status == "out_of_stock"` in the detail view.
+- Hide/disable the **Confirm** button only when **every** line is out of stock
+  (`in_stock_count == 0` in the list, or every line's
+  `stock_status == "out_of_stock"` in the detail view). Partial orders with at
+  least one in-stock line can still be confirmed.
 
 ---
 

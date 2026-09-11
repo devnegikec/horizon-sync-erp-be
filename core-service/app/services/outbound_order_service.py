@@ -350,7 +350,7 @@ class OutboundOrderService:
 
         # Atomically reserve stock per line so concurrent pick-list generations
         # cannot over-promise the same availability (race-condition guard).
-        pickable_items: list[OutboundOrderItem] = []
+        pickable_items: list[tuple[OutboundOrderItem, Decimal]] = []
         for item in order.items:
             stock_level = (
                 self.db.query(StockLevel)
@@ -362,9 +362,17 @@ class OutboundOrderService:
                 .with_for_update()
                 .first()
             )
-            available = int(stock_level.quantity_available or 0) if stock_level else 0
-            reserved = int(stock_level.quantity_reserved or 0) if stock_level else 0
-            qty = int(item.qty or 0)
+            available = (
+                Decimal(str(stock_level.quantity_available or 0))
+                if stock_level
+                else Decimal("0")
+            )
+            reserved = (
+                Decimal(str(stock_level.quantity_reserved or 0))
+                if stock_level
+                else Decimal("0")
+            )
+            qty = Decimal(str(item.qty or 0))
 
             if available < qty:
                 # Not fully fulfillable → out of stock.
@@ -373,7 +381,7 @@ class OutboundOrderService:
                 if exclude_out_of_stock:
                     # Partial order: skip out-of-stock lines entirely.
                     continue
-                # Full-order mode: keep the line, reserve only what exists.
+                # Full-order mode: keep the line but only reserve what exists.
                 reserve_qty = available
             else:
                 item.stock_status = OutboundOrderItemStockStatus.IN_STOCK
@@ -383,7 +391,7 @@ class OutboundOrderService:
             if stock_level is not None and reserve_qty > 0:
                 stock_level.quantity_reserved = reserved + reserve_qty
                 stock_level.quantity_available = available - reserve_qty
-            pickable_items.append(item)
+            pickable_items.append((item, reserve_qty))
 
         if not pickable_items:
             raise ValidationError(
@@ -404,9 +412,11 @@ class OutboundOrderService:
         numbering = DocumentNumberingService(self.db)
 
         # Split order items round-robin across buckets (worker count).
-        buckets: list[list[OutboundOrderItem]] = [[] for _ in range(bucket_count)]
-        for idx, item in enumerate(pickable_items):
-            buckets[idx % bucket_count].append(item)
+        buckets: list[list[tuple[OutboundOrderItem, Decimal]]] = [
+            [] for _ in range(bucket_count)
+        ]
+        for idx, entry in enumerate(pickable_items):
+            buckets[idx % bucket_count].append(entry)
 
         pick_lists: list[PickList] = []
         for idx, bucket in enumerate(buckets):
@@ -432,21 +442,21 @@ class OutboundOrderService:
             self.db.add(pick_list)
             self.db.flush()
 
-            for item in bucket:
+            for item, effective_qty in bucket:
                 per_case, case_qty, loose_qty = self._resolve_packaging(
                     item.item_id,
                     org_id,
                     item.per_case_qty,
                     item.case_qty,
                     item.loose_qty,
-                    item.qty,
+                    effective_qty,
                 )
 
                 # Split into master-pack-sized pick lines when a pack size is
                 # known — one line per full master pack plus a loose remainder.
                 pack_size = per_case
                 if pack_size is not None and Decimal(str(pack_size)) > 1:
-                    q = Decimal(str(item.qty))
+                    q = effective_qty
                     pc = Decimal(str(pack_size))
                     split_lines = []
                     for _ in range(int(q // pc)):
@@ -455,7 +465,7 @@ class OutboundOrderService:
                     if remainder > 0:
                         split_lines.append((remainder, pc, Decimal("0"), remainder))
                 else:
-                    split_lines = [(item.qty, per_case, case_qty, loose_qty)]
+                    split_lines = [(effective_qty, per_case, case_qty, loose_qty)]
 
                 for line_qty, line_per_case, line_case, line_loose in split_lines:
                     self.db.add(

@@ -26,12 +26,19 @@ After any change to `quantity_on_hand` or `quantity_reserved`, `quantity_availab
 is recomputed from this formula (never decremented independently in the outbound
 reservation path).
 
+> **Caveat:** the stock-reconciliation path computes
+> `quantity_available = on_hand - reserved` **without** the `max(0, …)` clamp, so
+> after a reconciliation it can be negative when reserved exceeds on-hand. The
+> clamped invariant is enforced in the outbound reservation flow only.
+
 ---
 
 ## 2. Locking mechanism
 
-All stock mutations use **pessimistic row-level locks** — PostgreSQL
-`SELECT … FOR UPDATE`, expressed in SQLAlchemy as `.with_for_update()`.
+All stock mutations **in the outbound flow described here** use **pessimistic
+row-level locks** — PostgreSQL `SELECT … FOR UPDATE`, expressed in SQLAlchemy as
+`.with_for_update()`. Other stock paths (e.g. receipt notes, reconciliation)
+update `stock_levels` without row locks and are outside this document's scope.
 
 - It is a **database row lock**, not an in-memory Python lock. FastAPI serves
   many requests concurrently (and possibly across multiple worker processes), so

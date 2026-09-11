@@ -1248,11 +1248,22 @@ class OrganizationOnboardingService:
                             block.id, organization_id, task_id
                         )
                         enqueue_qr_block(block.id, organization_id, task_id)
-                    except Exception:
+                    except Exception as exc:
+                        logger.warning(
+                            "Inbound automation: failed to create/enqueue QR block "
+                            "for item %s: %s",
+                            getattr(item, "item_code", item.id),
+                            exc,
+                        )
                         continue
                     try:
                         block = self._wait_for_receive_block(block.id, organization_id)
-                    except (RuntimeError, TimeoutError):
+                    except (RuntimeError, TimeoutError) as exc:
+                        logger.warning(
+                            "Inbound automation: QR block %s did not complete: %s",
+                            block.id,
+                            exc,
+                        )
                         continue
                     blocks.append(block)
             if not blocks:
@@ -1356,7 +1367,12 @@ class OrganizationOnboardingService:
                 )
             else:
                 # No workers selected → single unassigned put-away list.
-                raise RuntimeError("Put-away step requires at least one worker ID in options.put_away_worker_ids")
+                put_away = put_away_svc.generate_from_slip(
+                    slip_id=slip_id,
+                    org_id=organization_id,
+                    worker_id=None,
+                    mode="auto",
+                )
 
         result: dict = {
             "created": len(blocks) if blocks else len(aggregated),

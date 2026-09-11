@@ -103,6 +103,7 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -790,8 +791,13 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
     ) -> BinStockLevel:
-        """Get an existing BinStockLevel or create a new one."""
+        """Get an existing BinStockLevel or create a new one.
+
+        When ``for_update`` is true the existing row is locked so concurrent
+        add/remove operations serialize instead of overwriting each other.
+        """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
@@ -802,6 +808,9 @@ class BinStockService:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if for_update:
+            query = query.with_for_update()
 
         bin_stock = query.first()
 
@@ -885,16 +894,36 @@ class BinStockService:
         )
 
         if stock_level is None:
-            stock_level = StockLevel(
-                organization_id=org_id,
-                product_id=item_id,
-                warehouse_id=warehouse_id,
-                quantity_on_hand=0,
-                quantity_reserved=0,
-                quantity_available=0,
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            # INSERT ... ON CONFLICT DO NOTHING so two concurrent first-time
+            # syncs don't both try to create the row and fail the unique key.
+            self.db.execute(
+                pg_insert(StockLevel)
+                .values(
+                    organization_id=org_id,
+                    product_id=item_id,
+                    warehouse_id=warehouse_id,
+                    quantity_on_hand=0,
+                    quantity_reserved=0,
+                    quantity_available=0,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[StockLevel.product_id, StockLevel.warehouse_id]
+                )
             )
-            self.db.add(stock_level)
             self.db.flush()
+            # Re-fetch under lock (the row may have been inserted concurrently).
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == item_id,
+                    StockLevel.warehouse_id == warehouse_id,
+                    StockLevel.organization_id == org_id,
+                )
+                .with_for_update()
+                .first()
+            )
 
         # Apply the delta
         int_delta = int(quantity_delta)

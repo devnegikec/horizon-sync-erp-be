@@ -12,7 +12,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -96,6 +96,18 @@ class ReceiveAsnOptions(BaseModel):
             "(step 'put_away'). Populated from the target warehouse's workers."
         ),
     )
+
+    @field_validator("steps")
+    @classmethod
+    def _validate_steps(cls, value: list[str]) -> list[str]:
+        valid = {"qr_blocks", "asn", "receiving_slip", "put_away"}
+        for step in value:
+            if step not in valid:
+                raise ValueError(
+                    f"Unknown inbound automation step: {step}. "
+                    f"Expected one of: {', '.join(sorted(valid))}"
+                )
+        return value
 
 
 class DataSyncRequest(BaseModel):
