@@ -218,17 +218,27 @@ def _build_item_response(
     )
 
 
-def _build_groups(db: Session, put_away_list: PutAwayList) -> list[PutAwayItemGroup]:
-    """Group put-away items by their QSeal parent (master pack).
+def _fetch_qseal_context(
+    db: Session, put_away_lists: list[PutAwayList]
+) -> tuple[dict, dict]:
+    """Fetch QSealParameters + QSealTrack lookups for all serials across lists.
 
-    Mirrors the receiving-slip ``groups`` shape so the same view component can
-    render both documents consistently.
+    Returns ``(param_by_serial, track_by_id)`` with a single query pair for a
+    whole batch so grouping stays cheap when generation splits across workers.
     """
+    if not put_away_lists:
+        return {}, {}
+
+    org_id = put_away_lists[0].organization_id
     serials = {
-        s for item in put_away_list.items for s in (item.serial_nos or []) if s
+        s
+        for pal in put_away_lists
+        for item in pal.items
+        for s in (item.serial_nos or [])
+        if s
     }
-    if not serials:
-        return []
+    if not serials or org_id is None:
+        return {}, {}
 
     from app.models.qseal import QSealParameters, QSealTrack
 
@@ -240,24 +250,47 @@ def _build_groups(db: Session, put_away_list: PutAwayList) -> list[PutAwayItemGr
             QSealParameters.manufacturing_date,
             QSealParameters.expiry_date,
         )
-        .filter(QSealParameters.serial_number.in_(serials))
+        .filter(
+            QSealParameters.organization_id == org_id,
+            QSealParameters.serial_number.in_(serials),
+        )
         .all()
     )
     param_by_serial = {p.serial_number: p for p in params}
 
     parent_ids = {p.parent_id for p in params if p.parent_id}
     tracks = (
-        db.query(QSealTrack).filter(QSealTrack.id.in_(parent_ids)).all()
+        db.query(QSealTrack)
+        .filter(
+            QSealTrack.organization_id == org_id,
+            QSealTrack.id.in_(parent_ids),
+        )
+        .all()
         if parent_ids
         else []
     )
     track_by_id = {t.id: t for t in tracks}
+    return param_by_serial, track_by_id
 
-    groups: dict = {}
+
+def _build_groups(
+    put_away_list: PutAwayList,
+    param_by_serial: dict,
+    track_by_id: dict,
+) -> list[PutAwayItemGroup]:
+    """Group put-away items by their QSeal parent (master pack).
+
+    Mirrors the receiving-slip ``groups`` shape so the same view component can
+    render both documents consistently. One group is produced per put-away line
+    so each line's bin/status/sort order is preserved; non-serialized (batch)
+    lines are emitted with ``parent_qseal=None``.
+    """
+    groups: list[PutAwayItemGroup] = []
     order = 0
     for item in put_away_list.items:
         child_serials = [s for s in (item.serial_nos or []) if s]
 
+        parent_info = None
         parent_id = None
         for serial in child_serials:
             param = param_by_serial.get(serial)
@@ -265,56 +298,74 @@ def _build_groups(db: Session, put_away_list: PutAwayList) -> list[PutAwayItemGr
                 parent_id = param.parent_id
                 break
 
-        parent_key = str(parent_id) if parent_id else f"__item__{item.id}"
-        if parent_key not in groups:
-            parent_info = None
-            track = track_by_id.get(parent_id) if parent_id else None
-            if track is not None:
-                parent_info = PutAwayParentInfo(
-                    id=str(track.id),
-                    serial_number=track.serial_number,
-                    name=track.name,
-                    qseal_type=track.qseal_type,
-                    capacity=track.capacity,
-                )
-            bin_code = None
-            if item.bin_location is not None:
-                bin_code = item.bin_location.full_path or item.bin_location.code
-            groups[parent_key] = {
-                "parent_qseal": parent_info,
-                "product_name": item.item.item_name if item.item else None,
-                "bin_location_id": str(item.bin_location_id)
-                if item.bin_location_id
-                else None,
-                "bin_location_code": bin_code,
-                "status": item.status,
-                "sort_order": order,
-                "items": [],
-            }
-            order += 1
+        track = track_by_id.get(parent_id) if parent_id else None
+        if track is not None:
+            parent_info = PutAwayParentInfo(
+                id=str(track.id),
+                serial_number=track.serial_number,
+                name=track.name,
+                qseal_type=track.qseal_type,
+                capacity=track.capacity,
+            )
 
-        for serial in child_serials:
-            param = param_by_serial.get(serial)
-            batch = (param.dispatch_batch if param else None) or item.batch_number
-            groups[parent_key]["items"].append(
+        bin_code = None
+        if item.bin_location is not None:
+            bin_code = item.bin_location.full_path or item.bin_location.code
+
+        group_items: list[PutAwayItemGroupItem] = []
+        if child_serials:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                batch = (param.dispatch_batch if param else None) or item.batch_number
+                group_items.append(
+                    PutAwayItemGroupItem(
+                        serial_number=serial,
+                        sku=item.sku,
+                        batch_number=batch or serial,
+                        manufacturing_date=(
+                            str(param.manufacturing_date)
+                            if param and param.manufacturing_date
+                            else None
+                        ),
+                        expiry_date=(
+                            str(param.expiry_date)
+                            if param and param.expiry_date
+                            else None
+                        ),
+                        quantity=1,
+                        box_count=1,
+                    )
+                )
+        else:
+            # Batch-tracked (non-serialized) line — one entry carrying the full
+            # quantity so it still shows in the grouped representation.
+            qty = int(item.quantity or 0)
+            group_items.append(
                 PutAwayItemGroupItem(
-                    serial_number=serial,
+                    serial_number=None,
                     sku=item.sku,
-                    batch_number=batch or serial,
-                    manufacturing_date=(
-                        str(param.manufacturing_date)
-                        if param and param.manufacturing_date
-                        else None
-                    ),
-                    expiry_date=(
-                        str(param.expiry_date) if param and param.expiry_date else None
-                    ),
-                    quantity=1,
-                    box_count=1,
+                    batch_number=item.batch_number,
+                    quantity=qty,
+                    box_count=qty,
                 )
             )
 
-    return [PutAwayItemGroup(**group) for group in groups.values()]
+        groups.append(
+            PutAwayItemGroup(
+                parent_qseal=parent_info,
+                product_name=item.item.item_name if item.item else None,
+                bin_location_id=str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                bin_location_code=bin_code,
+                status=item.status,
+                sort_order=order,
+                items=group_items,
+            )
+        )
+        order += 1
+
+    return groups
 
 
 def _build_list_response(
@@ -345,7 +396,11 @@ def _build_list_response(
     )
 
 
-def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListResponse:
+def _build_response(
+    db: Session,
+    put_away_list: PutAwayList,
+    qseal_ctx: tuple[dict, dict] | None = None,
+) -> PutAwayListResponse:
     """Build a PutAwayListResponse with resolved item/bin details."""
     serial_meta = _serial_meta_map(
         db, {it.batch_number for it in put_away_list.items if it.batch_number}
@@ -354,7 +409,9 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         _build_item_response(item, serial_meta) for item in put_away_list.items
     ]
     item_responses.sort(key=lambda x: x.sort_order)
-    groups = _build_groups(db, put_away_list)
+    if qseal_ctx is None:
+        qseal_ctx = _fetch_qseal_context(db, [put_away_list])
+    groups = _build_groups(put_away_list, *qseal_ctx)
 
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
     completed_qty = sum(
@@ -454,8 +511,11 @@ async def generate_put_away_from_slip(
             worker_ids=worker_ids,
             mode=mode,
         )
+        qseal_ctx = _fetch_qseal_context(db, lists)
         return PutAwayListBatchResponse(
-            put_away_lists=[_build_response(db, pal) for pal in lists]
+            put_away_lists=[
+                _build_response(db, pal, qseal_ctx) for pal in lists
+            ]
         )
 
     put_away_list = service.generate_from_slip(
