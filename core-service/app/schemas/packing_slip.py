@@ -49,6 +49,41 @@ class PackingSlipItemResponse(BaseModel):
     sort_order: int = 0
 
 
+class PackingSlipParentInfo(BaseModel):
+    """QSeal parent (master pack) info attached to a packing-slip group."""
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class PackingSlipGroupItem(BaseModel):
+    """Individual unit inside a master-pack packing-slip group."""
+
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: float = 1.0
+    box_count: int = 1
+
+
+class PackingSlipItemGroup(BaseModel):
+    """A group of packing-slip units under the same QSeal parent (master pack)."""
+
+    parent_qseal: PackingSlipParentInfo | None = None
+    product_name: str | None = None
+    order_id: str | None = None
+    pick_list_id: str | None = None
+    bin_location_id: str | None = None
+    handling_unit_id: str | None = None
+    sort_order: int = 0
+    items: list[PackingSlipGroupItem] = []
+
+
 class PackingSlipResponse(BaseModel):
     """Response schema for a packing slip."""
 
@@ -61,7 +96,7 @@ class PackingSlipResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     order_ids: list[str] = []
-    items: list[PackingSlipItemResponse] = []
+    groups: list[PackingSlipItemGroup] = []
 
 
 class PackingSlipListItem(BaseModel):
