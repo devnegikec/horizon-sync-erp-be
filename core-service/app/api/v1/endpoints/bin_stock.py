@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.authorization import STOCK_ENTRY_CREATE, WAREHOUSE_READ
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.bin_stock_level import BinStockLevel
 from app.models.item import Item
 from app.models.warehouse_location import WarehouseLocation
 from app.schemas.bin_stock import (
@@ -19,6 +20,8 @@ from app.schemas.bin_stock import (
     BinStockInfoResponse,
     BinStockLevelResponse,
     BinStockListResponse,
+    BinStockParentResponse,
+    BinStockParentsResponse,
     BulkAddStockRequest,
     BulkAddStockResponse,
     CopyStockRequest,
@@ -217,10 +220,47 @@ async def get_bin_stock(
         bin_id=bin_id,
         org_id=current_user.organization_id,
     )
-    return BinStockListResponse(
-        bin_stock_levels=[
-            BinStockLevelResponse.model_validate(sl) for sl in stock_levels
-        ]
+    levels = []
+    for sl in stock_levels:
+        resp = BinStockLevelResponse.model_validate(sl)
+        item = sl.item
+        resp.item_name = item.item_name if item else None
+        resp.sku = item.sku if item else None
+        levels.append(resp)
+    return BinStockListResponse(bin_stock_levels=levels)
+
+
+@router.get(
+    "/{bin_id}/parents",
+    response_model=BinStockParentsResponse,
+    summary="Get parent boxes in a bin",
+    description="Get the master-pack (parent) boxes present in a bin, aggregated from child units",
+)
+async def get_bin_parents(
+    bin_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the parent (master-pack) boxes present in a bin.
+
+    Child units are stored individually in bin stock; this endpoint groups them
+    by their QSeal parent so the warehouse manager can see box-level counts.
+
+    **Path Parameters:**
+    - **bin_id**: Bin location UUID
+
+    **Returns:** Parent boxes with child-unit counts for the bin
+    """
+    service = BinStockService(db)
+    parents = service.get_parent_boxes(
+        bin_id=bin_id,
+        org_id=current_user.organization_id,
+    )
+    return BinStockParentsResponse(
+        bin_id=bin_id,
+        total_parent_boxes=len(parents),
+        parents=[BinStockParentResponse(**p) for p in parents],
     )
 
 

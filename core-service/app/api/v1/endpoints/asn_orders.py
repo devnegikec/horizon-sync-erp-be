@@ -21,6 +21,7 @@ from app.schemas.asn_order import (
     AsnOrderListItem,
     AsnOrderListResponse,
     AsnOrderResponse,
+    AsnOrderStatusCounts,
     AsnOrderStatusUpdate,
     AsnOrderUpdate,
 )
@@ -64,6 +65,11 @@ async def list_asn_orders(
     ),
     vehicle_no: str | None = Query(None, description="Filter by linked vehicle number"),
     search: str | None = Query(None, description="Search by ASN order number"),
+    asn_type: str | None = Query(
+        None,
+        pattern="^(purchase|internal_transfer|stock_receipt)$",
+        description="Filter by ASN type",
+    ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
@@ -71,7 +77,7 @@ async def list_asn_orders(
 ):
     """List ASN orders. Requires asn_order.read."""
     svc = AsnOrderService(db)
-    items, pagination = svc.get_list(
+    items, pagination, status_counts = svc.get_list(
         organization_id=current_user.organization_id,
         page=page,
         page_size=page_size,
@@ -82,12 +88,14 @@ async def list_asn_orders(
         delivery_date_to=delivery_date_to,
         vehicle_no=vehicle_no,
         search=search,
+        asn_type=asn_type,
         sort_by=sort_by,
         sort_order=sort_order,
     )
     return AsnOrderListResponse(
         asn_orders=[AsnOrderListItem.model_validate(x) for x in items],
         pagination=PaginationMeta(**pagination),
+        status_counts=AsnOrderStatusCounts(**status_counts),
     )
 
 
@@ -101,6 +109,39 @@ async def get_asn_order(
     svc = AsnOrderService(db)
     data = svc.get_by_id(asn_order_id, current_user.organization_id)
     return AsnOrderResponse.model_validate(data)
+
+
+@router.get("/{asn_order_id}/serials")
+async def get_asn_order_serials(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """Get unit-level serial lines (received/in-transit) for an ASN. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.get_serial_lines(asn_order_id, current_user.organization_id)
+
+
+@router.get("/{asn_order_id}/asn-856")
+async def export_asn_856(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EDI-856-style serialized ASN export (SKU + serials + SSCC). Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.serialized_asn_856(asn_order_id, current_user.organization_id)
+
+
+@router.get("/{asn_order_id}/epcis")
+async def export_asn_epcis(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """EPCIS 2.0-style event stream for the ASN's serials. Requires asn_order.read."""
+    svc = AsnOrderService(db)
+    return svc.epcis_events(asn_order_id, current_user.organization_id)
 
 
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)
@@ -117,6 +158,8 @@ async def update_asn_order(
         body.model_dump(exclude_unset=True),
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 
@@ -147,6 +190,27 @@ async def update_asn_order_status(
         body.status,
         current_user.organization_id,
         current_user.id,
+        current_user.user_type,
+        current_user.permissions,
+    )
+    return AsnOrderResponse.model_validate(data)
+
+
+@router.post("/{asn_order_id}/confirm", response_model=AsnOrderResponse)
+async def confirm_asn_order(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Confirm an ASN order (approve + auto-create source pick list for transfers). Requires asn_order.update."""
+    svc = AsnOrderService(db)
+    data = svc.update_status(
+        asn_order_id,
+        "confirmed",
+        current_user.organization_id,
+        current_user.id,
+        current_user.user_type,
+        current_user.permissions,
     )
     return AsnOrderResponse.model_validate(data)
 
@@ -167,8 +231,9 @@ async def upload_asn_csv(
 ):
     """Upload ASN order via CSV file.
 
-    Expected CSV columns: Item Name, Item Code, Quantity, UOM
-    Items are matched by item_code within the user's organization.
+    Expected CSV columns: Item Name, SKU, Quantity, UOM
+    Items are matched by SKU within the user's organization. Item IDs are
+    internal and must not be part of the import contract.
     """
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
@@ -182,12 +247,12 @@ async def upload_asn_csv(
 
     # Normalize headers (case-insensitive, strip whitespace)
     headers = {h.strip().lower(): h.strip() for h in reader.fieldnames}
-    required = {"item code", "quantity"}
+    required = {"sku", "quantity"}
     missing = required - set(headers.keys())
     if missing:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required columns: {', '.join(missing)}. Expected: Item Code, Quantity",
+            detail=f"Missing required columns: {', '.join(missing)}. Expected: SKU, Quantity",
         )
 
     # Parse rows
@@ -198,12 +263,12 @@ async def upload_asn_csv(
 
     for row in reader:
         row_num += 1
-        item_code = (row.get(headers.get("item code", "")) or "").strip()
+        sku = (row.get(headers.get("sku", "")) or "").strip()
         qty_str = (row.get(headers.get("quantity", "")) or "0").strip()
         uom = (row.get(headers.get("uom", "")) or "Piece").strip()
 
-        if not item_code:
-            errors.append(f"Row {row_num}: empty Item Code")
+        if not sku:
+            errors.append(f"Row {row_num}: empty SKU")
             continue
 
         try:
@@ -215,18 +280,18 @@ async def upload_asn_csv(
             errors.append(f"Row {row_num}: invalid Quantity '{qty_str}'")
             continue
 
-        # Look up item by item_code
+        # Look up item strictly by SKU
         item = (
             db.query(Item)
             .filter(
-                Item.item_code == item_code,
+                Item.sku == sku,
                 Item.organization_id == org_id,
                 Item.deleted_at.is_(None),
             )
             .first()
         )
         if not item:
-            errors.append(f"Row {row_num}: Item '{item_code}' not found")
+            errors.append(f"Row {row_num}: Item with SKU '{sku}' not found")
             continue
 
         items_payload.append(

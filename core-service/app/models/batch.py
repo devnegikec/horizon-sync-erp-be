@@ -55,6 +55,16 @@ class Batch(Base):
     # Relationships
     item = relationship("Item", backref="batches")
 
+    @property
+    def sku(self) -> str | None:
+        """SKU of the item this batch belongs to (for product-matching checks)."""
+        return self.item.sku if self.item else None
+
+    @property
+    def product_name(self) -> str | None:
+        """Display name of the item/product this batch belongs to."""
+        return self.item.item_name if self.item else None
+
     def __repr__(self):
         return (
             f"<Batch(id={self.id}, batch_no='{self.batch_no}', item_id={self.item_id})>"

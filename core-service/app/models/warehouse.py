@@ -9,7 +9,6 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
-    Integer,
     Numeric,
     String,
     Text,
@@ -63,7 +62,7 @@ class Warehouse(Base):
     contact_email = Column(String(255), nullable=True)
 
     # Capacity
-    total_capacity = Column(Integer, nullable=True)
+    total_capacity = Column(Numeric(15, 3), nullable=True)
     capacity_uom = Column(String(50), nullable=True)
 
     # Capacity planning — dimension toggles & threshold defaults

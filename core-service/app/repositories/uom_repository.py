@@ -103,6 +103,7 @@ class UOMRepository:
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        uom_types: list[str] | None = None,
     ) -> tuple[list[UOM], int]:
         """
         List UOMs with pagination, org-scoped, excluding soft-deleted.
@@ -114,6 +115,7 @@ class UOMRepository:
             search: Optional search term for name or abbreviation
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
+            uom_types: Optional list of UOM types to filter by
 
         Returns:
             Tuple of (list of UOMs, total count)
@@ -122,6 +124,9 @@ class UOMRepository:
             UOM.organization_id == organization_id,
             UOM.deleted_at.is_(None),
         )
+
+        if uom_types:
+            query = query.filter(UOM.uom_type.in_(uom_types))
 
         if search:
             search_term = f"%{search}%"

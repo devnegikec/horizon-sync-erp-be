@@ -173,9 +173,7 @@ async def upload_qr_product_image(
             detail=str(exc),
         ) from exc
 
-    image_url = str(
-        request.url_for("get_qr_product_image_file", object_key=object_key)
-    )
+    image_url = str(request.url_for("get_qr_product_image_file", object_key=object_key))
     try:
         _, previous_url = svc.update_product_image(
             product_id,
@@ -232,11 +230,11 @@ async def list_org_qr_blocks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: str | None = Query(None, min_length=1, max_length=100),
-    status: Literal["pending", "in_progress", "completed", "failed"] | None = Query(None),
+    status: Literal["pending", "in_progress", "completed", "failed"] | None = Query(
+        None
+    ),
     product_id: UUID | None = Query(None),
-    qr_type: Literal[
-        "dynamic", "dual", "secure_code", "one_time"
-    ] | None = Query(None),
+    qr_type: Literal["dynamic", "dual", "secure_code", "one_time"] | None = Query(None),
     created_from: datetime | None = Query(None),
     created_to: datetime | None = Query(None),
     current_user: CurrentUser = Depends(require_permission("qr_product.read")),
@@ -321,7 +319,7 @@ async def get_block_download_url(
 ):
     from io import BytesIO
 
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse, StreamingResponse
 
     svc = QRProductService(db)
 
@@ -334,20 +332,41 @@ async def get_block_download_url(
     except Exception as exc:
         # Re-raise anything that isn't "download_url not set"
         from fastapi import HTTPException as FHTTPException
+
         if isinstance(exc, FHTTPException) and exc.status_code == 409:
             raise  # block not completed — propagate 409
         if isinstance(exc, FHTTPException) and exc.status_code != 404:
             raise
 
-    # Fallback: generate Excel on-demand and stream it
+    # Fallback: serve from the local volume cache (core-service-volume) if present,
+    # otherwise generate on-demand, cache it, and stream it.
+    local_path = svc.get_block_local_artifact_path(
+        block_id, current_user.organization_id
+    )
+    if local_path.is_file():
+        return FileResponse(
+            local_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"qr_block_{block_id}.xlsx",
+        )
+
     excel_bytes, filename = svc.get_block_excel_stream(
         block_id, current_user.organization_id
     )
-    return StreamingResponse(
-        BytesIO(excel_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    try:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(excel_bytes)
+        return FileResponse(
+            local_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=filename,
+        )
+    except Exception:
+        return StreamingResponse(
+            BytesIO(excel_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
 
 @router.get(

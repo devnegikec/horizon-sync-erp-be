@@ -227,3 +227,37 @@ class QSealAggregationItem(BaseModel):
 class QSealAggregationResponse(BaseModel):
     items: list[QSealAggregationItem]
     pagination: dict[str, Any]
+
+
+class QSealAggregationChild(BaseModel):
+    """A child unit nested under a parent in the grouped aggregation view."""
+
+    id: UUID
+    block_id: UUID | None
+    batch: str | None
+    child_serial: str | None
+    activated: bool | None
+    scan_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QSealAggregationGroup(BaseModel):
+    """A parent (master-pack) box with its linked child units."""
+
+    parent_id: UUID
+    parent_serial: str | None
+    parent_name: str | None
+    parent_type: str | None
+    parent_capacity: int | None
+    linked_count: int
+    children: list[QSealAggregationChild]
+
+
+class QSealAggregationGroupedResponse(BaseModel):
+    """Grouped aggregation view — children nested under their parent box."""
+
+    groups: list[QSealAggregationGroup]
+    unlinked: list[QSealAggregationItem]
+    pagination: dict[str, Any]

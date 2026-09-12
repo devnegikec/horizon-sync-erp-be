@@ -498,8 +498,8 @@ class QSealService:
     ) -> tuple[bytes, str]:
         """Generate an Excel file with parent QSeal QR codes for a block.
 
-        Includes embedded QR code images for mobile app scanning.
-        Returns (excel_bytes, filename).
+        Embeds QR code images for mobile app scanning only when the block's
+        ``qr_image`` flag is enabled. Returns (excel_bytes, filename).
         """
         from io import BytesIO
 
@@ -578,13 +578,18 @@ class QSealService:
             .all()
         )
 
-        # Build Excel with embedded QR codes
+        # Build Excel — embed QR code images only when the block requested them
+        include_images = bool(block.qr_image)
         wb = Workbook()
         ws = wb.active
         ws.title = "QSeal Parent QR Codes"
 
-        # Headers: QR URL, QR Code image, Serial, Name, Capacity
-        headers = ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+        # Headers: QR URL, [QR Code image], Serial, Name, Capacity
+        headers = (
+            ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+            if include_images
+            else ["QR URL", "Serial Number", "Name", "Capacity"]
+        )
         bold_font = Font(bold=True)
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -593,10 +598,14 @@ class QSealService:
 
         # Column widths
         ws.column_dimensions[get_column_letter(1)].width = 55  # QR URL
-        ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
-        ws.column_dimensions[get_column_letter(3)].width = 18  # Serial
-        ws.column_dimensions[get_column_letter(4)].width = 25  # Name
-        ws.column_dimensions[get_column_letter(5)].width = 15  # Capacity
+        if include_images:
+            ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
+        serial_col = 3 if include_images else 2
+        name_col = 4 if include_images else 3
+        capacity_col = 5 if include_images else 4
+        ws.column_dimensions[get_column_letter(serial_col)].width = 18  # Serial
+        ws.column_dimensions[get_column_letter(name_col)].width = 25  # Name
+        ws.column_dimensions[get_column_letter(capacity_col)].width = 15  # Capacity
 
         qr_size = 150
         base_url = settings.qr_base_url or f"https://{settings.qr_domain}"
@@ -605,14 +614,16 @@ class QSealService:
             serial = parent.serial_number or ""
             qr_url = f"{base_url}/qseal/{serial}" if serial else ""
 
-            # Row height for QR image
-            ws.row_dimensions[row_idx].height = 115
+            if include_images:
+                # Row height for QR image
+                ws.row_dimensions[row_idx].height = 115
 
             ws.cell(row=row_idx, column=1, value=qr_url)  # QR URL
-            _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
-            ws.cell(row=row_idx, column=3, value=serial)  # Serial Number
-            ws.cell(row=row_idx, column=4, value=parent.name or "")
-            ws.cell(row=row_idx, column=5, value=parent.capacity or 0)
+            if include_images:
+                _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
+            ws.cell(row=row_idx, column=serial_col, value=serial)  # Serial Number
+            ws.cell(row=row_idx, column=name_col, value=parent.name or "")
+            ws.cell(row=row_idx, column=capacity_col, value=parent.capacity or 0)
 
         # Save
         buf = BytesIO()
@@ -621,9 +632,10 @@ class QSealService:
 
         filename = f"qseal_parents_{block.batch}.xlsx"
         logger.info(
-            "[QSEAL] parent excel with QR images generated block=%s parents=%d",
+            "[QSEAL] parent excel generated block=%s parents=%d images=%s",
             block_id,
             len(parents),
+            include_images,
         )
         return buf.getvalue(), filename
 
@@ -817,12 +829,13 @@ class QSealService:
         block_id: UUID | None = None,
         page: int = 1,
         page_size: int = 50,
+        grouped: bool = False,
     ) -> dict:
-        """List the aggregation (cascading) log — one row per child unit.
+        """List the aggregation (cascading) log.
 
-        Every generated ProductItem is shown with its parent QSealTrack (if
-        linked), activation state and scan count, so wrong or missing links
-        are easy to spot. Unlinked units have ``linked=False``.
+        Flat mode (default) returns one row per child unit. Grouped mode nests
+        each child under its parent (master-pack) box so the parent-child link
+        is visible at a glance; unlinked units are returned separately.
         """
         from sqlalchemy import func
 
@@ -848,6 +861,15 @@ class QSealService:
             q = q.filter(ProductItem.block_id == block_id)
 
         total = q.count()
+
+        if grouped:
+            rows = q.order_by(
+                QSealTrack.serial_number.asc(),
+                ProductItem.created_at.asc(),
+                ProductItem.serial_number.asc(),
+            ).all()
+            return self._build_grouped_aggregation(rows, page, page_size)
+
         rows = (
             q.order_by(
                 ProductItem.created_at.asc(),
@@ -900,4 +922,73 @@ class QSealService:
         return {
             "items": items,
             "pagination": self._paginate(rows, total, page, page_size),
+        }
+
+    def _build_grouped_aggregation(self, rows, page=1, page_size=50) -> dict:
+        """Group aggregation rows by parent (master-pack) box.
+
+        Children are nested under their parent; units without a parent are
+        returned in ``unlinked``. Pagination applies to the parent groups.
+        """
+        groups: dict[UUID, dict] = {}
+        unlinked: list[dict] = []
+
+        for item, qsp, parent, blk in rows:
+            linked = bool(qsp and qsp.parent_id and parent is not None)
+            if linked:
+                group = groups.get(parent.id)
+                if group is None:
+                    group = {
+                        "parent_id": parent.id,
+                        "parent_serial": parent.serial_number,
+                        "parent_name": parent.name,
+                        "parent_type": parent.qseal_type,
+                        "parent_capacity": parent.capacity,
+                        "children": [],
+                    }
+                    groups[parent.id] = group
+                group["children"].append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "created_at": item.created_at,
+                    }
+                )
+            else:
+                unlinked.append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "linked": False,
+                        "parent_id": None,
+                        "parent_serial": None,
+                        "parent_name": None,
+                        "parent_type": None,
+                        "parent_capacity": None,
+                        "parent_linked_count": None,
+                        "created_at": item.created_at,
+                    }
+                )
+
+        groups_list = []
+        for group in groups.values():
+            group["linked_count"] = len(group["children"])
+            groups_list.append(group)
+
+        total_groups = len(groups_list)
+        start = (page - 1) * page_size
+        page_groups = groups_list[start : start + page_size]
+
+        return {
+            "groups": page_groups,
+            "unlinked": unlinked,
+            "pagination": self._paginate(page_groups, total_groups, page, page_size),
         }

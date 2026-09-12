@@ -89,7 +89,7 @@ async def list_items(
         None, description="Filter by maintain_stock flag"
     ),
     search: str | None = Query(
-        None, description="Search in item_code, item_name, barcode"
+        None, description="Search in item_code, item_name, barcode, sku"
     ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),

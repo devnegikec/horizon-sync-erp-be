@@ -634,7 +634,7 @@ class LayoutService:
         """
         if not code:
             return code
-        return re.sub(r"([A-Za-z]+)(\d+)", r"\1-\2", code)
+        return re.sub(r"([A-Za-z]+)(\d+)", r"\1\2", code)
 
     @classmethod
     def _extract_trailing_number(cls, raw_code: str) -> str:
@@ -664,7 +664,7 @@ class LayoutService:
         numeric = cls._extract_trailing_number(raw_code)
         if not numeric:
             return raw_code
-        return f"{prefix}-{numeric}"
+        return f"{prefix}{numeric}"
 
     @classmethod
     def _build_raw_code(cls, location_type: str, code: str) -> str:

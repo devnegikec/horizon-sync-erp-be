@@ -84,12 +84,19 @@ class GateVerificationService:
                 entity_id=str(pick_list_id),
             )
 
-        # Validate pick list is in COMPLETED status
-        if pick_list.status != PickListStatus.COMPLETED:
+        # Validate pick list is in a completable state. The order-driven
+        # lifecycle marks picking done as 'pick_complete' (legacy 'completed'
+        # is retained), and a staged pick list may be 'ready_for_dispatch'.
+        gateable = (
+            PickListStatus.COMPLETED,
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.READY_FOR_DISPATCH,
+        )
+        if pick_list.status not in gateable:
             raise StateError(
-                message="Pick list must be in 'completed' status to start gate verification",
+                message="Pick list must be completed before starting gate verification",
                 current_state=pick_list.status.value,
-                required_state=["completed"],
+                required_state=[s.value for s in gateable],
             )
 
         # Create the gate verification session

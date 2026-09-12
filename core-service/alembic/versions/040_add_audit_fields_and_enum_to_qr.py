@@ -1,6 +1,6 @@
 """add audit fields and enum to qr_activation_tracks
 
-Revision ID: 540a6ccc80c0
+Revision ID: 040_add_audit_fields_and_enum_to_qr
 Revises: 039_add_audit_logs_table
 Create Date: 2026-04-20 22:23:55.927454
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '540a6ccc80c0'
+revision: str = '040_add_audit_fields_and_enum_to_qr'
 down_revision: str | None = '039_add_audit_logs_table'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -215,7 +215,46 @@ class ItemService:
         item.product_sku_id = sku.id
         self.db.flush()
 
-    def create_item(
+    def _link_or_create_product(self, item, organization_id, user_id):
+        """Auto-create or link the shared catalog Product for an item (idempotent).
+
+        Matches on ``(organization_id, sku)`` then ``(organization_id, gtin)``
+        so repeated item creates never duplicate the shared product.
+        """
+        from app.models.products import Product
+
+        sku = item.sku or item.item_code
+        query = self.db.query(Product).filter(
+            Product.organization_id == organization_id,
+            Product.deleted_at.is_(None),
+        )
+        product = None
+        if sku:
+            product = query.filter(Product.sku == sku).first()
+        if product is None and item.gtin:
+            product = query.filter(Product.gtin == item.gtin).first()
+        if product is not None:
+            return product
+
+        product = Product(
+            organization_id=organization_id,
+            name=item.item_name,
+            sku=sku,
+            gtin=item.gtin,
+            description=item.description,
+            brand_id=item.brand_id,
+            product_type="wms",
+            images=item.images,
+            tags=item.tags,
+            is_active=True,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        self.db.add(product)
+        self.db.flush()
+        return product
+
+    def create_item(  # noqa: C901
         self,
         item_data: ItemCreate,
         organization_id: UUID,
@@ -368,6 +407,32 @@ class ItemService:
         except Exception as e:
             logger.error(f"Failed to publish item created event: {e}")
 
+        # ── Auto-create/link a shared catalog Product (flag-gated) ──
+        if not item.product_id:
+            try:
+                from app.core.constants import ITEM_AUTO_CREATE_PRODUCT
+                from app.services.feature_flag_service import (
+                    is_feature_enabled_for_org,
+                )
+
+                if is_feature_enabled_for_org(
+                    ITEM_AUTO_CREATE_PRODUCT, self.db, organization_id
+                ):
+                    product = self._link_or_create_product(
+                        item, organization_id, user_id
+                    )
+                    if product is not None:
+                        item.product_id = product.id
+                        self.db.flush()
+                        self.db.commit()
+                        logger.info(
+                            "Auto-created/linked product '%s' for item '%s'",
+                            product.name,
+                            item.item_code,
+                        )
+            except Exception as e:
+                logger.error(f"Failed to auto-create product for item: {e}")
+
         # ── Auto-create a linked QR product (backward compatibility) ──
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not item.qr_product_id:
@@ -426,7 +491,7 @@ class ItemService:
             raise ItemNotFoundException(f"Item with ID {item_id} not found")
         return item
 
-    def update_item(
+    def update_item(  # noqa: C901
         self,
         item_id: UUID,
         item_data: ItemUpdate,
@@ -509,6 +574,32 @@ class ItemService:
             )
         except Exception as e:
             logger.error(f"Failed to publish item updated event: {e}")
+
+        # ── Auto-create/link a shared catalog Product (flag-gated) ──
+        if not updated_item.product_id:
+            try:
+                from app.core.constants import ITEM_AUTO_CREATE_PRODUCT
+                from app.services.feature_flag_service import (
+                    is_feature_enabled_for_org,
+                )
+
+                if is_feature_enabled_for_org(
+                    ITEM_AUTO_CREATE_PRODUCT, self.db, organization_id
+                ):
+                    product = self._link_or_create_product(
+                        updated_item, organization_id, user_id
+                    )
+                    if product is not None:
+                        updated_item.product_id = product.id
+                        self.db.flush()
+                        self.db.commit()
+                        logger.info(
+                            "Auto-created/linked product '%s' for legacy item '%s'",
+                            product.name,
+                            updated_item.item_code,
+                        )
+            except Exception as e:
+                logger.error(f"Failed to auto-create product for item: {e}")
 
         # ── Auto-create a linked QR product (backward compatibility) ──
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.

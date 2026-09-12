@@ -84,7 +84,9 @@ class InboundExceptionService:
         warehouse_id: UUID | None = None,
         destination: str | None = None,
         status: str | None = None,
-    ) -> list[InboundException]:
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[InboundException], int]:
         query = self.db.query(InboundException).filter(
             InboundException.organization_id == organization_id
         )
@@ -94,7 +96,14 @@ class InboundExceptionService:
             query = query.filter(InboundException.destination == destination.upper())
         if status:
             query = query.filter(InboundException.status == status)
-        return query.order_by(InboundException.created_at.desc()).all()
+        total = query.count()
+        items = (
+            query.order_by(InboundException.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return items, total
 
     def get_exception(
         self, exception_id: UUID, organization_id: UUID
@@ -134,7 +143,8 @@ class InboundExceptionService:
         scan_session_item_id: UUID | None = None,
         tracking_id: UUID | None = None,
     ) -> InboundException:
-        self._validate_reason(reason_code, organization_id)
+        reason = self._validate_reason(reason_code, organization_id)
+        destination = (reason.default_destination or "QUARANTINE").upper()
         exception = InboundException(
             organization_id=organization_id,
             warehouse_id=warehouse_id,
@@ -146,12 +156,8 @@ class InboundExceptionService:
             exception_type=exception_type,
             reason_code=reason_code,
             status="pending_approval",
-            condition_code="HOLD"
-            if exception_type == "unexpected_known_sku"
-            else "QUARANTINE",
-            destination="HOLD"
-            if exception_type == "unexpected_known_sku"
-            else "QUARANTINE",
+            condition_code=destination,
+            destination=destination,
             qr_identifier=qr_identifier,
             sku=sku,
             batch_number=batch_number,
@@ -348,7 +354,7 @@ class InboundExceptionService:
         if action == "release_to_receiving":
             if item is None:
                 raise ValidationError(
-                    "A valid, active SKU must be added or selected before release to RECEIVING-STAGE"
+                    "A valid, active SKU must be added or selected before release"
                 )
             if tracking is None:
                 tracking = self._materialize_now_active_unknown(
@@ -356,13 +362,13 @@ class InboundExceptionService:
                 )
                 exception.tracking_id = tracking.id
                 exception.scan_session_item_id = tracking.scan_session_item_id
-            stage = self._system_location(
-                exception.warehouse_id, organization_id, "RECEIVING-STAGE"
-            )
-            self._move_or_enter(exception, tracking, item, stage.id)
+            # Release no longer stages anywhere. Remove any segregated stock
+            # (HOLD/QUARANTINE) so normal put-away enters the quantity into
+            # the final bin exactly once.
+            self._remove_segregated_stock(exception, tracking, item)
             exception.status = "released"
-            exception.destination = "RECEIVING-STAGE"
-            exception.destination_location_id = stage.id
+            exception.destination = "released"
+            exception.destination_location_id = None
             exception.condition_code = "GOOD"
             if tracking:
                 tracking.item_id = item.id
@@ -424,6 +430,61 @@ class InboundExceptionService:
         self.db.refresh(exception)
         return exception
 
+    def dispose_many(
+        self,
+        *,
+        items: list[dict],
+        organization_id: UUID,
+        actor_id: UUID,
+        action: str,
+        note: str | None = None,
+        user=None,
+    ) -> dict:
+        """Dispose many exceptions with the same action, isolating per-item failures."""
+        if action not in self.FINAL_DISPOSITIONS:
+            raise ValidationError(f"Invalid exception disposition: {action}")
+
+        results: list[dict] = []
+        succeeded: list[InboundException] = []
+        for entry in items:
+            exception_id = entry["exception_id"]
+            item_id = entry.get("item_id")
+            try:
+                exception = self.get_exception(exception_id, organization_id)
+                if user is not None:
+                    self.assert_manager(user, exception.warehouse_id)
+                exception = self.dispose(
+                    exception_id=exception_id,
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    action=action,
+                    note=note,
+                    item_id=item_id,
+                )
+                succeeded.append(exception)
+                results.append(
+                    {"id": str(exception_id), "status": "disposed", "error": None}
+                )
+            except Exception as err:  # noqa: BLE001 - isolate per-item failures
+                self.db.rollback()
+                message = getattr(err, "message", None) or str(err)
+                results.append(
+                    {"id": str(exception_id), "status": "failed", "error": message}
+                )
+
+        serialized_by_id = {d["id"]: d for d in self.serialize_many(succeeded)}
+        for result in results:
+            if result["status"] == "disposed":
+                result["exception"] = serialized_by_id.get(result["id"])
+            else:
+                result["exception"] = None
+
+        return {
+            "results": results,
+            "disposed_count": len(succeeded),
+            "failed_count": len(results) - len(succeeded),
+        }
+
     def add_evidence(
         self,
         *,
@@ -467,7 +528,26 @@ class InboundExceptionService:
         self.db.refresh(evidence)
         return evidence
 
-    def serialize(self, exception: InboundException) -> dict:
+    def serialize(
+        self,
+        exception: InboundException,
+        *,
+        item_names_by_id: dict[UUID, str] | None = None,
+        item_names_by_sku: dict[str, str] | None = None,
+    ) -> dict:
+        item_name = None
+        if exception.item_id:
+            if item_names_by_id is not None:
+                item_name = item_names_by_id.get(exception.item_id)
+            else:
+                item = self.db.get(Item, exception.item_id)
+                item_name = item.item_name if item else None
+        elif exception.sku:
+            if item_names_by_sku is not None:
+                item_name = item_names_by_sku.get(exception.sku)
+            else:
+                item = self._resolve_item(exception.organization_id, exception.sku)
+                item_name = item.item_name if item else None
         return {
             "id": str(exception.id),
             "warehouse_id": str(exception.warehouse_id),
@@ -484,7 +564,9 @@ class InboundExceptionService:
             if exception.destination_location_id
             else None,
             "qr_identifier": exception.qr_identifier,
+            "serial_number": exception.qr_identifier,
             "sku": exception.sku,
+            "item_name": item_name,
             "batch_number": exception.batch_number,
             "quantity": exception.quantity,
             "note": exception.note,
@@ -510,7 +592,52 @@ class InboundExceptionService:
             ],
         }
 
-    def _validate_reason(self, code: str, organization_id: UUID) -> None:
+    def serialize_many(self, exceptions: list[InboundException]) -> list[dict]:
+        """Serialize exceptions with item lookups batched to avoid N+1 queries."""
+        from sqlalchemy import or_
+
+        item_names_by_id: dict[UUID, str] = {}
+        item_names_by_sku: dict[str, str] = {}
+
+        item_ids = {e.item_id for e in exceptions if e.item_id}
+        skus = {e.sku for e in exceptions if e.sku and not e.item_id}
+
+        if item_ids:
+            items = self.db.query(Item).filter(Item.id.in_(item_ids)).all()
+            item_names_by_id = {item.id: item.item_name for item in items}
+
+        if skus:
+            for org_id in {e.organization_id for e in exceptions}:
+                items = (
+                    self.db.query(Item)
+                    .filter(
+                        Item.organization_id == org_id,
+                        Item.deleted_at.is_(None),
+                        or_(
+                            Item.sku.in_(skus),
+                            Item.gtin.in_(skus),
+                            Item.item_code.in_(skus),
+                        ),
+                    )
+                    .all()
+                )
+                for item in items:
+                    for key in (item.sku, item.gtin, item.item_code):
+                        if key and key not in item_names_by_sku:
+                            item_names_by_sku[key] = item.item_name
+
+        return [
+            self.serialize(
+                exception,
+                item_names_by_id=item_names_by_id,
+                item_names_by_sku=item_names_by_sku,
+            )
+            for exception in exceptions
+        ]
+
+    def _validate_reason(
+        self, code: str, organization_id: UUID
+    ) -> InboundExceptionReason:
         reason = (
             self.db.query(InboundExceptionReason)
             .filter(
@@ -525,6 +652,7 @@ class InboundExceptionService:
             raise ValidationError(
                 f"Unknown or inactive inbound exception reason code: {code}"
             )
+        return reason
 
     def _resolve_item(self, organization_id: UUID, sku: str | None) -> Item | None:
         if not sku:
@@ -563,7 +691,7 @@ class InboundExceptionService:
 
         The identity was intentionally not counted when it was unknown. Once a
         manager supplies an active SKU, it is registered exactly once on the
-        still-open receiving session and then released into RECEIVING-STAGE.
+        still-open receiving session and then released for normal put-away.
         A closed session is never silently rewritten; the manager must create
         a new receipt flow in that case.
         """

@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -35,9 +35,9 @@ class StockLevel(Base):
         nullable=False,
     )
 
-    quantity_on_hand = Column(Integer, nullable=True, default=0)
-    quantity_reserved = Column(Integer, nullable=True, default=0)
-    quantity_available = Column(Integer, nullable=True, default=0)  # on_hand - reserved
+    quantity_on_hand = Column(Numeric(15, 3), nullable=True, default=0)
+    quantity_reserved = Column(Numeric(15, 3), nullable=True, default=0)
+    quantity_available = Column(Numeric(15, 3), nullable=True, default=0)  # on_hand - reserved
 
     last_counted_at = Column(DateTime(timezone=True), nullable=True)
 

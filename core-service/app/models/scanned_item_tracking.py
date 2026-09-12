@@ -87,7 +87,7 @@ class ScannedItemTracking(Base):
         nullable=True,
     )
     # Current physical location. Unlike bin_location_id (the eventual put-away
-    # target), this can be RECEIVING-STAGE, HOLD, or QUARANTINE.
+    # target), this can be HOLD or QUARANTINE.
     stock_location_id = Column(
         UUID(as_uuid=True),
         ForeignKey("warehouse_locations.id", ondelete="SET NULL"),

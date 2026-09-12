@@ -101,6 +101,7 @@ class ReceivingSlipStatus(str, enum.Enum):
 
     PENDING_REVIEW = "pending_review"
     PENDING_PUTAWAY = "pending_putaway"
+    PUTAWAY_IN_PROGRESS = "putaway_in_progress"
     PUTAWAY_COMPLETE = "putaway_complete"
     REJECTED = "rejected"
 

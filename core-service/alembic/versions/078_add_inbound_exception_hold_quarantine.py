@@ -371,7 +371,6 @@ def upgrade() -> None:
     ).fetchall()
     for warehouse_id, organization_id in warehouses:
         for code, name in (
-            ("RECEIVING-STAGE", "Receiving Stage"),
             ("HOLD", "Hold"),
             ("QUARANTINE", "Quarantine"),
         ):

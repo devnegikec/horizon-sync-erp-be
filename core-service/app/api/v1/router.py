@@ -52,6 +52,7 @@ from app.api.v1.endpoints import (
     notifications,
     organization_onboarding,
     outbound,
+    packing_slips,
     payments,
     pick_exceptions,
     pick_lists,
@@ -204,6 +205,14 @@ api_router.include_router(
     tags=["Vehicle Arrivals"],
 )
 # Outbound (SAP invoice-triggered pick lists)
+# NOTE: packing-slips MUST be registered before outbound because outbound
+# declares a catch-all GET /{pick_list_id} route that would otherwise shadow
+# the literal /outbound/packing-slips path (yielding 405 for POST).
+api_router.include_router(
+    packing_slips.router,
+    prefix="/outbound/packing-slips",
+    tags=["Outbound"],
+)
 api_router.include_router(
     outbound.router,
     prefix="/outbound",

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -25,16 +26,25 @@ from app.models.base import PickListStatus
 from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
+from app.models.product_item import ProductItem
 from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
 from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.pick_list_repository import PickListRepository
-from app.services.bin_reservation_service import BinReservationService
+from app.services.bin_reservation_service import (
+    DEFAULT_TTL_SECONDS,
+    BinReservationService,
+)
 from app.services.qr_decoder import decode_qr_payload
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
+from app.constants.constants_global import *
+from app.constants.constants_pick_list_service import PICK_LIST_NO
 
 #: Serial statuses that must NOT be picked (WF-014 / EX-005 / EX-006 / ALT-003).
 UNAVAILABLE_SERIAL_STATUSES: frozenset[str] = frozenset({"consumed", "blocked"})
+
+#: Short TTL (seconds) for unassigned (worker-less) pick-list bin reservations.
+UNASSIGNED_RESERVATION_TTL_SECONDS: int = 60
 
 
 @dataclass
@@ -67,20 +77,20 @@ class PickListService:
         self.reservation_service = BinReservationService(db)
 
     def create(self, data: dict, organization_id: UUID, user_id: UUID) -> dict:
-        payload = {k: v for k, v in data.items() if k != "items"}
-        payload["organization_id"] = organization_id
-        payload["created_by"] = user_id
-        payload["updated_by"] = user_id
+        payload = {k: v for k, v in data.items() if k != ITEMS}
+        payload[ORGANIZATION_ID] = organization_id
+        payload[CREATED_BY] = user_id
+        payload[UPDATED_BY] = user_id
         # Auto-generate pick_list_no if not provided
-        if not payload.get("pick_list_no"):
+        if not payload.get(PICK_LIST_NO):
             from app.services.document_numbering_service import DocumentNumberingService
 
-            payload["pick_list_no"] = DocumentNumberingService(self.db).get_next_number(
+            payload[PICK_LIST_NO] = DocumentNumberingService(self.db).get_next_number(
                 organization_id, "pick_list"
             )
-        if payload.get("status"):
-            payload["status"] = PickListStatus(payload["status"])
-        items = data.get("items") or []
+        if payload.get(STATUS):
+            payload[STATUS] = PickListStatus(payload[STATUS])
+        items = data.get(ITEMS) or []
         item_list = [dict(it) for it in items]
         pl = self.repo.create(payload, item_list)
         return self._to_response(pl)
@@ -112,19 +122,17 @@ class PickListService:
         )
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
-            "page": page,
-            "page_size": page_size,
-            "total_items": total,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
+            PAGE: page,
+            PAGE_SIZE: page_size,
+            TOTAL_ITEMS: total,
+            TOTAL_PAGES: total_pages,
+            HAS_NEXT: page < total_pages,
+            HAS_PREV: page > 1,
         }
         aging_threshold = self._pick_config(organization_id).get_int(
             "aging_threshold_minutes"
         )
-        return [
-            self._to_list_item(x, aging_threshold) for x in items
-        ], pagination
+        return [self._to_list_item(x, aging_threshold) for x in items], pagination
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -133,9 +141,9 @@ class PickListService:
         if not pl:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
         payload = {k: v for k, v in data.items() if v is not None}
-        if payload.get("status"):
-            payload["status"] = PickListStatus(payload["status"])
-        payload["updated_by"] = user_id
+        if payload.get(STATUS):
+            payload[STATUS] = PickListStatus(payload[STATUS])
+        payload[UPDATED_BY] = user_id
         self.repo.update(pl, payload)
         self.db.refresh(pl)
         return self._to_response(pl)
@@ -301,6 +309,18 @@ class PickListService:
         # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
         reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
 
+        # Serialized (unit-level) items capture their serials during pick scans;
+        # only batch-tracked items use the bin-stock batch as the line's serial.
+        serialized_item_ids = {
+            item_id
+            for (item_id,) in self.db.query(Item.id)
+            .filter(
+                Item.id.in_([it.item_id for it in pick_list.items]),
+                Item.has_serial_no == True,  # noqa: E712
+            )
+            .all()
+        }
+
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
 
@@ -359,7 +379,16 @@ class PickListService:
                 item.bin_location_id = bin_location_id
                 # Keep the packing-slip batch number; store the bin-stock serial(s)
                 # separately so the batch column matches the uploaded PDF.
-                item.serial_nos = [batch_number] if batch_number else None
+                if item.item_id in serialized_item_ids:
+                    # Serialized items keep any ASN-provided unit serials; the
+                    # remaining units are captured on pick scan.
+                    pass
+                else:
+                    item.serial_nos = [batch_number] if batch_number else None
+                # Backfill the batch/lot from the source bin when the upstream
+                # document (ASN order flow) didn't supply a batch number.
+                if item.batch_no is None and batch_number:
+                    item.batch_no = batch_number
                 resolved_items.append(item)
             else:
                 # Need to split across multiple bins
@@ -368,6 +397,13 @@ class PickListService:
                 for split_idx, (bin_location_id, alloc_qty, batch_number) in enumerate(
                     allocations
                 ):
+                    if item.item_id in serialized_item_ids:
+                        # Serialized items keep any ASN-provided unit serials on
+                        # the first split; the rest are captured on pick scan.
+                        split_serial_nos = item.serial_nos if split_idx == 0 else None
+                    else:
+                        split_serial_nos = [batch_number] if batch_number else None
+
                     split_item = PickListItem(
                         organization_id=org_id,
                         pick_list_id=pick_list.id,
@@ -381,8 +417,8 @@ class PickListService:
                         per_case_qty=item.per_case_qty if split_idx == 0 else None,
                         case_qty=item.case_qty if split_idx == 0 else None,
                         loose_qty=item.loose_qty if split_idx == 0 else None,
-                        batch_no=item.batch_no,
-                        serial_nos=[batch_number] if batch_number else None,
+                        batch_no=item.batch_no or batch_number,
+                        serial_nos=split_serial_nos,
                         bin_location_id=bin_location_id,
                         sort_order=0,
                     )
@@ -404,6 +440,87 @@ class PickListService:
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
+
+    def reserve_pick_bins(self, pick_list: PickList, org_id: UUID) -> int:
+        """Reserve the resolved bins of a pick list for its assigned worker.
+
+        Order-driven pick lists reserve each assigned bin so two pick lists
+        (or workers) cannot be directed to the same bin. Assigned workers hold
+        the default TTL; unassigned pick lists hold a short TTL with no worker
+        so the bin is not silently double-allocated while the task is being
+        claimed (requirement A1). Returns the number of bins reserved.
+        """
+        from app.core.exceptions import StateError
+
+        worker_id = pick_list.assigned_to
+        ttl = (
+            DEFAULT_TTL_SECONDS
+            if worker_id is not None
+            else UNASSIGNED_RESERVATION_TTL_SECONDS
+        )
+        reserved = 0
+        seen: set[UUID] = set()
+        for item in pick_list.items:
+            if item.bin_location_id is None or item.bin_location_id in seen:
+                continue
+            seen.add(item.bin_location_id)
+            try:
+                self.reservation_service.reserve(
+                    bin_id=item.bin_location_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                    task_id=pick_list.id,
+                    task_type="pick",
+                    ttl_seconds=ttl,
+                )
+                reserved += 1
+            except StateError:
+                # Bin was claimed concurrently; keep the item as-is and let the
+                # scan flow re-validate the bin assignment.
+                continue
+        return reserved
+
+    def release_pick_reservations(self, pick_list: PickList, org_id: UUID) -> int:
+        """Release all active bin reservations held for a pick list (A1)."""
+        return self.reservation_service.release_for_task(
+            task_id=pick_list.id, org_id=org_id
+        )
+
+    def _reconcile_order(self, order_id: UUID, org_id: UUID) -> None:
+        """Mark an outbound order completed once all its pick lists are in a
+        successful terminal state (requirement A4)."""
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        successful = {
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+        }
+        siblings = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id == order_id,
+            )
+            .all()
+        )
+        if not siblings or not all(pl.status in successful for pl in siblings):
+            return
+
+        order = (
+            self.db.query(OutboundOrder)
+            .filter(
+                OutboundOrder.id == order_id,
+                OutboundOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
+            order.status = OutboundOrderStatus.COMPLETED
 
     # ------------------------------------------------------------------
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
@@ -469,18 +586,14 @@ class PickListService:
         """
         from app.services.pick_settings_service import PickConfigResolver
 
-        policy = PickConfigResolver.from_org(self.db, org_id).get_enum(
-            "require_serial"
-        )
+        policy = PickConfigResolver.from_org(self.db, org_id).get_enum("require_serial")
         if policy == "never":
             return
         if policy == "per_item" and not item.has_serial_no:
             return
 
         if not serial_no:
-            raise ValidationError(
-                f"Serial scan required for item '{item.item_code}'"
-            )
+            raise ValidationError(f"Serial scan required for item '{item.item_code}'")
 
         serial_row = (
             self.db.query(SerialNo)
@@ -551,9 +664,7 @@ class PickListService:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} is not allowed"
             )
-        threshold = Decimal(
-            str(config.get_numeric("short_pick_approval_threshold"))
-        )
+        threshold = Decimal(str(config.get_numeric("short_pick_approval_threshold")))
         if shortfall > threshold:
             raise ValidationError(
                 f"Short-pick of {shortfall} on item {pick_item.id} exceeds the "
@@ -641,25 +752,63 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        # Only allow scanning on DRAFT (OPEN) or IN_PROGRESS pick lists
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        # Only allow scanning on a pick list that hasn't reached a terminal state.
+        scannable = (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        )
+        if pick_list.status not in scannable:
             raise ValidationError(
                 f"Cannot scan items on pick list with status '{pick_list.status.value}'. "
-                f"Pick list must be in 'draft' or 'in_progress' status."
+                f"Pick list must be in draft, confirmed, pending_picking or in_progress status."
             )
 
-        # Decode QR payload
-        payload = decode_qr_payload(qr_data)
+        # Decode QR payload — pass the db session and org scope so bare-serial
+        # and URL QR codes can be resolved against ProductItem (mirrors the
+        # inbound scan path). Without the db, serial-only payloads fail with
+        # "cannot resolve serial without database".
+        payload = decode_qr_payload(qr_data, db=self.db, organization_id=org_id)
 
-        # Find matching pick list item by SKU (item_code)
-        item = (
-            self.db.query(Item)
+        # Resolve the inventory Item for this scan. Unit/serial scans carry the
+        # ProductItem serial in payload.id (ProductItem → QRProduct → Item);
+        # box labels fall back to SKU/GTIN/item_code matching.
+        item = None
+        product_item = (
+            self.db.query(ProductItem)
             .filter(
-                Item.item_code == payload.sku,
-                Item.organization_id == org_id,
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == org_id,
+                ProductItem.deleted_at.is_(None),
             )
             .first()
         )
+        if product_item is not None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.qr_product_id == product_item.product_id,
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                )
+                .first()
+            )
+
+        if item is None:
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == org_id,
+                    Item.deleted_at.is_(None),
+                    or_(
+                        Item.item_code == payload.sku,
+                        Item.sku == payload.sku,
+                        Item.gtin == payload.sku,
+                    ),
+                )
+                .first()
+            )
 
         if not item:
             raise ValidationError(
@@ -687,6 +836,20 @@ class PickListService:
 
         # Serial validation (WF-014 / EX-005 / EX-006 / ALT-003).
         self.validate_serial(org_id, item, payload.id)
+
+        # Capture the scanned unit serial on the pick line so it propagates into
+        # the internal-transfer ASN at dispatch (unit-level chain of custody).
+        # Batch-tracked items keep the bin-stock batch already stored on the line.
+        if item.has_serial_no and payload.id:
+            current = list(matching_pick_item.serial_nos or [])
+            if payload.id in current:
+                # Duplicate serial scan: hard stop before picked_qty/stock are
+                # touched so the same unit can't be picked twice.
+                raise ValidationError(
+                    f"Serial '{payload.id}' has already been picked for this line"
+                )
+            current.append(payload.id)
+            matching_pick_item.serial_nos = current
 
         # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))
@@ -722,14 +885,18 @@ class PickListService:
                     user_id=worker_id,
                     commit=False,
                 )
-                self.reservation_service.release(
+                self.reservation_service.release_bin(
                     bin_id=matching_pick_item.bin_location_id,
                     worker_id=worker_id,
                     org_id=org_id,
                 )
 
-        # Transition to IN_PROGRESS on first scan
-        if pick_list.status == PickListStatus.DRAFT:
+        # Transition to IN_PROGRESS on first scan (from any pre-picking state).
+        if pick_list.status in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+        ):
             pick_list.status = PickListStatus.IN_PROGRESS
 
         # Record scan event in qr_scan_events
@@ -821,10 +988,15 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        if pick_list.status not in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        ):
             raise ValidationError(
                 f"Cannot complete pick list with status '{pick_list.status.value}'. "
-                f"Pick list must be in 'draft' or 'in_progress' status."
+                f"Pick list must be in draft, confirmed, pending_picking or in_progress status."
             )
 
         # Validate all items are fully picked (short-pick policy, EX-002 / ALT-004).
@@ -833,8 +1005,16 @@ class PickListService:
             if shortfall is not None:
                 self._capture_short_pick_exception(org_id, item, shortfall)
 
-        pick_list.status = PickListStatus.COMPLETED
+        pick_list.status = PickListStatus.PICK_COMPLETE
         pick_list.completed_at = datetime.now(UTC)
+
+        # Reconcile the upstream order when every pick list is in a successful
+        # terminal state (requirement A4).
+        if pick_list.reference_type == "outbound_order" and pick_list.reference_id:
+            self._reconcile_order(pick_list.reference_id, org_id)
+
+        # Release bin reservations for this pick list (requirement A1).
+        self.release_pick_reservations(pick_list, org_id)
 
         self.db.commit()
         self.db.refresh(pick_list)
@@ -863,8 +1043,17 @@ class PickListService:
         if not pick_list:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status == PickListStatus.COMPLETED:
-            raise ValidationError("Cannot cancel a completed pick list")
+        terminal = (
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+        )
+        if pick_list.status in terminal:
+            raise ValidationError(
+                f"Cannot cancel a pick list in '{pick_list.status.value}' status"
+            )
 
         if pick_list.status == PickListStatus.CANCELLED:
             raise ValidationError("Pick list is already cancelled")
@@ -889,6 +1078,9 @@ class PickListService:
 
         pick_list.status = PickListStatus.CANCELLED
 
+        # Release bin reservations for this pick list (requirement A1).
+        self.release_pick_reservations(pick_list, org_id)
+
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
@@ -905,6 +1097,52 @@ class PickListService:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
         pick_list.assigned_to = worker_id
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    # ------------------------------------------------------------------
+    # STATUS LIFECYCLE TRANSITIONS (order-driven outbound flow)
+    # ------------------------------------------------------------------
+
+    def confirm_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
+        """Move a draft pick list to ``confirmed`` (order-driven lifecycle)."""
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if pick_list.status in (PickListStatus.CANCELLED,):
+            raise ValidationError("Cannot confirm a cancelled pick list")
+        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.CONFIRMED):
+            raise ValidationError(
+                f"Cannot confirm pick list with status '{pick_list.status.value}'"
+            )
+
+        pick_list.status = PickListStatus.CONFIRMED
+        self.db.commit()
+        self.db.refresh(pick_list)
+        return pick_list
+
+    def transition_status(
+        self,
+        pick_list_id: UUID,
+        org_id: UUID,
+        target: PickListStatus,
+        allowed_from: tuple[PickListStatus, ...] = (),
+    ) -> PickList:
+        """Transition a pick list to ``target`` from one of ``allowed_from``."""
+        pick_list = self.repo.get_by_id(pick_list_id, org_id)
+        if not pick_list:
+            raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
+
+        if allowed_from and pick_list.status not in allowed_from:
+            allowed = ", ".join(s.value for s in allowed_from)
+            raise ValidationError(
+                f"Cannot move pick list from '{pick_list.status.value}' to "
+                f"'{target.value}' (expected one of: {allowed})"
+            )
+
+        pick_list.status = target
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
@@ -939,7 +1177,13 @@ class PickListService:
         if pick_list is None:
             raise ResourceNotFoundException(f"Pick list {pick_list_id} not found")
 
-        if pick_list.status not in (PickListStatus.DRAFT, PickListStatus.IN_PROGRESS):
+        acceptable = (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+            PickListStatus.IN_PROGRESS,
+        )
+        if pick_list.status not in acceptable:
             raise ValidationError(
                 f"Cannot accept pick list with status '{pick_list.status.value}'"
             )
@@ -948,7 +1192,11 @@ class PickListService:
             pick_list.accepted_at = datetime.now(UTC)
         pick_list.accepted_by = worker_id
         pick_list.assigned_to = worker_id
-        if pick_list.status == PickListStatus.DRAFT:
+        if pick_list.status in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+        ):
             pick_list.status = PickListStatus.IN_PROGRESS
 
         self.db.commit()
@@ -1046,9 +1294,25 @@ class PickListService:
 
         current = now or datetime.now(UTC)
         age_minutes = max(0, int((current - created).total_seconds() // 60))
+
+        # "Aged" only applies to open, actionable tasks. A pick list that has
+        # reached a terminal status is never flagged, regardless of how long
+        # it took to complete.
+        terminal = (
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+            PickListStatus.CANCELLED,
+        )
+        is_aging = (
+            age_minutes >= effective
+            and getattr(pl, "status", None) not in terminal
+        )
         return {
             "age_minutes": age_minutes,
-            "is_aging": age_minutes >= effective,
+            "is_aging": is_aging,
         }
 
     # ------------------------------------------------------------------
@@ -1074,9 +1338,7 @@ class PickListService:
             .first()
         )
         if location is None:
-            raise ValidationError(
-                f"Staging lane {staging_location_id} not found"
-            )
+            raise ValidationError(f"Staging lane {staging_location_id} not found")
         if location.location_type != LocationType.STAGING.value:
             raise ValidationError(
                 f"Location {staging_location_id} is not a staging lane "

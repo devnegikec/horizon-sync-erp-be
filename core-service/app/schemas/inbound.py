@@ -35,6 +35,25 @@ class RecordScanRequest(BaseModel):
     os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
+class RemoveScansRequest(BaseModel):
+    """Schema for removing one or more scanned items from an open session."""
+
+    qr_identifiers: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="QR identifiers (serials) of the scanned items to remove",
+    )
+
+
+class RemoveScansResponse(BaseModel):
+    """Result of removing scanned items from an open session."""
+
+    session_id: UUID
+    removed: int
+    total_boxes_scanned: int
+
+
 class EndSessionRejection(BaseModel):
     """A single item rejection submitted when ending a scan session."""
 
@@ -105,10 +124,10 @@ class FlagLineItemRequest(BaseModel):
 
 
 class ApproveSlipRequest(BaseModel):
-    """Schema for approving a receiving slip with optional worker assignment."""
+    """Schema for approving a receiving slip with optional approving user."""
 
     worker_id: UUID | None = Field(
-        None, description="Optional worker UUID to assign the put-away task to"
+        None, description="Optional UUID of the user performing the approval"
     )
 
 
@@ -136,6 +155,29 @@ class InboundExceptionDispositionRequest(BaseModel):
     item_id: UUID | None = Field(
         None, description="Required when release follows a SKU creation/correction"
     )
+
+
+class InboundExceptionBulkDispositionItem(BaseModel):
+    """One exception in a bulk disposition request."""
+
+    exception_id: UUID
+    item_id: UUID | None = Field(
+        None,
+        description="Corrected SKU's item ID — required when releasing an unknown-SKU exception",
+    )
+
+
+class InboundExceptionBulkDispositionRequest(BaseModel):
+    """Bulk manager disposition for multiple inbound exceptions."""
+
+    items: list[InboundExceptionBulkDispositionItem] = Field(
+        ..., min_length=1, max_length=200
+    )
+    action: str = Field(
+        ...,
+        description="release_to_receiving, move_to_hold, move_to_quarantine, return_to_sender, or dispose",
+    )
+    note: str | None = Field(None, max_length=2000)
 
 
 # ===========================================
@@ -225,6 +267,7 @@ class ReceivingSlipItemData(BaseModel):
     """Individual line item inside a QSeal group — merged child detail + slip item."""
 
     id: str
+    name: str | None = None
     serial_number: str | None = None
     sku: str
     batch_number: str | None = None
@@ -236,6 +279,8 @@ class ReceivingSlipItemData(BaseModel):
     condition_code: str | None = None
     exception_status: str | None = None
     exception_destination_location_id: str | None = None
+    rejection_reason: str | None = None
+    reason_code: str | None = None
     notes: str | None = None
 
 
@@ -265,6 +310,27 @@ class ReceivingSlipResponse(BaseModel):
     rejection_reason: str | None = None
     notes: str | None = None
     groups: list[ReceivingSlipItemGroup] = []
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ReceivingSlipListItem(BaseModel):
+    """Lightweight receiving slip entry for list responses (no item groups)."""
+
+    id: str
+    organization_id: str
+    slip_number: str
+    session_id: str
+    warehouse_id: str
+    asn_order_id: str | None = None
+    asn_order_no: str | None = None
+    vehicle_arrival_id: str | None = None
+    vehicle_no: str | None = None
+    status: str
+    total_boxes: int
+    total_items: int
+    rejection_reason: str | None = None
+    notes: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -309,7 +375,9 @@ class InboundExceptionResponse(BaseModel):
     destination: str | None = None
     destination_location_id: str | None = None
     qr_identifier: str | None = None
+    serial_number: str | None = None
     sku: str | None = None
+    item_name: str | None = None
     batch_number: str | None = None
     quantity: int
     note: str | None = None
@@ -319,6 +387,41 @@ class InboundExceptionResponse(BaseModel):
     approved_at: str | None = None
     disposed_at: str | None = None
     evidence: list[InboundEvidenceResponse] = []
+
+
+class InboundExceptionPagination(BaseModel):
+    """Pagination metadata for the inbound exception queue."""
+
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class InboundExceptionListResponse(BaseModel):
+    """Paginated inbound exception queue."""
+
+    exceptions: list[InboundExceptionResponse]
+    pagination: InboundExceptionPagination
+
+
+class InboundExceptionBulkResult(BaseModel):
+    """Per-exception outcome for a bulk disposition."""
+
+    id: str
+    status: str
+    error: str | None = None
+    exception: InboundExceptionResponse | None = None
+
+
+class InboundExceptionBulkDispositionResponse(BaseModel):
+    """Result of a bulk disposition operation."""
+
+    results: list[InboundExceptionBulkResult]
+    disposed_count: int
+    failed_count: int
 
 
 class InboundShortBalanceResponse(BaseModel):
@@ -346,11 +449,23 @@ class ReceivingSlipPagination(BaseModel):
     has_prev: bool
 
 
-class ReceivingSlipListResponse(BaseModel):
-    """Paginated list of receiving slips."""
+class ReceivingSlipStatusCounts(BaseModel):
+    """Status distribution for receiving slips in the current scope."""
 
-    receiving_slips: list[ReceivingSlipResponse]
+    total: int = 0
+    pending_review: int = 0
+    pending_putaway: int = 0
+    putaway_in_progress: int = 0
+    putaway_complete: int = 0
+    rejected: int = 0
+
+
+class ReceivingSlipListResponse(BaseModel):
+    """Paginated list of receiving slips with status statistics."""
+
+    receiving_slips: list[ReceivingSlipListItem]
     pagination: ReceivingSlipPagination
+    status_counts: ReceivingSlipStatusCounts
 
 
 # ------------------------------------------------------------------

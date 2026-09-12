@@ -8,11 +8,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
-from app.models.wms_worker import WMSWorker
 from app.schemas.worker_session import (
     WorkerSessionLoginRequest,
     WorkerSessionResponse,
@@ -40,34 +40,23 @@ async def start_worker_session(
     """
     Start a worker login session.
 
-    Rejects the request (HTTP 423) when the worker is locked out after too
-    many failed login attempts. Otherwise records a successful login and
-    creates an active session with the org's idle timeout.
+    Verifies the worker exists (as a ``users`` row) and creates an active
+    session with the org's idle timeout. Lockout is enforced on the identity
+    side at login.
 
     Requirements: WF-009
     """
     org_id = current_user.organization_id
-    worker = (
-        db.query(WMSWorker)
-        .filter(
-            WMSWorker.id == data.worker_id,
-            WMSWorker.organization_id == org_id,
-        )
-        .first()
-    )
-    if worker is None:
+    exists = db.execute(
+        text("SELECT 1 FROM users WHERE id=:id AND user_type='warehouse_worker'"),
+        {"id": data.worker_id},
+    ).fetchone()
+    if exists is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found"
         )
 
     service = WorkerSessionService(db)
-    if WorkerSessionService.is_locked(worker):
-        raise HTTPException(
-            status_code=status.HTTP_423_LOCKED,
-            detail="Worker account is locked due to too many failed login attempts",
-        )
-
-    service.record_successful_login(worker)
     session = service.start_session(org_id, data.worker_id)
     timeout = service._timeout_for(org_id)
     return WorkerSessionResponse(**_to_dict(session, timeout))

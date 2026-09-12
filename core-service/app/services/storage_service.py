@@ -112,6 +112,46 @@ def delete_qr_artifact(object_key: str) -> None:
     )
 
 
+def _local_artifacts_root() -> Path:
+    """Return the base directory for locally-stored QR artifacts.
+
+    Uses ``settings.upload_dir`` when set (e.g. the Railway volume mounted at
+    ``/uploads``), otherwise falls back to ``<project_root>/uploads``.
+    """
+    if settings.upload_dir:
+        return Path(settings.upload_dir)
+    return Path(__file__).resolve().parents[2] / "uploads"
+
+
+def build_qr_artifact_local_path(
+    organization_id: UUID,
+    product_id: UUID,
+    block_id: UUID,
+) -> Path:
+    """Return the absolute filesystem path for a locally-stored QR workbook."""
+    return (
+        _local_artifacts_root()
+        / "qr-blocks"
+        / str(organization_id)
+        / str(product_id)
+        / str(block_id)
+        / "qr_codes.xlsx"
+    )
+
+
+def store_qr_artifact_local(
+    data: bytes,
+    organization_id: UUID,
+    product_id: UUID,
+    block_id: UUID,
+) -> Path:
+    """Persist a QR workbook on the local volume (e.g. core-service-volume)."""
+    filepath = build_qr_artifact_local_path(organization_id, product_id, block_id)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    filepath.write_bytes(data)
+    return filepath
+
+
 def get_signed_url(gcs_path: str, expiry_minutes: int = 60) -> str:
     """
     Generate a V4 signed download URL for a GCS object.

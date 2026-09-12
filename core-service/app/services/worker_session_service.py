@@ -1,9 +1,10 @@
-"""Worker login session + lockout service (PR-14 / T-14, WF-009).
+"""Worker login session service (PR-14 / T-14, WF-009).
 
-- ``start_session`` / ``touch`` / ``end_session`` track a worker's handheld
-  login session and enforce the idle timeout (``pick.session_timeout_minutes``).
-- ``record_failed_login`` / ``record_successful_login`` / ``is_locked`` enforce
-  the login lockout (``pick.login_lockout_attempts``) on ``WMSWorker`` rows.
+``start_session`` / ``touch`` / ``end_session`` track a worker's handheld
+login session and enforce the idle timeout (``pick.session_timeout_minutes``).
+
+Login lockout (``login_lockout_attempts``) is enforced on the identity
+``users`` table, so it no longer lives here.
 
 Idle timeout semantics: a session expires when the time since
 ``last_active_at`` exceeds the timeout. ``touch`` rejects an expired session
@@ -19,11 +20,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
-from app.models.wms_worker import WMSWorker
 from app.models.worker_session import WorkerSession, WorkerSessionStatus
-
-#: Fixed window (minutes) a worker stays locked after exceeding failed attempts.
-LOCKOUT_WINDOW_MINUTES = 15
 
 
 class WorkerSessionService:
@@ -31,11 +28,9 @@ class WorkerSessionService:
         self,
         db: Session,
         timeout_minutes: int | None = None,
-        lockout_attempts: int | None = None,
     ):
         self.db = db
         self._timeout_minutes = timeout_minutes
-        self._lockout_attempts = lockout_attempts
 
     # -- config -------------------------------------------------------------
 
@@ -46,15 +41,6 @@ class WorkerSessionService:
 
         return PickConfigResolver.from_org(self.db, org_id).get_int(
             "session_timeout_minutes"
-        )
-
-    def _attempts_for(self, org_id: UUID) -> int:
-        if self._lockout_attempts is not None:
-            return self._lockout_attempts
-        from app.services.pick_settings_service import PickConfigResolver
-
-        return PickConfigResolver.from_org(self.db, org_id).get_int(
-            "login_lockout_attempts"
         )
 
     # -- sessions -----------------------------------------------------------
@@ -129,42 +115,6 @@ class WorkerSessionService:
                 f"Worker session is {session.status} and cannot be used"
             )
         return session
-
-    # -- lockout ------------------------------------------------------------
-
-    @staticmethod
-    def is_locked(worker: WMSWorker, now: datetime | None = None) -> bool:
-        """Return True if the worker is currently locked out."""
-        if worker.locked_until is None:
-            return False
-        now = now or datetime.now(UTC)
-        return worker.locked_until > now
-
-    def record_failed_login(
-        self,
-        org_id: UUID,
-        worker: WMSWorker,
-        now: datetime | None = None,
-    ) -> None:
-        """Increment the failed-attempt counter and lock when the threshold is hit."""
-        now = now or datetime.now(UTC)
-        worker.failed_login_attempts = (worker.failed_login_attempts or 0) + 1
-        attempts = self._attempts_for(org_id)
-        if worker.failed_login_attempts >= attempts:
-            worker.locked_until = now + timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
-        self.db.commit()
-
-    def record_successful_login(
-        self,
-        worker: WMSWorker,
-        now: datetime | None = None,
-    ) -> None:
-        """Reset the failed-attempt counter and stamp the login time."""
-        now = now or datetime.now(UTC)
-        worker.failed_login_attempts = 0
-        worker.locked_until = None
-        worker.last_login_at = now
-        self.db.commit()
 
 
 def _to_dict(session: WorkerSession, timeout_minutes: int) -> dict[str, Any]:

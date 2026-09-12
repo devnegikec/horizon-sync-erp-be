@@ -44,7 +44,7 @@ class BinReservationService:
     def reserve(
         self,
         bin_id: UUID,
-        worker_id: UUID,
+        worker_id: UUID | None,
         org_id: UUID,
         task_id: UUID | None = None,
         task_type: str | None = None,
@@ -213,6 +213,66 @@ class BinReservationService:
         if actives:
             self.db.commit()
         return len(actives)
+
+    def release_for_task(self, task_id: UUID, org_id: UUID) -> int:
+        """Release all active reservations owned by a task (e.g. a pick list).
+
+        Used on pick-list completion/cancellation: worker-scoped and unassigned
+        (worker-less) holds alike are released by task ownership. Returns the
+        count of reservations released.
+        """
+        now = datetime.now(UTC)
+        actives = (
+            self.db.query(BinReservation)
+            .filter(
+                BinReservation.organization_id == org_id,
+                BinReservation.task_id == task_id,
+                BinReservation.released_at.is_(None),
+            )
+            .all()
+        )
+        for r in actives:
+            r.released_at = now
+        if actives:
+            self.db.commit()
+        return len(actives)
+
+    def release_bin(
+        self, bin_id: UUID, worker_id: UUID | None, org_id: UUID
+    ) -> bool:
+        """Release the active reservation on a bin held by ``worker_id`` or an
+        unassigned (worker-less) hold.
+
+        Used when a pick line is fully satisfied: the hold is released whether
+        it was created for an assigned worker or as a short-TTL unassigned
+        hold. Returns True if a reservation was released.
+        """
+        active = (
+            self.db.query(BinReservation)
+            .filter(
+                BinReservation.bin_location_id == bin_id,
+                BinReservation.organization_id == org_id,
+                BinReservation.released_at.is_(None),
+            )
+            .first()
+        )
+        if active is None:
+            return False
+        if active.worker_id is not None and active.worker_id != worker_id:
+            return False
+
+        active.released_at = datetime.now(UTC)
+        self.db.commit()
+        warehouse_id = (
+            self.db.query(WarehouseLocation.warehouse_id)
+            .filter(WarehouseLocation.id == bin_id)
+            .scalar()
+        )
+        if warehouse_id is not None:
+            publish_bin_event(
+                "bin_released", bin_id, warehouse_id, worker_id=active.worker_id
+            )
+        return True
 
     def force_release(self, bin_id: UUID, org_id: UUID) -> bool:
         """Manager override — release any active reservation on a bin (FR-CW-04)."""

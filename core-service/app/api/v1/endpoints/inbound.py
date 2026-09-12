@@ -12,7 +12,7 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
@@ -22,6 +22,7 @@ from app.core.authorization import (
     RECEIVING_SLIP_CREATE,
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
+    WMS_SCAN,
 )
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -33,18 +34,26 @@ from app.schemas.inbound import (
     EndSessionRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
+    InboundExceptionBulkDispositionRequest,
+    InboundExceptionBulkDispositionResponse,
     InboundExceptionClassifyRequest,
     InboundExceptionDispositionRequest,
+    InboundExceptionListResponse,
+    InboundExceptionPagination,
     InboundExceptionReasonResponse,
     InboundExceptionResponse,
     InboundShortBalanceResponse,
     LinkAsnToSessionRequest,
+    ReceivingSlipListItem,
     ReceivingSlipListResponse,
     ReceivingSlipResponse,
+    ReceivingSlipStatusCounts,
     RecordScanRequest,
     RejectedItemResponse,
     RejectSlipItemRequest,
     RejectSlipRequest,
+    RemoveScansRequest,
+    RemoveScansResponse,
     ResolveFloatingItemRequest,
     ScanResult,
     SessionResponse,
@@ -123,6 +132,39 @@ async def cancel_session(
         organization_id=current_user.organization_id,
     )
     return SessionResponse(**result)
+
+
+@router.post(
+    "/sessions/{session_id}/remove-scan",
+    response_model=RemoveScansResponse,
+    summary="Remove scanned items",
+    description="Remove one or more scanned items from an open session (e.g. a wrong parent QR)",
+)
+async def remove_scans(
+    session_id: UUID,
+    data: RemoveScansRequest,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove previously scanned items from an open session.
+
+    Deletes the matching ScanSessionItem rows plus their dual-axis tracking
+    and exception records, reversing any HOLD stock they entered.
+
+    **Path Parameters:**
+    - **session_id**: UUID of the open scan session
+
+    **Request Body:**
+    - **qr_identifiers**: Serial numbers (QR identifiers) of the items to remove
+    """
+    service = InboundService(db)
+    result = service.remove_scan_items(
+        session_id=session_id,
+        organization_id=current_user.organization_id,
+        qr_identifiers=data.qr_identifiers,
+    )
+    return RemoveScansResponse(**result)
 
 
 @router.post(
@@ -257,7 +299,7 @@ async def list_receiving_slips(
     session_id: UUID | None = Query(None, description="Filter by scan session UUID"),
     status: str | None = Query(
         None,
-        description="Filter by status: pending_review, pending_putaway, putaway_complete, rejected",
+        description="Filter by status: pending_review, pending_putaway, putaway_in_progress, putaway_complete, rejected",
     ),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -270,11 +312,11 @@ async def list_receiving_slips(
     **Query Parameters:**
     - **warehouse_id**: Filter by warehouse UUID
     - **session_id**: Filter by scan session UUID
-    - **status**: Filter by status (pending_review, pending_putaway, putaway_complete, rejected)
+    - **status**: Filter by status (pending_review, pending_putaway, putaway_in_progress, putaway_complete, rejected)
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 20)
 
-    **Returns:** Paginated list of receiving slips with line items
+    **Returns:** Paginated list of receiving slips (summary only, no item groups) with status statistics
     """
     from app.schemas.inbound import ReceivingSlipPagination
 
@@ -293,11 +335,15 @@ async def list_receiving_slips(
         page=page,
         page_size=page_size,
     )
+    status_counts = service.slip_repo.get_status_counts(
+        org_id=current_user.organization_id,
+        filters=filters,
+    )
 
     total_pages = max(1, (total + page_size - 1) // page_size)
 
     slip_responses = [
-        ReceivingSlipResponse(**service._slip_to_dict(slip)) for slip in slips
+        ReceivingSlipListItem(**service._slip_to_summary_dict(slip)) for slip in slips
     ]
 
     return ReceivingSlipListResponse(
@@ -310,6 +356,7 @@ async def list_receiving_slips(
             has_next=page < total_pages,
             has_prev=page > 1,
         ),
+        status_counts=ReceivingSlipStatusCounts(**status_counts),
     )
 
 
@@ -352,26 +399,27 @@ async def get_receiving_slip(
     "/receiving-slips/{slip_id}/approve",
     response_model=ReceivingSlipResponse,
     summary="Approve receiving slip",
-    description="Approve a receiving slip, transitioning it to PENDING_PUTAWAY and triggering put-away list generation",
+    description="Approve a receiving slip, transitioning it to PENDING_PUTAWAY",
 )
 async def approve_slip(
     slip_id: UUID,
     data: ApproveSlipRequest | None = None,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
     Approve a receiving slip.
 
-    Transitions the slip from PENDING_REVIEW to PENDING_PUTAWAY, generates
-    a put-away list with bin assignments respecting allocations and routing,
-    and optionally creates a worker task if worker_id is provided.
+    Transitions the slip from PENDING_REVIEW to PENDING_PUTAWAY (or directly
+    to PUTAWAY_COMPLETE when every item was already binned via direct
+    put-away). Put-away list generation is a separate step via
+    ``/put-away/generate-from-slip/{slip_id}``.
 
     **Path Parameters:**
     - **slip_id**: UUID of the receiving slip to approve
 
     **Request Body (optional):**
-    - **worker_id**: Optional UUID of the worker to assign the put-away task to
+    - **worker_id**: Optional UUID of the user performing the approval
 
     **Returns:** Updated receiving slip details
 
@@ -396,7 +444,7 @@ async def approve_slip(
 async def reject_slip(
     slip_id: UUID,
     data: RejectSlipRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -433,7 +481,7 @@ async def flag_line_item(
     slip_id: UUID,
     item_id: UUID,
     data: FlagLineItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -520,26 +568,42 @@ async def classify_inbound_exception(
 
 @router.get(
     "/exceptions",
-    response_model=list[InboundExceptionResponse],
+    response_model=InboundExceptionListResponse,
     summary="List inbound exception and hold/quarantine queue",
 )
 async def list_inbound_exceptions(
     warehouse_id: UUID | None = Query(None),
     destination: str | None = Query(None),
     exception_status: str | None = Query(None, alias="status"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_READ)),
     db: Session = Depends(get_db),
 ):
     service = InboundExceptionService(db)
-    return [
-        InboundExceptionResponse(**service.serialize(exception))
-        for exception in service.list_exceptions(
-            current_user.organization_id,
-            warehouse_id=warehouse_id,
-            destination=destination,
-            status=exception_status,
-        )
-    ]
+    exceptions, total = service.list_exceptions(
+        current_user.organization_id,
+        warehouse_id=warehouse_id,
+        destination=destination,
+        status=exception_status,
+        page=page,
+        page_size=page_size,
+    )
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return InboundExceptionListResponse(
+        exceptions=[
+            InboundExceptionResponse(**serialized)
+            for serialized in service.serialize_many(exceptions)
+        ],
+        pagination=InboundExceptionPagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1,
+        ),
+    )
 
 
 @router.get(
@@ -625,6 +689,29 @@ async def dispose_inbound_exception(
         item_id=data.item_id,
     )
     return InboundExceptionResponse(**service.serialize(exception))
+
+
+@router.post(
+    "/exceptions/bulk-disposition",
+    response_model=InboundExceptionBulkDispositionResponse,
+    summary="Bulk manager disposition for multiple inbound exceptions",
+)
+async def bulk_dispose_inbound_exceptions(
+    data: InboundExceptionBulkDispositionRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_DISPOSE)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    items = [item.model_dump() for item in data.items]
+    result = service.dispose_many(
+        items=items,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action=data.action,
+        note=data.note,
+        user=current_user,
+    )
+    return InboundExceptionBulkDispositionResponse(**result)
 
 
 # ------------------------------------------------------------------
@@ -758,6 +845,11 @@ async def assign_bin_to_slip_item(
         slip = db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
         if slip:
             slip.status = "putaway_complete"
+            db.flush()
+            if slip.asn_order_id:
+                InboundService(db)._sync_asn_delivered_qty(
+                    slip.asn_order_id, current_user.organization_id
+                )
 
     db.commit()
 
@@ -933,7 +1025,7 @@ async def reject_slip_item(
     slip_id: UUID,
     item_id: UUID,
     data: RejectSlipItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -975,7 +1067,7 @@ async def reject_slip_item(
 async def update_slip_items_status(
     slip_id: UUID,
     data: BulkItemStatusUpdateRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """Bulk update item statuses on a receiving slip.
@@ -1084,7 +1176,7 @@ async def list_floating_items(
 async def resolve_floating_item(
     item_id: UUID,
     data: ResolveFloatingItemRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE)),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),
 ):
     """

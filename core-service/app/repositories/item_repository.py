@@ -137,7 +137,7 @@ class ItemRepository:
             item_type: Filter by item type
             item_group_id: Filter by item group
             maintain_stock: Filter by maintain_stock flag
-            search: Search term for item_code, item_name, barcode
+            search: Search term for item_code, item_name, barcode, sku
             sort_by: Field to sort by
             sort_order: Sort order (asc or desc)
 
@@ -173,6 +173,7 @@ class ItemRepository:
                     Item.item_code.ilike(search_term),
                     Item.item_name.ilike(search_term),
                     Item.barcode.ilike(search_term),
+                    Item.sku.ilike(search_term),
                 )
             )
 

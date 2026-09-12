@@ -1,0 +1,4 @@
+item_name,description,item_type,SKU,status,uom,standard_rate,action
+Prestige cooker 5 Ltr,Prestige cooker 5 Ltr,ItemType.STOCK,PRE-COOK-05,ItemStatus.ACTIVE,PK,1200.00,CREATE
+Prestige cooker 10 Ltr,Prestige cooker 10 Ltr,ItemType.STOCK,PRE-COOK-10,ItemStatus.ACTIVE,PK,1200.00,CREATE
+

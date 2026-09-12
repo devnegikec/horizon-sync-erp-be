@@ -1,7 +1,7 @@
 """add parent relation to qr_activation_parameters
 
-Revision ID: e18bb13c20f4
-Revises: 540a6ccc80c0
+Revision ID: 041_add_parent_relation_to_qr_activation
+Revises: 040_add_audit_fields_and_enum_to_qr
 Create Date: 2026-04-21 05:38:06.234844
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'e18bb13c20f4'
-down_revision: str | None = '540a6ccc80c0'
+revision: str = '041_add_parent_relation_to_qr_activation'
+down_revision: str | None = '040_add_audit_fields_and_enum_to_qr'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

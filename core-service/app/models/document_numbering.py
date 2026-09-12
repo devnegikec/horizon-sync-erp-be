@@ -36,6 +36,8 @@ DOCUMENT_TYPES = [
     "put_away_list",
     "dispatch",
     "asn_order",
+    "outbound_order",
+    "packing_slip",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -61,6 +63,8 @@ DEFAULT_PREFIXES = {
     "put_away_list": "PA",
     "dispatch": "DSP",
     "asn_order": "ASN",
+    "outbound_order": "ORD",
+    "packing_slip": "PKSL",
 }
 
 

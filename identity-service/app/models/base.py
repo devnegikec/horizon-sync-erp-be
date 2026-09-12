@@ -86,6 +86,7 @@ class ResourceType(str, enum.Enum):
     ASN_ORDER = "asn_order"
     PICK_LIST = "pick_list"
     RECEIVING_SLIP = "receiving_slip"
+    INBOUND_EXCEPTION = "inbound_exception"
     QSEAL = "qseal"
     QR_PRODUCT = "qr_product"
     QR_BLOCK = "qr_block"

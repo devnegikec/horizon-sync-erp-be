@@ -14,6 +14,7 @@ from app.services.qr_product_service import QRProductService
 def make_service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()
+    service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
     service.block_repo = Mock()
@@ -133,8 +134,8 @@ def test_block_uses_product_serial_configuration_not_request_overrides():
     )
     service.product_repo.get_by_id.return_value = product
     service.block_repo.batch_exists.return_value = False
-    service.block_repo.create.side_effect = lambda payload, commit=False: SimpleNamespace(
-        id=uuid4(), **payload
+    service.block_repo.create.side_effect = lambda payload, commit=False: (
+        SimpleNamespace(id=uuid4(), **payload)
     )
     block = service.create_block_job(
         product.id,

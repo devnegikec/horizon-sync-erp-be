@@ -16,7 +16,6 @@ import pytest
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import PickListStatus
 from app.models.pick_list import PickList
-from app.models.wms_worker import WMSWorker
 from app.services.pick_list_service import PickListService
 from app.services.worker_session_service import WorkerSessionService
 
@@ -102,16 +101,6 @@ def _pick_list(org_id, status=PickListStatus.DRAFT):
     )
 
 
-def _worker(org_id, attempts=0, locked_until=None):
-    return WMSWorker(
-        id=uuid.uuid4(),
-        organization_id=org_id,
-        failed_login_attempts=attempts,
-        locked_until=locked_until,
-        last_login_at=None,
-    )
-
-
 class TestAcceptTask:
     def test_accept_records_start_time(self, org_id, worker_id):
         pl = _pick_list(org_id)
@@ -146,44 +135,16 @@ class TestAcceptTask:
 
 
 class TestLockout:
-    def test_exceeded_attempts_locks(self, org_id):
-        worker = _worker(org_id)
-        svc = WorkerSessionService(_FakeDb(), lockout_attempts=2, timeout_minutes=5)
-        now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
-
-        svc.record_failed_login(org_id, worker, now=now)
-        assert WorkerSessionService.is_locked(worker, now=now) is False
-
-        svc.record_failed_login(org_id, worker, now=now)
-        assert WorkerSessionService.is_locked(worker, now=now) is True
-        assert worker.failed_login_attempts == 2
-        assert worker.locked_until == now + timedelta(minutes=15)
-
-    def test_lock_expires_after_window(self, org_id):
-        worker = _worker(org_id, attempts=5)
-        svc = WorkerSessionService(_FakeDb(), lockout_attempts=2, timeout_minutes=5)
-        now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
-        svc.record_failed_login(org_id, worker, now=now)
-
-        # Still locked at now + 10 minutes, unlocked after the 15-min window.
-        assert WorkerSessionService.is_locked(worker, now=now + timedelta(minutes=10)) is True
-        assert WorkerSessionService.is_locked(worker, now=now + timedelta(minutes=16)) is False
-
-    def test_successful_login_resets(self, org_id):
-        worker = _worker(org_id, attempts=3, locked_until=datetime(2026, 8, 30, 13, 0, tzinfo=UTC))
-        svc = WorkerSessionService(_FakeDb(), lockout_attempts=2, timeout_minutes=5)
-        now = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
-
-        svc.record_successful_login(worker, now=now)
-
-        assert worker.failed_login_attempts == 0
-        assert worker.locked_until is None
-        assert worker.last_login_at == now
+    def test_lockout_enforced_on_identity(self, org_id):
+        # Lockout is now enforced on the identity `users` table (identity-service),
+        # not in core-service. Assert the service no longer exposes it.
+        assert not hasattr(WorkerSessionService, "record_failed_login")
+        assert not hasattr(WorkerSessionService, "is_locked")
 
 
 class TestSessionTimeout:
     def test_expired_session_rejected(self, org_id, worker_id):
-        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5, lockout_attempts=2)
+        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5)
         t0 = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
         session = svc.start_session(org_id, worker_id, now=t0)
@@ -191,7 +152,7 @@ class TestSessionTimeout:
             svc.touch(session.id, org_id, now=t0 + timedelta(minutes=6))
 
     def test_touch_refreshes_within_timeout(self, org_id, worker_id):
-        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5, lockout_attempts=2)
+        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5)
         t0 = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
         session = svc.start_session(org_id, worker_id, now=t0)
@@ -200,7 +161,7 @@ class TestSessionTimeout:
         assert touched.last_active_at == t0 + timedelta(minutes=4)
 
     def test_end_session(self, org_id, worker_id):
-        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5, lockout_attempts=2)
+        svc = WorkerSessionService(_FakeDb(), timeout_minutes=5)
         session = svc.start_session(org_id, worker_id)
         ended = svc.end_session(session.id, org_id)
 

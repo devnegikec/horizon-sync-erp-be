@@ -29,6 +29,15 @@ class GeneratePutAwayRequest(BaseModel):
     worker_id: UUID | None = Field(
         None, description="Optional worker UUID to assign the put-away task to"
     )
+    worker_ids: list[UUID] | None = Field(
+        None,
+        description="Optional worker UUIDs to split the put-away work across — one put-away list is generated per worker",
+    )
+    mode: str | None = Field(
+        None,
+        pattern="^(auto|manual)$",
+        description="auto = server assigns bins intelligently; manual = items are grouped by SKU without bin assignment. Omit to use the organization's putaway_mode setting.",
+    )
 
 
 class CompletePutAwayItemRequest(BaseModel):
@@ -94,6 +103,7 @@ class PutAwayListResponse(BaseModel):
     remarks: str | None = None
     warnings: list[str] | None = None
     assigned_to: str | None = None
+    worker_id: str | None = None
     worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0
@@ -102,6 +112,12 @@ class PutAwayListResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     items: list[PutAwayListItemResponse] = []
+
+
+class PutAwayListBatchResponse(BaseModel):
+    """Response when put-away is distributed across multiple workers."""
+
+    put_away_lists: list[PutAwayListResponse] = []
 
 
 class PutAwayListSummaryResponse(BaseModel):
@@ -118,6 +134,7 @@ class PutAwayListSummaryResponse(BaseModel):
     receiving_slip_no: str | None = None
     remarks: str | None = None
     assigned_to: str | None = None
+    worker_id: str | None = None
     worker_name: str | None = None
     total_items: int = 0
     completed_items: int = 0

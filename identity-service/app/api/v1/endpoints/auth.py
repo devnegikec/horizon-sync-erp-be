@@ -51,6 +51,7 @@ from app.schemas.auth import (
     ResetPasswordResponse,
     TokenResponse,
     VerifyResetTokenResponse,
+    WorkerLoginRequest,
 )
 from app.schemas.error import ErrorResponse
 from app.schemas.user import UserCreate, UserResponse
@@ -587,6 +588,89 @@ async def qr_code_login(
         ) from e
 
     # Get user's organization_id
+    user_org_role = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user.id,
+            UserOrganizationRole.is_active == True,  # noqa: E712
+        )
+        .order_by(UserOrganizationRole.is_primary.desc())
+        .first()
+    )
+    organization_id = str(user_org_role.organization_id) if user_org_role else None
+
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "display_name": user.display_name,
+        "phone": user.phone,
+        "avatar_url": user.avatar_url,
+        "user_type": user.user_type.value if user.user_type else None,
+        "status": user.status.value if user.status else None,
+        "is_active": user.is_active,
+        "email_verified": user.email_verified,
+        "email_verified_at": user.email_verified_at,
+        "last_login_at": user.last_login_at,
+        "last_login_ip": user.last_login_ip,
+        "preferences": user.preferences,
+        "timezone": user.timezone,
+        "language": user.language,
+        "extra_data": user.extra_data,
+        "organization_id": organization_id,
+    }
+
+    worker_ttl_hours = getattr(settings, "worker_token_expire_hours", 20)
+    expires_in = worker_ttl_hours * 60 * 60
+
+    return QRCodeLoginResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=expires_in,
+        user=LoginUserResponse.model_validate(user_dict),
+    )
+
+
+@router.post(
+    "/login/worker",
+    response_model=QRCodeLoginResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Invalid username or password"},
+        403: {"model": ErrorResponse, "description": "Not a warehouse worker"},
+    },
+    summary="Username + password login for warehouse workers (mobile/device fallback)",
+    description="Warehouse workers authenticate with a managed username and password "
+    "when QR login is unavailable. Returns JWT tokens.",
+)
+async def worker_login(
+    body: WorkerLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Authenticate a warehouse worker using username + password.
+
+    Fallback for when QR scanning is unavailable. The worker must have a
+    `login_username` and a password managed by the owner/admin/manager.
+    """
+    auth_service = AuthService(db)
+    ip_address = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent")
+
+    try:
+        user, access_token, refresh_token = auth_service.login_worker(
+            login_username=body.login_username,
+            password=body.password,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+        ) from e
+
     user_org_role = (
         db.query(UserOrganizationRole)
         .filter(

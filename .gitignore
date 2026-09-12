@@ -7,6 +7,7 @@
 .env.local
 .env.*.local
 .sync.env
+.codeant-pr-comments.json
 
 # Local DB sync artifacts
 .db_dumps/
@@ -71,4 +72,4 @@ search-service/pyproject.toml
 LOCAL_DB_SETUP.md
 
 sync_local_db.sh
-test_results 
+test_results
