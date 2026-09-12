@@ -16,6 +16,9 @@ class QRProductPackagingDetails(BaseModel):
 
     unit_name: str = Field("Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(Decimal("1"), gt=0)
+    items_per_master_pack: int | None = Field(
+        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+    )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
@@ -84,19 +87,27 @@ class QRProductResponse(QRProductBase):
     updated_at: datetime
     # Linked inventory item (auto-created when the QR product is created)
     linked_item_id: UUID | None = None
+    # Items per master pack, resolved from the linked item's base packaging unit
+    items_per_master_pack: int | None = None
     serial_prefix: str | None = None
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def model_validate(cls, obj, *args, **kwargs):
-        """Populate linked_item_id from the items back-reference if loaded."""
+        """Populate linked_item_id and items_per_master_pack from the linked item."""
         instance = super().model_validate(obj, *args, **kwargs)
         # SQLAlchemy relationship: qr_product.items is a list
         try:
             items = obj.items  # type: ignore[attr-defined]
             if items:
-                instance.linked_item_id = items[0].id
+                item = items[0]
+                instance.linked_item_id = item.id
+                # Resolve Items per Master Pack from the item's base packaging unit
+                for pu in item.packaging_units or []:
+                    if pu.is_base_unit:
+                        instance.items_per_master_pack = pu.items_per_master_pack
+                        break
         except Exception:
             pass
         return instance

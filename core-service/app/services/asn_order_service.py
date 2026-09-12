@@ -99,6 +99,10 @@ class AsnOrderService:
         page_size: int = 20,
         status: str | None = None,
         warehouse_id: UUID | None = None,
+        source_warehouse_id: UUID | None = None,
+        delivery_date_from=None,
+        delivery_date_to=None,
+        vehicle_no: str | None = None,
         search: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
@@ -109,6 +113,10 @@ class AsnOrderService:
             page_size=page_size,
             status=status,
             warehouse_id=warehouse_id,
+            source_warehouse_id=source_warehouse_id,
+            delivery_date_from=delivery_date_from,
+            delivery_date_to=delivery_date_to,
+            vehicle_no=vehicle_no,
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
@@ -456,6 +464,24 @@ class AsnOrderService:
 
     # ── serialization helpers ──────────────────────────────────────────
 
+    @staticmethod
+    def _vehicle_arrivals_for_response(asn_order: AsnOrder) -> list[dict]:
+        return [
+            {
+                "id": arrival.id,
+                "vehicle_no": arrival.vehicle.vehicle_no if arrival.vehicle else None,
+                "driver_name": arrival.vehicle.driver_name if arrival.vehicle else None,
+                "driver_contact": (
+                    arrival.vehicle.driver_contact if arrival.vehicle else None
+                ),
+                "transporter": arrival.vehicle.transporter if arrival.vehicle else None,
+                "dock": arrival.dock,
+                "status": arrival.status,
+                "arrived_at": arrival.arrived_at,
+            }
+            for arrival in asn_order.vehicle_arrivals
+        ]
+
     def _to_response(self, asn_order: AsnOrder) -> dict:
         from_warehouse = None
         if asn_order.from_warehouse:
@@ -512,6 +538,7 @@ class AsnOrderService:
             "updated_at": asn_order.updated_at,
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
+            "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
             "items": items,
         }
 
@@ -542,5 +569,6 @@ class AsnOrderService:
             "grand_total": float(asn_order.grand_total) if asn_order.grand_total else 0,
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
+            "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
             "created_at": asn_order.created_at,
         }

@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -32,9 +33,16 @@ class ItemPackagingUnit(Base):
         nullable=False,
         index=True,
     )
-    unit_name = Column(String(100), nullable=False)
+    packaging_type_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("packaging_types.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    unit_name = Column(String(100), nullable=False)  # legacy display cache; prefer packaging_type_id
     qr_identifier = Column(String(255), nullable=True, unique=True)
     conversion_factor = Column(Numeric(15, 6), nullable=False)
+    items_per_master_pack = Column(Integer, nullable=True)
     length_mm = Column(Numeric(10, 2), nullable=True)
     width_mm = Column(Numeric(10, 2), nullable=True)
     height_mm = Column(Numeric(10, 2), nullable=True)
@@ -56,6 +64,7 @@ class ItemPackagingUnit(Base):
 
     # Relationships
     item = relationship("Item", back_populates="packaging_units")
+    packaging_type = relationship("PackagingType")
 
     def __repr__(self):
         return (

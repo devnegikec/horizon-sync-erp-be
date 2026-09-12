@@ -289,19 +289,8 @@ class QRProductService:
             qr_product, organization_id, user_id, packaging_details
         )
 
-        # ── Sync Product → linked Items ──
-        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
-        # See: app/services/product_item_sync_service.py for full removal steps.
+        # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         self.db.refresh(qr_product)
-        try:
-            from app.services.product_item_sync_service import (
-                ProductItemSyncService,
-            )
-
-            ProductItemSyncService(self.db).sync_product_to_items(qr_product)
-            self.db.commit()
-        except Exception as e:
-            logger.error(f"Failed to sync product→items: {e}")
 
         return qr_product
 
@@ -381,6 +370,9 @@ class QRProductService:
                         unit_name=packaging_details.get("unit_name") or "Each",
                         conversion_factor=packaging_details.get("conversion_factor")
                         or Decimal("1"),
+                        items_per_master_pack=packaging_details.get(
+                            "items_per_master_pack"
+                        ),
                         length_mm=packaging_details.get("length_mm"),
                         width_mm=packaging_details.get("width_mm"),
                         height_mm=packaging_details.get("height_mm"),
@@ -572,6 +564,9 @@ class QRProductService:
                         unit_name=packaging_details.get("unit_name") or "Each",
                         conversion_factor=packaging_details.get("conversion_factor")
                         or Decimal("1"),
+                        items_per_master_pack=packaging_details.get(
+                            "items_per_master_pack"
+                        ),
                         length_mm=packaging_details.get("length_mm"),
                         width_mm=packaging_details.get("width_mm"),
                         height_mm=packaging_details.get("height_mm"),
@@ -584,18 +579,7 @@ class QRProductService:
             except Exception as exc:
                 logger.error("Failed to upsert linked item packaging: %s", exc)
 
-        # ── Sync Product → linked Items ──
-        # TODO(DEPRECATION): Remove this block when QRProduct is deprecated.
-        try:
-            from app.services.product_item_sync_service import (
-                ProductItemSyncService,
-            )
-
-            ProductItemSyncService(self.db).sync_product_to_items(product)
-            self.db.commit()
-        except Exception as e:
-            logger.error(f"Failed to sync product→items: {e}")
-
+        # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         return product
 
     def delete_product(

@@ -11,6 +11,7 @@ import json
 import pytest
 
 from app.core.exceptions import ValidationError
+from app.services import qr_decoder
 from app.services.qr_decoder import QRPayload, decode_qr_payload
 
 
@@ -314,3 +315,44 @@ class TestDecodeQRPayloadInvalidValues:
             decode_qr_payload(qr_data)
 
         assert any(d["field"] == "sku" for d in exc_info.value.details)
+
+
+class TestDecodeQRPayloadURLs:
+    """Tests for URL-format QR payloads (including shortened CDN URLs)."""
+
+    def test_legacy_url_recognised(self):
+        """Legacy /g/{gtin}/s/{serial} URLs should be accepted."""
+        with pytest.raises(ValidationError) as exc_info:
+            decode_qr_payload("https://example.com/g/9283975768/s/TTK-HZ04VO/1?c=sig")
+
+        # Reaches serial resolution (db=None) rather than "URL format not recognised".
+        assert "cannot resolve serial without database" in exc_info.value.message
+
+    def test_gs1_url_recognised(self):
+        """GS1 Digital Link /01/{gtin}/21/{serial} URLs should be accepted."""
+        with pytest.raises(ValidationError) as exc_info:
+            decode_qr_payload("https://example.com/01/9283975768/21/TTK-HZ04VO")
+
+        assert "cannot resolve serial without database" in exc_info.value.message
+
+    def test_unrecognised_url_raises(self, monkeypatch):
+        """Non-shortener URLs that match no pattern should be rejected."""
+        monkeypatch.setattr(qr_decoder, "_is_shortened_qr_url", lambda url: False)
+        with pytest.raises(ValidationError) as exc_info:
+            decode_qr_payload("https://example.com/foo/bar")
+
+        assert "URL format not recognised" in exc_info.value.message
+
+    def test_shortened_url_resolves_via_redirect(self, monkeypatch):
+        """Shortened CDN URLs should be resolved to their serial."""
+        monkeypatch.setattr(qr_decoder, "_is_shortened_qr_url", lambda url: True)
+        monkeypatch.setattr(
+            qr_decoder,
+            "_resolve_short_url",
+            lambda url: "https://v0.example.com/g/9283975768/s/TTK-HZ04VO/1788009157534?c=sig",
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            decode_qr_payload("https://bwqr.me/01/9283975768/HbSdqPALqiRtmwmx")
+
+        # Reaches serial resolution (db=None), proving the redirect was followed.
+        assert "cannot resolve serial without database" in exc_info.value.message

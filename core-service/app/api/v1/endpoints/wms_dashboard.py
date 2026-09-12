@@ -31,13 +31,14 @@ def _get_user_warehouse_ids(
     user_id: UUID,
     organization_id: UUID,
     user_type: str,
+    permissions: list[str],
 ) -> list[UUID] | None:
     """Return the list of warehouse IDs assigned to this user.
 
     Returns None if the user has global/admin access (meaning no filter should
     be applied and all warehouses are visible).
     """
-    if user_type in ("system_admin", "organization_admin"):
+    if user_type in ("system_admin", "organization_admin") or "*.*" in permissions:
         return None  # global access — no warehouse filter
 
     # Check for primary (mother-warehouse) assignment → global access
@@ -107,7 +108,7 @@ async def get_wms_dashboard_stats(
     # ── Warehouse scope ────────────────────────────────────────────────────
     # Respect the optional ?warehouse_id filter AND the user's own assignments.
     user_wh_ids = _get_user_warehouse_ids(
-        db, current_user.id, org_id, current_user.user_type
+        db, current_user.id, org_id, current_user.user_type, current_user.permissions
     )
 
     # Build the effective warehouse list

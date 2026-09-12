@@ -62,7 +62,7 @@ Thumbs.db
 
 # Docker volumes (if local)
 postgres_data/
-
+core-service/.hypothesis/
 search-service/.hypothesis
 search-service/.dockerignore
 search-service//.gitignore
@@ -71,3 +71,4 @@ search-service/pyproject.toml
 LOCAL_DB_SETUP.md
 
 sync_local_db.sh
+test_results 

@@ -86,6 +86,13 @@ class ScannedItemTracking(Base):
         ForeignKey("warehouse_locations.id"),
         nullable=True,
     )
+    # Current physical location. Unlike bin_location_id (the eventual put-away
+    # target), this can be RECEIVING-STAGE, HOLD, or QUARANTINE.
+    stock_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     putaway_at = Column(DateTime(timezone=True), nullable=True)
     putaway_by = Column(UUID(as_uuid=True), nullable=True)
 
@@ -107,7 +114,9 @@ class ScannedItemTracking(Base):
     scan_session = relationship("ScanSession", backref="item_trackings")
     warehouse = relationship("Warehouse", backref="item_trackings")
     item = relationship("Item", backref="item_trackings")
-    bin_location = relationship("WarehouseLocation", backref="item_trackings")
+    bin_location = relationship(
+        "WarehouseLocation", foreign_keys=[bin_location_id], backref="item_trackings"
+    )
 
     def __repr__(self):
         return (

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     database_url: str
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    db_pool_recycle: int = 1800  # Recycle connections every 30 min
+    db_pool_timeout: int = 30    # Wait up to 30s for a connection
 
     # Security
     secret_key: str

@@ -23,6 +23,7 @@ class ItemBase(BaseModel):
 
     # Unit of Measure
     uom: str = Field(default="Nos", max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -68,6 +69,10 @@ class ItemBase(BaseModel):
     # QR Product link — enables unit-level QR tracking for this item
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
     # Brand link and GTIN
     brand_id: UUID | None = None
     gtin: str | None = Field(None, max_length=20)
@@ -87,6 +92,9 @@ class ItemPackagingDetails(BaseModel):
 
     unit_name: str = Field(default="Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
+    items_per_master_pack: int | None = Field(
+        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+    )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
@@ -111,6 +119,7 @@ class ItemUpdate(BaseModel):
 
     # Unit of Measure
     uom: str | None = Field(None, max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -156,6 +165,10 @@ class ItemUpdate(BaseModel):
     # QR Product link
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
     # Brand link and GTIN
     brand_id: UUID | None = None
     gtin: str | None = Field(None, max_length=20)
@@ -197,6 +210,7 @@ class ItemResponse(BaseModel):
 
     # Unit of Measure
     uom: str
+    base_uom_id: UUID | None = None
 
     # Warehouse SKU
     sku: str | None = None
@@ -243,6 +257,10 @@ class ItemResponse(BaseModel):
 
     # QR Product link
     qr_product_id: UUID | None = None
+
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
 
     # Additional Info
     barcode: str | None = None

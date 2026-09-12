@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Index,
+    Integer,
     String,
     Text,
     text,
@@ -27,6 +28,8 @@ class UOM(Base):
     # UOM fields
     name = Column(String(50), nullable=False)
     abbreviation = Column(String(10), nullable=False)
+    uom_type = Column(String(20), nullable=True)  # count | weight | volume | length | time
+    precision = Column(Integer, nullable=False, default=0, server_default="0")
     description = Column(Text, nullable=True)
 
     # Audit fields

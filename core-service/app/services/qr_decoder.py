@@ -25,7 +25,12 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin, urlparse
+from uuid import UUID
 
+import httpx
+
+from app.config import settings
 from app.core.exceptions import ValidationError
 
 if TYPE_CHECKING:
@@ -72,11 +77,16 @@ class QRPayload:
     packaging_unit_qr_id: str | None = field(default=None)
 
 
-def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
+def _resolve_serial(
+    serial: str,
+    db: "Session | None",
+    organization_id: UUID | None = None,
+) -> QRPayload:
     """Look up a ProductItem by serial number and build a unit-level QRPayload.
 
     qty defaults to 1 and batch defaults to the serial since serial-only
-    scans carry no batch metadata.
+    scans carry no batch metadata. When ``organization_id`` is supplied the
+    lookup is tenant-scoped so a foreign tenant's serial is rejected.
     """
     if db is None:
         raise ValidationError(
@@ -92,14 +102,13 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
     # Local import to avoid a circular dependency at module load time.
     from app.models.product_item import ProductItem
 
-    item = (
-        db.query(ProductItem)
-        .filter(
-            ProductItem.serial_number == serial,
-            ProductItem.deleted_at.is_(None),
-        )
-        .first()
+    item_query = db.query(ProductItem).filter(
+        ProductItem.serial_number == serial,
+        ProductItem.deleted_at.is_(None),
     )
+    if organization_id is not None:
+        item_query = item_query.filter(ProductItem.organization_id == organization_id)
+    item = item_query.first()
 
     if item is None:
         raise ValidationError(
@@ -112,10 +121,26 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
             ],
         )
 
-    # Resolve SKU from the linked QR product (gtin → name → serial fallback)
+    # Resolve the real SKU/code. Prefer the WMS Item linked via the QR product,
+    # then fall back to the QR product's own identifiers, then the serial.
     sku = serial
-    if item.product:
-        sku = item.product.gtin or item.product.name or serial
+    if item.product_id and getattr(item, "organization_id", None):
+        from app.models.item import Item
+
+        wms_item = (
+            db.query(Item)
+            .filter(
+                Item.qr_product_id == item.product_id,
+                Item.organization_id == item.organization_id,
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if wms_item:
+            sku = wms_item.sku or wms_item.item_code or sku
+
+    if sku == serial and item.product:
+        sku = item.product.sku or item.product.gtin or item.product.name or serial
 
     return QRPayload(
         id=serial,
@@ -125,13 +150,105 @@ def _resolve_serial(serial: str, db: "Session | None") -> QRPayload:
     )
 
 
-def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
+_SHORT_URL_MAX_HOPS = 3
+_SHORT_URL_TIMEOUT = 5.0
+
+
+def _is_shortened_qr_url(url: str) -> bool:
+    """Return True when url is hosted on the configured QR shortener CDN."""
+    if not settings.qr_shortener_enabled:
+        return False
+    prefix = (settings.qr_shortener_cdn_prefix or "").lower()
+    if not prefix:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host == prefix or host.endswith(f".{prefix}")
+
+
+def _redirect_target_allowed(url: str) -> bool:
+    """Return True only for redirect targets on the configured QR domains.
+
+    Blocks internal/private hosts and non-HTTP schemes so a malicious short
+    link cannot make the backend fetch arbitrary targets (SSRF).
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+
+    allowed: list[str] = []
+    cdn = (settings.qr_shortener_cdn_prefix or "").lower()
+    if cdn:
+        allowed.append(cdn)
+    qr_domain = settings.qr_domain or ""
+    qr_host = (
+        urlparse(qr_domain if "://" in qr_domain else f"https://{qr_domain}").hostname
+        or ""
+    ).lower()
+    if qr_host:
+        allowed.append(qr_host)
+
+    return any(
+        host == domain or host.endswith(f".{domain}") for domain in allowed if domain
+    )
+
+
+def _resolve_short_url(url: str) -> str | None:
+    """Resolve a shortened QR URL to its long (redirect) URL.
+
+    The CDN shortener emits URLs like ``https://bwqr.me/01/<gtin>/<slug>``
+    which 301-redirect to the full signed product URL
+    (``.../g/<gtin>/s/<serial>/<ts>?c=<sig>``). Each redirect hop is validated
+    against the configured QR domains before being requested so
+    attacker-controlled redirects cannot reach internal services (SSRF).
+    """
+    current = url
+    try:
+        with httpx.Client(follow_redirects=False, timeout=_SHORT_URL_TIMEOUT) as client:
+            for _ in range(_SHORT_URL_MAX_HOPS):
+                if not _redirect_target_allowed(current):
+                    return None
+                response = client.get(current)
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current = urljoin(current, location)
+                    continue
+                return str(response.url) or current
+    except httpx.HTTPError:
+        return None
+    return current
+
+
+def _decode_url_payload(
+    qr_data: str,
+    db: "Session | None",
+    organization_id: UUID | None = None,
+) -> QRPayload:
     """Extract a QRPayload from a product authentication URL.
 
     Supports GS1 Digital Link SGTIN (/01/{gtin}/21/{serial}) and the legacy
-    /g/{gtin}/s/{serial} format for backward compatibility.
+    /g/{gtin}/s/{serial} format for backward compatibility. Shortened CDN
+    URLs are transparently resolved via their redirect Location header.
     """
     match = _GS1_SGTIN_URL_PATTERN.search(qr_data) or _QR_URL_PATTERN.search(qr_data)
+
+    if not match and _is_shortened_qr_url(qr_data):
+        resolved = _resolve_short_url(qr_data)
+        if resolved and resolved != qr_data:
+            match = _GS1_SGTIN_URL_PATTERN.search(resolved) or _QR_URL_PATTERN.search(
+                resolved
+            )
+
     if not match:
         raise ValidationError(
             message="Invalid QR payload: URL format not recognised",
@@ -147,10 +264,14 @@ def _decode_url_payload(qr_data: str, db: "Session | None") -> QRPayload:
             ],
         )
 
-    return _resolve_serial(match.group("serial"), db)
+    return _resolve_serial(match.group("serial"), db, organization_id)
 
 
-def decode_qr_payload(qr_data: str, db: "Session | None" = None) -> QRPayload:  # noqa: C901
+def decode_qr_payload(
+    qr_data: str,
+    db: "Session | None" = None,
+    organization_id: UUID | None = None,
+) -> QRPayload:  # noqa: C901
     """Decode and validate a QR payload string.
 
     Accepts three formats:
@@ -180,13 +301,13 @@ def decode_qr_payload(qr_data: str, db: "Session | None" = None) -> QRPayload:  
 
     # ── URL format detection ──────────────────────────────────────────────────
     if qr_data.startswith("http://") or qr_data.startswith("https://"):
-        return _decode_url_payload(qr_data, db)
+        return _decode_url_payload(qr_data, db, organization_id)
 
     # ── Bare serial number (no JSON, no URL) ──────────────────────────────────
     # Matched before the JSON branch so callers get a clearer error than a
     # JSON parse failure when they send something like "RB7FJE".
     if _BARE_SERIAL_PATTERN.match(qr_data):
-        return _resolve_serial(qr_data, db)
+        return _resolve_serial(qr_data, db, organization_id)
 
     # ── JSON format ───────────────────────────────────────────────────────────
     try:

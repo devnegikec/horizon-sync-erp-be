@@ -136,7 +136,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
 
     # Ensure master organization exists and setup customer relationships (Steps 1 & 2)
-    if ensure_single_master_organization:
+    skip_master_setup = os.getenv("SKIP_MASTER_ORG_SETUP", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if ensure_single_master_organization and not skip_master_setup:
         try:
             logger.info(
                 "🚀 Setting up Master Organization and Customer Relationships..."
@@ -155,6 +160,10 @@ async def lifespan(app: FastAPI):
                 logger.warning(
                     "⚠️ Continuing without master organization setup (dev environment)"
                 )
+    elif skip_master_setup:
+        logger.info(
+            "⏭️ Skipping master organization setup (SKIP_MASTER_ORG_SETUP=true)"
+        )
     else:
         logger.info("⚠️ Master organization setup module not available")
 

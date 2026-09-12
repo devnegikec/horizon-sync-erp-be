@@ -308,6 +308,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -340,6 +343,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -393,6 +399,8 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "pick_list.update",
             "stock_entry.create",
             "stock_entry.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
         ],
     ),
 ]

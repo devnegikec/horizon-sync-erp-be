@@ -19,6 +19,8 @@ class ItemType(str, enum.Enum):
 class ItemStatus(str, enum.Enum):
     """Item status enumeration"""
 
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
     ACTIVE = "active"
     INACTIVE = "inactive"
     DISCONTINUED = "discontinued"
@@ -209,7 +211,7 @@ class BillingCycle(str, enum.Enum):
     """Billing cycle enumeration for subscription invoices (Task 1B-1)"""
 
     MONTHLY = "monthly"
-    QUARTERLY = "quarterly" 
+    QUARTERLY = "quarterly"
     YEARLY = "yearly"
 
 
@@ -507,6 +509,8 @@ class NotificationType(str, enum.Enum):
     RECEIVING_SLIP_CREATED = "receiving_slip_created"
     PUT_AWAY_LIST_CREATED = "put_away_list_created"
     PICK_LIST_CREATED = "pick_list_created"
+    PICK_EXCEPTION = "pick_exception"
+    ERP_SYNC_FAILED = "erp_sync_failed"
 
 
 class WarehouseUserRole(str, enum.Enum):

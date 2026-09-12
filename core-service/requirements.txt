@@ -6,7 +6,7 @@ python-multipart==0.0.6
 # Database
 sqlalchemy==2.0.23
 alembic==1.12.1
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 
 # Validation
 pydantic==2.5.0
@@ -19,6 +19,7 @@ bcrypt==4.1.2
 
 # HTTP Client (for identity-service calls)
 httpx==0.25.2
+requests==2.32.3
 
 # Rate Limiting
 slowapi==0.1.8

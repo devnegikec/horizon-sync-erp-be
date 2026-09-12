@@ -54,8 +54,16 @@ class Item(Base):
     )
 
     # Unit of Measure
-    uom = Column(String(50), default="Nos")
+    uom = Column(String(50), default="Nos")  # legacy cache; prefer base_uom_id
+    base_uom_id = Column(
+        UUID(as_uuid=True), ForeignKey("uoms.id"), nullable=True, index=True
+    )
     sku = Column(String(100), nullable=True, index=True)
+
+    # Shared catalog core link (1:N from products)
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("products.id"), nullable=True, index=True
+    )
 
     # Stock Settings
     maintain_stock = Column(Boolean, default=True)
@@ -74,6 +82,10 @@ class Item(Base):
     has_variants = Column(Boolean, default=False)
     variant_of = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
     variant_attributes = Column(JSONB, nullable=True)
+    # Concrete SKU link (Qseal variant) — Option A: link Item ↔ ProductSKU
+    product_sku_id = Column(
+        UUID(as_uuid=True), ForeignKey("product_skus.id"), nullable=True, index=True
+    )
 
     # Batch and Serial
     has_batch_no = Column(Boolean, default=False)
@@ -114,17 +126,9 @@ class Item(Base):
         UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=True, index=True
     )
 
-    # ── Synced from QRProduct ──
-    # TODO(DEPRECATION): Drop these columns when QRProduct is removed.
-    # See: app/services/product_item_sync_service.py
+    # Brand link and GTIN (WMS-relevant — kept; Qseal-only sync columns dropped in Phase 4)
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=True)
     gtin = Column(String(20), nullable=True)
-    industry = Column(String(100), nullable=True)
-    landing_page = Column(Text, nullable=True)
-    warranty_period_months = Column(Integer, nullable=True)
-    qr_type = Column(String(30), nullable=True)
-    activation_method = Column(String(4), nullable=True)
-    sr_number_type = Column(String(50), nullable=True)
 
     # Additional Info
     barcode = Column(String(100), nullable=True)
@@ -154,8 +158,18 @@ class Item(Base):
     )
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Approval workflow
+    submitted_by = Column(UUID(as_uuid=True), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(UUID(as_uuid=True), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
     # Relationships
     item_group = relationship("ItemGroup", back_populates="items")
+    base_uom = relationship("UOM", foreign_keys=[base_uom_id])
+    product = relationship("Product", foreign_keys=[product_id])
+    product_sku = relationship("ProductSKU", foreign_keys=[product_sku_id])
     variant_parent = relationship("Item", remote_side=[id], backref="variants")
     item_prices = relationship(
         "ItemPrice", back_populates="item", cascade="all, delete-orphan"

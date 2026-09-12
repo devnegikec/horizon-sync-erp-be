@@ -7,7 +7,7 @@ from app.models.account_balance import AccountBalance
 from app.models.admin import (
     AdminAuditLog,
     AdminNotification,
-   # FeatureFlag,
+    # FeatureFlag,
     UserActivityLog,
 )
 
@@ -68,8 +68,6 @@ from app.models.base import (
 from app.models.batch import Batch
 from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
-from app.models.bulk_export_job import BulkExportJob
-from app.models.bulk_import_job import BulkImportJob
 
 # QR Products module
 from app.models.brand import Brand
@@ -82,6 +80,8 @@ from app.models.brand_trust import (
     BrandTrustAssessment,
     BrandTrustQuestion,
 )
+from app.models.bulk_export_job import BulkExportJob
+from app.models.bulk_import_job import BulkImportJob
 
 # Bulk Import/Export module
 # Campaigns & Coupons module
@@ -113,11 +113,13 @@ from app.models.document_numbering import (
     DocumentNumberingConfig,
     DocumentSequenceCounter,
 )
+from app.models.erp_sync_message import ErpSyncMessage, ErpSyncStatus
 from app.models.exchange_rate import ExchangeRate
 
 # Feature Flag module
 from app.models.feature_flag import FeatureFlag
 from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.handling_unit import HandlingUnit, HandlingUnitType
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
@@ -145,14 +147,18 @@ from app.models.messaging import (
     WhatsAppReport,
 )
 from app.models.notification import Notification
+from app.models.packaging_types import PackagingType
 from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
 from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
+from app.models.pick_exception import PickException, PickExceptionAudit
+from app.models.pick_idempotency import PickIdempotencyKey
 from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
 from app.models.product_sku import ProductSKU
+from app.models.products import Product
 
 # Public Marketing module
 # Public Marketing module
@@ -196,7 +202,6 @@ from app.models.reminder_config import (
 from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
-from app.models.scanned_item_tracking import ScannedItemTracking
 from app.models.serial_no import SerialNo
 
 # URL Management module
@@ -222,6 +227,7 @@ from app.models.transaction_breakdown import (
 )
 from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
+from app.models.vehicle import Vehicle, VehicleArrival
 from app.models.warehouse import Warehouse
 from app.models.warehouse_floor_plan import WarehouseFloorPlan
 
@@ -248,6 +254,7 @@ from app.models.warehouse_user import WarehouseUser
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.wms_device import WMSDevice, WMSDeviceStatus
 from app.models.wms_worker import WMSWorker, WMSWorkerStatus
+from app.models.worker_session import WorkerSession, WorkerSessionStatus
 from app.models.worker_task import WorkerTask
 
 __all__ = [
@@ -314,6 +321,7 @@ __all__ = [
     "Item",
     "ItemGroup",
     "ItemPackagingUnit",
+    "PackagingType",
     "JournalEntry",
     "JournalEntryLine",
     "PaymentEntry",
@@ -324,8 +332,15 @@ __all__ = [
     "PendingWarehouseAssignment",
     "PickList",
     "PickListItem",
+    "PickException",
+    "PickExceptionAudit",
+    "PickIdempotencyKey",
+    "ErpSyncMessage",
+    "ErpSyncStatus",
     "AsnOrder",
     "AsnOrderItem",
+    "Vehicle",
+    "VehicleArrival",
     "Quotation",
     "QuotationItem",
     "SalesOrder",
@@ -357,6 +372,7 @@ __all__ = [
     "QRBlock",
     "ProductItem",
     "ProductSKU",
+    "Product",
     "VariantAttribute",
     "VariantAttributeValue",
     "ProductSKUAttributeValue",
@@ -458,9 +474,13 @@ __all__ = [
     "ReceivingSlipItem",
     "GateVerificationSession",
     "GateVerificationItem",
+    "HandlingUnit",
+    "HandlingUnitType",
     "DispatchRecord",
     "WorkerTask",
     "LocationScan",
+    "WorkerSession",
+    "WorkerSessionStatus",
     "PutAwayList",
     "PutAwayListItem",
     # Procurement / Sourcing / Fulfillment modules

@@ -150,7 +150,9 @@ class BulkExportService:
                 row = {}
                 for col in columns_to_export:
                     # Handle special fields first
-                    if col == "item_group_name":
+                    if col == "action":
+                        row[col] = "CREATE"
+                    elif col == "item_group_name":
                         row[col] = item.item_group.name if item.item_group else None
                     elif hasattr(item, col):
                         value = getattr(item, col)

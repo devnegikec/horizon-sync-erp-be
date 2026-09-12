@@ -12,10 +12,13 @@ Requirements: 5.1, 5.6, 6.1, 7.2
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
+    INBOUND_EXCEPTION_CREATE,
+    INBOUND_EXCEPTION_DISPOSE,
+    INBOUND_EXCEPTION_READ,
     RECEIVING_SLIP_CREATE,
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
@@ -30,6 +33,11 @@ from app.schemas.inbound import (
     EndSessionRequest,
     FlaggedItemResponse,
     FlagLineItemRequest,
+    InboundExceptionClassifyRequest,
+    InboundExceptionDispositionRequest,
+    InboundExceptionReasonResponse,
+    InboundExceptionResponse,
+    InboundShortBalanceResponse,
     LinkAsnToSessionRequest,
     ReceivingSlipListResponse,
     ReceivingSlipResponse,
@@ -43,7 +51,9 @@ from app.schemas.inbound import (
     SessionSummary,
     StartSessionWithAsnRequest,
 )
+from app.services.inbound_exception_service import InboundExceptionService
 from app.services.inbound_service import InboundService
+from app.services.inbound_short_balance_service import InboundShortBalanceService
 
 router = APIRouter()
 
@@ -81,6 +91,36 @@ async def start_session(
         warehouse_id=data.warehouse_id,
         dock_location=data.dock_location,
         asn_order_id=data.asn_order_id,
+    )
+    return SessionResponse(**result)
+
+
+@router.post(
+    "/sessions/{session_id}/cancel",
+    response_model=SessionResponse,
+    summary="Cancel inbound scan session",
+    description="Cancel an open scan session without generating a receiving slip",
+)
+async def cancel_session(
+    session_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Cancel an open inbound scan session.
+
+    Discards any scanned items and releases the linked ASN so a fresh
+    session can be started. No receiving slip is generated.
+
+    **Path Parameters:**
+    - **session_id**: UUID of the open scan session to cancel
+
+    **Returns:** Cancelled session details
+    """
+    service = InboundService(db)
+    result = service.cancel_session(
+        session_id=session_id,
+        organization_id=current_user.organization_id,
     )
     return SessionResponse(**result)
 
@@ -162,11 +202,15 @@ async def end_session(
     rejections = (
         [r.model_dump() for r in data.rejections] if data and data.rejections else None
     )
+    exceptions = (
+        [e.model_dump() for e in data.exceptions] if data and data.exceptions else None
+    )
     result = service.end_session(
         session_id=session_id,
         worker_id=current_user.id,
         organization_id=current_user.organization_id,
         rejections=rejections,
+        exceptions=exceptions,
     )
     return ReceivingSlipResponse(**result)
 
@@ -421,6 +465,169 @@ async def flag_line_item(
 
 
 # ------------------------------------------------------------------
+# Inbound exception & hold / quarantine framework
+# ------------------------------------------------------------------
+
+
+@router.get(
+    "/exception-reasons",
+    response_model=list[InboundExceptionReasonResponse],
+    summary="List inbound exception reason codes",
+)
+async def list_exception_reasons(
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_READ)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    return [
+        InboundExceptionReasonResponse(
+            code=reason.code,
+            name=reason.name,
+            category=reason.category,
+            default_destination=reason.default_destination,
+            requires_approval=reason.requires_approval,
+        )
+        for reason in service.list_reasons(current_user.organization_id)
+    ]
+
+
+@router.post(
+    "/receiving-slips/{slip_id}/items/{item_id}/exception",
+    response_model=InboundExceptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Classify inbound exception",
+)
+async def classify_inbound_exception(
+    slip_id: UUID,
+    item_id: UUID,
+    data: InboundExceptionClassifyRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    exception = service.classify_slip_item(
+        slip_id=slip_id,
+        slip_item_id=item_id,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        classification=data.classification,
+        reason_code=data.reason_code,
+        destination=data.destination,
+        note=data.note,
+    )
+    return InboundExceptionResponse(**service.serialize(exception))
+
+
+@router.get(
+    "/exceptions",
+    response_model=list[InboundExceptionResponse],
+    summary="List inbound exception and hold/quarantine queue",
+)
+async def list_inbound_exceptions(
+    warehouse_id: UUID | None = Query(None),
+    destination: str | None = Query(None),
+    exception_status: str | None = Query(None, alias="status"),
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_READ)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    return [
+        InboundExceptionResponse(**service.serialize(exception))
+        for exception in service.list_exceptions(
+            current_user.organization_id,
+            warehouse_id=warehouse_id,
+            destination=destination,
+            status=exception_status,
+        )
+    ]
+
+
+@router.get(
+    "/asn-orders/{asn_order_id}/short-balances",
+    response_model=list[InboundShortBalanceResponse],
+    summary="List current ASN short balances linked to receiving slips",
+)
+async def list_inbound_short_balances(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    balances = InboundShortBalanceService(db).list_for_asn(
+        asn_order_id, current_user.organization_id
+    )
+    return [
+        InboundShortBalanceResponse(
+            id=str(balance.id),
+            asn_order_id=str(balance.asn_order_id),
+            asn_order_item_id=str(balance.asn_order_item_id),
+            receiving_slip_id=str(balance.receiving_slip_id)
+            if balance.receiving_slip_id
+            else None,
+            item_id=str(balance.item_id) if balance.item_id else None,
+            sku=balance.sku,
+            expected_qty=float(balance.expected_qty),
+            received_qty=float(balance.received_qty),
+            short_qty=float(balance.short_qty),
+            status=balance.status,
+            updated_at=balance.updated_at.isoformat() if balance.updated_at else None,
+        )
+        for balance in balances
+    ]
+
+
+@router.post(
+    "/exceptions/{exception_id}/evidence",
+    response_model=InboundExceptionResponse,
+    summary="Upload optional inbound exception photo or evidence",
+)
+async def upload_inbound_exception_evidence(
+    exception_id: UUID,
+    file: UploadFile = File(
+        ..., description="JPEG, PNG, WEBP, or PDF evidence (max 10 MB)"
+    ),
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_CREATE)),
+    db: Session = Depends(get_db),
+):
+    contents = await file.read()
+    service = InboundExceptionService(db)
+    service.add_evidence(
+        exception_id=exception_id,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        filename=file.filename or "evidence",
+        content_type=file.content_type or "application/octet-stream",
+        data=contents,
+    )
+    exception = service.get_exception(exception_id, current_user.organization_id)
+    return InboundExceptionResponse(**service.serialize(exception))
+
+
+@router.post(
+    "/exceptions/{exception_id}/disposition",
+    response_model=InboundExceptionResponse,
+    summary="Manager disposition for held or quarantined inbound stock",
+)
+async def dispose_inbound_exception(
+    exception_id: UUID,
+    data: InboundExceptionDispositionRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_DISPOSE)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    exception = service.get_exception(exception_id, current_user.organization_id)
+    service.assert_manager(current_user, exception.warehouse_id)
+    exception = service.dispose(
+        exception_id=exception_id,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        action=data.action,
+        note=data.note,
+        item_id=data.item_id,
+    )
+    return InboundExceptionResponse(**service.serialize(exception))
+
+
+# ------------------------------------------------------------------
 # Two-Step Inbound: Assign Bin (Phase 2)
 # ------------------------------------------------------------------
 
@@ -633,6 +840,7 @@ async def get_fifo_bins_for_slip_item(
             BinStockLevel.item_id == db_item.id,
             BinStockLevel.organization_id == current_user.organization_id,
             BinStockLevel.quantity_on_hand > 0,
+            WarehouseLocation.is_pickable.is_(True),
         )
         .order_by(BinStockLevel.created_at.asc())
         .all()

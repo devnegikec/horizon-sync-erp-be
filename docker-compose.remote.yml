@@ -1,0 +1,108 @@
+# =============================================================================
+# Horizon Sync Backend — Remote DB dev setup
+# Runs identity-service + core-service locally in Docker, connected to the
+# REMOTE Railway Postgres (no local postgres / redis containers).
+#
+# Prerequisites:
+#   1. Fill DATABASE_URL and SECRET_KEY in the root `.env` file
+#      (copy them from Railway dashboard -> Postgres -> Connect -> Public Network,
+#       and use the SAME SECRET_KEY that Railway uses so JWTs stay valid).
+#   2. Run:  docker compose -f docker-compose.remote.yml up -d --build
+#
+# NOTE: `alembic upgrade` runs against the REMOTE database on startup.
+# =============================================================================
+
+services:
+  identity-service:
+    build:
+      context: ./identity-service
+      dockerfile: Dockerfile
+    container_name: horizon_identity_remote
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the root .env file}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-4320}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      PASSWORD_RESET_TOKEN_EXPIRE_HOURS: ${PASSWORD_RESET_TOKEN_EXPIRE_HOURS:-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
+      # Core Service Integration
+      CORE_SERVICE_URL: http://core-service:8001
+      CORE_SERVICE_TIMEOUT: 10
+      ENABLE_AUTO_CHART_CREATION: ${ENABLE_AUTO_CHART_CREATION:-true}
+      CHART_CREATION_RETRY_ATTEMPTS: 3
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./identity-service/app:/app/app
+      - ./identity-service/alembic:/app/alembic
+      - ./identity-service/scripts:/app/scripts
+    command: >
+      bash -c "
+        echo 'Running Identity Service migrations (remote DB)...' &&
+        python -m alembic upgrade head &&
+        echo 'Starting Identity Service...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+    restart: unless-stopped
+
+  core-service:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_core_remote
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the root .env file}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in the root .env file}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      IDENTITY_SERVICE_URL: http://identity-service:8000
+      # Single shared Railway DB — same URL for identity tables
+      IDENTITY_DATABASE_URL: ${DATABASE_URL}
+      # Redis is not started by this file; core-service only touches Redis lazily
+      # (search/3D event publishing), so it starts fine without it.
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_NAME: search:events
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-devnegikec@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-devnegikec@gmail.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HorzonSync}
+      SMTP_VALIDATE_CERTS: ${SMTP_VALIDATE_CERTS:-false}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+    ports:
+      - "8001:8001"
+    depends_on:
+      identity-service:
+        condition: service_started
+    volumes:
+      - ./core-service/app:/app/app
+      - ./core-service/alembic:/app/alembic
+      - ./core-service/scripts:/app/scripts
+      - ./core-service/tests:/app/tests
+      - ./core-service/create_master_organization.py:/app/create_master_organization.py
+    command: >
+      bash -c "
+        echo 'Waiting for Identity Service...' &&
+        sleep 5 &&
+        echo 'Running Core Service migrations (remote DB)...' &&
+        (python -m alembic upgrade heads || echo 'WARNING: migrations had issues') ;
+        echo 'Starting Core Service...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8001
+      "
+    restart: unless-stopped

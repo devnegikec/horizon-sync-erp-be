@@ -67,10 +67,50 @@ class InboundService:
 
         Requirements: 5.1
         """
-        # ── Guard against duplicate sessions/slips for the same ASN ──
+        # ── Guard against duplicate sessions and unresolved receipts ──
         if asn_order_id:
+            from app.models.asn_order import AsnOrder
             from app.models.receiving_slip import ReceivingSlip
             from app.models.scan_session import ScanSession
+
+            asn_order = (
+                self.db.query(AsnOrder)
+                .filter(
+                    AsnOrder.id == asn_order_id,
+                    AsnOrder.organization_id == organization_id,
+                )
+                .with_for_update()
+                .first()
+            )
+            if asn_order is None:
+                raise ValidationError(
+                    message="ASN order not found",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": f"ASN '{asn_order_id}' does not exist",
+                        }
+                    ],
+                )
+
+            asn_status = (
+                asn_order.status.value
+                if hasattr(asn_order.status, "value")
+                else str(asn_order.status)
+            )
+            if asn_status not in {"confirmed", "partially_delivered"}:
+                raise ValidationError(
+                    message="ASN is not open for receiving",
+                    details=[
+                        {
+                            "field": "asn_order_id",
+                            "reason": (
+                                "Only confirmed or partially delivered ASNs can "
+                                "start a receiving session"
+                            ),
+                        }
+                    ],
+                )
 
             existing_open = (
                 self.db.query(ScanSession)
@@ -90,28 +130,29 @@ class InboundService:
                             "reason": (
                                 f"Session {existing_open.id} is already open for this ASN"
                             ),
+                            "existing_session_id": str(existing_open.id),
                         }
                     ],
                 )
 
-            existing_slip = (
+            existing_review_slip = (
                 self.db.query(ReceivingSlip)
                 .filter(
                     ReceivingSlip.organization_id == organization_id,
                     ReceivingSlip.asn_order_id == asn_order_id,
-                    ReceivingSlip.status != "rejected",
+                    ReceivingSlip.status == "pending_review",
                 )
                 .first()
             )
-            if existing_slip is not None:
+            if existing_review_slip is not None:
                 raise ValidationError(
-                    message="A receiving slip already exists for this ASN",
+                    message="A receiving slip is awaiting review for this ASN",
                     details=[
                         {
                             "field": "asn_order_id",
                             "reason": (
-                                f"Receiving slip {existing_slip.slip_number} already "
-                                f"exists for this ASN"
+                                f"Receiving slip {existing_review_slip.slip_number} must "
+                                "be approved or rejected before another receipt starts"
                             ),
                         }
                     ],
@@ -124,6 +165,14 @@ class InboundService:
             "warehouse_id": warehouse_id,
             "dock_location": dock_location,
             "asn_order_id": asn_order_id,
+            "vehicle_arrival_id": self._resolve_vehicle_arrival(
+                organization_id=organization_id,
+                warehouse_id=warehouse_id,
+                asn_order_id=asn_order_id,
+                dock_location=dock_location,
+            )
+            if asn_order_id
+            else None,
             "status": "open",
             "total_boxes_scanned": 0,
             "started_at": datetime.now(UTC),
@@ -132,6 +181,54 @@ class InboundService:
         session = self.session_repo.create_session(session_data)
 
         return self._session_to_dict(session)
+
+    def _resolve_vehicle_arrival(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID,
+        asn_order_id: UUID,
+        dock_location: str | None = None,
+    ) -> UUID | None:
+        """Find the open vehicle arrival that carries the given ASN.
+
+        Matches on organization + warehouse + ASN, preferring an arrival whose
+        dock matches the session's ``dock_location``. Returns an arrival id only
+        when the match is unambiguous; otherwise ``None`` so the WMS manager can
+        link manually (e.g. when one ASN is split across multiple vehicles).
+        """
+        from app.models.vehicle import VehicleArrival, vehicle_arrival_asns
+
+        q = (
+            self.db.query(VehicleArrival)
+            .join(
+                vehicle_arrival_asns,
+                vehicle_arrival_asns.c.vehicle_arrival_id == VehicleArrival.id,
+            )
+            .filter(
+                VehicleArrival.organization_id == organization_id,
+                VehicleArrival.status == "arrived",
+                vehicle_arrival_asns.c.asn_order_id == asn_order_id,
+            )
+        )
+        if warehouse_id is not None:
+            q = q.filter(
+                (VehicleArrival.warehouse_id == warehouse_id)
+                | (VehicleArrival.warehouse_id.is_(None))
+            )
+
+        candidates = q.order_by(VehicleArrival.arrived_at.desc()).all()
+        if not candidates:
+            return None
+
+        # A dock match makes the association unambiguous.
+        if dock_location:
+            dock_matches = [a for a in candidates if a.dock == dock_location]
+            if len(dock_matches) == 1:
+                return dock_matches[0].id
+
+        # Otherwise only link when all candidates are the same arrival.
+        ids = {a.id for a in candidates}
+        return next(iter(ids)) if len(ids) == 1 else None
 
     # ------------------------------------------------------------------
     # RECORD SCAN
@@ -187,8 +284,12 @@ class InboundService:
                 required_state=["open"],
             )
 
-        # Decode QR payload — supports both JSON and URL format QR codes
-        payload = decode_qr_payload(qr_data, db=self.db)
+        # Decode QR payload — supports both JSON and URL format QR codes.
+        # Organization scoping prevents a foreign tenant's ProductItem serial
+        # from being decoded here and then matching a same-SKU local Item.
+        payload = decode_qr_payload(
+            qr_data, db=self.db, organization_id=organization_id
+        )
 
         # Check for duplicate qr_identifier within this session
         existing_items = self.session_repo.get_items(session_id)
@@ -213,6 +314,7 @@ class InboundService:
         from app.models.product_item import ProductItem
 
         item = None
+        pending_asn_exception_type: str | None = None
 
         product_item = (
             self.db.query(ProductItem)
@@ -294,18 +396,42 @@ class InboundService:
                 matched = True
 
             if not matched:
-                raise ValidationError(
-                    message="Scanned item does not belong to the linked ASN",
-                    details=[
-                        {
-                            "field": "qr_data",
-                            "reason": (
-                                f"Item '{payload.sku or payload.id}' is not part of "
-                                f"ASN order {asn_order.asn_order_no}"
-                            ),
-                        }
-                    ],
+                from app.services.inbound_exception_service import (
+                    InboundExceptionService,
                 )
+
+                # Unknown identities are a hard stop, but are recorded first
+                # so they are visible in the supervisor exception queue.
+                if item is None:
+                    exception = InboundExceptionService(self.db).create_scan_exception(
+                        organization_id=organization_id,
+                        warehouse_id=session.warehouse_id,
+                        session_id=session_id,
+                        asn_order_id=session.asn_order_id,
+                        exception_type="unknown_identity",
+                        reason_code="UNKNOWN_IDENTITY",
+                        qr_identifier=payload.id,
+                        sku=payload.sku,
+                        batch_number=payload.batch,
+                        quantity=payload.qty or 1,
+                        raw_qr_data=qr_data,
+                        actor_id=worker_id,
+                    )
+                    self.db.commit()
+                    raise ValidationError(
+                        message="Unknown SKU or identity: scan stopped and exception recorded",
+                        details=[
+                            {
+                                "field": "qr_data",
+                                "reason": f"Exception {exception.id}: '{payload.sku or payload.id}' is not in the item master",
+                            }
+                        ],
+                    )
+
+                # Retain known catalog SKUs as blocked excess stock. They will
+                # be linked to the generated receipt line and need a manager's
+                # disposition before becoming normal receiving inventory.
+                pending_asn_exception_type = "unexpected_known_sku"
 
         # Resolve packaging unit from QR payload (best-effort — null if not found)
         packaging_unit_id = None
@@ -336,7 +462,7 @@ class InboundService:
 
         if item is not None:
             tracking_svc = ScannedItemTrackingService(self.db)
-            tracking_svc.create_from_scan(
+            tracking = tracking_svc.create_from_scan(
                 organization_id=organization_id,
                 warehouse_id=session.warehouse_id,
                 session_id=session_id,
@@ -355,6 +481,7 @@ class InboundService:
                 payload.sku,
                 organization_id,
             )
+            tracking = None
 
         # Record scan event in qr_scan_events table
         scan_event = QRScanEvent(
@@ -377,6 +504,49 @@ class InboundService:
             },
         )
         self.db.add(scan_event)
+        exception_id = None
+        if pending_asn_exception_type and tracking is not None:
+            from decimal import Decimal
+
+            from app.services.bin_stock_service import BinStockService
+            from app.services.inbound_exception_service import InboundExceptionService
+
+            exception_service = InboundExceptionService(self.db)
+            exception = exception_service.create_scan_exception(
+                organization_id=organization_id,
+                warehouse_id=session.warehouse_id,
+                session_id=session_id,
+                asn_order_id=session.asn_order_id,
+                exception_type=pending_asn_exception_type,
+                reason_code="UNEXPECTED_KNOWN_SKU",
+                qr_identifier=payload.id,
+                sku=payload.sku,
+                batch_number=payload.batch,
+                quantity=payload.qty or 1,
+                raw_qr_data=qr_data,
+                actor_id=worker_id,
+                item_id=item.id,
+                scan_session_item_id=scan_item.id,
+                tracking_id=tracking.id,
+            )
+            hold = exception_service._system_location(
+                session.warehouse_id, organization_id, "HOLD"
+            )
+            BinStockService(self.db).add_stock(
+                hold.id,
+                item.id,
+                Decimal(str(payload.qty or 1)),
+                organization_id,
+                payload.batch,
+                commit=False,
+            )
+            tracking.receiving_status = "hold"
+            tracking.putaway_status = "blocked"
+            tracking.stock_entered = True
+            tracking.stock_entered_at = datetime.now(UTC)
+            tracking.stock_location_id = hold.id
+            exception.destination_location_id = hold.id
+            exception_id = str(exception.id)
         self.db.commit()
 
         return {
@@ -391,6 +561,8 @@ class InboundService:
             if scan_item.scanned_at
             else None,
             "total_boxes_scanned": session.total_boxes_scanned,
+            "exception_id": exception_id,
+            "exception_status": "pending_approval" if exception_id else None,
         }
 
     # ------------------------------------------------------------------
@@ -403,6 +575,7 @@ class InboundService:
         worker_id: UUID,
         organization_id: UUID,
         rejections: list[dict] | None = None,
+        exceptions: list[dict] | None = None,
     ) -> dict:
         """
         Close a scan session and generate a receiving slip.
@@ -453,9 +626,99 @@ class InboundService:
             items=items,
             organization_id=organization_id,
             rejections=rejections,
+            exceptions=exceptions,
+            actor_id=worker_id,
         )
 
         return self._slip_to_dict(slip)
+
+    # ------------------------------------------------------------------
+    # CANCEL SESSION
+    # ------------------------------------------------------------------
+
+    def cancel_session(
+        self,
+        session_id: UUID,
+        organization_id: UUID,
+    ) -> dict:
+        """
+        Cancel an open scan session without generating a receiving slip.
+
+        Sets the session status to 'cancelled' and records the end timestamp.
+        Any scanned items are discarded and the ASN is released so a fresh
+        session can be started.
+
+        Args:
+            session_id: UUID of the scan session to cancel.
+            organization_id: Organization UUID for tenant isolation.
+
+        Returns:
+            Dictionary representation of the cancelled ScanSession.
+
+        Raises:
+            NotFoundError: If session is not found.
+            StateError: If session is not in OPEN status.
+        """
+        session = self.session_repo.get_by_id(session_id, organization_id)
+        if session is None:
+            raise NotFoundError(
+                message="Scan session not found",
+                entity_type="ScanSession",
+                entity_id=str(session_id),
+            )
+
+        if session.status != "open":
+            raise StateError(
+                message="Session is already closed",
+                current_state=session.status,
+                required_state=["open"],
+            )
+
+        cancelled_session = self.session_repo.cancel_session(session_id)
+        if cancelled_session is None:
+            raise StateError(
+                message="Session was closed concurrently and cannot be cancelled",
+                current_state="closed",
+                required_state=["open"],
+            )
+
+        # Discard the session's scanned items (documented discard behavior).
+        self._discard_session_scans(session_id)
+
+        return self._session_to_dict(cancelled_session)
+
+    def _discard_session_scans(self, session_id: UUID) -> None:
+        """Delete scanned items for a cancelled session.
+
+        Removes ScanSessionItem rows plus their pending ScannedItemTracking
+        rows. Tracking rows that already entered stock (e.g. HOLD) are left
+        intact so managers can still disposition them; their scan items are
+        therefore kept as well (the tracking FK references them).
+        """
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        # Remove pending dual-axis tracking rows (nothing entered into stock).
+        self.db.query(ScannedItemTracking).filter(
+            ScannedItemTracking.scan_session_id == session_id,
+            ScannedItemTracking.receiving_status == "scanned",
+            ScannedItemTracking.stock_entered == False,  # noqa: E712
+        ).delete(synchronize_session=False)
+
+        # Delete scan items no longer referenced by a retained tracking row.
+        retained_tracking_item_ids = (
+            self.db.query(ScannedItemTracking.scan_session_item_id)
+            .filter(
+                ScannedItemTracking.scan_session_id == session_id,
+                ScannedItemTracking.scan_session_item_id.isnot(None),
+            )
+            .subquery()
+        )
+        self.db.query(ScanSessionItem).filter(
+            ScanSessionItem.session_id == session_id,
+            ~ScanSessionItem.id.in_(retained_tracking_item_ids),
+        ).delete(synchronize_session=False)
+
+        self.db.commit()
 
     # ------------------------------------------------------------------
     # GET SESSION SUMMARY
@@ -677,25 +940,39 @@ class InboundService:
             )
 
         # ------------------------------------------------------------------
-        # Step 0: Save rejected items before regeneration
+        # Step 0: Save all non-normal items before regeneration.  Approval
+        # recalculates normal quantities from scan rows, but exceptions are
+        # operational records with their own physical routing and must retain
+        # their flags, condition and exception linkage.
         # ------------------------------------------------------------------
-        rejected_items = []
+        protected_items = []
+        protected_exception_links: dict[UUID, tuple[str, str, str]] = {}
         for existing_item in slip.items:
-            if existing_item.flag == "rejected":
-                rejected_items.append(
+            if existing_item.flag != "ok":
+                protected_items.append(
                     {
                         "sku": existing_item.sku,
                         "batch_number": existing_item.batch_number,
                         "quantity": existing_item.quantity,
                         "box_count": existing_item.box_count,
-                        "flag": "rejected",
+                        "flag": existing_item.flag,
                         "rejection_reason": existing_item.rejection_reason,
                         "rejected_by": existing_item.rejected_by,
                         "rejected_at": existing_item.rejected_at,
                         "notes": existing_item.notes,
+                        "condition_code": existing_item.condition_code,
+                        "exception_status": existing_item.exception_status,
+                        "exception_destination_location_id": existing_item.exception_destination_location_id,
                     }
                 )
-        rejected_keys = {(r["sku"], r["batch_number"]) for r in rejected_items}
+                protected_exception_links[existing_item.id] = (
+                    existing_item.sku,
+                    existing_item.batch_number,
+                    existing_item.flag,
+                )
+        protected_keys = {
+            (item["sku"], item["batch_number"]) for item in protected_items
+        }
 
         # ------------------------------------------------------------------
         # Step 1: Fetch all ScanSessionItems for this slip's session
@@ -730,15 +1007,16 @@ class InboundService:
                 eaches_qty = scan_item.raw_quantity
 
             key = (scan_item.sku, scan_item.batch_number)
-            if key in rejected_keys:
-                # Already saved above — will be re-added as rejected below.
+            if key in protected_keys:
+                # Already saved above — will be re-added with its exception
+                # state below, never converted into a normal receipt line.
                 continue
             slip_items_by_key[key]["eaches_qty"] += eaches_qty
             slip_items_by_key[key]["box_count"] += 1
 
         # ------------------------------------------------------------------
         # Step 3: Delete existing receiving_slip_items and recreate with
-        #         converted Eaches quantities (accepted) + rejected items
+        #         converted Eaches quantities (accepted) + protected items
         # ------------------------------------------------------------------
         self.db.query(ReceivingSlipItem).filter(
             ReceivingSlipItem.slip_id == slip_id
@@ -757,15 +1035,35 @@ class InboundService:
             self.slip_repo.add_item(slip_id, item_data)
             total_eaches += agg["eaches_qty"]
 
-        # Re-add rejected items (they stay in floating mode)
-        for rejected in rejected_items:
-            self.slip_repo.add_item(
+        # Re-add protected items exactly as they were before conversion.
+        replacement_items: dict[tuple[str, str, str], ReceivingSlipItem] = {}
+        for protected in protected_items:
+            replacement = self.slip_repo.add_item(
                 slip_id,
                 {
                     "organization_id": organization_id,
-                    **rejected,
+                    **protected,
                 },
             )
+            replacement_items[
+                (replacement.sku, replacement.batch_number, replacement.flag)
+            ] = replacement
+
+        # The line rows have new primary keys after regeneration.  Repair
+        # exception foreign keys so evidence, audit events and disposition
+        # continue to point at the live receipt line.
+        if protected_exception_links:
+            from app.models.inbound_exception import InboundException
+
+            for old_line_id, key in protected_exception_links.items():
+                replacement = replacement_items.get(key)
+                if replacement is not None:
+                    self.db.query(InboundException).filter(
+                        InboundException.slip_item_id == old_line_id
+                    ).update(
+                        {"slip_item_id": replacement.id},
+                        synchronize_session="fetch",
+                    )
 
         # Update total_items on the slip to reflect converted Eaches total
         slip.total_items = total_eaches
@@ -795,7 +1093,7 @@ class InboundService:
             self.db.query(ScannedItemTracking)
             .filter(
                 ScannedItemTracking.scan_session_id == slip.session_id,
-                ScannedItemTracking.receiving_status == "scanned",
+                ScannedItemTracking.receiving_status.in_(["scanned", "approved"]),
             )
             .update(
                 {"receiving_slip_id": slip_id},
@@ -804,6 +1102,7 @@ class InboundService:
         )
         # Approve them — stock enters for items already binned
         stock_entered = tracking_svc.approve_items(slip_id, approved_by=worker_id)
+        self._stage_approved_receipt_lines(slip, organization_id)
         logger.info(
             "Tracking: %d records linked to slip %s, %d entered stock",
             trackings_updated,
@@ -841,6 +1140,13 @@ class InboundService:
         # ------------------------------------------------------------------
         if slip.asn_order_id:
             self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+            from app.services.inbound_short_balance_service import (
+                InboundShortBalanceService,
+            )
+
+            InboundShortBalanceService(self.db).refresh_for_asn(
+                slip.asn_order_id, organization_id, slip.id
+            )
 
         # Step 6: Create a material_receipt stock entry for ERP traceability.
         self._create_receiving_stock_entry(slip, organization_id, worker_id)
@@ -1611,12 +1917,131 @@ class InboundService:
 
         self.db.flush()
 
+    def _apply_scan_exceptions(
+        self,
+        *,
+        slip,
+        organization_id: UUID,
+        exceptions: list[dict] | None,
+        actor_id: UUID | None,
+    ) -> None:
+        """Apply classifications captured on the handheld before slip approval.
+
+        A handheld can only classify an identity that became a line on this
+        receipt.  This deliberately rejects stale or malformed client payloads
+        instead of silently applying an exception to a different receipt.
+        """
+        if not exceptions:
+            return
+
+        from app.services.inbound_exception_service import InboundExceptionService
+
+        handled_serials: set[str] = set()
+        exception_service = InboundExceptionService(self.db)
+        for payload in exceptions:
+            serial = str(payload.get("serial_number") or "").strip()
+            if not serial:
+                raise ValidationError("Each scan exception requires a serial number")
+            if serial in handled_serials:
+                raise ValidationError(
+                    f"Only one exception classification may be submitted for serial '{serial}'"
+                )
+            handled_serials.add(serial)
+
+            line = (
+                self.db.query(ReceivingSlipItem)
+                .filter(
+                    ReceivingSlipItem.slip_id == slip.id,
+                    ReceivingSlipItem.batch_number == serial,
+                    ReceivingSlipItem.flag == "ok",
+                )
+                .first()
+            )
+            if line is None:
+                raise ValidationError(
+                    f"Cannot classify serial '{serial}': it is not an accepted line on this receiving slip"
+                )
+
+            exception_service.classify_slip_item(
+                slip_id=slip.id,
+                slip_item_id=line.id,
+                organization_id=organization_id,
+                actor_id=actor_id,
+                classification=str(payload.get("classification") or "").lower(),
+                reason_code=str(payload.get("reason_code") or ""),
+                destination=payload.get("destination"),
+                note=payload.get("note"),
+            )
+
+    def _stage_approved_receipt_lines(self, slip, organization_id: UUID) -> None:
+        """Book normal approved receipt quantities into RECEIVING-STAGE.
+
+        This deliberately uses the regenerated receipt-line quantity (Eaches),
+        not the raw scanner quantity. Direct put-away rows are already in a
+        final bin and are therefore excluded.
+        """
+        from decimal import Decimal
+
+        from app.models.item import Item
+        from app.services.bin_stock_service import BinStockService
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        stage = ScannedItemTrackingService(self.db)._get_or_create_system_bin(
+            slip.warehouse_id, organization_id, "RECEIVING-STAGE"
+        )
+        for line in (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip.id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        ):
+            trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.scan_session_id == slip.session_id,
+                    ScannedItemTracking.qr_identifier == line.batch_number,
+                )
+                .all()
+            )
+            if trackings and all(t.putaway_status == "completed" for t in trackings):
+                continue
+            item = (
+                self.db.query(Item)
+                .filter(
+                    Item.organization_id == organization_id,
+                    Item.deleted_at.is_(None),
+                    (Item.sku == line.sku)
+                    | (Item.gtin == line.sku)
+                    | (Item.item_code == line.sku),
+                )
+                .first()
+            )
+            if item is None:
+                raise ValidationError(
+                    f"Cannot stage approved receipt line '{line.sku}': no active item master record"
+                )
+            BinStockService(self.db).add_stock(
+                stage.id,
+                item.id,
+                Decimal(str(line.quantity)),
+                organization_id,
+                line.batch_number,
+                commit=False,
+            )
+        self.db.commit()
+
     def _generate_receiving_slip(
         self,
         session,
         items: list,
         organization_id: UUID,
         rejections: list[dict] | None = None,
+        exceptions: list[dict] | None = None,
+        actor_id: UUID | None = None,
     ):
         """Generate a receiving slip from session items grouped by SKU+batch.
 
@@ -1698,6 +2123,7 @@ class InboundService:
             "session_id": session.id,
             "warehouse_id": session.warehouse_id,
             "asn_order_id": session.asn_order_id,
+            "vehicle_arrival_id": session.vehicle_arrival_id,
             "status": "pending_review",
             "total_boxes": total_boxes,
             "total_items": total_items,
@@ -1722,6 +2148,45 @@ class InboundService:
         # Apply rejections before finalization (rejected items never enter
         # stock or put-away — they are left for the warehouse manager).
         self._apply_rejections(slip, session, organization_id, rejections)
+        self._apply_scan_exceptions(
+            slip=slip,
+            organization_id=organization_id,
+            exceptions=exceptions,
+            actor_id=actor_id,
+        )
+
+        # Link known-but-unexpected ASN scans to their new receipt line and
+        # keep them blocked as excess until a manager disposition. Unknown
+        # identities are not scanned into the receipt at all.
+        from app.models.inbound_exception import InboundException
+
+        pending_exceptions = (
+            self.db.query(InboundException)
+            .filter(
+                InboundException.session_id == session.id,
+                InboundException.slip_id.is_(None),
+                InboundException.exception_type == "unexpected_known_sku",
+            )
+            .all()
+        )
+        for exception in pending_exceptions:
+            line = next(
+                (
+                    candidate
+                    for candidate in slip.items
+                    if candidate.sku == exception.sku
+                    and candidate.batch_number == exception.batch_number
+                ),
+                None,
+            )
+            if line is None:
+                continue
+            line.flag = "excess"
+            line.condition_code = "HOLD"
+            line.exception_status = "pending_approval"
+            line.exception_destination_location_id = exception.destination_location_id
+            exception.slip_id = slip.id
+            exception.slip_item_id = line.id
 
         # Flow B: link items already put away via direct put-away (match by QR)
         from app.services.put_away_service import PutAwayService
@@ -1737,6 +2202,13 @@ class InboundService:
             slip = self.slip_repo.update_status(slip.id, "putaway_complete")
             if slip is not None and slip.asn_order_id:
                 self._sync_asn_delivered_qty(slip.asn_order_id, organization_id)
+                from app.services.inbound_short_balance_service import (
+                    InboundShortBalanceService,
+                )
+
+                InboundShortBalanceService(self.db).refresh_for_asn(
+                    slip.asn_order_id, organization_id, slip.id
+                )
             # Create a material_receipt stock entry for ERP traceability.
             if slip is not None:
                 self._create_receiving_stock_entry(slip, organization_id)
@@ -1758,6 +2230,10 @@ class InboundService:
             "dock_location": session.dock_location,
             "asn_order_id": str(session.asn_order_id) if session.asn_order_id else None,
             "asn_order_no": asn_order_no,
+            "vehicle_arrival_id": str(session.vehicle_arrival_id)
+            if session.vehicle_arrival_id
+            else None,
+            "vehicle_no": self._get_session_vehicle_no(session),
             "status": session.status,
             "total_boxes_scanned": session.total_boxes_scanned or 0,
             "started_at": session.started_at.isoformat()
@@ -1791,6 +2267,10 @@ class InboundService:
             "warehouse_id": str(slip.warehouse_id),
             "asn_order_id": str(slip.asn_order_id) if slip.asn_order_id else None,
             "asn_order_no": asn_order_no,
+            "vehicle_arrival_id": str(slip.vehicle_arrival_id)
+            if slip.vehicle_arrival_id
+            else None,
+            "vehicle_no": self._get_slip_vehicle_no(slip),
             "status": slip.status,
             "total_boxes": slip.total_boxes,
             "total_items": slip.total_items,
@@ -1800,6 +2280,24 @@ class InboundService:
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }
+
+    def _get_slip_vehicle_no(self, slip) -> str | None:
+        """Return the vehicle number linked to a receiving slip, if any."""
+        if not slip.vehicle_arrival_id:
+            return None
+        vehicle_arrival = slip.vehicle_arrival
+        if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
+            return vehicle_arrival.vehicle.vehicle_no
+        return None
+
+    def _get_session_vehicle_no(self, session) -> str | None:
+        """Return the vehicle number linked to a scan session, if any."""
+        if not session.vehicle_arrival_id:
+            return None
+        vehicle_arrival = session.vehicle_arrival
+        if vehicle_arrival is not None and vehicle_arrival.vehicle is not None:
+            return vehicle_arrival.vehicle.vehicle_no
+        return None
 
     # ------------------------------------------------------------------
     # COUNT DISTINCT QSEAL PARENT CONTAINERS
@@ -1981,6 +2479,13 @@ class InboundService:
                     "quantity": item.quantity,
                     "box_count": item.box_count,
                     "flag": item.flag,
+                    "condition_code": item.condition_code,
+                    "exception_status": item.exception_status,
+                    "exception_destination_location_id": str(
+                        item.exception_destination_location_id
+                    )
+                    if item.exception_destination_location_id
+                    else None,
                     "notes": item.notes,
                 }
             )

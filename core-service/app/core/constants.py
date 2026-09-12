@@ -44,6 +44,21 @@ ROLES_MODULE_ENABLED = "roles_module_enabled"
 # Report module
 REPORTS_MODULE_ENABLED = "reports_module_enabled"
 
+# Product/Item dual-mode (catalog vs WMS)
+WMS_ENABLED = "wms_enabled"
+QSEAL_ENABLED = "qseal_enabled"
+PRODUCT_EDITABLE_MANUALLY = "product_editable_manually"
+ITEM_AUTO_CREATE_PRODUCT = "item_auto_create_product"
+
+# Variant handling (structured axes vs legacy JSONB)
+VARIANT_STRUCTURED_ENABLED = "variant_structured_enabled"
+AUTO_CREATE_SKU_ON_ITEM = "auto_create_sku_on_item"
+AUTO_CREATE_VARIANT_AXES = "auto_create_variant_axes"
+
+# Approval workflow
+REQUIRE_ITEM_APPROVAL = "require_item_approval"
+AUTO_APPROVE_SINGLE_CREATE = "auto_approve_single_create"
+
 # ── Error codes ─────────────────────────────────────────────────────
 FEATURE_DISABLED_CODE = "FEATURE_DISABLED"
 
@@ -52,3 +67,4 @@ HTTP_FEATURE_DISABLED = 423  # Locked – feature administratively disabled
 
 # ── Default scope ───────────────────────────────────────────────────
 DEFAULT_SCOPE = "GLOBAL"
+TENANT_SCOPE = "TENANT"

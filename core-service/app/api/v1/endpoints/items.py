@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,6 +21,12 @@ from app.schemas.item import (
 from app.services.item_service import ItemService
 
 router = APIRouter()
+
+
+class RejectItemRequest(BaseModel):
+    """Request body for rejecting a pending item."""
+
+    reason: str = Field(..., min_length=1, max_length=1000, description="Rejection reason")
 
 
 @router.post(
@@ -262,6 +269,65 @@ async def delete_item(
         user_id=current_user.id,
     )
     return None
+
+
+@router.post(
+    "/{item_id}/submit",
+    response_model=ItemResponse,
+    summary="Submit item for approval",
+)
+async def submit_item_for_approval(
+    item_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.submit_for_approval(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ItemResponse.model_validate(item)
+
+
+@router.post(
+    "/{item_id}/approve",
+    response_model=ItemResponse,
+    summary="Approve item",
+)
+async def approve_item(
+    item_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.approve_item(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ItemResponse.model_validate(item)
+
+
+@router.post(
+    "/{item_id}/reject",
+    response_model=ItemResponse,
+    summary="Reject item",
+)
+async def reject_item(
+    item_id: UUID,
+    body: RejectItemRequest,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.reject_item(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        reason=body.reason,
+    )
+    return ItemResponse.model_validate(item)
 
 
 @router.get(

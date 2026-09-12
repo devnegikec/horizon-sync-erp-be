@@ -36,6 +36,12 @@ class ReceivingSlip(Base):
         nullable=True,
         index=True,
     )
+    vehicle_arrival_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("vehicle_arrivals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status = Column(String(30), nullable=False, default="pending_review")
     total_boxes = Column(Integer, default=0)
     total_items = Column(Integer, default=0)
@@ -54,6 +60,7 @@ class ReceivingSlip(Base):
     session = relationship("ScanSession", back_populates="receiving_slips")
     warehouse = relationship("Warehouse")
     asn_order = relationship("AsnOrder", foreign_keys=[asn_order_id])
+    vehicle_arrival = relationship("VehicleArrival", back_populates="receiving_slips")
     items = relationship(
         "ReceivingSlipItem", back_populates="slip", cascade="all, delete-orphan"
     )
@@ -84,6 +91,8 @@ class ReceivingSlipItem(Base):
     quantity = Column(Integer, nullable=False)
     box_count = Column(Integer, default=0)
     flag = Column(String(20), default="ok")
+    condition_code = Column(String(30), nullable=False, default="GOOD")
+    exception_status = Column(String(30), nullable=True)
     notes = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), nullable=True)
@@ -93,6 +102,12 @@ class ReceivingSlipItem(Base):
     bin_location_id = Column(
         UUID(as_uuid=True),
         ForeignKey("warehouse_locations.id"),
+        nullable=True,
+        index=True,
+    )
+    exception_destination_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -110,7 +125,7 @@ class ReceivingSlipItem(Base):
 
     # Relationships
     slip = relationship("ReceivingSlip", back_populates="items")
-    bin_location = relationship("WarehouseLocation")
+    bin_location = relationship("WarehouseLocation", foreign_keys=[bin_location_id])
 
     def __repr__(self):
         return (
