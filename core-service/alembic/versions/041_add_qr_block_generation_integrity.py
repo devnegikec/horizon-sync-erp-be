@@ -8,6 +8,7 @@ Create Date: 2026-07-29
 import sqlalchemy as sa
 
 from alembic import op
+
 from app.alembic_guards import has_column, has_constraint, has_index, has_table
 
 revision = "041_qr_block_integrity"
@@ -60,20 +61,51 @@ def _assert_no_active_duplicates() -> None:
 def upgrade() -> None:
     if not has_table("qr_blocks"):
         return
-    columns = (
-        ("qr_type", sa.String(length=30), False, "dynamic"),
-        ("starting_serial", sa.String(length=10), True, None),
-        ("generated_count", sa.Integer(), False, "0"),
-        ("progress", sa.Integer(), False, "0"),
-        ("error_code", sa.String(length=50), True, None),
-        ("error_message", sa.String(length=500), True, None),
-    )
-    for name, column_type, nullable, default in columns:
+    # Idempotent: this migration can run against databases where the QSeal
+    # branch schema was already materialized out-of-band (schema drift).
+    def _add_col(name: str, col: sa.Column) -> None:
         if not has_column("qr_blocks", name):
-            op.add_column(
-                "qr_blocks",
-                sa.Column(name, column_type, nullable=nullable, server_default=default),
-            )
+            op.add_column("qr_blocks", col)
+
+    _add_col(
+        "qr_type",
+        sa.Column(
+            "qr_type",
+            sa.String(length=30),
+            nullable=False,
+            server_default="dynamic",
+        ),
+    )
+    _add_col(
+        "starting_serial",
+        sa.Column("starting_serial", sa.String(length=10), nullable=True),
+    )
+    _add_col(
+        "generated_count",
+        sa.Column(
+            "generated_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    _add_col(
+        "progress",
+        sa.Column(
+            "progress",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    _add_col(
+        "error_code",
+        sa.Column("error_code", sa.String(length=50), nullable=True),
+    )
+    _add_col(
+        "error_message",
+        sa.Column("error_message", sa.String(length=500), nullable=True),
+    )
 
     op.execute(
         """
@@ -111,8 +143,14 @@ def upgrade() -> None:
             "progress >= 0 AND progress <= 100",
         )
 
-    _assert_no_active_duplicates()
-    if not has_index("qr_blocks", "uq_qr_blocks_org_batch_active"):
+    need_batch_index = not has_index("qr_blocks", "uq_qr_blocks_org_batch_active")
+    need_serial_index = has_table("product_items") and not has_index(
+        "product_items", "uq_product_items_org_serial_active"
+    )
+    if need_batch_index or need_serial_index:
+        _assert_no_active_duplicates()
+
+    if need_batch_index:
         op.create_index(
             "uq_qr_blocks_org_batch_active",
             "qr_blocks",
@@ -120,7 +158,7 @@ def upgrade() -> None:
             unique=True,
             postgresql_where=sa.text("deleted_at IS NULL"),
         )
-    if has_table("product_items") and not has_index("product_items", "uq_product_items_org_serial_active"):
+    if need_serial_index:
         op.create_index(
             "uq_product_items_org_serial_active",
             "product_items",
