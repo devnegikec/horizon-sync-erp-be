@@ -80,6 +80,9 @@ from app.schemas.outbound import (
     OutboundPickListResponse,
     OutboundPickListStatusCounts,
     PickListAcceptResponse,
+    PickListGroupItem,
+    PickListItemGroup,
+    PickListParentInfo,
     PickListProgress,
     PickScanRequest,
     PickScanResult,
@@ -530,6 +533,152 @@ def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
     return result
 
 
+def _resolve_pick_qseal_context(pl, item_map, db):
+    """Resolve QSealParameters + QSealTrack lookups for a pick list's lines.
+
+    Only serialized items participate — batch-tracked lines store their batch
+    marker in ``serial_nos`` rather than unit serials, so they are skipped.
+    Returns ``(param_by_serial, track_by_id)``.
+    """
+    serials = {
+        s
+        for item in (pl.items or [])
+        if item_map.get(str(item.item_id), {}).get("has_serial_no")
+        for s in (item.serial_nos or [])
+        if s
+    }
+    if not serials or not db:
+        return {}, {}
+
+    from app.models.qseal import QSealParameters, QSealTrack
+
+    params = (
+        db.query(
+            QSealParameters.serial_number,
+            QSealParameters.parent_id,
+            QSealParameters.dispatch_batch,
+            QSealParameters.manufacturing_date,
+            QSealParameters.expiry_date,
+        )
+        .filter(
+            QSealParameters.organization_id == pl.organization_id,
+            QSealParameters.serial_number.in_(serials),
+        )
+        .all()
+    )
+    param_by_serial = {p.serial_number: p for p in params}
+
+    parent_ids = {p.parent_id for p in params if p.parent_id}
+    tracks = (
+        db.query(QSealTrack)
+        .filter(
+            QSealTrack.organization_id == pl.organization_id,
+            QSealTrack.id.in_(parent_ids),
+        )
+        .all()
+        if parent_ids
+        else []
+    )
+    track_by_id = {t.id: t for t in tracks}
+    return param_by_serial, track_by_id
+
+
+def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
+    """Build QSeal master-pack groups mirroring the receiving-slip view.
+
+    Lines whose child serials resolve to the same QSeal parent are merged into
+    one group; batch-tracked lines and serialized lines without a parent each
+    become their own standalone group (``parent_qseal=None``).
+    """
+    groups: dict = {}
+    for item in sorted(pl.items or [], key=lambda i: i.sort_order or 0):
+        info = item_map.get(str(item.item_id), {})
+        sku = info.get("sku")
+        product_name = info.get("item_name")
+        is_serialized = bool(info.get("has_serial_no"))
+
+        child_serials = [s for s in (item.serial_nos or []) if s]
+
+        parent_id = None
+        if is_serialized:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                if param and param.parent_id:
+                    parent_id = param.parent_id
+                    break
+
+        if parent_id:
+            parent_key = str(parent_id)
+        elif not is_serialized:
+            parent_key = f"batch::{item.batch_no or 'unknown'}"
+        else:
+            parent_key = f"none::{item.id}"
+
+        if parent_key not in groups:
+            parent_info = None
+            track = track_by_id.get(parent_id) if parent_id else None
+            if track is not None:
+                parent_info = PickListParentInfo(
+                    id=str(track.id),
+                    serial_number=track.serial_number,
+                    name=track.name,
+                    qseal_type=track.qseal_type,
+                    capacity=track.capacity,
+                )
+            groups[parent_key] = {
+                "parent_qseal": parent_info,
+                "product_name": product_name,
+                "bin_location_id": str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                "bin_location_path": bin_map.get(str(item.bin_location_id))
+                if item.bin_location_id
+                else None,
+                "handling_unit_id": str(item.handling_unit_id)
+                if item.handling_unit_id
+                else None,
+                "sort_order": item.sort_order or 0,
+                "items": [],
+            }
+
+        if is_serialized and child_serials:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                batch = (param.dispatch_batch if param else None) or item.batch_no
+                groups[parent_key]["items"].append(
+                    PickListGroupItem(
+                        serial_number=serial,
+                        sku=sku,
+                        batch_number=batch or serial,
+                        manufacturing_date=(
+                            str(param.manufacturing_date)
+                            if param and param.manufacturing_date
+                            else None
+                        ),
+                        expiry_date=(
+                            str(param.expiry_date)
+                            if param and param.expiry_date
+                            else None
+                        ),
+                        quantity=1,
+                        box_count=1,
+                    )
+                )
+        else:
+            groups[parent_key]["items"].append(
+                PickListGroupItem(
+                    serial_number=None,
+                    sku=sku,
+                    batch_number=item.batch_no
+                    or (child_serials[0] if child_serials else None),
+                    quantity=float(item.qty or 0),
+                    box_count=1,
+                )
+            )
+
+    return [PickListItemGroup(**g) for g in groups.values()]
+
+
 def _identity_engine():
     """Return a read-only engine to the identity database, or None if unset."""
     from sqlalchemy import create_engine
@@ -628,14 +777,15 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
     bin_map: dict[str, str] = {}
     if item_ids and db:
         from app.models.item import Item
-        rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
-            Item.id.in_(item_ids)
-        ).all()
+        rows = db.query(
+            Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
+        ).filter(Item.id.in_(item_ids)).all()
         item_map = {
             str(r.id): {
                 "item_name": r.item_name,
                 "item_code": r.item_code,
                 "sku": r.sku or r.item_code,
+                "has_serial_no": bool(r.has_serial_no),
             }
             for r in rows
         }
@@ -651,6 +801,10 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
 
     # Resolve per-unit serials for each item line
     serials_by_item = _resolve_pick_serials(pl.items or [], db)
+
+    # Resolve QSeal master-pack context and build the grouped representation
+    param_by_serial, track_by_id = _resolve_pick_qseal_context(pl, item_map, db)
+    groups = _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id)
 
     items = []
     for item in pl.items or []:
@@ -720,6 +874,7 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         age_minutes=aging["age_minutes"],
         is_aging=aging["is_aging"],
         items=items,
+        groups=groups,
         progress=progress,
     )
 

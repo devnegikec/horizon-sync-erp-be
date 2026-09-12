@@ -274,6 +274,10 @@ class ItemResponse(BaseModel):
     # Packaging units (base unit first)
     packaging_units: list[ItemPackagingUnitResponse] | None = None
 
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
+
     # Audit
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -367,6 +371,10 @@ class ItemPickerItem(BaseModel):
     stock_levels: ItemPickerStockLevels = Field(default_factory=ItemPickerStockLevels)
     item_group: ItemPickerItemGroup | None = None
     tax_info: ItemPickerTaxInfo | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
 
 class ItemPickerListResponse(BaseModel):

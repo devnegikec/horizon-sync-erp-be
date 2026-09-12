@@ -922,6 +922,22 @@ class ItemService:
 
         item_ids = [item.id for item in items]
 
+        # Resolve the master-pack size from each item's base packaging unit.
+        pack_rows = (
+            self.db.query(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.items_per_master_pack,
+            )
+            .filter(
+                ItemPackagingUnit.organization_id == organization_id,
+                ItemPackagingUnit.item_id.in_(item_ids),
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .all()
+        )
+        pack_map = {item_id: mpp for item_id, mpp in pack_rows if mpp is not None}
+
         # Warehouse-scoped or aggregated stock levels
         if warehouse_id:
             stock_agg = self._get_stock_by_warehouse(
@@ -992,6 +1008,7 @@ class ItemService:
                     stock_levels=ItemPickerStockLevels(**stock),
                     item_group=item_group,
                     tax_info=tax_info,
+                    items_per_master_pack=pack_map.get(item.id),
                 )
             )
 
