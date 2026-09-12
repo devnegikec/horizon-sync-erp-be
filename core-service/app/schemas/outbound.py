@@ -250,6 +250,44 @@ class PickListItemResponse(BaseModel):
     serials: list[PickSerialDetail] = []
 
 
+class PickListParentInfo(BaseModel):
+    """QSeal parent (master pack) info attached to a pick-list group."""
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class PickListGroupItem(BaseModel):
+    """Individual unit inside a master-pack pick-list group."""
+
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: float = 1.0
+    box_count: int = 1
+
+
+class PickListItemGroup(BaseModel):
+    """A group of pick-list units under the same QSeal parent (master pack).
+
+    Mirrors the receiving-slip ``groups`` shape so the same view component can
+    render both documents consistently.
+    """
+
+    parent_qseal: PickListParentInfo | None = None
+    product_name: str | None = None
+    bin_location_id: str | None = None
+    bin_location_path: str | None = None
+    handling_unit_id: str | None = None
+    sort_order: int = 0
+    items: list[PickListGroupItem] = []
+
+
 class OutboundPickListResponse(BaseModel):
     """Response schema for a pick list in the outbound workflow.
 
@@ -279,7 +317,7 @@ class OutboundPickListResponse(BaseModel):
     sla_minutes: int | None = None
     age_minutes: int = 0
     is_aging: bool = False
-    items: list[PickListItemResponse] = []
+    groups: list[PickListItemGroup] = []
     progress: PickListProgress | None = None
 
 

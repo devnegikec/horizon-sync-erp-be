@@ -232,7 +232,18 @@ async def get_item(
         organization_id=current_user.organization_id,
         include_group=True,
     )
-    return ItemResponse.model_validate(item)
+    item_dto = ItemResponse.model_validate(item)
+
+    # Surface the master-pack size from the item's base packaging unit
+    # (preferred over any secondary packaging units).
+    base_units = [
+        pu
+        for pu in (item_dto.packaging_units or [])
+        if pu.is_base_unit and pu.is_active and pu.items_per_master_pack is not None
+    ]
+    item_dto.items_per_master_pack = base_units[0].items_per_master_pack if base_units else None
+
+    return item_dto
 
 
 @router.put(
