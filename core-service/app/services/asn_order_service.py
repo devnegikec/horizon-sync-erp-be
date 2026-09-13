@@ -92,6 +92,7 @@ class AsnOrderService:
                 "serial_nos": item_data.get("serial_nos") or None,
                 "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
                 "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
+                "extra_data": item_data.get("extra_data") or None,
             }
             grand_total += item_payload["qty"]
             self.db.add(AsnOrderItem(**item_payload))
@@ -454,6 +455,7 @@ class AsnOrderService:
                     "serial_nos": item_data.get("serial_nos") or None,
                     "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
                     "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
+                    "extra_data": item_data.get("extra_data") or None,
                 }
                 grand_total += item_payload["qty"]
                 self.db.add(AsnOrderItem(**item_payload))
@@ -1114,6 +1116,7 @@ class AsnOrderService:
                 "serial_nos": item.serial_nos or [],
                 "shipped_qty": float(item.shipped_qty) if item.shipped_qty else 0,
                 "received_qty": float(item.received_qty) if item.received_qty else 0,
+                "extra_data": item.extra_data,
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
             }

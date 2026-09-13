@@ -114,6 +114,8 @@ class PutAwayItemGroupItem(BaseModel):
 class PutAwayItemGroup(BaseModel):
     """A group of put-away units under the same QSeal parent (master pack)."""
 
+    id: str
+    item_id: str | None = None
     parent_qseal: PutAwayParentInfo | None = None
     product_name: str | None = None
     bin_location_id: str | None = None
@@ -146,6 +148,7 @@ class PutAwayListResponse(BaseModel):
     completed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    items: list[PutAwayListItemResponse] = []
     groups: list[PutAwayItemGroup] = []
 
 

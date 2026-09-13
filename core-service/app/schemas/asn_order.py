@@ -38,6 +38,7 @@ class AsnOrderItemBase(BaseModel):
     uom: str = Field(..., min_length=1, max_length=50)
     sort_order: int = 0
     serial_nos: list[str] | None = None
+    extra_data: dict | None = None
 
 
 class AsnOrderItemCreate(AsnOrderItemBase):

@@ -22,6 +22,7 @@ from app.core.authorization import (
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
     WMS_SCAN,
+    is_worker_scope,
 )
 from app.core.exceptions import NotFoundError
 from app.database import get_db
@@ -352,6 +353,8 @@ def _build_groups(
 
         groups.append(
             PutAwayItemGroup(
+                id=str(item.id),
+                item_id=str(item.item_id),
                 parent_qseal=parent_info,
                 product_name=item.item.item_name if item.item else None,
                 bin_location_id=str(item.bin_location_id)
@@ -566,6 +569,10 @@ async def list_put_away_lists(
     if status_filter:
         query = query.filter(PutAwayList.status == status_filter)
 
+    # Warehouse workers only see the lists assigned to them.
+    if is_worker_scope(current_user.user_type, current_user.permissions):
+        query = query.filter(PutAwayList.assigned_to == current_user.id)
+
     # Get total count
     total = query.count()
 
@@ -628,6 +635,8 @@ async def list_put_away_lists(
     )
     if warehouse_id:
         counts_query = counts_query.filter(PutAwayList.warehouse_id == warehouse_id)
+    if is_worker_scope(current_user.user_type, current_user.permissions):
+        counts_query = counts_query.filter(PutAwayList.assigned_to == current_user.id)
     counts_raw = {
         "total": 0,
         "pending": 0,

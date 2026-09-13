@@ -187,3 +187,15 @@ WMS_WORKER_PERMISSIONS = [
     STOCK_ENTRY_CREATE,
     STOCK_ENTRY_READ,
 ]
+
+
+def is_worker_scope(user_type: str, permissions: list[str]) -> bool:
+    """True when the caller is a warehouse worker rather than a manager/admin.
+
+    Workers (mobile/PDA scanner users) must only see the put-away and pick
+    lists assigned to them. Warehouse managers, supervisors, and system admins
+    keep the full (organization-wide) view.
+    """
+    if user_type == "system_admin":
+        return False
+    return WAREHOUSE_MANAGE not in permissions
