@@ -241,6 +241,7 @@ async def get_item(
         for pu in (item_dto.packaging_units or [])
         if pu.is_base_unit and pu.is_active and pu.items_per_master_pack is not None
     ]
+    base_units.sort(key=lambda pu: str(pu.id))
     item_dto.items_per_master_pack = base_units[0].items_per_master_pack if base_units else None
 
     return item_dto

@@ -475,7 +475,7 @@ def _compute_progress(pick_list) -> PickListProgress:
     )
 
 
-def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
+def _resolve_pick_serials(items, db, qmeta=None) -> dict[str, list[dict]]:
     """Resolve per-unit serials for each pick list item from its serial_nos.
 
     ``batch_no`` holds the packing-slip batch number (matches the uploaded
@@ -504,24 +504,25 @@ def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
 
     if all_serials and db:
         try:
-            from app.models.qseal import QSealParameters
+            if qmeta is None:
+                from app.models.qseal import QSealParameters
 
-            qrows = (
-                db.query(
-                    QSealParameters.serial_number,
-                    QSealParameters.manufacturing_date,
-                    QSealParameters.expiry_date,
+                qrows = (
+                    db.query(
+                        QSealParameters.serial_number,
+                        QSealParameters.manufacturing_date,
+                        QSealParameters.expiry_date,
+                    )
+                    .filter(QSealParameters.serial_number.in_(all_serials))
+                    .all()
                 )
-                .filter(QSealParameters.serial_number.in_(all_serials))
-                .all()
-            )
-            qmeta = {
-                sn: {
-                    "manufacturing_date": str(m) if m else None,
-                    "expiry_date": str(e) if e else None,
+                qmeta = {
+                    sn: {
+                        "manufacturing_date": str(m) if m else None,
+                        "expiry_date": str(e) if e else None,
+                    }
+                    for sn, m, e in qrows
                 }
-                for sn, m, e in qrows
-            }
             for item in items:
                 for s in result[str(item.id)]:
                     meta = qmeta.get(s["serial_number"]) or {}
@@ -533,12 +534,16 @@ def _resolve_pick_serials(items, db) -> dict[str, list[dict]]:
     return result
 
 
-def _resolve_pick_qseal_context(pl, item_map, db):
+def _resolve_pick_qseal_context(pl, item_map, db, param_by_serial=None, track_by_id=None):
     """Resolve QSealParameters + QSealTrack lookups for a pick list's lines.
 
     Only serialized items participate — batch-tracked lines store their batch
     marker in ``serial_nos`` rather than unit serials, so they are skipped.
-    Returns ``(param_by_serial, track_by_id)``.
+    Pre-computed ``param_by_serial``/``track_by_id`` maps may be supplied to
+    avoid re-querying per pick list. Returns ``(param_by_serial, track_by_id)``.
+
+    These lookups are optional grouping metadata: on any database error we
+    return empty maps so the pick-list response is still produced.
     """
     serials = {
         s
@@ -550,36 +555,41 @@ def _resolve_pick_qseal_context(pl, item_map, db):
     if not serials or not db:
         return {}, {}
 
-    from app.models.qseal import QSealParameters, QSealTrack
+    if param_by_serial is None or track_by_id is None:
+        try:
+            from app.models.qseal import QSealParameters, QSealTrack
 
-    params = (
-        db.query(
-            QSealParameters.serial_number,
-            QSealParameters.parent_id,
-            QSealParameters.dispatch_batch,
-            QSealParameters.manufacturing_date,
-            QSealParameters.expiry_date,
-        )
-        .filter(
-            QSealParameters.organization_id == pl.organization_id,
-            QSealParameters.serial_number.in_(serials),
-        )
-        .all()
-    )
-    param_by_serial = {p.serial_number: p for p in params}
+            params = (
+                db.query(
+                    QSealParameters.serial_number,
+                    QSealParameters.parent_id,
+                    QSealParameters.dispatch_batch,
+                    QSealParameters.manufacturing_date,
+                    QSealParameters.expiry_date,
+                )
+                .filter(
+                    QSealParameters.organization_id == pl.organization_id,
+                    QSealParameters.serial_number.in_(serials),
+                )
+                .all()
+            )
+            param_by_serial = {p.serial_number: p for p in params}
 
-    parent_ids = {p.parent_id for p in params if p.parent_id}
-    tracks = (
-        db.query(QSealTrack)
-        .filter(
-            QSealTrack.organization_id == pl.organization_id,
-            QSealTrack.id.in_(parent_ids),
-        )
-        .all()
-        if parent_ids
-        else []
-    )
-    track_by_id = {t.id: t for t in tracks}
+            parent_ids = {p.parent_id for p in params if p.parent_id}
+            tracks = (
+                db.query(QSealTrack)
+                .filter(
+                    QSealTrack.organization_id == pl.organization_id,
+                    QSealTrack.id.in_(parent_ids),
+                )
+                .all()
+                if parent_ids
+                else []
+            )
+            track_by_id = {t.id: t for t in tracks}
+        except Exception:
+            return {}, {}
+
     return param_by_serial, track_by_id
 
 
@@ -610,7 +620,9 @@ def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
         if parent_id:
             parent_key = str(parent_id)
         elif not is_serialized:
-            parent_key = f"batch::{item.batch_no or 'unknown'}"
+            # Include the item id so unrelated lines without a batch are not
+            # collapsed into a single "unknown" group.
+            parent_key = f"batch::{item.batch_no or 'unknown'}::{item.id}"
         else:
             parent_key = f"none::{item.id}"
 
@@ -661,6 +673,19 @@ def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
                             else None
                         ),
                         quantity=1,
+                        box_count=1,
+                    )
+                )
+            # If serial_nos only carries the initial serials, reflect the
+            # remaining quantity so the group total matches the line's qty.
+            remaining = float(item.qty or 0) - len(child_serials)
+            if remaining > 0:
+                groups[parent_key]["items"].append(
+                    PickListGroupItem(
+                        serial_number=None,
+                        sku=sku,
+                        batch_number=item.batch_no,
+                        quantity=remaining,
                         box_count=1,
                     )
                 )
@@ -767,43 +792,60 @@ def _pick_list_aging(pl, db) -> dict:
     return PickListService.aging_info(pl, threshold)
 
 
-def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
-    """Convert a PickList model to an OutboundPickListResponse."""
+def _pick_list_to_response(
+    pl,
+    db=None,
+    *,
+    item_map=None,
+    bin_map=None,
+    serial_qmeta=None,
+    qseal_params=None,
+    qseal_tracks=None,
+) -> OutboundPickListResponse:
+    """Convert a PickList model to an OutboundPickListResponse.
+
+    Optional pre-computed lookup maps may be supplied to batch lookups across
+    multiple pick lists; when omitted they are fetched per pick list.
+    """
     progress = _compute_progress(pl)
 
     # Batch-fetch item names and SKUs
     item_ids = [item.item_id for item in (pl.items or [])]
-    item_map: dict[str, dict] = {}
-    bin_map: dict[str, str] = {}
-    if item_ids and db:
-        from app.models.item import Item
-        rows = db.query(
-            Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
-        ).filter(Item.id.in_(item_ids)).all()
-        item_map = {
-            str(r.id): {
-                "item_name": r.item_name,
-                "item_code": r.item_code,
-                "sku": r.sku or r.item_code,
-                "has_serial_no": bool(r.has_serial_no),
+    if item_map is None:
+        item_map = {}
+        if item_ids and db:
+            from app.models.item import Item
+            rows = db.query(
+                Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
+            ).filter(Item.id.in_(item_ids)).all()
+            item_map = {
+                str(r.id): {
+                    "item_name": r.item_name,
+                    "item_code": r.item_code,
+                    "sku": r.sku or r.item_code,
+                    "has_serial_no": bool(r.has_serial_no),
+                }
+                for r in rows
             }
-            for r in rows
-        }
 
     # Batch-fetch bin full paths
     bin_ids = [item.bin_location_id for item in (pl.items or []) if item.bin_location_id]
-    if bin_ids and db:
-        from app.models.warehouse_location import WarehouseLocation
-        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
-            WarehouseLocation.id.in_(bin_ids)
-        ).all()
-        bin_map = {str(r.id): r.full_path for r in rows}
+    if bin_map is None:
+        bin_map = {}
+        if bin_ids and db:
+            from app.models.warehouse_location import WarehouseLocation
+            rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
+                WarehouseLocation.id.in_(bin_ids)
+            ).all()
+            bin_map = {str(r.id): r.full_path for r in rows}
 
     # Resolve per-unit serials for each item line
-    serials_by_item = _resolve_pick_serials(pl.items or [], db)
+    serials_by_item = _resolve_pick_serials(pl.items or [], db, serial_qmeta)
 
     # Resolve QSeal master-pack context and build the grouped representation
-    param_by_serial, track_by_id = _resolve_pick_qseal_context(pl, item_map, db)
+    param_by_serial, track_by_id = _resolve_pick_qseal_context(
+        pl, item_map, db, qseal_params, qseal_tracks
+    )
     groups = _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id)
 
     items = []
@@ -877,6 +919,99 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         groups=groups,
         progress=progress,
     )
+
+
+def _pick_lists_to_responses(pick_lists, db) -> list[OutboundPickListResponse]:
+    """Convert multiple pick lists, batching shared lookups into single queries.
+
+    Avoids per-pick-list QSeal/item/bin query amplification when an order is
+    split into many pick lists.
+    """
+    if not pick_lists:
+        return []
+
+    all_items = [item for pl in pick_lists for item in (pl.items or [])]
+    item_ids = [item.item_id for item in all_items]
+    bin_ids = [item.bin_location_id for item in all_items if item.bin_location_id]
+
+    item_map: dict[str, dict] = {}
+    if item_ids and db:
+        from app.models.item import Item
+        rows = db.query(
+            Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
+        ).filter(Item.id.in_(item_ids)).all()
+        item_map = {
+            str(r.id): {
+                "item_name": r.item_name,
+                "item_code": r.item_code,
+                "sku": r.sku or r.item_code,
+                "has_serial_no": bool(r.has_serial_no),
+            }
+            for r in rows
+        }
+
+    bin_map: dict[str, str] = {}
+    if bin_ids and db:
+        from app.models.warehouse_location import WarehouseLocation
+        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
+            WarehouseLocation.id.in_(bin_ids)
+        ).all()
+        bin_map = {str(r.id): r.full_path for r in rows}
+
+    all_serials = {s for item in all_items for s in (item.serial_nos or []) if s}
+    serial_qmeta: dict = {}
+    qseal_params: dict = {}
+    qseal_tracks: dict = {}
+    if all_serials and db:
+        try:
+            from app.models.qseal import QSealParameters, QSealTrack
+
+            params = (
+                db.query(
+                    QSealParameters.serial_number,
+                    QSealParameters.parent_id,
+                    QSealParameters.dispatch_batch,
+                    QSealParameters.manufacturing_date,
+                    QSealParameters.expiry_date,
+                )
+                .filter(
+                    QSealParameters.organization_id == pick_lists[0].organization_id,
+                    QSealParameters.serial_number.in_(all_serials),
+                )
+                .all()
+            )
+            qseal_params = {p.serial_number: p for p in params}
+            serial_qmeta = {
+                p.serial_number: {
+                    "manufacturing_date": (
+                        str(p.manufacturing_date) if p.manufacturing_date else None
+                    ),
+                    "expiry_date": str(p.expiry_date) if p.expiry_date else None,
+                }
+                for p in params
+            }
+            parent_ids = {p.parent_id for p in params if p.parent_id}
+            if parent_ids:
+                tracks = db.query(QSealTrack).filter(
+                    QSealTrack.organization_id == pick_lists[0].organization_id,
+                    QSealTrack.id.in_(parent_ids),
+                ).all()
+                qseal_tracks = {t.id: t for t in tracks}
+        except Exception:
+            pass
+
+    return [
+        _pick_list_to_response(
+            pl,
+            db,
+            item_map=item_map,
+            bin_map=bin_map,
+            serial_qmeta=serial_qmeta,
+            qseal_params=qseal_params,
+            qseal_tracks=qseal_tracks,
+        )
+        for pl in pick_lists
+    ]
 
 
 @router.post(
@@ -1280,7 +1415,7 @@ async def generate_pick_lists_from_order(
         mode=data.mode,
         exclude_out_of_stock=data.exclude_out_of_stock,
     )
-    return [_pick_list_to_response(pl, db) for pl in pick_lists]
+    return _pick_lists_to_responses(pick_lists, db)
 
 
 @router.get(

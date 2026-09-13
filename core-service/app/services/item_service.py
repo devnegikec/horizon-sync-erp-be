@@ -934,9 +934,17 @@ class ItemService:
                 ItemPackagingUnit.is_base_unit.is_(True),
                 ItemPackagingUnit.is_active.is_(True),
             )
+            .order_by(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.created_at.asc(),
+                ItemPackagingUnit.id.asc(),
+            )
             .all()
         )
-        pack_map = {item_id: mpp for item_id, mpp in pack_rows if mpp is not None}
+        pack_map: dict = {}
+        for item_id, mpp in pack_rows:
+            if mpp is not None and item_id not in pack_map:
+                pack_map[item_id] = mpp
 
         # Warehouse-scoped or aggregated stock levels
         if warehouse_id:

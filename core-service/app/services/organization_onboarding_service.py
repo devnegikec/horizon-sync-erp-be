@@ -1251,9 +1251,11 @@ class OrganizationOnboardingService:
                     except Exception as exc:
                         logger.warning(
                             "Inbound automation: failed to create/enqueue QR block "
-                            "for item %s: %s",
+                            "for item %s: %s: %s",
                             getattr(item, "item_code", item.id),
-                            exc,
+                            type(exc).__name__,
+                            getattr(exc, "detail", None) or str(exc),
+                            exc_info=True,
                         )
                         continue
                     try:
@@ -1573,21 +1575,33 @@ class OrganizationOnboardingService:
         return item
 
     def _next_batch_number(self, base: str, organization_id: UUID) -> str:
-        """Append the next sequence to a base batch (e.g. BASE-1, BASE-2)."""
+        """Append the next sequence to a base batch (e.g. BASE-1, BASE-2).
+
+        Matching is case-insensitive to mirror ``batch_exists``, which treats
+        batch labels differing only by case as duplicates. Otherwise a base
+        such as ``Batch-Sep-IPH-17`` would fail to see an existing
+        ``Batch-SEP-IPH-17-1`` and regenerate the same sequence number,
+        tripping the 409 duplicate-batch check in ``create_block_job``.
+        """
+        from sqlalchemy import func
+
         from app.models.qr_block import QRBlock
 
         prefix = f"{base}-"
+        lowered_prefix = prefix.lower()
         rows = (
             self.db.query(QRBlock.batch)
             .filter(
                 QRBlock.organization_id == organization_id,
-                QRBlock.batch.like(f"{prefix}%"),
+                func.lower(QRBlock.batch).like(f"{lowered_prefix}%"),
             )
             .all()
         )
         max_seq = 0
         for (batch,) in rows:
-            suffix = (batch or "").removeprefix(prefix)
+            suffix = (batch or "")
+            if suffix.lower().startswith(lowered_prefix):
+                suffix = suffix[len(prefix):]
             if suffix.isdigit():
                 max_seq = max(max_seq, int(suffix))
         return f"{base}-{max_seq + 1}"
