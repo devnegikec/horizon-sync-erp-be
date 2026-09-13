@@ -650,6 +650,7 @@ def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
                 if item.handling_unit_id
                 else None,
                 "sort_order": item.sort_order or 0,
+                "picked_qty": 0.0,
                 "items": [],
             }
 
@@ -700,6 +701,8 @@ def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
                     box_count=1,
                 )
             )
+
+        groups[parent_key]["picked_qty"] += float(item.picked_qty or 0)
 
     return [PickListItemGroup(**g) for g in groups.values()]
 

@@ -285,6 +285,7 @@ class PickListItemGroup(BaseModel):
     bin_location_path: str | None = None
     handling_unit_id: str | None = None
     sort_order: int = 0
+    picked_qty: float = 0
     items: list[PickListGroupItem] = []
 
 
