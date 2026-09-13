@@ -40,6 +40,9 @@ class QRActivationParameters(Base):
     currency = Column(String(10), nullable=True)
     batch_size = Column(Integer, nullable=True)
     qr_settings = Column(Boolean, default=False)
+    # A settings row is current while history is false.  Activation rows keep
+    # this false for backwards compatibility with the original workflow.
+    history = Column(Boolean, default=False, nullable=False)
     qr_cascade = Column(Boolean, default=False)
     extra_data = Column(JSONB, nullable=True)
 
@@ -63,6 +66,11 @@ class QRActivationParameters(Base):
 
     def __repr__(self):
         return f"<QRActivationParameters(id={self.id}, product_id={self.product_id})>"
+
+    @property
+    def created_on(self):
+        """API-compatible name used by the QSeal activation contract."""
+        return self.created_at
 
 
 

@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.alembic_guards import has_column, has_table
 
 revision = "046_qr_credit_reservations"
 down_revision = "045_expand_item_token_id"
@@ -17,6 +18,14 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # This reservation schema may already be provisioned by the QR service.
+    if (
+        has_table("qr_credit_balance")
+        and has_column("qr_credit_balance", "reserved_credits")
+        and has_table("qr_credit_reservations")
+    ):
+        return
+
     op.add_column(
         "qr_credit_balance",
         sa.Column(

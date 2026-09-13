@@ -8,6 +8,7 @@ Create Date: 2026-08-04
 import sqlalchemy as sa
 
 from alembic import op
+from app.alembic_guards import has_column, has_table
 
 revision = "044_qr_block_artifacts"
 down_revision = "043_qr_credit_management"
@@ -16,30 +17,17 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "qr_blocks",
-        sa.Column("artifact_object_key", sa.Text(), nullable=True),
+    if not has_table("qr_blocks"):
+        return
+    columns = (
+        ("artifact_object_key", sa.Text()),
+        ("artifact_size_bytes", sa.BigInteger()),
+        ("artifact_checksum_sha256", sa.String(length=64)),
+        ("artifact_generated_at", sa.DateTime(timezone=True)),
     )
-    op.add_column(
-        "qr_blocks",
-        sa.Column("artifact_size_bytes", sa.BigInteger(), nullable=True),
-    )
-    op.add_column(
-        "qr_blocks",
-        sa.Column(
-            "artifact_checksum_sha256",
-            sa.String(length=64),
-            nullable=True,
-        ),
-    )
-    op.add_column(
-        "qr_blocks",
-        sa.Column(
-            "artifact_generated_at",
-            sa.DateTime(timezone=True),
-            nullable=True,
-        ),
-    )
+    for name, column_type in columns:
+        if not has_column("qr_blocks", name):
+            op.add_column("qr_blocks", sa.Column(name, column_type, nullable=True))
 
 
 def downgrade() -> None:

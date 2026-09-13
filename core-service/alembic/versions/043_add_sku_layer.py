@@ -11,6 +11,7 @@ import sqlalchemy as sa
 
 import app.models.types
 from alembic import op
+from app.alembic_guards import has_column, has_index, has_table
 
 revision: str = '043_add_sku_layer'
 down_revision: str | None = '042_add_audit_fields_to_qr_activation'
@@ -19,6 +20,22 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # This layer was provisioned out-of-band in some databases.  Preserve
+    # those tables and add only the missing product_items link.
+    sku_tables = (
+        "variant_attributes",
+        "variant_attribute_values",
+        "product_skus",
+        "product_sku_attribute_values",
+    )
+    if all(has_table(table) for table in sku_tables):
+        if has_table("product_items") and not has_column("product_items", "sku_id"):
+            op.add_column("product_items", sa.Column("sku_id", app.models.types.UUID(), nullable=True))
+            if not has_index("product_items", "ix_product_items_sku_id"):
+                op.create_index(op.f("ix_product_items_sku_id"), "product_items", ["sku_id"], unique=False)
+            op.create_foreign_key(None, "product_items", "product_skus", ["sku_id"], ["id"])
+        return
+
     # ── NEW TABLES ─────────────────────────────────────────────────────────────
 
     op.create_table('variant_attributes',

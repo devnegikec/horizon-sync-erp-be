@@ -90,6 +90,7 @@ class ProductItem(Base):
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        Index("ix_product_items_org_token_id", "organization_id", "token_id"),
     )
 
     # Relationships

@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-from app.alembic_guards import has_column, has_constraint, has_index
+from app.alembic_guards import has_column, has_constraint, has_index, has_table
 
 revision = "041_qr_block_integrity"
 down_revision = "040_add_product_shelf_life"
@@ -59,6 +59,8 @@ def _assert_no_active_duplicates() -> None:
 
 
 def upgrade() -> None:
+    if not has_table("qr_blocks"):
+        return
     # Idempotent: this migration can run against databases where the QSeal
     # branch schema was already materialized out-of-band (schema drift).
     def _add_col(name: str, col: sa.Column) -> None:
@@ -142,7 +144,7 @@ def upgrade() -> None:
         )
 
     need_batch_index = not has_index("qr_blocks", "uq_qr_blocks_org_batch_active")
-    need_serial_index = not has_index(
+    need_serial_index = has_table("product_items") and not has_index(
         "product_items", "uq_product_items_org_serial_active"
     )
     if need_batch_index or need_serial_index:
