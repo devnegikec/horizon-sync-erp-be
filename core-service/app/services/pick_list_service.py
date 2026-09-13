@@ -110,6 +110,7 @@ class PickListService:
         status: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        assigned_to: UUID | None = None,
     ) -> tuple[list[dict], dict]:
         items, total = self.repo.list_pick_lists(
             organization_id=organization_id,
@@ -119,6 +120,7 @@ class PickListService:
             status=status,
             sort_by=sort_by,
             sort_order=sort_order,
+            assigned_to=assigned_to,
         )
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
@@ -139,6 +141,7 @@ class PickListService:
         organization_id: UUID,
         warehouse_id: UUID | None = None,
         invoice_reference: str | None = None,
+        assigned_to: UUID | None = None,
     ) -> dict:
         """Return per-status counts for outbound pick lists (unfiltered by status)."""
         query = (
@@ -149,6 +152,8 @@ class PickListService:
             query = query.filter(PickList.warehouse_id == warehouse_id)
         if invoice_reference:
             query = query.filter(PickList.invoice_reference == invoice_reference)
+        if assigned_to is not None:
+            query = query.filter(PickList.assigned_to == assigned_to)
         rows = query.group_by(PickList.status).all()
         counts = {
             (row[0].value if hasattr(row[0], "value") else row[0]): row[1]

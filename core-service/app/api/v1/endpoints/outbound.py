@@ -44,6 +44,7 @@ from app.core.authorization import (
     PICK_LIST_CREATE,
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
+    is_worker_scope,
 )
 from app.models.base import PickListStatus
 from app.core.exceptions import ValidationError
@@ -545,10 +546,13 @@ def _resolve_pick_qseal_context(pl, item_map, db, param_by_serial=None, track_by
     These lookups are optional grouping metadata: on any database error we
     return empty maps so the pick-list response is still produced.
     """
+    # Collect every serial/batch marker on the lines. QSeal child serials will
+    # resolve to parameters below; batch markers simply won't match. This must
+    # NOT be gated on Item.has_serial_no — items can be QR-serialized
+    # (qr_product_id) while that legacy flag is still False.
     serials = {
         s
         for item in (pl.items or [])
-        if item_map.get(str(item.item_id), {}).get("has_serial_no")
         for s in (item.serial_nos or [])
         if s
     }
@@ -605,9 +609,15 @@ def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
         info = item_map.get(str(item.item_id), {})
         sku = info.get("sku")
         product_name = info.get("item_name")
-        is_serialized = bool(info.get("has_serial_no"))
-
         child_serials = [s for s in (item.serial_nos or []) if s]
+
+        # has_serial_no is a legacy WMS flag and can be False even for items
+        # that are QR-serialized (qr_product_id). Treat a line as serialized
+        # when the flag is set OR any of its serial_nos resolves to a QSeal
+        # parameter row; a batch-tracked line's batch marker will not resolve.
+        is_serialized = bool(info.get("has_serial_no")) or any(
+            s in param_by_serial for s in child_serials
+        )
 
         parent_id = None
         if is_serialized:
@@ -1468,6 +1478,13 @@ async def list_pick_lists(
     """
     service = PickListService(db)
 
+    # Warehouse workers only see the pick lists assigned to them.
+    assigned_to = (
+        current_user.id
+        if is_worker_scope(current_user.user_type, current_user.permissions)
+        else None
+    )
+
     pick_lists_data, pagination = service.get_list(
         organization_id=current_user.organization_id,
         page=page,
@@ -1476,12 +1493,14 @@ async def list_pick_lists(
         status=status_filter,
         sort_by=sort_by,
         sort_order=sort_order,
+        assigned_to=assigned_to,
     )
 
     status_counts = service.get_status_counts(
         organization_id=current_user.organization_id,
         warehouse_id=warehouse_id,
         invoice_reference=invoice_reference,
+        assigned_to=assigned_to,
     )
 
     # For the list view, we need to fetch full pick list objects to compute progress
