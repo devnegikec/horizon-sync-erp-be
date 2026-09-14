@@ -31,23 +31,73 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_UOMS = [
     # Quantity
-    {"name": "Piece", "abbreviation": "PCS", "uom_type": "count", "description": "Individual unit or piece"},
-    {"name": "Dozen", "abbreviation": "DOZ", "uom_type": "count", "description": "12 pieces"},
-    {"name": "Pair", "abbreviation": "PR", "uom_type": "count", "description": "Set of two"},
+    {
+        "name": "Piece",
+        "abbreviation": "PCS",
+        "uom_type": "count",
+        "description": "Individual unit or piece",
+    },
+    {
+        "name": "Dozen",
+        "abbreviation": "DOZ",
+        "uom_type": "count",
+        "description": "12 pieces",
+    },
+    {
+        "name": "Pair",
+        "abbreviation": "PR",
+        "uom_type": "count",
+        "description": "Set of two",
+    },
     {
         "name": "Set",
         "abbreviation": "SET",
         "uom_type": "count",
         "description": "Group of items sold together",
     },
-    {"name": "Box", "abbreviation": "BOX", "uom_type": "count", "description": "Standard box packaging"},
-    {"name": "Carton", "abbreviation": "CTN", "uom_type": "count", "description": "Carton packaging"},
-    {"name": "Pack", "abbreviation": "PCK", "uom_type": "count", "description": "Packaged bundle"},
-    {"name": "Roll", "abbreviation": "ROL", "uom_type": "count", "description": "Roll of material"},
-    {"name": "Sheet", "abbreviation": "SHT", "uom_type": "count", "description": "Flat sheet"},
-    {"name": "Bundle", "abbreviation": "BDL", "uom_type": "count", "description": "Bundled items"},
+    {
+        "name": "Box",
+        "abbreviation": "BOX",
+        "uom_type": "count",
+        "description": "Standard box packaging",
+    },
+    {
+        "name": "Carton",
+        "abbreviation": "CTN",
+        "uom_type": "count",
+        "description": "Carton packaging",
+    },
+    {
+        "name": "Pack",
+        "abbreviation": "PCK",
+        "uom_type": "count",
+        "description": "Packaged bundle",
+    },
+    {
+        "name": "Roll",
+        "abbreviation": "ROL",
+        "uom_type": "count",
+        "description": "Roll of material",
+    },
+    {
+        "name": "Sheet",
+        "abbreviation": "SHT",
+        "uom_type": "count",
+        "description": "Flat sheet",
+    },
+    {
+        "name": "Bundle",
+        "abbreviation": "BDL",
+        "uom_type": "count",
+        "description": "Bundled items",
+    },
     # Weight
-    {"name": "Kilogram", "abbreviation": "KG", "uom_type": "weight", "description": "Metric unit of weight"},
+    {
+        "name": "Kilogram",
+        "abbreviation": "KG",
+        "uom_type": "weight",
+        "description": "Metric unit of weight",
+    },
     {
         "name": "Gram",
         "abbreviation": "GM",
@@ -60,8 +110,18 @@ DEFAULT_UOMS = [
         "uom_type": "weight",
         "description": "Metric unit of weight (1/1000 g)",
     },
-    {"name": "Metric Ton", "abbreviation": "MT", "uom_type": "weight", "description": "1000 kilograms"},
-    {"name": "Pound", "abbreviation": "LB", "uom_type": "weight", "description": "Imperial unit of weight"},
+    {
+        "name": "Metric Ton",
+        "abbreviation": "MT",
+        "uom_type": "weight",
+        "description": "1000 kilograms",
+    },
+    {
+        "name": "Pound",
+        "abbreviation": "LB",
+        "uom_type": "weight",
+        "description": "Imperial unit of weight",
+    },
     {
         "name": "Ounce",
         "abbreviation": "OZ",
@@ -69,7 +129,12 @@ DEFAULT_UOMS = [
         "description": "Imperial unit of weight (1/16 lb)",
     },
     # Volume
-    {"name": "Liter", "abbreviation": "LTR", "uom_type": "volume", "description": "Metric unit of volume"},
+    {
+        "name": "Liter",
+        "abbreviation": "LTR",
+        "uom_type": "volume",
+        "description": "Metric unit of volume",
+    },
     {
         "name": "Milliliter",
         "abbreviation": "ML",
@@ -82,9 +147,19 @@ DEFAULT_UOMS = [
         "uom_type": "volume",
         "description": "Metric unit of volume",
     },
-    {"name": "Gallon", "abbreviation": "GAL", "uom_type": "volume", "description": "Imperial unit of volume"},
+    {
+        "name": "Gallon",
+        "abbreviation": "GAL",
+        "uom_type": "volume",
+        "description": "Imperial unit of volume",
+    },
     # Length
-    {"name": "Meter", "abbreviation": "MTR", "uom_type": "length", "description": "Metric unit of length"},
+    {
+        "name": "Meter",
+        "abbreviation": "MTR",
+        "uom_type": "length",
+        "description": "Metric unit of length",
+    },
     {
         "name": "Centimeter",
         "abbreviation": "CM",
@@ -103,7 +178,12 @@ DEFAULT_UOMS = [
         "uom_type": "length",
         "description": "Metric unit of length (1000 m)",
     },
-    {"name": "Inch", "abbreviation": "IN", "uom_type": "length", "description": "Imperial unit of length"},
+    {
+        "name": "Inch",
+        "abbreviation": "IN",
+        "uom_type": "length",
+        "description": "Imperial unit of length",
+    },
     {
         "name": "Foot",
         "abbreviation": "FT",
@@ -130,18 +210,73 @@ DEFAULT_UOMS = [
         "description": "Imperial unit of area",
     },
     # Time / Service
-    {"name": "Hour", "abbreviation": "HR", "uom_type": "time", "description": "Unit of time"},
-    {"name": "Day", "abbreviation": "DAY", "uom_type": "time", "description": "Unit of time (24 hours)"},
-    {"name": "Month", "abbreviation": "MON", "uom_type": "time", "description": "Unit of time"},
-    {"name": "Year", "abbreviation": "YR", "uom_type": "time", "description": "Unit of time (12 months)"},
+    {
+        "name": "Hour",
+        "abbreviation": "HR",
+        "uom_type": "time",
+        "description": "Unit of time",
+    },
+    {
+        "name": "Day",
+        "abbreviation": "DAY",
+        "uom_type": "time",
+        "description": "Unit of time (24 hours)",
+    },
+    {
+        "name": "Month",
+        "abbreviation": "MON",
+        "uom_type": "time",
+        "description": "Unit of time",
+    },
+    {
+        "name": "Year",
+        "abbreviation": "YR",
+        "uom_type": "time",
+        "description": "Unit of time (12 months)",
+    },
     # Other
-    {"name": "Unit", "abbreviation": "UNIT", "uom_type": "other", "description": "Generic unit"},
-    {"name": "Lot", "abbreviation": "LOT", "uom_type": "other", "description": "Batch or lot of items"},
-    {"name": "Pallet", "abbreviation": "PLT", "uom_type": "other", "description": "Pallet load"},
-    {"name": "Container", "abbreviation": "CNT", "uom_type": "other", "description": "Shipping container"},
-    {"name": "Bag", "abbreviation": "BAG", "uom_type": "other", "description": "Bag packaging"},
-    {"name": "Drum", "abbreviation": "DRM", "uom_type": "other", "description": "Drum container"},
-    {"name": "Bottle", "abbreviation": "BTL", "uom_type": "other", "description": "Bottle packaging"},
+    {
+        "name": "Unit",
+        "abbreviation": "UNIT",
+        "uom_type": "other",
+        "description": "Generic unit",
+    },
+    {
+        "name": "Lot",
+        "abbreviation": "LOT",
+        "uom_type": "other",
+        "description": "Batch or lot of items",
+    },
+    {
+        "name": "Pallet",
+        "abbreviation": "PLT",
+        "uom_type": "other",
+        "description": "Pallet load",
+    },
+    {
+        "name": "Container",
+        "abbreviation": "CNT",
+        "uom_type": "other",
+        "description": "Shipping container",
+    },
+    {
+        "name": "Bag",
+        "abbreviation": "BAG",
+        "uom_type": "other",
+        "description": "Bag packaging",
+    },
+    {
+        "name": "Drum",
+        "abbreviation": "DRM",
+        "uom_type": "other",
+        "description": "Drum container",
+    },
+    {
+        "name": "Bottle",
+        "abbreviation": "BTL",
+        "uom_type": "other",
+        "description": "Bottle packaging",
+    },
 ]
 
 # Tax templates: code, name, category, description
@@ -463,8 +598,14 @@ class OrganizationOnboardingService:
         summary: dict = {"organization_id": str(organization_id)}
         for key in ordered_features:
             summary[key] = self._sync_feature(
-                key, organization_id, user_id, now, base_currency, warehouse_id,
-                stock_boost_qty, receive_asn_options,
+                key,
+                organization_id,
+                user_id,
+                now,
+                base_currency,
+                warehouse_id,
+                stock_boost_qty,
+                receive_asn_options,
             )
 
         self.db.commit()
@@ -1171,15 +1312,27 @@ class OrganizationOnboardingService:
         source_warehouse_id = options.get("source_warehouse_id")
 
         steps = self._normalize_inbound_automation_steps(
-            options.get("steps")
-            or list(self.INBOUND_AUTOMATION_STEPS[:3])
+            options.get("steps") or list(self.INBOUND_AUTOMATION_STEPS[:3])
         )
         if isinstance(steps, dict):  # validation error
             return steps
 
-        if target_warehouse_id is None:
-            return {"created": 0, "skipped": 0, "error": "target_warehouse_id is required"}
-        if asn_type == "internal_transfer" and source_warehouse_id is None:
+        # ``qr_blocks`` alone is a documented standalone first step and never
+        # touches a warehouse, so only demand one for the steps that use it.
+        needs_warehouse = any(
+            step in steps for step in ("asn", "receiving_slip", "put_away")
+        )
+        if needs_warehouse and target_warehouse_id is None:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "target_warehouse_id is required",
+            }
+        if (
+            "asn" in steps
+            and asn_type == "internal_transfer"
+            and source_warehouse_id is None
+        ):
             return {
                 "created": 0,
                 "skipped": 0,
@@ -1226,7 +1379,9 @@ class OrganizationOnboardingService:
                     # Parent/child auto-linking is gated by the tenant feature
                     # flag; the master-pack size itself always comes from the
                     # item's base packaging unit (never hardcoded).
-                    master_pack_enabled = is_auto_link_enabled and master_pack_size is not None
+                    master_pack_enabled = (
+                        is_auto_link_enabled and master_pack_size is not None
+                    )
                     try:
                         block = qr_svc.create_block_job(
                             item.qr_product_id,
@@ -1359,8 +1514,9 @@ class OrganizationOnboardingService:
                 UUID(str(w)) for w in (options.get("put_away_worker_ids") or []) if w
             ]
             if put_away_worker_ids:
-                # One put-away list per selected worker; items are split
-                # round-robin (master-pack children kept together).
+                # One put-away list per selected worker; whole SKUs are
+                # assigned to a single worker (master packs kept together) so
+                # the same item is never worked from two lists.
                 put_away = put_away_svc.generate_from_slip_for_workers(
                     slip_id=slip_id,
                     org_id=organization_id,
@@ -1442,9 +1598,7 @@ class OrganizationOnboardingService:
         from app.repositories.feature_flag_repository import FeatureFlagRepository
 
         repo = FeatureFlagRepository(self.db)
-        flag = repo.get_by_name_for_tenant(
-            QR_AUTO_LINK_PARENT_CHILD, organization_id
-        )
+        flag = repo.get_by_name_for_tenant(QR_AUTO_LINK_PARENT_CHILD, organization_id)
         if flag is None:
             flag = repo.get_by_name(QR_AUTO_LINK_PARENT_CHILD, scope="GLOBAL")
         if flag is None:
@@ -1599,9 +1753,9 @@ class OrganizationOnboardingService:
         )
         max_seq = 0
         for (batch,) in rows:
-            suffix = (batch or "")
+            suffix = batch or ""
             if suffix.lower().startswith(lowered_prefix):
-                suffix = suffix[len(prefix):]
+                suffix = suffix[len(prefix) :]
             if suffix.isdigit():
                 max_seq = max(max_seq, int(suffix))
         return f"{base}-{max_seq + 1}"
