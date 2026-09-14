@@ -474,7 +474,8 @@ def _build_response(
     description=(
         "Generate one or more put-away lists with bin assignments from an "
         "approved receiving slip. Pass ``worker_ids`` to split the work into "
-        "one list per worker."
+        "one list per worker (divided by SKU so the same item is never handed "
+        "to two workers)."
     ),
 )
 async def generate_put_away_from_slip(
@@ -497,6 +498,10 @@ async def generate_put_away_from_slip(
 
     **Request Body (optional):**
     - **worker_id**: Optional UUID of the worker to assign the put-away task to
+    - **worker_ids**: Optional list of worker UUIDs. When present, one put-away
+      list is created per worker and whole SKUs are assigned to a single
+      worker, so the same item is never put away from two lists at once.
+    - **mode**: Optional `auto` (bin assignment) or `manual` (worker picks bins)
 
     **Returns:** The created PutAwayList with items assigned to bins
 
@@ -516,9 +521,7 @@ async def generate_put_away_from_slip(
         )
         qseal_ctx = _fetch_qseal_context(db, lists)
         return PutAwayListBatchResponse(
-            put_away_lists=[
-                _build_response(db, pal, qseal_ctx) for pal in lists
-            ]
+            put_away_lists=[_build_response(db, pal, qseal_ctx) for pal in lists]
         )
 
     put_away_list = service.generate_from_slip(

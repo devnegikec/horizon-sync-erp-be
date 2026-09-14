@@ -147,9 +147,11 @@ class PutAwayService:
     ) -> list[PutAwayList]:
         """Generate one put-away list per worker, distributing slip items.
 
-        Splits the eligible slip lines across the given workers (round-robin)
-        and creates a separate PutAwayList for each worker, each assigned to
-        that worker and accompanied by a worker task.
+        Work is divided by SKU: every SKU goes to exactly one worker so two
+        people never put away the same item (into the same bin) at once. Master
+        packs are kept whole on a single worker and the split is balanced by
+        quantity. Only when the slip carries fewer SKUs than workers is a SKU
+        broken up, and then only on master-pack boundaries.
 
         Args:
             slip_id: The receiving slip ID to generate put-away from.
@@ -188,19 +190,26 @@ class PutAwayService:
                 )
             ]
 
-        # Keep all children of the same master-pack (parent) on one worker so a
-        # physical carton is not split across multiple put-away lists.
-        groups = self._group_specs_by_parent(item_specs, org_id)
-        chunks = self._distribute_round_robin(groups, len(workers))
+        # Split by SKU, keeping all children of the same master-pack (parent)
+        # together: a worker receives whole SKUs, so the same item is never
+        # worked from two lists, and no physical carton is split either.
+        sku_groups = self._group_specs_by_sku(item_specs, org_id)
+        chunks = self._distribute_balanced(sku_groups, len(workers))
+
+        from app.services.task_service import TaskService
+
+        task_service = TaskService(self.db)
         lists: list[PutAwayList] = []
-        for worker_id, chunk in zip(workers, chunks):
-            if not chunk:
-                # More workers than groups — skip empty chunks.
-                continue
-            worker_specs = [spec for group in chunk for spec in group]
-            number = numbering.get_next_number(org_id, "put_away_list")
-            lists.append(
-                self._create_list_from_specs(
+        # The whole split is written in one transaction: a failure part-way
+        # through must not leave committed lists (or a moved slip status)
+        # behind, which would block a retry with a partial split.
+        try:
+            for worker_id, worker_specs in zip(workers, chunks, strict=True):
+                if not worker_specs:
+                    # More workers than distributable units — skip empty chunks.
+                    continue
+                number = numbering.get_next_number(org_id, "put_away_list")
+                put_away_list = self._create_list_from_specs(
                     slip=slip,
                     org_id=org_id,
                     mode=mode,
@@ -208,35 +217,127 @@ class PutAwayService:
                     worker_id=worker_id,
                     warnings_parts=warnings_parts,
                     put_away_number=number,
+                    commit=False,
                 )
-            )
-
-        # Nothing eligible (all lines skipped) — still return a single list so
-        # the caller sees the warnings, mirroring single-worker behaviour.
-        if not lists:
-            number = numbering.get_next_number(org_id, "put_away_list")
-            lists.append(
-                self._create_list_from_specs(
-                    slip=slip,
+                task_service.create_task(
+                    task_type="put_away",
+                    worker_id=worker_id,
+                    reference_id=put_away_list.id,
                     org_id=org_id,
-                    mode=mode,
-                    item_specs=[],
-                    worker_id=None,
-                    warnings_parts=warnings_parts,
-                    put_away_number=number,
+                    commit=False,
                 )
-            )
+                lists.append(put_away_list)
+
+            # Nothing eligible (all lines skipped) — still return a single list
+            # so the caller sees the warnings, mirroring single-worker behaviour.
+            if not lists:
+                number = numbering.get_next_number(org_id, "put_away_list")
+                lists.append(
+                    self._create_list_from_specs(
+                        slip=slip,
+                        org_id=org_id,
+                        mode=mode,
+                        item_specs=[],
+                        worker_id=None,
+                        warnings_parts=warnings_parts,
+                        put_away_number=number,
+                        commit=False,
+                    )
+                )
+
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        for put_away_list in lists:
+            self.db.refresh(put_away_list)
         return lists
 
     # ── Put-away generation helpers ─────────────────────────────────────────
 
     @staticmethod
-    def _distribute_round_robin(items: list, count: int) -> list[list]:
-        """Distribute items across ``count`` buckets round-robin."""
-        buckets: list[list] = [[] for _ in range(count)]
-        for idx, item in enumerate(items):
-            buckets[idx % count].append(item)
-        return buckets
+    def _unit_quantity(unit: list[list[dict]]) -> Decimal:
+        """Total quantity of a distributable unit (a SKU or a master pack)."""
+        return sum(
+            (spec["quantity"] for carton in unit for spec in carton),
+            Decimal("0"),
+        )
+
+    @classmethod
+    def _distribute_balanced(
+        cls, sku_groups: list[list[list[dict]]], count: int
+    ) -> list[list[dict]]:
+        """Spread put-away work over ``count`` workers, one SKU per worker.
+
+        ``sku_groups`` holds one entry per SKU, each expressed as that SKU's
+        master-pack (carton) groups, so the carton structure stays available
+        while distributing.
+
+        Whole SKUs are handed out largest-first to the least-loaded worker, so
+        a SKU is never worked from two lists at once and the loads stay even.
+        Only when there are fewer SKUs than workers is a SKU broken up — and
+        then on master-pack boundaries, never mid-carton.
+
+        Returns one flat list of specs per worker (empty lists included for
+        workers that received nothing).
+        """
+        if count <= 0:
+            return []
+
+        # Units still to be handed out. Each unit keeps its carton structure.
+        units: list[list[list[dict]]] = list(sku_groups)
+
+        # Fewer SKUs than workers: expand the biggest SKUs into single-carton
+        # units until every worker can be given something to do.
+        while len(units) < count:
+            split_idx = -1
+            split_qty = Decimal("-1")
+            for idx, unit in enumerate(units):
+                if len(unit) <= 1:
+                    continue
+                qty = cls._unit_quantity(unit)
+                if qty > split_qty:
+                    split_idx, split_qty = idx, qty
+            if split_idx < 0:
+                break
+            largest = units.pop(split_idx)
+            units.extend([[carton] for carton in largest])
+
+        buckets: list[list[list[dict]]] = [[] for _ in range(count)]
+        loads = [Decimal("0")] * count
+        # Largest-first greedy (LPT) keeps the final per-worker load as even as
+        # possible; the index tie-break keeps the result deterministic.
+        for _, unit in sorted(
+            enumerate(units),
+            key=lambda pair: (-cls._unit_quantity(pair[1]), pair[0]),
+        ):
+            target = min(range(count), key=lambda i: (loads[i], i))
+            buckets[target].append(unit)
+            loads[target] += cls._unit_quantity(unit)
+
+        return [
+            [spec for unit in bucket for carton in unit for spec in carton]
+            for bucket in buckets
+        ]
+
+    def _group_specs_by_sku(
+        self, item_specs: list[dict], org_id: UUID
+    ) -> list[list[list[dict]]]:
+        """Group specs by SKU, keeping master-pack (carton) children together.
+
+        Returns one entry per SKU in first-appearance order. Each entry is the
+        SKU's list of carton groups (see ``_group_specs_by_parent``); splitting
+        a SKU across workers would mean two people putting away the same item
+        into the same bin concurrently, so the SKU — not the carton — is the
+        unit work is divided by.
+        """
+        by_sku: dict[str, list[list[dict]]] = {}
+        for carton in self._group_specs_by_parent(item_specs, org_id):
+            # A master pack carries a single SKU; its first spec identifies it.
+            sku = str(carton[0].get("sku") or "")
+            by_sku.setdefault(sku, []).append(carton)
+        return list(by_sku.values())
 
     def _group_specs_by_parent(
         self, item_specs: list[dict], org_id: UUID
@@ -246,7 +347,7 @@ class PutAwayService:
         Child serials are stored in each spec's ``batch_number``; their shared
         parent box is resolved via ``qseal_parameters.parent_id``. Specs without
         a parent (or without a resolvable child serial) are each treated as an
-        individual group so they can still be distributed across workers.
+        individual carton so a lone unit is never mixed into another pack.
         """
         from app.models.qseal import QSealParameters
 
@@ -510,7 +611,9 @@ class PutAwayService:
                     {
                         "item_id": item.id,
                         "sku": line["sku"],
-                        "batch_number": split_serials[0] if split_serials else batch_number,
+                        "batch_number": split_serials[0]
+                        if split_serials
+                        else batch_number,
                         "quantity": assignment["quantity"],
                         "bin_location_id": assignment["bin_location_id"],
                         "serial_nos": split_serials or None,
@@ -553,8 +656,14 @@ class PutAwayService:
         worker_id: UUID | None,
         warnings_parts: list[str],
         put_away_number: str,
+        commit: bool = True,
     ) -> PutAwayList:
-        """Persist one PutAwayList and its items from pre-built specs."""
+        """Persist one PutAwayList and its items from pre-built specs.
+
+        ``commit=False`` leaves the write in the caller's transaction so a
+        multi-worker split can commit (or roll back) as a single unit; the
+        caller then owns creating the worker task.
+        """
         put_away_list = PutAwayList(
             organization_id=org_id,
             warehouse_id=slip.warehouse_id,
@@ -617,6 +726,12 @@ class PutAwayService:
         slip.status = "putaway_in_progress" if put_away_items else "putaway_complete"
         slip.updated_at = datetime.now(UTC)
 
+        # A deferred-commit caller owns the transaction (and the worker task),
+        # so the whole multi-worker split lands or fails as one unit.
+        if not commit:
+            self.db.flush()
+            return put_away_list
+
         self.db.commit()
 
         # Create a worker task via TaskService if worker_id is provided
@@ -654,9 +769,7 @@ class PutAwayService:
                 ScannedItemTracking.put_away_item_id.is_(None),
             )
             if serial_nos:
-                query = query.filter(
-                    ScannedItemTracking.batch_number.in_(serial_nos)
-                )
+                query = query.filter(ScannedItemTracking.batch_number.in_(serial_nos))
             else:
                 query = query.filter(
                     ScannedItemTracking.batch_number == item.batch_number
