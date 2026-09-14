@@ -1317,13 +1317,22 @@ class OrganizationOnboardingService:
         if isinstance(steps, dict):  # validation error
             return steps
 
-        if target_warehouse_id is None:
+        # ``qr_blocks`` alone is a documented standalone first step and never
+        # touches a warehouse, so only demand one for the steps that use it.
+        needs_warehouse = any(
+            step in steps for step in ("asn", "receiving_slip", "put_away")
+        )
+        if needs_warehouse and target_warehouse_id is None:
             return {
                 "created": 0,
                 "skipped": 0,
                 "error": "target_warehouse_id is required",
             }
-        if asn_type == "internal_transfer" and source_warehouse_id is None:
+        if (
+            "asn" in steps
+            and asn_type == "internal_transfer"
+            and source_warehouse_id is None
+        ):
             return {
                 "created": 0,
                 "skipped": 0,

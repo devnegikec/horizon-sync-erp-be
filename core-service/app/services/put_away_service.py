@@ -195,14 +195,21 @@ class PutAwayService:
         # worked from two lists, and no physical carton is split either.
         sku_groups = self._group_specs_by_sku(item_specs, org_id)
         chunks = self._distribute_balanced(sku_groups, len(workers))
+
+        from app.services.task_service import TaskService
+
+        task_service = TaskService(self.db)
         lists: list[PutAwayList] = []
-        for worker_id, worker_specs in zip(workers, chunks, strict=True):
-            if not worker_specs:
-                # More workers than distributable units — skip empty chunks.
-                continue
-            number = numbering.get_next_number(org_id, "put_away_list")
-            lists.append(
-                self._create_list_from_specs(
+        # The whole split is written in one transaction: a failure part-way
+        # through must not leave committed lists (or a moved slip status)
+        # behind, which would block a retry with a partial split.
+        try:
+            for worker_id, worker_specs in zip(workers, chunks, strict=True):
+                if not worker_specs:
+                    # More workers than distributable units — skip empty chunks.
+                    continue
+                number = numbering.get_next_number(org_id, "put_away_list")
+                put_away_list = self._create_list_from_specs(
                     slip=slip,
                     org_id=org_id,
                     mode=mode,
@@ -210,24 +217,41 @@ class PutAwayService:
                     worker_id=worker_id,
                     warnings_parts=warnings_parts,
                     put_away_number=number,
+                    commit=False,
                 )
-            )
-
-        # Nothing eligible (all lines skipped) — still return a single list so
-        # the caller sees the warnings, mirroring single-worker behaviour.
-        if not lists:
-            number = numbering.get_next_number(org_id, "put_away_list")
-            lists.append(
-                self._create_list_from_specs(
-                    slip=slip,
+                task_service.create_task(
+                    task_type="put_away",
+                    worker_id=worker_id,
+                    reference_id=put_away_list.id,
                     org_id=org_id,
-                    mode=mode,
-                    item_specs=[],
-                    worker_id=None,
-                    warnings_parts=warnings_parts,
-                    put_away_number=number,
+                    commit=False,
                 )
-            )
+                lists.append(put_away_list)
+
+            # Nothing eligible (all lines skipped) — still return a single list
+            # so the caller sees the warnings, mirroring single-worker behaviour.
+            if not lists:
+                number = numbering.get_next_number(org_id, "put_away_list")
+                lists.append(
+                    self._create_list_from_specs(
+                        slip=slip,
+                        org_id=org_id,
+                        mode=mode,
+                        item_specs=[],
+                        worker_id=None,
+                        warnings_parts=warnings_parts,
+                        put_away_number=number,
+                        commit=False,
+                    )
+                )
+
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        for put_away_list in lists:
+            self.db.refresh(put_away_list)
         return lists
 
     # ── Put-away generation helpers ─────────────────────────────────────────
@@ -632,8 +656,14 @@ class PutAwayService:
         worker_id: UUID | None,
         warnings_parts: list[str],
         put_away_number: str,
+        commit: bool = True,
     ) -> PutAwayList:
-        """Persist one PutAwayList and its items from pre-built specs."""
+        """Persist one PutAwayList and its items from pre-built specs.
+
+        ``commit=False`` leaves the write in the caller's transaction so a
+        multi-worker split can commit (or roll back) as a single unit; the
+        caller then owns creating the worker task.
+        """
         put_away_list = PutAwayList(
             organization_id=org_id,
             warehouse_id=slip.warehouse_id,
@@ -695,6 +725,12 @@ class PutAwayService:
         # it does not stay stuck with no pending item to trigger completion.
         slip.status = "putaway_in_progress" if put_away_items else "putaway_complete"
         slip.updated_at = datetime.now(UTC)
+
+        # A deferred-commit caller owns the transaction (and the worker task),
+        # so the whole multi-worker split lands or fails as one unit.
+        if not commit:
+            self.db.flush()
+            return put_away_list
 
         self.db.commit()
 
