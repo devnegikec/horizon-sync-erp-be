@@ -522,22 +522,41 @@ class OutboundOrderService:
         if effective_per_case is None or Decimal(str(effective_per_case)) <= 0:
             from app.models.item_packaging_unit import ItemPackagingUnit
 
-            master = (
+            # Prefer the base packaging unit's items_per_master_pack — the WMS
+            # stores the master-pack size on the base "Each" unit for
+            # QR/master-pack items. Fall back to a case-level (non-base) unit's
+            # conversion factor when no base pack size is configured.
+            base = (
                 self.db.query(ItemPackagingUnit)
                 .filter(
                     ItemPackagingUnit.item_id == item_id,
                     ItemPackagingUnit.organization_id == org_id,
                     ItemPackagingUnit.is_active.is_(True),
-                    ItemPackagingUnit.is_base_unit.is_(False),
+                    ItemPackagingUnit.is_base_unit.is_(True),
+                    ItemPackagingUnit.items_per_master_pack.isnot(None),
+                    ItemPackagingUnit.items_per_master_pack > 1,
                 )
-                .order_by(ItemPackagingUnit.conversion_factor.asc())
                 .first()
             )
-            if master is not None:
-                if master.items_per_master_pack is not None:
-                    effective_per_case = Decimal(str(master.items_per_master_pack))
-                elif master.conversion_factor is not None:
-                    effective_per_case = Decimal(str(master.conversion_factor))
+            if base is not None:
+                effective_per_case = Decimal(str(base.items_per_master_pack))
+            else:
+                master = (
+                    self.db.query(ItemPackagingUnit)
+                    .filter(
+                        ItemPackagingUnit.item_id == item_id,
+                        ItemPackagingUnit.organization_id == org_id,
+                        ItemPackagingUnit.is_active.is_(True),
+                        ItemPackagingUnit.is_base_unit.is_(False),
+                    )
+                    .order_by(ItemPackagingUnit.conversion_factor.asc())
+                    .first()
+                )
+                if master is not None:
+                    if master.items_per_master_pack is not None:
+                        effective_per_case = Decimal(str(master.items_per_master_pack))
+                    elif master.conversion_factor is not None:
+                        effective_per_case = Decimal(str(master.conversion_factor))
 
         effective_case = case_qty
         effective_loose = loose_qty

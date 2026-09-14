@@ -42,6 +42,7 @@ DEFAULT_UOMS = [
     },
     {"name": "Box", "abbreviation": "BOX", "uom_type": "count", "description": "Standard box packaging"},
     {"name": "Carton", "abbreviation": "CTN", "uom_type": "count", "description": "Carton packaging"},
+    {"name": "Case", "abbreviation": "CS", "uom_type": "count", "description": "Case packaging"},
     {"name": "Pack", "abbreviation": "PCK", "uom_type": "count", "description": "Packaged bundle"},
     {"name": "Roll", "abbreviation": "ROL", "uom_type": "count", "description": "Roll of material"},
     {"name": "Sheet", "abbreviation": "SHT", "uom_type": "count", "description": "Flat sheet"},

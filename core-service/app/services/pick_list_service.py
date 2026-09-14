@@ -561,6 +561,43 @@ class PickListService:
         if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
             order.status = OutboundOrderStatus.COMPLETED
 
+    def _revert_order_if_all_cancelled(self, order_id: UUID, org_id: UUID) -> None:
+        """Revert an outbound order to `confirmed` when all its pick lists are
+        cancelled (inverse of ``_reconcile_order``).
+
+        Cancelling a pick list must not leave the source order stuck in
+        ``pending_picking`` with no active pick lists. When every sibling pick
+        list of the order has been cancelled, restore the order to ``confirmed``
+        so a fresh set of pick lists can be generated.
+        """
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        siblings = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id == order_id,
+            )
+            .all()
+        )
+        if not siblings or not all(
+            pl.status == PickListStatus.CANCELLED for pl in siblings
+        ):
+            return
+
+        order = (
+            self.db.query(OutboundOrder)
+            .filter(
+                OutboundOrder.id == order_id,
+                OutboundOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
+            order.status = OutboundOrderStatus.CONFIRMED
+
     # ------------------------------------------------------------------
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
     # ------------------------------------------------------------------
@@ -1153,6 +1190,12 @@ class PickListService:
 
         # Release bin reservations for this pick list (requirement A1).
         self.release_pick_reservations(pick_list, org_id)
+
+        # Revert the source outbound order to `confirmed` when none of its pick
+        # lists remain active, so it can be re-picked instead of staying stuck
+        # in `pending_picking`.
+        if pick_list.reference_type == "outbound_order" and pick_list.reference_id:
+            self._revert_order_if_all_cancelled(pick_list.reference_id, org_id)
 
         self.db.commit()
         self.db.refresh(pick_list)
