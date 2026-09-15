@@ -360,11 +360,22 @@ class PickListService:
             .all()
         }
 
+        # Track bin-stock rows already allocated to earlier items of this pick
+        # list so the same serial/stock row is never assigned twice (e.g. when
+        # an order line is split into several master-pack lines of the same SKU).
+        allocated_stock: dict[UUID, Decimal] = {}
+
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
 
             # Query bin stock levels for this item using FEFO then FIFO:
             # earliest expiry first (NULLs last), then oldest arrival.
+            # Scope strictly to the pick list's warehouse so stock in other
+            # warehouses (e.g. the mother warehouse) is never assigned, and
+            # skip stock rows already fully allocated to earlier lines.
+            exhausted_ids = [
+                sid for sid, remaining in allocated_stock.items() if remaining <= 0
+            ]
             bin_stocks = (
                 self.db.query(BinStockLevel)
                 .join(
@@ -376,7 +387,10 @@ class PickListService:
                     BinStockLevel.organization_id == org_id,
                     BinStockLevel.quantity_on_hand > 0,
                     BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
+                    BinStockLevel.id.notin_(exhausted_ids),
+                    WarehouseLocation.warehouse_id == pick_list.warehouse_id,
                     WarehouseLocation.is_pickable.is_(True),
+                    WarehouseLocation.is_active.is_(True),
                 )
                 .order_by(
                     BinStockLevel.expiry_date.asc().nullslast(),
@@ -402,11 +416,17 @@ class PickListService:
                 if remaining_qty <= 0:
                     break
 
-                available = Decimal(str(bin_stock.quantity_on_hand))
-                allocate_qty = min(remaining_qty, available)
+                row_remaining = allocated_stock.get(
+                    bin_stock.id, Decimal(str(bin_stock.quantity_on_hand))
+                )
+                if row_remaining <= 0:
+                    continue
+
+                allocate_qty = min(remaining_qty, row_remaining)
                 allocations.append(
                     (bin_stock.bin_location_id, allocate_qty, bin_stock.batch_number)
                 )
+                allocated_stock[bin_stock.id] = row_remaining - allocate_qty
                 remaining_qty -= allocate_qty
 
             if len(allocations) == 0:
@@ -1306,8 +1326,11 @@ class PickListService:
 
         if pick_list.accepted_at is None:
             pick_list.accepted_at = datetime.now(UTC)
-        pick_list.accepted_by = worker_id
-        pick_list.assigned_to = worker_id
+            pick_list.accepted_by = worker_id
+            # Preserve an existing auto/manual assignment; only fall back to
+            # the accepting worker when the task is still unassigned.
+            if pick_list.assigned_to is None:
+                pick_list.assigned_to = worker_id
         if pick_list.status in (
             PickListStatus.DRAFT,
             PickListStatus.CONFIRMED,

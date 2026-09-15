@@ -137,10 +137,16 @@ async def reset_warehouse_layout(
     """Delete ALL floor plans and locations for a warehouse.
 
     This is a destructive action — use to start fresh.
-    Locations with stock are soft-deleted; stockless locations are hard-deleted.
+    Active pick and put-away work is cancelled first, then locations are
+    soft-deactivated and their dependent data (bin stock, reservations) is
+    removed so no stale location data remains for future assignment.
     Floor plan records are hard-deleted.
     """
     from app.models.warehouse_location import WarehouseLocation
+    from app.models.pick_list import PickList
+    from app.models.put_away_list import PutAwayList
+    from app.models.base import PickListStatus
+    from app.services.pick_list_service import PickListService
 
     # Delete all floor plans for this warehouse
     plans_deleted = (
@@ -152,15 +158,52 @@ async def reset_warehouse_layout(
         .delete(synchronize_session='fetch')
     )
 
-    # Delete all locations (hard-delete stockless, soft-delete with stock)
+    # Cancel active pick work first so no pick items keep pointing at bin stock
+    # that is about to be cleared (otherwise later scans fail on missing stock).
+    active_pick_statuses = [
+        PickListStatus.DRAFT.value,
+        PickListStatus.CONFIRMED.value,
+        PickListStatus.PENDING_PICKING.value,
+        PickListStatus.IN_PROGRESS.value,
+    ]
+    active_pick_lists = (
+        db.query(PickList)
+        .filter(
+            PickList.warehouse_id == warehouse_id,
+            PickList.organization_id == current_user.organization_id,
+            PickList.status.in_(active_pick_statuses),
+        )
+        .all()
+    )
+    pick_service = PickListService(db)
+    for pl in active_pick_lists:
+        pick_service.cancel_pick_list(pl.id, current_user.organization_id)
+
+    # Cancel active put-away lists for the same reason.
+    putaway_cancelled = (
+        db.query(PutAwayList)
+        .filter(
+            PutAwayList.warehouse_id == warehouse_id,
+            PutAwayList.organization_id == current_user.organization_id,
+            PutAwayList.status != "completed",
+        )
+        .update({"status": "cancelled"}, synchronize_session="fetch")
+    )
+
+    # Soft-deactivate all pickable locations and clear their dependent data
+    # (bin stock, reservations) so nothing stale survives.
     service = FloorPlanGeneratorService(db)
-    locations_removed = service._deactivate_existing(warehouse_id, current_user.organization_id)
+    locations_removed = service._deactivate_existing(
+        warehouse_id, current_user.organization_id, clear_stock=True
+    )
 
     db.commit()
     return {
         "warehouse_id": warehouse_id,
         "plans_deleted": plans_deleted,
         "locations_removed": locations_removed,
+        "pick_lists_cancelled": len(active_pick_lists),
+        "put_away_lists_cancelled": putaway_cancelled,
     }
 
 
