@@ -87,8 +87,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
 
-    # Detach the 'Case' packaging type from the Case UOM before deleting it
-    # (the FK on packaging_types.uom_id has no ON DELETE action).
+    # Detach only the 'Case' packaging type that this migration pointed at the
+    # Case UOM (it previously fell back to a generic count UOM such as PCS/EA).
+    # The FK on packaging_types.uom_id has no ON DELETE action.
     bind.execute(
         sa.text(
             """
@@ -96,17 +97,28 @@ def downgrade() -> None:
             SET uom_id = NULL
             FROM uoms u
             WHERE pt.uom_id = u.id
+              AND LOWER(pt.code) = 'case'
               AND (LOWER(u.name) = 'case'
                    OR LOWER(u.abbreviation) IN ('cs', 'case'))
             """
         )
     )
 
+    # Delete only the Case UOMs this migration inserted — Case/CS count UOMs
+    # that are no longer referenced by any packaging type. This avoids removing
+    # pre-existing Case UOMs or any still referenced by other packaging types.
     bind.execute(
         sa.text(
             """
-            DELETE FROM uoms
-            WHERE LOWER(name) = 'case' AND LOWER(abbreviation) = 'cs'
+            DELETE FROM uoms u
+            WHERE LOWER(u.name) = 'case'
+              AND LOWER(u.abbreviation) = 'cs'
+              AND u.uom_type = 'count'
+              AND u.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM packaging_types pt
+                  WHERE pt.uom_id = u.id
+              )
             """
         )
     )

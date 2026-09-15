@@ -25,30 +25,6 @@ class PackingSlipService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _unit_serials_for_lines(self, items: list, org_id: UUID) -> set[str]:
-        """Return the line ``serial_nos`` that are QSeal child (unit) serials.
-
-        Serialized lines record each picked unit in ``serial_nos``; batch-
-        tracked lines store their batch marker there instead. Only entries that
-        resolve to a ``QSealParameters`` row are unit serials, so the packing
-        slip can fall back to the serial count when ``picked_qty`` wasn't
-        recorded (QR-serialized items where ``has_serial_no`` is False).
-        """
-        serials = {s for item in items for s in (item.serial_nos or []) if s}
-        if not serials:
-            return set()
-        from app.models.qseal import QSealParameters
-
-        rows = (
-            self.db.query(QSealParameters.serial_number)
-            .filter(
-                QSealParameters.organization_id == org_id,
-                QSealParameters.serial_number.in_(serials),
-            )
-            .all()
-        )
-        return {r.serial_number for r in rows}
-
     # ------------------------------------------------------------------
     # CREATE
     # ------------------------------------------------------------------
@@ -134,28 +110,11 @@ class PackingSlipService:
         self.db.add(slip)
         self.db.flush()
 
-        # Serialized lines track picked units by serial; resolve which line
-        # serials are QSeal child serials so we can fall back to the serial
-        # count when picked_qty wasn't recorded on the line.
-        all_items = [
-            pli
-            for order in orders
-            for pl in pick_lists_by_order.get(order.id, [])
-            for pli in pl.items
-        ]
-        qseal_unit_serials = self._unit_serials_for_lines(all_items, org_id)
-
         sort_order = 0
         for order in orders:
             for pl in pick_lists_by_order.get(order.id, []):
                 for pli in pl.items:
                     picked = Decimal(str(pli.picked_qty or 0))
-                    if picked <= 0:
-                        unit_serials = [
-                            s for s in (pli.serial_nos or []) if s in qseal_unit_serials
-                        ]
-                        if unit_serials:
-                            picked = Decimal(len(unit_serials))
                     if picked <= 0:
                         continue
                     self.db.add(
@@ -271,20 +230,11 @@ class PackingSlipService:
         sort_order = (
             max((i.sort_order or 0) for i in slip.items) + 1 if slip.items else 0
         )
-        qseal_unit_serials = self._unit_serials_for_lines(
-            [pli for pl in pick_lists for pli in pl.items], org_id
-        )
         added = 0
         for pl in pick_lists:
             order_id = pl.reference_id if pl.reference_type == "outbound_order" else None
             for pli in pl.items:
                 picked = Decimal(str(pli.picked_qty or 0))
-                if picked <= 0:
-                    unit_serials = [
-                        s for s in (pli.serial_nos or []) if s in qseal_unit_serials
-                    ]
-                    if unit_serials:
-                        picked = Decimal(len(unit_serials))
                 if picked <= 0:
                     continue
                 self.db.add(
@@ -523,6 +473,13 @@ class PackingSlipService:
             raise ResourceNotFoundException(f"Packing slip {slip_id} not found")
         return slip
 
+    @staticmethod
+    def _is_serialized_item(info: Item | None) -> bool:
+        """True when an item tracks unit serials (legacy flag or QR link)."""
+        return info is not None and (
+            info.has_serial_no or info.qr_product_id is not None
+        )
+
     def _qseal_context(
         self, slip: PackingSlip, items_by_id: dict[UUID, Item]
     ) -> tuple[dict, dict]:
@@ -532,13 +489,15 @@ class PackingSlipService:
         serials), so they are excluded here — which also avoids the lookup for
         batch-only slips.
         """
-        # Collect every serial/batch marker on the slip lines. QSeal child
-        # serials will resolve to parameters below; batch markers simply won't
-        # match. This must NOT be gated on Item.has_serial_no — items can be
-        # QR-serialized (qr_product_id) while that legacy flag is still False.
+        # Collect the serials on serialized lines only. QSeal child serials
+        # resolve to parameters below; batch markers never match, so excluding
+        # batch-tracked lines keeps the IN clause small. Gate on has_serial_no
+        # OR qr_product_id — items can be QR-serialized (qr_product_id) while
+        # the legacy has_serial_no flag is still False.
         serials = {
             s
             for item in slip.items
+            if self._is_serialized_item(items_by_id.get(item.item_id))
             for s in (item.serial_nos or [])
             if s
         }

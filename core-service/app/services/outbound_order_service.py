@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -541,6 +541,9 @@ class OutboundOrderService:
             if base is not None:
                 effective_per_case = Decimal(str(base.items_per_master_pack))
             else:
+                # Fall back to a non-base (case-level) unit with a meaningful
+                # pack size. Exclude factors <= 1 so a no-op "pack of 1" can't
+                # override a valid case size and produce an incorrect split.
                 master = (
                     self.db.query(ItemPackagingUnit)
                     .filter(
@@ -548,14 +551,24 @@ class OutboundOrderService:
                         ItemPackagingUnit.organization_id == org_id,
                         ItemPackagingUnit.is_active.is_(True),
                         ItemPackagingUnit.is_base_unit.is_(False),
+                        or_(
+                            ItemPackagingUnit.conversion_factor > 1,
+                            ItemPackagingUnit.items_per_master_pack > 1,
+                        ),
                     )
                     .order_by(ItemPackagingUnit.conversion_factor.asc())
                     .first()
                 )
                 if master is not None:
-                    if master.items_per_master_pack is not None:
+                    if (
+                        master.items_per_master_pack is not None
+                        and master.items_per_master_pack > 1
+                    ):
                         effective_per_case = Decimal(str(master.items_per_master_pack))
-                    elif master.conversion_factor is not None:
+                    elif (
+                        master.conversion_factor is not None
+                        and Decimal(str(master.conversion_factor)) > 1
+                    ):
                         effective_per_case = Decimal(str(master.conversion_factor))
 
         effective_case = case_qty
