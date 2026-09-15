@@ -137,7 +137,9 @@ async def reset_warehouse_layout(
     """Delete ALL floor plans and locations for a warehouse.
 
     This is a destructive action — use to start fresh.
-    Locations with stock are soft-deleted; stockless locations are hard-deleted.
+    Locations are soft-deactivated and their dependent data (bin stock,
+    reservations, allocations) is removed so no stale location data remains
+    for future pick/put-away assignment.
     Floor plan records are hard-deleted.
     """
     from app.models.warehouse_location import WarehouseLocation
@@ -152,9 +154,12 @@ async def reset_warehouse_layout(
         .delete(synchronize_session='fetch')
     )
 
-    # Delete all locations (hard-delete stockless, soft-delete with stock)
+    # Soft-deactivate all pickable locations and clear their dependent data
+    # (bin stock, reservations, allocations) so nothing stale survives.
     service = FloorPlanGeneratorService(db)
-    locations_removed = service._deactivate_existing(warehouse_id, current_user.organization_id)
+    locations_removed = service._deactivate_existing(
+        warehouse_id, current_user.organization_id, clear_stock=True
+    )
 
     db.commit()
     return {
