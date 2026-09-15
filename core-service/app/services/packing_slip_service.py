@@ -473,6 +473,13 @@ class PackingSlipService:
             raise ResourceNotFoundException(f"Packing slip {slip_id} not found")
         return slip
 
+    @staticmethod
+    def _is_serialized_item(info: Item | None) -> bool:
+        """True when an item tracks unit serials (legacy flag or QR link)."""
+        return info is not None and (
+            info.has_serial_no or info.qr_product_id is not None
+        )
+
     def _qseal_context(
         self, slip: PackingSlip, items_by_id: dict[UUID, Item]
     ) -> tuple[dict, dict]:
@@ -482,13 +489,17 @@ class PackingSlipService:
         serials), so they are excluded here — which also avoids the lookup for
         batch-only slips.
         """
+        # Collect the serials on serialized lines only. QSeal child serials
+        # resolve to parameters below; batch markers never match, so excluding
+        # batch-tracked lines keeps the IN clause small. Gate on has_serial_no
+        # OR qr_product_id — items can be QR-serialized (qr_product_id) while
+        # the legacy has_serial_no flag is still False.
         serials = {
             s
             for item in slip.items
+            if self._is_serialized_item(items_by_id.get(item.item_id))
             for s in (item.serial_nos or [])
             if s
-            and (items_by_id.get(item.item_id) is not None)
-            and items_by_id[item.item_id].has_serial_no
         }
         if not serials:
             return {}, {}
@@ -539,13 +550,19 @@ class PackingSlipService:
             info = items_by_id.get(item.item_id)
             sku = info.sku if info else None
             product_name = info.item_name if info else None
-            is_serialized = bool(info is not None and info.has_serial_no)
+            child_serials = [s for s in (item.serial_nos or []) if s]
+
+            # has_serial_no is a legacy WMS flag and can be False even for
+            # QR-serialized items. Treat a line as serialized when the flag is
+            # set OR any of its serial_nos resolves to a QSeal parameter row.
+            is_serialized = bool(info is not None and info.has_serial_no) or any(
+                s in param_by_serial for s in child_serials
+            )
 
             parent_info = None
             group_items: list[dict] = []
 
             if is_serialized:
-                child_serials = [s for s in (item.serial_nos or []) if s]
                 parent_id = None
                 for serial in child_serials:
                     param = param_by_serial.get(serial)

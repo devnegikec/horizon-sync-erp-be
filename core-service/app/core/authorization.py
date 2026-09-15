@@ -193,9 +193,11 @@ def is_worker_scope(user_type: str, permissions: list[str]) -> bool:
     """True when the caller is a warehouse worker rather than a manager/admin.
 
     Workers (mobile/PDA scanner users) must only see the put-away and pick
-    lists assigned to them. Warehouse managers, supervisors, and system admins
-    keep the full (organization-wide) view.
+    lists assigned to them. Warehouse managers, supervisors, org/system admins,
+    and anyone holding the full wildcard keep the organization-wide view.
     """
-    if user_type == "system_admin":
+    if user_type in ("system_admin", "organization_admin"):
+        return False
+    if "*.*" in permissions:
         return False
     return WAREHOUSE_MANAGE not in permissions

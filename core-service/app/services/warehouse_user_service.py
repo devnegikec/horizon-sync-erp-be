@@ -172,9 +172,14 @@ class WarehouseUserService:
             user_type,
         )
 
-        # Global access: only system_admin or organization_admin (not WMS roles).
-        # WMS roles (manager, operator) are scoped by WarehouseUser assignments.
-        if user_type in ("system_admin", "organization_admin"):
+        # Global access: system_admin / organization_admin, or any caller with
+        # the full wildcard or warehouse.manage permission (not other WMS roles).
+        # Other WMS roles (operator, worker) are scoped by WarehouseUser assignments.
+        if (
+            user_type in ("system_admin", "organization_admin")
+            or "*.*" in current_user.permissions
+            or "warehouse.manage" in current_user.permissions
+        ):
             warehouses = (
                 self.db.query(Warehouse)
                 .filter(
