@@ -834,11 +834,11 @@ class FloorPlanGeneratorService:
         deliberately preserved — they are logical staging locations, not part of
         the physical layout, and must keep receiving stock after a layout apply.
 
-        Dependent operational rows tied to the deactivated bins (bin
-        reservations and location allocations) are cleaned up so stale data
-        can't leak into future pick/put-away assignment. ``clear_stock``
-        additionally removes the bin stock records — used by the destructive
-        "reset" flow to start from a clean slate.
+        Dependent operational rows tied to the deactivated bins (active bin
+        reservations) are removed so stale data can't leak into future
+        pick/put-away assignment. ``clear_stock`` additionally removes the bin
+        stock records — used by the destructive "reset" flow to start from a
+        clean slate (the reset endpoint cancels active work first).
 
         Previously this method hard-deleted locations without stock, but that
         caused IntegrityError when other tables (pick_list_items,
@@ -849,7 +849,6 @@ class FloorPlanGeneratorService:
 
         from app.models.bin_reservation import BinReservation
         from app.models.bin_stock_level import BinStockLevel
-        from app.models.location_allocation import LocationAllocation
 
         # Active, pickable locations to deactivate.
         locations = (
@@ -891,14 +890,6 @@ class FloorPlanGeneratorService:
             BinReservation.organization_id == org_id,
             BinReservation.bin_location_id.in_(location_ids),
         ).delete(synchronize_session="fetch")
-
-        self.db.query(LocationAllocation).filter(
-            LocationAllocation.organization_id == org_id,
-            LocationAllocation.location_id.in_(location_ids),
-        ).update(
-            {"is_active": False},
-            synchronize_session="fetch",
-        )
 
         if clear_stock:
             self.db.query(BinStockLevel).filter(
