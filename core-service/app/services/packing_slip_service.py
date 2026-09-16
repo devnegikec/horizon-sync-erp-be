@@ -542,6 +542,7 @@ class PackingSlipService:
         items_by_id: dict[UUID, Item],
         param_by_serial: dict,
         track_by_id: dict,
+        bin_paths: dict[UUID, str],
     ) -> list[dict]:
         """Build master-pack groups, merging lines that share a QSeal parent."""
         groups: dict = {}
@@ -597,6 +598,11 @@ class PackingSlipService:
                     "bin_location_id": str(item.bin_location_id)
                     if item.bin_location_id
                     else None,
+                    "bin_location_path": (
+                        bin_paths.get(item.bin_location_id)
+                        if item.bin_location_id
+                        else None
+                    ),
                     "handling_unit_id": str(item.handling_unit_id)
                     if item.handling_unit_id
                     else None,
@@ -617,6 +623,11 @@ class PackingSlipService:
                     and item.bin_location_id is not None
                 ):
                     group["bin_location_id"] = str(item.bin_location_id)
+                if (
+                    group["bin_location_path"] is None
+                    and item.bin_location_id is not None
+                ):
+                    group["bin_location_path"] = bin_paths.get(item.bin_location_id)
                 if (
                     group["handling_unit_id"] is None
                     and item.handling_unit_id is not None
@@ -696,8 +707,21 @@ class PackingSlipService:
                 {r.invoice_reference for r in order_rows if r.invoice_reference}
             )
         order_ids = [str(oid) for oid in order_ids]
+        bin_ids = {i.bin_location_id for i in items if i.bin_location_id}
+        bin_paths: dict[UUID, str] = {}
+        if bin_ids:
+            from app.models.warehouse_location import WarehouseLocation
+
+            bin_rows = (
+                self.db.query(WarehouseLocation.id, WarehouseLocation.full_path)
+                .filter(WarehouseLocation.id.in_(bin_ids))
+                .all()
+            )
+            bin_paths = {r[0]: r[1] for r in bin_rows if r[1]}
         param_by_serial, track_by_id = self._qseal_context(slip, items_by_id)
-        groups = self._build_groups(slip, items_by_id, param_by_serial, track_by_id)
+        groups = self._build_groups(
+            slip, items_by_id, param_by_serial, track_by_id, bin_paths
+        )
         return {
             "id": str(slip.id),
             "organization_id": str(slip.organization_id),
