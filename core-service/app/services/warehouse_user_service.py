@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.authorization import WAREHOUSE_MANAGE, has_global_warehouse_access
 from app.core.exceptions import ResourceNotFoundException
+from app.dependencies import has_permission
 from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
 from app.models.warehouse import Warehouse
 from app.models.warehouse_user import WarehouseUser
@@ -185,16 +186,16 @@ class WarehouseUserService:
         )
 
         def _all_active_warehouses(reason: str) -> list[dict]:
-            """Every active warehouse in the organization (organization-wide view)."""
-            warehouses = (
-                self.db.query(Warehouse)
-                .filter(
-                    Warehouse.organization_id == org_id,
-                    Warehouse.is_active == True,
-                )
-                .order_by(Warehouse.name)
-                .all()
-            )
+            """Every active warehouse the caller may see organization-wide.
+
+            System-admin tokens carry no organization, so the tenancy filter is
+            omitted for them instead of filtering on ``NULL`` (which would
+            silently return nothing).
+            """
+            query = self.db.query(Warehouse).filter(Warehouse.is_active == True)
+            if org_id is not None:
+                query = query.filter(Warehouse.organization_id == org_id)
+            warehouses = query.order_by(Warehouse.name).all()
             logger.info(
                 "[get_user_warehouses] %s path: found %d warehouses for org %s",
                 reason,
@@ -274,7 +275,7 @@ class WarehouseUserService:
 
         # 5. Backwards-compatible fallback: a warehouse administrator that was
         #    never scoped to specific warehouses keeps the organization-wide view.
-        if WAREHOUSE_MANAGE in current_user.permissions:
+        if has_permission(current_user.permissions, WAREHOUSE_MANAGE):
             return _all_active_warehouses("unassigned warehouse.manage")
 
         return []
@@ -282,7 +283,7 @@ class WarehouseUserService:
     def _resolve_pending_assignments(
         self,
         user_id: UUID,
-        org_id: UUID,
+        org_id: UUID | None,
         email: str | None,
         logger=None,
     ) -> None:
@@ -290,9 +291,10 @@ class WarehouseUserService:
 
         Members of the warehouse_users table are matched by email
         (case-insensitive) so an invited user's assignments are materialised the
-        first time they read their warehouses.
+        first time they read their warehouses. Pending rows are only applied for
+        warehouses owned by ``org_id``.
         """
-        if not email:
+        if not email or org_id is None:
             return
 
         pending = (
@@ -303,8 +305,31 @@ class WarehouseUserService:
             )
             .all()
         )
+        if not pending:
+            return
+
+        # Only materialise pending rows whose warehouse belongs to the caller's
+        # organization; a stale or forged row must never leak a foreign
+        # warehouse into the user's assigned list.
+        warehouse_ids = {p.warehouse_id for p in pending}
+        valid_warehouse_ids = {
+            wid
+            for (wid,) in self.db.query(Warehouse.id)
+            .filter(
+                Warehouse.id.in_(warehouse_ids),
+                Warehouse.organization_id == org_id,
+            )
+            .all()
+        }
+
+        resolved = 0
         for p in pending:
-            # Create the actual assignment (update if exists)
+            if p.warehouse_id not in valid_warehouse_ids:
+                # Drop the invalid pending row rather than re-processing it on
+                # every subsequent read.
+                self.db.delete(p)
+                continue
+
             existing = (
                 self.db.query(WarehouseUser)
                 .filter(
@@ -315,9 +340,12 @@ class WarehouseUserService:
                 .first()
             )
             if existing:
-                existing.role = p.role
-                existing.is_primary = p.is_primary
-                existing.is_active = True
+                # Respect an administrator's deactivation: a pending invitation
+                # must not silently reactivate (and overwrite the role of) a
+                # disabled assignment.
+                if existing.is_active:
+                    existing.role = p.role
+                    existing.is_primary = p.is_primary
             else:
                 self.db.add(
                     WarehouseUser(
@@ -330,13 +358,14 @@ class WarehouseUserService:
                     )
                 )
             self.db.delete(p)
-        if pending:
-            self.db.commit()
-            if logger:
-                logger.info(
-                    "[get_user_warehouses] resolved %d pending assignment(s)",
-                    len(pending),
-                )
+            resolved += 1
+
+        self.db.commit()
+        if logger:
+            logger.info(
+                "[get_user_warehouses] resolved %d pending assignment(s)",
+                resolved,
+            )
 
     def update(
         self,
