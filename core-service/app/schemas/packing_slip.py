@@ -96,6 +96,7 @@ class PackingSlipResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     order_ids: list[str] = []
+    invoice_reference: list[str] = []
     groups: list[PackingSlipItemGroup] = []
 
 

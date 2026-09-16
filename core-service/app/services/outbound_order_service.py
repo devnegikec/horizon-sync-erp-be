@@ -431,7 +431,7 @@ class OutboundOrderService:
                 pick_date=datetime.now(UTC),
                 reference_type="outbound_order",
                 reference_id=order.id,
-                invoice_reference=order.invoice_reference,
+                invoice_reference=order.order_no,
                 assigned_to=assigned_to,
                 invoice_data={
                     "order_no": order.order_no,

@@ -543,8 +543,8 @@ class PackingSlipService:
         param_by_serial: dict,
         track_by_id: dict,
     ) -> list[dict]:
-        """Build master-pack groups mirroring the receiving-slip/put-away view."""
-        groups: list[dict] = []
+        """Build master-pack groups, merging lines that share a QSeal parent."""
+        groups: dict = {}
         order = 0
         for item in sorted(slip.items, key=lambda i: i.sort_order or 0):
             info = items_by_id.get(item.item_id)
@@ -559,17 +559,25 @@ class PackingSlipService:
                 s in param_by_serial for s in child_serials
             )
 
-            parent_info = None
-            group_items: list[dict] = []
-
+            parent_id = None
             if is_serialized:
-                parent_id = None
                 for serial in child_serials:
                     param = param_by_serial.get(serial)
                     if param and param.parent_id:
                         parent_id = param.parent_id
                         break
 
+            if parent_id:
+                parent_key = str(parent_id)
+            elif not is_serialized:
+                # Include the item id so unrelated lines without a batch are not
+                # collapsed into a single "unknown" group.
+                parent_key = f"batch::{item.batch_no or 'unknown'}::{item.id}"
+            else:
+                parent_key = f"none::{item.id}"
+
+            if parent_key not in groups:
+                parent_info = None
                 track = track_by_id.get(parent_id) if parent_id else None
                 if track is not None:
                     parent_info = {
@@ -579,11 +587,29 @@ class PackingSlipService:
                         "qseal_type": track.qseal_type,
                         "capacity": track.capacity,
                     }
+                groups[parent_key] = {
+                    "parent_qseal": parent_info,
+                    "product_name": product_name,
+                    "order_id": str(item.order_id) if item.order_id else None,
+                    "pick_list_id": str(item.pick_list_id)
+                    if item.pick_list_id
+                    else None,
+                    "bin_location_id": str(item.bin_location_id)
+                    if item.bin_location_id
+                    else None,
+                    "handling_unit_id": str(item.handling_unit_id)
+                    if item.handling_unit_id
+                    else None,
+                    "sort_order": order,
+                    "items": [],
+                }
+                order += 1
 
+            if is_serialized and child_serials:
                 for serial in child_serials:
                     param = param_by_serial.get(serial)
                     batch = (param.dispatch_batch if param else None) or item.batch_no
-                    group_items.append(
+                    groups[parent_key]["items"].append(
                         {
                             "serial_number": serial,
                             "sku": sku,
@@ -602,10 +628,23 @@ class PackingSlipService:
                             "box_count": 1,
                         }
                     )
+                # If serial_nos only carries the initial serials, reflect the
+                # remaining quantity so the group total matches the line qty.
+                remaining = float(item.qty or 0) - len(child_serials)
+                if remaining > 0:
+                    groups[parent_key]["items"].append(
+                        {
+                            "serial_number": None,
+                            "sku": sku,
+                            "batch_number": item.batch_no,
+                            "quantity": remaining,
+                            "box_count": 1,
+                        }
+                    )
             else:
                 # Batch-tracked line — keep the full (possibly fractional) qty.
                 batch_markers = [s for s in (item.serial_nos or []) if s]
-                group_items.append(
+                groups[parent_key]["items"].append(
                     {
                         "serial_number": None,
                         "sku": sku,
@@ -616,26 +655,7 @@ class PackingSlipService:
                     }
                 )
 
-            groups.append(
-                {
-                    "parent_qseal": parent_info,
-                    "product_name": product_name,
-                    "order_id": str(item.order_id) if item.order_id else None,
-                    "pick_list_id": str(item.pick_list_id)
-                    if item.pick_list_id
-                    else None,
-                    "bin_location_id": str(item.bin_location_id)
-                    if item.bin_location_id
-                    else None,
-                    "handling_unit_id": str(item.handling_unit_id)
-                    if item.handling_unit_id
-                    else None,
-                    "sort_order": order,
-                    "items": group_items,
-                }
-            )
-            order += 1
-        return groups
+        return list(groups.values())
 
     def _to_response(self, slip: PackingSlip) -> dict:
         items = sorted(slip.items, key=lambda i: i.sort_order or 0)
@@ -644,7 +664,20 @@ class PackingSlipService:
         if item_ids:
             rows = self.db.query(Item).filter(Item.id.in_(item_ids)).all()
             items_by_id = {r.id: r for r in rows}
-        order_ids = sorted({str(i.order_id) for i in items if i.order_id})
+        order_ids = sorted({i.order_id for i in items if i.order_id})
+        invoice_reference: list[str] = []
+        if order_ids:
+            from app.models.outbound_order import OutboundOrder
+
+            order_rows = (
+                self.db.query(OutboundOrder)
+                .filter(OutboundOrder.id.in_(order_ids))
+                .all()
+            )
+            invoice_reference = sorted(
+                {r.invoice_reference for r in order_rows if r.invoice_reference}
+            )
+        order_ids = [str(oid) for oid in order_ids]
         param_by_serial, track_by_id = self._qseal_context(slip, items_by_id)
         groups = self._build_groups(slip, items_by_id, param_by_serial, track_by_id)
         return {
@@ -657,6 +690,7 @@ class PackingSlipService:
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
             "order_ids": order_ids,
+            "invoice_reference": invoice_reference,
             "items": [
                 {
                     "id": str(i.id),
