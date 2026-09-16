@@ -79,6 +79,7 @@ class PackingSlipItemGroup(BaseModel):
     order_id: str | None = None
     pick_list_id: str | None = None
     bin_location_id: str | None = None
+    bin_location_path: str | None = None
     handling_unit_id: str | None = None
     sort_order: int = 0
     items: list[PackingSlipGroupItem] = []
@@ -96,6 +97,7 @@ class PackingSlipResponse(BaseModel):
     created_at: str | None = None
     updated_at: str | None = None
     order_ids: list[str] = []
+    invoice_reference: list[str] = []
     groups: list[PackingSlipItemGroup] = []
 
 

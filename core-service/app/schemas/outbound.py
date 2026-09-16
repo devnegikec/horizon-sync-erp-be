@@ -304,6 +304,7 @@ class OutboundPickListResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     invoice_reference: str | None = None
+    order_no: str | None = None
     assigned_to: str | None = None
     worker_name: str | None = None
     completed_at: str | None = None

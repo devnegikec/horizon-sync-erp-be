@@ -316,6 +316,36 @@ class PickListService:
 
         return pick_list
 
+    def _reserved_bin_ids_for_pick(
+        self, pick_list: PickList, org_id: UUID
+    ) -> set[UUID]:
+        """Return reserved bin ids for this pick list's resolution.
+
+        Bins reserved by sibling pick lists of the same outbound order are
+        excluded so two workers can pick different items from the same bin
+        within one order. Reservations held by other orders or put-away tasks
+        remain obstacles.
+        """
+        reservations = self.reservation_service.get_active_reservations(org_id)
+        sibling_task_ids: set[UUID] = set()
+        task_ids = {r.task_id for r in reservations if r.task_id}
+        if task_ids and pick_list.reference_id is not None:
+            rows = (
+                self.db.query(PickList.id)
+                .filter(
+                    PickList.id.in_(task_ids),
+                    PickList.reference_type == pick_list.reference_type,
+                    PickList.reference_id == pick_list.reference_id,
+                )
+                .all()
+            )
+            sibling_task_ids = {row[0] for row in rows}
+        return {
+            r.bin_location_id
+            for r in reservations
+            if r.task_id not in sibling_task_ids
+        }
+
     def resolve_bin_locations(self, pick_list_id: UUID, org_id: UUID) -> PickList:
         """Resolve bin locations for pick list items using FIFO logic.
 
@@ -345,8 +375,10 @@ class PickListService:
         resolved_items: list[PickListItem] = []
         items_to_remove: list[PickListItem] = []
 
-        # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
-        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
+        # Bins actively reserved by other pick lists must be skipped
+        # (FR-CW-01, FR-SL-02) — except bins held by sibling pick lists of the
+        # same order, which may share a bin for different items.
+        reserved_bin_ids = self._reserved_bin_ids_for_pick(pick_list, org_id)
 
         # Serialized (unit-level) items capture their serials during pick scans;
         # only batch-tracked items use the bin-stock batch as the line's serial.
@@ -434,8 +466,11 @@ class PickListService:
                 resolved_items.append(item)
             elif len(allocations) == 1:
                 # Single bin can fulfill the entire quantity
-                bin_location_id, _, batch_number = allocations[0]
+                bin_location_id, alloc_qty, batch_number = allocations[0]
                 item.bin_location_id = bin_location_id
+                # Cap the line quantity to what the bin actually supplied so a
+                # short-stocked line isn't overstated.
+                item.qty = alloc_qty
                 # Keep the packing-slip batch number; store the bin-stock serial(s)
                 # separately so the batch column matches the uploaded PDF.
                 if item.item_id in serialized_item_ids:
@@ -1308,6 +1343,7 @@ class PickListService:
                 PickList.id == pick_list_id,
                 PickList.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
         if pick_list is None:
