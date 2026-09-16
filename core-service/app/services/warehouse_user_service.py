@@ -5,7 +5,9 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.authorization import WAREHOUSE_MANAGE, has_global_warehouse_access
 from app.core.exceptions import ResourceNotFoundException
+from app.dependencies import has_permission
 from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
 from app.models.warehouse import Warehouse
 from app.models.warehouse_user import WarehouseUser
@@ -150,13 +152,24 @@ class WarehouseUserService:
         current_user,  # CurrentUser from dependencies (has DB-derived permissions)
         organization_id: UUID | None = None,
     ) -> list[dict]:
-        """Get warehouses assigned to a user.
+        """Get the warehouses a user is allowed to see.
 
-        Rules (evaluated from current_user which carries DB-derived permissions):
-          - System admins, org admins, and users with warehouse.manage see all.
-          - Users with a primary (mother-warehouse) assignment see all warehouses.
-          - Everyone else sees only explicitly assigned warehouses.
-          - Pending assignments keyed by email are resolved on first call.
+        Resolution order (``current_user`` carries DB-derived permissions):
+
+          1. Pending email-keyed assignments are resolved first, so the
+             warehouse selection made at invitation time is honoured on the
+             invited user's very first request.
+          2. System admins, org admins, and ``*.*`` holders see every warehouse
+             (:func:`has_global_warehouse_access`).
+          3. A primary (mother-warehouse) assignment sees every warehouse.
+          4. Otherwise the user sees only their explicitly assigned warehouses.
+
+        ``warehouse.manage`` deliberately no longer implies global visibility.
+        WMS Managers hold it for worker/device CRUD but must stay scoped to their
+        ``WarehouseUser`` assignments. As a backwards-compatible fallback, a
+        ``warehouse.manage`` holder with *no* assignment at all (for example a
+        WMS Admin that was never scoped to specific warehouses) keeps the legacy
+        organization-wide view.
         """
         import logging
 
@@ -172,25 +185,20 @@ class WarehouseUserService:
             user_type,
         )
 
-        # Global access: system_admin / organization_admin, or any caller with
-        # the full wildcard or warehouse.manage permission (not other WMS roles).
-        # Other WMS roles (operator, worker) are scoped by WarehouseUser assignments.
-        if (
-            user_type in ("system_admin", "organization_admin")
-            or "*.*" in current_user.permissions
-            or "warehouse.manage" in current_user.permissions
-        ):
-            warehouses = (
-                self.db.query(Warehouse)
-                .filter(
-                    Warehouse.organization_id == org_id,
-                    Warehouse.is_active == True,
-                )
-                .order_by(Warehouse.name)
-                .all()
-            )
+        def _all_active_warehouses(reason: str) -> list[dict]:
+            """Every active warehouse the caller may see organization-wide.
+
+            System-admin tokens carry no organization, so the tenancy filter is
+            omitted for them instead of filtering on ``NULL`` (which would
+            silently return nothing).
+            """
+            query = self.db.query(Warehouse).filter(Warehouse.is_active == True)
+            if org_id is not None:
+                query = query.filter(Warehouse.organization_id == org_id)
+            warehouses = query.order_by(Warehouse.name).all()
             logger.info(
-                "[get_user_warehouses] admin/manage path: found %d warehouses for org %s",
+                "[get_user_warehouses] %s path: found %d warehouses for org %s",
+                reason,
                 len(warehouses),
                 org_id,
             )
@@ -206,47 +214,17 @@ class WarehouseUserService:
                 for w in warehouses
             ]
 
-        # Resolve any pending assignments for this user's email (case-insensitive)
-        if user_email:
-            pending = (
-                self.db.query(PendingWarehouseAssignment)
-                .filter(
-                    func.lower(PendingWarehouseAssignment.email) == user_email.lower(),
-                    PendingWarehouseAssignment.organization_id == org_id,
-                )
-                .all()
-            )
-            for p in pending:
-                # Create the actual assignment (update if exists)
-                existing = (
-                    self.db.query(WarehouseUser)
-                    .filter(
-                        WarehouseUser.user_id == user_id,
-                        WarehouseUser.warehouse_id == p.warehouse_id,
-                        WarehouseUser.organization_id == org_id,
-                    )
-                    .first()
-                )
-                if existing:
-                    existing.role = p.role
-                    existing.is_primary = p.is_primary
-                    existing.is_active = True
-                else:
-                    self.db.add(
-                        WarehouseUser(
-                            organization_id=org_id,
-                            user_id=user_id,
-                            warehouse_id=p.warehouse_id,
-                            role=p.role,
-                            is_primary=p.is_primary,
-                            is_active=True,
-                        )
-                    )
-                self.db.delete(p)
-            if pending:
-                self.db.commit()
+        # 1. Resolve pending assignments before deciding on visibility, so an
+        #    invitation-time assignment can never be bypassed.
+        self._resolve_pending_assignments(
+            user_id=user_id, org_id=org_id, email=user_email, logger=logger
+        )
 
-        # Check if user has primary (global) access (after resolving pending)
+        # 2. Organization-wide access is reserved for admins / wildcard holders.
+        if has_global_warehouse_access(user_type, current_user.permissions):
+            return _all_active_warehouses("admin/wildcard")
+
+        # 3. Primary (mother-warehouse) assignment grants the organization view.
         has_primary = (
             self.db.query(WarehouseUser)
             .filter(
@@ -257,34 +235,10 @@ class WarehouseUserService:
             )
             .first()
         )
-
         if has_primary:
-            warehouses = (
-                self.db.query(Warehouse)
-                .filter(
-                    Warehouse.organization_id == org_id,
-                    Warehouse.is_active == True,
-                )
-                .order_by(Warehouse.name)
-                .all()
-            )
-            logger.info(
-                "[get_user_warehouses] primary path: found %d warehouses",
-                len(warehouses),
-            )
-            return [
-                {
-                    "id": w.id,
-                    "name": w.name,
-                    "code": w.code,
-                    "city": w.city,
-                    "type": w.warehouse_type.value if w.warehouse_type else None,
-                    "is_default": w.is_default,
-                }
-                for w in warehouses
-            ]
+            return _all_active_warehouses("primary")
 
-        # Return assigned warehouses
+        # 4. Explicitly assigned warehouses.
         results = (
             self.db.query(WarehouseUser, Warehouse)
             .join(Warehouse, WarehouseUser.warehouse_id == Warehouse.id)
@@ -319,7 +273,99 @@ class WarehouseUserService:
                 for assignment, warehouse in results
             ]
 
+        # 5. Backwards-compatible fallback: a warehouse administrator that was
+        #    never scoped to specific warehouses keeps the organization-wide view.
+        if has_permission(current_user.permissions, WAREHOUSE_MANAGE):
+            return _all_active_warehouses("unassigned warehouse.manage")
+
         return []
+
+    def _resolve_pending_assignments(
+        self,
+        user_id: UUID,
+        org_id: UUID | None,
+        email: str | None,
+        logger=None,
+    ) -> None:
+        """Turn pending (email-keyed) assignments into real WarehouseUser rows.
+
+        Members of the warehouse_users table are matched by email
+        (case-insensitive) so an invited user's assignments are materialised the
+        first time they read their warehouses. Pending rows are only applied for
+        warehouses owned by ``org_id``.
+        """
+        if not email or org_id is None:
+            return
+
+        pending = (
+            self.db.query(PendingWarehouseAssignment)
+            .filter(
+                func.lower(PendingWarehouseAssignment.email) == email.lower(),
+                PendingWarehouseAssignment.organization_id == org_id,
+            )
+            .all()
+        )
+        if not pending:
+            return
+
+        # Only materialise pending rows whose warehouse belongs to the caller's
+        # organization; a stale or forged row must never leak a foreign
+        # warehouse into the user's assigned list.
+        warehouse_ids = {p.warehouse_id for p in pending}
+        valid_warehouse_ids = {
+            wid
+            for (wid,) in self.db.query(Warehouse.id)
+            .filter(
+                Warehouse.id.in_(warehouse_ids),
+                Warehouse.organization_id == org_id,
+            )
+            .all()
+        }
+
+        resolved = 0
+        for p in pending:
+            if p.warehouse_id not in valid_warehouse_ids:
+                # Drop the invalid pending row rather than re-processing it on
+                # every subsequent read.
+                self.db.delete(p)
+                continue
+
+            existing = (
+                self.db.query(WarehouseUser)
+                .filter(
+                    WarehouseUser.user_id == user_id,
+                    WarehouseUser.warehouse_id == p.warehouse_id,
+                    WarehouseUser.organization_id == org_id,
+                )
+                .first()
+            )
+            if existing:
+                # Respect an administrator's deactivation: a pending invitation
+                # must not silently reactivate (and overwrite the role of) a
+                # disabled assignment.
+                if existing.is_active:
+                    existing.role = p.role
+                    existing.is_primary = p.is_primary
+            else:
+                self.db.add(
+                    WarehouseUser(
+                        organization_id=org_id,
+                        user_id=user_id,
+                        warehouse_id=p.warehouse_id,
+                        role=p.role,
+                        is_primary=p.is_primary,
+                        is_active=True,
+                    )
+                )
+            self.db.delete(p)
+            resolved += 1
+
+        self.db.commit()
+        if logger:
+            logger.info(
+                "[get_user_warehouses] resolved %d pending assignment(s)",
+                resolved,
+            )
 
     def update(
         self,

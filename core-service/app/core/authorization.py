@@ -201,3 +201,21 @@ def is_worker_scope(user_type: str, permissions: list[str]) -> bool:
     if "*.*" in permissions:
         return False
     return WAREHOUSE_MANAGE not in permissions
+
+
+def has_global_warehouse_access(user_type: str, permissions: list[str]) -> bool:
+    """True when the caller may see every warehouse in the organization.
+
+    Only system/organization admins and holders of the full wildcard get an
+    unconditional organization-wide warehouse view.
+
+    ``warehouse.manage`` deliberately does NOT imply global visibility. WMS
+    Managers are granted it for worker/device CRUD but remain scoped to their
+    ``WarehouseUser`` assignments. Callers that must keep unassigned warehouse
+    administrators working (e.g. a WMS Admin that was never scoped to specific
+    warehouses) should apply their own explicit fallback — see
+    ``WarehouseUserService.get_user_warehouses``.
+    """
+    if user_type in ("system_admin", "organization_admin"):
+        return True
+    return "*.*" in permissions
