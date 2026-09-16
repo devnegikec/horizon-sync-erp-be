@@ -247,6 +247,7 @@ class VolumetricAssignmentService:
               AND wl.warehouse_id    = :warehouse_id
               AND wl.location_type   = 'bin'
               AND wl.is_active       = TRUE
+              AND wl.is_pickable     = TRUE
               AND (
                   wl.max_volume_cc IS NULL
                   OR :required_volume_cc IS NULL

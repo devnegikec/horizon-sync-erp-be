@@ -181,6 +181,7 @@ class LocationSuggestionService:
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.location_type == "bin",
                 WarehouseLocation.is_active.is_(True),
+                WarehouseLocation.is_pickable.is_(True),
             )
             .all()
         )
