@@ -431,7 +431,7 @@ class OutboundOrderService:
                 pick_date=datetime.now(UTC),
                 reference_type="outbound_order",
                 reference_id=order.id,
-                invoice_reference=order.order_no,
+                invoice_reference=order.invoice_reference,
                 assigned_to=assigned_to,
                 invoice_data={
                     "order_no": order.order_no,
@@ -495,13 +495,8 @@ class OutboundOrderService:
             from app.services.pick_list_service import PickListService
 
             pick_service = PickListService(self.db)
-            # Resolve bins for every pick list before reserving any. Otherwise
-            # a bin reservation made for one pick list blocks a sibling pick
-            # list in the same batch from using the same bin for a different
-            # item, leaving the sibling without a bin.
             for pick_list in pick_lists:
-                pick_service.resolve_bin_locations(pick_list.id, org_id)
-            for pick_list in pick_lists:
+                pick_list = pick_service.resolve_bin_locations(pick_list.id, org_id)
                 pick_service.reserve_pick_bins(pick_list, org_id)
 
         return pick_lists

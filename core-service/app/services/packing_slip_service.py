@@ -604,6 +604,24 @@ class PackingSlipService:
                     "items": [],
                 }
                 order += 1
+            else:
+                # Merged into an existing group: fill in any metadata the first
+                # line lacked instead of discarding the later line's metadata.
+                group = groups[parent_key]
+                if group["order_id"] is None and item.order_id is not None:
+                    group["order_id"] = str(item.order_id)
+                if group["pick_list_id"] is None and item.pick_list_id is not None:
+                    group["pick_list_id"] = str(item.pick_list_id)
+                if (
+                    group["bin_location_id"] is None
+                    and item.bin_location_id is not None
+                ):
+                    group["bin_location_id"] = str(item.bin_location_id)
+                if (
+                    group["handling_unit_id"] is None
+                    and item.handling_unit_id is not None
+                ):
+                    group["handling_unit_id"] = str(item.handling_unit_id)
 
             if is_serialized and child_serials:
                 for serial in child_serials:

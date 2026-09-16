@@ -914,6 +914,7 @@ def _pick_list_to_response(
         reference_type=pl.reference_type,
         reference_id=str(pl.reference_id) if pl.reference_id else None,
         invoice_reference=pl.invoice_reference,
+        order_no=(pl.invoice_data or {}).get("order_no"),
         assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
         worker_name=worker_name,
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
