@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import PaginationMeta
+from app.schemas.item_packaging_unit import ItemPackagingUnitResponse
 
 
 class ItemBase(BaseModel):
@@ -22,6 +23,7 @@ class ItemBase(BaseModel):
 
     # Unit of Measure
     uom: str = Field(default="Nos", max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -67,6 +69,14 @@ class ItemBase(BaseModel):
     # QR Product link — enables unit-level QR tracking for this item
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = Field(None, max_length=20)
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str = Field(default="ACTIVE")
@@ -77,10 +87,24 @@ class ItemBase(BaseModel):
     extra_data: dict | None = None
 
 
+class ItemPackagingDetails(BaseModel):
+    """Physical packaging details for an item's base packaging unit."""
+
+    unit_name: str = Field(default="Each", min_length=1, max_length=100)
+    conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
+    items_per_master_pack: int | None = Field(
+        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+    )
+    length_mm: Decimal | None = Field(None, ge=0)
+    width_mm: Decimal | None = Field(None, ge=0)
+    height_mm: Decimal | None = Field(None, ge=0)
+    weight_grams: Decimal | None = Field(None, ge=0)
+
+
 class ItemCreate(ItemBase):
     """Schema for creating a new item"""
 
-    pass
+    packaging_details: ItemPackagingDetails | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -95,6 +119,7 @@ class ItemUpdate(BaseModel):
 
     # Unit of Measure
     uom: str | None = Field(None, max_length=50)
+    base_uom_id: UUID | None = None
     sku: str | None = Field(None, max_length=100)
 
     # Stock Settings
@@ -140,6 +165,14 @@ class ItemUpdate(BaseModel):
     # QR Product link
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
+    # Brand link and GTIN
+    brand_id: UUID | None = None
+    gtin: str | None = Field(None, max_length=20)
+
     # Additional Info
     barcode: str | None = Field(None, max_length=100)
     status: str | None = None
@@ -148,6 +181,7 @@ class ItemUpdate(BaseModel):
     tags: list[str] | None = None
     custom_fields: dict | None = None
     extra_data: dict | None = None
+    packaging_details: ItemPackagingDetails | None = None
 
 
 class ItemGroupInfo(BaseModel):
@@ -176,6 +210,7 @@ class ItemResponse(BaseModel):
 
     # Unit of Measure
     uom: str
+    base_uom_id: UUID | None = None
 
     # Warehouse SKU
     sku: str | None = None
@@ -223,6 +258,10 @@ class ItemResponse(BaseModel):
     # QR Product link
     qr_product_id: UUID | None = None
 
+    # Shared catalog core + concrete SKU links
+    product_id: UUID | None = None
+    product_sku_id: UUID | None = None
+
     # Additional Info
     barcode: str | None = None
     status: str
@@ -231,6 +270,13 @@ class ItemResponse(BaseModel):
     tags: list[str] | None = None
     custom_fields: dict | None = None
     extra_data: dict | None = None
+
+    # Packaging units (base unit first)
+    packaging_units: list[ItemPackagingUnitResponse] | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
     # Audit
     created_by: UUID | None = None
@@ -258,6 +304,10 @@ class ItemListItem(BaseModel):
     barcode: str | None = None
     image_url: str | None = None
     created_at: datetime | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -321,6 +371,10 @@ class ItemPickerItem(BaseModel):
     stock_levels: ItemPickerStockLevels = Field(default_factory=ItemPickerStockLevels)
     item_group: ItemPickerItemGroup | None = None
     tax_info: ItemPickerTaxInfo | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
 
 class ItemPickerListResponse(BaseModel):

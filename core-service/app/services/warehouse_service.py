@@ -1,7 +1,9 @@
 """Warehouse service with business logic"""
 
+from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -11,6 +13,7 @@ from app.core.exceptions import (
 )
 from app.models.base import WarehouseType
 from app.models.warehouse import Warehouse
+from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.warehouse_repository import WarehouseRepository
 from app.schemas.warehouse import WarehouseCreate, WarehouseTreeNode, WarehouseUpdate
 from app.services.document_numbering_service import DocumentNumberingService
@@ -117,6 +120,7 @@ class WarehouseService:
             raise WarehouseNotFoundException(
                 f"Warehouse with ID {warehouse_id} not found"
             )
+        self._apply_derived_capacity([warehouse])
         return warehouse
 
     def update_warehouse(
@@ -282,8 +286,12 @@ class WarehouseService:
         )
 
         # Get status and type counts (scoped to warehouse_ids if provided)
-        status_counts = self.warehouse_repo.get_warehouse_status_counts(organization_id, warehouse_ids=warehouse_ids)
-        type_counts = self.warehouse_repo.get_warehouse_type_counts(organization_id, warehouse_ids=warehouse_ids)
+        status_counts = self.warehouse_repo.get_warehouse_status_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
+        type_counts = self.warehouse_repo.get_warehouse_type_counts(
+            organization_id, warehouse_ids=warehouse_ids
+        )
 
         # Calculate pagination metadata
         total_pages = (total_count + page_size - 1) // page_size
@@ -296,7 +304,63 @@ class WarehouseService:
             "has_prev": page > 1,
         }
 
+        self._apply_derived_capacity(warehouses)
+
         return warehouses, pagination, status_counts, type_counts
+
+    def _apply_derived_capacity(self, warehouses: list[Warehouse]) -> None:
+        """Populate each warehouse's total capacity and UOM from its active bins.
+
+        Warehouse capacity is a roll-up of the active bin locations (the layout
+        is the source of truth). Warehouses without bins keep their stored value.
+        The UOM is reported only when all active bins agree on one unit; mixed or
+        unknown units clear the label so a summed total is never mislabelled.
+        """
+        if not warehouses:
+            return
+
+        ids = [w.id for w in warehouses]
+        rows = (
+            self.db.query(
+                WarehouseLocation.warehouse_id,
+                func.sum(WarehouseLocation.capacity),
+                func.count().label("bin_count"),
+                func.count(WarehouseLocation.capacity_uom).label("uom_count"),
+                func.count(func.distinct(WarehouseLocation.capacity_uom)).label(
+                    "distinct_uoms"
+                ),
+                func.max(WarehouseLocation.capacity_uom).label("uom"),
+            )
+            .filter(
+                WarehouseLocation.warehouse_id.in_(ids),
+                WarehouseLocation.location_type == LocationType.BIN.value,
+                WarehouseLocation.is_active.is_(True),
+            )
+            .group_by(WarehouseLocation.warehouse_id)
+            .all()
+        )
+
+        capacity_map: dict[
+            UUID, tuple[Decimal | None, int, int, int, str | None]
+        ] = {
+            row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in rows
+        }
+
+        for warehouse in warehouses:
+            row = capacity_map.get(warehouse.id)
+            if row is None:
+                continue
+            total, bin_count, uom_count, distinct_uoms, uom = row
+            if total is None:
+                continue
+            warehouse.total_capacity = float(total)
+            # Report a single UOM only when every active bin carries a non-null
+            # unit and they all agree. Otherwise clear the label so the derived
+            # total is never paired with a stale or arbitrary unit.
+            if uom_count == bin_count and distinct_uoms == 1 and uom:
+                warehouse.capacity_uom = uom
+            else:
+                warehouse.capacity_uom = None
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """

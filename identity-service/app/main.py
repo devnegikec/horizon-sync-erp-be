@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
 
     # Register audit trail listeners
     from app.core.audit_listener import register_audit_listeners
+
     register_audit_listeners()
 
     # Auto-seed system admin roles & permissions (idempotent)
@@ -158,6 +159,7 @@ app.include_router(api_router, prefix="/api/v1")
 
 # Audit context middleware (must be after CORS)
 from app.middleware.audit_middleware import AuditContextMiddleware
+
 app.add_middleware(AuditContextMiddleware)
 
 

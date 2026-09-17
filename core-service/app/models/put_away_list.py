@@ -7,7 +7,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, T
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.types import UUID
+from app.models.types import JSONB, UUID
 
 
 class PutAwayList(Base):
@@ -81,6 +81,8 @@ class PutAwayListItem(Base):
     )
     sku = Column(String(100), nullable=True)
     batch_number = Column(String(100), nullable=True)
+    # Serialized master packs carry the list of unit serials grouped on this line.
+    serial_nos = Column(JSONB, nullable=True)
     quantity = Column(Numeric(15, 3), nullable=False)
     bin_location_id = Column(
         UUID(as_uuid=True),

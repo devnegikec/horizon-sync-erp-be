@@ -1,5 +1,6 @@
 """Dependency injection for FastAPI"""
 
+import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -143,38 +144,55 @@ async def _get_user_org_and_permissions(token: str) -> tuple[UUID | None, list[s
     Raises:
         HTTPException: If identity service unavailable or returns error
     """
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.identity_service_url}/api/v1/identity/me",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5.0,
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Unable to get user context from identity service",
+    last_error: httpx.RequestError | None = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{settings.identity_service_url}/api/v1/identity/me",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5.0,
                 )
 
-            data = response.json()
-            org_id_str = data.get("organization_id")
-            organization_id = None
-            if org_id_str:
-                try:
-                    organization_id = UUID(org_id_str)
-                except ValueError:
-                    pass
-            permissions = data.get("permissions") or []
-            if not isinstance(permissions, list):
-                permissions = []
-            return organization_id, permissions
+                if response.status_code in (401, 403):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Unable to get user context from identity service",
+                    )
 
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Identity service unavailable",
-        ) from e
+                if response.status_code != 200:
+                    # Transient identity-service error (5xx etc.) — retry on
+                    # the next attempt instead of surfacing a false 401.
+                    if attempt < 2:
+                        await asyncio.sleep(0.2 * (attempt + 1))
+                        continue
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Identity service unavailable",
+                    )
+
+                data = response.json()
+                org_id_str = data.get("organization_id")
+                organization_id = None
+                if org_id_str:
+                    try:
+                        organization_id = UUID(org_id_str)
+                    except ValueError:
+                        pass
+                permissions = data.get("permissions") or []
+                if not isinstance(permissions, list):
+                    permissions = []
+                return organization_id, permissions
+
+        except httpx.RequestError as exc:
+            last_error = exc
+            if attempt < 2:
+                await asyncio.sleep(0.2 * (attempt + 1))
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Identity service unavailable",
+    ) from last_error
 
 
 async def get_current_active_user(
@@ -195,6 +213,7 @@ async def get_current_active_user(
     # Basic validation - user_type check can be extended
     return current_user
 
+
 async def require_admin(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> CurrentUser:
@@ -205,7 +224,6 @@ async def require_admin(
             detail="Admin access required",
         )
     return current_user
-
 
 
 def has_permission(permissions: list[str], required_permission: str) -> bool:
@@ -228,7 +246,10 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     if "*.*" in permissions:
         return True
     # system_admin.master grants all system_admin.* permissions
-    if required_permission.startswith("system_admin.") and "system_admin.master" in permissions:
+    if (
+        required_permission.startswith("system_admin.")
+        and "system_admin.master" in permissions
+    ):
         return True
     # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
     if "." in required_permission:
@@ -248,10 +269,16 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     if "." in required_permission:
         resource, _, action = required_permission.partition(".")
         _SA_RESOURCE_TO_DOMAIN = {
-            "user": "users", "organization": "organizations",
-            "role": "users", "permission": "users", "invitation": "users",
-            "billing": "billing", "invoice": "billing", "subscription": "billing",
-            "reporting": "reporting", "report": "reporting",
+            "user": "users",
+            "organization": "organizations",
+            "role": "users",
+            "permission": "users",
+            "invitation": "users",
+            "billing": "billing",
+            "invoice": "billing",
+            "subscription": "billing",
+            "reporting": "reporting",
+            "report": "reporting",
         }
         domain = _SA_RESOURCE_TO_DOMAIN.get(resource)
         if domain:
@@ -275,8 +302,15 @@ def require_permission(*permissions: str):
     """
 
     async def check_permission(
-        current_user: CurrentUser = Depends(get_current_active_user),
+        current_user=Depends(get_current_active_user),
     ) -> CurrentUser:
+        # Note: Do NOT annotate current_user with CurrentUser type hint.
+        # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
+        # and tries to read them as query params instead of resolving Depends().
+        # System admins and organization admins (owners) bypass RBAC — they
+        # implicitly hold every permission.
+        if current_user.user_type in ("system_admin", "organization_admin"):
+            return current_user
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -299,8 +333,8 @@ def require_feature_flag(flag_name: str):
     Usage:
         router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
     """
-    from app.services.feature_flag_service import is_feature_enabled
     from app.core.constants import FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
+    from app.services.feature_flag_service import is_feature_enabled
 
     async def _check_flag(db: Session = Depends(get_db)) -> None:
         if not is_feature_enabled(flag_name, db):

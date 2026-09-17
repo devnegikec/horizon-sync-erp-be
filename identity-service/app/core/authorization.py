@@ -135,6 +135,15 @@ def is_system_admin(permissions: list[str]) -> bool:
     )
 
 
+def is_system_admin_or_owner(permissions: list[str]) -> bool:
+    """True for platform system admins OR organization owners (*.* wildcard).
+
+    Organization owners have full authority within their own organization and
+    may perform the same role-management operations as a system admin.
+    """
+    return is_system_admin(permissions) or "*.*" in permissions
+
+
 def is_cross_org_admin(permissions: list[str]) -> bool:
     """
     Check if user has cross-organization administrative permissions.

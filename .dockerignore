@@ -17,10 +17,17 @@
 **/.mypy_cache/
 **/.ruff_cache/
 
-# Docker
-**/Dockerfile
+# Docker (only in subdirectories, keep root Dockerfile)
+**/identity-service/Dockerfile
+**/core-service/Dockerfile
+**/search-service/Dockerfile
+**/nginx-gateway/Dockerfile
 docker-compose*
-**/.dockerignore
+# Keep root .dockerignore, ignore only subdirectory ones
+**/identity-service/.dockerignore
+**/core-service/.dockerignore
+**/search-service/.dockerignore
+**/nginx-gateway/.dockerignore
 
 # IDEs
 .vscode/

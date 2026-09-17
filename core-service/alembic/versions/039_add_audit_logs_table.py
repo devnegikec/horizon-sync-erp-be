@@ -42,9 +42,7 @@ def upgrade() -> None:
     )
 
     # Composite index for table + record lookups
-    op.create_index(
-        "idx_audit_table_record", "audit_logs", ["table_name", "record_id"]
-    )
+    op.create_index("idx_audit_table_record", "audit_logs", ["table_name", "record_id"])
     # Individual indexes
     op.create_index("ix_audit_logs_user_id", "audit_logs", ["user_id"])
     op.create_index("ix_audit_logs_organization_id", "audit_logs", ["organization_id"])

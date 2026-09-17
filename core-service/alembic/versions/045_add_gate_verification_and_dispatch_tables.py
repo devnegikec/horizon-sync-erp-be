@@ -27,6 +27,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # ── Ensure pick_lists and pick_list_items exist (missed in earlier migrations) ──
+    _create_pick_lists_if_missing()
+    _create_pick_list_items_if_missing()
+
     # ── gate_verification_sessions ─────────────────────────────────
     op.create_table(
         "gate_verification_sessions",
@@ -193,6 +197,60 @@ def upgrade() -> None:
     op.create_index("idx_dr_pick_list", "dispatch_records", ["pick_list_id"])
     op.create_index("idx_dr_gate_session", "dispatch_records", ["gate_session_id"])
     op.create_index("idx_dr_dispatch_number", "dispatch_records", ["dispatch_number"])
+
+
+def _create_pick_lists_if_missing():
+    """Create pick_lists table if it doesn't exist (missed in earlier migrations)."""
+    op.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='pick_lists') THEN "
+        "CREATE TABLE pick_lists ("
+        "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), "
+        "organization_id UUID NOT NULL, "
+        "pick_list_no VARCHAR(100) NOT NULL, "
+        "warehouse_id UUID REFERENCES warehouses_extended(id) ON DELETE CASCADE NOT NULL, "
+        "status VARCHAR(20) DEFAULT 'draft' NOT NULL, "
+        "pick_date TIMESTAMP WITH TIME ZONE, "
+        "reference_type VARCHAR(50), "
+        "reference_id UUID, "
+        "remarks TEXT, "
+        "completed_at TIMESTAMP WITH TIME ZONE, "
+        "extra_data JSONB, "
+        "created_by UUID, "
+        "updated_by UUID, "
+        "created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), "
+        "updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"
+        "); "
+        "CREATE INDEX idx_pl_org ON pick_lists(organization_id); "
+        "CREATE INDEX idx_pl_warehouse ON pick_lists(warehouse_id); "
+        "CREATE INDEX idx_pl_status ON pick_lists(status); "
+        "END IF; END $$;"
+    )
+
+
+def _create_pick_list_items_if_missing():
+    """Create pick_list_items table if it doesn't exist (missed in earlier migrations)."""
+    op.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='pick_list_items') THEN "
+        "CREATE TABLE pick_list_items ("
+        "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), "
+        "organization_id UUID NOT NULL, "
+        "pick_list_id UUID REFERENCES pick_lists(id) ON DELETE CASCADE NOT NULL, "
+        "item_id UUID REFERENCES items(id) ON DELETE CASCADE NOT NULL, "
+        "warehouse_id UUID REFERENCES warehouses_extended(id) ON DELETE CASCADE NOT NULL, "
+        "qty NUMERIC(15,3) NOT NULL, "
+        "picked_qty NUMERIC(15,3) DEFAULT 0, "
+        "uom VARCHAR(50) NOT NULL, "
+        "batch_no VARCHAR(100), "
+        "serial_nos JSONB, "
+        "sort_order INTEGER DEFAULT 0"
+        "); "
+        "CREATE INDEX idx_pli_org ON pick_list_items(organization_id); "
+        "CREATE INDEX idx_pli_pick_list ON pick_list_items(pick_list_id); "
+        "CREATE INDEX idx_pli_item ON pick_list_items(item_id); "
+        "END IF; END $$;"
+    )
 
 
 def downgrade() -> None:

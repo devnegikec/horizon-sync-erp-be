@@ -64,7 +64,9 @@ class LocationResponse(BaseModel):
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
     is_active: bool = True
+    is_pickable: bool = True
     version: int = 1
+    qr_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -88,6 +90,8 @@ class LocationTree(BaseModel):
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
     is_active: bool = True
+    is_pickable: bool = True
+    qr_code: str | None = None
     children: list[LocationTree] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -161,3 +165,5 @@ class LocationQRPayload(BaseModel):
     full_path: str
     location_type: str
     location_code: str
+    qr_code: str | None = None  # 5-char short code for quick lookup
+    bin_code: str | None = None  # Alias for qr_code for mobile app compatibility

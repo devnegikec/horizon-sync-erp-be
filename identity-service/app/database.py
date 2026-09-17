@@ -10,11 +10,19 @@ from app.config import settings
 # Create database engine
 _engine_kwargs: dict = {
     "pool_pre_ping": True,
+    "pool_timeout": settings.db_pool_timeout,
     "echo": settings.debug,
+    "connect_args": {
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    },
 }
 if not settings.database_url.startswith("sqlite"):
     _engine_kwargs["pool_size"] = settings.db_pool_size
     _engine_kwargs["max_overflow"] = settings.db_max_overflow
+    _engine_kwargs["pool_recycle"] = settings.db_pool_recycle
 
 engine = create_engine(settings.database_url, **_engine_kwargs)
 

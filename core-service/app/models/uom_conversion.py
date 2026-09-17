@@ -26,12 +26,18 @@ class UOMConversion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     item_id = Column(
-        UUID(as_uuid=True), ForeignKey("items.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("items.id"), nullable=True, index=True
     )
 
     # Conversion fields
-    from_uom = Column(String(50), nullable=False)
-    to_uom = Column(String(50), nullable=False)
+    from_uom = Column(String(50), nullable=False)  # legacy cache; prefer from_uom_id
+    to_uom = Column(String(50), nullable=False)  # legacy cache; prefer to_uom_id
+    from_uom_id = Column(
+        UUID(as_uuid=True), ForeignKey("uoms.id"), nullable=True, index=True
+    )
+    to_uom_id = Column(
+        UUID(as_uuid=True), ForeignKey("uoms.id"), nullable=True, index=True
+    )
     conversion_factor = Column(Numeric(19, 6), nullable=False)
 
     # Audit fields

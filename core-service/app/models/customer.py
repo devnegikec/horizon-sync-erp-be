@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, Enum, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Numeric, String, Text
 
 from app.database import Base
 from app.models.base import CustomerStatus
@@ -38,6 +38,7 @@ class Customer(Base):
 
     # Tax
     tax_number = Column(String(50), nullable=True)
+    is_tax_exempt = Column(Boolean, default=False)
 
     # Status
     status = Column(

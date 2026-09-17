@@ -106,9 +106,7 @@ class Warehouse3DService:
             }
             kids = children_by_parent.get(loc.id, [])
             if loc.location_type == "level":
-                node["bins"] = [
-                    build_bin(b) for b in kids if b.location_type == "bin"
-                ]
+                node["bins"] = [build_bin(b) for b in kids if b.location_type == "bin"]
             elif loc.location_type == "bay":
                 node["levels"] = [
                     build_subtree(c) for c in kids if c.location_type == "level"
@@ -290,6 +288,7 @@ class Warehouse3DService:
                 Item.sku,
                 Item.uom,
                 BinStockLevel.quantity_on_hand,
+                BinStockLevel.inventory_status,
                 BinStockLevel.batch_number,
                 BinStockLevel.expiry_date,
                 BinStockLevel.created_at,
@@ -320,9 +319,10 @@ class Warehouse3DService:
                     "sku": row[3],
                     "uom": row[4],
                     "quantity_on_hand": float(qty),
-                    "batch_number": row[6],
-                    "expiry_date": row[7].isoformat() if row[7] else None,
-                    "created_at": row[8].isoformat() if row[8] else None,
+                    "inventory_status": row[6] or "available",
+                    "batch_number": row[7],
+                    "expiry_date": row[8].isoformat() if row[8] else None,
+                    "created_at": row[9].isoformat() if row[9] else None,
                 }
             )
 

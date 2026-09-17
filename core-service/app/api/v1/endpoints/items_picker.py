@@ -21,7 +21,7 @@ router = APIRouter()
 )
 async def item_picker(
     search: str | None = Query(
-        None, description="Search by item name, item code, or barcode"
+        None, description="Search by item name, item code, barcode, or SKU"
     ),
     warehouse_id: UUID | None = Query(
         None, description="Filter stock levels to a specific warehouse"

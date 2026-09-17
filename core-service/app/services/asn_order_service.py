@@ -3,12 +3,14 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ResourceNotFoundException
+from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.asn_order import AsnOrder, AsnOrderItem
 from app.models.base import AsnOrderStatus
 from app.repositories.asn_order_repository import AsnOrderRepository
+from app.constants.constants_asn_orders import STOCK_RECEIPT, ASN_ORDER, INTERNAL_TRANSFER
 
 
 class AsnOrderService:
@@ -26,13 +28,34 @@ class AsnOrderService:
         if not payload.get("asn_order_no"):
             from app.services.document_numbering_service import DocumentNumberingService
 
-            payload["asn_order_no"] = DocumentNumberingService(
-                self.db
-            ).get_next_number(organization_id, "asn_order")
+            payload["asn_order_no"] = DocumentNumberingService(self.db).get_next_number(
+                organization_id, ASN_ORDER
+            )
 
         # Handle status enum conversion
         if payload.get("status"):
             payload["status"] = AsnOrderStatus(payload["status"])
+
+        # Default the ASN type to a stock receipt (purchase) when omitted.
+        if not payload.get("asn_type"):
+            payload["asn_type"] = STOCK_RECEIPT
+
+        # Stock Receipt ASNs arrive from manufacturing units (which are not
+        # warehouses in the system), so they only carry a target warehouse.
+        if payload["asn_type"] == STOCK_RECEIPT:
+            payload["warehouse_id_from"] = None
+            if not payload.get("warehouse_id_to"):
+                raise ValueError(
+                    "warehouse_id_to (target warehouse) is required for a "
+                    "stock receipt ASN"
+                )
+        elif payload["asn_type"] == INTERNAL_TRANSFER and not payload.get(
+            "warehouse_id_from"
+        ):
+            raise ValueError(
+                "warehouse_id_from (source warehouse) is required for an "
+                "internal transfer ASN"
+            )
 
         # Extract items
         items_data = payload.pop("items", [])
@@ -66,6 +89,10 @@ class AsnOrderService:
                 "qty": Decimal(str(item_data["qty"])),
                 "uom": item_data.get("uom", "pcs"),
                 "sort_order": item_data.get("sort_order", 0),
+                "serial_nos": item_data.get("serial_nos") or None,
+                "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
+                "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
+                "extra_data": item_data.get("extra_data") or None,
             }
             grand_total += item_payload["qty"]
             self.db.add(AsnOrderItem(**item_payload))
@@ -89,10 +116,190 @@ class AsnOrderService:
     def get_by_id(self, asn_order_id: UUID, organization_id: UUID) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
         return self._to_response(asn_order)
+
+    def get_serial_lines(self, asn_order_id: UUID, organization_id: UUID) -> dict:
+        """Return unit-level serial lines for an internal-transfer ASN.
+
+        Includes received/not-received counts for in-transit visibility.
+        """
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(
+                AsnOrderSerialLine.asn_order_id == asn_order_id,
+                AsnOrderSerialLine.organization_id == organization_id,
+            )
+            .order_by(AsnOrderSerialLine.created_at.asc())
+            .all()
+        )
+        received = sum(1 for line in lines if line.received)
+        return {
+            "asn_order_id": str(asn_order_id),
+            "asn_order_no": asn_order.asn_order_no,
+            "asn_type": asn_order.asn_type or "purchase",
+            "status": asn_order.status.value if asn_order.status else "draft",
+            "total_serials": len(lines),
+            "received_serials": received,
+            "in_transit_serials": len(lines) - received,
+            "serials": [
+                {
+                    "id": str(line.id),
+                    "item_id": str(line.item_id),
+                    "serial_no": line.serial_no,
+                    "bin_location_id": str(line.bin_location_id)
+                    if line.bin_location_id
+                    else None,
+                    "received": bool(line.received),
+                    "received_at": line.received_at,
+                    "received_by": str(line.received_by) if line.received_by else None,
+                }
+                for line in lines
+            ],
+        }
+
+    def serialized_asn_856(self, asn_order_id: UUID, organization_id: UUID) -> dict:
+        """EDI-856-style serialized ASN export (SKU + unit-level serials + SSCC)."""
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+        from app.services.gs1_service import generate_sscc
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order_id)
+            .all()
+        )
+        serials_by_item: dict[str, list[str]] = {}
+        for line in serial_lines:
+            serials_by_item.setdefault(str(line.item_id), []).append(line.serial_no)
+
+        items = []
+        for item in asn_order.items:
+            serials = serials_by_item.get(str(item.item_id), [])
+            items.append(
+                {
+                    "sku": (item.item.sku or item.item.item_code)
+                    if item.item
+                    else None,
+                    "gtin": item.item.gtin if item.item else None,
+                    "description": item.item.item_name if item.item else None,
+                    "quantity": float(item.shipped_qty or item.qty),
+                    "uom": item.uom,
+                    "serial_numbers": serials,
+                }
+            )
+
+        # One SSCC per shipment (logistics unit), derived from the ASN id.
+        # The serial reference must fit the 17-digit SSCC body given the
+        # default 7-digit company prefix: 17 - 1 (extension) - 7 = 9 digits.
+        serial_ref = (
+            str(asn_order.id.int % 1_000_000_000).rjust(9, "0")
+            if getattr(asn_order.id, "int", None)
+            else "1"
+        )
+        sscc = generate_sscc(serial_ref)
+
+        return {
+            "transaction_set": "856",
+            "asn_number": asn_order.asn_order_no,
+            "asn_type": asn_order.asn_type or "purchase",
+            "ship_from": (
+                asn_order.from_warehouse.name if asn_order.from_warehouse else None
+            ),
+            "ship_to": (
+                asn_order.to_warehouse.name if asn_order.to_warehouse else None
+            ),
+            "order_date": asn_order.order_date,
+            "delivery_date": asn_order.delivery_date,
+            "sscc": sscc,
+            "items": items,
+        }
+
+    def epcis_events(self, asn_order_id: UUID, organization_id: UUID) -> dict:
+        """EPCIS 2.0-style event stream for a transfer ASN's serials."""
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+        from app.models.serial_no import SerialNo, SerialNoHistory
+        from app.services.epcis_service import build_events_for_serial
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        )
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order_id)
+            .all()
+        )
+        serial_nos = [line.serial_no for line in serial_lines]
+
+        histories = (
+            self.db.query(SerialNoHistory)
+            .filter(
+                SerialNoHistory.organization_id == organization_id,
+                SerialNoHistory.transaction_id == asn_order_id,
+            )
+            .order_by(SerialNoHistory.transaction_date.asc())
+            .all()
+        )
+
+        serial_map: dict = {}
+        serial_ids = {h.serial_no_id for h in histories}
+        if serial_ids:
+            serial_map = {
+                s.id: s.serial_no
+                for s in self.db.query(SerialNo)
+                .filter(SerialNo.id.in_(serial_ids))
+                .all()
+            }
+
+        by_serial: dict[str, list] = {}
+        for h in histories:
+            sn = serial_map.get(h.serial_no_id)
+            if sn is None:
+                continue
+            by_serial.setdefault(sn, []).append(h)
+
+        events: list[dict] = []
+        for sn in serial_nos:
+            events.extend(build_events_for_serial(sn, by_serial.get(sn, [])))
+
+        return {
+            "context": {
+                "schema": "EPCIS 2.0 (simplified JSON)",
+                "asn_number": asn_order.asn_order_no,
+            },
+            "events": events,
+        }
 
     def get_list(
         self,
@@ -101,17 +308,30 @@ class AsnOrderService:
         page_size: int = 20,
         status: str | None = None,
         warehouse_id: UUID | None = None,
+        source_warehouse_id: UUID | None = None,
+        delivery_date_from=None,
+        delivery_date_to=None,
+        vehicle_no: str | None = None,
         search: str | None = None,
-        sort_by: str = "order_date",
+        asn_type: str | None = None,
+        sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> tuple[list[dict], dict]:
+    ) -> tuple[list[dict], dict, dict]:
+        # Read the page and its status totals from one repeatable-read snapshot
+        # so concurrent ASN writes cannot split the two results.
+        self.db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
         items, total = self.repo.list_asn_orders(
             organization_id=organization_id,
             page=page,
             page_size=page_size,
             status=status,
             warehouse_id=warehouse_id,
+            source_warehouse_id=source_warehouse_id,
+            delivery_date_from=delivery_date_from,
+            delivery_date_to=delivery_date_to,
+            vehicle_no=vehicle_no,
             search=search,
+            asn_type=asn_type,
             sort_by=sort_by,
             sort_order=sort_order,
         )
@@ -124,16 +344,21 @@ class AsnOrderService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(x) for x in items], pagination
+        status_counts = self.repo.get_status_counts(organization_id)
+        return [self._to_list_item(x) for x in items], pagination, status_counts
 
-    def update(
-        self, asn_order_id: UUID, data: dict, organization_id: UUID, user_id: UUID
+    def update(  # noqa: C901
+        self,
+        asn_order_id: UUID,
+        data: dict,
+        organization_id: UUID,
+        user_id: UUID,
+        user_type: str | None = None,
+        permissions: list[str] | None = None,
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         payload = {k: v for k, v in data.items() if v is not None and k != "items"}
 
@@ -154,6 +379,53 @@ class AsnOrderService:
         if "warehouse_id_to" in payload and payload["warehouse_id_to"]:
             self._validate_warehouse_organization(
                 payload["warehouse_id_to"], organization_id
+            )
+
+        # An internal-transfer ASN must always have a source warehouse. The
+        # update may set asn_type to internal_transfer without a source, which
+        # would otherwise fail later when the confirmation tries to create the
+        # source pick list.
+        effective_asn_type = payload.get("asn_type", asn_order.asn_type)
+        effective_from = payload.get("warehouse_id_from", asn_order.warehouse_id_from)
+
+        # Stock Receipt ASNs never carry a source warehouse (stock arrives from
+        # manufacturing units, not another warehouse), but they always need a
+        # target (mother) warehouse.
+        if effective_asn_type == "stock_receipt":
+            payload["warehouse_id_from"] = None
+            effective_to = payload.get("warehouse_id_to", asn_order.warehouse_id_to)
+            if not effective_to:
+                raise ValidationError(
+                    message=(
+                        "warehouse_id_to (target warehouse) is required for a "
+                        "stock receipt ASN"
+                    ),
+                    details=[
+                        {
+                            "field": "warehouse_id_to",
+                            "reason": (
+                                "A target warehouse is required when asn_type "
+                                "is stock_receipt"
+                            ),
+                        }
+                    ],
+                )
+
+        if effective_asn_type == "internal_transfer" and not effective_from:
+            raise ValidationError(
+                message=(
+                    "warehouse_id_from (source warehouse) is required for an "
+                    "internal transfer ASN"
+                ),
+                details=[
+                    {
+                        "field": "warehouse_id_from",
+                        "reason": (
+                            "A source warehouse is required when asn_type is "
+                            "internal_transfer"
+                        ),
+                    }
+                ],
             )
 
         # Handle items update if provided
@@ -180,6 +452,10 @@ class AsnOrderService:
                     "qty": Decimal(str(item_data["qty"])),
                     "uom": item_data.get("uom", "pcs"),
                     "sort_order": item_data.get("sort_order", 0),
+                    "serial_nos": item_data.get("serial_nos") or None,
+                    "shipped_qty": Decimal(str(item_data.get("shipped_qty") or 0)),
+                    "received_qty": Decimal(str(item_data.get("received_qty") or 0)),
+                    "extra_data": item_data.get("extra_data") or None,
                 }
                 grand_total += item_payload["qty"]
                 self.db.add(AsnOrderItem(**item_payload))
@@ -192,13 +468,38 @@ class AsnOrderService:
         # Emit notifications when status changes via the general update endpoint
         new_status = asn_order.status
         if old_status != new_status:
+            # Internal transfer side-effects (the dialog confirms through this
+            # endpoint, not the dedicated status endpoint).
+            if (
+                new_status == AsnOrderStatus.CONFIRMED
+                and asn_order.asn_type == "internal_transfer"
+            ):
+                created_order = self._create_transfer_order(asn_order, user_id)
+                self._emit_asn_notification(
+                    asn_order=asn_order,
+                    notif_type="transfer_pick_created",
+                    title="ASN Order Created",
+                    message=(
+                        f"Order {created_order.get('order_no')} was "
+                        f"created at the target warehouse for ASN "
+                        f"{asn_order.asn_order_no}."
+                    ),
+                    warehouse_id=asn_order.warehouse_id_to,
+                    sender_id=user_id,
+                )
+            elif (
+                new_status == AsnOrderStatus.CANCELLED
+                and asn_order.asn_type == "internal_transfer"
+            ):
+                self._reverse_transfer(asn_order)
+
             if new_status == AsnOrderStatus.CONFIRMED:
                 self._emit_asn_notification(
                     asn_order=asn_order,
                     notif_type="asn_confirmed",
                     title="ASN Confirmed",
                     message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.PARTIALLY_DELIVERED:
@@ -207,7 +508,7 @@ class AsnOrderService:
                     notif_type="fulfillment_partially_completed",
                     title="ASN Partially Delivered",
                     message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.DELIVERED:
@@ -216,7 +517,7 @@ class AsnOrderService:
                     notif_type="fulfillment_completed",
                     title="ASN Fully Delivered",
                     message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
-                    warehouse_id=asn_order.warehouse_id_from,
+                    warehouse_id=self._fulfillment_warehouse(asn_order),
                     sender_id=user_id,
                 )
             elif new_status == AsnOrderStatus.CANCELLED:
@@ -234,9 +535,7 @@ class AsnOrderService:
     def delete(self, asn_order_id: UUID, organization_id: UUID) -> None:
         asn_order = self.repo.get_by_id(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
         self.repo.delete(asn_order)
 
     def update_status(
@@ -245,12 +544,12 @@ class AsnOrderService:
         new_status: str,
         organization_id: UUID,
         user_id: UUID,
+        user_type: str | None = None,
+        permissions: list[str] | None = None,
     ) -> dict:
         asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
         if not asn_order:
-            raise ResourceNotFoundException(
-                f"ASN Order {asn_order_id} not found"
-            )
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         new_status_enum = AsnOrderStatus(new_status)
         self._validate_status_transition(asn_order.status, new_status_enum)
@@ -272,6 +571,32 @@ class AsnOrderService:
         self.repo.update(asn_order, payload)
         self.db.refresh(asn_order)
 
+        # Internal transfer: confirming the ASN drives the source outbound order.
+        if (
+            new_status_enum == AsnOrderStatus.CONFIRMED
+            and asn_order.asn_type == "internal_transfer"
+        ):
+            created_order = self._create_transfer_order(asn_order, user_id)
+            # Notify the destination (creation side) that fulfilment started.
+            self._emit_asn_notification(
+                asn_order=asn_order,
+                notif_type="transfer_pick_created",
+                title="ASN Order Created",
+                message=(
+                    f"Order {created_order.get('order_no')} was created "
+                    f"at the target warehouse for ASN {asn_order.asn_order_no}."
+                ),
+                warehouse_id=asn_order.warehouse_id_to,
+                sender_id=user_id,
+            )
+
+        # Internal transfer: cancelling reverses in-transit serials + pick list.
+        if (
+            new_status_enum == AsnOrderStatus.CANCELLED
+            and asn_order.asn_type == "internal_transfer"
+        ):
+            self._reverse_transfer(asn_order)
+
         # Emit notifications based on status change
         if new_status_enum == AsnOrderStatus.CONFIRMED:
             self._emit_asn_notification(
@@ -279,7 +604,7 @@ class AsnOrderService:
                 notif_type="asn_confirmed",
                 title="ASN Confirmed",
                 message=f"ASN {asn_order.asn_order_no} has been confirmed and is ready for fulfillment.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.PARTIALLY_DELIVERED:
@@ -288,7 +613,7 @@ class AsnOrderService:
                 notif_type="fulfillment_partially_completed",
                 title="ASN Partially Delivered",
                 message=f"ASN {asn_order.asn_order_no} has been partially delivered.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.DELIVERED:
@@ -297,7 +622,7 @@ class AsnOrderService:
                 notif_type="fulfillment_completed",
                 title="ASN Fully Delivered",
                 message=f"ASN {asn_order.asn_order_no} has been fully delivered.",
-                warehouse_id=asn_order.warehouse_id_from,
+                warehouse_id=self._fulfillment_warehouse(asn_order),
                 sender_id=user_id,
             )
         elif new_status_enum == AsnOrderStatus.CANCELLED:
@@ -312,7 +637,239 @@ class AsnOrderService:
 
         return self._to_response(asn_order)
 
+    # ── internal-transfer fulfilment ──────────────────────────────────
+
+    def _create_transfer_order(self, asn_order: AsnOrder, user_id: UUID) -> dict:
+        """Auto-create the target warehouse's outbound order for an internal transfer.
+
+        Mirrors each ASN line into an ``OutboundOrder`` (type ``asn``) at
+        ``warehouse_id_to`` with ``reference_type='asn_order'`` so the
+        order-driven outbound flow (order → pick lists → dispatch) can fulfil
+        it. Returns the created order dict and links it back onto the ASN.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Serialize concurrent confirmations: take a row lock on the ASN so two
+        # simultaneous confirms cannot both create a duplicate order.
+        linked_order_id = (
+            self.db.query(AsnOrder.linked_order_id)
+            .filter(AsnOrder.id == asn_order.id)
+            .with_for_update()
+            .scalar()
+        )
+
+        from app.models.outbound_order import OutboundOrder, OutboundOrderItem
+
+        # Idempotency: never create a second order for the same ASN.
+        if linked_order_id:
+            existing = self.db.get(OutboundOrder, linked_order_id)
+            if existing:
+                return {"id": existing.id, "order_no": existing.order_no}
+
+        # Guard a prior partial creation that committed the order but failed
+        # before persisting the ASN link: reuse that order instead.
+        existing = (
+            self.db.query(OutboundOrder)
+            .filter(
+                OutboundOrder.reference_type == "asn_order",
+                OutboundOrder.reference_id == asn_order.id,
+            )
+            .first()
+        )
+        if existing is not None:
+            asn_order.linked_order_id = existing.id
+            self.db.commit()
+            return {"id": existing.id, "order_no": existing.order_no}
+
+        if not asn_order.warehouse_id_from:
+            raise ValueError("Source warehouse is required to create an order")
+
+        if not asn_order.items:
+            raise ValueError("Internal transfer ASN has no line items to order")
+
+        from app.models.base import OutboundOrderStatus, OutboundOrderType
+        from app.services.document_numbering_service import DocumentNumberingService
+        from app.services.outbound_order_service import OutboundOrderService
+
+        order = OutboundOrder(
+            organization_id=asn_order.organization_id,
+            order_no=DocumentNumberingService(self.db).get_next_number(
+                asn_order.organization_id, "outbound_order"
+            ),
+            order_type=OutboundOrderType.ASN,
+            warehouse_id=asn_order.warehouse_id_from,
+            status=OutboundOrderStatus.DRAFT,
+            invoice_reference=asn_order.asn_order_no,
+            reference_type="asn_order",
+            reference_id=asn_order.id,
+            reference_no=asn_order.asn_order_no,
+            remarks=f"Internal transfer from ASN {asn_order.asn_order_no}",
+            created_by=user_id,
+        )
+        self.db.add(order)
+        self.db.flush()
+
+        for item in asn_order.items:
+            self.db.add(
+                OutboundOrderItem(
+                    organization_id=asn_order.organization_id,
+                    outbound_order_id=order.id,
+                    item_id=item.item_id,
+                    warehouse_id=asn_order.warehouse_id_from,
+                    qty=item.qty,
+                    uom=item.uom,
+                    sku=(item.item.sku or item.item.item_code) if item.item else None,
+                )
+            )
+
+        # Link the ASN to the order before computing stock status.
+        asn_order.linked_order_id = order.id
+        self.db.flush()
+
+        # Compute per-line stock availability so the order shows fulfilment
+        # status in the Orders tab immediately.
+        OutboundOrderService(self.db).refresh_stock_status(order)
+
+        self.db.commit()
+
+        logger.info(
+            "Created source order '%s' for internal transfer ASN '%s'",
+            order.order_no,
+            asn_order.asn_order_no,
+        )
+        return {"id": order.id, "order_no": order.order_no}
+
+    def _reverse_transfer(self, asn_order: AsnOrder) -> None:
+        """Reverse an internal transfer on cancel.
+
+        Restores not-yet-received serials to the source warehouse (``in_stock``)
+        with a ``transfer_cancelled`` history row, and cancels the linked pick
+        list if it hasn't been dispatched yet.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        from app.models.asn_order import AsnOrderSerialLine
+        from app.models.pick_list import PickList, PickListStatus
+        from app.models.serial_no import SerialNo, SerialNoHistory
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        for line in lines:
+            if line.received:
+                continue
+            serial_row = (
+                self.db.query(SerialNo)
+                .filter(
+                    SerialNo.organization_id == asn_order.organization_id,
+                    SerialNo.serial_no == line.serial_no,
+                    SerialNo.item_id == line.item_id,
+                )
+                .first()
+            )
+            if serial_row is not None:
+                serial_row.warehouse_id = asn_order.warehouse_id_from
+                serial_row.status = "in_stock"
+                self.db.add(
+                    SerialNoHistory(
+                        organization_id=asn_order.organization_id,
+                        serial_no_id=serial_row.id,
+                        transaction_type="transfer_cancelled",
+                        transaction_id=asn_order.id,
+                        from_warehouse_id=asn_order.warehouse_id_to,
+                        to_warehouse_id=asn_order.warehouse_id_from,
+                        remarks=f"Cancelled transfer ASN {asn_order.asn_order_no}",
+                    )
+                )
+
+        # Cancel the linked source order (order-driven flow) and any pick lists
+        # generated from it; also handle legacy pick lists linked directly to
+        # the ASN (created before the order-driven flow).
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        terminal_pick_statuses = (
+            PickListStatus.COMPLETED,
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+            PickListStatus.DELIVERED,
+            PickListStatus.CANCELLED,
+        )
+
+        order = None
+        if asn_order.linked_order_id:
+            order = self.db.get(OutboundOrder, asn_order.linked_order_id)
+        else:
+            order = (
+                self.db.query(OutboundOrder)
+                .filter(
+                    OutboundOrder.reference_type == "asn_order",
+                    OutboundOrder.reference_id == asn_order.id,
+                )
+                .first()
+            )
+
+        pick_list_ids: list = []
+        if order is not None:
+            if order.status not in (
+                OutboundOrderStatus.CANCELLED,
+                OutboundOrderStatus.COMPLETED,
+            ):
+                order.status = OutboundOrderStatus.CANCELLED
+            pick_list_ids = [
+                row[0]
+                for row in self.db.query(PickList.id)
+                .filter(
+                    PickList.organization_id == asn_order.organization_id,
+                    PickList.reference_type == "outbound_order",
+                    PickList.reference_id == order.id,
+                )
+                .all()
+            ]
+
+        legacy = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == asn_order.organization_id,
+                PickList.reference_type == "asn_order",
+                PickList.reference_id == asn_order.id,
+            )
+            .first()
+        )
+        if legacy is not None:
+            pick_list_ids.append(legacy.id)
+
+        for pick_list_id in pick_list_ids:
+            pl = self.db.get(PickList, pick_list_id)
+            if (
+                pl is not None
+                and pl.status not in terminal_pick_statuses
+                and pl.dispatch_record_id is None
+            ):
+                pl.status = PickListStatus.CANCELLED
+
+        logger.info(
+            "Reversed in-transit serials for cancelled transfer ASN '%s'",
+            asn_order.asn_order_no,
+        )
+
     # ── notification helpers ─────────────────────────────────────────
+
+    def _fulfillment_warehouse(self, asn_order: AsnOrder) -> UUID | None:
+        """Warehouse to notify for fulfilment progress.
+
+        Stock receipts have no source warehouse (manufacturing units are not
+        warehouses), so fall back to the target warehouse instead of passing
+        ``None`` — which broadcasts to every org user.
+        """
+        return asn_order.warehouse_id_from or asn_order.warehouse_id_to
 
     def _emit_asn_notification(
         self,
@@ -383,6 +940,13 @@ class AsnOrderService:
                 exc,
                 exc_info=True,
             )
+            # A failed notification flush leaves the session in a
+            # rolled-back state, which would poison any subsequent reads
+            # (e.g. _to_response) with a 503. Discard the broken transaction.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
 
     # ── validation helpers ─────────────────────────────────────────────
 
@@ -404,9 +968,7 @@ class AsnOrderService:
                 f"Warehouse {warehouse_id} not found in organization"
             )
 
-    def _validate_item_organization(
-        self, item_id: UUID, organization_id: UUID
-    ) -> None:
+    def _validate_item_organization(self, item_id: UUID, organization_id: UUID) -> None:
         from app.models.item import Item
 
         item = (
@@ -418,9 +980,7 @@ class AsnOrderService:
             .first()
         )
         if not item:
-            raise ResourceNotFoundException(
-                f"Item {item_id} not found in organization"
-            )
+            raise ResourceNotFoundException(f"Item {item_id} not found in organization")
 
     def _validate_status_transition(
         self,
@@ -468,6 +1028,60 @@ class AsnOrderService:
 
     # ── serialization helpers ──────────────────────────────────────────
 
+    @staticmethod
+    def _vehicle_arrivals_for_response(asn_order: AsnOrder) -> list[dict]:
+        return [
+            {
+                "id": arrival.id,
+                "vehicle_no": arrival.vehicle.vehicle_no if arrival.vehicle else None,
+                "driver_name": arrival.vehicle.driver_name if arrival.vehicle else None,
+                "driver_contact": (
+                    arrival.vehicle.driver_contact if arrival.vehicle else None
+                ),
+                "transporter": arrival.vehicle.transporter if arrival.vehicle else None,
+                "dock": arrival.dock,
+                "status": arrival.status,
+                "arrived_at": arrival.arrived_at,
+            }
+            for arrival in asn_order.vehicle_arrivals
+        ]
+
+    def _linked_pick_list_no(self, asn_order: AsnOrder) -> str | None:
+        """Resolve the linked pick list number (if any) for the ASN."""
+        if not asn_order.linked_pick_list_id:
+            return None
+        from app.models.pick_list import PickList
+
+        pl = self.db.get(PickList, asn_order.linked_pick_list_id)
+        return pl.pick_list_no if pl else None
+
+    def _linked_order_no(self, asn_order: AsnOrder) -> str | None:
+        """Resolve the linked outbound order number (if any) for the ASN."""
+        if not asn_order.linked_order_id:
+            return None
+        from app.models.outbound_order import OutboundOrder
+
+        order = self.db.get(OutboundOrder, asn_order.linked_order_id)
+        return order.order_no if order else None
+
+    def _transfer_progress(self, asn_order: AsnOrder) -> dict | None:
+        """Serial-level transfer progress for internal-transfer ASNs."""
+        if asn_order.asn_type != "internal_transfer":
+            return None
+        from app.models.asn_order import AsnOrderSerialLine
+
+        lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .all()
+        )
+        received = sum(1 for line in lines if line.received)
+        return {
+            "total_serials": len(lines),
+            "received_serials": received,
+            "in_transit_serials": len(lines) - received,
+        }
+
     def _to_response(self, asn_order: AsnOrder) -> dict:
         from_warehouse = None
         if asn_order.from_warehouse:
@@ -493,11 +1107,16 @@ class AsnOrderService:
                 "asn_order_id": item.asn_order_id,
                 "item_id": item.item_id,
                 "item_code": item.item.item_code if item.item else None,
+                "sku": (item.item.sku or item.item.item_code) if item.item else None,
                 "item_name": item.item.item_name if item.item else None,
                 "qty": float(item.qty) if item.qty else 0,
                 "uom": item.uom,
                 "sort_order": item.sort_order,
                 "delivered_qty": float(item.delivered_qty) if item.delivered_qty else 0,
+                "serial_nos": item.serial_nos or [],
+                "shipped_qty": float(item.shipped_qty) if item.shipped_qty else 0,
+                "received_qty": float(item.received_qty) if item.received_qty else 0,
+                "extra_data": item.extra_data,
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
             }
@@ -516,6 +1135,18 @@ class AsnOrderService:
             "reference_type": asn_order.reference_type,
             "reference_id": asn_order.reference_id,
             "reference_no": asn_order.reference_no,
+            "asn_type": asn_order.asn_type or "purchase",
+            "linked_pick_list_id": (
+                str(asn_order.linked_pick_list_id)
+                if asn_order.linked_pick_list_id
+                else None
+            ),
+            "linked_pick_list_no": self._linked_pick_list_no(asn_order),
+            "linked_order_id": (
+                str(asn_order.linked_order_id) if asn_order.linked_order_id else None
+            ),
+            "linked_order_no": self._linked_order_no(asn_order),
+            "transfer_progress": self._transfer_progress(asn_order),
             "remarks": asn_order.remarks,
             "submitted_at": asn_order.submitted_at,
             "created_by": asn_order.created_by,
@@ -524,6 +1155,7 @@ class AsnOrderService:
             "updated_at": asn_order.updated_at,
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
+            "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
             "items": items,
         }
 
@@ -552,7 +1184,17 @@ class AsnOrderService:
             "order_date": asn_order.order_date,
             "delivery_date": asn_order.delivery_date,
             "grand_total": float(asn_order.grand_total) if asn_order.grand_total else 0,
+            "asn_type": asn_order.asn_type or "purchase",
+            "linked_pick_list_id": (
+                str(asn_order.linked_pick_list_id)
+                if asn_order.linked_pick_list_id
+                else None
+            ),
+            "linked_order_id": (
+                str(asn_order.linked_order_id) if asn_order.linked_order_id else None
+            ),
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
+            "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
             "created_at": asn_order.created_at,
         }

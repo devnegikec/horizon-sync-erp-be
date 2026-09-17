@@ -12,7 +12,7 @@ from app.tasks.billing_automation import (
 __all__ = [
     "BillingAutomationTask",
     "run_daily_reminders",
-    "run_deactivation_check", 
+    "run_deactivation_check",
     "run_log_cleanup",
     "run_reminder_report",
     "schedule_billing_automation_tasks",

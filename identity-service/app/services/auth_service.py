@@ -26,6 +26,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.base import UserStatus, UserType
+from app.models.role import Permission, Role, RolePermission
 from app.models.user import User
 from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.token_repository import TokenRepository
@@ -34,6 +35,22 @@ from app.repositories.user_repository import UserRepository
 
 class AuthService:
     """Service for authentication operations"""
+
+    # Permission codes required by the warehouse_work_user role.
+    # Must stay in sync with workers.py and identity_role_service.py.
+    _WORKER_REQUIRED_PERMISSIONS = [
+        "warehouse.read",
+        "wms.scan",
+        "receiving_slip.create",
+        "receiving_slip.read",
+        "receiving_slip.update",
+        "inbound_exception.read",
+        "inbound_exception.create",
+        "pick_list.read",
+        "pick_list.update",
+        "stock_entry.create",
+        "stock_entry.read",
+    ]
 
     def __init__(self, db: Session):
         self.db = db
@@ -152,6 +169,12 @@ class AuthService:
         if not user:
             raise AuthenticationError("Invalid email or password")
 
+        # Warehouse workers must use QR or the worker app, never the web portal.
+        if user.user_type == UserType.WAREHOUSE_WORKER:
+            raise AuthenticationError(
+                "Warehouse workers must log in via the worker app (QR code or username/password), not the web portal"
+            )
+
         # Check if account is locked
         if self._is_account_locked(user):
             raise AccountLockedException(
@@ -241,7 +264,7 @@ class AuthService:
         Raises:
             AuthenticationError: If QR code is invalid or worker is not active
         """
-        # Look up user by QR code
+        # Look up user by QR code (single source of truth: users.qr_code)
         user = self.user_repo.get_user_by_qr_code(qr_code)
         if not user:
             raise AuthenticationError("Invalid QR code")
@@ -255,6 +278,10 @@ class AuthService:
         # Check if user is active
         if not user.is_active or user.status == UserStatus.SUSPENDED:
             raise AuthenticationError("Worker account is inactive or suspended")
+
+        # --- Ensure the worker's role has all required permissions ---
+        # (patches roles created before the seed-data fix or auto-seeded without perms)
+        self._ensure_worker_permissions(user)
 
         # Update login tracking
         self.user_repo.update_user(
@@ -290,6 +317,135 @@ class AuthService:
         )
 
         return user, access_token, refresh_token
+
+    def login_worker(
+        self,
+        login_username: str,
+        password: str,
+        device_info: dict | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> tuple[User, str, str]:
+        """Authenticate a warehouse worker by username + password.
+
+        Fallback for when QR login is unavailable (mobile/device only).
+        The worker must have a managed `login_username` + password.
+        """
+        user = (
+            self.db.query(User)
+            .filter(User.login_username == login_username)
+            .first()
+        )
+        if not user or not verify_password(password, user.password_hash):
+            raise AuthenticationError("Invalid username or password")
+
+        if user.user_type != UserType.WAREHOUSE_WORKER:
+            raise AuthenticationError(
+                "Username/password login is only available for warehouse workers"
+            )
+
+        if not user.is_active or user.status == UserStatus.SUSPENDED:
+            raise AuthenticationError("Worker account is inactive or suspended")
+
+        self._ensure_worker_permissions(user)
+        self.user_repo.update_user(
+            user,
+            {
+                "last_login_at": datetime.now(UTC),
+                "last_login_ip": ip_address,
+            },
+        )
+
+        worker_ttl_hours = getattr(settings, "worker_token_expire_hours", 20)
+        access_token_expires = timedelta(hours=worker_ttl_hours)
+        refresh_token_expires = timedelta(hours=worker_ttl_hours * 2)
+
+        access_token = create_access_token(
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_type": user.user_type.value,
+            },
+            expires_delta=access_token_expires,
+        )
+        refresh_token = create_refresh_token(
+            {"sub": str(user.id), "token_family": str(uuid.uuid4())},
+            expires_delta=refresh_token_expires,
+        )
+        self._store_refresh_token(
+            user.id, refresh_token, device_info, ip_address, user_agent
+        )
+        return user, access_token, refresh_token
+
+    def _ensure_worker_permissions(self, user: User) -> None:
+        """Ensure the warehouse_work_user role has all required permissions.
+
+        Patches roles that were created before the seed-data fix or
+        auto-seeded by core-service without permissions.
+        Idempotent — skips permissions already assigned.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Find the worker's warehouse_work_user role
+        ww_role = (
+            self.db.query(Role)
+            .filter(
+                Role.code == "warehouse_work_user",
+                Role.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not ww_role:
+            logger.warning(
+                "warehouse_work_user role not found — cannot patch permissions"
+            )
+            return
+
+        # Fetch all required Permission objects
+        required_perms = (
+            self.db.query(Permission)
+            .filter(
+                Permission.code.in_(self._WORKER_REQUIRED_PERMISSIONS),
+                Permission.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+
+        found_codes = {p.code for p in required_perms}
+        missing_codes = set(self._WORKER_REQUIRED_PERMISSIONS) - found_codes
+        if missing_codes:
+            logger.warning(
+                "Permissions not found in DB: %s — workers may be incomplete",
+                ", ".join(sorted(missing_codes)),
+            )
+
+        if not required_perms:
+            return
+
+        # Fetch already-assigned permission IDs
+        existing_ids = set(
+            row[0]
+            for row in self.db.query(RolePermission.permission_id)
+            .filter(RolePermission.role_id == ww_role.id)
+            .all()
+        )
+
+        # Assign missing permissions
+        assigned = 0
+        for perm in required_perms:
+            if perm.id not in existing_ids:
+                self.db.add(RolePermission(role_id=ww_role.id, permission_id=perm.id))
+                assigned += 1
+
+        if assigned:
+            self.db.flush()
+            logger.info(
+                "QR login: auto-assigned %d missing permissions to warehouse_work_user role %s",
+                assigned,
+                ww_role.id,
+            )
 
     def refresh_access_token(self, refresh_token: str) -> str:
         """

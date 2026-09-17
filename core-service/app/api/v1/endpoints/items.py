@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,6 +21,12 @@ from app.schemas.item import (
 from app.services.item_service import ItemService
 
 router = APIRouter()
+
+
+class RejectItemRequest(BaseModel):
+    """Request body for rejecting a pending item."""
+
+    reason: str = Field(..., min_length=1, max_length=1000, description="Rejection reason")
 
 
 @router.post(
@@ -82,7 +89,7 @@ async def list_items(
         None, description="Filter by maintain_stock flag"
     ),
     search: str | None = Query(
-        None, description="Search in item_code, item_name, barcode"
+        None, description="Search in item_code, item_name, barcode, sku"
     ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
@@ -124,6 +131,34 @@ async def list_items(
 
     # Convert to response schema
     item_items = [ItemListItem.model_validate(item) for item in items]
+
+    # Attach each item's master-pack size (items per master pack) from its
+    # base packaging unit in a single query, so callers (e.g. the Inbound
+    # Automation data-sync flow) can auto-populate the master-pack field
+    # without N+1 lookups.
+    if item_items:
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        pack_rows = (
+            db.query(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.items_per_master_pack,
+            )
+            .filter(
+                ItemPackagingUnit.organization_id == current_user.organization_id,
+                ItemPackagingUnit.item_id.in_([it.id for it in item_items]),
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .all()
+        )
+        pack_map = {
+            item_id: items_per_master_pack
+            for item_id, items_per_master_pack in pack_rows
+            if items_per_master_pack is not None
+        }
+        for item_dto in item_items:
+            item_dto.items_per_master_pack = pack_map.get(item_dto.id)
 
     return ItemListResponse(items=item_items, pagination=PaginationMeta(**pagination))
 
@@ -197,7 +232,19 @@ async def get_item(
         organization_id=current_user.organization_id,
         include_group=True,
     )
-    return ItemResponse.model_validate(item)
+    item_dto = ItemResponse.model_validate(item)
+
+    # Surface the master-pack size from the item's base packaging unit
+    # (preferred over any secondary packaging units).
+    base_units = [
+        pu
+        for pu in (item_dto.packaging_units or [])
+        if pu.is_base_unit and pu.is_active and pu.items_per_master_pack is not None
+    ]
+    base_units.sort(key=lambda pu: str(pu.id))
+    item_dto.items_per_master_pack = base_units[0].items_per_master_pack if base_units else None
+
+    return item_dto
 
 
 @router.put(
@@ -262,6 +309,65 @@ async def delete_item(
         user_id=current_user.id,
     )
     return None
+
+
+@router.post(
+    "/{item_id}/submit",
+    response_model=ItemResponse,
+    summary="Submit item for approval",
+)
+async def submit_item_for_approval(
+    item_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.submit_for_approval(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ItemResponse.model_validate(item)
+
+
+@router.post(
+    "/{item_id}/approve",
+    response_model=ItemResponse,
+    summary="Approve item",
+)
+async def approve_item(
+    item_id: UUID,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.approve_item(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+    )
+    return ItemResponse.model_validate(item)
+
+
+@router.post(
+    "/{item_id}/reject",
+    response_model=ItemResponse,
+    summary="Reject item",
+)
+async def reject_item(
+    item_id: UUID,
+    body: RejectItemRequest,
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    item_service = ItemService(db)
+    item = item_service.reject_item(
+        item_id=item_id,
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        reason=body.reason,
+    )
+    return ItemResponse.model_validate(item)
 
 
 @router.get(

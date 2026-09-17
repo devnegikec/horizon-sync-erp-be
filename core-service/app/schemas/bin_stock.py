@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -39,6 +39,29 @@ class RemoveStockRequest(BaseModel):
     )
 
 
+class BulkAddStockItem(BaseModel):
+    """A single item entry within a bulk add request"""
+
+    item_id: UUID = Field(..., description="Item UUID to add to the bin")
+    quantity: Decimal = Field(
+        ..., gt=0, description="Quantity to add (must be positive)"
+    )
+    batch_number: str | None = Field(
+        None, max_length=100, description="Optional batch number"
+    )
+
+
+class BulkAddStockRequest(BaseModel):
+    """Schema for adding multiple items to a single bin in one API call"""
+
+    bin_id: UUID = Field(
+        ..., description="Bin location UUID (all items go to this bin)"
+    )
+    items: list[BulkAddStockItem] = Field(
+        ..., min_length=1, max_length=50, description="List of items to add to the bin"
+    )
+
+
 # ===========================================
 # RESPONSE SCHEMAS
 # ===========================================
@@ -51,7 +74,10 @@ class BinStockLevelResponse(BaseModel):
     organization_id: UUID
     bin_location_id: UUID
     item_id: UUID
+    item_name: str | None = None
+    sku: str | None = None
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -68,6 +94,7 @@ class BinStockInfoResponse(BaseModel):
     warehouse_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
@@ -79,6 +106,59 @@ class BinStockListResponse(BaseModel):
     """Response schema for listing bin stock levels"""
 
     bin_stock_levels: list[BinStockLevelResponse]
+
+
+class BinStockChildResponse(BaseModel):
+    """A child unit within a parent (master-pack) box in a bin."""
+
+    serial_number: str | None = None
+    batch_number: str | None = None
+    item_id: UUID | None = None
+    quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
+    manufacturing_date: date | None = None
+    expiry_date: date | None = None
+    dispatch_batch: str | None = None
+
+
+class BinStockParentResponse(BaseModel):
+    """A parent (master-pack) box present in a bin."""
+
+    parent_id: UUID
+    parent_serial: str | None = None
+    parent_name: str | None = None
+    capacity: int | None = None
+    child_units_in_bin: int = 0
+    quantity_on_hand: Decimal = Decimal("0")
+    children: list[BinStockChildResponse] = []
+
+
+class BinStockParentsResponse(BaseModel):
+    """Response schema for parent (box) aggregation in a bin."""
+
+    bin_id: UUID
+    total_parent_boxes: int = 0
+    parents: list[BinStockParentResponse] = []
+
+
+class BulkAddStockItemResult(BaseModel):
+    """Result for a single item in a bulk add operation"""
+
+    item_id: UUID
+    quantity: Decimal
+    batch_number: str | None = None
+    status: str  # "added" or "error"
+    error: str | None = None
+    bin_stock_level: BinStockLevelResponse | None = None
+
+
+class BulkAddStockResponse(BaseModel):
+    """Response schema for bulk add stock operation"""
+
+    bin_id: UUID
+    added: int
+    errors: int
+    items: list[BulkAddStockItemResult]
 
 
 class BinStockForItemResponse(BaseModel):
@@ -94,7 +174,9 @@ class CopyStockRequest(BaseModel):
     target_bin_id: UUID = Field(..., description="Target bin location UUID")
     item_id: UUID = Field(..., description="Item UUID")
     quantity: Decimal = Field(..., gt=0, description="Quantity to copy")
-    batch_number: str | None = Field(None, max_length=100, description="Optional batch number")
+    batch_number: str | None = Field(
+        None, max_length=100, description="Optional batch number"
+    )
 
 
 class StockImportRow(BaseModel):
@@ -111,7 +193,9 @@ class StockImportRequest(BaseModel):
 
     warehouse_id: UUID = Field(..., description="Warehouse UUID")
     rows: list[StockImportRow] = Field(..., min_length=1)
-    overwrite_existing: bool = Field(default=False, description="Overwrite existing stock for same bin+item+batch")
+    overwrite_existing: bool = Field(
+        default=False, description="Overwrite existing stock for same bin+item+batch"
+    )
 
 
 class StockImportResult(BaseModel):

@@ -118,6 +118,10 @@ class LayoutService:
             is_active=True,
         )
 
+        # Auto-generate unique 5-char QR code for bins
+        if location_type == "bin":
+            location.qr_code = self._generate_qr_code()
+
         self.db.add(location)
         self.db.commit()
         self.db.refresh(location)
@@ -630,7 +634,7 @@ class LayoutService:
         """
         if not code:
             return code
-        return re.sub(r"([A-Za-z]+)(\d+)", r"\1-\2", code)
+        return re.sub(r"([A-Za-z]+)(\d+)", r"\1\2", code)
 
     @classmethod
     def _extract_trailing_number(cls, raw_code: str) -> str:
@@ -660,7 +664,7 @@ class LayoutService:
         numeric = cls._extract_trailing_number(raw_code)
         if not numeric:
             return raw_code
-        return f"{prefix}-{numeric}"
+        return f"{prefix}{numeric}"
 
     @classmethod
     def _build_raw_code(cls, location_type: str, code: str) -> str:
@@ -679,6 +683,27 @@ class LayoutService:
         if not numeric:
             return code
         return f"{prefix}{numeric}"
+
+    def _generate_qr_code(self) -> str:
+        """
+        Generate a unique 5-character alphanumeric QR code for a bin.
+
+        Excludes I, O, 0, 1 for readability.
+        Retries on collision (extremely unlikely with 60M+ combinations).
+        """
+        import random
+
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        for _ in range(10):  # safety limit
+            code = "".join(random.choices(chars, k=5))
+            exists = (
+                self.db.query(WarehouseLocation)
+                .filter(WarehouseLocation.qr_code == code)
+                .first()
+            )
+            if not exists:
+                return code
+        raise RuntimeError("Failed to generate unique QR code after 10 attempts")
 
     @classmethod
     def _format_full_path(cls, full_path: str | None) -> str:
@@ -769,6 +794,8 @@ class LayoutService:
             full_path=location.full_path or "",
             location_type=location.location_type,
             location_code=location.code,
+            qr_code=location.qr_code,
+            bin_code=location.qr_code,
         )
 
     def _get_all_descendants(

@@ -77,7 +77,7 @@ async def get_admin_me(
     summary="Create a warehouse worker user",
     description="Admin creates a warehouse worker with QR code login. Requires system_admin user_type.",
 )
-async def create_warehouse_worker(
+async def create_warehouse_worker(  # noqa: C901
     body: CreateWarehouseWorkerRequest,
     current_user: CurrentUser = Depends(require_worker_manager),
     db: Session = Depends(get_db),
@@ -145,11 +145,11 @@ async def create_warehouse_worker(
             detail="warehouse_work_user role not found. Run seed data first.",
         )
 
-    # Create the user with a random password (they login via QR)
-    random_password = secrets.token_urlsafe(16)
+    # Create the user (QR login primary; optional managed username/password fallback)
+    password = body.password or secrets.token_urlsafe(16)
     user = User(
         email=worker_email,
-        password_hash=hash_password(random_password),
+        password_hash=hash_password(password),
         first_name=body.first_name,
         last_name=body.last_name,
         display_name=f"{body.first_name} {body.last_name}",
@@ -159,6 +159,9 @@ async def create_warehouse_worker(
         is_active=True,
         email_verified=True,
         qr_code=qr_code,
+        employee_id=body.employee_id,
+        login_username=body.login_username,
+        login_password=body.password,
     )
     db.add(user)
     db.flush()

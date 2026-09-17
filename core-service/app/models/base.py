@@ -19,6 +19,8 @@ class ItemType(str, enum.Enum):
 class ItemStatus(str, enum.Enum):
     """Item status enumeration"""
 
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
     ACTIVE = "active"
     INACTIVE = "inactive"
     DISCONTINUED = "discontinued"
@@ -209,7 +211,7 @@ class BillingCycle(str, enum.Enum):
     """Billing cycle enumeration for subscription invoices (Task 1B-1)"""
 
     MONTHLY = "monthly"
-    QUARTERLY = "quarterly" 
+    QUARTERLY = "quarterly"
     YEARLY = "yearly"
 
 
@@ -252,11 +254,58 @@ class DefaultAccountTransactionType(str, enum.Enum):
 
 
 class PickListStatus(str, enum.Enum):
-    """Pick list status enumeration"""
+    """Pick list status enumeration.
+
+    Extended lifecycle (outbound order-driven picking):
+    draft → confirmed → pending_picking → in_progress → pick_complete
+          → ready_for_dispatch → in_transit → delivered.
+
+    ``completed`` is retained as an alias of ``pick_complete`` for backward
+    compatibility with the legacy gate-verification flow.
+    """
 
     DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    PENDING_PICKING = "pending_picking"
     IN_PROGRESS = "in_progress"
+    PICK_COMPLETE = "pick_complete"
     COMPLETED = "completed"
+    READY_FOR_DISPATCH = "ready_for_dispatch"
+    IN_TRANSIT = "in_transit"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+class OutboundOrderType(str, enum.Enum):
+    """Type of an outbound order."""
+
+    ASN = "asn"
+    SAP = "sap"
+
+
+class OutboundOrderStatus(str, enum.Enum):
+    """Lifecycle of an outbound order."""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    PENDING_PICKING = "pending_picking"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class OutboundOrderItemStockStatus(str, enum.Enum):
+    """Fulfilment availability of an outbound order line."""
+
+    IN_STOCK = "in_stock"
+    OUT_OF_STOCK = "out_of_stock"
+
+
+class PackingSlipStatus(str, enum.Enum):
+    """Lifecycle of a packing slip (internal staging of picked goods)."""
+
+    DRAFT = "draft"
+    LOADING = "loading"
+    DISPATCHED = "dispatched"
     CANCELLED = "cancelled"
 
 
@@ -507,6 +556,9 @@ class NotificationType(str, enum.Enum):
     RECEIVING_SLIP_CREATED = "receiving_slip_created"
     PUT_AWAY_LIST_CREATED = "put_away_list_created"
     PICK_LIST_CREATED = "pick_list_created"
+    PICK_EXCEPTION = "pick_exception"
+    ERP_SYNC_FAILED = "erp_sync_failed"
+    TRANSFER_PICK_CREATED = "transfer_pick_created"
 
 
 class WarehouseUserRole(str, enum.Enum):

@@ -54,6 +54,7 @@ class PickListRepository:
         status: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        assigned_to: UUID | None = None,
     ) -> tuple[list[PickList], int]:
         q = self.db.query(PickList).options(
             subqueryload(PickList.items)
@@ -62,9 +63,22 @@ class PickListRepository:
             q = q.filter(PickList.warehouse_id == warehouse_id)
         if status is not None:
             q = q.filter(PickList.status == status)
+        if assigned_to is not None:
+            q = q.filter(PickList.assigned_to == assigned_to)
         total = q.count()
-        col = getattr(PickList, sort_by, PickList.created_at)
-        q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
+        if sort_by == "priority":
+            # WF-007 ordering: higher manual priority first, then earlier
+            # dispatch cutoff, then wave/route sequence, oldest created last.
+            q = q.order_by(
+                PickList.priority.desc(),
+                PickList.dispatch_cutoff.asc().nullslast(),
+                PickList.wave.asc().nullslast(),
+                PickList.route.asc().nullslast(),
+                PickList.created_at.asc(),
+            )
+        else:
+            col = getattr(PickList, sort_by, PickList.created_at)
+            q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
         items = q.offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 

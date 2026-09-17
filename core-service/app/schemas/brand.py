@@ -22,7 +22,6 @@ class BrandResponse(BaseModel):
     organization_id: UUID
     name: str
     short_code: str
-    public_key: str
     created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime

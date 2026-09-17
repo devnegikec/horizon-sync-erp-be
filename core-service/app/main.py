@@ -2,6 +2,10 @@
 
 import asyncio
 import logging
+import os
+
+# Master organization setup
+import sys
 import warnings
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -11,6 +15,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import (
     IntegrityError,
     OperationalError,
@@ -72,15 +77,14 @@ from app.core.exceptions import (
 )
 from app.database import engine
 
-# Master organization setup
-import sys
-import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from create_master_organization import ensure_single_master_organization
 except ImportError:
-    logger.warning("Master organization setup module not found - skipping automatic setup")
+    logger.warning(
+        "Master organization setup module not found - skipping automatic setup"
+    )
     ensure_single_master_organization = None
 
 # Configure logging
@@ -130,31 +134,45 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
-    
+
     # Ensure master organization exists and setup customer relationships (Steps 1 & 2)
-    if ensure_single_master_organization:
+    skip_master_setup = os.getenv("SKIP_MASTER_ORG_SETUP", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if ensure_single_master_organization and not skip_master_setup:
         try:
-            logger.info("🚀 Setting up Master Organization and Customer Relationships...")
+            logger.info(
+                "🚀 Setting up Master Organization and Customer Relationships..."
+            )
             ensure_single_master_organization()
             logger.info("✅ Master Organization and Customer setup completed")
         except Exception as e:
             logger.error(f"❌ Master Organization setup failed: {e}")
             if settings.environment == "production":
                 # In production, fail fast if master org setup fails
-                raise RuntimeError(f"Critical startup failure: Master Organization setup failed - {e}")
+                raise RuntimeError(
+                    f"Critical startup failure: Master Organization setup failed - {e}"
+                )
             else:
                 # In dev/test, log warning but continue
-                logger.warning("⚠️ Continuing without master organization setup (dev environment)")
+                logger.warning(
+                    "⚠️ Continuing without master organization setup (dev environment)"
+                )
+    elif skip_master_setup:
+        logger.info(
+            "⏭️ Skipping master organization setup (SKIP_MASTER_ORG_SETUP=true)"
+        )
     else:
         logger.info("⚠️ Master organization setup module not available")
-    
+
     # Register audit trail listeners
     from app.core.audit_listener import register_audit_listeners
+
     register_audit_listeners()
 
-    # Background task: clean up expired bin reservations every 60 s
     cleanup_task = asyncio.create_task(_bin_reservation_cleanup_loop())
-    logger.info("Started bin-reservation cleanup background task (interval: 60s)")
 
     yield
     # Shutdown
@@ -188,6 +206,7 @@ app.add_middleware(
 
 # Audit context middleware (must be after CORS)
 from app.middleware.audit_middleware import AuditContextMiddleware
+
 app.add_middleware(AuditContextMiddleware)
 
 
@@ -227,6 +246,22 @@ async def health_check():
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")
+
+# Mount static files directory for uploaded images (landing page logos/banners)
+# On Railway, set UPLOAD_DIR=/uploads/landing-pages and attach a volume at /uploads
+_static_dir = (
+    os.path.join(settings.upload_dir, "landing-pages")
+    if settings.upload_dir
+    else os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "uploads",
+        "landing-pages",
+    )
+)
+os.makedirs(_static_dir, exist_ok=True)
+app.mount(
+    "/static/landing-pages", StaticFiles(directory=_static_dir), name="static_uploads"
+)
 
 
 # Exception handlers

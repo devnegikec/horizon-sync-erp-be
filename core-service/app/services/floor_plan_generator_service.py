@@ -101,6 +101,7 @@ class FloorPlanGeneratorService:
         locations = self._build_locations(
             warehouse_id, org_id, config, warehouse_code
         )
+        self._assign_bin_qr_codes(locations)
         for loc in locations:
             self.db.add(loc)
 
@@ -167,6 +168,7 @@ class FloorPlanGeneratorService:
         locations = self._build_locations(
             floor_plan.warehouse_id, org_id, config, warehouse_code
         )
+        self._assign_bin_qr_codes(locations)
         for loc in locations:
             self.db.add(loc)
 
@@ -568,6 +570,12 @@ class FloorPlanGeneratorService:
                     aisle_cx, aisle_cy, rows,
                 )
 
+        # Capacity is a per-bin attribute. Carry the layout's capacity UOM
+        # (units vs volume) onto every bin so the warehouse roll-up is meaningful.
+        for loc in locs:
+            if loc.location_type == "bin":
+                loc.capacity_uom = config.capacity_uom
+
         return locs
 
     def _build_corridor_bays(
@@ -705,6 +713,65 @@ class FloorPlanGeneratorService:
     # HELPERS
     # ------------------------------------------------------------------
 
+    def _assign_bin_qr_codes(self, locations: list[WarehouseLocation]) -> None:
+        """Assign a unique 5-char short code to every generated bin.
+
+        Layout-generated bins previously had no ``qr_code`` — the 5-char code
+        was only auto-generated for manually created bins (LayoutService). The
+        mobile app and ``/warehouse-locations/by-qr`` lookup rely on the short
+        code, so every physical bin must carry one.
+        """
+        import random
+
+        from sqlalchemy import text
+
+        bins = [loc for loc in locations if loc.location_type == "bin"]
+        if not bins:
+            return
+
+        # Serialize concurrent layout generation with a transaction-scoped
+        # advisory lock (per org and per warehouse). Without it, two simultaneous
+        # applies both read the same "existing codes" snapshot and can pick the
+        # same 5-char code, failing the unique constraint at commit with no retry.
+        lock_keys = {
+            f"qr:{k}"
+            for k in [
+                *(loc.organization_id for loc in bins if loc.organization_id),
+                *(loc.warehouse_id for loc in bins if loc.warehouse_id),
+            ]
+        }
+        for key in lock_keys:
+            try:
+                self.db.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                    {"key": key},
+                )
+            except Exception:
+                # Non-Postgres backends (e.g. SQLite tests) have no advisory
+                # locks — degrade to the snapshot approach.
+                pass
+
+        # Load existing non-null codes once (instead of one query per bin).
+        existing = {
+            row[0]
+            for row in self.db.query(WarehouseLocation.qr_code)
+            .filter(WarehouseLocation.qr_code.isnot(None))
+            .all()
+        }
+
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        for loc in bins:
+            for _ in range(10):
+                code = "".join(random.choices(chars, k=5))
+                if code not in existing:
+                    existing.add(code)
+                    loc.qr_code = code
+                    break
+            else:
+                raise RuntimeError(
+                    "Failed to generate a unique QR code after 10 attempts"
+                )
+
     @staticmethod
     def _make_loc(
         org_id: UUID,
@@ -756,12 +823,21 @@ class FloorPlanGeneratorService:
         return wh
 
     def _deactivate_existing(
-        self, warehouse_id: UUID, org_id: UUID
+        self, warehouse_id: UUID, org_id: UUID, clear_stock: bool = False
     ) -> int:
-        """Soft-deactivate ALL existing active locations for this warehouse.
+        """Soft-deactivate existing *pickable* locations for this warehouse.
 
         Renames full_path to avoid unique-constraint collisions with
         newly generated locations, and sets is_active=False.
+
+        Non-pickable system bins (HOLD, QUARANTINE, ...) are
+        deliberately preserved — they are logical staging locations, not part of
+        the physical layout, and must keep receiving stock after a layout apply.
+
+        ``clear_stock`` removes the bin stock records — used by the destructive
+        "reset" flow to start from a clean slate (the reset endpoint cancels
+        active work first). Bin reservations are left untouched: they expire via
+        TTL and their released rows form an audit trail.
 
         Previously this method hard-deleted locations without stock, but that
         caused IntegrityError when other tables (pick_list_items,
@@ -770,27 +846,29 @@ class FloorPlanGeneratorService:
         """
         from sqlalchemy import func
 
-        # Count total active locations
-        count = (
+        from app.models.bin_stock_level import BinStockLevel
+
+        # Active, pickable locations to deactivate.
+        locations = (
             self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.is_active.is_(True),
+                WarehouseLocation.is_pickable.is_(True),
             )
-            .count()
+            .all()
         )
 
-        if count == 0:
+        if not locations:
             return 0
 
-        # Soft-deactivate ALL locations (rename full_path + set inactive)
-        # This avoids FK violations from pick_list_items, put_away_items,
-        # bin_reservations, and location_allocations.
+        location_ids = [loc.id for loc in locations]
+
+        # Soft-deactivate pickable locations (rename full_path + set inactive)
+        # This avoids FK violations from pick_list_items, put_away_items, etc.
         self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.warehouse_id == warehouse_id,
-            WarehouseLocation.organization_id == org_id,
-            WarehouseLocation.is_active.is_(True),
+            WarehouseLocation.id.in_(location_ids),
         ).update(
             {
                 "is_active": False,
@@ -804,8 +882,14 @@ class FloorPlanGeneratorService:
             synchronize_session="fetch",
         )
 
+        if clear_stock:
+            self.db.query(BinStockLevel).filter(
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.bin_location_id.in_(location_ids),
+            ).delete(synchronize_session="fetch")
+
         self.db.flush()
-        return count
+        return len(locations)
 
     def _deactivate_all_plans(
         self, warehouse_id: UUID, org_id: UUID

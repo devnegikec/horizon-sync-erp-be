@@ -19,17 +19,22 @@ IDENTITY_DB_URL = settings.identity_database_url
 
 # (code, resource, action)
 NEW_PERMISSIONS = [
-    ("brand.create",        "brand",         "create"),
-    ("brand.read",          "brand",         "read"),
-    ("brand.update",        "brand",         "update"),
-    ("qr_product.create",   "qr_product",    "create"),
-    ("qr_product.read",     "qr_product",    "read"),
-    ("qr_product.update",   "qr_product",    "update"),
-    ("qr_product.delete",   "qr_product",    "delete"),
-    ("pick_list.create",    "pick_list",     "create"),
-    ("pick_list.read",      "pick_list",     "read"),
-    ("delivery_note.create","delivery_note", "create"),
-    ("delivery_note.read",  "delivery_note", "read"),
+    ("brand.create", "brand", "create"),
+    ("brand.read", "brand", "read"),
+    ("brand.update", "brand", "update"),
+    ("qr_product.create", "qr_product", "create"),
+    ("qr_product.read", "qr_product", "read"),
+    ("qr_product.update", "qr_product", "update"),
+    ("qr_product.delete", "qr_product", "delete"),
+    ("landing_page.create", "landing_page", "create"),
+    ("landing_page.read", "landing_page", "read"),
+    ("landing_page.update", "landing_page", "update"),
+    ("landing_page.delete", "landing_page", "delete"),
+    ("landing_page.upload_image", "landing_page", "upload_image"),
+    ("pick_list.create", "pick_list", "create"),
+    ("pick_list.read", "pick_list", "read"),
+    ("delivery_note.create", "delivery_note", "create"),
+    ("delivery_note.read", "delivery_note", "read"),
 ]
 
 DEFAULT_ORG_SLUG = "default-org"
@@ -49,7 +54,9 @@ def run():
             {"slug": DEFAULT_ORG_SLUG},
         ).fetchone()
         if not org_row:
-            print(f"✗ Organization '{DEFAULT_ORG_SLUG}' not found. Run identity seed first.")
+            print(
+                f"✗ Organization '{DEFAULT_ORG_SLUG}' not found. Run identity seed first."
+            )
             return
         org_id = org_row[0]
         print(f"✓ Organization: {org_id}")
@@ -65,7 +72,9 @@ def run():
         print(f"✓ Admin user: {user_id}")
 
         role_row = db.execute(
-            text("SELECT id FROM roles WHERE name = :name AND organization_id = :org_id LIMIT 1"),
+            text(
+                "SELECT id FROM roles WHERE name = :name AND organization_id = :org_id LIMIT 1"
+            ),
             {"name": ADMIN_ROLE_NAME, "org_id": org_id},
         ).fetchone()
         if not role_row:
@@ -131,7 +140,7 @@ def run():
         ).fetchone()
 
         if uor_exists:
-            print(f"  - Admin already assigned to org (skipping)")
+            print("  - Admin already assigned to org (skipping)")
         else:
             db.execute(
                 text(
@@ -146,7 +155,9 @@ def run():
                     "rid": role_id,
                 },
             )
-            print(f"  + Admin assigned to org '{DEFAULT_ORG_SLUG}' with role '{ADMIN_ROLE_NAME}'")
+            print(
+                f"  + Admin assigned to org '{DEFAULT_ORG_SLUG}' with role '{ADMIN_ROLE_NAME}'"
+            )
 
         db.commit()
         print("\n✓ Done. Admin can now access /api/v1/brands and QR endpoints.")

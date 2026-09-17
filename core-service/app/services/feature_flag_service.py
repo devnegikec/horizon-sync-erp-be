@@ -7,13 +7,15 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.repositories.feature_flag_repository import FeatureFlagRepository
-from app.core.constants import DEFAULT_SCOPE
+from app.core.constants import DEFAULT_SCOPE, TENANT_SCOPE
 from app.schemas.feature_flag import (
     FeatureFlagCreate,
     FeatureFlagEvaluation,
     FeatureFlagListResponse,
     FeatureFlagResponse,
+    FeatureFlagTenantUpdate,
     FeatureFlagUpdate,
+    TenantFeatureFlagResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,53 @@ class FeatureFlagService:
             raise HTTPException(status_code=404, detail="Feature flag not found")
         self.repo.delete(flag)
 
+    def list_flags_for_org(
+        self, organization_id: UUID
+    ) -> list[TenantFeatureFlagResponse]:
+        """Return ONLY tenant-scoped flags for the organization.
+
+        Global flags are managed exclusively by system administrators and are
+        intentionally NOT exposed to organization admins/owners. A tenant can
+        only see (and override) flags scoped to its own organization.
+        """
+        tenant_flags = self.repo.list_by_tenant(organization_id)
+        return [
+            TenantFeatureFlagResponse(
+                name=flag.name,
+                description=flag.description,
+                enabled=flag.enabled,
+                visible=flag.visible,
+                scope=TENANT_SCOPE,
+                tenant_id=flag.tenant_id,
+                inherited=False,
+            )
+            for flag in sorted(tenant_flags, key=lambda f: f.name)
+        ]
+
+    def upsert_tenant_flag(
+        self,
+        organization_id: UUID,
+        feature_name: str,
+        data: FeatureFlagTenantUpdate,
+    ) -> FeatureFlagResponse:
+        """Create or update a TENANT-scoped flag override for an organization."""
+        flag = self.repo.get_by_name_for_tenant(feature_name, organization_id)
+        if flag is None:
+            flag = self.repo.create(
+                {
+                    "name": feature_name,
+                    "scope": TENANT_SCOPE,
+                    "tenant_id": organization_id,
+                    "enabled": data.enabled if data.enabled is not None else False,
+                    "visible": data.visible if data.visible is not None else True,
+                    "description": data.description,
+                }
+            )
+        else:
+            update_data = data.model_dump(exclude_unset=True)
+            flag = self.repo.update(flag, update_data)
+        return FeatureFlagResponse.model_validate(flag)
+
     def evaluate(self, feature_name: str) -> FeatureFlagEvaluation:
         try:
             flag = self.repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
@@ -93,6 +142,30 @@ class FeatureFlagService:
                 feature_name=feature_name, enabled=False, visible=True
             )
 
+    def evaluate_for_org(
+        self, feature_name: str, organization_id: UUID
+    ) -> FeatureFlagEvaluation:
+        """Evaluate a flag for a specific tenant: tenant override first, else global."""
+        try:
+            flag = self.repo.get_by_name_for_tenant(feature_name, organization_id)
+            if flag is None:
+                flag = self.repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
+            enabled = flag.enabled if flag else False
+            visible = flag.visible if flag else True
+            return FeatureFlagEvaluation(
+                feature_name=feature_name, enabled=enabled, visible=visible
+            )
+        except Exception:
+            logger.error(
+                "Error evaluating feature flag '%s' for org %s",
+                feature_name,
+                organization_id,
+                exc_info=True,
+            )
+            return FeatureFlagEvaluation(
+                feature_name=feature_name, enabled=False, visible=True
+            )
+
 
 def is_feature_enabled(feature_name: str, db: Session) -> bool:
     """Check if a GLOBAL feature flag is enabled. Returns False on any error."""
@@ -109,6 +182,26 @@ def is_feature_enabled(feature_name: str, db: Session) -> bool:
     except Exception:
         logger.error(
             "Error evaluating feature flag '%s'", feature_name, exc_info=True
+        )
+        return False
+
+
+def is_feature_enabled_for_org(
+    feature_name: str, db: Session, organization_id: UUID
+) -> bool:
+    """Check a tenant-scoped flag first, then fall back to GLOBAL. False on error."""
+    try:
+        repo = FeatureFlagRepository(db)
+        flag = repo.get_by_name_for_tenant(feature_name, organization_id)
+        if flag is None:
+            flag = repo.get_by_name(feature_name, scope=DEFAULT_SCOPE)
+        return flag.enabled if flag else False
+    except Exception:
+        logger.error(
+            "Error evaluating feature flag '%s' for org %s",
+            feature_name,
+            organization_id,
+            exc_info=True,
         )
         return False
 

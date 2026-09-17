@@ -124,6 +124,16 @@ MODULES: list[ModuleDefinition] = [
                 "ASN Orders",
                 ["read", "create", "update", "delete", "manage"],
             ),
+            ModuleResource(
+                "receiving_slip",
+                "Receiving Slips",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
+                "inbound_exception",
+                "Inbound Exceptions",
+                ["read", "create", "dispose"],
+            ),
         ],
     ),
     ModuleDefinition(
@@ -308,6 +318,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -340,6 +353,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -350,12 +366,21 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         hierarchy_level=50,
         permission_codes=[
             "warehouse.read",
+            "warehouse.update",
+            "wms.scan",
+            "receiving_slip.create",
+            "receiving_slip.read",
+            "receiving_slip.update",
             "pick_list.read",
             "pick_list.update",
+            "stock_entry.create",
             "stock_entry.read",
             "item.read",
             "batch.read",
             "serial.read",
+            "asn_order.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
         ],
     ),
     RoleTemplate(
@@ -393,6 +418,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "pick_list.update",
             "stock_entry.create",
             "stock_entry.read",
+            "asn_order.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
         ],
     ),
 ]

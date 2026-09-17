@@ -39,6 +39,7 @@ GLOBAL_EXCLUDE_FIELDS: set[str] = {
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _get_excluded_fields(model_class) -> set[str]:
     """Return the union of global and model-level excluded fields."""
     model_exclude = getattr(model_class, "__audit_exclude__", set())
@@ -93,6 +94,7 @@ def _get_record_id(target) -> uuid.UUID | None:
 
 # ── Audit entry helper ───────────────────────────────────────────────────────
 
+
 def _create_audit_entry(
     session,
     action: str,
@@ -125,6 +127,7 @@ def _create_audit_entry(
 
 # ── Event handlers ───────────────────────────────────────────────────────────
 
+
 def _after_insert(mapper, connection, target):  # noqa: ARG001
     """Handle after_insert — record a CREATE audit entry."""
     try:
@@ -148,7 +151,10 @@ def _after_insert(mapper, connection, target):  # noqa: ARG001
             changed_fields=None,
         )
     except Exception:
-        logger.exception("Audit listener error on INSERT for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on INSERT for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_update(mapper, connection, target):  # noqa: ARG001
@@ -193,7 +199,10 @@ def _after_update(mapper, connection, target):  # noqa: ARG001
             changed_fields=changed_fields,
         )
     except Exception:
-        logger.exception("Audit listener error on UPDATE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on UPDATE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_delete(mapper, connection, target):  # noqa: ARG001
@@ -219,10 +228,14 @@ def _after_delete(mapper, connection, target):  # noqa: ARG001
             changed_fields=None,
         )
     except Exception:
-        logger.exception("Audit listener error on DELETE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on DELETE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 # ── Registration ─────────────────────────────────────────────────────────────
+
 
 def register_audit_listeners() -> None:
     """Attach audit event listeners to every model with ``__audited__ = True``.

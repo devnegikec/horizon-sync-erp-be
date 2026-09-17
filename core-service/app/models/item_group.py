@@ -33,7 +33,8 @@ class ItemGroup(Base):
         ),
         nullable=True,
     )
-    default_uom = Column(String(50), nullable=True)
+    default_uom = Column(String(50), nullable=True)  # legacy cache; prefer default_uom_id
+    default_uom_id = Column(UUID(as_uuid=True), ForeignKey("uoms.id"), nullable=True)
     is_active = Column(Boolean, default=True)
 
     # Tax Templates

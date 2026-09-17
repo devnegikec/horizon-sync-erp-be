@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
-    is_system_admin,
+    is_system_admin_or_owner,
     require_permission,
     validate_user_in_organization,
 )
@@ -63,7 +63,9 @@ def _normalize_role_name(role_name: str) -> str:
     return role_name.lower().replace("_", " ").replace("-", " ").strip()
 
 
-def _user_has_owner_role(db: Session, user_id: UUID, organization_ids: list[UUID] | None = None) -> bool:
+def _user_has_owner_role(
+    db: Session, user_id: UUID, organization_ids: list[UUID] | None = None
+) -> bool:
     query = (
         db.query(Role.name)
         .join(UserOrganizationRole, UserOrganizationRole.role_id == Role.id)
@@ -138,9 +140,8 @@ async def list_users(
     # Determine if caller has cross-org user management access
     # Only actual system_admin user_type OR explicit system_admin.* permissions grant cross-org access.
     # An org owner with *.* permission within their org does NOT get cross-org access.
-    has_cross_org_user_access = (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
+    has_cross_org_user_access = current_user.user_type == "system_admin" or any(
+        p.startswith("system_admin.") for p in current_user.permissions
     )
 
     organization_ids: list[UUID] | None = None
@@ -185,8 +186,7 @@ async def list_users(
 
         if _is_org_admin_without_owner_role(current_user, db):
             users = [
-                u for u in users
-                if not _user_has_owner_role(db, u.id, organization_ids)
+                u for u in users if not _user_has_owner_role(db, u.id, organization_ids)
             ]
 
         status_counts = user_service.get_user_status_counts(
@@ -199,8 +199,9 @@ async def list_users(
         # Batch-fetch org-level role names for all returned users to avoid N+1 queries.
         # We join UserOrganizationRole → Role scoped to the same organization_ids the
         # list was filtered by, so we only show roles relevant to the current org context.
-        from app.models.role import Role, UserOrganizationRole as UOR
-        from sqlalchemy import tuple_ as sa_tuple
+
+        from app.models.role import Role
+        from app.models.role import UserOrganizationRole as UOR
 
         user_ids = [u.id for u in users]
         roles_map: dict[str, list[str]] = {str(u.id): [] for u in users}
@@ -213,13 +214,12 @@ async def list_users(
                     UOR.user_id.in_(user_ids),
                     UOR.is_active == True,  # noqa: E712
                     Role.is_active == True,  # noqa: E712
+                    Role.code.notlike("custom_%"),
                 )
             )
             # Scope to the same orgs the list was filtered by
             if organization_ids:
-                role_rows = role_rows.filter(
-                    UOR.organization_id.in_(organization_ids)
-                )
+                role_rows = role_rows.filter(UOR.organization_id.in_(organization_ids))
             for user_id, role_name in role_rows.all():
                 key = str(user_id)
                 if key in roles_map:
@@ -332,7 +332,9 @@ async def get_my_permissions(
         .all()
     )
 
-    role_names = [role.name for role in user_roles]
+    role_names = [
+        role.name for role in user_roles if role.code != f"custom_{current_user.id}"
+    ]
 
     # Get all permissions for these roles
     permission_codes = (
@@ -406,11 +408,12 @@ async def get_user(
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.read")
-    has_cross_org_user_access = (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
+    has_cross_org_user_access = current_user.user_type == "system_admin" or any(
+        p.startswith("system_admin.") for p in current_user.permissions
     )
-    if not has_cross_org_user_access and not _users_share_organization(db, current_user.id, user_id):
+    if not has_cross_org_user_access and not _users_share_organization(
+        db, current_user.id, user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -420,7 +423,10 @@ async def get_user(
         user = user_service.get_user_by_id(user_id)
 
         # Isolation: hide system_admin users from callers without system_admin.master
-        if user.user_type == UserType.SYSTEM_ADMIN and "system_admin.master" not in current_user.permissions:
+        if (
+            user.user_type == UserType.SYSTEM_ADMIN
+            and "system_admin.master" not in current_user.permissions
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
@@ -506,7 +512,24 @@ async def get_user_permissions(
         .all()
     )
 
-    role_names = [role.name for role in user_roles]
+    custom_code = f"custom_{user_id}"
+    role_names = [role.name for role in user_roles if role.code != custom_code]
+
+    # Custom (fine-grained) permissions come from the per-user custom role.
+    custom_role_ids = [r.id for r in user_roles if r.code == custom_code]
+    custom_permission_codes = (
+        db.query(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .filter(
+            RolePermission.role_id.in_(custom_role_ids),
+            Permission.is_active == True,  # noqa: E712
+        )
+        .distinct()
+        .all()
+    ) if custom_role_ids else []
+    custom_permissions = list(
+        dict.fromkeys(code for (code,) in custom_permission_codes if code)
+    )
 
     # Get all permissions for these roles
     permission_codes = (
@@ -537,6 +560,7 @@ async def get_user_permissions(
         "organization_id": str(organization_id),
         "permissions": permissions,
         "roles": role_names,
+        "custom_permissions": custom_permissions,
         "has_access": len(permissions) > 0 or len(role_names) > 0,
     }
 
@@ -592,13 +616,18 @@ async def create_user(
                 except Exception as role_err:
                     db.rollback()
                     import logging
+
                     logging.getLogger(__name__).warning(
                         f"Role assignment failed for user {user.id}: {role_err}"
                     )
-            elif data.get("user_type") == "system_admin" or (hasattr(body, "user_type") and body.user_type == UserType.SYSTEM_ADMIN.value):
+            elif data.get("user_type") == "system_admin" or (
+                hasattr(body, "user_type")
+                and body.user_type == UserType.SYSTEM_ADMIN.value
+            ):
                 # System admin with no explicit roles — skip default role assignment.
                 # Admin must assign roles explicitly via the UI.
                 import logging
+
                 logging.getLogger(__name__).info(
                     f"System admin user {user.id} created without role assignment — roles must be assigned explicitly"
                 )
@@ -624,6 +653,7 @@ async def create_user(
                     db.commit()
                 else:
                     import logging
+
                     logging.getLogger(__name__).warning(
                         f"No role found for org {org_id} — skipping UserOrganizationRole creation"
                     )
@@ -647,12 +677,17 @@ async def update_user(
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.update")
-    if not (current_user.user_type == "system_admin" or any(p.startswith("system_admin.") for p in current_user.permissions)) and not _users_share_organization(db, current_user.id, user_id):
+    if not (
+        current_user.user_type == "system_admin"
+        or any(p.startswith("system_admin.") for p in current_user.permissions)
+    ) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(db, user_id):
+    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
+        db, user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrators cannot modify organization owner accounts",
@@ -677,7 +712,10 @@ async def update_user(
                 )
 
         # Case 2: demoting from system_admin to another type
-        if existing_user.user_type == UserType.SYSTEM_ADMIN and new_type != UserType.SYSTEM_ADMIN.value:
+        if (
+            existing_user.user_type == UserType.SYSTEM_ADMIN
+            and new_type != UserType.SYSTEM_ADMIN.value
+        ):
             if "system_admin.master" not in current_user.permissions:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -705,12 +743,17 @@ async def delete_user(
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
     require_permission(current_user.permissions, "user.delete")
-    if not (current_user.user_type == "system_admin" or any(p.startswith("system_admin.") for p in current_user.permissions)) and not _users_share_organization(db, current_user.id, user_id):
+    if not (
+        current_user.user_type == "system_admin"
+        or any(p.startswith("system_admin.") for p in current_user.permissions)
+    ) and not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(db, user_id):
+    if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
+        db, user_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrators cannot delete organization owner accounts",
@@ -720,6 +763,118 @@ async def delete_user(
         user_service.delete_user(user_id)
     except UserNotFoundException:
         raise
+
+
+def _upsert_user_custom_permissions(
+    db: Session, user_id: UUID, organization_id: UUID, permission_ids: list[UUID]
+) -> None:
+    """Store a user's fine-grained (custom) permissions on a per-user role.
+
+    Mirrors the invitation flow: custom permissions live on a dedicated role
+    with code ``custom_{user_id}``. An empty permission list deactivates the
+    custom role (i.e. clears any custom permissions).
+    """
+    from app.models.role import Permission, RolePermission
+
+    custom_code = f"custom_{user_id}"
+    custom_role = (
+        db.query(Role)
+        .filter(Role.organization_id == organization_id, Role.code == custom_code)
+        .first()
+    )
+
+    if not permission_ids:
+        if custom_role is not None:
+            custom_role.is_active = False
+            db.query(UserOrganizationRole).filter(
+                UserOrganizationRole.role_id == custom_role.id,
+                UserOrganizationRole.user_id == user_id,
+            ).update({"is_active": False})
+        return
+
+    # Only active, non-wildcard, non-platform permissions can be granted through
+    # the fine-grained path. A caller with only user.update must not be able to
+    # escalate a target (e.g. grant ``system_admin.master``, ``*.*``, or a
+    # resource wildcard like ``user.*``).
+    existing = {
+        pid: code
+        for pid, code in db.query(Permission.id, Permission.code)
+        .filter(
+            Permission.id.in_(permission_ids),
+            Permission.is_active == True,  # noqa: E712
+        )
+        .all()
+    }
+
+    privileged = [
+        code
+        for code in existing.values()
+        if code
+        and (code == "*.*" or code.endswith(".*") or code.startswith("system_admin."))
+    ]
+    if privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Custom permissions cannot include platform-level or wildcard "
+                f"permissions: {sorted(privileged)}"
+            ),
+        )
+
+    valid_ids = set(existing.keys())
+    missing = set(permission_ids) - valid_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Invalid or restricted permission IDs: "
+                f"{[str(m) for m in sorted(missing)]}"
+            ),
+        )
+
+    if custom_role is None:
+        custom_role = Role(
+            organization_id=organization_id,
+            name="Custom Permissions",
+            code=custom_code,
+            description="Fine-grained permissions assigned per user",
+            is_system=False,
+            is_default=False,
+            is_active=True,
+        )
+        db.add(custom_role)
+        db.flush()
+    else:
+        custom_role.is_active = True
+        db.query(RolePermission).filter(
+            RolePermission.role_id == custom_role.id
+        ).delete(synchronize_session=False)
+
+    for pid in permission_ids:
+        db.add(RolePermission(role_id=custom_role.id, permission_id=pid))
+
+    assignment = (
+        db.query(UserOrganizationRole)
+        .filter(
+            UserOrganizationRole.user_id == user_id,
+            UserOrganizationRole.organization_id == organization_id,
+            UserOrganizationRole.role_id == custom_role.id,
+        )
+        .first()
+    )
+    if assignment is not None:
+        assignment.is_active = True
+    else:
+        db.add(
+            UserOrganizationRole(
+                user_id=user_id,
+                organization_id=organization_id,
+                role_id=custom_role.id,
+                is_primary=False,
+                is_active=True,
+                status="active",
+            )
+        )
 
 
 @router.put(
@@ -776,9 +931,8 @@ async def update_user_roles(
     )
     if not target_in_org:
         # Allow if caller has cross-org access, otherwise target must be in org
-        has_cross_org = (
-            current_user.user_type == "system_admin"
-            or any(p.startswith("system_admin.") for p in current_user.permissions)
+        has_cross_org = current_user.user_type == "system_admin" or any(
+            p.startswith("system_admin.") for p in current_user.permissions
         )
         if not has_cross_org:
             raise HTTPException(
@@ -788,13 +942,17 @@ async def update_user_roles(
 
     # Load requested roles and validate they belong to the org
     requested_roles = (
-        db.query(Role)
-        .filter(
-            Role.id.in_(body.role_ids) if body.role_ids else False,
-            Role.organization_id == body.organization_id,
+        (
+            db.query(Role)
+            .filter(
+                Role.id.in_(body.role_ids) if body.role_ids else False,
+                Role.organization_id == body.organization_id,
+            )
+            .all()
         )
-        .all()
-    ) if body.role_ids else []
+        if body.role_ids
+        else []
+    )
 
     requested_role_ids = {r.id for r in requested_roles}
     missing = set(body.role_ids) - requested_role_ids
@@ -806,10 +964,10 @@ async def update_user_roles(
 
     # Check for system roles
     system_roles = [r for r in requested_roles if r.is_system]
-    if system_roles and not is_system_admin(current_user.permissions):
+    if system_roles and not is_system_admin_or_owner(current_user.permissions):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only system admins can assign system roles",
+            detail="Only system admins or organization owners can assign system roles",
         )
 
     # Deactivate existing role assignments for this user/org
@@ -846,6 +1004,11 @@ async def update_user_roles(
                     is_active=True,
                 )
             )
+
+    # Apply fine-grained (custom) permissions via the per-user custom role.
+    _upsert_user_custom_permissions(
+        db, user_id, body.organization_id, body.custom_permission_ids
+    )
 
     db.commit()
 

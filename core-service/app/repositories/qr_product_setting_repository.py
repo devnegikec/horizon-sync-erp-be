@@ -3,8 +3,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.models.qr_block import QRBlock
+from app.models.qr_product import QRProduct
 from app.models.qr_product_setting import QRProductSetting
 
 
@@ -84,6 +87,38 @@ class QRProductSettingRepository:
         self.db.commit()
         self.db.refresh(setting)
         return setting
+
+    def is_referenced_by_product(
+        self, setting_id: UUID, organization_id: UUID
+    ) -> bool:
+        product_reference = (
+            self.db.query(QRProduct.id)
+            .filter(
+                or_(
+                    QRProduct.shelf_life_setting_id == setting_id,
+                    QRProduct.serial_prefix_setting_id == setting_id,
+                ),
+                QRProduct.organization_id == organization_id,
+                QRProduct.deleted_at.is_(None),
+            )
+            .first()
+            is not None
+        )
+        if product_reference:
+            return True
+        return (
+            self.db.query(QRBlock.id)
+            .filter(
+                or_(
+                    QRBlock.channel_setting_id == setting_id,
+                    QRBlock.destination_setting_id == setting_id,
+                ),
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
+            .first()
+            is not None
+        )
 
     def soft_delete(self, setting: QRProductSetting, user_id: UUID) -> None:
         setting.deleted_at = datetime.now(UTC)

@@ -18,8 +18,34 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Always drop and recreate to handle schema mismatches
     conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if inspector.has_table("feature_flags"):
+        columns = {
+            column["name"]
+            for column in inspector.get_columns("feature_flags")
+        }
+        current_columns = {
+            "id",
+            "name",
+            "description",
+            "enabled",
+            "visible",
+            "scope",
+            "tenant_id",
+            "user_id",
+            "rollout_percentage",
+            "created_at",
+            "updated_at",
+        }
+        # Do not destroy flags already stored using the current schema. This
+        # matters when repairing a database whose Alembic version lags behind
+        # objects that were created out of band.
+        if current_columns.issubset(columns):
+            return
+
+    # The original organization-scoped feature_flags table is incompatible
+    # with the current global flag model and cannot be queried by the service.
     conn.execute(sa.text("DROP TABLE IF EXISTS feature_flags CASCADE"))
 
     op.create_table(

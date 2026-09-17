@@ -4,9 +4,9 @@ Revision ID: 009
 Revises: 008
 Create Date: 2026-04-07
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "009"
 down_revision = "008"
@@ -40,9 +40,5 @@ def upgrade() -> None:
         "entity_audit_logs",
         ["table_name", "record_id"],
     )
-    op.create_index(
-        "idx_entity_audit_action", "entity_audit_logs", ["action"]
-    )
-    op.create_index(
-        "idx_entity_audit_created_at", "entity_audit_logs", ["created_at"]
-    )
+    op.create_index("idx_entity_audit_action", "entity_audit_logs", ["action"])
+    op.create_index("idx_entity_audit_created_at", "entity_audit_logs", ["created_at"])

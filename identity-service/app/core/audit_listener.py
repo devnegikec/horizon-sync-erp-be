@@ -78,7 +78,13 @@ def _get_record_id(target) -> uuid.UUID | None:
 
 
 def _create_audit_entry(
-    session, action: str, table_name: str, record_id, old_values, new_values, changed_fields
+    session,
+    action: str,
+    table_name: str,
+    record_id,
+    old_values,
+    new_values,
+    changed_fields,
 ) -> None:
     from app.models.entity_audit_log import EntityAuditLog
 
@@ -107,9 +113,14 @@ def _after_insert(mapper, connection, target):
         session = object_session(target)
         if session is None:
             return
-        _create_audit_entry(session, "CREATE", target.__tablename__, record_id, None, new_values, None)
+        _create_audit_entry(
+            session, "CREATE", target.__tablename__, record_id, None, new_values, None
+        )
     except Exception:
-        logger.exception("Audit listener error on INSERT for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on INSERT for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_update(mapper, connection, target):
@@ -122,17 +133,32 @@ def _after_update(mapper, connection, target):
                 continue
             history = get_history(target, attr.key)
             if history.has_changes():
-                old_values[attr.key] = _serialize_value(history.deleted[0] if history.deleted else None)
-                new_values[attr.key] = _serialize_value(history.added[0] if history.added else None)
+                old_values[attr.key] = _serialize_value(
+                    history.deleted[0] if history.deleted else None
+                )
+                new_values[attr.key] = _serialize_value(
+                    history.added[0] if history.added else None
+                )
                 changed_fields.append(attr.key)
         if not changed_fields:
             return
         session = object_session(target)
         if session is None:
             return
-        _create_audit_entry(session, "UPDATE", target.__tablename__, _get_record_id(target), old_values, new_values, changed_fields)
+        _create_audit_entry(
+            session,
+            "UPDATE",
+            target.__tablename__,
+            _get_record_id(target),
+            old_values,
+            new_values,
+            changed_fields,
+        )
     except Exception:
-        logger.exception("Audit listener error on UPDATE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on UPDATE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_delete(mapper, connection, target):
@@ -142,9 +168,20 @@ def _after_delete(mapper, connection, target):
         session = object_session(target)
         if session is None:
             return
-        _create_audit_entry(session, "DELETE", target.__tablename__, _get_record_id(target), old_values, None, None)
+        _create_audit_entry(
+            session,
+            "DELETE",
+            target.__tablename__,
+            _get_record_id(target),
+            old_values,
+            None,
+            None,
+        )
     except Exception:
-        logger.exception("Audit listener error on DELETE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on DELETE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def register_audit_listeners() -> None:

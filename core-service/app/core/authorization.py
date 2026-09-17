@@ -155,6 +155,13 @@ RECEIVING_SLIP_CREATE = "receiving_slip.create"
 RECEIVING_SLIP_READ = "receiving_slip.read"
 RECEIVING_SLIP_UPDATE = "receiving_slip.update"
 
+# Inbound exception & hold/quarantine workflow. Classification is delegated
+# through feature permissions; final disposition also requires warehouse-manager
+# authority at the warehouse level.
+INBOUND_EXCEPTION_READ = "inbound_exception.read"
+INBOUND_EXCEPTION_CREATE = "inbound_exception.create"
+INBOUND_EXCEPTION_DISPOSE = "inbound_exception.dispose"
+
 # QR scanning (Inbound + Outbound)
 WMS_SCAN = "wms.scan"
 
@@ -163,13 +170,52 @@ WAREHOUSE_MANAGE = "warehouse.manage"
 
 # Fixed permission set embedded in a WMS worker's barcode-login token.
 # Workers are API-only mobile clients: they scan QR codes and create/update
-# receiving slips (Inbound) and read/update pick lists (Outbound). They can
-# NOT create pick lists, manage workers/devices, or access anything else.
+# receiving slips (Inbound), read/update pick lists (Outbound), and read ASN
+# orders. They can NOT create pick lists, manage workers/devices, edit
+# warehouse records, or access anything else.
 WMS_WORKER_PERMISSIONS = [
     WMS_SCAN,
+    WAREHOUSE_READ,
     RECEIVING_SLIP_CREATE,
     RECEIVING_SLIP_READ,
     RECEIVING_SLIP_UPDATE,
+    INBOUND_EXCEPTION_READ,
+    INBOUND_EXCEPTION_CREATE,
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
+    ASN_ORDER_READ,
+    STOCK_ENTRY_CREATE,
+    STOCK_ENTRY_READ,
 ]
+
+
+def is_worker_scope(user_type: str, permissions: list[str]) -> bool:
+    """True when the caller is a warehouse worker rather than a manager/admin.
+
+    Workers (mobile/PDA scanner users) must only see the put-away and pick
+    lists assigned to them. Warehouse managers, supervisors, org/system admins,
+    and anyone holding the full wildcard keep the organization-wide view.
+    """
+    if user_type in ("system_admin", "organization_admin"):
+        return False
+    if "*.*" in permissions:
+        return False
+    return WAREHOUSE_MANAGE not in permissions
+
+
+def has_global_warehouse_access(user_type: str, permissions: list[str]) -> bool:
+    """True when the caller may see every warehouse in the organization.
+
+    Only system/organization admins and holders of the full wildcard get an
+    unconditional organization-wide warehouse view.
+
+    ``warehouse.manage`` deliberately does NOT imply global visibility. WMS
+    Managers are granted it for worker/device CRUD but remain scoped to their
+    ``WarehouseUser`` assignments. Callers that must keep unassigned warehouse
+    administrators working (e.g. a WMS Admin that was never scoped to specific
+    warehouses) should apply their own explicit fallback — see
+    ``WarehouseUserService.get_user_warehouses``.
+    """
+    if user_type in ("system_admin", "organization_admin"):
+        return True
+    return "*.*" in permissions

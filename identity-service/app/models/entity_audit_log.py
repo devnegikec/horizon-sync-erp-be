@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, Index, JSON, String, Text, Uuid
+from sqlalchemy import JSON, Column, DateTime, Index, String, Text, Uuid
 
 from app.database import Base
 

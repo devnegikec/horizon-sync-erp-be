@@ -3,9 +3,10 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
+from app.models.vehicle import VehicleArrival
 
 
 class ReceivingSlipRepository:
@@ -89,7 +90,9 @@ class ReceivingSlipRepository:
     # ADD ITEM
     # ------------------------------------------------------------------
 
-    def add_item(self, slip_id: UUID, item_data: dict) -> ReceivingSlipItem:
+    def add_item(
+        self, slip_id: UUID, item_data: dict, *, commit: bool = True
+    ) -> ReceivingSlipItem:
         """
         Add a line item to a receiving slip.
 
@@ -98,14 +101,17 @@ class ReceivingSlipRepository:
             item_data: Dictionary containing item fields
                        (organization_id, sku, batch_number, quantity,
                         box_count, flag, notes).
+            commit: When False, the item is only staged (no commit/refresh) so
+                callers can batch many line inserts into a single transaction.
 
         Returns:
             Created ReceivingSlipItem object.
         """
         item = ReceivingSlipItem(slip_id=slip_id, **item_data)
         self.db.add(item)
-        self.db.commit()
-        self.db.refresh(item)
+        if commit:
+            self.db.commit()
+            self.db.refresh(item)
         return item
 
     # ------------------------------------------------------------------
@@ -165,7 +171,7 @@ class ReceivingSlipRepository:
 
         Args:
             item_id: The receiving slip item UUID.
-            flag: New flag value (ok, short, damaged).
+            flag: New flag value (ok, short, damaged, rejected).
             notes: Optional notes about the flag.
 
         Returns:
@@ -185,6 +191,93 @@ class ReceivingSlipRepository:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    # ------------------------------------------------------------------
+    # REJECT ITEM
+    # ------------------------------------------------------------------
+
+    def reject_item(
+        self,
+        item_id: UUID,
+        reason: str,
+        rejected_by: UUID | None = None,
+        notes: str | None = None,
+    ) -> ReceivingSlipItem | None:
+        """
+        Mark a receiving slip item as rejected with a reason.
+
+        Args:
+            item_id: The receiving slip item UUID.
+            reason: Rejection reason text.
+            rejected_by: UUID of the user rejecting the item.
+            notes: Optional additional notes.
+
+        Returns:
+            Updated ReceivingSlipItem or None if not found.
+        """
+        item = (
+            self.db.query(ReceivingSlipItem)
+            .filter(ReceivingSlipItem.id == item_id)
+            .first()
+        )
+        if item is None:
+            return None
+
+        from datetime import UTC, datetime
+
+        item.flag = "rejected"
+        item.rejection_reason = reason
+        item.rejected_by = rejected_by
+        item.rejected_at = datetime.now(UTC)
+        if notes is not None:
+            item.notes = notes
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    # ------------------------------------------------------------------
+    # GET ITEMS BY SLIP ID (for ASN mismatch queries)
+    # ------------------------------------------------------------------
+
+    def get_items_by_slip_id(self, slip_id: UUID) -> list[ReceivingSlipItem]:
+        """
+        Get all line items for a receiving slip (alias for get_items).
+
+        Args:
+            slip_id: The receiving slip UUID.
+
+        Returns:
+            List of ReceivingSlipItem objects.
+        """
+        return self.get_items(slip_id)
+
+    # ------------------------------------------------------------------
+    # GET SLIPS BY ASN ORDER
+    # ------------------------------------------------------------------
+
+    def get_slips_by_asn_order(
+        self, asn_order_id: UUID, org_id: UUID
+    ) -> list[ReceivingSlip]:
+        """
+        Get all receiving slips linked to an ASN order.
+
+        Args:
+            asn_order_id: The ASN order UUID.
+            org_id: Organization UUID for tenant isolation.
+
+        Returns:
+            List of ReceivingSlip objects.
+        """
+        return (
+            self.db.query(ReceivingSlip)
+            .options(joinedload(ReceivingSlip.asn_order))
+            .filter(
+                ReceivingSlip.asn_order_id == asn_order_id,
+                ReceivingSlip.organization_id == org_id,
+            )
+            .order_by(ReceivingSlip.created_at.asc())
+            .all()
+        )
 
     # ------------------------------------------------------------------
     # UPDATE REJECTION REASON
@@ -240,8 +333,17 @@ class ReceivingSlipRepository:
         Returns:
             Tuple of (list of slips, total count).
         """
-        query = self.db.query(ReceivingSlip).filter(
-            ReceivingSlip.organization_id == org_id,
+        query = (
+            self.db.query(ReceivingSlip)
+            .options(
+                joinedload(ReceivingSlip.asn_order),
+                joinedload(ReceivingSlip.vehicle_arrival).joinedload(
+                    VehicleArrival.vehicle
+                ),
+            )
+            .filter(
+                ReceivingSlip.organization_id == org_id,
+            )
         )
 
         if filters:
@@ -265,3 +367,41 @@ class ReceivingSlipRepository:
         )
 
         return slips, total
+
+    def get_status_counts(
+        self,
+        org_id: UUID,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """Count receiving slips by status, scoped to the same filters as the
+        list query (excluding ``status`` itself so every bucket is populated).
+        """
+        from sqlalchemy import func
+
+        query = self.db.query(
+            ReceivingSlip.status, func.count(ReceivingSlip.id)
+        ).filter(ReceivingSlip.organization_id == org_id)
+        if filters:
+            if filters.get("warehouse_id"):
+                query = query.filter(
+                    ReceivingSlip.warehouse_id == filters["warehouse_id"]
+                )
+            if filters.get("session_id"):
+                query = query.filter(ReceivingSlip.session_id == filters["session_id"])
+
+        rows = query.group_by(ReceivingSlip.status).all()
+
+        counts = {
+            "total": 0,
+            "pending_review": 0,
+            "pending_putaway": 0,
+            "putaway_in_progress": 0,
+            "putaway_complete": 0,
+            "rejected": 0,
+        }
+        for status_value, count in rows:
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts

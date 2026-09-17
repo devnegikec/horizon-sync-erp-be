@@ -62,6 +62,28 @@ Core Service is a microservice handling **Inventory**, **Order**, and **Billing*
    - Swagger UI: http://localhost:8001/docs
    - ReDoc: http://localhost:8001/redoc
 
+### Running QR Block Generation Locally
+
+QR block creation is processed asynchronously by a Celery worker. PostgreSQL,
+Redis, the Core API, and the worker must use the same `core-service/.env`
+configuration.
+
+```bash
+# Apply migrations
+alembic upgrade head
+
+# Terminal 1: Core API
+DEBUG=false uvicorn app.main:app --reload --port 8010
+
+# Terminal 2: QR generation worker
+DEBUG=false celery -A app.celery_app:celery_app worker \
+  --loglevel=INFO --queues=qr-generation --concurrency=2
+```
+
+Generated workbooks and Product images are stored in the configured private S3
+bucket. Signed QR URLs are shortened through the configured short-URL provider;
+the signed long URL remains in Product Item metadata for traceability.
+
 ### Authentication
 
 All endpoints require authentication. Get a token from Identity Service:
