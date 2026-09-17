@@ -123,7 +123,11 @@ class BinStockParentQSealInfo(BaseModel):
 
 
 class BinStockGroupItem(BaseModel):
-    """A child unit stored in a bin — mirrors ``ReceivingSlipItemData``."""
+    """A child unit stored in a bin — mirrors ``ReceivingSlipItemData``.
+
+    ``quantity`` stays a ``Decimal`` (not ``int``) because bin stock is stored as
+    ``Numeric(15, 3)`` and can legitimately be fractional for bulk items.
+    """
 
     id: str
     name: str | None = None
@@ -132,7 +136,7 @@ class BinStockGroupItem(BaseModel):
     batch_number: str | None = None
     manufacturing_date: str | None = None
     expiry_date: str | None = None
-    quantity: int = 0
+    quantity: Decimal = Decimal("0")
     box_count: int = 0
     flag: str = "ok"
     condition_code: str | None = None

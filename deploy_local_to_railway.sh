@@ -64,6 +64,7 @@ MIGRATE=0
 HEALTH=1
 DRY_RUN=0
 ASSUME_YES=0
+POSTFLIGHT_FAILURES=0
 REQUIRE_CLEAN="${REQUIRE_CLEAN:-0}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-900}"
 LOG_LINES="${LOG_LINES:-1500}"
@@ -296,10 +297,33 @@ deploy_service() {
 }
 
 # ------------------------------------------------------------- post-flight 1
+# Health probe URLs. The built-in defaults only apply to the production
+# environment — for any other environment an explicit override is required, so a
+# staging deploy can never be "verified" against the production service.
 health_url_for() {
+  local prod_defaults=0
+  if [[ "$ENVIRONMENT" == "production" ]]; then
+    prod_defaults=1
+  fi
   case "$1" in
-    identity-service) echo "${IDENTITY_SERVICE_HEALTH_URL:-https://identity-service-production-a1eb.up.railway.app/health}" ;;
-    core-service) echo "${CORE_SERVICE_HEALTH_URL:-https://core-service-production-66e9.up.railway.app/health}" ;;
+    identity-service)
+      if [[ -n "${IDENTITY_SERVICE_HEALTH_URL:-}" ]]; then
+        echo "$IDENTITY_SERVICE_HEALTH_URL"
+      elif [[ "$prod_defaults" -eq 1 ]]; then
+        echo "https://identity-service-production-a1eb.up.railway.app/health"
+      else
+        echo ""
+      fi
+      ;;
+    core-service)
+      if [[ -n "${CORE_SERVICE_HEALTH_URL:-}" ]]; then
+        echo "$CORE_SERVICE_HEALTH_URL"
+      elif [[ "$prod_defaults" -eq 1 ]]; then
+        echo "https://core-service-production-66e9.up.railway.app/health"
+      else
+        echo ""
+      fi
+      ;;
     *) echo "" ;;
   esac
 }
@@ -337,7 +361,7 @@ wait_for_deployment() {
       esac
     fi
     if [[ "$(date +%s)" -ge "$deadline" ]]; then
-      echo "  WARNING: no SUCCESS deployment within ${HEALTH_TIMEOUT}s (last status: ${status:-unknown})."
+      echo "  ERROR: no SUCCESS deployment within ${HEALTH_TIMEOUT}s (last status: ${status:-unknown})."
       return 1
     fi
     sleep 15
@@ -348,7 +372,8 @@ wait_for_health() {
   local svc="$1" url deadline code body
   url="$(health_url_for "$svc")"
   if [[ -z "$url" ]]; then
-    echo "  no health URL configured for '$svc' — skipping health check."
+    echo "  no health URL configured for '$svc' in environment '$ENVIRONMENT' — skipping."
+    echo "  (set CORE_SERVICE_HEALTH_URL / IDENTITY_SERVICE_HEALTH_URL to enable it)"
     return 0
   fi
   echo "  waiting for $url (timeout ${HEALTH_TIMEOUT}s) ..."
@@ -361,8 +386,8 @@ wait_for_health() {
       return 0
     fi
     if [[ "$(date +%s)" -ge "$deadline" ]]; then
-      echo "  WARNING: health check did not return 200 within ${HEALTH_TIMEOUT}s (last: ${code:-no response})."
-      echo "           The new build may still be rolling out — check the Railway dashboard."
+      echo "  ERROR: health check did not return 200 within ${HEALTH_TIMEOUT}s (last: ${code:-no response})."
+      echo "         The new build may still be rolling out — check the Railway dashboard."
       return 1
     fi
     sleep 10
@@ -389,17 +414,23 @@ verify_migrations_in_logs() {
   fi
 }
 postflight() {
-  local svc="$1" base_id="$2"
+  local svc="$1" base_id="$2" failed=0
   section "Post-deploy verification: $svc"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "[dry-run] would wait for the new deployment to reach SUCCESS, then check /health and migration logs."
     return 0
   fi
-  wait_for_deployment "$svc" "$base_id" || true
+  # Do not swallow these failures: a failed/never-completing deployment or an
+  # unhealthy service must make the script exit non-zero for CI and operators.
+  wait_for_deployment "$svc" "$base_id" || failed=1
   if [[ "$HEALTH" -eq 1 ]]; then
-    wait_for_health "$svc" || true
+    wait_for_health "$svc" || failed=1
   fi
   verify_migrations_in_logs "$svc" || true
+  if [[ "$failed" -ne 0 ]]; then
+    POSTFLIGHT_FAILURES=$((POSTFLIGHT_FAILURES + 1))
+    echo "  → verification FAILED for '$svc' (see the errors above)."
+  fi
 }
 
 # ---------------------------------------------------------------------- main
@@ -463,6 +494,14 @@ while [[ "$i" -lt "${#target_svcs[@]}" ]]; do
   postflight "${target_svcs[$i]}" "${target_bases[$i]}"
   i=$((i + 1))
 done
+
+if [[ "$POSTFLIGHT_FAILURES" -gt 0 ]]; then
+  section "Done with FAILURES"
+  echo "ERROR: $POSTFLIGHT_FAILURES service(s) failed post-deploy verification."
+  echo "Monitor at https://railway.app/project/$PROJECT_ID/services"
+  echo "Tip: build logs → railway logs -b -s <service> -p $PROJECT_ID -e $ENVIRONMENT"
+  exit 1
+fi
 
 section "Done"
 echo "Monitor at https://railway.app/project/$PROJECT_ID/services"

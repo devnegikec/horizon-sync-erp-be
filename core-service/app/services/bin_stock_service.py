@@ -14,7 +14,7 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 18.1, 18.2
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -685,7 +685,16 @@ class BinStockService:
                 BinStockLevel,
                 BinStockLevel.batch_number == QSealParameters.serial_number,
             )
-            .outerjoin(Item, Item.id == BinStockLevel.item_id)
+            # Organization is part of the join condition (not the WHERE clause)
+            # so a corrupt cross-tenant item_id yields NULL name/sku instead of
+            # exposing another organization's item (and never drops the row).
+            .outerjoin(
+                Item,
+                and_(
+                    Item.id == BinStockLevel.item_id,
+                    Item.organization_id == org_id,
+                ),
+            )
             .filter(
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
@@ -703,7 +712,17 @@ class BinStockService:
 
         # One group per (parent box, item) pair.
         groups: dict[tuple[UUID, UUID], dict] = {}
+        # ``qseal_parameters.serial_number`` has no unique constraint, so a
+        # legacy duplicate serial could match one stock row to several parents.
+        # Emit every stock row at most once (the ORDER BY makes "first" stable)
+        # so child units and quantities are never double-counted.
+        seen_stock_level_ids: set[UUID] = set()
         for row in rows:
+            stock_level_id = row[5]
+            if stock_level_id in seen_stock_level_ids:
+                continue
+            seen_stock_level_ids.add(stock_level_id)
+
             key = (row[0], row[10])
             group = groups.get(key)
             if group is None:
@@ -734,7 +753,7 @@ class BinStockService:
                     "sku": row[14],
                     "manufacturing_date": str(row[7]) if row[7] else None,
                     "expiry_date": str(row[8]) if row[8] else None,
-                    "quantity": int(quantity),
+                    "quantity": quantity,
                     "box_count": 1,
                     # Stock sitting in a bin has passed receiving, so it is
                     # accepted/good; the *_exception/notes fields stay null to
