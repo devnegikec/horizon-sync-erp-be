@@ -29,7 +29,24 @@ class QRScanEvent(Base):
     product_item_id = Column(
         UUID(as_uuid=True), ForeignKey("product_items.id"), nullable=True
     )
+    # QSeal analytics context. These fields are denormalized snapshots so the
+    # dashboard can filter/group scan events without reconstructing the QSeal
+    # hierarchy after products or batches have changed.
+    product_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_products.id"), nullable=True, index=True
+    )
+    block_id = Column(
+        UUID(as_uuid=True), ForeignKey("qr_blocks.id"), nullable=True, index=True
+    )
+    qseal_track_id = Column(
+        UUID(as_uuid=True), ForeignKey("qseal_tracks.id"), nullable=True, index=True
+    )
+    qseal_parameter_id = Column(
+        UUID(as_uuid=True), ForeignKey("qseal_parameters.id"), nullable=True, index=True
+    )
     serial_number = Column(String(75), nullable=True, index=True)
+    batch = Column(String(50), nullable=True, index=True)
+    qseal_type = Column(String(30), nullable=True, index=True)
     scan_timestamp = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
@@ -63,6 +80,16 @@ class QRScanEvent(Base):
     cta_action = Column(String(50), nullable=True)
     referrer_url = Column(Text, nullable=True)
     language = Column(String(10), nullable=True)
+
+    # ── QSeal suspicious-scan review ────────────────────────────────────
+    # These values are calculated when the event is captured. Keeping the
+    # score and rule codes on the event makes the dashboard explainable and
+    # avoids recalculating historical results after the rules evolve.
+    is_suspicious = Column(Boolean, nullable=False, default=False, index=True)
+    risk_score = Column(Integer, nullable=False, default=0, index=True)
+    suspicious_reasons = Column(JSONB, nullable=False, default=list)
+    review_status = Column(String(20), nullable=False, default="not_flagged", index=True)
+    flagged_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     product_item = relationship("ProductItem", back_populates="scan_events")

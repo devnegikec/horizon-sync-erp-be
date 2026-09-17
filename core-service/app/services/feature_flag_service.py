@@ -76,24 +76,35 @@ class FeatureFlagService:
     def list_flags_for_org(
         self, organization_id: UUID
     ) -> list[TenantFeatureFlagResponse]:
-        """Return ONLY tenant-scoped flags for the organization.
+        """Return effective global and tenant flags for the organization.
 
-        Global flags are managed exclusively by system administrators and are
-        intentionally NOT exposed to organization admins/owners. A tenant can
-        only see (and override) flags scoped to its own organization.
+        Global flags must be included so organization owners can see and
+        override them from Settings. A tenant override takes precedence over
+        a global flag with the same name.
         """
-        tenant_flags = self.repo.list_by_tenant(organization_id)
+        global_flags = {
+            flag.name: flag
+            for flag in self.repo.list_by_scope(DEFAULT_SCOPE)
+        }
+        tenant_flags = {
+            flag.name: flag
+            for flag in self.repo.list_by_tenant(organization_id)
+        }
+
+        effective_flags = {**global_flags, **tenant_flags}
         return [
             TenantFeatureFlagResponse(
                 name=flag.name,
                 description=flag.description,
                 enabled=flag.enabled,
                 visible=flag.visible,
-                scope=TENANT_SCOPE,
-                tenant_id=flag.tenant_id,
-                inherited=False,
+                scope=TENANT_SCOPE if flag.name in tenant_flags else DEFAULT_SCOPE,
+                tenant_id=(
+                    flag.tenant_id if flag.name in tenant_flags else None
+                ),
+                inherited=flag.name not in tenant_flags,
             )
-            for flag in sorted(tenant_flags, key=lambda f: f.name)
+            for flag in sorted(effective_flags.values(), key=lambda f: f.name)
         ]
 
     def upsert_tenant_flag(
