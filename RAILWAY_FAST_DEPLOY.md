@@ -7,9 +7,45 @@ Quick reference for interactive and non-interactive Railway deployments of the H
 
 Files / Scripts
 ---------------
-- `deploy_to_railway.sh` — main deploy script (repo root).
+- `deploy_local_to_railway.sh` — **preferred** one-shot deploy: pre-flight checks
+  → deploy → post-deploy verification (see below).
+- `deploy_to_railway.sh` — older main deploy script (repo root).
 - `deploy_core_to_railway.sh` — wrapper that deploys `core-service`.
 - `deploy_identity_to_railway.sh` — wrapper that deploys `identity-service`.
+
+Recommended: `deploy_local_to_railway.sh`
+----------------------------------------
+```bash
+./deploy_local_to_railway.sh core-service "what changed"          # deploy
+./deploy_local_to_railway.sh core-service "what changed" --migrate # + redeploy to re-run migrations
+./deploy_local_to_railway.sh all "release" --require-clean         # every existing service
+./deploy_local_to_railway.sh core-service "dry check" --dry-run    # print commands only
+```
+
+It performs, in order:
+1. **Pre-flight 1** — Railway CLI presence + project/environment shown.
+2. **Pre-flight 2** — auth check (`railway whoami`); logs in automatically when a
+   session has no auth (auth does not persist between terminal sessions), or uses
+   `RAILWAY_TOKEN` for non-interactive runs.
+3. **Pre-flight 3** — prints the branch + commit that will be uploaded and warns
+   when the working tree is dirty (`railway up` ships uncommitted code as-is).
+   Add `--require-clean` to make a dirty tree abort the deploy.
+4. **Pre-flight 4** — prints the alembic head(s) per service and warns if a
+   service has multiple heads (its start command uses `alembic upgrade head`).
+5. **Deploy** — `railway up -d` per service, restricted to services that actually
+   exist in the project.
+6. **Post-deploy** — waits for the *new* deployment id to report `SUCCESS`
+   (the old deployment keeps serving `/health` 200, so the id comparison is the
+   real gate), then polls the service `/health`, then greps the newest deploy
+   logs for the alembic migration lines.
+
+Useful flags/env: `--dry-run`, `--no-healthcheck`, `--timeout <secs>`,
+`--require-clean`, `-y`, `RAILWAY_TOKEN`, `LOG_LINES`, and
+`CORE_SERVICE_HEALTH_URL` / `IDENTITY_SERVICE_HEALTH_URL` to override probes.
+
+Known service names in production: `core-service`, `identity-service`,
+`qr-worker` (plus the `Postgres` service). `search-service` and `nginx-gateway`
+are listed in the script but are not deployed yet — the script skips them.
 
 Prerequisites
 -------------

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -108,37 +108,64 @@ class BinStockListResponse(BaseModel):
     bin_stock_levels: list[BinStockLevelResponse]
 
 
-class BinStockChildResponse(BaseModel):
-    """A child unit within a parent (master-pack) box in a bin."""
+class BinStockParentQSealInfo(BaseModel):
+    """QSeal parent (master-pack box) info.
 
+    Mirrors ``QSealParentInfo`` used by the inbound receiving-slip detail so the
+    frontend can reuse the same rendering component.
+    """
+
+    id: str
     serial_number: str | None = None
-    batch_number: str | None = None
-    item_id: UUID | None = None
-    quantity_on_hand: Decimal = Decimal("0")
-    inventory_status: str = "available"
-    manufacturing_date: date | None = None
-    expiry_date: date | None = None
-    dispatch_batch: str | None = None
-
-
-class BinStockParentResponse(BaseModel):
-    """A parent (master-pack) box present in a bin."""
-
-    parent_id: UUID
-    parent_serial: str | None = None
-    parent_name: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
     capacity: int | None = None
-    child_units_in_bin: int = 0
-    quantity_on_hand: Decimal = Decimal("0")
-    children: list[BinStockChildResponse] = []
+
+
+class BinStockGroupItem(BaseModel):
+    """A child unit stored in a bin — mirrors ``ReceivingSlipItemData``."""
+
+    id: str
+    name: str | None = None
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: int = 0
+    box_count: int = 0
+    flag: str = "ok"
+    condition_code: str | None = None
+    inventory_status: str | None = None
+    exception_status: str | None = None
+    exception_destination_location_id: str | None = None
+    rejection_reason: str | None = None
+    reason_code: str | None = None
+    notes: str | None = None
+
+
+class BinStockItemGroup(BaseModel):
+    """Child units of one product stored under a parent box in a bin.
+
+    Mirrors ``ReceivingSlipItemGroup``.
+    """
+
+    parent_qseal: BinStockParentQSealInfo | None = None
+    product_name: str | None = None
+    items: list[BinStockGroupItem] = []
 
 
 class BinStockParentsResponse(BaseModel):
-    """Response schema for parent (box) aggregation in a bin."""
+    """Response schema for parent (box) aggregation in a bin.
+
+    ``total_parent_boxes`` counts distinct physical parent boxes; ``groups``
+    holds one entry per (parent box, product) pair, mirroring the inbound
+    receiving-slip detail response.
+    """
 
     bin_id: UUID
     total_parent_boxes: int = 0
-    parents: list[BinStockParentResponse] = []
+    groups: list[BinStockItemGroup] = []
 
 
 class BulkAddStockItemResult(BaseModel):

@@ -632,14 +632,18 @@ class BinStockService:
         )
 
     def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
-        """Return the parent (master-pack) boxes present in a bin, with children.
+        """Return the parent (master-pack) boxes present in a bin, grouped by product.
 
         Child units are stored in ``bin_stock_levels`` with ``batch_number`` set
         to the child serial. Each child links to its parent box through
-        ``qseal_parameters.parent_id`` → ``qseal_tracks``. Children are grouped
-        under their parent so the warehouse manager gets a box-level view with
-        the individual child units nested inside.
+        ``qseal_parameters.parent_id`` → ``qseal_tracks``. Children of the same
+        parent box and item are grouped together.
+
+        The returned shape mirrors the inbound receiving-slip detail response
+        (``groups[] → parent_qseal / product_name / items[]``) so the frontend can
+        reuse the same rendering component.
         """
+        from app.models.item import Item
         from app.models.qseal import QSealParameters, QSealTrack
 
         # Validate the bin exists for this organization.
@@ -660,24 +664,28 @@ class BinStockService:
 
         rows = (
             self.db.query(
-                QSealTrack.id,
-                QSealTrack.serial_number,
-                QSealTrack.name,
-                QSealTrack.capacity,
-                QSealParameters.serial_number,
-                QSealParameters.manufacturing_date,
-                QSealParameters.expiry_date,
-                QSealParameters.dispatch_batch,
-                BinStockLevel.item_id,
-                BinStockLevel.quantity_on_hand,
-                BinStockLevel.inventory_status,
-                BinStockLevel.batch_number,
+                QSealTrack.id,  # 0 parent id
+                QSealTrack.serial_number,  # 1 parent serial
+                QSealTrack.name,  # 2 parent name
+                QSealTrack.qseal_type,  # 3 parent type
+                QSealTrack.capacity,  # 4 parent capacity
+                BinStockLevel.id,  # 5 bin stock level id
+                QSealParameters.serial_number,  # 6 child serial
+                QSealParameters.manufacturing_date,  # 7
+                QSealParameters.expiry_date,  # 8
+                QSealParameters.dispatch_batch,  # 9 real batch number
+                BinStockLevel.item_id,  # 10
+                BinStockLevel.quantity_on_hand,  # 11
+                BinStockLevel.inventory_status,  # 12
+                Item.item_name,  # 13
+                Item.sku,  # 14
             )
             .join(QSealParameters, QSealParameters.parent_id == QSealTrack.id)
             .join(
                 BinStockLevel,
                 BinStockLevel.batch_number == QSealParameters.serial_number,
             )
+            .outerjoin(Item, Item.id == BinStockLevel.item_id)
             .filter(
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
@@ -693,41 +701,58 @@ class BinStockService:
             .all()
         )
 
-        parents: dict[UUID, dict] = {}
+        # One group per (parent box, item) pair.
+        groups: dict[tuple[UUID, UUID], dict] = {}
         for row in rows:
-            parent_id = row[0]
-            parent = parents.get(parent_id)
-            if parent is None:
-                parent = {
-                    "parent_id": row[0],
-                    "parent_serial": row[1],
-                    "parent_name": row[2],
-                    "capacity": row[3],
-                    "quantity_on_hand": Decimal("0"),
-                    "children": [],
+            key = (row[0], row[10])
+            group = groups.get(key)
+            if group is None:
+                group = {
+                    "parent_qseal": {
+                        "id": str(row[0]),
+                        "serial_number": row[1],
+                        "name": row[2],
+                        "qseal_type": row[3],
+                        "capacity": row[4],
+                    },
+                    "product_name": row[13],
+                    "items": [],
                 }
-                parents[parent_id] = parent
+                groups[key] = group
 
-            qty = Decimal(str(row[9])) if row[9] is not None else Decimal("0")
-            parent["quantity_on_hand"] += qty
-            parent["children"].append(
+            child_serial = row[6]
+            quantity = Decimal(str(row[11])) if row[11] is not None else Decimal("0")
+            inventory_status = row[12]
+            group["items"].append(
                 {
-                    "serial_number": row[4],
-                    "manufacturing_date": row[5],
-                    "expiry_date": row[6],
-                    "dispatch_batch": row[7],
-                    "item_id": row[8],
-                    "quantity_on_hand": qty,
-                    "inventory_status": row[10],
-                    "batch_number": row[11],
+                    "id": str(row[5]),
+                    "name": row[13],
+                    "serial_number": child_serial,
+                    # The child serial is stored in batch_number; the QSeal
+                    # dispatch batch is the human-meaningful batch number.
+                    "batch_number": row[9] or child_serial,
+                    "sku": row[14],
+                    "manufacturing_date": str(row[7]) if row[7] else None,
+                    "expiry_date": str(row[8]) if row[8] else None,
+                    "quantity": int(quantity),
+                    "box_count": 1,
+                    # Stock sitting in a bin has passed receiving, so it is
+                    # accepted/good; the *_exception/notes fields stay null to
+                    # keep the payload shape identical to receiving slips.
+                    "flag": "ok",
+                    "condition_code": "GOOD",
+                    "inventory_status": inventory_status.value
+                    if hasattr(inventory_status, "value")
+                    else inventory_status,
+                    "exception_status": None,
+                    "exception_destination_location_id": None,
+                    "rejection_reason": None,
+                    "reason_code": None,
+                    "notes": None,
                 }
             )
 
-        result = []
-        for parent in parents.values():
-            parent["child_units_in_bin"] = len(parent["children"])
-            result.append(parent)
-        return result
+        return list(groups.values())
 
     # ------------------------------------------------------------------
     # PRIVATE HELPERS
