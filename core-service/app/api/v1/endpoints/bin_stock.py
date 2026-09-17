@@ -18,9 +18,9 @@ from app.schemas.bin_stock import (
     AddStockRequest,
     BinStockForItemResponse,
     BinStockInfoResponse,
+    BinStockItemGroup,
     BinStockLevelResponse,
     BinStockListResponse,
-    BinStockParentResponse,
     BinStockParentsResponse,
     BulkAddStockRequest,
     BulkAddStockResponse,
@@ -234,7 +234,7 @@ async def get_bin_stock(
     "/{bin_id}/parents",
     response_model=BinStockParentsResponse,
     summary="Get parent boxes in a bin",
-    description="Get the master-pack (parent) boxes present in a bin, aggregated from child units",
+    description="Get the master-pack (parent) boxes present in a bin, grouped by product like the inbound receiving-slip detail",
 )
 async def get_bin_parents(
     bin_id: UUID,
@@ -245,22 +245,29 @@ async def get_bin_parents(
     Get the parent (master-pack) boxes present in a bin.
 
     Child units are stored individually in bin stock; this endpoint groups them
-    by their QSeal parent so the warehouse manager can see box-level counts.
+    by their QSeal parent box and item so the warehouse manager can see a
+    box-level view.
+
+    The payload mirrors the inbound receiving-slip detail structure
+    (``groups[] → parent_qseal / product_name / items[]``) so the frontend can
+    reuse the same rendering component.
 
     **Path Parameters:**
     - **bin_id**: Bin location UUID
 
-    **Returns:** Parent boxes with child-unit counts for the bin
+    **Returns:** ``groups`` of child units per parent box/product, plus
+    ``total_parent_boxes`` (distinct physical boxes in the bin)
     """
     service = BinStockService(db)
-    parents = service.get_parent_boxes(
+    groups = service.get_parent_boxes(
         bin_id=bin_id,
         org_id=current_user.organization_id,
     )
+    parent_ids = {g["parent_qseal"]["id"] for g in groups if g.get("parent_qseal")}
     return BinStockParentsResponse(
         bin_id=bin_id,
-        total_parent_boxes=len(parents),
-        parents=[BinStockParentResponse(**p) for p in parents],
+        total_parent_boxes=len(parent_ids),
+        groups=[BinStockItemGroup(**g) for g in groups],
     )
 
 
