@@ -132,6 +132,28 @@ class VerifyResetTokenResponse(BaseModel):
     valid: bool
 
 
+class ClientCredentialsRequest(BaseModel):
+    """Schema for OAuth2 client-credentials token request.
+
+    Used by machine clients (e.g. ai-service) to obtain a service-scoped
+    access token without human interaction.
+    """
+
+    grant_type: str  # must be "client_credentials"
+    client_id: str
+    client_secret: str
+
+
+class ServiceTokenResponse(BaseModel):
+    """Schema for service token (client-credentials) response.
+
+    Mirrors the shape of a standard OAuth2 access-token response but
+    omits the refresh token (service tokens are re-obtained on expiry).
+    """
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
 class QRCodeLoginRequest(BaseModel):
     """Schema for QR code / barcode login request (warehouse workers).
 

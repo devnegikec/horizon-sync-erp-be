@@ -35,4 +35,5 @@ __all__ = [
     "Invitation",
     "OTPVerification",
     "SystemAdminAuditLog",
+    "ServiceCredential",
 ]

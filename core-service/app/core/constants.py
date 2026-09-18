@@ -65,6 +65,9 @@ QR_AUTO_LINK_PARENT_CHILD = "qr_auto_link_parent_child"
 # ── Error codes ─────────────────────────────────────────────────────
 FEATURE_DISABLED_CODE = "FEATURE_DISABLED"
 
+# AI module (AI Hub: ASN ingestion, SOP Copilot, discrepancy detection, MCP)
+AI_MODULE_ENABLED = "ai_module_enabled"
+
 # ── HTTP status codes ───────────────────────────────────────────────
 HTTP_FEATURE_DISABLED = 423  # Locked – feature administratively disabled
 
