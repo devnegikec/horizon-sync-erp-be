@@ -1256,7 +1256,8 @@ async def reject_slip_item(
     "/receiving-slips/{slip_id}/items/status",
     summary="Bulk update receiving slip item statuses",
     description="Update multiple receiving slip line items in one request. "
-    "Each item carries a status ('rejected', 'ok', 'short', or 'damaged').",
+    "Each item carries a status ('rejected', 'ok', 'short', 'damaged', "
+    "'excess', 'hold', or 'quarantine').",
 )
 async def update_slip_items_status(
     slip_id: UUID,

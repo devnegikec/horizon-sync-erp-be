@@ -736,9 +736,11 @@ GET /api/v1/inbound/exception-reasons
    after the slip is approved, not in the hold/quarantine queue.
 3. **`written_off` is terminal.** Granting a later receipt refreshes numbers but keeps the closure —
    show the closure fields and an "already closed" hint instead of a close button.
-4. **Bulk status updates** (`POST /receiving-slips/{slip}/items/bulk-status`) now accept
+4. **Bulk status updates** (`POST /receiving-slips/{slip}/items/status`) now accept every line
+   status (`rejected`, `ok`, `short`, `damaged`, `excess`, `hold`, `quarantine`) plus
    `reason_code`, `short_qty` and `destination` per item; when omitted, `short_qty` may be absent
-   (legacy behaviour) and the reason code defaults to `SHORT_PHYSICAL` / `DAMAGED`. Prefer the
+   (legacy behaviour) and the reason code defaults to the canonical code for the status
+   (`SHORT_PHYSICAL`, `DAMAGED`, `EXCESS`, `HOLD`, `QUARANTINE`). Prefer the
    single-line endpoint for shortage capture.
 5. **Permissions to hide in the UI:** flagging needs `warehouse.update` **or** `wms.scan`;
    shortage closure needs `inbound_exception.dispose` **and** warehouse-manager authority;

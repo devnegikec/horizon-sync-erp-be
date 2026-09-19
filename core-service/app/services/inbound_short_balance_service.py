@@ -17,9 +17,10 @@ actionable ``hint`` so the frontend can tell the operator exactly what to fix.
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -62,6 +63,9 @@ class InboundShortBalanceService:
         counts accepted receipts. A balance closed as ``written_off`` keeps that
         decision — the numbers refresh for traceability but the manager's
         approval is not silently undone.
+
+        Only the ASN lines that appear on ``receiving_slip_id`` are linked to it;
+        the remaining balances keep the slip that last affected them.
         """
         asn = (
             self.db.query(AsnOrder)
@@ -74,7 +78,9 @@ class InboundShortBalanceService:
         if asn is None:
             return
 
-        dock_reasons = self._dock_reason_codes(receiving_slip_id, organization_id)
+        # Lines captured on this receipt, with the dock reason code when present.
+        slip_line_reasons = self._slip_line_reasons(receiving_slip_id, organization_id)
+        slip_line_item_ids = set(slip_line_reasons)
 
         for asn_item in asn.items:
             expected = Decimal(str(asn_item.qty or 0))
@@ -95,34 +101,61 @@ class InboundShortBalanceService:
                 if asn_item.item
                 else str(asn_item.item_id)
             )
-            dock_reason = dock_reasons.get(asn_item.item_id)
+            dock_reason = slip_line_reasons.get(asn_item.item_id)
+            # Only a line that is actually on this receipt may point at it.
+            slip_id_for_line = (
+                receiving_slip_id if asn_item.item_id in slip_line_item_ids else None
+            )
 
             if balance is None:
-                balance = InboundShortBalance(
-                    organization_id=organization_id,
-                    asn_order_item_id=asn_item.id,
-                    asn_order_id=asn.id,
-                    receiving_slip_id=receiving_slip_id,
-                    item_id=asn_item.item_id,
-                    sku=sku,
-                    expected_qty=expected,
-                    received_qty=received,
-                    short_qty=short,
-                    status=BALANCE_STATUS_OPEN
-                    if short > 0
-                    else BALANCE_STATUS_RESOLVED,
-                    reason_code=dock_reason,
+                now = datetime.now(UTC)
+                status = BALANCE_STATUS_OPEN if short > 0 else BALANCE_STATUS_RESOLVED
+                # Concurrent approvals can race to create the same ASN-line
+                # balance; insert-or-ignore so the loser reuses the winner's row
+                # instead of failing the whole approval on the unique constraint.
+                inserted_id = self.db.execute(
+                    pg_insert(InboundShortBalance)
+                    .values(
+                        id=uuid4(),
+                        organization_id=organization_id,
+                        asn_order_item_id=asn_item.id,
+                        asn_order_id=asn.id,
+                        receiving_slip_id=slip_id_for_line,
+                        item_id=asn_item.item_id,
+                        sku=sku,
+                        expected_qty=expected,
+                        received_qty=received,
+                        short_qty=short,
+                        status=status,
+                        reason_code=dock_reason,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    .on_conflict_do_nothing(
+                        constraint="uq_inbound_short_balance_asn_item"
+                    )
+                    .returning(InboundShortBalance.id)
+                ).scalar_one_or_none()
+
+                balance = (
+                    self.db.query(InboundShortBalance)
+                    .filter(
+                        InboundShortBalance.organization_id == organization_id,
+                        InboundShortBalance.asn_order_item_id == asn_item.id,
+                    )
+                    .first()
                 )
-                self.db.add(balance)
-                self.db.flush()
-                self._event(
-                    balance,
-                    event_type="created",
-                    from_status=None,
-                    to_status=balance.status,
-                    reason_code=dock_reason,
-                    actor_id=None,
-                )
+                if balance is None:
+                    continue
+                if inserted_id is not None:
+                    self._event(
+                        balance,
+                        event_type="created",
+                        from_status=None,
+                        to_status=balance.status,
+                        reason_code=dock_reason,
+                        actor_id=None,
+                    )
                 continue
 
             previous = (
@@ -133,7 +166,8 @@ class InboundShortBalanceService:
             )
 
             balance.asn_order_id = asn.id
-            balance.receiving_slip_id = receiving_slip_id
+            if slip_id_for_line is not None:
+                balance.receiving_slip_id = slip_id_for_line
             balance.item_id = asn_item.item_id
             balance.sku = sku
             balance.expected_qty = expected
@@ -274,16 +308,25 @@ class InboundShortBalanceService:
         }
 
     def get_balance(
-        self, balance_id: UUID, organization_id: UUID
+        self,
+        balance_id: UUID,
+        organization_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> InboundShortBalance:
-        balance = (
-            self.db.query(InboundShortBalance)
-            .filter(
-                InboundShortBalance.id == balance_id,
-                InboundShortBalance.organization_id == organization_id,
-            )
-            .first()
+        """Load one balance, optionally locking the row for a state change.
+
+        ``for_update`` takes a ``SELECT ... FOR UPDATE`` row lock so concurrent
+        writers (e.g. two closure requests) serialize on the balance instead of
+        both reading the same open state.
+        """
+        query = self.db.query(InboundShortBalance).filter(
+            InboundShortBalance.id == balance_id,
+            InboundShortBalance.organization_id == organization_id,
         )
+        if for_update:
+            query = query.with_for_update()
+        balance = query.first()
         if balance is None:
             raise NotFoundError(
                 message=f"Shortage balance '{balance_id}' was not found",
@@ -338,7 +381,9 @@ class InboundShortBalanceService:
         Requires warehouse-manager / org-admin authority, scoped to the ASN
         warehouse.
         """
-        balance = self.get_balance(balance_id, organization_id)
+        # Lock the row: a concurrent closure must observe the committed
+        # ``written_off`` state rather than appending a second closing event.
+        balance = self.get_balance(balance_id, organization_id, for_update=True)
 
         normalized_outcome = (outcome or "").strip().lower()
         if normalized_outcome not in CLOSE_OUTCOMES:
@@ -538,10 +583,15 @@ class InboundShortBalanceService:
                 ),
             )
 
-    def _dock_reason_codes(
+    def _slip_line_reasons(
         self, receiving_slip_id: UUID | None, organization_id: UUID
-    ) -> dict[UUID, str]:
-        """Reason code captured on the receipt line at the dock, keyed by item."""
+    ) -> dict[UUID, str | None]:
+        """Receipt lines of a slip keyed by item id, with their dock reason code.
+
+        Every line of the slip is included — a missing reason code maps to
+        ``None`` — so callers can tell which ASN lines the receipt actually
+        covers instead of assuming the whole ASN.
+        """
         if receiving_slip_id is None:
             return {}
 
@@ -561,15 +611,14 @@ class InboundShortBalanceService:
             .filter(
                 ReceivingSlipItem.slip_id == receiving_slip_id,
                 ReceivingSlipItem.organization_id == organization_id,
-                ReceivingSlipItem.reason_code.isnot(None),
                 Item.organization_id == organization_id,
                 Item.deleted_at.is_(None),
             )
             .all()
         )
-        mapping: dict[UUID, str] = {}
+        mapping: dict[UUID, str | None] = {}
         for item_id, reason_code in rows:
-            mapping.setdefault(item_id, reason_code)
+            mapping.setdefault(item_id, reason_code or None)
         return mapping
 
     def _event(

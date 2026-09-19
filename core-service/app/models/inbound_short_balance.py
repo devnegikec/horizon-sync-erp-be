@@ -86,7 +86,9 @@ class InboundShortBalance(Base):
     events = relationship(
         "InboundShortBalanceEvent",
         back_populates="balance",
-        cascade="all, delete-orphan",
+        # Append-only audit trail: never delete history with its parent balance.
+        cascade="save-update, merge",
+        passive_deletes=True,
         order_by="InboundShortBalanceEvent.created_at",
     )
 
@@ -108,8 +110,9 @@ class InboundShortBalanceEvent(Base):
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     balance_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("inbound_short_balances.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("inbound_short_balances.id", ondelete="SET NULL"),
+        # Nullable so the audit row survives a purge of its parent balance.
+        nullable=True,
         index=True,
     )
     receiving_slip_id = Column(

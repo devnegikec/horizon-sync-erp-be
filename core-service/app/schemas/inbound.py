@@ -515,7 +515,8 @@ class InboundShortBalanceEventResponse(BaseModel):
     """One append-only event in a shortage balance's history."""
 
     id: str
-    balance_id: str
+    # Null once the parent balance is purged; the audit row itself is retained.
+    balance_id: str | None = None
     receiving_slip_id: str | None = None
     event_type: str
     from_status: str | None = None
@@ -670,8 +671,10 @@ class ItemStatusUpdateRequest(BaseModel):
         None,
         max_length=80,
         description=(
-            "Exception/shortage reason code. Defaults to SHORT_PHYSICAL for "
-            "'short' and DAMAGED for 'damaged' when omitted."
+            "Exception/shortage reason code. When omitted it defaults to the "
+            "canonical code for the status: SHORT_PHYSICAL for 'short', "
+            "DAMAGED for 'damaged', EXCESS for 'excess', HOLD for 'hold' and "
+            "QUARANTINE for 'quarantine'."
         ),
     )
     short_qty: int | None = Field(

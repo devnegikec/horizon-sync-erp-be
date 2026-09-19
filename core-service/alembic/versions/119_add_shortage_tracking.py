@@ -112,8 +112,10 @@ def upgrade() -> None:
             sa.Column(
                 "balance_id",
                 postgresql.UUID(as_uuid=True),
-                sa.ForeignKey("inbound_short_balances.id", ondelete="CASCADE"),
-                nullable=False,
+                # Append-only history: a purged balance (itself cascaded from
+                # ``asn_orders``) nulls the link instead of erasing evidence.
+                sa.ForeignKey("inbound_short_balances.id", ondelete="SET NULL"),
+                nullable=True,
                 index=True,
             ),
             sa.Column(

@@ -1214,6 +1214,10 @@ class InboundService:
                         "quantity": existing_item.quantity,
                         "box_count": existing_item.box_count,
                         "flag": existing_item.flag,
+                        # Shortage evidence recorded at the dock must survive the
+                        # regeneration, otherwise the approved receipt loses it.
+                        "reason_code": existing_item.reason_code,
+                        "short_qty": existing_item.short_qty,
                         "rejection_reason": existing_item.rejection_reason,
                         "rejected_by": existing_item.rejected_by,
                         "rejected_at": existing_item.rejected_at,
@@ -2380,11 +2384,23 @@ class InboundService:
         organization_id: UUID,
         user_id: UUID | None = None,
     ) -> list[dict]:
-        """Apply per-item status updates (rejected / ok / short / damaged).
+        """Apply per-item status updates in bulk.
 
         This is the bulk equivalent of calling the individual reject / flag
-        endpoints — one request, one payload, with a per-item ``status``.
+        endpoints — one request, one payload, with a per-item ``status`` —
+        covering every flag the single-line endpoint accepts: ``rejected``,
+        ``ok``, ``short``, ``damaged``, ``excess``, ``hold`` and ``quarantine``.
         """
+        # Canonical reason code per flag, used when the payload omits one, so a
+        # discrepancy is always reason-coded (and never silently dropped).
+        default_reason_codes = {
+            "short": "SHORT_PHYSICAL",
+            "damaged": "DAMAGED",
+            "excess": "EXCESS",
+            "hold": "HOLD",
+            "quarantine": "QUARANTINE",
+        }
+
         results: list[dict] = []
         for entry in items:
             status = entry.status
@@ -2399,11 +2415,7 @@ class InboundService:
                         notes=entry.notes,
                     )
                 )
-            elif status in ("short", "damaged"):
-                # The bulk payload may omit the reason code; fall back to the
-                # canonical code for the status so every discrepancy stays
-                # reason-coded (and never silently dropped).
-                default_reason = "SHORT_PHYSICAL" if status == "short" else "DAMAGED"
+            elif status in self.FLAG_VALUES:
                 results.append(
                     self.flag_line_item(
                         slip_id=slip_id,
@@ -2412,7 +2424,7 @@ class InboundService:
                         notes=entry.notes,
                         organization_id=organization_id,
                         reason_code=getattr(entry, "reason_code", None)
-                        or default_reason,
+                        or default_reason_codes[status],
                         short_qty=getattr(entry, "short_qty", None),
                         destination=getattr(entry, "destination", None),
                         actor_id=user_id,
@@ -2433,7 +2445,10 @@ class InboundService:
                     details=[
                         {
                             "field": "items",
-                            "reason": "status must be one of: rejected, ok, short, damaged",
+                            "reason": (
+                                "status must be one of: rejected, ok, "
+                                + ", ".join(self.FLAG_VALUES)
+                            ),
                         }
                     ],
                 )
@@ -2503,6 +2518,8 @@ class InboundService:
             "quantity": updated_item.quantity,
             "box_count": updated_item.box_count,
             "flag": updated_item.flag,
+            "reason_code": updated_item.reason_code,
+            "short_qty": updated_item.short_qty,
             "rejection_reason": updated_item.rejection_reason,
             "notes": updated_item.notes,
             "rejected_at": None,
