@@ -42,11 +42,15 @@ from app.schemas.inbound import (
     InboundExceptionPagination,
     InboundExceptionReasonResponse,
     InboundExceptionResponse,
+    InboundShortBalanceEventResponse,
+    InboundShortBalanceListResponse,
     InboundShortBalanceResponse,
+    InboundShortBalanceSummary,
     LinkAsnToSessionRequest,
+    ReceivingSlipActionResponse,
     ReceivingSlipListItem,
     ReceivingSlipListResponse,
-    ReceivingSlipActionResponse,
+    ReceivingSlipPagination,
     ReceivingSlipResponse,
     ReceivingSlipStatusCounts,
     RecordScanRequest,
@@ -59,6 +63,7 @@ from app.schemas.inbound import (
     ScanResult,
     SessionResponse,
     SessionSummary,
+    ShortBalanceCloseRequest,
     StartSessionWithAsnRequest,
 )
 from app.services.inbound_exception_service import InboundExceptionService
@@ -485,8 +490,13 @@ async def reject_slip(
 @router.post(
     "/receiving-slips/{slip_id}/items/{item_id}/flag",
     response_model=FlaggedItemResponse,
-    summary="Flag line item",
-    description="Flag a receiving slip line item as SHORT or DAMAGED",
+    summary="Flag / classify a receipt line",
+    description=(
+        "Flag a receipt line. `short` records a shortage against the ASN "
+        "expectation (reason code + short quantity, nothing segregated); "
+        "`damaged`/`excess`/`hold`/`quarantine` segregate the units into a "
+        "HOLD/QUARANTINE bin and open a supervisor exception."
+    ),
 )
 async def flag_line_item(
     slip_id: UUID,
@@ -496,19 +506,29 @@ async def flag_line_item(
     db: Session = Depends(get_db),
 ):
     """
-    Flag a receiving slip line item.
+    Flag / classify a receiving slip line item.
 
-    Marks a line item as SHORT or DAMAGED with optional notes.
+    Only allowed while the slip is `pending_review` (draft receipt note).
 
     **Path Parameters:**
     - **slip_id**: UUID of the receiving slip
     - **item_id**: UUID of the line item to flag
 
     **Request Body:**
-    - **flag**: Flag value ('short' or 'damaged')
-    - **notes**: Optional notes about the discrepancy
+    - **flag**: `short` | `damaged` | `excess` | `hold` | `quarantine`
+    - **reason_code**: reason code from `GET /inbound/exception-reasons`
+      (required; must match the flag's category)
+    - **destination**: `HOLD` or `QUARANTINE` — required for segregation flags,
+      must be omitted for `short`
+    - **short_qty**: units missing against the ASN expectation — required for
+      `short`, must be omitted otherwise
+    - **notes**: optional free text
 
-    **Returns:** Updated line item details
+    **Returns:** Updated line, plus `exception_id`/`exception_status` for
+    segregation flags.
+
+    **Errors:** `400` validation (field-level `details` + `hint`), `404` slip or
+    line not found, `409` slip is no longer pending review.
 
     Requirements: 7.5
     """
@@ -519,6 +539,10 @@ async def flag_line_item(
         flag=data.flag,
         notes=data.notes,
         organization_id=current_user.organization_id,
+        reason_code=data.reason_code,
+        destination=data.destination,
+        short_qty=data.short_qty,
+        actor_id=current_user.id,
     )
     return FlaggedItemResponse(**result)
 
@@ -617,6 +641,33 @@ async def list_inbound_exceptions(
     )
 
 
+def _short_balance_response(balance) -> InboundShortBalanceResponse:
+    """Serialize a shortage balance (shares the service's field contract)."""
+    data = InboundShortBalanceService.serialize(balance)
+    return InboundShortBalanceResponse(
+        id=str(data["id"]),
+        asn_order_id=str(data["asn_order_id"]),
+        asn_order_item_id=str(data["asn_order_item_id"]),
+        receiving_slip_id=str(data["receiving_slip_id"])
+        if data["receiving_slip_id"]
+        else None,
+        item_id=str(data["item_id"]) if data["item_id"] else None,
+        sku=data["sku"],
+        expected_qty=float(data["expected_qty"]),
+        received_qty=float(data["received_qty"]),
+        short_qty=float(data["short_qty"]),
+        status=data["status"],
+        reason_code=data["reason_code"],
+        note=data["note"],
+        close_reason_code=data["close_reason_code"],
+        close_note=data["close_note"],
+        closed_by=str(data["closed_by"]) if data["closed_by"] else None,
+        closed_at=data["closed_at"].isoformat() if data["closed_at"] else None,
+        created_at=data["created_at"].isoformat() if data["created_at"] else None,
+        updated_at=data["updated_at"].isoformat() if data["updated_at"] else None,
+    )
+
+
 @router.get(
     "/asn-orders/{asn_order_id}/short-balances",
     response_model=list[InboundShortBalanceResponse],
@@ -630,24 +681,156 @@ async def list_inbound_short_balances(
     balances = InboundShortBalanceService(db).list_for_asn(
         asn_order_id, current_user.organization_id
     )
+    return [_short_balance_response(balance) for balance in balances]
+
+
+@router.get(
+    "/short-balances",
+    response_model=InboundShortBalanceListResponse,
+    summary="List ASN shortage balances (expected vs received)",
+)
+async def list_short_balances(
+    asn_order_id: UUID | None = Query(None, description="Filter by ASN order UUID"),
+    balance_status: str | None = Query(
+        None,
+        alias="status",
+        description="Filter by status: open, resolved, written_off",
+    ),
+    sku: str | None = Query(None, description="Filter by SKU (partial match)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Paginated shortage ledger: what the ASN expects versus what was actually
+    accepted, per ASN line, with the residual short still open.
+
+    **Query Parameters:**
+    - **asn_order_id**: only balances of this ASN
+    - **status**: `open` (outstanding), `resolved` (received later),
+      `written_off` (manager-closed)
+    - **sku**: partial SKU match
+
+    **Returns:** balances + pagination + status/quantity totals (`summary`)
+    """
+    service = InboundShortBalanceService(db)
+    balances, total = service.list_balances(
+        current_user.organization_id,
+        asn_order_id=asn_order_id,
+        status=balance_status,
+        sku=sku,
+        page=page,
+        page_size=page_size,
+    )
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    summary = service.summarize(
+        current_user.organization_id, asn_order_id=asn_order_id, sku=sku
+    )
+    return InboundShortBalanceListResponse(
+        balances=[_short_balance_response(balance) for balance in balances],
+        pagination=ReceivingSlipPagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1,
+        ),
+        summary=InboundShortBalanceSummary(**summary),
+    )
+
+
+@router.get(
+    "/short-balances/{balance_id}",
+    response_model=InboundShortBalanceResponse,
+    summary="Get a shortage balance by ID",
+)
+async def get_short_balance(
+    balance_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Get one shortage balance (404 with a hint when it does not exist)."""
+    service = InboundShortBalanceService(db)
+    balance = service.get_balance(balance_id, current_user.organization_id)
+    return _short_balance_response(balance)
+
+
+@router.get(
+    "/short-balances/{balance_id}/history",
+    response_model=list[InboundShortBalanceEventResponse],
+    summary="Get the arrival-level history of a shortage balance",
+)
+async def get_short_balance_history(
+    balance_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Append-only history: every receipt that changed the balance, plus the
+    formal closure. Lets a supervisor trace a shortage across vehicle arrivals.
+    """
+    service = InboundShortBalanceService(db)
+    events = service.list_events(balance_id, current_user.organization_id)
     return [
-        InboundShortBalanceResponse(
-            id=str(balance.id),
-            asn_order_id=str(balance.asn_order_id),
-            asn_order_item_id=str(balance.asn_order_item_id),
-            receiving_slip_id=str(balance.receiving_slip_id)
-            if balance.receiving_slip_id
+        InboundShortBalanceEventResponse(
+            id=str(event.id),
+            balance_id=str(event.balance_id),
+            receiving_slip_id=str(event.receiving_slip_id)
+            if event.receiving_slip_id
             else None,
-            item_id=str(balance.item_id) if balance.item_id else None,
-            sku=balance.sku,
-            expected_qty=float(balance.expected_qty),
-            received_qty=float(balance.received_qty),
-            short_qty=float(balance.short_qty),
-            status=balance.status,
-            updated_at=balance.updated_at.isoformat() if balance.updated_at else None,
+            event_type=event.event_type,
+            from_status=event.from_status,
+            to_status=event.to_status,
+            expected_qty=float(event.expected_qty),
+            received_qty=float(event.received_qty),
+            short_qty=float(event.short_qty),
+            reason_code=event.reason_code,
+            note=event.note,
+            actor_id=str(event.actor_id) if event.actor_id else None,
+            created_at=event.created_at.isoformat() if event.created_at else None,
         )
-        for balance in balances
+        for event in events
     ]
+
+
+@router.post(
+    "/short-balances/{balance_id}/close",
+    response_model=InboundShortBalanceResponse,
+    summary="Close / write off a residual shortage (manager approval)",
+)
+async def close_short_balance(
+    balance_id: UUID,
+    data: ShortBalanceCloseRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_DISPOSE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Formally close a residual shortage. The ASN expectation is never modified —
+    only the shortage decision is recorded (reason code, approver, timestamp).
+
+    **Permission:** `inbound_exception.dispose` plus warehouse-manager authority
+    for the ASN's warehouse.
+
+    **Errors:**
+    - `400 SHORTAGE_REASON_REQUIRED` / `SHORTAGE_REASON_INVALID`
+    - `400 SHORTAGE_OUTCOME_INVALID`
+    - `404 SHORT_BALANCE_NOT_FOUND`
+    - `409 SHORTAGE_ALREADY_CLOSED` / `SHORTAGE_NOTHING_TO_CLOSE` /
+      `SHORTAGE_STILL_OPEN` / `SHORTAGE_APPROVAL_REQUIRED`
+    """
+    service = InboundShortBalanceService(db)
+    balance = service.close_balance(
+        balance_id=balance_id,
+        organization_id=current_user.organization_id,
+        actor_id=current_user.id,
+        user=current_user,
+        outcome=data.outcome,
+        reason_code=data.reason_code,
+        note=data.note,
+    )
+    return _short_balance_response(balance)
 
 
 @router.post(

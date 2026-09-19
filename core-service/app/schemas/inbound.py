@@ -111,13 +111,43 @@ class RejectSlipRequest(BaseModel):
 
 
 class FlagLineItemRequest(BaseModel):
-    """Schema for flagging a receiving slip line item."""
+    """Schema for flagging a receiving slip line item.
+
+    ``short`` records a shortage against the ASN expectation (no physical stock
+    is segregated). ``damaged``/``excess``/``hold``/``quarantine`` segregate the
+    units into a non-pickable HOLD/QUARANTINE bin and create a reason-coded
+    inbound exception for supervisor disposition.
+    """
 
     flag: str = Field(
-        ..., description="Flag value: short, damaged, excess, hold, or quarantine"
+        ...,
+        description=("Flag value: short, damaged, excess, hold, or quarantine"),
     )
-    reason_code: str | None = Field(None, max_length=80)
-    destination: str | None = Field(None, description="HOLD or QUARANTINE")
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Reason code from GET /inbound/exception-reasons (e.g. SHORT_PHYSICAL, "
+            "DAMAGED, EXCESS, HOLD, QUARANTINE). Required — when missing or unknown "
+            "the API answers REASON_CODE_REQUIRED / REASON_CODE_INVALID and lists "
+            "the codes that are valid for this flag."
+        ),
+    )
+    destination: str | None = Field(
+        None,
+        description=(
+            "HOLD or QUARANTINE segregation bin. Required for damaged/excess/hold/"
+            "quarantine; must be omitted for short."
+        ),
+    )
+    short_qty: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Units missing against the ASN expectation. Required when flag=short, "
+            "must be omitted otherwise."
+        ),
+    )
     notes: str | None = Field(
         None, max_length=1000, description="Optional notes about the discrepancy"
     )
@@ -345,7 +375,12 @@ class ReceivingSlipListItem(BaseModel):
 
 
 class FlaggedItemResponse(BaseModel):
-    """Response schema for a flagged receiving slip line item."""
+    """Response schema for a flagged receiving slip line item.
+
+    ``exception_*`` fields are populated only for segregation flags
+    (``damaged``/``excess``/``hold``/``quarantine``), which create an inbound
+    exception the supervisor must dispose of.
+    """
 
     id: str
     slip_id: str
@@ -354,6 +389,15 @@ class FlaggedItemResponse(BaseModel):
     quantity: int
     box_count: int
     flag: str
+    reason_code: str | None = None
+    short_qty: int | None = Field(
+        None, description="Units short against the ASN expectation (flag=short)"
+    )
+    condition_code: str | None = None
+    exception_id: str | None = None
+    exception_status: str | None = None
+    destination: str | None = None
+    destination_location_id: str | None = None
     notes: str | None = None
 
 
@@ -434,6 +478,8 @@ class InboundExceptionBulkDispositionResponse(BaseModel):
 
 
 class InboundShortBalanceResponse(BaseModel):
+    """One ASN-line shortage balance (expected vs actually received)."""
+
     id: str
     asn_order_id: str
     asn_order_item_id: str
@@ -444,6 +490,13 @@ class InboundShortBalanceResponse(BaseModel):
     received_qty: float
     short_qty: float
     status: str
+    reason_code: str | None = None
+    note: str | None = None
+    close_reason_code: str | None = None
+    close_note: str | None = None
+    closed_by: str | None = None
+    closed_at: str | None = None
+    created_at: str | None = None
     updated_at: str | None = None
 
 
@@ -456,6 +509,64 @@ class ReceivingSlipPagination(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+
+class InboundShortBalanceEventResponse(BaseModel):
+    """One append-only event in a shortage balance's history."""
+
+    id: str
+    balance_id: str
+    receiving_slip_id: str | None = None
+    event_type: str
+    from_status: str | None = None
+    to_status: str
+    expected_qty: float
+    received_qty: float
+    short_qty: float
+    reason_code: str | None = None
+    note: str | None = None
+    actor_id: str | None = None
+    created_at: str | None = None
+
+
+class InboundShortBalanceSummary(BaseModel):
+    """Aggregated shortage totals for the supervisor worklist."""
+
+    total: int
+    open_count: int
+    resolved_count: int
+    written_off_count: int
+    open_short_qty: float
+    total_short_qty: float
+
+
+class InboundShortBalanceListResponse(BaseModel):
+    """Paginated shortage ledger with status totals."""
+
+    balances: list[InboundShortBalanceResponse]
+    pagination: ReceivingSlipPagination
+    summary: InboundShortBalanceSummary
+
+
+class ShortBalanceCloseRequest(BaseModel):
+    """Formal closure of a residual shortage (manager approved)."""
+
+    outcome: str = Field(
+        "written_off",
+        description=(
+            "written_off = accept the residual short as a loss (reason required); "
+            "resolved_by_receipt = the gap was received later"
+        ),
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Closure reason code from GET /inbound/exception-reasons "
+            "(category 'short'), e.g. SHORTAGE_WRITE_OFF"
+        ),
+    )
+    note: str | None = Field(None, max_length=2000)
 
 
 class ReceivingSlipStatusCounts(BaseModel):
@@ -546,10 +657,34 @@ class ItemStatusUpdateRequest(BaseModel):
 
     item_id: UUID
     status: str = Field(
-        ..., description="New status: 'rejected', 'ok', 'short', or 'damaged'"
+        ...,
+        description=(
+            "New status: 'rejected', 'ok', 'short', 'damaged', 'excess', "
+            "'hold', or 'quarantine'"
+        ),
     )
     reason: str | None = Field(
         None, max_length=1000, description="Reason (used when status is 'rejected')"
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Exception/shortage reason code. Defaults to SHORT_PHYSICAL for "
+            "'short' and DAMAGED for 'damaged' when omitted."
+        ),
+    )
+    short_qty: int | None = Field(
+        None,
+        ge=1,
+        description="Units missing against the ASN expectation (status='short')",
+    )
+    destination: str | None = Field(
+        None,
+        description=(
+            "HOLD or QUARANTINE for segregation statuses "
+            "(damaged/excess/hold/quarantine)"
+        ),
     )
     notes: str | None = Field(
         None, max_length=1000, description="Optional additional notes"
