@@ -21,13 +21,13 @@ Revises: 118_add_case_uom
 Create Date: 2026-09-18
 """
 
-from collections.abc import Sequence
 import uuid
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 from app.alembic_guards import has_column, has_index, has_table
 
 revision: str = "119_add_shortage_tracking"
