@@ -207,6 +207,11 @@ class InboundExceptionService:
                 "Receiving slip must be pending review before classification",
                 current_state=slip.status,
                 required_state=["pending_review"],
+                code="SLIP_NOT_PENDING_REVIEW",
+                hint=(
+                    "Classify damaged/excess/held stock before the Draft Receipt "
+                    "Note is approved."
+                ),
             )
         line = (
             self.db.query(ReceivingSlipItem)
@@ -237,6 +242,11 @@ class InboundExceptionService:
                 "This receipt line already has an active inbound exception",
                 current_state=existing.status,
                 required_state=["closed", "released"],
+                code="EXCEPTION_ALREADY_ACTIVE",
+                hint=(
+                    f"Exception {existing.id} is already '{existing.status}'. "
+                    "Dispose of it before classifying the line again."
+                ),
             )
 
         self._validate_reason(reason_code, organization_id)
@@ -277,6 +287,7 @@ class InboundExceptionService:
         )
         self.db.add(exception)
         line.flag = classification
+        line.reason_code = reason_code
         line.condition_code = normalized_destination or (
             "DAMAGED" if classification == "damaged" else "GOOD"
         )
@@ -650,7 +661,22 @@ class InboundExceptionService:
             reason.organization_id and reason.organization_id != organization_id
         ):
             raise ValidationError(
-                f"Unknown or inactive inbound exception reason code: {code}"
+                message=f"Unknown or inactive inbound exception reason code: {code}",
+                details=[
+                    {
+                        "field": "reason_code",
+                        "reason": (
+                            f"'{code}' is unknown, inactive, or belongs to another "
+                            f"organization"
+                        ),
+                        "hint": (
+                            "Fetch the allowed codes from "
+                            "GET /inbound/exception-reasons"
+                        ),
+                    }
+                ],
+                code="REASON_CODE_INVALID",
+                hint="Fetch the allowed codes from GET /inbound/exception-reasons.",
             )
         return reason
 

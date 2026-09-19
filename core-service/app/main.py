@@ -161,9 +161,7 @@ async def lifespan(app: FastAPI):
                     "⚠️ Continuing without master organization setup (dev environment)"
                 )
     elif skip_master_setup:
-        logger.info(
-            "⏭️ Skipping master organization setup (SKIP_MASTER_ORG_SETUP=true)"
-        )
+        logger.info("⏭️ Skipping master organization setup (SKIP_MASTER_ORG_SETUP=true)")
     else:
         logger.info("⚠️ Master organization setup module not available")
 
@@ -768,14 +766,21 @@ async def custom_validation_exception_handler(request: Request, exc: ValidationE
         },
     )
 
-    # Format validation errors with field and reason as per Requirement 10.4
+    # Format validation errors with field and reason as per Requirement 10.4.
+    # ``hint`` is only attached when the service supplied one, so existing
+    # payloads stay byte-for-byte compatible.
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "details": exc.details,  # List of {field, reason, hint?} dicts
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "details": exc.details,  # List of {field, reason} dicts
-        },
+        content=content,
     )
 
 
@@ -794,14 +799,19 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
     )
 
     # Format not found errors with entity_type and entity_id as per Requirement 10.5
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "entity_type": exc.entity_type,
+        "entity_id": exc.entity_id,
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "entity_type": exc.entity_type,
-            "entity_id": exc.entity_id,
-        },
+        content=content,
     )
 
 
@@ -819,14 +829,22 @@ async def state_error_handler(request: Request, exc: StateError):
         },
     )
 
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "current_state": exc.current_state,
+        "required_state": exc.required_state,
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+    details = getattr(exc, "details", None)
+    if details:
+        content["details"] = details
+
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "current_state": exc.current_state,
-            "required_state": exc.required_state,
-        },
+        content=content,
     )
 
 
