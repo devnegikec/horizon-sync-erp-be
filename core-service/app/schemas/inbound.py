@@ -178,8 +178,34 @@ class InboundExceptionClassifyRequest(BaseModel):
     )
     reason_code: str = Field(..., max_length=80)
     destination: str | None = Field(
-        None, description="HOLD or QUARANTINE where physical segregation is required"
+        None,
+        description="HOLD, QUARANTINE or DAMAGED where physical segregation is required",
     )
+    note: str | None = Field(None, max_length=2000)
+
+
+class UnreadableQRReportRequest(BaseModel):
+    """Operator report of a carton whose QR label cannot be scanned (G-Q1).
+
+    Nothing is decoded, so no stock is created: the carton reference is recorded
+    as a reason-coded HOLD exception and a supervisor is alerted.
+    """
+
+    session_id: UUID = Field(
+        ..., description="Open receiving session the carton arrived on"
+    )
+    carton_reference: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description=(
+            "Printed reference of the unreadable carton (serial, batch or ASN line) "
+            "so a supervisor can locate it"
+        ),
+    )
+    sku: str | None = Field(None, max_length=100)
+    batch_number: str | None = Field(None, max_length=100)
+    quantity: int = Field(1, ge=1)
     note: str | None = Field(None, max_length=2000)
 
 
@@ -251,12 +277,19 @@ class ScanResult(BaseModel):
     qr_identifier: str
     sku: str
     raw_quantity: int
-    batch_number: str
+    batch_number: str | None = None
     packaging_unit_id: UUID | None = None
     scanned_at: str | None = None
     total_boxes_scanned: int = 0
     exception_id: str | None = None
     exception_status: str | None = None
+    # Over-receipt control (G-E1 / E-12): when this scan pushes the ASN line over
+    # its expected quantity, the extra units are held and a decision is required.
+    requires_decision: bool = False
+    decision_options: list[str] = Field(default_factory=list)
+    excess_qty: float | None = None
+    expected_qty: float | None = None
+    scanned_qty: float | None = None
 
 
 class BatchBreakdown(BaseModel):
@@ -402,11 +435,21 @@ class FlaggedItemResponse(BaseModel):
 
 
 class InboundExceptionReasonResponse(BaseModel):
+    """A tenant-configurable exception reason code.
+
+    ``applies_to_conditions`` lists the **return** unit conditions this reason
+    is offered for (``good`` / ``damaged`` / ``hold`` / ``quarantine``). It is
+    empty for inbound-only reasons such as ``SHORT_PHYSICAL`` or
+    ``QR_UNREADABLE``, so a client can filter the condition picker from data
+    instead of hard-coding a category map.
+    """
+
     code: str
     name: str
     category: str
     default_destination: str | None = None
-    requires_approval: bool
+    requires_approval: bool = False
+    applies_to_conditions: list[str] = Field(default_factory=list)
 
 
 class InboundEvidenceResponse(BaseModel):

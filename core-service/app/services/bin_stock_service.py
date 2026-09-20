@@ -49,6 +49,7 @@ class BinStockService:
         *,
         commit: bool = True,
         sync_warehouse: bool = True,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -69,6 +70,10 @@ class BinStockService:
             quantity: The quantity to add (must be positive).
             org_id: Organization ID for scoping.
             batch_number: Optional batch number for the stock.
+            inventory_status: Status for the resulting stock. Defaults to
+                ``available`` for normal stock; pass ``hold`` / ``quality`` /
+                ``damaged`` when segregating stock (E-05) so status-based
+                reporting and allocation do not treat it as sellable.
 
         Returns:
             The created or updated BinStockLevel record.
@@ -104,6 +109,7 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
             for_update=True,
+            inventory_status=inventory_status,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -490,12 +496,17 @@ class BinStockService:
         quantity: Decimal,
         org_id: UUID,
         batch_number: str | None = None,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Atomically move physical stock between bins without changing on-hand.
 
         Availability changes only when the source and destination have different
         pickability. This is the hold/quarantine → storage primitive used by
         inbound exception disposition.
+
+        ``inventory_status`` sets the status of the destination stock, so moving
+        segregated stock into a HOLD/QUARANTINE/DAMAGED bin keeps it non-sellable
+        (E-05).
         """
         if from_bin_id == to_bin_id:
             existing = self._get_bin_stock_record(
@@ -521,7 +532,13 @@ class BinStockService:
                 from_bin_id, item_id, quantity, org_id, batch_number, commit=False
             )
             moved = self.add_stock(
-                to_bin_id, item_id, quantity, org_id, batch_number, commit=False
+                to_bin_id,
+                item_id,
+                quantity,
+                org_id,
+                batch_number,
+                commit=False,
+                inventory_status=inventory_status,
             )
             self.db.commit()
             self.db.refresh(moved)
@@ -836,11 +853,17 @@ class BinStockService:
         org_id: UUID,
         batch_number: str | None = None,
         for_update: bool = False,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Get an existing BinStockLevel or create a new one.
 
         When ``for_update`` is true the existing row is locked so concurrent
         add/remove operations serialize instead of overwriting each other.
+
+        ``inventory_status`` is applied to the row: new rows start in that status,
+        and an existing row is re-statused when a caller explicitly declares a
+        different one (e.g. stock being segregated into a HOLD bin). Omitting it
+        keeps the row's current status (new rows default to ``available``).
         """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
@@ -865,10 +888,15 @@ class BinStockService:
                 organization_id=org_id,
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
-                inventory_status=InventoryStatus.AVAILABLE.value,
+                inventory_status=(inventory_status or InventoryStatus.AVAILABLE.value),
             )
             self.db.add(bin_stock)
             self.db.flush()
+        elif inventory_status is not None:
+            current = bin_stock.inventory_status or InventoryStatus.AVAILABLE.value
+            if current != inventory_status:
+                bin_stock.inventory_status = inventory_status
+                self.db.flush()
 
         return bin_stock
 

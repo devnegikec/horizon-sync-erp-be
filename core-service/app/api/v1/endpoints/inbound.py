@@ -65,6 +65,7 @@ from app.schemas.inbound import (
     SessionSummary,
     ShortBalanceCloseRequest,
     StartSessionWithAsnRequest,
+    UnreadableQRReportRequest,
 )
 from app.services.inbound_exception_service import InboundExceptionService
 from app.services.inbound_service import InboundService
@@ -204,11 +205,6 @@ async def record_scan(
     Requirements: 5.2, 5.3, 5.4
     """
     service = InboundService(db)
-    import logging
-
-    logging.getLogger(__name__).warning(
-        "SCAN DEBUG qr_data=%r len=%d", data.qr_data, len(data.qr_data)
-    )
     result = service.record_scan(
         session_id=session_id,
         qr_data=data.qr_data,
@@ -556,8 +552,26 @@ async def flag_line_item(
     "/exception-reasons",
     response_model=list[InboundExceptionReasonResponse],
     summary="List inbound exception reason codes",
+    description=(
+        "Tenant-configurable reason codes. Pass `condition` "
+        "(`good|damaged|hold|quarantine`) to get only the reasons offered for a "
+        "returned unit in that condition — the handheld condition picker should "
+        "use this rather than hard-coding a category map. `category` matches one "
+        "category exactly. Omitting both returns every active code, which is what "
+        "the inbound receiving flow relies on. Each reason also carries "
+        "`applies_to_conditions` so the mapping is readable from the payload."
+    ),
 )
 async def list_exception_reasons(
+    condition: str | None = Query(
+        None,
+        description=(
+            "Return unit condition to filter by: good | damaged | hold | quarantine"
+        ),
+    ),
+    category: str | None = Query(
+        None, description="Exact reason category to filter by (e.g. return_damage)"
+    ),
     current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_READ)),
     db: Session = Depends(get_db),
 ):
@@ -569,8 +583,13 @@ async def list_exception_reasons(
             category=reason.category,
             default_destination=reason.default_destination,
             requires_approval=reason.requires_approval,
+            applies_to_conditions=InboundExceptionService.conditions_for_category(
+                reason.category
+            ),
         )
-        for reason in service.list_reasons(current_user.organization_id)
+        for reason in service.list_reasons(
+            current_user.organization_id, condition=condition, category=category
+        )
     ]
 
 
@@ -596,6 +615,37 @@ async def classify_inbound_exception(
         classification=data.classification,
         reason_code=data.reason_code,
         destination=data.destination,
+        note=data.note,
+    )
+    return InboundExceptionResponse(**service.serialize(exception))
+
+
+@router.post(
+    "/exceptions/unreadable-qr",
+    response_model=InboundExceptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Report an unreadable / unscannable QR label",
+    description=(
+        "Record a carton whose QR label cannot be scanned (G-Q1). Nothing is "
+        "decoded and no stock is created: the carton reference is parked as a "
+        "reason-coded HOLD exception and the warehouse supervisors are alerted so "
+        "they can locate the carton or authorise a relabel."
+    ),
+)
+async def report_unreadable_qr(
+    data: UnreadableQRReportRequest,
+    current_user: CurrentUser = Depends(require_permission(INBOUND_EXCEPTION_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = InboundExceptionService(db)
+    exception = service.record_unreadable_qr(
+        organization_id=current_user.organization_id,
+        session_id=data.session_id,
+        carton_reference=data.carton_reference,
+        actor_id=current_user.id,
+        sku=data.sku,
+        batch_number=data.batch_number,
+        quantity=data.quantity,
         note=data.note,
     )
     return InboundExceptionResponse(**service.serialize(exception))

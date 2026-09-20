@@ -12,6 +12,7 @@ Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 14.1
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -291,19 +292,45 @@ class InboundService:
             qr_data, db=self.db, organization_id=organization_id
         )
 
-        # Check for duplicate qr_identifier within this session
-        existing_items = self.session_repo.get_items(session_id)
-        for item in existing_items:
-            if item.qr_identifier == payload.id:
-                raise ValidationError(
-                    message="Duplicate scan: this box has already been scanned in this session",
-                    details=[
-                        {
-                            "field": "qr_identifier",
-                            "reason": f"QR identifier '{payload.id}' already exists in session",
-                        }
-                    ],
-                )
+        # ── Session-scoped duplicate gate ────────────────────────────────
+        # Both axes are consulted: the receipt lines (``scan_session_items``) and
+        # the dual-axis tracking rows via ``can_scan``, which also covers a label
+        # re-presented after its tracking row already exists.
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        session_duplicate = not ScannedItemTrackingService(self.db).can_scan(
+            payload.id, session_id
+        ) or any(
+            item.qr_identifier == payload.id
+            for item in self.session_repo.get_items(session_id)
+        )
+        if session_duplicate:
+            raise ValidationError(
+                message="Duplicate scan: this box has already been scanned in this session",
+                details=[
+                    {
+                        "field": "qr_identifier",
+                        "reason": f"QR identifier '{payload.id}' already exists in session",
+                    }
+                ],
+            )
+
+        # ── Active-stock duplicate gate (G-E3 / E-13) ────────────────────
+        # A session-scoped check is not enough: the same label can be presented
+        # again in a brand-new session while the unit is already on hand. Internal
+        # transfers legitimately re-scan serials that exist in the source
+        # warehouse, so they are excluded here and validated by the transfer path.
+        if not self._session_is_internal_transfer(session, organization_id):
+            self._reject_duplicate_active_stock(
+                qr_identifier=payload.id,
+                payload=payload,
+                session=session,
+                organization_id=organization_id,
+                worker_id=worker_id,
+                qr_data=qr_data,
+            )
 
         # ── Resolve the inventory Item for this scan ──
         # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
@@ -315,6 +342,10 @@ class InboundService:
 
         item = None
         pending_asn_exception_type: str | None = None
+        pending_asn_reason_code: str | None = None
+        pending_notification = None
+        excess_alert: dict | None = None
+        asn_order = None
 
         product_item = (
             self.db.query(ProductItem)
@@ -432,6 +463,7 @@ class InboundService:
                 # be linked to the generated receipt line and need a manager's
                 # disposition before becoming normal receiving inventory.
                 pending_asn_exception_type = "unexpected_known_sku"
+                pending_asn_reason_code = "UNEXPECTED_KNOWN_SKU"
 
             # ── Internal transfer: verify + receive the scanned serial ──
             if asn_order.asn_type == "internal_transfer" and item is not None:
@@ -452,6 +484,28 @@ class InboundService:
             )
             if pu is not None:
                 packaging_unit_id = pu.id
+
+        # ── Scan-time excess check (G-E1 / E-12) ───────────────────────────
+        # Nothing compared scanned quantity to the ASN expectation at the dock, so
+        # over-receipts were only discovered later in slip reconciliation. When
+        # this scan tips the line over its expected quantity, the extra units are
+        # segregated in HOLD and a supervisor decision is requested.
+        if (
+            asn_order is not None
+            and asn_order.asn_type != "internal_transfer"
+            and item is not None
+            and pending_asn_exception_type is None
+        ):
+            excess_alert = self._detect_scan_excess(
+                session_id=session_id,
+                asn_order=asn_order,
+                item=item,
+                payload=payload,
+                packaging_unit_id=packaging_unit_id,
+            )
+            if excess_alert is not None:
+                pending_asn_exception_type = "excess_receipt"
+                pending_asn_reason_code = "EXCESS"
 
         # Add scan session item
         item_data = {
@@ -529,7 +583,7 @@ class InboundService:
                 session_id=session_id,
                 asn_order_id=session.asn_order_id,
                 exception_type=pending_asn_exception_type,
-                reason_code="UNEXPECTED_KNOWN_SKU",
+                reason_code=pending_asn_reason_code or "UNEXPECTED_KNOWN_SKU",
                 qr_identifier=payload.id,
                 sku=payload.sku,
                 batch_number=payload.batch,
@@ -550,6 +604,10 @@ class InboundService:
                 organization_id,
                 payload.batch,
                 commit=False,
+                # Segregated stock is not sellable: never report it as available.
+                inventory_status=InboundExceptionService.inventory_status_for_destination(
+                    "HOLD"
+                ),
             )
             tracking.receiving_status = "hold"
             tracking.putaway_status = "blocked"
@@ -558,7 +616,10 @@ class InboundService:
             tracking.stock_location_id = hold.id
             exception.destination_location_id = hold.id
             exception_id = str(exception.id)
+            pending_notification = exception
         self.db.commit()
+        if pending_notification is not None:
+            InboundExceptionService(self.db).notify_supervisors(pending_notification)
 
         return {
             "scan_item_id": str(scan_item.id),
@@ -574,6 +635,200 @@ class InboundService:
             "total_boxes_scanned": session.total_boxes_scanned,
             "exception_id": exception_id,
             "exception_status": "pending_approval" if exception_id else None,
+            # Decision-required response for an over-receipt (E-12): the extra
+            # units are already in HOLD and wait for a supervisor disposition.
+            "requires_decision": excess_alert is not None,
+            "decision_options": (
+                list(excess_alert["decision_options"]) if excess_alert else []
+            ),
+            "excess_qty": excess_alert["excess_qty"] if excess_alert else None,
+            "expected_qty": excess_alert["expected_qty"] if excess_alert else None,
+            "scanned_qty": excess_alert["scanned_qty"] if excess_alert else None,
+        }
+
+    # ------------------------------------------------------------------
+    # SCAN-TIME CONTROLS (duplicate identity, excess receipt)
+    # ------------------------------------------------------------------
+
+    def _session_is_internal_transfer(
+        self, session: ScanSession, organization_id: UUID
+    ) -> bool:
+        """True when the session's ASN is an internal transfer."""
+        if not session.asn_order_id:
+            return False
+        from app.models.asn_order import AsnOrder
+
+        return (
+            self.db.query(AsnOrder.asn_type)
+            .filter(
+                AsnOrder.id == session.asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .scalar()
+        ) == "internal_transfer"
+
+    def _reject_duplicate_active_stock(
+        self,
+        *,
+        qr_identifier: str,
+        payload,
+        session: ScanSession,
+        organization_id: UUID,
+        worker_id: UUID,
+        qr_data: str,
+    ) -> None:
+        """Hard-stop a scan whose identity is already in active stock (E-13).
+
+        The exception is recorded (and the supervisor alerted) *before* the scan
+        is rejected, so the attempted double receipt stays visible, and no stock
+        or receipt line is created for it.
+        """
+        from app.services.inbound_exception_service import (
+            DUPLICATE_SERIAL_REASON,
+            InboundExceptionService,
+        )
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        hit = ScannedItemTrackingService(self.db).find_active_stock(
+            qr_identifier, organization_id
+        )
+        if hit is None:
+            return
+
+        exception_service = InboundExceptionService(self.db)
+        exception = exception_service.create_scan_exception(
+            organization_id=organization_id,
+            warehouse_id=session.warehouse_id,
+            session_id=session.id,
+            asn_order_id=session.asn_order_id,
+            exception_type="duplicate_serial",
+            reason_code=DUPLICATE_SERIAL_REASON,
+            qr_identifier=qr_identifier,
+            sku=payload.sku,
+            batch_number=payload.batch,
+            quantity=payload.qty or 1,
+            raw_qr_data=qr_data,
+            actor_id=worker_id,
+        )
+        self.db.commit()
+        exception_service.notify_supervisors(exception)
+        raise StateError(
+            message=(
+                "Duplicate identity: this carton or unit is already in stock and "
+                "cannot be received again"
+            ),
+            current_state="already_in_stock",
+            required_state=["not_in_stock"],
+            code="DUPLICATE_SERIAL",
+            hint=(
+                f"'{qr_identifier}' is {hit['detail']}. Do not receive it again — "
+                "raise a stock investigation if the physical unit is at the dock."
+            ),
+        )
+
+    def _matched_asn_line(self, asn_order, item, payload):
+        """The ASN line this scan belongs to, by item or SKU/GTIN/item-code."""
+        keys: set[str] = set()
+        if item is not None:
+            keys.update(key for key in (item.sku, item.gtin, item.item_code) if key)
+        if payload.sku:
+            keys.add(payload.sku)
+
+        for line in asn_order.items:
+            if item is not None and line.item_id == item.id:
+                return line
+            line_item = line.item
+            if line_item is None:
+                continue
+            for key in (line_item.sku, line_item.gtin, line_item.item_code):
+                if key and key in keys:
+                    return line
+        return None
+
+    def _scan_item_eaches(
+        self, raw_quantity, packaging_unit_id: UUID | None
+    ) -> Decimal:
+        """Eaches represented by a scan (raw quantity × packaging factor)."""
+        raw = Decimal(str(raw_quantity or 0))
+        if packaging_unit_id:
+            packaging_unit = self.db.get(ItemPackagingUnit, packaging_unit_id)
+            factor = getattr(packaging_unit, "conversion_factor", None)
+            if factor is not None:
+                return raw * Decimal(str(factor))
+        return raw
+
+    def _scanned_eaches_for_line(self, session_id: UUID, line) -> Decimal:
+        """Eaches already scanned in this session for one ASN line."""
+        line_item = line.item
+        keys = {
+            key
+            for key in (
+                getattr(line_item, "sku", None),
+                getattr(line_item, "gtin", None),
+                getattr(line_item, "item_code", None),
+            )
+            if key
+        }
+        if not keys:
+            return Decimal("0")
+
+        rows = (
+            self.db.query(ScanSessionItem)
+            .filter(
+                ScanSessionItem.session_id == session_id,
+                ScanSessionItem.sku.in_(keys),
+            )
+            .all()
+        )
+        return sum(
+            (
+                self._scan_item_eaches(row.raw_quantity, row.packaging_unit_id)
+                for row in rows
+            ),
+            Decimal("0"),
+        )
+
+    def _detect_scan_excess(
+        self,
+        *,
+        session_id: UUID,
+        asn_order,
+        item,
+        payload,
+        packaging_unit_id: UUID | None,
+    ) -> dict | None:
+        """Flag an over-receipt against the ASN line for this scan (E-12).
+
+        Returns the decision payload when this scan pushes the ASN line over its
+        expected quantity, otherwise ``None``. Quantities are compared in eaches
+        (the same unit ``approve_slip`` aggregates), so packaging units do not
+        distort the check.
+        """
+        line = self._matched_asn_line(asn_order, item, payload)
+        if line is None:
+            return None
+
+        expected = Decimal(str(line.qty or 0))
+        if expected <= 0:
+            return None
+
+        already = self._scanned_eaches_for_line(session_id, line)
+        scanned_now = self._scan_item_eaches(payload.qty or 1, packaging_unit_id)
+        projected = already + scanned_now
+        if projected <= expected:
+            return None
+
+        return {
+            "asn_order_item_id": str(line.id),
+            "expected_qty": float(expected),
+            "scanned_qty": float(projected),
+            "excess_qty": float(projected - expected),
+            "reason_code": "EXCESS",
+            "destination": "HOLD",
+            # Existing disposition actions that resolve the decision.
+            "decision_options": ["move_to_hold", "return_to_sender", "dispose"],
         }
 
     # ------------------------------------------------------------------
@@ -1964,13 +2219,16 @@ class InboundService:
         )
         normalized_destination = (destination or "").strip().upper() or None
 
+        from app.services.inbound_exception_service import InboundExceptionService
+
         # ── Destination rules ──────────────────────────────────────────────
         if normalized_flag in self.SEGREGATION_FLAGS:
             if normalized_destination is None:
                 normalized_destination = (
                     reason.default_destination or "QUARANTINE"
                 ).upper()
-            if normalized_destination not in ("HOLD", "QUARANTINE"):
+            allowed_destinations = sorted(InboundExceptionService.DESTINATIONS)
+            if normalized_destination not in InboundExceptionService.DESTINATIONS:
                 raise ValidationError(
                     message=(
                         f"Destination '{destination}' is not a segregation bin that "
@@ -1982,11 +2240,11 @@ class InboundService:
                             "reason": (
                                 f"'{destination}' is not a supported destination"
                             ),
-                            "hint": "Use HOLD or QUARANTINE",
+                            "hint": "Use " + ", ".join(allowed_destinations),
                         }
                     ],
                     code="DESTINATION_INVALID",
-                    hint="Use HOLD or QUARANTINE.",
+                    hint="Use " + ", ".join(allowed_destinations) + ".",
                 )
         elif normalized_destination is not None:
             raise ValidationError(

@@ -115,6 +115,13 @@ changes described in `SHORT_RECEIPT_FRONTEND_INTEGRATION.md`. Kept here for the 
 
 ### 3.2 Damaged stock
 
+> **Status 2026-09-19:** **G-D1 and G-D2 fixed** (E-05, E-06, branch
+> `feature-inbound-exception-gaps`, migrations `121`/`122`). Segregated stock is
+> now written with `inventory_status = hold | quality | damaged` (95 live rows
+> backfilled) and damaged goods get their own non-pickable `DAMAGED` bin instead
+> of defaulting to QUARANTINE. **G-D3** (mandatory damage reason/evidence at flag
+> time) remains open as E-07; **G-D4** is resolved by the same status write.
+
 | ID       | Gap                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Evidence                                                                                    |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **G-D1** | **Segregated stock keeps `inventory_status='available'`.** `classify_slip_item()` and `create_scan_exception()` add stock to the HOLD/QUARANTINE bin without setting a status; `BinStockService.add_stock()` has no status parameter, so the row defaults to `available`. Allocation is still blocked by `is_pickable=false`, but status-based reporting, analytics and any status-driven filter will mis-report damaged/held stock as available. **Confirmed in the live database:** `HOLD` bin = 72 stock rows / 83 units, all with `inventory_status='available'`; `QUARANTINE` = 1 row, also `available`. | `bin_stock_service.py` `add_stock`/`_get_or_create_bin_stock`; `bin_stock_level.py` default |
@@ -123,6 +130,12 @@ changes described in `SHORT_RECEIPT_FRONTEND_INTEGRATION.md`. Kept here for the 
 | **G-D4** | Condition code is stored per exception and mirrored on the slip line, but **not propagated to `bin_stock_levels`** (no `inventory_status`/condition column update), reinforcing G-D1.                                                                                                                                                                                                                                                                                                                                                                                                                         | `inbound_exception_service.py`                                                              |
 
 ### 3.3 Unreadable / unscannable QR
+
+> **Status 2026-09-19:** **G-Q1 fixed** — `POST /inbound/exceptions/unreadable-qr`
+> records a `QR_UNREADABLE` exception (destination HOLD, `pending_approval`) from a
+> carton reference without decoding anything or creating stock. **G-Q2 fixed for
+> this path** — the warehouse supervisors are alerted (in-app notification).
+> **G-Q3** (relabeling workflow, E-10) and **G-Q4** (controlled lookup, E-11) remain open.
 
 | ID       | Gap                                                                                                                                                                                               | Evidence                                           |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -133,6 +146,14 @@ changes described in `SHORT_RECEIPT_FRONTEND_INTEGRATION.md`. Kept here for the 
 | ✅       | Unknown/uncommissioned identity already hard-stops **and** records the exception, and no stock is created.                                                                                        | `inbound_service.record_scan` (`unknown_identity`) |
 
 ### 3.4 Other inbound exceptions
+
+> **Status 2026-09-19:** **G-E1 and G-E2 fixed** — `record_scan` now compares the
+> scanned eaches against the ASN line expectation, holds the over-receipt in HOLD
+> with an `EXCESS` exception and returns `requires_decision` plus the disposition
+> options (`move_to_hold`, `return_to_sender`, `dispose`). **G-E3 fixed** — a
+> duplicate identity already in active stock is a hard stop (`409
+> DUPLICATE_SERIAL`), recorded for the supervisor and never counted as a receipt
+> line. **G-E4** (MC ↔ IC aggregation validation, E-14) remains open.
 
 | ID       | Gap                                                                                                                                                                                                                                                                                                                                                                | Evidence                                                                |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
@@ -183,8 +204,20 @@ Sizes: S (≤1 day), M (2–4 days), L (1–2 weeks).
 
 ### 4.1 Returns module (largest piece — section 4)
 
+> **Progress 2026-09-20** (branch `feature-inbound-exception-gaps`, core migration
+> `124_returns_module`, identity migration `022`): **R-01, R-02, R-03, R-04, R-05, R-06,
+> R-07, R-10 done.** All 18 web + handheld endpoints answer and were verified end-to-end
+> on both warehouses (Mother `8bc22a62`, Ecity `f0099ec7`) — registration → session → scan
+> → classify → note → approval → put-away, including the 409/404 guards. Still open:
+> **R-08** CSV/PDF export (JSON slip is live), **R-09** explicit note→exception link (the
+> exceptions are created at classification today), **X-03** note audit events (written, but
+> not yet surfaced), **X-04** pagination on the exception queue.
+> Implementation notes and the four deliberate deviations from the v1.0 contract are in
+> `RETURNS_WEB_APP_INTEGRATION.md` §14. See `RETURNS_API_AUDIT_2026-09-20.md` for the
+> pre-build state.
+
 | ID       | Task                                                    | APIs to build                                                                                                                                                                                                                                       | Data / migration                                                                                                                                                  | Pri    | Size |
-| -------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
+| -------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
 | **R-01** | Return registration entity + lifecycle                  | `POST /api/v1/returns/registrations`<br>`GET /returns/registrations` (filters: status, dealer, invoice, warehouse)<br>`GET /returns/registrations/{id}`<br>`POST /returns/registrations/{id}/cancel`                                                | `return_registrations`, `return_registration_items` (+ optional serial lines). Reuse `DocumentNumberingService` with new type `return_registration` (prefix `RR`) | **P0** | M    |
 | **R-02** | Reference reconciliation (Invoice / Dealer / Warehouse) | `GET /returns/references?invoice_no=` / `?dealer_id=` (lookup + validation source)                                                                                                                                                                  | read-model over `invoices`, `customers`, `warehouses`                                                                                                             | **P0** | S    |
 | **R-03** | Return receiving session (HC)                           | `POST /returns/registrations/{id}/sessions`<br>`GET /returns/sessions/{id}`<br>`POST /returns/sessions/{id}/scans` (validate identity against registration; duplicate hard stop)<br>`POST /returns/sessions/{id}/end`                               | `return_sessions`, `return_session_items` **or** extend `scan_sessions` with `session_type='return'` + `return_registration_id`                                   | **P0** | M    |
@@ -197,6 +230,12 @@ Sizes: S (≤1 day), M (2–4 days), L (1–2 weeks).
 | **R-10** | Permissions & roles                                     | `return.register`, `return.receive`, `return.classify`, `return.approve`, `return.dispose` in `authorization.py` + role seed                                                                                                                        | `identity`/role seed migration                                                                                                                                    | **P0** | S    |
 
 ### 4.2 Inbound exception gaps
+
+> **Progress 2026-09-19** (branch `feature-inbound-exception-gaps`, migrations
+> `121`–`123`): **E-05, E-06, E-08, E-12, E-13 done**; **E-09 done** for the dock
+> controls (unreadable QR, duplicate identity, excess, unexpected SKU). Still open
+> in this section: **E-10** (relabeling, L), **E-11** (controlled lookup, S),
+> **E-14** (aggregation validation, L), **E-07** (photo rule, S).
 
 | ID       | Task                                                                                                                 | APIs to build                                                                                                                                                                                                                                                                           | Data / migration                                                                                                              | Pri    | Size | Covers                                                                           |
 | -------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------ | ---- | -------------------------------------------------------------------------------- |
