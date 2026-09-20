@@ -27,12 +27,21 @@ CREATE DATABASE core_db;
 CREATE DATABASE search_db;
 
 -- ===========================================
+-- Create AI Database
+-- ===========================================
+CREATE DATABASE ai_db;
+
+-- ===========================================
 -- Grant privileges to horizon_user
 -- ===========================================
 -- Note: horizon_user is created by POSTGRES_USER env var
 GRANT ALL PRIVILEGES ON DATABASE identity_db TO horizon_user;
+
 GRANT ALL PRIVILEGES ON DATABASE core_db TO horizon_user;
+
 GRANT ALL PRIVILEGES ON DATABASE search_db TO horizon_user;
+
+GRANT ALL PRIVILEGES ON DATABASE ai_db TO horizon_user;
 
 -- ===========================================
 -- Initialize Identity Database
@@ -208,4 +217,20 @@ CREATE TYPE readingtype AS ENUM (
 \c search_db;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";  -- For fuzzy text search
+
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+-- For fuzzy text search
+-- For fuzzy text search
+
+-- ===========================================
+-- Initialize AI Database
+-- ===========================================
+-- Connect to ai_db (must be explicit)
+\c ai_db;
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- pgvector for vector similarity search (SOP Copilot RAG)
+-- NOTE: requires pgvector-enabled PostgreSQL image (e.g. pgvector/pgvector:pg15)
+-- Commented out for standard postgres; ai-service main.py will attempt CREATE EXTENSION at startup.
+-- CREATE EXTENSION IF NOT EXISTS "vector";
