@@ -384,6 +384,97 @@ class ScannedItemTrackingService:
             bin_id,
         )
 
+    # ── Duplicate identity against active stock (G-E3 / E-13) ────────────
+
+    def find_active_stock(
+        self, qr_identifier: str, organization_id: UUID
+    ) -> dict | None:
+        """Return where an identity already sits in stock, or ``None``.
+
+        A carton/unit that is physically in the warehouse must never be received
+        a second time — it would double-count stock and silently overwrite the
+        original receipt. The session-scoped duplicate check is not enough: the
+        same label can be re-presented days later in a brand-new session.
+
+        Checks the three places an identity can live in active stock:
+
+        1. ``bin_stock_levels`` — the identity (or its batch) is on hand,
+        2. ``serial_nos`` — the serial is registered,
+        3. ``scanned_item_tracking`` — an earlier session already put it away.
+        """
+        from app.models.bin_stock_level import BinStockLevel
+        from app.models.serial_no import SerialNo
+
+        bin_stock = (
+            self.db.query(BinStockLevel)
+            .filter(
+                BinStockLevel.organization_id == organization_id,
+                BinStockLevel.batch_number == qr_identifier,
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .first()
+        )
+        if bin_stock is not None:
+            return {
+                "source": "bin_stock",
+                "bin_location_id": bin_stock.bin_location_id,
+                "quantity": float(bin_stock.quantity_on_hand or 0),
+                "detail": (
+                    f"already on hand ({bin_stock.quantity_on_hand} unit(s)) in bin "
+                    f"{bin_stock.bin_location_id}"
+                ),
+            }
+
+        serial = (
+            self.db.query(SerialNo)
+            .filter(
+                SerialNo.organization_id == organization_id,
+                SerialNo.serial_no == qr_identifier,
+                # Only serials the warehouse still owns count as a duplicate: a
+                # sold/dispatched serial (customer + delivery date recorded) may
+                # legitimately come back as a return.
+                SerialNo.customer_id.is_(None),
+                SerialNo.delivery_date.is_(None),
+            )
+            .first()
+        )
+        if serial is not None:
+            return {
+                "source": "serial_master",
+                "bin_location_id": None,
+                "quantity": None,
+                "detail": (
+                    f"serial already registered (status '{serial.status or 'unknown'}')"
+                ),
+            }
+
+        tracking = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.organization_id == organization_id,
+                ScannedItemTracking.qr_identifier == qr_identifier,
+                ScannedItemTracking.putaway_status == "completed",
+            )
+            .order_by(ScannedItemTracking.putaway_at.desc())
+            .first()
+        )
+        if tracking is not None:
+            return {
+                "source": "tracking",
+                "bin_location_id": tracking.bin_location_id,
+                "quantity": tracking.quantity,
+                "detail": (
+                    "already put away"
+                    + (
+                        f" on {tracking.putaway_at.isoformat()}"
+                        if tracking.putaway_at
+                        else " in an earlier session"
+                    )
+                ),
+            }
+
+        return None
+
     def _get_or_create_system_bin(
         self, warehouse_id: UUID, organization_id: UUID, code: str
     ):

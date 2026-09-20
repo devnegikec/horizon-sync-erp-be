@@ -20,7 +20,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.models.bin_stock_level import BinStockLevel
+from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.item import Item
 from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.location_allocation import LocationAllocation
@@ -146,7 +146,7 @@ class LocationSuggestionService:
     # PUT-AWAY SCORING (section 7.1)
     # ------------------------------------------------------------------
 
-    def _score_put_away(
+    def _score_put_away(  # noqa: C901 - pre-existing complexity
         self,
         item: Item,
         quantity: Decimal,
@@ -162,17 +162,19 @@ class LocationSuggestionService:
         required_m3 = self._required_volume_m3(item, quantity)
 
         # Allocation lookups for this item group.
-        exclusive_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "exclusive"
-        ) if item_group_id else set()
-        preferred_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "preferred"
-        ) if item_group_id else set()
+        exclusive_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "exclusive")
+            if item_group_id
+            else set()
+        )
+        preferred_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "preferred")
+            if item_group_id
+            else set()
+        )
         # Bins exclusively allocated to *any* group (blocked for this item
         # unless the allocation belongs to this item's group).
-        all_exclusive_loc_ids = self._allocated_location_ids(
-            org_id, None, "exclusive"
-        )
+        all_exclusive_loc_ids = self._allocated_location_ids(org_id, None, "exclusive")
 
         bins = (
             self.db.query(WarehouseLocation)
@@ -215,10 +217,14 @@ class LocationSuggestionService:
                 if required_m3 is not None and required_m3 > remaining:
                     continue
                 if cap["volume"]["capacity_m3"] > 0:
-                    capacity_ratio = float(remaining) / float(cap["volume"]["capacity_m3"])
+                    capacity_ratio = float(remaining) / float(
+                        cap["volume"]["capacity_m3"]
+                    )
                     score += capacity_ratio * 10
                     reasons.append(f"{round(capacity_ratio * 100)}% volume available")
-            available = Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            available = (
+                Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            )
 
             # 3. Proximity to dock
             dist_to_dock = self._distance(self._position(b), dock_position)
@@ -271,6 +277,10 @@ class LocationSuggestionService:
             BinStockLevel.item_id == item.id,
             BinStockLevel.organization_id == org_id,
             BinStockLevel.quantity_on_hand > 0,
+            # Candidate bins are chosen from sellable stock only: since rows are
+            # keyed by inventory_status a bin/item/batch can also hold
+            # segregated stock, which must not attract put-away consolidation.
+            BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
         )
         if batch_number:
             query = query.filter(BinStockLevel.batch_number == batch_number)
@@ -367,7 +377,7 @@ class LocationSuggestionService:
 
         return results
 
-    def _score_pick_by_pack(
+    def _score_pick_by_pack(  # noqa: C901 - pre-existing complexity
         self,
         item: Item,
         bin_stocks: list[BinStockLevel],
@@ -760,9 +770,7 @@ class LocationSuggestionService:
 
     @staticmethod
     def _distance(a: Position, b: Position) -> float:
-        return math.sqrt(
-            (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
-        )
+        return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
     @staticmethod
     def _build_suggestion(
@@ -803,6 +811,5 @@ def _floor_plan_dock_query():
     from sqlalchemy import text
 
     return text(
-        "SELECT dock_doors FROM warehouse_floor_plans "
-        "WHERE warehouse_id = :wid LIMIT 1"
+        "SELECT dock_doors FROM warehouse_floor_plans WHERE warehouse_id = :wid LIMIT 1"
     )

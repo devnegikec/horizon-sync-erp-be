@@ -49,6 +49,7 @@ class BinStockService:
         *,
         commit: bool = True,
         sync_warehouse: bool = True,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -69,6 +70,10 @@ class BinStockService:
             quantity: The quantity to add (must be positive).
             org_id: Organization ID for scoping.
             batch_number: Optional batch number for the stock.
+            inventory_status: Status for the resulting stock. Defaults to
+                ``available`` for normal stock; pass ``hold`` / ``quality`` /
+                ``damaged`` when segregating stock (E-05) so status-based
+                reporting and allocation do not treat it as sellable.
 
         Returns:
             The created or updated BinStockLevel record.
@@ -104,6 +109,7 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
             for_update=True,
+            inventory_status=inventory_status,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -301,6 +307,7 @@ class BinStockService:
         *,
         commit: bool = True,
         sync_warehouse: bool = True,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Remove stock from a bin location.
 
@@ -342,6 +349,7 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
             for_update=True,
+            inventory_status=inventory_status,
         )
 
         if bin_stock is None:
@@ -490,16 +498,27 @@ class BinStockService:
         quantity: Decimal,
         org_id: UUID,
         batch_number: str | None = None,
+        inventory_status: str | None = None,
+        from_inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Atomically move physical stock between bins without changing on-hand.
 
         Availability changes only when the source and destination have different
         pickability. This is the hold/quarantine → storage primitive used by
         inbound exception disposition.
+
+        ``inventory_status`` sets the status of the destination stock, so moving
+        segregated stock into a HOLD/QUARANTINE/DAMAGED bin keeps it non-sellable
+        (E-05). ``from_inventory_status`` identifies which status to take from the
+        source bin when that bin holds more than one.
         """
         if from_bin_id == to_bin_id:
             existing = self._get_bin_stock_record(
-                from_bin_id, item_id, org_id, batch_number
+                from_bin_id,
+                item_id,
+                org_id,
+                batch_number,
+                inventory_status=from_inventory_status or inventory_status,
             )
             if existing is None:
                 raise NotFoundError(
@@ -518,10 +537,22 @@ class BinStockService:
 
         try:
             self.remove_stock(
-                from_bin_id, item_id, quantity, org_id, batch_number, commit=False
+                from_bin_id,
+                item_id,
+                quantity,
+                org_id,
+                batch_number,
+                commit=False,
+                inventory_status=from_inventory_status,
             )
             moved = self.add_stock(
-                to_bin_id, item_id, quantity, org_id, batch_number, commit=False
+                to_bin_id,
+                item_id,
+                quantity,
+                org_id,
+                batch_number,
+                commit=False,
+                inventory_status=inventory_status,
             )
             self.db.commit()
             self.db.refresh(moved)
@@ -836,16 +867,30 @@ class BinStockService:
         org_id: UUID,
         batch_number: str | None = None,
         for_update: bool = False,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Get an existing BinStockLevel or create a new one.
 
         When ``for_update`` is true the existing row is locked so concurrent
         add/remove operations serialize instead of overwriting each other.
+
+        Rows are keyed by ``(bin, item, batch, inventory_status)``, so stock in a
+        different status never shares a row: adding segregated stock updates (or
+        creates) the row for that status instead of re-statusing the whole row
+        and silently flipping units that were already there. Omitting
+        ``inventory_status`` means ``available``.
         """
+        effective_status = inventory_status or InventoryStatus.AVAILABLE.value
+
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
             BinStockLevel.organization_id == org_id,
+            # ``coalesce`` keeps any legacy NULL-status row addressable.
+            func.coalesce(
+                BinStockLevel.inventory_status, InventoryStatus.AVAILABLE.value
+            )
+            == effective_status,
         )
 
         if batch_number is not None:
@@ -865,7 +910,7 @@ class BinStockService:
                 organization_id=org_id,
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
-                inventory_status=InventoryStatus.AVAILABLE.value,
+                inventory_status=effective_status,
             )
             self.db.add(bin_stock)
             self.db.flush()
@@ -879,12 +924,18 @@ class BinStockService:
         org_id: UUID,
         batch_number: str | None = None,
         for_update: bool = False,
+        inventory_status: str | None = None,
     ) -> BinStockLevel | None:
         """Get a specific BinStockLevel record.
 
         When ``for_update`` is true the row is locked (SELECT ... FOR UPDATE)
         so the caller can read-modify-write without losing a concurrent
         update (e.g. two simultaneous pick scans of the same bin).
+
+        A bin/item/batch can hold several statuses at once, so pass
+        ``inventory_status`` whenever the caller knows which stock it means.
+        Without it the row actually holding stock is preferred (oldest first),
+        which keeps the previous single-row behaviour predictable.
         """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
@@ -896,6 +947,19 @@ class BinStockService:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if inventory_status is not None:
+            query = query.filter(
+                func.coalesce(
+                    BinStockLevel.inventory_status, InventoryStatus.AVAILABLE.value
+                )
+                == inventory_status
+            )
+
+        query = query.order_by(
+            (BinStockLevel.quantity_on_hand > 0).desc(),
+            BinStockLevel.created_at.asc(),
+        )
 
         if for_update:
             query = query.with_for_update()

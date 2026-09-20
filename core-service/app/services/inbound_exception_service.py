@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
+from app.models.bin_stock_level import InventoryStatus
 from app.models.inbound_exception import (
     InboundException,
     InboundExceptionEvent,
@@ -22,11 +25,21 @@ from app.models.warehouse_user import WarehouseUser
 from app.services.bin_stock_service import BinStockService
 from app.services.scanned_item_tracking_service import ScannedItemTrackingService
 
+logger = logging.getLogger(__name__)
+
+#: Reason code for a carton whose label cannot be scanned (G-Q1 / E-08).
+UNREADABLE_QR_REASON = "QR_UNREADABLE"
+
+#: Reason code for an identity that is already in active stock (G-E3 / E-13).
+DUPLICATE_SERIAL_REASON = "DUPLICATE_SERIAL"
+
 
 class InboundExceptionService:
     """Owns exception lifecycle and physical non-pickable stock routing."""
 
-    DESTINATIONS = {"HOLD", "QUARANTINE"}
+    #: Physical segregation bins an exception may be routed to. ``DAMAGED`` is
+    #: provisioned on demand like the other system bins (G-D2 / E-06).
+    DESTINATIONS = {"HOLD", "QUARANTINE", "DAMAGED"}
     CLASSIFICATIONS = {"short", "damaged", "excess", "hold", "quarantine"}
     FINAL_DISPOSITIONS = {
         "release_to_receiving",
@@ -36,8 +49,50 @@ class InboundExceptionService:
         "dispose",
     }
 
+    #: Destination bin → ``bin_stock_levels.inventory_status`` (E-05). Segregated
+    #: stock must never be reported as ``available`` even though the bin is also
+    #: non-pickable.
+    DESTINATION_INVENTORY_STATUS = {
+        "HOLD": InventoryStatus.HOLD.value,
+        "QUARANTINE": InventoryStatus.QUALITY.value,
+        "DAMAGED": InventoryStatus.DAMAGED.value,
+    }
+
+    #: Destination bin → ``scanned_item_tracking.receiving_status``.
+    DESTINATION_RECEIVING_STATUS = {
+        "HOLD": "hold",
+        "QUARANTINE": "quarantined",
+        "DAMAGED": "damaged",
+    }
+
+    #: Reason **categories** offered for each return unit condition. Used to
+    #: filter ``GET /inbound/exception-reasons?condition=`` so the handheld's
+    #: condition picker is data-driven. Inbound-only categories (short, excess,
+    #: unexpected_sku, unknown_identity, unreadable, duplicate_serial) are
+    #: deliberately absent: they are not valid reasons for a returned unit.
+    RETURN_CONDITION_CATEGORIES = {
+        "good": ("return_good",),
+        "damaged": ("damage", "return_damage", "return_scrap"),
+        "hold": ("hold",),
+        "quarantine": ("quarantine",),
+    }
+
     def __init__(self, db: Session):
         self.db = db
+
+    @classmethod
+    def inventory_status_for_destination(cls, destination: str | None) -> str | None:
+        """Bin-stock status for a segregation destination (``None`` if unknown)."""
+        if not destination:
+            return None
+        return cls.DESTINATION_INVENTORY_STATUS.get(destination.strip().upper())
+
+    @classmethod
+    def receiving_status_for_destination(cls, destination: str | None) -> str:
+        """Tracking status for a segregation destination (defaults to hold)."""
+        if not destination:
+            return "hold"
+        return cls.DESTINATION_RECEIVING_STATUS.get(destination.strip().upper(), "hold")
 
     def assert_manager(self, user, warehouse_id: UUID) -> None:
         """Require a warehouse manager or an organization/system-level superior."""
@@ -65,17 +120,54 @@ class InboundExceptionService:
                 required_state=["manager"],
             )
 
-    def list_reasons(self, organization_id: UUID) -> list[InboundExceptionReason]:
-        return (
-            self.db.query(InboundExceptionReason)
-            .filter(
-                InboundExceptionReason.is_active.is_(True),
-                (InboundExceptionReason.organization_id.is_(None))
-                | (InboundExceptionReason.organization_id == organization_id),
-            )
-            .order_by(InboundExceptionReason.category, InboundExceptionReason.code)
-            .all()
+    def list_reasons(
+        self,
+        organization_id: UUID,
+        *,
+        condition: str | None = None,
+        category: str | None = None,
+    ) -> list[InboundExceptionReason]:
+        """Active reason codes, optionally narrowed to a return condition.
+
+        ``condition`` filters to the reasons a dock operator may pick for a
+        returned unit in that condition (contract §4.3), so the handheld never
+        has to hard-code a category map. ``category`` matches one category
+        exactly. Omitting both returns the full list, which is what the inbound
+        receiving flow relies on.
+        """
+        query = self.db.query(InboundExceptionReason).filter(
+            InboundExceptionReason.is_active.is_(True),
+            (InboundExceptionReason.organization_id.is_(None))
+            | (InboundExceptionReason.organization_id == organization_id),
         )
+        if condition:
+            categories = self.categories_for_condition(condition)
+            if not categories:
+                return []
+            query = query.filter(InboundExceptionReason.category.in_(categories))
+        if category:
+            query = query.filter(InboundExceptionReason.category == category)
+        return query.order_by(
+            InboundExceptionReason.category, InboundExceptionReason.code
+        ).all()
+
+    @classmethod
+    def categories_for_condition(cls, condition: str) -> tuple[str, ...]:
+        """Reason categories offered for a return unit condition."""
+        return cls.RETURN_CONDITION_CATEGORIES.get(
+            (condition or "").strip().lower(), ()
+        )
+
+    @classmethod
+    def conditions_for_category(cls, category: str | None) -> list[str]:
+        """Return conditions a reason category is applicable to ([] = inbound-only)."""
+        if not category:
+            return []
+        return [
+            condition
+            for condition, categories in cls.RETURN_CONDITION_CATEGORIES.items()
+            if category in categories
+        ]
 
     def list_exceptions(
         self,
@@ -172,6 +264,337 @@ class InboundExceptionService:
         )
         return exception
 
+    def record_unreadable_qr(
+        self,
+        *,
+        organization_id: UUID,
+        session_id: UUID,
+        carton_reference: str,
+        actor_id: UUID | None,
+        sku: str | None = None,
+        batch_number: str | None = None,
+        quantity: int = 1,
+        note: str | None = None,
+    ) -> InboundException:
+        """Record a carton whose QR label could not be scanned (G-Q1 / E-08).
+
+        No identity is decoded, so no stock is created and nothing is counted as
+        received. The carton is parked in HOLD and a supervisor is alerted: they
+        either locate the carton in the system (controlled lookup) or authorise a
+        relabel. Reporting the same carton twice in one session is rejected.
+        """
+        from app.models.scan_session import ScanSession
+
+        normalized_reference = (carton_reference or "").strip()
+        if not normalized_reference:
+            raise ValidationError(
+                message=(
+                    "A carton reference is required to report an unreadable label"
+                ),
+                details=[
+                    {
+                        "field": "carton_reference",
+                        "reason": "Missing required field 'carton_reference'",
+                        "hint": (
+                            "Enter the carton's printed reference (serial, batch or "
+                            "ASN line) so a supervisor can locate it."
+                        ),
+                    }
+                ],
+                code="CARTON_REFERENCE_REQUIRED",
+                hint="Enter the carton's printed reference.",
+            )
+
+        session = (
+            self.db.query(ScanSession)
+            .filter(
+                ScanSession.id == session_id,
+                ScanSession.organization_id == organization_id,
+            )
+            .first()
+        )
+        if session is None:
+            raise NotFoundError(
+                message=f"Scan session '{session_id}' was not found",
+                entity_type="ScanSession",
+                entity_id=str(session_id),
+                code="SCAN_SESSION_NOT_FOUND",
+                hint="Start a receiving session at the dock before reporting a label.",
+            )
+        if session.status != "open":
+            raise StateError(
+                message=(
+                    "Unreadable labels can only be reported while the session is open "
+                    f"(current status: '{session.status}')"
+                ),
+                current_state=session.status,
+                required_state=["open"],
+                code="SESSION_NOT_OPEN",
+                hint="Start or reopen the receiving session at this dock.",
+            )
+
+        existing = (
+            self.db.query(InboundException)
+            .filter(
+                InboundException.organization_id == organization_id,
+                InboundException.session_id == session.id,
+                InboundException.reason_code == UNREADABLE_QR_REASON,
+                InboundException.qr_identifier == normalized_reference,
+                InboundException.status.notin_(["closed", "released"]),
+            )
+            .first()
+        )
+        if existing is not None:
+            raise StateError(
+                message=(
+                    f"Carton '{normalized_reference}' is already reported as "
+                    f"unreadable in this session"
+                ),
+                current_state=existing.status,
+                required_state=["closed", "released"],
+                code="EXCEPTION_ALREADY_ACTIVE",
+                hint=(
+                    "The supervisor queue already carries this carton; resolve it "
+                    "there instead of reporting it again."
+                ),
+            )
+
+        reason = self._validate_reason(UNREADABLE_QR_REASON, organization_id)
+        destination = (reason.default_destination or "HOLD").upper()
+        location = self._system_location(
+            session.warehouse_id, organization_id, destination
+        )
+
+        exception = InboundException(
+            organization_id=organization_id,
+            warehouse_id=session.warehouse_id,
+            asn_order_id=session.asn_order_id,
+            session_id=session.id,
+            exception_type="unreadable_qr",
+            reason_code=reason.code,
+            status="pending_approval",
+            condition_code=destination,
+            destination=destination,
+            destination_location_id=location.id,
+            qr_identifier=normalized_reference,
+            sku=(sku or None),
+            batch_number=(batch_number or None),
+            quantity=quantity,
+            note=note,
+            created_by=actor_id,
+        )
+        self.db.add(exception)
+        self.db.flush()
+        self._event(
+            exception,
+            "detected",
+            actor_id,
+            {
+                "source": "operator_report",
+                "type": "unreadable_qr",
+                "carton_reference": normalized_reference,
+            },
+        )
+        self.db.commit()
+        self.db.refresh(exception)
+        self.notify_supervisors(exception)
+        return exception
+
+    def record_unreadable_qr_for_return_session(
+        self,
+        *,
+        organization_id: UUID,
+        session_id: UUID,
+        carton_reference: str,
+        actor_id: UUID | None,
+        sku: str | None = None,
+        batch_number: str | None = None,
+        quantity: int = 1,
+        note: str | None = None,
+    ) -> InboundException:
+        """Report an unreadable label against an open **return** session.
+
+        ``record_unreadable_qr`` resolves its session against
+        ``scan_sessions`` (the inbound receiving session), so a returns session
+        id — which lives in ``return_sessions`` — can never match it. This
+        variant performs the same operation for the returns flow.
+
+        The behaviour is identical to the inbound path: nothing is decoded, no
+        stock is created, no return counter moves, the carton is parked in HOLD
+        as ``pending_approval``, and the supervisors are alerted. The return
+        session is recorded in ``metadata_json`` because
+        ``inbound_exceptions.session_id`` is an FK to the inbound
+        ``scan_sessions`` table.
+        """
+        from app.models.returns import ReturnSession
+
+        normalized_reference = (carton_reference or "").strip()
+        if not normalized_reference:
+            raise ValidationError(
+                message=(
+                    "A carton reference is required to report an unreadable label"
+                ),
+                details=[
+                    {
+                        "field": "carton_reference",
+                        "reason": "Missing required field 'carton_reference'",
+                        "hint": (
+                            "Enter the carton's printed reference (serial, batch or "
+                            "ASN line) so a supervisor can locate it."
+                        ),
+                    }
+                ],
+                code="CARTON_REFERENCE_REQUIRED",
+                hint="Enter the carton's printed reference.",
+            )
+
+        session = (
+            self.db.query(ReturnSession)
+            .filter(
+                ReturnSession.id == session_id,
+                ReturnSession.organization_id == organization_id,
+            )
+            .first()
+        )
+        if session is None:
+            raise NotFoundError(
+                message=f"Return session '{session_id}' was not found",
+                entity_type="ReturnSession",
+                entity_id=str(session_id),
+                code="RETURN_SESSION_NOT_FOUND",
+                hint="Start or resume the return session at the dock.",
+            )
+        if session.status != "open":
+            raise StateError(
+                message=(
+                    "Unreadable labels can only be reported while the session is "
+                    f"open (current status: '{session.status}')"
+                ),
+                current_state=session.status,
+                required_state=["open"],
+                code="RETURN_SESSION_NOT_OPEN",
+                hint="Resume an open return session before reporting a label.",
+            )
+
+        existing = (
+            self.db.query(InboundException)
+            .filter(
+                InboundException.organization_id == organization_id,
+                InboundException.session_id.is_(None),
+                InboundException.reason_code == UNREADABLE_QR_REASON,
+                InboundException.qr_identifier == normalized_reference,
+                # ``metadata_json`` is a TypeDecorator over JSON, so the
+                # Postgres-only ``.astext`` accessor is unavailable — query the
+                # stored key directly instead.
+                sa_text(
+                    "inbound_exceptions.metadata_json ->> 'return_session_id' "
+                    "= :return_session_id"
+                ).bindparams(return_session_id=str(session.id)),
+                InboundException.status.notin_(["closed", "released"]),
+            )
+            .first()
+        )
+        if existing is not None:
+            raise StateError(
+                message=(
+                    f"Carton '{normalized_reference}' is already reported as "
+                    f"unreadable in this session"
+                ),
+                current_state=existing.status,
+                required_state=["closed", "released"],
+                code="EXCEPTION_ALREADY_ACTIVE",
+                hint=(
+                    "The supervisor queue already carries this carton; resolve it "
+                    "there instead of reporting it again."
+                ),
+            )
+
+        reason = self._validate_reason(UNREADABLE_QR_REASON, organization_id)
+        destination = (reason.default_destination or "HOLD").upper()
+        location = self._system_location(
+            session.warehouse_id, organization_id, destination
+        )
+
+        exception = InboundException(
+            organization_id=organization_id,
+            warehouse_id=session.warehouse_id,
+            exception_type="unreadable_qr",
+            reason_code=reason.code,
+            status="pending_approval",
+            condition_code=destination,
+            destination=destination,
+            destination_location_id=location.id,
+            qr_identifier=normalized_reference,
+            sku=(sku or None),
+            batch_number=(batch_number or None),
+            quantity=quantity,
+            note=note,
+            created_by=actor_id,
+            metadata_json={
+                "source": "returns",
+                "return_session_id": str(session.id),
+                "registration_id": str(session.registration_id),
+            },
+        )
+        self.db.add(exception)
+        self.db.flush()
+        self._event(
+            exception,
+            "detected",
+            actor_id,
+            {
+                "source": "operator_report",
+                "flow": "returns",
+                "type": "unreadable_qr",
+                "carton_reference": normalized_reference,
+            },
+        )
+        self.db.commit()
+        self.db.refresh(exception)
+        self.notify_supervisors(exception)
+        return exception
+
+    def notify_supervisors(
+        self, exception: InboundException, *, title: str | None = None
+    ) -> int:
+        """Alert the warehouse supervisors about an exception (G-Q2 / E-09).
+
+        Best-effort: an alerting failure must never lose the exception itself, so
+        the row is already committed by the caller before this runs.
+        """
+        subject = exception.sku or exception.qr_identifier or "unknown carton"
+        body = (
+            f"{exception.exception_type.replace('_', ' ').title()} "
+            f"[{exception.reason_code}] needs review — {subject}"
+        )
+        if exception.destination:
+            body += f" (held in {exception.destination})"
+        try:
+            from app.services.notification_service import NotificationService
+
+            created = NotificationService(self.db).create_for_warehouse_users(
+                organization_id=exception.organization_id,
+                warehouse_id=exception.warehouse_id,
+                type="inbound_exception",
+                title=title or f"Inbound exception: {exception.reason_code}",
+                message=body,
+                entity_type="InboundException",
+                entity_id=exception.id,
+                extra_data={
+                    "reason_code": exception.reason_code,
+                    "destination": exception.destination,
+                    "exception_type": exception.exception_type,
+                },
+                exclude_user_id=exception.created_by,
+            )
+            return len(created)
+        except Exception:  # noqa: BLE001 - alerting must not break receiving
+            logger.exception(
+                "Supervisor alert failed for inbound exception %s", exception.id
+            )
+            self.db.rollback()
+            return 0
+
     def classify_slip_item(
         self,
         *,
@@ -253,7 +676,25 @@ class InboundExceptionService:
         normalized_destination = (destination or "").upper() or None
         if classification in {"damaged", "hold", "quarantine", "excess"}:
             if normalized_destination not in self.DESTINATIONS:
-                raise ValidationError("Destination must be HOLD or QUARANTINE")
+                raise ValidationError(
+                    message=(
+                        "A segregation destination is required for "
+                        f"'{classification}' stock"
+                    ),
+                    details=[
+                        {
+                            "field": "destination",
+                            "reason": (
+                                f"'{destination}' is not a supported destination"
+                            ),
+                            "hint": (
+                                "Use one of: " + ", ".join(sorted(self.DESTINATIONS))
+                            ),
+                        }
+                    ],
+                    code="DESTINATION_INVALID",
+                    hint="Use one of: " + ", ".join(sorted(self.DESTINATIONS)),
+                )
 
         item = self._resolve_item(organization_id, line.sku)
         tracking = self._tracking_for_line(slip, line)
@@ -305,12 +746,15 @@ class InboundExceptionService:
                 organization_id,
                 line.batch_number,
                 commit=False,
+                inventory_status=self.inventory_status_for_destination(
+                    normalized_destination
+                ),
             )
             tracking.stock_entered = True
             tracking.stock_entered_at = datetime.now(UTC)
             tracking.stock_location_id = location.id
-            tracking.receiving_status = (
-                "hold" if normalized_destination == "HOLD" else "quarantined"
+            tracking.receiving_status = self.receiving_status_for_destination(
+                normalized_destination
             )
             tracking.putaway_status = "blocked"
         self._event(
@@ -395,13 +839,19 @@ class InboundExceptionService:
                 exception.warehouse_id, organization_id, code
             )
             if item is not None:
-                self._move_or_enter(exception, tracking, item, destination.id)
+                self._move_or_enter(
+                    exception,
+                    tracking,
+                    item,
+                    destination.id,
+                    destination_code=code,
+                )
             exception.status = "approved"
             exception.destination = code
             exception.destination_location_id = destination.id
             exception.condition_code = code
             if tracking:
-                tracking.receiving_status = "hold" if code == "HOLD" else "quarantined"
+                tracking.receiving_status = self.receiving_status_for_destination(code)
                 tracking.putaway_status = "blocked"
             self._update_line(
                 exception,
@@ -792,10 +1242,19 @@ class InboundExceptionService:
         )
 
     def _move_or_enter(
-        self, exception: InboundException, tracking, item: Item, destination_id: UUID
+        self,
+        exception: InboundException,
+        tracking,
+        item: Item,
+        destination_id: UUID,
+        *,
+        destination_code: str | None = None,
     ) -> None:
         stock = BinStockService(self.db)
         quantity = Decimal(str(exception.quantity))
+        inventory_status = self.inventory_status_for_destination(
+            destination_code or exception.destination
+        )
         if tracking and tracking.stock_entered and tracking.stock_location_id:
             stock.transfer_stock(
                 from_bin_id=tracking.stock_location_id,
@@ -804,6 +1263,7 @@ class InboundExceptionService:
                 quantity=quantity,
                 org_id=exception.organization_id,
                 batch_number=exception.batch_number,
+                inventory_status=inventory_status,
             )
         else:
             stock.add_stock(
@@ -813,6 +1273,7 @@ class InboundExceptionService:
                 exception.organization_id,
                 exception.batch_number,
                 commit=False,
+                inventory_status=inventory_status,
             )
             if tracking:
                 tracking.stock_entered = True

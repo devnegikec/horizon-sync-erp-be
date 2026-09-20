@@ -203,6 +203,25 @@ from app.models.reminder_config import (
     ReminderStatus,
     ReminderType,
 )
+
+# Returns (customer returns) module — R-01..R-07
+from app.models.returns import (
+    CANCELLABLE_REGISTRATION_STATUSES,
+    CONDITION_DESTINATIONS,
+    CONDITIONS,
+    DISPOSITION_ALLOWED_CONDITIONS,
+    DISPOSITIONS,
+    NOTE_STATUSES,
+    RECEIVABLE_REGISTRATION_STATUSES,
+    REGISTRATION_STATUSES,
+    ReturnReceiptNote,
+    ReturnReceiptNoteEvent,
+    ReturnReceiptNoteItem,
+    ReturnRegistration,
+    ReturnRegistrationItem,
+    ReturnSession,
+    ReturnSessionItem,
+)
 from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
@@ -511,4 +530,20 @@ __all__ = [
     "SupplierQuote",
     "StatusTransition",
     "StockSettings",
+    # Returns (customer returns) module — R-01..R-07
+    "ReturnRegistration",
+    "ReturnRegistrationItem",
+    "ReturnSession",
+    "ReturnSessionItem",
+    "ReturnReceiptNote",
+    "ReturnReceiptNoteItem",
+    "ReturnReceiptNoteEvent",
+    "REGISTRATION_STATUSES",
+    "NOTE_STATUSES",
+    "CONDITIONS",
+    "DISPOSITIONS",
+    "DISPOSITION_ALLOWED_CONDITIONS",
+    "CONDITION_DESTINATIONS",
+    "CANCELLABLE_REGISTRATION_STATUSES",
+    "RECEIVABLE_REGISTRATION_STATUSES",
 ]
