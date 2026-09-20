@@ -83,6 +83,14 @@ class PutAwayListItem(Base):
     batch_number = Column(String(100), nullable=True)
     # Serialized master packs carry the list of unit serials grouped on this line.
     serial_nos = Column(JSONB, nullable=True)
+    # Packaging unit (IC/MC) of the stock being put away; propagated to
+    # bin_stock_levels on completion so capacity uses MC outer dimensions.
+    packaging_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("item_packaging_units.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     quantity = Column(Numeric(15, 3), nullable=False)
     bin_location_id = Column(
         UUID(as_uuid=True),
@@ -107,6 +115,7 @@ class PutAwayListItem(Base):
     put_away_list = relationship("PutAwayList", back_populates="items")
     item = relationship("Item")
     bin_location = relationship("WarehouseLocation")
+    packaging_unit = relationship("ItemPackagingUnit")
 
     def __repr__(self):
         return (

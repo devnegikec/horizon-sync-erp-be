@@ -46,6 +46,8 @@ class LayoutService:
         capacity_uom: str | None = None,
         position_x: Decimal | None = None,
         position_y: Decimal | None = None,
+        max_volume_cc: Decimal | None = None,
+        max_weight_grams: Decimal | None = None,
     ) -> WarehouseLocation:
         """
         Create a new location node in the warehouse hierarchy.
@@ -63,6 +65,8 @@ class LayoutService:
             capacity_uom: Unit of measure for capacity.
             position_x: X coordinate for routing.
             position_y: Y coordinate for routing.
+            max_volume_cc: Max volume capacity in cubic centimetres (cc).
+            max_weight_grams: Max weight capacity in grams.
 
         Returns:
             The created WarehouseLocation.
@@ -115,6 +119,8 @@ class LayoutService:
             capacity_uom=capacity_uom,
             position_x=position_x or Decimal("0"),
             position_y=position_y or Decimal("0"),
+            max_volume_cc=max_volume_cc,
+            max_weight_grams=max_weight_grams,
             is_active=True,
         )
 
@@ -140,6 +146,8 @@ class LayoutService:
         capacity_uom: str | None = None,
         position_x: Decimal | None = None,
         position_y: Decimal | None = None,
+        max_volume_cc: Decimal | None = None,
+        max_weight_grams: Decimal | None = None,
     ) -> WarehouseLocation:
         """
         Update a location's mutable fields (name, capacity, position).
@@ -154,6 +162,8 @@ class LayoutService:
             capacity_uom: New capacity UOM (optional).
             position_x: New X position (optional).
             position_y: New Y position (optional).
+            max_volume_cc: New max volume capacity in cc (optional).
+            max_weight_grams: New max weight capacity in grams (optional).
 
         Returns:
             The updated WarehouseLocation.
@@ -176,10 +186,24 @@ class LayoutService:
             location.position_x = position_x
         if position_y is not None:
             location.position_y = position_y
+        if max_volume_cc is not None:
+            location.max_volume_cc = max_volume_cc
+        if max_weight_grams is not None:
+            location.max_weight_grams = max_weight_grams
 
         location.version += 1
         self.db.commit()
         self.db.refresh(location)
+
+        # Changing a bin's volume/weight limit should immediately re-evaluate
+        # its capacity state (pct, bin_state, is_available) for the dashboard.
+        if location.location_type == LocationType.BIN.value and (
+            max_volume_cc is not None or max_weight_grams is not None
+        ):
+            from app.services.bin_capacity_service import BinCapacityService
+
+            BinCapacityService(self.db).refresh_bin(location.id, organization_id)
+
         return location
 
     # ------------------------------------------------------------------
@@ -420,58 +444,85 @@ class LayoutService:
         """
         location = self._get_location(location_id, organization_id)
 
-        # Get all descendant bins (including self if it's a bin)
+        # All descendant location IDs (including self), regardless of state.
         descendant_ids = [location.id] + [
             d.id for d in self._get_all_descendants(location_id)
         ]
 
-        # Count bins in subtree
-        total_bins = (
-            self.db.query(func.count(WarehouseLocation.id))
+        # Active bins in the subtree — the single source of truth used for
+        # BOTH total capacity and used capacity. This prevents an inactive
+        # bin's leftover stock from producing phantom utilization (the count
+        # dashboard and the volume Location Tree would otherwise disagree).
+        active_bin_ids = [
+            row[0]
+            for row in self.db.query(WarehouseLocation.id)
             .filter(
                 WarehouseLocation.id.in_(descendant_ids),
                 WarehouseLocation.location_type == LocationType.BIN.value,
+                WarehouseLocation.is_active.is_(True),
             )
-            .scalar()
-            or 0
-        )
+            .all()
+        ]
 
-        # Count occupied bins (bins with stock > 0)
-        occupied_bins = (
-            self.db.query(func.count(func.distinct(BinStockLevel.bin_location_id)))
-            .filter(
-                BinStockLevel.bin_location_id.in_(descendant_ids),
-                BinStockLevel.quantity_on_hand > 0,
+        # Count bins in subtree (active only, matching the capacity rollups)
+        total_bins = len(active_bin_ids)
+
+        # Count occupied bins (active bins with stock > 0)
+        if active_bin_ids:
+            occupied_bins = (
+                self.db.query(
+                    func.count(func.distinct(BinStockLevel.bin_location_id))
+                )
+                .filter(
+                    BinStockLevel.bin_location_id.in_(active_bin_ids),
+                    BinStockLevel.quantity_on_hand > 0,
+                )
+                .scalar()
+                or 0
             )
-            .scalar()
-            or 0
-        )
+        else:
+            occupied_bins = 0
 
-        # Total capacity of bins in subtree
-        total_capacity = self.db.query(func.sum(WarehouseLocation.capacity)).filter(
-            WarehouseLocation.id.in_(descendant_ids),
-            WarehouseLocation.location_type == LocationType.BIN.value,
-            WarehouseLocation.is_active == True,  # noqa: E712
-        ).scalar() or Decimal("0")
+        # Total capacity of active bins in subtree
+        if active_bin_ids:
+            total_capacity = (
+                self.db.query(func.sum(WarehouseLocation.capacity))
+                .filter(WarehouseLocation.id.in_(active_bin_ids))
+                .scalar()
+                or Decimal("0")
+            )
+        else:
+            total_capacity = Decimal("0")
 
-        # Used capacity (sum of stock in bins)
-        used_capacity = self.db.query(func.sum(BinStockLevel.quantity_on_hand)).filter(
-            BinStockLevel.bin_location_id.in_(descendant_ids),
-            BinStockLevel.quantity_on_hand > 0,
-        ).scalar() or Decimal("0")
+        # Used capacity (sum of stock in active bins)
+        if active_bin_ids:
+            used_capacity = (
+                self.db.query(func.sum(BinStockLevel.quantity_on_hand))
+                .filter(
+                    BinStockLevel.bin_location_id.in_(active_bin_ids),
+                    BinStockLevel.quantity_on_hand > 0,
+                )
+                .scalar()
+                or Decimal("0")
+            )
+        else:
+            used_capacity = Decimal("0")
 
         available_capacity = total_capacity - used_capacity
 
-        # Distinct items in subtree
-        distinct_items = (
-            self.db.query(func.count(func.distinct(BinStockLevel.item_id)))
-            .filter(
-                BinStockLevel.bin_location_id.in_(descendant_ids),
-                BinStockLevel.quantity_on_hand > 0,
+        # Distinct items in active bins
+        if active_bin_ids:
+            distinct_items = (
+                self.db.query(func.count(func.distinct(BinStockLevel.item_id)))
+                .filter(
+                    BinStockLevel.bin_location_id.in_(active_bin_ids),
+                    BinStockLevel.quantity_on_hand > 0,
+                )
+                .scalar()
+                or 0
             )
-            .scalar()
-            or 0
-        )
+        else:
+            distinct_items = 0
 
         return {
             "location_id": location.id,

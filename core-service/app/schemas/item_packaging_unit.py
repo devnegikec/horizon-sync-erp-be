@@ -20,6 +20,9 @@ class ItemPackagingUnitCreate(BaseModel):
     width_mm: Optional[Decimal] = Field(None, ge=0, description="Width in millimetres")
     height_mm: Optional[Decimal] = Field(None, ge=0, description="Height in millimetres")
     weight_grams: Optional[Decimal] = Field(None, ge=0, description="Weight in grams")
+    master_pack_fill_factor: Optional[Decimal] = Field(None, gt=0, le=1, description="Master-carton packing efficiency used to estimate MC outer volume")
+    master_pack_void_fill_pct: Optional[Decimal] = Field(None, ge=0, le=1, description="Master-carton dunnage/bubble-wrap allowance (fraction)")
+    master_pack_wall_thickness_mm: Optional[Decimal] = Field(None, ge=0, description="Master-carton wall thickness per side (mm)")
     is_base_unit: bool = Field(default=False, description="Whether this is the base unit (Each)")
     is_active: bool = Field(default=True, description="Whether this packaging unit is active")
 
@@ -43,6 +46,9 @@ class ItemPackagingUnitUpdate(BaseModel):
     width_mm: Optional[Decimal] = Field(None, ge=0)
     height_mm: Optional[Decimal] = Field(None, ge=0)
     weight_grams: Optional[Decimal] = Field(None, ge=0)
+    master_pack_fill_factor: Optional[Decimal] = Field(None, gt=0, le=1)
+    master_pack_void_fill_pct: Optional[Decimal] = Field(None, ge=0, le=1)
+    master_pack_wall_thickness_mm: Optional[Decimal] = Field(None, ge=0)
     is_base_unit: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -71,6 +77,9 @@ class ItemPackagingUnitResponse(BaseModel):
     width_mm: Optional[Decimal] = None
     height_mm: Optional[Decimal] = None
     weight_grams: Optional[Decimal] = None
+    master_pack_fill_factor: Optional[Decimal] = None
+    master_pack_void_fill_pct: Optional[Decimal] = None
+    master_pack_wall_thickness_mm: Optional[Decimal] = None
     is_base_unit: bool
     is_active: bool
     created_at: object

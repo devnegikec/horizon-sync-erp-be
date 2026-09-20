@@ -65,6 +65,8 @@ async def create_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc,
+        max_weight_grams=data.max_weight_grams,
     )
     return LocationResponse.model_validate(location)
 
@@ -251,6 +253,8 @@ async def update_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc,
+        max_weight_grams=data.max_weight_grams,
     )
     return LocationResponse.model_validate(location)
 

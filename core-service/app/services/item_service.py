@@ -747,7 +747,114 @@ class ItemService:
         base.width_mm = packaging_details.width_mm
         base.height_mm = packaging_details.height_mm
         base.weight_grams = packaging_details.weight_grams
+
+        self._upsert_master_pack_unit(item, base, packaging_details, organization_id)
+
         self.db.flush()
+
+    def _upsert_master_pack_unit(
+        self, item: Item, base, packaging_details, organization_id: UUID
+    ) -> None:
+        """Create/update the master-carton packaging unit from the master-pack size.
+
+        The MC outer dimensions are estimated from the base-unit dimensions using
+        a packing fill factor and a carton wall thickness, unless explicit
+        ``master_pack_*`` overrides are supplied in ``packaging_details``.
+        """
+        from decimal import Decimal
+
+        mp = getattr(packaging_details, "items_per_master_pack", None)
+        if mp is None and getattr(packaging_details, "conversion_factor", None) is not None:
+            cf = int(packaging_details.conversion_factor)
+            if cf > 1:
+                mp = cf
+        if not mp or mp <= 1:
+            return
+
+        unit_name = (
+            getattr(packaging_details, "master_pack_unit_name", None)
+            or f"Master Pack of {mp}"
+        )
+
+        mc = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.unit_name == unit_name,
+            )
+            .first()
+        )
+
+        l = getattr(packaging_details, "master_pack_length_mm", None)
+        w = getattr(packaging_details, "master_pack_width_mm", None)
+        h = getattr(packaging_details, "master_pack_height_mm", None)
+        wt = getattr(packaging_details, "master_pack_weight_grams", None)
+
+        # Resolve the estimation knobs once (defaults match the item schema).
+        fill = getattr(packaging_details, "master_pack_fill_factor", None)
+        fill = Decimal(str(fill)) if fill is not None else Decimal("0.75")
+        void = getattr(packaging_details, "master_pack_void_fill_pct", None)
+        void = Decimal(str(void)) if void is not None else Decimal("0.10")
+        thickness = getattr(
+            packaging_details, "master_pack_wall_thickness_mm", None
+        )
+        thickness = (
+            Decimal(str(thickness)) if thickness is not None else Decimal("3")
+        )
+
+        if mc is None:
+            # Estimate outer dims when creating without explicit values:
+            # inner volume = (N × V_each / fill_factor), plus wall thickness on
+            # every side. Real outer dims should override this later.
+            if (l is None or w is None or h is None) and base is not None:
+                if base.length_mm and base.width_mm and base.height_mm:
+                    # Void-fill allowance adds a dunnage/bubble-wrap buffer on top
+                    # of the packing-efficiency (fill factor) adjustment.
+                    scale = (
+                        float(mp) * (1.0 + float(void)) / max(float(fill), 0.01)
+                    ) ** (1.0 / 3.0)
+                    l = Decimal(str(round(float(base.length_mm) * scale + 2.0 * float(thickness), 2)))
+                    w = Decimal(str(round(float(base.width_mm) * scale + 2.0 * float(thickness), 2)))
+                    h = Decimal(str(round(float(base.height_mm) * scale + 2.0 * float(thickness), 2)))
+
+            if wt is None and base is not None and base.weight_grams:
+                wt = Decimal(str(mp)) * Decimal(str(base.weight_grams))
+
+            mc = ItemPackagingUnit(
+                organization_id=organization_id,
+                item_id=item.id,
+                unit_name=unit_name,
+                conversion_factor=Decimal(str(mp)),
+                items_per_master_pack=int(mp),
+                length_mm=l,
+                width_mm=w,
+                height_mm=h,
+                weight_grams=wt,
+                master_pack_fill_factor=fill,
+                master_pack_void_fill_pct=void,
+                master_pack_wall_thickness_mm=thickness,
+                is_base_unit=False,
+                is_active=True,
+            )
+            self.db.add(mc)
+        else:
+            # Update the count, the estimation knobs, and any explicitly-
+            # provided overrides; never re-estimate over operator-entered
+            # outer dims.
+            mc.conversion_factor = Decimal(str(mp))
+            mc.items_per_master_pack = int(mp)
+            mc.is_base_unit = False
+            mc.master_pack_fill_factor = fill
+            mc.master_pack_void_fill_pct = void
+            mc.master_pack_wall_thickness_mm = thickness
+            if l is not None:
+                mc.length_mm = l
+            if w is not None:
+                mc.width_mm = w
+            if h is not None:
+                mc.height_mm = h
+            if wt is not None:
+                mc.weight_grams = wt
 
     def delete_item(
         self,

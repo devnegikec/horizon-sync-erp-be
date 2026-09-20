@@ -79,6 +79,7 @@ class PutAwayListItemResponse(BaseModel):
     manufacturing_date: str | None = None
     expiry_date: str | None = None
     quantity: float
+    packaging_unit_id: str | None = None
     bin_location_id: str | None = None
     bin_location_code: str | None = None
     suggested_bin_code: str | None = None

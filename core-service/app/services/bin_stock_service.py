@@ -30,6 +30,12 @@ from app.models.stock_movement import StockMovement
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    compute_bin_occupancy,
+    compute_item_required_cc_and_grams,
+)
 
 
 class BinStockService:
@@ -49,6 +55,7 @@ class BinStockService:
         *,
         commit: bool = True,
         sync_warehouse: bool = True,
+        packaging_unit_id: UUID | None = None,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -97,6 +104,37 @@ class BinStockService:
                     f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
                 )
 
+        # Volume/weight capacity enforcement (null limit = unconstrained).
+        if (
+            bin_location.max_volume_cc is not None
+            or bin_location.max_weight_grams is not None
+        ):
+            required_cc, required_g = compute_item_required_cc_and_grams(
+                self.db, item_id, packaging_unit_id, quantity
+            )
+            occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_id)
+            if bin_location.max_volume_cc is not None and required_cc is not None:
+                occupied_cc = occupied_m3 * CC_PER_M3
+                limit_cc = Decimal(str(bin_location.max_volume_cc))
+                if occupied_cc + required_cc > limit_cc:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Volume capacity exceeded: occupied {occupied_cc} cc + "
+                        f"required {required_cc} cc > limit {limit_cc} cc"
+                    )
+            if (
+                bin_location.max_weight_grams is not None
+                and required_g is not None
+            ):
+                occupied_g = occupied_kg * G_PER_KG
+                limit_g = Decimal(str(bin_location.max_weight_grams))
+                if occupied_g + required_g > limit_g:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Weight capacity exceeded: occupied {occupied_g} g + "
+                        f"required {required_g} g > limit {limit_g} g"
+                    )
+
         # Create or update the BinStockLevel record
         bin_stock = self._get_or_create_bin_stock(
             bin_id=bin_id,
@@ -104,6 +142,7 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
             for_update=True,
+            packaging_unit_id=packaging_unit_id,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -836,6 +875,7 @@ class BinStockService:
         org_id: UUID,
         batch_number: str | None = None,
         for_update: bool = False,
+        packaging_unit_id: UUID | None = None,
     ) -> BinStockLevel:
         """Get an existing BinStockLevel or create a new one.
 
@@ -866,6 +906,7 @@ class BinStockService:
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
                 inventory_status=InventoryStatus.AVAILABLE.value,
+                packaging_unit_id=packaging_unit_id,
             )
             self.db.add(bin_stock)
             self.db.flush()
