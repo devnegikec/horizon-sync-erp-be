@@ -23,6 +23,10 @@ VALID_PARENT_TYPES: dict[str, str] = {
     "bin": "level",
 }
 
+# Sentinel distinguishing "field omitted" from "field set to null" on PATCH,
+# so callers can explicitly clear a volume/weight limit.
+_UNSET = object()
+
 
 class LayoutService:
     """Service for managing the warehouse location hierarchy."""
@@ -146,8 +150,8 @@ class LayoutService:
         capacity_uom: str | None = None,
         position_x: Decimal | None = None,
         position_y: Decimal | None = None,
-        max_volume_cc: Decimal | None = None,
-        max_weight_grams: Decimal | None = None,
+        max_volume_cc: Decimal | None | object = _UNSET,
+        max_weight_grams: Decimal | None | object = _UNSET,
     ) -> WarehouseLocation:
         """
         Update a location's mutable fields (name, capacity, position).
@@ -186,9 +190,9 @@ class LayoutService:
             location.position_x = position_x
         if position_y is not None:
             location.position_y = position_y
-        if max_volume_cc is not None:
+        if max_volume_cc is not _UNSET:
             location.max_volume_cc = max_volume_cc
-        if max_weight_grams is not None:
+        if max_weight_grams is not _UNSET:
             location.max_weight_grams = max_weight_grams
 
         location.version += 1
@@ -198,11 +202,12 @@ class LayoutService:
         # Changing a bin's volume/weight limit should immediately re-evaluate
         # its capacity state (pct, bin_state, is_available) for the dashboard.
         if location.location_type == LocationType.BIN.value and (
-            max_volume_cc is not None or max_weight_grams is not None
+            max_volume_cc is not _UNSET or max_weight_grams is not _UNSET
         ):
             from app.services.bin_capacity_service import BinCapacityService
 
             BinCapacityService(self.db).refresh_bin(location.id, organization_id)
+            self.db.commit()
 
         return location
 

@@ -282,14 +282,21 @@ class VolumetricAssignmentService:
                 SELECT
                     bsl.bin_location_id,
                     COALESCE(SUM(
-                        bsl.quantity_on_hand
-                        * ipu.length_mm * ipu.width_mm * ipu.height_mm / 1000.0
-                    ), 0) AS occupied_volume_cc,
+                        FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(ipu.length_mm * ipu.width_mm * ipu.height_mm, base.length_mm * base.width_mm * base.height_mm, 0)
+                        + MOD(bsl.quantity_on_hand, NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(base.length_mm * base.width_mm * base.height_mm, 0)
+                    ) / 1000.0, 0) AS occupied_volume_cc,
                     COALESCE(SUM(
-                        bsl.quantity_on_hand * ipu.weight_grams
+                        FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(ipu.weight_grams, base.weight_grams, 0)
+                        + MOD(bsl.quantity_on_hand, NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(base.weight_grams, 0)
                     ), 0) AS occupied_weight_g
                 FROM bin_stock_levels bsl
                 LEFT JOIN item_packaging_units ipu ON ipu.id = bsl.packaging_unit_id
+                LEFT JOIN item_packaging_units base
+                       ON base.item_id = bsl.item_id AND base.is_base_unit = TRUE
                 WHERE bsl.organization_id = :org_id
                 GROUP BY bsl.bin_location_id
             ),

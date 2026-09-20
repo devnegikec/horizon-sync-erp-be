@@ -155,19 +155,18 @@ def zero_orphaned_stock(engine) -> None:
             key = (item_id, wh_id, org_id)
             deltas[key] = deltas.get(key, Decimal("0")) + Decimal(str(qty))
 
-        # Zero the bin stock rows.
-        c.execute(
-            text(
-                """
-                UPDATE bin_stock_levels bs
-                SET quantity_on_hand = 0
-                FROM warehouse_locations wl
-                WHERE wl.id = bs.bin_location_id
-                  AND bs.quantity_on_hand > 0
-                  AND (wl.is_active IS FALSE OR wl.location_type <> 'bin')
-                """
+        # Zero only the rows captured in the snapshot, so a concurrently-added
+        # orphan row is not zeroed without a matching stock_levels deduction.
+        orphan_ids = [row[0] for row in orphans]
+        if orphan_ids:
+            placeholders = ", ".join(f":id{i}" for i in range(len(orphan_ids)))
+            c.execute(
+                text(
+                    f"UPDATE bin_stock_levels SET quantity_on_hand = 0 "
+                    f"WHERE id IN ({placeholders})"
+                ),
+                {f"id{i}": str(oid) for i, oid in enumerate(orphan_ids)},
             )
-        )
 
         # Reconcile warehouse-level stock_levels (never below 0).
         for (item_id, wh_id, org_id), qty in deltas.items():

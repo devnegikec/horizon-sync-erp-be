@@ -30,9 +30,9 @@ flowchart TD
     A["POST product create"] --> B{packaging_details supplied?}
     B -- No --> C["Item auto-created, NO packaging units at all"]
     B -- Yes --> D["Base 'Each' row created"]
-    D --> E{items_per_master_pack > 1 or conversion_factor > 1?}
+    D --> E{items_per_master_pack > 1 or integer conversion_factor > 1?}
     E -- No --> F["Only base 'Each' row"]
-    E -- Yes --> G["MC row 'Master Pack of N' created (estimated outer dims)"]
+    E -- Yes --> G["MC row 'Master Pack of N' created (outer dims estimated when base dims exist)"]
 ```
 
 ---
@@ -43,7 +43,7 @@ flowchart TD
 |---|---|
 | Product created **without** `packaging_details` | Item auto-created with **zero** `item_packaging_units` rows — no base "Each", no MC. Master packaging silently skipped. |
 | Product created with `packaging_details` but `items_per_master_pack` NULL and `conversion_factor=1` | Only the base "Each" row is created. No MC row. |
-| Product created with `packaging_details.items_per_master_pack = 4` (or `conversion_factor > 1`) | Base "Each" row + MC row "Master Pack of 4" (`conversion_factor=4`) created. ✅ Master packaging considered. |
+| Product created with `packaging_details.items_per_master_pack = 4` (or integer `conversion_factor > 1`) | Base "Each" row + MC row "Master Pack of 4" (`conversion_factor=4`) created. ✅ Master packaging considered. Fractional `conversion_factor` (e.g. 1.5) is not a valid integer master-pack size and does not create an MC row. |
 
 The direct item-creation path behaves identically: `ItemService.create_item`
 only calls `_upsert_base_packaging_unit` when `item_data.packaging_details is
@@ -79,9 +79,10 @@ details = ItemPackagingDetails(
 
 Consequently, even when master packaging **is** triggered from product
 creation, the MC row is created with **estimated** outer dims (the fill-factor
-formula in `_upsert_master_pack_unit`), never with explicit carton dims. To set
-real MC outer dimensions, the item must be updated afterwards through the item
-form (`ItemPackagingDetails.master_pack_*`).
+formula in `_upsert_master_pack_unit`) **only when base-unit dimensions are
+available; otherwise the MC dimensions are left null**. Explicit carton dims
+are never set on this path. To set real MC outer dimensions, the item must be
+updated afterwards through the item form (`ItemPackagingDetails.master_pack_*`).
 
 ---
 

@@ -559,21 +559,26 @@ class PutAwayService:
             item = lines[0]["item"]
             pack_size = self._items_per_master_pack(item_id, org_id)
             if pack_size:
-                serials = [ln["slip_item"].batch_number for ln in lines]
-                for i in range(0, len(serials), pack_size):
-                    chunk = serials[i : i + pack_size]
-                    source_lines.append(
-                        {
-                            "item": item,
-                            "sku": lines[0]["slip_item"].sku,
-                            "quantity": Decimal(len(chunk)),
-                            "batch_number": chunk[0],
-                            "serial_nos": chunk,
-                            "packaging_unit_id": lines[0][
-                                "slip_item"
-                            ].packaging_unit_id,
-                        }
-                    )
+                # Group lines by packaging unit so each master-pack chunk keeps
+                # its own carton's packaging unit (never borrow a sibling's).
+                by_pu: dict = {}
+                for ln in lines:
+                    pu_id = ln["slip_item"].packaging_unit_id
+                    by_pu.setdefault(pu_id, []).append(ln)
+                for pu_id, pu_lines in by_pu.items():
+                    serials = [ln["slip_item"].batch_number for ln in pu_lines]
+                    for i in range(0, len(serials), pack_size):
+                        chunk = serials[i : i + pack_size]
+                        source_lines.append(
+                            {
+                                "item": item,
+                                "sku": pu_lines[0]["slip_item"].sku,
+                                "quantity": Decimal(len(chunk)),
+                                "batch_number": chunk[0],
+                                "serial_nos": chunk,
+                                "packaging_unit_id": pu_id,
+                            }
+                        )
             else:
                 for ln in lines:
                     si = ln["slip_item"]

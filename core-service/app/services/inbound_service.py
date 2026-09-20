@@ -1252,6 +1252,7 @@ class InboundService:
                 "box_count": 0,
                 "packaging_unit_id": None,
                 "pu_mixed": False,
+                "pu_seen": False,
             }
         )
 
@@ -1297,9 +1298,12 @@ class InboundService:
             # the same SKU/batch fall back to null (base-unit) volume.
             agg = slip_items_by_key[key]
             if not agg["pu_mixed"]:
-                if agg["packaging_unit_id"] is None:
+                if not agg["pu_seen"]:
                     agg["packaging_unit_id"] = scan_item.packaging_unit_id
+                    agg["pu_seen"] = True
                 elif agg["packaging_unit_id"] != scan_item.packaging_unit_id:
+                    # A loose (None) scan followed by a carton scan (or vice
+                    # versa) is mixed stock — fall back to base-unit volume.
                     agg["pu_mixed"] = True
                     agg["packaging_unit_id"] = None
 

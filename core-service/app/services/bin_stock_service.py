@@ -910,6 +910,11 @@ class BinStockService:
             )
             self.db.add(bin_stock)
             self.db.flush()
+        elif packaging_unit_id is not None:
+            # Keep packaging metadata current on an existing row (e.g. a
+            # serialized carton whose rows were first created loose), so
+            # later capacity math uses the right outer dimensions.
+            bin_stock.packaging_unit_id = packaging_unit_id
 
         return bin_stock
 

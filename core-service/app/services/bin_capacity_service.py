@@ -201,7 +201,12 @@ class BinCapacityService:
         metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
         full, almost = self._effective_thresholds(bin_loc, warehouse)
         state = self._derive_state(metrics["binding_pct"], full, almost)
-        is_available = bool(bin_loc.is_active) and metrics["binding_pct"] < full
+        units, _packs, count_cap, _count_pct = self._bin_counts(bin_loc)
+        is_available = (
+            bool(bin_loc.is_active)
+            and metrics["binding_pct"] < full
+            and (count_cap is None or units < count_cap)
+        )
         return metrics, state, is_available
 
     # ------------------------------------------------------------ refresh
@@ -285,6 +290,7 @@ class BinCapacityService:
             metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
             full, almost = self._effective_thresholds(bin_loc, warehouse)
             state = self._derive_state(metrics["binding_pct"], full, almost)
+            units, _packs, count_cap, _count_pct = self._bin_counts(bin_loc)
             results.append(
                 {
                     "bin_id": bin_loc.id,
@@ -295,8 +301,11 @@ class BinCapacityService:
                     "qr_code": bin_loc.qr_code,
                     "bin_state": state,
                     "binding_pct": metrics["binding_pct"],
-                    "is_available": bool(bin_loc.is_active)
-                    and metrics["binding_pct"] < full,
+                    "is_available": (
+                        bool(bin_loc.is_active)
+                        and metrics["binding_pct"] < full
+                        and (count_cap is None or units < count_cap)
+                    ),
                 }
             )
         return results
@@ -369,13 +378,17 @@ class BinCapacityService:
                 }
                 n["binding_pct"] = m["binding_pct"]
                 n["bin_state"] = state
-                n["is_available"] = bool(loc.is_active) and m["binding_pct"] < full
                 units, packs = bin_counts.get(
                     str(loc.id), (Decimal("0"), Decimal("0"))
                 )
                 count_cap = Decimal(str(loc.capacity)) if loc.capacity else None
                 if count_cap is not None and count_cap <= 0:
                     count_cap = None
+                n["is_available"] = (
+                    bool(loc.is_active)
+                    and m["binding_pct"] < full
+                    and (count_cap is None or units < count_cap)
+                )
                 n["unit_count"] = units
                 n["master_pack_count"] = packs
                 n["count_capacity"] = count_cap

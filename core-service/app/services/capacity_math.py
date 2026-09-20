@@ -285,6 +285,20 @@ def compute_item_required_cc_and_grams(
     unit), matching the "null = unconstrained" convention.
     """
     ipu = db.get(ItemPackagingUnit, packaging_unit_id) if packaging_unit_id else None
+    if ipu is None:
+        # Match occupancy: fall back to the item's active master-pack unit so
+        # enforcement and reporting agree on MC outer dimensions.
+        ipu = (
+            db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.is_base_unit.is_(False),
+                ItemPackagingUnit.conversion_factor > 1,
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .order_by(ItemPackagingUnit.conversion_factor.asc())
+            .first()
+        )
     base = (
         db.query(ItemPackagingUnit)
         .filter(

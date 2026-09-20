@@ -82,6 +82,8 @@ def _plan(c, warehouse_id: str | None, mode: str, value: Decimal) -> list:
         else:  # factor
             if uom != "volume":
                 continue
+            if capacity is None or cap <= 0:
+                continue
             new_cc = cap * value
         if cur is None or Decimal(str(cur)) != new_cc:
             plan.append((loc_id, code, cap, uom, cur, new_cc))
@@ -124,7 +126,10 @@ def main() -> None:
     with engine.begin() as c:
         for loc_id, _code, _cap, _uom, _cur, new_cc in plan:
             c.execute(
-                text("UPDATE warehouse_locations SET max_volume_cc = :v WHERE id = :id"),
+                text(
+                    "UPDATE warehouse_locations SET max_volume_cc = :v "
+                    "WHERE id = :id AND is_active IS TRUE"
+                ),
                 {"v": new_cc, "id": loc_id},
             )
     print(f"\nApplied. Updated max_volume_cc on {len(plan)} bins.")
