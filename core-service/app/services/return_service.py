@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -198,6 +198,26 @@ class ReturnService:
             )
         return lines
 
+    def _returnable_map(
+        self, organization_id: UUID, reference: DeliveryNote | None
+    ) -> dict[UUID, Decimal]:
+        """Remaining returnable quantity per item, empty when unresolved.
+
+        Mirrors the read-path calculation (``_build_reference_lines``) so the
+        quantity the UI offers is the quantity the write path accepts.
+        """
+        if reference is None:
+            return {}
+        returned = self._already_returned_map(organization_id, reference.id)
+        remaining: dict[UUID, Decimal] = {}
+        for line in reference.items or []:
+            if line.item_id is None:
+                continue
+            invoiced = self._to_decimal(line.qty)
+            already = returned.get(line.item_id, Decimal("0"))
+            remaining[line.item_id] = max(invoiced - already, Decimal("0"))
+        return remaining
+
     def _already_returned_map(
         self, organization_id: UUID, reference_id: UUID
     ) -> dict[UUID | None, Decimal]:
@@ -299,6 +319,11 @@ class ReturnService:
         self.db.flush()
 
         total = Decimal("0")
+        # Remaining returnable quantity per item on the resolved reference. An
+        # unknown reference stays permissive (best-effort resolution), but a
+        # known one must not be over-declared.
+        returnable = self._returnable_map(organization_id, reference)
+        requested: dict = {}
         for idx, line in enumerate(payload.lines):
             item, sku = self._resolve_item(organization_id, line.sku)
             if item is None:
@@ -318,6 +343,26 @@ class ReturnService:
                         }
                     ],
                 )
+            if item.id in returnable:
+                implied = requested.get(item.id, Decimal("0")) + qty
+                if implied > returnable[item.id]:
+                    raise ValidationError(
+                        f"Only {returnable[item.id]} unit(s) of '{sku}' can still be "
+                        "returned against this reference",
+                        details=[
+                            {
+                                "field": "lines",
+                                "reason": (
+                                    f"'{sku}' requested {implied}, "
+                                    f"returnable {returnable[item.id]}"
+                                ),
+                                "hint": "Reduce the quantity or cancel the extra line.",
+                            }
+                        ],
+                        code="RETURN_QTY_EXCEEDS_REFERENCE",
+                        hint="Cap the line at returnable_qty from the reference lookup.",
+                    )
+                requested[item.id] = implied
             total += qty
             self.db.add(
                 ReturnRegistrationItem(
@@ -539,6 +584,15 @@ class ReturnService:
                 hint="Report it as unreadable and hand the carton to the supervisor.",
             )
 
+        # The duplicate gates below are check-then-insert, so two sessions
+        # scanning the same identity concurrently could both pass and each
+        # capture the unit. A transaction-scoped advisory lock keyed on the
+        # identity serializes them for the duration of the scan.
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"return-scan:{organization_id}:{qr_identifier}"},
+        )
+
         registration = self.get_registration(session.registration_id, organization_id)
 
         # Already captured in this session → amber "already captured".
@@ -612,6 +666,25 @@ class ReturnService:
             )
 
         quantity = self._to_decimal(payload.get("qty") or 1) or Decimal("1")
+        if quantity <= 0:
+            # A negative or zero qty used to flow straight through, decrementing
+            # the line/session received counters.
+            raise ValidationError(
+                "Scanned quantity must be greater than zero",
+                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
+                code="RETURN_QTY_INVALID",
+            )
+        if quantity != quantity.to_integral_value():
+            # Segregation, disposition and put-away all run on whole units (the
+            # linked InboundException.quantity is an Integer), so a fractional
+            # scan used to be truncated there while stock received the full
+            # amount — silently losing the difference from the audit trail.
+            raise ValidationError(
+                "Return scans must be whole units",
+                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
+                code="RETURN_QTY_NOT_WHOLE",
+                hint="Segregation and disposition are tracked in whole units.",
+            )
         new_total = self._to_decimal(line.received_qty) + quantity
         over_receipt = new_total > self._to_decimal(line.expected_qty)
 
@@ -728,6 +801,9 @@ class ReturnService:
                 entity_id=str(item_id),
             )
 
+        # Re-classification (override) must not count the unit a second time.
+        first_classification = item.condition is None
+
         if item.condition and not override:
             raise StateError(
                 "This unit is already classified",
@@ -735,6 +811,21 @@ class ReturnService:
                 required_state=["pending"],
                 code="RETURN_ITEM_ALREADY_CLASSIFIED",
                 hint='Use "Change reason" to re-classify it.',
+            )
+
+        if not first_classification and item.exception_id is not None:
+            # The unit already sits in a segregation bin behind an exception.
+            # Re-classifying it would leave that stock in place while creating a
+            # new exception, so the same unit would be counted twice.
+            raise StateError(
+                "This unit is already segregated and cannot be re-classified",
+                current_state=item.condition,
+                required_state=["pending"],
+                code="RETURN_ITEM_ALREADY_SEGREGATED",
+                hint=(
+                    "Resolve the linked exception instead — re-classifying a "
+                    "segregated unit leaves its stock behind and double-counts it."
+                ),
             )
 
         if condition not in CONDITIONS:
@@ -774,9 +865,10 @@ class ReturnService:
             )
             item.exception_id = exception.id
 
-        session.classified_qty = self._to_decimal(
-            session.classified_qty
-        ) + self._to_decimal(item.quantity)
+        if first_classification:
+            session.classified_qty = self._to_decimal(
+                session.classified_qty
+            ) + self._to_decimal(item.quantity)
         self.db.flush()
 
         return {
@@ -896,23 +988,27 @@ class ReturnService:
                 hint="Send the note back to the dock to capture condition(s).",
             )
 
-        if dispositions:
-            for entry in dispositions:
+        provided = {entry.line_id: entry for entry in dispositions or []}
+        for line in note.items:
+            entry = provided.get(line.id)
+            if entry is not None:
                 self._apply_disposition(
                     note,
-                    entry.line_id,
+                    line.id,
                     entry.action,
                     entry.reason_code,
                     entry.note,
                     user.id,
                 )
-        else:
-            for line in note.items:
-                action = self._proposed_disposition(line)
-                if action:
-                    self._apply_disposition(
-                        note, line.id, action, line.reason_code, None, user.id
-                    )
+                continue
+            # A line the approver did not explicitly override still gets its
+            # proposed disposition. Previously it was left with none while the
+            # note was approved, so its required put-away/segregation never ran.
+            action = self._proposed_disposition(line)
+            if action:
+                self._apply_disposition(
+                    note, line.id, action, line.reason_code, None, user.id
+                )
 
         note.status = "approved"
         note.approved_by = user.id
@@ -1371,9 +1467,18 @@ class ReturnService:
         resolved_reason = reason_code
         reason = None
         if resolved_reason:
+            # Same scope as InboundExceptionService.list_reasons(): active codes
+            # only, and either this tenant's own code or a global (org-less) one.
+            # Without this, a deactivated or foreign-tenant reason could drive
+            # the classification and its destination.
             reason = (
                 self.db.query(InboundExceptionReason)
-                .filter(InboundExceptionReason.code == resolved_reason)
+                .filter(
+                    InboundExceptionReason.code == resolved_reason,
+                    InboundExceptionReason.is_active.is_(True),
+                    (InboundExceptionReason.organization_id.is_(None))
+                    | (InboundExceptionReason.organization_id == organization_id),
+                )
                 .first()
             )
             if reason is None:
@@ -1472,9 +1577,11 @@ class ReturnService:
         self.db.flush()
 
         try:
-            InboundExceptionService(self.db).notify_supervisors(
-                exception, exclude_user_id=actor_id
-            )
+            # notify_supervisors already excludes exception.created_by, which is
+            # set to actor_id above — passing an exclude kwarg here raised
+            # TypeError, which the handler below swallowed, so supervisors were
+            # never alerted for a segregated return.
+            InboundExceptionService(self.db).notify_supervisors(exception)
         except Exception:  # noqa: BLE001 - alerting must never lose the exception
             logger.warning("Return supervisor alert failed", exc_info=True)
         return exception
