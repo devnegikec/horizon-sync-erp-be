@@ -292,6 +292,15 @@ class InboundService:
             qr_data, db=self.db, organization_id=organization_id
         )
 
+        # The duplicate gates below are check-then-insert, so concurrent scans of
+        # the same label could both pass and each create a receipt line. A
+        # transaction-scoped advisory lock keyed on the identity serializes them
+        # (hash collisions only ever over-serialize, never under-serialize).
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"inbound-scan:{organization_id}:{payload.id}"},
+        )
+
         # ── Session-scoped duplicate gate ────────────────────────────────
         # Both axes are consulted: the receipt lines (``scan_session_items``) and
         # the dual-axis tracking rows via ``can_scan``, which also covers a label
