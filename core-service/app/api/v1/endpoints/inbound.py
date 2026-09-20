@@ -1015,7 +1015,7 @@ async def assign_bin_to_slip_item(
         .filter(
             WarehouseLocation.id == body.bin_location_id,
             WarehouseLocation.organization_id == current_user.organization_id,
-            WarehouseLocation.is_active == True,
+            WarehouseLocation.is_active == True,  # noqa: E712 - pre-existing
         )
         .first()
     )
@@ -1132,7 +1132,7 @@ async def get_fifo_bins_for_slip_item(
     """
     from datetime import UTC, datetime
 
-    from app.models.bin_stock_level import BinStockLevel
+    from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
     from app.models.item import Item
     from app.models.receiving_slip import ReceivingSlipItem
     from app.models.warehouse_location import WarehouseLocation
@@ -1176,6 +1176,9 @@ async def get_fifo_bins_for_slip_item(
             BinStockLevel.item_id == db_item.id,
             BinStockLevel.organization_id == current_user.organization_id,
             BinStockLevel.quantity_on_hand > 0,
+            # Only sellable stock: a bin/item/batch row can now be in a
+            # segregation status too, which must not surface as FIFO stock.
+            BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
             WarehouseLocation.is_pickable.is_(True),
         )
         .order_by(BinStockLevel.created_at.asc())
