@@ -76,9 +76,11 @@ class AuthService:
                     UserOrganizationRole,
                     RolePermission.role_id == UserOrganizationRole.role_id,
                 )
+                .join(Role, Role.id == UserOrganizationRole.role_id)
                 .filter(
                     UserOrganizationRole.user_id == user_id,
                     UserOrganizationRole.is_active,
+                    Role.is_active == True,  # noqa: E712
                     Permission.is_active == True,  # noqa: E712
                 )
                 .distinct()
@@ -456,12 +458,12 @@ class AuthService:
             return
 
         # Fetch already-assigned permission IDs
-        existing_ids = set(
+        existing_ids = {
             row[0]
             for row in self.db.query(RolePermission.permission_id)
             .filter(RolePermission.role_id == ww_role.id)
             .all()
-        )
+        }
 
         # Assign missing permissions
         assigned = 0

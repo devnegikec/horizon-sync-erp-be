@@ -526,12 +526,30 @@ def _seed_reason_codes() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text(
-            "DELETE FROM inbound_exception_reasons "
-            "WHERE code IN ('RETURN_GOOD','RETURN_DAMAGED','RETURN_SCRAP')"
-        )
-    )
+    # Only the rows that still carry the exact values seeded above are removed.
+    # A code that already existed when the upgrade ran (it skips those) or that
+    # an operator has since customised is left in place.
+    if has_table("inbound_exception_reasons"):
+        for code, name, category, destination, requires_approval in NEW_REASONS:
+            op.execute(
+                sa.text(
+                    """
+                    DELETE FROM inbound_exception_reasons
+                     WHERE code = :code
+                       AND name = :name
+                       AND category = :category
+                       AND default_destination IS NOT DISTINCT FROM :destination
+                       AND requires_approval = :requires_approval
+                    """
+                ).bindparams(
+                    code=code,
+                    name=name,
+                    category=category,
+                    destination=destination,
+                    requires_approval=requires_approval,
+                )
+            )
+
     for table in (
         "return_receipt_note_events",
         "return_receipt_note_items",

@@ -77,15 +77,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Restore the previous (incorrect) ``available`` value."""
+    """Drop the supporting index; the backfilled statuses deliberately stay.
+
+    The upgrade repaired rows whose ``inventory_status`` was already wrong
+    (``available`` inside a segregation bin). Those rows carry no marker, and
+    the application legitimately writes the same ``hold`` / ``quality`` /
+    ``damaged`` values when it segregates stock, so a rollback cannot tell a
+    repaired row from one the application has since set. Resetting them all to
+    ``available`` would re-create the original defect for every row segregated
+    after this migration ran, so it is intentionally not attempted.
+    """
     if not has_table("bin_stock_levels") or not has_table("warehouse_locations"):
         return
-    for bin_code, status in BIN_STATUS:
-        op.execute(
-            _UPDATE.bindparams(
-                bin_code=bin_code, status="available", from_status=status
-            )
-        )
 
     if has_index("bin_stock_levels", IDENTITY_INDEX):
         op.drop_index(IDENTITY_INDEX, "bin_stock_levels")

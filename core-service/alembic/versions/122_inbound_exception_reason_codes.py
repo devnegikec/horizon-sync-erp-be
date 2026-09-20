@@ -60,6 +60,22 @@ REASONS_TABLE = sa.table(
     sa.column("requires_approval", sa.Boolean),
 )
 
+#: The ``DAMAGED`` row as seeded by migration 078. Used so :func:`downgrade`
+#: recognises the row this migration re-pointed instead of one an operator has
+#: since repurposed under the same code.
+DAMAGED_SEED = ("DAMAGED", "Damaged goods", "damage")
+
+_DELETE_SEEDED_REASON = sa.text(
+    """
+    DELETE FROM inbound_exception_reasons
+     WHERE code = :code
+       AND name = :name
+       AND category = :category
+       AND default_destination IS NOT DISTINCT FROM :destination
+       AND requires_approval = :requires_approval
+    """
+)
+
 
 def _existing_codes() -> set[str]:
     return {
@@ -104,22 +120,38 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Undo the seed, touching only rows this migration is responsible for.
+
+    A downgrade cannot tell a row it wrote from a row that already held the
+    same value, so both statements are narrowed to the exact seeded signature.
+    A ``DAMAGED`` reason an operator has renamed, or a ``QR_UNREADABLE`` /
+    ``DUPLICATE_SERIAL`` row that pre-dates this migration (the upgrade skips
+    codes that already exist), is left in place.
+    """
     if not has_table("inbound_exception_reasons"):
         return
 
+    code, name, category = DAMAGED_SEED
     op.execute(
         sa.text(
             """
             UPDATE inbound_exception_reasons
                SET default_destination = 'QUARANTINE'
-             WHERE code = 'DAMAGED'
+             WHERE code = :code
+               AND name = :name
+               AND category = :category
                AND default_destination = 'DAMAGED'
             """
+        ).bindparams(code=code, name=name, category=category)
+    )
+
+    for code, name, category, destination, requires_approval in NEW_REASONS:
+        op.execute(
+            _DELETE_SEEDED_REASON.bindparams(
+                code=code,
+                name=name,
+                category=category,
+                destination=destination,
+                requires_approval=requires_approval,
+            )
         )
-    )
-    codes = tuple(code for code, *_ in NEW_REASONS)
-    op.execute(
-        sa.text(
-            "DELETE FROM inbound_exception_reasons WHERE code IN :codes"
-        ).bindparams(sa.bindparam("codes", value=codes, expanding=True))
-    )

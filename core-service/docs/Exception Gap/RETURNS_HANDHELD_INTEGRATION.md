@@ -3,10 +3,9 @@
 > **Version**: 1.1 (implemented — local/dev verified 2026-09-20)
 > **Date**: 2026-09-20
 > **Audience**: Handheld / mobile app developers (React Native / Flutter) working the dock
-> **Base URL**: `http://<host>/api/v1`
-> **Status**: ✅ **IMPLEMENTED** — all `/returns/…` endpoints below are live
+> **Base URL**: `http://<host>/api/v1` > **Status**: ✅ **IMPLEMENTED** — all `/returns/…` endpoints below are live
 > (migration `124_returns_module`, permissions identity `022`). `POST
-> /inbound/exceptions/unreadable-qr`, `GET /inbound/exception-reasons`, `GET /items` and the
+/inbound/exceptions/unreadable-qr`, `GET /inbound/exception-reasons`, `GET /items` and the
 > put-away endpoints were already live. See the web-app doc §13 for the implementation notes
 > that differ from v1.0.
 > **Companion doc**: `RETURNS_WEB_APP_INTEGRATION.md` (registration, approval, Return Slip).
@@ -16,14 +15,14 @@
 
 ## 1. What the device does (and never does)
 
-| Device responsibility                                      | Not the device's job                        |
-| ---------------------------------------------------------- | ------------------------------------------- |
-| Start a return receiving session against a registration     | Create or approve a registration            |
-| Scan returned units / cartons and validate the identity     | Change expected quantities                   |
-| Capture the **condition** of every unit (`good`/`damaged`/`hold`/`quarantine`) + reason code | Approve / reject the Return Receipt Note |
-| End the session → draft Return Receipt Note                 | Choose the final disposition (`scrap`, `return_to_dealer`, …) |
-| Report an unreadable label (records + alerts the supervisor) | Relabel / mint a new identity               |
-| Confirm put-away of `good` stock into a bin                 | Decide where `damaged` / `hold` stock goes  |
+| Device responsibility                                                                        | Not the device's job                                          |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Start a return receiving session against a registration                                      | Create or approve a registration                              |
+| Scan returned units / cartons and validate the identity                                      | Change expected quantities                                    |
+| Capture the **condition** of every unit (`good`/`damaged`/`hold`/`quarantine`) + reason code | Approve / reject the Return Receipt Note                      |
+| End the session → draft Return Receipt Note                                                  | Choose the final disposition (`scrap`, `return_to_dealer`, …) |
+| Report an unreadable label (records + alerts the supervisor)                                 | Relabel / mint a new identity                                 |
+| Confirm put-away of `good` stock into a bin                                                  | Decide where `damaged` / `hold` stock goes                    |
 
 Everything the device sends is **evidence**; the supervisor decides (web app).
 
@@ -89,13 +88,28 @@ Returns the header above plus the per-line counters and the pending queue:
   "scanned_qty": 2,
   "classified_qty": 1,
   "lines": [
-    { "line_id": "…", "sku": "TTK-COOK-897", "item_name": "Prestige Cooker 3L", "uom": "NOS",
-      "expected_qty": 2, "scanned_qty": 2, "classified_qty": 1, "serials": ["TTK-1T1ZB0"] }
+    {
+      "line_id": "…",
+      "sku": "TTK-COOK-897",
+      "item_name": "Prestige Cooker 3L",
+      "uom": "NOS",
+      "expected_qty": 2,
+      "scanned_qty": 2,
+      "classified_qty": 1,
+      "serials": ["TTK-1T1ZB0"]
+    }
   ],
   "items": [
-    { "id": "item-uuid", "qr_identifier": "TTK-1T1ZB0", "sku": "TTK-COOK-897",
-      "serial_number": "TTK-1T1ZB0", "quantity": 1, "condition": null, "reason_code": null,
-      "exception_id": null }
+    {
+      "id": "item-uuid",
+      "qr_identifier": "TTK-1T1ZB0",
+      "sku": "TTK-COOK-897",
+      "serial_number": "TTK-1T1ZB0",
+      "quantity": 1,
+      "condition": null,
+      "reason_code": null,
+      "exception_id": null
+    }
   ]
 }
 ```
@@ -107,8 +121,11 @@ Returns the header above plus the per-line counters and the pending queue:
 ### 3.3 `POST /returns/sessions/{id}/scans`
 
 ```json
-{ "qr_data": "{\"id\":\"TTK-1T1ZB0\",\"sku\":\"TTK-COOK-897\",\"qty\":1,\"batch\":\"BT-SEP-19\"}",
-  "device_type": "mobile", "os": "Android 14" }
+{
+  "qr_data": "{\"id\":\"TTK-1T1ZB0\",\"sku\":\"TTK-COOK-897\",\"qty\":1,\"batch\":\"BT-SEP-19\"}",
+  "device_type": "mobile",
+  "os": "Android 14"
+}
 ```
 
 ```json
@@ -135,17 +152,25 @@ Returns the header above plus the per-line counters and the pending queue:
 ### 3.4 `POST /returns/sessions/{id}/classify` and `…/classify/bulk`
 
 ```json
-{ "item_id": "item-uuid", "condition": "damaged",
-  "reason_code": "RETURN_DAMAGED", "note": "Dent on the lid" }
+{
+  "item_id": "item-uuid",
+  "condition": "damaged",
+  "reason_code": "RETURN_DAMAGED",
+  "note": "Dent on the lid"
+}
 ```
 
 ```json
-{ "items": [ { "item_id": "…", "condition": "good" },
-             { "item_id": "…", "condition": "quarantine", "reason_code": "QUARANTINE" } ] }
+{
+  "items": [
+    { "item_id": "…", "condition": "good" },
+    { "item_id": "…", "condition": "quarantine", "reason_code": "QUARANTINE" }
+  ]
+}
 ```
 
 Both classify endpoints return the **same object shape**; `classify/bulk` returns a **bare JSON
-array** of them (one entry per item), *not* an `{ "items": [ … ] }` wrapper.
+array** of them (one entry per item), _not_ an `{ "items": [ … ] }` wrapper.
 
 ```json
 {
@@ -179,9 +204,15 @@ array** of them (one entry per item), *not* an `{ "items": [ … ] }` wrapper.
 
 ```json
 {
-  "receipt_note": { "id": "…", "note_no": "RRN-2026-00017", "status": "pending_approval" },
+  "receipt_note": {
+    "id": "…",
+    "note_no": "RRN-2026-00017",
+    "status": "pending_approval"
+  },
   "registration_status": "received",
-  "expected_qty": 3, "received_qty": 2, "short_qty": 1,
+  "expected_qty": 3,
+  "received_qty": 2,
+  "short_qty": 1,
   "conditions": { "good": 1, "damaged": 1, "hold": 0, "quarantine": 0 },
   "next": "Supervisor review in the web app"
 }
@@ -197,11 +228,11 @@ supervisor's queue immediately and there is no separate "submit for approval" st
 
 | Need                                    | Endpoint (live today)                                        |
 | --------------------------------------- | ------------------------------------------------------------ |
-| Unreadable / unscannable label          | `POST /returns/sessions/{id}/unreadable` (§4.2)               |
-| Reason-code picker                      | `GET /inbound/exception-reasons?condition=`                   |
-| Item lookup by SKU (never stock-levels) | `GET /items?search=`                                          |
-| List my put-away tasks                  | `GET /put-away` (detail: `GET /put-away/{put_away_list_id}`)  |
-| Confirm put-away into a bin             | `POST /put-away/{put_away_list_id}/items/{item_id}/complete`  |
+| Unreadable / unscannable label          | `POST /returns/sessions/{id}/unreadable` (§4.2)              |
+| Reason-code picker                      | `GET /inbound/exception-reasons?condition=`                  |
+| Item lookup by SKU (never stock-levels) | `GET /items?search=`                                         |
+| List my put-away tasks                  | `GET /put-away` (detail: `GET /put-away/{put_away_list_id}`) |
+| Confirm put-away into a bin             | `POST /put-away/{put_away_list_id}/items/{item_id}/complete` |
 
 Put-away for returned `good` stock uses the **same** task list and confirmation flow as inbound
 receiving (`MOBILE_APP_INBOUND_GUIDE.md` §4) — no returns-specific put-away UI.
@@ -212,19 +243,19 @@ receiving (`MOBILE_APP_INBOUND_GUIDE.md` §4) — no returns-specific put-away U
 
 ### 4.1 Validation matrix
 
-| Case                                                              | Server response                                  | Device UI                                                        |
-| ----------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| Identity on the registration (SKU + serial)                        | `201`                                            | Green, move straight to condition capture                         |
-| SKU on the registration, serial not listed                         | `409 RETURN_SERIAL_NOT_REGISTERED`                | Red banner + "Report as unexpected / call supervisor"             |
-| SKU not on the registration at all                                 | `404 RETURN_UNIT_NOT_REGISTERED`                  | Red, offer the unreadable/unexpected action                       |
-| Unit already scanned in **this** session                           | `409 RETURN_UNIT_ALREADY_SCANNED`                 | Amber "already captured" — jump to that item, do not retry         |
-| Identity already in **active stock**                               | `409 DUPLICATE_SERIAL`                            | Red — the unit was never dispatched; supervisor investigation      |
-| Line already at its registered quantity                            | `201` with `over_receipt: true`                    | Amber warning; keep scanning, the supervisor decides               |
-| All lines fully received                                           | `409 RETURN_REGISTRATION_FULLY_RECEIVED`           | Offer "End session"                                                |
-| Malformed / undecodable payload                                    | `400 RETURN_QR_INVALID`                            | Offer "Report unreadable label" (§4.2)                             |
-| Session closed / ended                                             | `409 RETURN_SESSION_NOT_OPEN`                      | Return to the session picker                                       |
-| QR already **put away** by an earlier return                       | `409 DUPLICATE_SERIAL`                            | Red — same handling as active stock                                |
-| Damaged unit already classified                                    | `409 RETURN_ITEM_ALREADY_CLASSIFIED`               | Use "Change reason" (`override: true`)                             |
+| Case                                         | Server response                          | Device UI                                                     |
+| -------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------- |
+| Identity on the registration (SKU + serial)  | `201`                                    | Green, move straight to condition capture                     |
+| SKU on the registration, serial not listed   | `409 RETURN_SERIAL_NOT_REGISTERED`       | Red banner + "Report as unexpected / call supervisor"         |
+| SKU not on the registration at all           | `404 RETURN_UNIT_NOT_REGISTERED`         | Red, offer the unreadable/unexpected action                   |
+| Unit already scanned in **this** session     | `409 RETURN_UNIT_ALREADY_SCANNED`        | Amber "already captured" — jump to that item, do not retry    |
+| Identity already in **active stock**         | `409 DUPLICATE_SERIAL`                   | Red — the unit was never dispatched; supervisor investigation |
+| Line already at its registered quantity      | `201` with `over_receipt: true`          | Amber warning; keep scanning, the supervisor decides          |
+| All lines fully received                     | `409 RETURN_REGISTRATION_FULLY_RECEIVED` | Offer "End session"                                           |
+| Malformed / undecodable payload              | `400 RETURN_QR_INVALID`                  | Offer "Report unreadable label" (§4.2)                        |
+| Session closed / ended                       | `409 RETURN_SESSION_NOT_OPEN`            | Return to the session picker                                  |
+| QR already **put away** by an earlier return | `409 DUPLICATE_SERIAL`                   | Red — same handling as active stock                           |
+| Damaged unit already classified              | `409 RETURN_ITEM_ALREADY_CLASSIFIED`     | Use "Change reason" (`override: true`)                        |
 
 ### 4.2 Unreadable label — `POST /returns/sessions/{id}/unreadable`
 
@@ -263,7 +294,10 @@ POST /api/v1/returns/sessions/{session_id}/unreadable
   returns every active code (that is the inbound receiving behaviour and is unchanged).
   Each reason also carries `applies_to_conditions: string[]`, so the mapping is readable from the
   payload — it is `[]` for inbound-only codes such as `SHORT_PHYSICAL` or `QR_UNREADABLE`.
-- Show the server-derived destination (`QUARANTINE`) so the operator knows where to put the unit.
+- Show the server-derived destination exactly as returned, so the operator knows where to put the
+  unit. It is **not** always `QUARANTINE`: it follows the chosen reason code (`HOLD` for `HOLD`,
+  `DAMAGED` for `RETURN_SCRAP`, `QUARANTINE` for `RETURN_DAMAGED`, …). Render the field, never a
+  hard-coded bin name.
 - Support **bulk good** for a carton ("All good") — `…/classify/bulk` with the scanned item ids.
 - Default the picker from the reason the registration was created with, but never auto-classify a
   non-good unit without an explicit tap.
@@ -287,16 +321,16 @@ POST /api/v1/returns/sessions/{session_id}/unreadable
 
 ## 6. Permissions & role
 
-| Operation                        | Permission         | Dock role (`warehouse_work_user` equivalent) |
-| -------------------------------- | ------------------ | ------------------------------------------- |
-| List / read registrations        | `return.read`      | ✅                                          |
-| Open a return session            | `return.receive`   | ✅                                          |
-| Record scans                     | `return.receive` + `wms.scan` | ✅                                |
-| Report an unreadable label       | `inbound_exception.create` | ✅                                  |
-| Classify conditions              | `return.classify`  | ✅                                          |
-| End the session                  | `return.receive`   | ✅                                          |
-| Approve the note / dispose       | `return.approve` / `return.dispose` | ❌ Supervisor only       |
-| Create / cancel a registration   | `return.register`  | ❌ Back-office only                         |
+| Operation                      | Permission                          | Dock role (`warehouse_work_user` equivalent) |
+| ------------------------------ | ----------------------------------- | -------------------------------------------- |
+| List / read registrations      | `return.read`                       | ✅                                           |
+| Open a return session          | `return.receive`                    | ✅                                           |
+| Record scans                   | `return.receive` + `wms.scan`       | ✅                                           |
+| Report an unreadable label     | `inbound_exception.create`          | ✅                                           |
+| Classify conditions            | `return.classify`                   | ✅                                           |
+| End the session                | `return.receive`                    | ✅                                           |
+| Approve the note / dispose     | `return.approve` / `return.dispose` | ❌ Supervisor only                           |
+| Create / cancel a registration | `return.register`                   | ❌ Back-office only                          |
 
 `return.receive` / `return.classify` are the returns dock codes (R-10 / X-02), seeded by identity
 migration `022`. They are granted to `warehouse_work_user`, `wms_operator`, `wms_manager` and
@@ -323,53 +357,53 @@ Envelope (same as the receiving flow): `{"error", "message", "hint", "details"}`
 `hint`**, it is written for the operator ("Report it as unreadable and hand the carton to the
 supervisor", "This unit is already captured — check the pending list").
 
-| HTTP | `error`                            | Operator action                                              |
-| ---- | ---------------------------------- | ------------------------------------------------------------ |
-| 400  | `RETURN_QR_INVALID`                | "Report unreadable label", retry the camera                  |
-| 400  | `RETURN_CONDITION_REQUIRED`        | Force a condition tap before continuing                      |
-| 400  | `RETURN_CONDITION_INVALID`         | Reset to the four supported buttons                          |
-| 400  | `RETURN_REASON_CODE_REQUIRED`      | Open the reason picker                                        |
-| 400  | `RETURN_REASON_CODE_INVALID`       | Refresh the picker (`GET /inbound/exception-reasons`)         |
-| 400  | `RETURN_DESTINATION_INVALID`       | Clear the destination override (HOLD/QUARANTINE/DAMAGED only) |
-| 404  | `RETURN_REGISTRATION_NOT_FOUND`    | Back to the registration list                                 |
-| 404  | `RETURN_SESSION_NOT_FOUND`         | Recover the session (see §5.4)                                |
-| 404  | `RETURN_UNIT_NOT_REGISTERED`       | Do not override; report unreadable / call the supervisor      |
-| 409  | `RETURN_SERIAL_NOT_REGISTERED`     | Same as above — the serial is not on this return              |
-| 409  | `RETURN_UNIT_ALREADY_SCANNED`      | Open the already-captured unit; do not retry blindly           |
-| 409  | `DUPLICATE_SERIAL`                 | Hard stop — unit is already in stock; notify the supervisor    |
-| 409  | `RETURN_ITEM_ALREADY_CLASSIFIED`   | Offer "Change reason"                                          |
-| 409  | `RETURN_SESSION_HAS_UNCLASSIFIED_ITEMS` | Jump to the first unclassified unit                       |
-| 409  | `RETURN_SESSION_NOT_OPEN`          | Session ended/abandoned — return to the picker                |
-| 409  | `RETURN_SESSION_ALREADY_OPEN`      | Resume the open session instead of creating one                |
-| 409  | `RETURN_REGISTRATION_NOT_RECEIVABLE` | Registration state blocks receiving (cancelled/closed)      |
-| 409  | `RETURN_REGISTRATION_FULLY_RECEIVED` | Offer to end the session                                    |
-| 409  | `EXCEPTION_ALREADY_ACTIVE`         | The unreadable carton is already reported                      |
-| 403  | —                                  | Hide the action (permission missing)                           |
+| HTTP | `error`                                 | Operator action                                               |
+| ---- | --------------------------------------- | ------------------------------------------------------------- |
+| 400  | `RETURN_QR_INVALID`                     | "Report unreadable label", retry the camera                   |
+| 400  | `RETURN_CONDITION_REQUIRED`             | Force a condition tap before continuing                       |
+| 400  | `RETURN_CONDITION_INVALID`              | Reset to the four supported buttons                           |
+| 400  | `RETURN_REASON_CODE_REQUIRED`           | Open the reason picker                                        |
+| 400  | `RETURN_REASON_CODE_INVALID`            | Refresh the picker (`GET /inbound/exception-reasons`)         |
+| 400  | `RETURN_DESTINATION_INVALID`            | Clear the destination override (HOLD/QUARANTINE/DAMAGED only) |
+| 404  | `RETURN_REGISTRATION_NOT_FOUND`         | Back to the registration list                                 |
+| 404  | `RETURN_SESSION_NOT_FOUND`              | Recover the session (see §5.4)                                |
+| 404  | `RETURN_UNIT_NOT_REGISTERED`            | Do not override; report unreadable / call the supervisor      |
+| 409  | `RETURN_SERIAL_NOT_REGISTERED`          | Same as above — the serial is not on this return              |
+| 409  | `RETURN_UNIT_ALREADY_SCANNED`           | Open the already-captured unit; do not retry blindly          |
+| 409  | `DUPLICATE_SERIAL`                      | Hard stop — unit is already in stock; notify the supervisor   |
+| 409  | `RETURN_ITEM_ALREADY_CLASSIFIED`        | Offer "Change reason"                                         |
+| 409  | `RETURN_SESSION_HAS_UNCLASSIFIED_ITEMS` | Jump to the first unclassified unit                           |
+| 409  | `RETURN_SESSION_NOT_OPEN`               | Session ended/abandoned — return to the picker                |
+| 409  | `RETURN_SESSION_ALREADY_OPEN`           | Resume the open session instead of creating one               |
+| 409  | `RETURN_REGISTRATION_NOT_RECEIVABLE`    | Registration state blocks receiving (cancelled/closed)        |
+| 409  | `RETURN_REGISTRATION_FULLY_RECEIVED`    | Offer to end the session                                      |
+| 409  | `EXCEPTION_ALREADY_ACTIVE`              | The unreadable carton is already reported                     |
+| 403  | —                                       | Hide the action (permission missing)                          |
 
 ---
 
 ## 8. Device test checklist
 
-| #  | Scenario                                  | Call                                                        | Expect                                                       |
-| -- | ----------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
-| 1  | Pick a ready registration                 | `GET /returns/registrations?status=ready`                    | List with `expected_qty` / `received_qty`                     |
-| 2  | Open a session                            | `POST /returns/registrations/{id}/sessions`                  | `201`, registration → `receiving`, counters at 0              |
-| 3  | Open a second session                     | same                                                        | `409 RETURN_SESSION_ALREADY_OPEN`                             |
-| 4  | Scan an expected serial                   | `POST …/scans`                                               | `201`, `next_action=classify`, counters +1                    |
-| 5  | Re-scan the same unit                     | same                                                        | `409 RETURN_UNIT_ALREADY_SCANNED` + jump to the unit          |
-| 6  | Scan a serial not on the registration     | same                                                        | `409 RETURN_SERIAL_NOT_REGISTERED` (no stock change)          |
-| 7  | Scan an identity already in stock         | same                                                        | `409 DUPLICATE_SERIAL` (no stock change, exception recorded)  |
-| 8  | Scan beyond the registered quantity       | same                                                        | `201` + `over_receipt: true`                                  |
-| 9  | Classify damaged without a reason         | `POST …/classify`                                           | `400 RETURN_REASON_CODE_REQUIRED`                             |
-| 10 | Classify damaged with a reason            | same                                                        | `201`, `destination=QUARANTINE`, exception `pending_approval` |
-| 11 | Classify good                             | same                                                        | `201`, no exception, unit stays available for put-away         |
-| 12 | Bulk good a carton                        | `POST …/classify/bulk`                                      | All items classified, counts consistent                        |
-| 13 | End with an unclassified unit             | `POST …/end`                                                | `409 RETURN_SESSION_HAS_UNCLASSIFIED_ITEMS`                    |
-| 14 | End after classifying everything          | `POST …/end`                                                | `200`, note `pending_approval` + `RRN-…`, registration `received` |
-| 15 | Unreadable label flow                     | `POST /returns/sessions/{id}/unreadable`                     | `201` HOLD `QR_UNREADABLE`; duplicate → `409 EXCEPTION_ALREADY_ACTIVE` |
-| 16 | App restart mid-session                   | `GET /returns/sessions/{id}`                                 | Pending list rebuilt from `condition === null`                 |
-| 17 | Offline classification attempt            | any                                                          | Blocked in the UI with a clear "connect to continue" message   |
-| 18 | Classify with a non-dock account          | `POST …/classify`                                            | `403`, action hidden                                           |
+| #   | Scenario                              | Call                                        | Expect                                                                 |
+| --- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| 1   | Pick a ready registration             | `GET /returns/registrations?status=ready`   | List with `expected_qty` / `received_qty`                              |
+| 2   | Open a session                        | `POST /returns/registrations/{id}/sessions` | `201`, registration → `receiving`, counters at 0                       |
+| 3   | Open a second session                 | same                                        | `409 RETURN_SESSION_ALREADY_OPEN`                                      |
+| 4   | Scan an expected serial               | `POST …/scans`                              | `201`, `next_action=classify`, counters +1                             |
+| 5   | Re-scan the same unit                 | same                                        | `409 RETURN_UNIT_ALREADY_SCANNED` + jump to the unit                   |
+| 6   | Scan a serial not on the registration | same                                        | `409 RETURN_SERIAL_NOT_REGISTERED` (no stock change)                   |
+| 7   | Scan an identity already in stock     | same                                        | `409 DUPLICATE_SERIAL` (no stock change, exception recorded)           |
+| 8   | Scan beyond the registered quantity   | same                                        | `201` + `over_receipt: true`                                           |
+| 9   | Classify damaged without a reason     | `POST …/classify`                           | `400 RETURN_REASON_CODE_REQUIRED`                                      |
+| 10  | Classify damaged with a reason        | same                                        | `201`, `destination=QUARANTINE`, exception `pending_approval`          |
+| 11  | Classify good                         | same                                        | `201`, no exception, unit stays available for put-away                 |
+| 12  | Bulk good a carton                    | `POST …/classify/bulk`                      | All items classified, counts consistent                                |
+| 13  | End with an unclassified unit         | `POST …/end`                                | `409 RETURN_SESSION_HAS_UNCLASSIFIED_ITEMS`                            |
+| 14  | End after classifying everything      | `POST …/end`                                | `200`, note `pending_approval` + `RRN-…`, registration `received`      |
+| 15  | Unreadable label flow                 | `POST /returns/sessions/{id}/unreadable`    | `201` HOLD `QR_UNREADABLE`; duplicate → `409 EXCEPTION_ALREADY_ACTIVE` |
+| 16  | App restart mid-session               | `GET /returns/sessions/{id}`                | Pending list rebuilt from `condition === null`                         |
+| 17  | Offline classification attempt        | any                                         | Blocked in the UI with a clear "connect to continue" message           |
+| 18  | Classify with a non-dock account      | `POST …/classify`                           | `403`, action hidden                                                   |
 
 Report the tenant/user, session id, `qr_identifier` and the `error` code with any failure — the
 `hint` is operator-facing, the `error` code is what engineering needs.
@@ -378,16 +412,16 @@ Report the tenant/user, session id, `qr_identifier` and the `error` code with an
 
 ## 9. Do-not list (mirrors `MOBILE_APP_INBOUND_GUIDE.md` §7)
 
-| Don't                                                         | Do                                                          |
-| ------------------------------------------------------------- | ----------------------------------------------------------- |
-| Let the operator type or "fix" an identity                     | Report it as unreadable and hand the carton to the supervisor |
-| Queue classification/session-end offline                       | Require connectivity for anything that moves stock           |
-| Treat `409 RETURN_UNIT_ALREADY_SCANNED` as a crash             | Treat it as "already captured" and continue                  |
-| Use `GET /stock-levels` to resolve an item                     | Use `GET /items?search=`                                     |
-| Add a returns-specific put-away screen                         | Reuse the existing put-away list + confirm flow              |
-| Show a success state before the server responds                | Wait for the response, then advance                          |
-| Hard-code reason codes in the app                              | Load them from `GET /inbound/exception-reasons`              |
-| Approve/alter the note on the device                           | Leave approval to the supervisor in the web app              |
+| Don't                                              | Do                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| Let the operator type or "fix" an identity         | Report it as unreadable and hand the carton to the supervisor |
+| Queue classification/session-end offline           | Require connectivity for anything that moves stock            |
+| Treat `409 RETURN_UNIT_ALREADY_SCANNED` as a crash | Treat it as "already captured" and continue                   |
+| Use `GET /stock-levels` to resolve an item         | Use `GET /items?search=`                                      |
+| Add a returns-specific put-away screen             | Reuse the existing put-away list + confirm flow               |
+| Show a success state before the server responds    | Wait for the response, then advance                           |
+| Hard-code reason codes in the app                  | Load them from `GET /inbound/exception-reasons`               |
+| Approve/alter the note on the device               | Leave approval to the supervisor in the web app               |
 
 ---
 
@@ -417,21 +451,21 @@ Report the tenant/user, session id, `qr_identifier` and the `error` code with an
 The mobile client adapted to these live behaviours; the doc has been corrected to match. No API
 change was made for items 1–6, so nothing the client already consumes is renamed.
 
-| # | v1.0 doc said                            | Live API (canonical)                                                                 |
-| - | ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| 1 | `classify/bulk` → `{ "items": [ … ] }`   | **bare array** `[ … ]`                                                                |
-| 2 | `receipt_note.status` = `"draft"`        | `"pending_approval"`                                                                  |
-| 3 | `…/end` → `201`                          | `200`                                                                                 |
-| 4 | classify `destination` always set        | `null` for a `good` unit                                                              |
-| 5 | registration list nests `warehouse`      | list is **flat** (`warehouse_name` / `warehouse_id`); the **detail** endpoint nests `warehouse` / `party` |
-| 6 | `lines[]` shape                          | **two shapes, by design** (see below)                                                  |
-| 7 | —                                        | **fixed in the API**: the list row now also returns `return_reason_code`                |
+| #   | v1.0 doc said                          | Live API (canonical)                                                                                      |
+| --- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | `classify/bulk` → `{ "items": [ … ] }` | **bare array** `[ … ]`                                                                                    |
+| 2   | `receipt_note.status` = `"draft"`      | `"pending_approval"`                                                                                      |
+| 3   | `…/end` → `201`                        | `200`                                                                                                     |
+| 4   | classify `destination` always set      | `null` for a `good` unit                                                                                  |
+| 5   | registration list nests `warehouse`    | list is **flat** (`warehouse_name` / `warehouse_id`); the **detail** endpoint nests `warehouse` / `party` |
+| 6   | `lines[]` shape                        | **two shapes, by design** (see below)                                                                     |
+| 7   | —                                      | **fixed in the API**: the list row now also returns `return_reason_code`                                  |
 
 **Item 6 confirmed intent.** The two line shapes differ because they answer different questions:
 
-- **Registration detail** (`GET /returns/registrations/{id}`) → *what was declared*: `id`,
+- **Registration detail** (`GET /returns/registrations/{id}`) → _what was declared_: `id`,
   `expected_qty`, `received_qty`, `serials`, `conditions{}` (per-condition counts for the whole line).
-- **Session** (`GET /returns/sessions/{id}`) → *what the dock has captured so far*: `line_id`,
+- **Session** (`GET /returns/sessions/{id}`) → _what the dock has captured so far_: `line_id`,
   `scanned_qty`, `classified_qty`, `serials`.
 
 Both are deliberate; do not expect one to mirror the other. Use the registration for the expected

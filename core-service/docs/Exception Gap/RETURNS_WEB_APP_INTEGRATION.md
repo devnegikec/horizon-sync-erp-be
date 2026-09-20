@@ -3,8 +3,7 @@
 > **Version**: 1.1 (implemented — local/dev verified 2026-09-20)
 > **Date**: 2026-09-20
 > **Audience**: Web app (back-office / supervisor console) developers
-> **Base URL**: `http://<host>/api/v1`
-> **Status**: ✅ **IMPLEMENTED** — all 12 web endpoints below are live
+> **Base URL**: `http://<host>/api/v1` > **Status**: ✅ **IMPLEMENTED** — all 12 web endpoints below are live
 > (migration `124_returns_module`, permissions migration identity `022`). Verified end-to-end
 > against both warehouses. See §14 for the four implementation notes that differ from v1.0.
 > **Companion doc**: `RETURNS_HANDHELD_INTEGRATION.md` (dock scanning + condition capture).
@@ -16,17 +15,17 @@
 
 ## 1. Division of labour
 
-| Step                                                                 | Owner        | Where                        |
-| -------------------------------------------------------------------- | ------------ | ---------------------------- |
-| Register a return against Invoice / Dealer / Warehouse               | Web app      | §5                           |
-| Look up + validate the reference (invoice / party / warehouse)       | Web app      | §4                           |
-| Print / hand the registration to the dock                            | Web app      | §5.3                         |
-| Receive + classify returned units                                    | **Handheld** | handheld doc §5, §6          |
-| Review the Draft Return Receipt Note (expected vs received)          | Web app      | §6                           |
-| Approve / reject the note, per-line disposition                      | Web app      | §6.3 – §6.5                  |
-| Generate put-away for good lines / segregate the rest                | Web app      | §6.6                         |
-| Produce the Return Slip document                                     | Web app      | §6.7                         |
-| Confirm put-away of good stock in the bin                            | **Handheld** | existing put-away endpoints  |
+| Step                                                           | Owner        | Where                       |
+| -------------------------------------------------------------- | ------------ | --------------------------- |
+| Register a return against Invoice / Dealer / Warehouse         | Web app      | §5                          |
+| Look up + validate the reference (invoice / party / warehouse) | Web app      | §4                          |
+| Print / hand the registration to the dock                      | Web app      | §5.3                        |
+| Receive + classify returned units                              | **Handheld** | handheld doc §5, §6         |
+| Review the Draft Return Receipt Note (expected vs received)    | Web app      | §6                          |
+| Approve / reject the note, per-line disposition                | Web app      | §6.3 – §6.5                 |
+| Generate put-away for good lines / segregate the rest          | Web app      | §6.6                        |
+| Produce the Return Slip document                               | Web app      | §6.7                        |
+| Confirm put-away of good stock in the bin                      | **Handheld** | existing put-away endpoints |
 
 The web app **never** scans returned units and the handheld **never** approves a note — mirrors the
 existing receiving split (`SHORT_RECEIPT_FRONTEND_INTEGRATION.md` §1).
@@ -66,14 +65,14 @@ draft ──► ready ──► receiving ──► received ──► closed
   └─────────┴────────────┴──► cancelled        (allowed until the first unit is scanned)
 ```
 
-| Status      | Meaning                                                       | Set by                        |
-| ----------- | ------------------------------------------------------------- | ----------------------------- |
-| `draft`     | Created, lines not confirmed yet                              | `POST /registrations`         |
-| `ready`     | Lines confirmed, the dock may start receiving                 | `POST /registrations/{id}/…`  |
-| `receiving` | A handheld session is open against it                         | handheld session start        |
-| `received`  | Session ended, units classified                               | handheld session end          |
-| `closed`    | Return Slip issued / put-away handled                         | after `generate-put-away`     |
-| `cancelled` | Cancelled before any unit was scanned                         | `POST /registrations/{id}/cancel` |
+| Status      | Meaning                                       | Set by                            |
+| ----------- | --------------------------------------------- | --------------------------------- |
+| `draft`     | Created, lines not confirmed yet              | `POST /registrations`             |
+| `ready`     | Lines confirmed, the dock may start receiving | `POST /registrations/{id}/…`      |
+| `receiving` | A handheld session is open against it         | handheld session start            |
+| `received`  | Session ended, units classified               | handheld session end              |
+| `closed`    | Return Slip issued / put-away handled         | after `generate-put-away`         |
+| `cancelled` | Cancelled before any unit was scanned         | `POST /registrations/{id}/cancel` |
 
 > `cancelled` is terminal. The UI must hide **Start receiving** once `receiving`/`received`/`closed`.
 
@@ -90,13 +89,13 @@ draft ──► pending_approval ──► approved
 
 ### 3.4 Line disposition (chosen on the web app at approval)
 
-| Disposition           | Applies to                        | Stock effect                                                |
-| --------------------- | --------------------------------- | ----------------------------------------------------------- |
-| `release_to_stock`    | `good`                            | enters put-away; becomes available only after put-away      |
-| `move_to_hold`        | `hold`, `damaged`                 | non-pickable HOLD bin, `inventory_status='hold'`            |
-| `move_to_quarantine`  | `quarantine`, `damaged`           | non-pickable QUARANTINE bin, `inventory_status='quality'`   |
-| `scrap`               | `damaged`, `quarantine`           | stock removed, exception closed                             |
-| `return_to_dealer`    | any                               | stock removed, exception closed with the dealer as recipient |
+| Disposition          | Applies to              | Stock effect                                                 |
+| -------------------- | ----------------------- | ------------------------------------------------------------ |
+| `release_to_stock`   | `good`                  | enters put-away; becomes available only after put-away       |
+| `move_to_hold`       | `hold`, `damaged`       | non-pickable HOLD bin, `inventory_status='hold'`             |
+| `move_to_quarantine` | `quarantine`, `damaged` | non-pickable QUARANTINE bin, `inventory_status='quality'`    |
+| `scrap`              | `damaged`, `quarantine` | stock removed, exception closed                              |
+| `return_to_dealer`   | any                     | stock removed, exception closed with the dealer as recipient |
 
 ---
 
@@ -167,7 +166,12 @@ GET /api/v1/returns/references?invoice_no=INV-2026-00123&warehouse_id=<uuid>
   "return_date": "2026-09-19",
   "note": "Dealer reported 2 damaged cookers on arrival",
   "lines": [
-    { "sku": "TTK-COOK-897", "quantity": 2, "uom": "NOS", "serials": ["TTK-1T1ZB0"] },
+    {
+      "sku": "TTK-COOK-897",
+      "quantity": 2,
+      "uom": "NOS",
+      "serials": ["TTK-1T1ZB0"]
+    },
     { "sku": "PTK-TOA-G001", "quantity": 1 }
   ]
 }
@@ -175,15 +179,15 @@ GET /api/v1/returns/references?invoice_no=INV-2026-00123&warehouse_id=<uuid>
 
 **Response `201`** — the same body as `GET /returns/registrations/{id}` (§5.3).
 
-| Field                 | Required | Notes                                                              |
-| --------------------- | -------- | ------------------------------------------------------------------ |
-| `reference_type`      | yes      | `invoice` \| `dealer` \| `warehouse`. Only `invoice` carries lines |
-| `invoice_no`          | for `invoice` | Must resolve through §4.1 — otherwise `400 RETURN_REFERENCE_INVALID` |
-| `party_id`            | for `dealer`  | Customer/dealer UUID                                           |
-| `warehouse_id`        | yes      | Receiving warehouse for the return                                 |
-| `lines[]`             | yes      | At least one; `quantity ≥ 1`; SKU must be active in the org        |
-| `lines[].serials[]`   | no       | When present the handheld validates each scanned unit against it    |
-| `registration_no`     | read-only | Server-generated, series `RR` (e.g. `RR-2026-00042`)               |
+| Field               | Required      | Notes                                                                |
+| ------------------- | ------------- | -------------------------------------------------------------------- |
+| `reference_type`    | yes           | `invoice` \| `dealer` \| `warehouse`. Only `invoice` carries lines   |
+| `invoice_no`        | for `invoice` | Must resolve through §4.1 — otherwise `400 RETURN_REFERENCE_INVALID` |
+| `party_id`          | for `dealer`  | Customer/dealer UUID                                                 |
+| `warehouse_id`      | yes           | Receiving warehouse for the return                                   |
+| `lines[]`           | yes           | At least one; `quantity ≥ 1`; SKU must be active in the org          |
+| `lines[].serials[]` | no            | When present the handheld validates each scanned unit against it     |
+| `registration_no`   | read-only     | Server-generated, series `RR` (e.g. `RR-2026-00042`)                 |
 
 ### 5.2 `GET /returns/registrations`
 
@@ -191,12 +195,26 @@ GET /api/v1/returns/references?invoice_no=INV-2026-00123&warehouse_id=<uuid>
 
 ```json
 {
-  "items": [ { "id": "…", "registration_no": "RR-2026-00042", "status": "ready",
-               "party_name": "Prestige Traders", "warehouse_name": "Ecity",
-               "warehouse_id": "…", "return_reason_code": "RETURN_DAMAGED",
-               "expected_qty": 3, "received_qty": 0, "created_at": "2026-09-19T09:12:00Z" } ],
-  "page": 1, "page_size": 20, "total_items": 1, "total_pages": 1,
-  "has_next": false, "has_prev": false
+  "items": [
+    {
+      "id": "…",
+      "registration_no": "RR-2026-00042",
+      "status": "ready",
+      "party_name": "Prestige Traders",
+      "warehouse_name": "Ecity",
+      "warehouse_id": "…",
+      "return_reason_code": "RETURN_DAMAGED",
+      "expected_qty": 3,
+      "received_qty": 0,
+      "created_at": "2026-09-19T09:12:00Z"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total_items": 1,
+  "total_pages": 1,
+  "has_next": false,
+  "has_prev": false
 }
 ```
 
@@ -233,7 +251,9 @@ Detail used by both the review screen and the handheld's expected list:
       "conditions": { "good": 1, "damaged": 0, "hold": 0, "quarantine": 0 }
     }
   ],
-  "sessions": [ { "id": "…", "status": "open", "started_at": "…", "worker_id": "…" } ]
+  "sessions": [
+    { "id": "…", "status": "open", "started_at": "…", "worker_id": "…" }
+  ]
 }
 ```
 
@@ -252,16 +272,32 @@ Detail used by both the review screen and the handheld's expected list:
 
 ### 6.1 `GET /returns/receipt-notes` — supervisor queue
 
-`?status=draft&warehouse_id=&registration_id=&page=&page_size=`
+`?status=pending_approval&warehouse_id=&registration_id=&page=&page_size=`
+
+The dock writes every note straight to `pending_approval` (§6.2), so this is the status a
+supervisor queue should ask for. `draft` is only reachable through the note's own lifecycle.
 
 ```json
 {
-  "items": [ { "id": "…", "note_no": "RRN-2026-00017", "status": "pending_approval",
-               "registration_no": "RR-2026-00042", "warehouse_name": "Ecity",
-               "expected_qty": 3, "received_qty": 2, "mismatch": true,
-               "damaged_qty": 1, "open_exceptions": 1,
-               "created_at": "2026-09-19T11:40:00Z" } ],
-  "page": 1, "page_size": 20, "total_items": 1, "total_pages": 1
+  "items": [
+    {
+      "id": "…",
+      "note_no": "RRN-2026-00017",
+      "status": "pending_approval",
+      "registration_no": "RR-2026-00042",
+      "warehouse_name": "Ecity",
+      "expected_qty": 3,
+      "received_qty": 2,
+      "mismatch": true,
+      "damaged_qty": 1,
+      "open_exceptions": 1,
+      "created_at": "2026-09-19T11:40:00Z"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total_items": 1,
+  "total_pages": 1
 }
 ```
 
@@ -315,7 +351,16 @@ Same grouped shape as a receiving slip so the existing review component can be r
 ### 6.3 `POST /returns/receipt-notes/{id}/approve`
 
 ```json
-{ "note": "Damaged unit accepted for quarantine", "dispositions": [ { "line_id": "…", "action": "move_to_quarantine", "reason_code": "RETURN_DAMAGED" } ] }
+{
+  "note": "Damaged unit accepted for quarantine",
+  "dispositions": [
+    {
+      "line_id": "…",
+      "action": "move_to_quarantine",
+      "reason_code": "RETURN_DAMAGED"
+    }
+  ]
+}
 ```
 
 - Requires warehouse-manager authority (`409 RETURN_APPROVAL_REQUIRED` otherwise, with `hint`).
@@ -333,7 +378,12 @@ Same grouped shape as a receiving slip so the existing review component can be r
 Per-line final decision; safe to call for a single line.
 
 ```json
-{ "line_id": "…", "action": "move_to_hold", "reason_code": "HOLD", "note": "Awaiting QA" }
+{
+  "line_id": "…",
+  "action": "move_to_hold",
+  "reason_code": "HOLD",
+  "note": "Awaiting QA"
+}
 ```
 
 - Allowed actions: `release_to_stock`, `move_to_hold`, `move_to_quarantine`, `scrap`,
@@ -352,7 +402,14 @@ Creates put-away tasks for `release_to_stock` lines and keeps the rest in the no
 
 ```json
 {
-  "put_away_lists": [ { "id": "…", "list_no": "PA-2026-00119", "assigned_to": "…", "item_count": 1 } ],
+  "put_away_lists": [
+    {
+      "id": "…",
+      "list_no": "PA-2026-00119",
+      "assigned_to": "…",
+      "item_count": 1
+    }
+  ],
   "segregated_lines": 1,
   "note_status": "approved"
 }
@@ -365,7 +422,11 @@ Creates put-away tasks for `release_to_stock` lines and keeps the rest in the no
 ### 6.7 `GET /returns/receipt-notes/{id}/slip`
 
 The Return Slip document: expected vs received per line, serials, conditions, reason codes,
-approver, immutable timestamps. JSON by default; `?format=csv` (and later `pdf`) for export.
+approver, immutable timestamps.
+
+- **JSON only today.** The endpoint returns `ReturnSlipResponse`; it has no `format` parameter.
+  CSV/PDF export is still open in the gap analysis (`EXPORT_*`), so do not build a download
+  button against `?format=csv` yet.
 
 ```json
 {
@@ -377,8 +438,16 @@ approver, immutable timestamps. JSON by default; `?format=csv` (and later `pdf`)
   "warehouse": { "name": "Ecity" },
   "approved_by": "…",
   "approved_at": "…",
-  "lines": [ { "sku": "…", "expected_qty": 3, "received_qty": 2, "conditions": { "good": 1, "damaged": 1 },
-               "reason_codes": ["RETURN_DAMAGED"], "serials": ["TTK-1T1ZB0"] } ],
+  "lines": [
+    {
+      "sku": "…",
+      "expected_qty": 3,
+      "received_qty": 2,
+      "conditions": { "good": 1, "damaged": 1 },
+      "reason_codes": ["RETURN_DAMAGED"],
+      "serials": ["TTK-1T1ZB0"]
+    }
+  ],
   "totals": { "expected_qty": 3, "received_qty": 2, "short_qty": 1 }
 }
 ```
@@ -407,11 +476,11 @@ that condition — `damaged` → `DAMAGED`, `RETURN_DAMAGED`, `RETURN_SCRAP`; `q
 `applies_to_conditions` (empty for inbound-only codes) so the mapping is data-driven rather than
 hard-coded.
 
-| Picker                    | Filter                                                         |
-| ------------------------- | -------------------------------------------------------------- |
-| Registration return reason | `category === 'return_good' \| 'return_damage' \| 'return_scrap'` |
-| Per-line disposition reason | category matching the condition (`damage`, `quarantine`, `hold`) |
-| Scrap / dealer return     | `category === 'return_scrap'`                                   |
+| Picker                      | Filter                                                            |
+| --------------------------- | ----------------------------------------------------------------- |
+| Registration return reason  | `category === 'return_good' \| 'return_damage' \| 'return_scrap'` |
+| Per-line disposition reason | category matching the condition (`damage`, `quarantine`, `hold`)  |
+| Scrap / dealer return       | `category === 'return_scrap'`                                     |
 
 New codes are seeded by the returns MVP (`RETURN_GOOD`, `RETURN_DAMAGED`, `RETURN_SCRAP`); see the
 gap-analysis appendix for the proposed set.
@@ -424,30 +493,34 @@ Errors for `ValidationError` / `NotFoundError` / `StateError` use the envelope a
 receiving:
 
 ```json
-{ "error": "RETURN_UNIT_NOT_REGISTERED", "message": "…", "hint": "…",
-  "details": [ { "field": "sku", "reason": "…", "hint": "…" } ] }
+{
+  "error": "RETURN_UNIT_NOT_REGISTERED",
+  "message": "…",
+  "hint": "…",
+  "details": [{ "field": "sku", "reason": "…", "hint": "…" }]
+}
 ```
 
 http status: `400` validation · `404` not found · `409` state conflict · `403` permission.
 
-| HTTP | `error`                              | When                                              | UI behaviour                                       |
-| ---- | ------------------------------------ | ------------------------------------------------- | -------------------------------------------------- |
-| 400  | `RETURNS_REFERENCE_NOT_FOUND`        | Invoice/party/warehouse did not resolve           | Keep the form, show `hint`, focus the field         |
-| 400  | `RETURN_REFERENCE_REQUIRED`          | No reference supplied                             | Inline error on the reference picker                |
-| 400  | `RETURN_REFERENCE_INVALID`           | Reference type/invoice combination not usable     | Show `details[].hint`                                |
-| 400  | `RETURN_LINES_REQUIRED`              | Empty `lines[]`                                   | Disable submit until a line is added                |
-| 400  | `RETURN_LINE_INVALID`                | qty ≤ 0, unknown/inactive SKU, qty > returnable    | Inline error per line (`details[].field`)            |
-| 404  | `RETURN_REGISTRATION_NOT_FOUND`      | Wrong/foreign-tenant id                            | Back to the list + toast                            |
-| 409  | `RETURN_REGISTRATION_NOT_CANCELLABLE`| Units already scanned                             | Disable Cancel, explain why                          |
-| 404  | `RETURN_RECEIPT_NOTE_NOT_FOUND`      | Wrong id                                           | Back to the queue                                    |
-| 409  | `RETURN_NOTE_NOT_PENDING_APPROVAL`   | Approved/rejected already                          | Reload the note, hide the approve bar                |
-| 409  | `RETURN_NOTE_HAS_UNCLASSIFIED_LINES` | A line is still `pending`                          | Highlight those lines, block approve                 |
-| 409  | `RETURN_NOTE_HAS_OPEN_EXCEPTIONS`    | An exception must be disposed first                | Deep-link to the exception                           |
-| 409  | `RETURN_APPROVAL_REQUIRED`           | Caller is not a warehouse manager                  | Show "Ask a warehouse manager"                       |
-| 400  | `RETURN_DISPOSITION_INVALID`         | Condition/action mismatch                          | Constrain the dropdown by condition                  |
-| 409  | `RETURN_PUTAWAY_ALREADY_GENERATED`   | Put-away generated twice                           | Reload; show the existing lists                      |
-| 409  | `RETURN_REGISTRATION_CANCELLED`      | Acting on a cancelled registration                 | Read-only view                                        |
-| 403  | —                                    | Missing `return.*` permission                      | Hide the action entirely                             |
+| HTTP | `error`                               | When                                            | UI behaviour                                |
+| ---- | ------------------------------------- | ----------------------------------------------- | ------------------------------------------- |
+| 404  | `RETURNS_REFERENCE_NOT_FOUND`         | Invoice/party/warehouse did not resolve         | Keep the form, show `hint`, focus the field |
+| 400  | `RETURN_REFERENCE_REQUIRED`           | No reference supplied                           | Inline error on the reference picker        |
+| 400  | `RETURN_REFERENCE_INVALID`            | Reference type/invoice combination not usable   | Show `details[].hint`                       |
+| 400  | `RETURN_LINES_REQUIRED`               | Empty `lines[]`                                 | Disable submit until a line is added        |
+| 400  | `RETURN_LINE_INVALID`                 | qty ≤ 0, unknown/inactive SKU, qty > returnable | Inline error per line (`details[].field`)   |
+| 404  | `RETURN_REGISTRATION_NOT_FOUND`       | Wrong/foreign-tenant id                         | Back to the list + toast                    |
+| 409  | `RETURN_REGISTRATION_NOT_CANCELLABLE` | Units already scanned                           | Disable Cancel, explain why                 |
+| 404  | `RETURN_RECEIPT_NOTE_NOT_FOUND`       | Wrong id                                        | Back to the queue                           |
+| 409  | `RETURN_NOTE_NOT_PENDING_APPROVAL`    | Approved/rejected already                       | Reload the note, hide the approve bar       |
+| 409  | `RETURN_NOTE_HAS_UNCLASSIFIED_LINES`  | A line is still `pending`                       | Highlight those lines, block approve        |
+| 409  | `RETURN_NOTE_HAS_OPEN_EXCEPTIONS`     | An exception must be disposed first             | Deep-link to the exception                  |
+| 409  | `RETURN_APPROVAL_REQUIRED`            | Caller is not a warehouse manager               | Show "Ask a warehouse manager"              |
+| 400  | `RETURN_DISPOSITION_INVALID`          | Condition/action mismatch                       | Constrain the dropdown by condition         |
+| 409  | `RETURN_PUTAWAY_ALREADY_GENERATED`    | Put-away generated twice                        | Reload; show the existing lists             |
+| 409  | `RETURN_REGISTRATION_CANCELLED`       | Acting on a cancelled registration              | Read-only view                              |
+| 403  | —                                     | Missing `return.*` permission                   | Hide the action entirely                    |
 
 > **Change control:** these codes are the interface contract. If the backend must differ, the two
 > integration docs and the gap analysis are updated together — do not ship a silent rename.
@@ -456,14 +529,14 @@ http status: `400` validation · `404` not found · `409` state conflict · `403
 
 ## 9. Permissions
 
-| Action                                   | Permission                            |
-| ---------------------------------------- | ------------------------------------- |
-| View registrations / notes               | `return.read`                         |
-| Create / cancel a registration            | `return.register`                     |
-| Approve / reject a note                  | `return.approve` + **manager** (`assert_manager`) |
-| Per-line disposition                     | `return.dispose` + **manager**        |
-| Generate put-away                        | `return.approve`                      |
-| Export the Return Slip                   | `return.read`                         |
+| Action                         | Permission                                        |
+| ------------------------------ | ------------------------------------------------- |
+| View registrations / notes     | `return.read`                                     |
+| Create / cancel a registration | `return.register`                                 |
+| Approve / reject a note        | `return.approve` + **manager** (`assert_manager`) |
+| Per-line disposition           | `return.dispose` + **manager**                    |
+| Generate put-away              | `return.approve`                                  |
+| Export the Return Slip         | `return.read`                                     |
 
 `return.*` are new codes added alongside the existing `inbound_exception.*` in
 `app/core/authorization.py` (R-10 / X-02). Roles: warehouse manager / org admin get all;
@@ -490,23 +563,23 @@ supervisors get `return.read` + `return.approve`; the dock role gets `return.rec
 
 ## 11. Frontend test checklist
 
-| #  | Scenario                              | Call                                                    | Expect                                                        |
-| -- | ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- |
-| 1  | Reference lookup by invoice           | `GET /returns/references?invoice_no=…`                  | `200`, lines with `returnable_qty`                             |
-| 2  | Unknown invoice                       | same, bogus number                                      | `400 RETURNS_REFERENCE_NOT_FOUND` + hint                        |
-| 3  | Create registration                   | `POST /returns/registrations`                           | `201`, `registration_no` `RR-…`, status `draft`/`ready`         |
-| 4  | Create with qty > returnable          | same                                                    | `400 RETURN_LINE_INVALID`, per-line error                       |
-| 5  | Create with no lines                  | same, `lines: []`                                       | `400 RETURN_LINES_REQUIRED`                                     |
-| 6  | Cancel before any scan                | `POST /registrations/{id}/cancel`                       | `200`, status `cancelled`                                       |
-| 7  | Cancel after a scan                   | same                                                    | `409 RETURN_REGISTRATION_NOT_CANCELLABLE`                       |
-| 8  | Note queue badges                     | `GET /returns/receipt-notes?status=pending_approval`    | `mismatch` / `damaged_qty` / `open_exceptions` set correctly     |
-| 9  | Approve with an unclassified line     | `POST …/approve`                                        | `409 RETURN_NOTE_HAS_UNCLASSIFIED_LINES`                        |
-| 10 | Approve as non-manager                | same with a worker token                                | `409 RETURN_APPROVAL_REQUIRED` (or `403`)                       |
-| 11 | Disposition per line                  | `POST …/disposition`                                    | `200`, line shows `disposition`, stock status tag updates        |
-| 12 | Invalid disposition for condition     | `release_to_stock` on a `quarantine` line               | `400 RETURN_DISPOSITION_INVALID`                                |
-| 13 | Generate put-away twice               | `POST …/generate-put-away` twice                        | `409 RETURN_PUTAWAY_ALREADY_GENERATED` on the second call        |
-| 14 | Return Slip export                    | `GET …/slip` (and `?format=csv`)                        | Document with conditions, serials, approver, timestamps          |
-| 15 | Cross-tenant id                       | any `{id}` from another org                             | `404`, never data                                                |
+| #   | Scenario                          | Call                                                 | Expect                                                       |
+| --- | --------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| 1   | Reference lookup by invoice       | `GET /returns/references?invoice_no=…`               | `200`, lines with `returnable_qty`                           |
+| 2   | Unknown invoice                   | same, bogus number                                   | `404 RETURNS_REFERENCE_NOT_FOUND` + hint                     |
+| 3   | Create registration               | `POST /returns/registrations`                        | `201`, `registration_no` `RR-…`, status `draft`/`ready`      |
+| 4   | Create with qty > returnable      | same                                                 | `400 RETURN_LINE_INVALID`, per-line error                    |
+| 5   | Create with no lines              | same, `lines: []`                                    | `400 RETURN_LINES_REQUIRED`                                  |
+| 6   | Cancel before any scan            | `POST /registrations/{id}/cancel`                    | `200`, status `cancelled`                                    |
+| 7   | Cancel after a scan               | same                                                 | `409 RETURN_REGISTRATION_NOT_CANCELLABLE`                    |
+| 8   | Note queue badges                 | `GET /returns/receipt-notes?status=pending_approval` | `mismatch` / `damaged_qty` / `open_exceptions` set correctly |
+| 9   | Approve with an unclassified line | `POST …/approve`                                     | `409 RETURN_NOTE_HAS_UNCLASSIFIED_LINES`                     |
+| 10  | Approve as non-manager            | same with a worker token                             | `409 RETURN_APPROVAL_REQUIRED` (or `403`)                    |
+| 11  | Disposition per line              | `POST …/disposition`                                 | `200`, line shows `disposition`, stock status tag updates    |
+| 12  | Invalid disposition for condition | `release_to_stock` on a `quarantine` line            | `400 RETURN_DISPOSITION_INVALID`                             |
+| 13  | Generate put-away twice           | `POST …/generate-put-away` twice                     | `409 RETURN_PUTAWAY_ALREADY_GENERATED` on the second call    |
+| 14  | Return Slip export                | `GET …/slip` (and `?format=csv`)                     | Document with conditions, serials, approver, timestamps      |
+| 15  | Cross-tenant id                   | any `{id}` from another org                          | `404`, never data                                            |
 
 ---
 
@@ -532,18 +605,18 @@ flip once answered:
 
 ## 13. Backend implementation map (for the API reviewer)
 
-| Concern                        | Where                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| Models                         | `app/models/returns.py` (registration, session, receipt note — new)                |
-| Service                        | `app/services/return_service.py` (registration, session, note, disposition, put-away) |
-| Endpoints                      | `app/api/v1/endpoints/returns.py` + registration in `app/api/v1/router.py`          |
-| Schemas                        | `app/schemas/returns.py`                                                           |
-| Numbering                      | `return_registration` (`RR`) + `return_receipt` (`RRN`) in `document_numbering.py`  |
-| Permissions                    | `return.read` / `.register` / `.receive` / `.classify` / `.approve` / `.dispose` in `app/core/authorization.py`; seeded by identity migration `022` |
-| Migrations                     | core `124_returns_module` → `return_registrations`, `return_registration_items`, `return_sessions`, `return_session_items`, `return_receipt_notes`, `return_receipt_note_items`, `return_receipt_note_events` |
-| Reason codes                   | `RETURN_GOOD` / `RETURN_DAMAGED` / `RETURN_SCRAP` seeded by migration `124`          |
-| Reuse (no new endpoint)        | `InboundExceptionService.assert_manager`, `BinStockService`, `PutAwayService` bin allocation, `DocumentNumberingService`, `GET /inbound/exception-reasons`, `GET /put-away` + put-away completion |
-| Demo seeder                    | `app/_seed_returns_demo.py` — creates dispatch references and drives both warehouses end-to-end |
+| Concern                 | Where                                                                                                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Models                  | `app/models/returns.py` (registration, session, receipt note — new)                                                                                                                                           |
+| Service                 | `app/services/return_service.py` (registration, session, note, disposition, put-away)                                                                                                                         |
+| Endpoints               | `app/api/v1/endpoints/returns.py` + registration in `app/api/v1/router.py`                                                                                                                                    |
+| Schemas                 | `app/schemas/returns.py`                                                                                                                                                                                      |
+| Numbering               | `return_registration` (`RR`) + `return_receipt` (`RRN`) in `document_numbering.py`                                                                                                                            |
+| Permissions             | `return.read` / `.register` / `.receive` / `.classify` / `.approve` / `.dispose` in `app/core/authorization.py`; seeded by identity migration `022`                                                           |
+| Migrations              | core `124_returns_module` → `return_registrations`, `return_registration_items`, `return_sessions`, `return_session_items`, `return_receipt_notes`, `return_receipt_note_items`, `return_receipt_note_events` |
+| Reason codes            | `RETURN_GOOD` / `RETURN_DAMAGED` / `RETURN_SCRAP` seeded by migration `124`                                                                                                                                   |
+| Reuse (no new endpoint) | `InboundExceptionService.assert_manager`, `BinStockService`, `PutAwayService` bin allocation, `DocumentNumberingService`, `GET /inbound/exception-reasons`, `GET /put-away` + put-away completion             |
+| Demo seeder             | `app/_seed_returns_demo.py` — creates dispatch references and drives both warehouses end-to-end                                                                                                               |
 
 ---
 
@@ -571,7 +644,7 @@ contract. Screens built against §3–§6 keep working; these only remove ambigu
    `already_returned_qty` is still derived per line so the UI can cap the input.
 4. **Serial validation only applies when the registration supplies `lines[].serials`.** With no
    serial list the handheld validates SKU + quantity only, which keeps bulk returns working
-   (open question §12 Q3). When serials *are* supplied, a mismatch is the hard
+   (open question §12 Q3). When serials _are_ supplied, a mismatch is the hard
    `409 RETURN_SERIAL_NOT_REGISTERED` stop described in §4.1.
 
 Two further behaviours worth knowing:
