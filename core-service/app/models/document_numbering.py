@@ -38,6 +38,8 @@ DOCUMENT_TYPES = [
     "asn_order",
     "outbound_order",
     "packing_slip",
+    "return_registration",
+    "return_receipt",
 ]
 
 # Default prefix per document type (used when seeding new org config)
@@ -65,6 +67,8 @@ DEFAULT_PREFIXES = {
     "asn_order": "ASN",
     "outbound_order": "ORD",
     "packing_slip": "PKSL",
+    "return_registration": "RR",
+    "return_receipt": "RRN",
 }
 
 

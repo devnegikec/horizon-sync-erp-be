@@ -111,13 +111,43 @@ class RejectSlipRequest(BaseModel):
 
 
 class FlagLineItemRequest(BaseModel):
-    """Schema for flagging a receiving slip line item."""
+    """Schema for flagging a receiving slip line item.
+
+    ``short`` records a shortage against the ASN expectation (no physical stock
+    is segregated). ``damaged``/``excess``/``hold``/``quarantine`` segregate the
+    units into a non-pickable HOLD/QUARANTINE bin and create a reason-coded
+    inbound exception for supervisor disposition.
+    """
 
     flag: str = Field(
-        ..., description="Flag value: short, damaged, excess, hold, or quarantine"
+        ...,
+        description=("Flag value: short, damaged, excess, hold, or quarantine"),
     )
-    reason_code: str | None = Field(None, max_length=80)
-    destination: str | None = Field(None, description="HOLD or QUARANTINE")
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Reason code from GET /inbound/exception-reasons (e.g. SHORT_PHYSICAL, "
+            "DAMAGED, EXCESS, HOLD, QUARANTINE). Required — when missing or unknown "
+            "the API answers REASON_CODE_REQUIRED / REASON_CODE_INVALID and lists "
+            "the codes that are valid for this flag."
+        ),
+    )
+    destination: str | None = Field(
+        None,
+        description=(
+            "HOLD or QUARANTINE segregation bin. Required for damaged/excess/hold/"
+            "quarantine; must be omitted for short."
+        ),
+    )
+    short_qty: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Units missing against the ASN expectation. Required when flag=short, "
+            "must be omitted otherwise."
+        ),
+    )
     notes: str | None = Field(
         None, max_length=1000, description="Optional notes about the discrepancy"
     )
@@ -148,8 +178,34 @@ class InboundExceptionClassifyRequest(BaseModel):
     )
     reason_code: str = Field(..., max_length=80)
     destination: str | None = Field(
-        None, description="HOLD or QUARANTINE where physical segregation is required"
+        None,
+        description="HOLD, QUARANTINE or DAMAGED where physical segregation is required",
     )
+    note: str | None = Field(None, max_length=2000)
+
+
+class UnreadableQRReportRequest(BaseModel):
+    """Operator report of a carton whose QR label cannot be scanned (G-Q1).
+
+    Nothing is decoded, so no stock is created: the carton reference is recorded
+    as a reason-coded HOLD exception and a supervisor is alerted.
+    """
+
+    session_id: UUID = Field(
+        ..., description="Open receiving session the carton arrived on"
+    )
+    carton_reference: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description=(
+            "Printed reference of the unreadable carton (serial, batch or ASN line) "
+            "so a supervisor can locate it"
+        ),
+    )
+    sku: str | None = Field(None, max_length=100)
+    batch_number: str | None = Field(None, max_length=100)
+    quantity: int = Field(1, ge=1)
     note: str | None = Field(None, max_length=2000)
 
 
@@ -221,12 +277,19 @@ class ScanResult(BaseModel):
     qr_identifier: str
     sku: str
     raw_quantity: int
-    batch_number: str
+    batch_number: str | None = None
     packaging_unit_id: UUID | None = None
     scanned_at: str | None = None
     total_boxes_scanned: int = 0
     exception_id: str | None = None
     exception_status: str | None = None
+    # Over-receipt control (G-E1 / E-12): when this scan pushes the ASN line over
+    # its expected quantity, the extra units are held and a decision is required.
+    requires_decision: bool = False
+    decision_options: list[str] = Field(default_factory=list)
+    excess_qty: float | None = None
+    expected_qty: float | None = None
+    scanned_qty: float | None = None
 
 
 class BatchBreakdown(BaseModel):
@@ -345,7 +408,12 @@ class ReceivingSlipListItem(BaseModel):
 
 
 class FlaggedItemResponse(BaseModel):
-    """Response schema for a flagged receiving slip line item."""
+    """Response schema for a flagged receiving slip line item.
+
+    ``exception_*`` fields are populated only for segregation flags
+    (``damaged``/``excess``/``hold``/``quarantine``), which create an inbound
+    exception the supervisor must dispose of.
+    """
 
     id: str
     slip_id: str
@@ -354,15 +422,34 @@ class FlaggedItemResponse(BaseModel):
     quantity: int
     box_count: int
     flag: str
+    reason_code: str | None = None
+    short_qty: int | None = Field(
+        None, description="Units short against the ASN expectation (flag=short)"
+    )
+    condition_code: str | None = None
+    exception_id: str | None = None
+    exception_status: str | None = None
+    destination: str | None = None
+    destination_location_id: str | None = None
     notes: str | None = None
 
 
 class InboundExceptionReasonResponse(BaseModel):
+    """A tenant-configurable exception reason code.
+
+    ``applies_to_conditions`` lists the **return** unit conditions this reason
+    is offered for (``good`` / ``damaged`` / ``hold`` / ``quarantine``). It is
+    empty for inbound-only reasons such as ``SHORT_PHYSICAL`` or
+    ``QR_UNREADABLE``, so a client can filter the condition picker from data
+    instead of hard-coding a category map.
+    """
+
     code: str
     name: str
     category: str
     default_destination: str | None = None
-    requires_approval: bool
+    requires_approval: bool = False
+    applies_to_conditions: list[str] = Field(default_factory=list)
 
 
 class InboundEvidenceResponse(BaseModel):
@@ -434,6 +521,8 @@ class InboundExceptionBulkDispositionResponse(BaseModel):
 
 
 class InboundShortBalanceResponse(BaseModel):
+    """One ASN-line shortage balance (expected vs actually received)."""
+
     id: str
     asn_order_id: str
     asn_order_item_id: str
@@ -444,6 +533,13 @@ class InboundShortBalanceResponse(BaseModel):
     received_qty: float
     short_qty: float
     status: str
+    reason_code: str | None = None
+    note: str | None = None
+    close_reason_code: str | None = None
+    close_note: str | None = None
+    closed_by: str | None = None
+    closed_at: str | None = None
+    created_at: str | None = None
     updated_at: str | None = None
 
 
@@ -456,6 +552,65 @@ class ReceivingSlipPagination(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+
+class InboundShortBalanceEventResponse(BaseModel):
+    """One append-only event in a shortage balance's history."""
+
+    id: str
+    # Null once the parent balance is purged; the audit row itself is retained.
+    balance_id: str | None = None
+    receiving_slip_id: str | None = None
+    event_type: str
+    from_status: str | None = None
+    to_status: str
+    expected_qty: float
+    received_qty: float
+    short_qty: float
+    reason_code: str | None = None
+    note: str | None = None
+    actor_id: str | None = None
+    created_at: str | None = None
+
+
+class InboundShortBalanceSummary(BaseModel):
+    """Aggregated shortage totals for the supervisor worklist."""
+
+    total: int
+    open_count: int
+    resolved_count: int
+    written_off_count: int
+    open_short_qty: float
+    total_short_qty: float
+
+
+class InboundShortBalanceListResponse(BaseModel):
+    """Paginated shortage ledger with status totals."""
+
+    balances: list[InboundShortBalanceResponse]
+    pagination: ReceivingSlipPagination
+    summary: InboundShortBalanceSummary
+
+
+class ShortBalanceCloseRequest(BaseModel):
+    """Formal closure of a residual shortage (manager approved)."""
+
+    outcome: str = Field(
+        "written_off",
+        description=(
+            "written_off = accept the residual short as a loss (reason required); "
+            "resolved_by_receipt = the gap was received later"
+        ),
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Closure reason code from GET /inbound/exception-reasons "
+            "(category 'short'), e.g. SHORTAGE_WRITE_OFF"
+        ),
+    )
+    note: str | None = Field(None, max_length=2000)
 
 
 class ReceivingSlipStatusCounts(BaseModel):
@@ -546,10 +701,36 @@ class ItemStatusUpdateRequest(BaseModel):
 
     item_id: UUID
     status: str = Field(
-        ..., description="New status: 'rejected', 'ok', 'short', or 'damaged'"
+        ...,
+        description=(
+            "New status: 'rejected', 'ok', 'short', 'damaged', 'excess', "
+            "'hold', or 'quarantine'"
+        ),
     )
     reason: str | None = Field(
         None, max_length=1000, description="Reason (used when status is 'rejected')"
+    )
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Exception/shortage reason code. When omitted it defaults to the "
+            "canonical code for the status: SHORT_PHYSICAL for 'short', "
+            "DAMAGED for 'damaged', EXCESS for 'excess', HOLD for 'hold' and "
+            "QUARANTINE for 'quarantine'."
+        ),
+    )
+    short_qty: int | None = Field(
+        None,
+        ge=1,
+        description="Units missing against the ASN expectation (status='short')",
+    )
+    destination: str | None = Field(
+        None,
+        description=(
+            "HOLD or QUARANTINE for segregation statuses "
+            "(damaged/excess/hold/quarantine)"
+        ),
     )
     notes: str | None = Field(
         None, max_length=1000, description="Optional additional notes"

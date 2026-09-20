@@ -12,6 +12,7 @@ Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 14.1
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -291,19 +292,54 @@ class InboundService:
             qr_data, db=self.db, organization_id=organization_id
         )
 
-        # Check for duplicate qr_identifier within this session
-        existing_items = self.session_repo.get_items(session_id)
-        for item in existing_items:
-            if item.qr_identifier == payload.id:
-                raise ValidationError(
-                    message="Duplicate scan: this box has already been scanned in this session",
-                    details=[
-                        {
-                            "field": "qr_identifier",
-                            "reason": f"QR identifier '{payload.id}' already exists in session",
-                        }
-                    ],
-                )
+        # The duplicate gates below are check-then-insert, so concurrent scans of
+        # the same label could both pass and each create a receipt line. A
+        # transaction-scoped advisory lock keyed on the identity serializes them
+        # (hash collisions only ever over-serialize, never under-serialize).
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"inbound-scan:{organization_id}:{payload.id}"},
+        )
+
+        # ── Session-scoped duplicate gate ────────────────────────────────
+        # Both axes are consulted: the receipt lines (``scan_session_items``) and
+        # the dual-axis tracking rows via ``can_scan``, which also covers a label
+        # re-presented after its tracking row already exists.
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        session_duplicate = not ScannedItemTrackingService(self.db).can_scan(
+            payload.id, session_id
+        ) or any(
+            item.qr_identifier == payload.id
+            for item in self.session_repo.get_items(session_id)
+        )
+        if session_duplicate:
+            raise ValidationError(
+                message="Duplicate scan: this box has already been scanned in this session",
+                details=[
+                    {
+                        "field": "qr_identifier",
+                        "reason": f"QR identifier '{payload.id}' already exists in session",
+                    }
+                ],
+            )
+
+        # ── Active-stock duplicate gate (G-E3 / E-13) ────────────────────
+        # A session-scoped check is not enough: the same label can be presented
+        # again in a brand-new session while the unit is already on hand. Internal
+        # transfers legitimately re-scan serials that exist in the source
+        # warehouse, so they are excluded here and validated by the transfer path.
+        if not self._session_is_internal_transfer(session, organization_id):
+            self._reject_duplicate_active_stock(
+                qr_identifier=payload.id,
+                payload=payload,
+                session=session,
+                organization_id=organization_id,
+                worker_id=worker_id,
+                qr_data=qr_data,
+            )
 
         # ── Resolve the inventory Item for this scan ──
         # - Unit/serial scans: payload.id is the ProductItem serial, so resolve
@@ -315,6 +351,10 @@ class InboundService:
 
         item = None
         pending_asn_exception_type: str | None = None
+        pending_asn_reason_code: str | None = None
+        pending_notification = None
+        excess_alert: dict | None = None
+        asn_order = None
 
         product_item = (
             self.db.query(ProductItem)
@@ -432,6 +472,7 @@ class InboundService:
                 # be linked to the generated receipt line and need a manager's
                 # disposition before becoming normal receiving inventory.
                 pending_asn_exception_type = "unexpected_known_sku"
+                pending_asn_reason_code = "UNEXPECTED_KNOWN_SKU"
 
             # ── Internal transfer: verify + receive the scanned serial ──
             if asn_order.asn_type == "internal_transfer" and item is not None:
@@ -452,6 +493,28 @@ class InboundService:
             )
             if pu is not None:
                 packaging_unit_id = pu.id
+
+        # ── Scan-time excess check (G-E1 / E-12) ───────────────────────────
+        # Nothing compared scanned quantity to the ASN expectation at the dock, so
+        # over-receipts were only discovered later in slip reconciliation. When
+        # this scan tips the line over its expected quantity, the extra units are
+        # segregated in HOLD and a supervisor decision is requested.
+        if (
+            asn_order is not None
+            and asn_order.asn_type != "internal_transfer"
+            and item is not None
+            and pending_asn_exception_type is None
+        ):
+            excess_alert = self._detect_scan_excess(
+                session_id=session_id,
+                asn_order=asn_order,
+                item=item,
+                payload=payload,
+                packaging_unit_id=packaging_unit_id,
+            )
+            if excess_alert is not None:
+                pending_asn_exception_type = "excess_receipt"
+                pending_asn_reason_code = "EXCESS"
 
         # Add scan session item
         item_data = {
@@ -529,7 +592,7 @@ class InboundService:
                 session_id=session_id,
                 asn_order_id=session.asn_order_id,
                 exception_type=pending_asn_exception_type,
-                reason_code="UNEXPECTED_KNOWN_SKU",
+                reason_code=pending_asn_reason_code or "UNEXPECTED_KNOWN_SKU",
                 qr_identifier=payload.id,
                 sku=payload.sku,
                 batch_number=payload.batch,
@@ -550,6 +613,10 @@ class InboundService:
                 organization_id,
                 payload.batch,
                 commit=False,
+                # Segregated stock is not sellable: never report it as available.
+                inventory_status=InboundExceptionService.inventory_status_for_destination(
+                    "HOLD"
+                ),
             )
             tracking.receiving_status = "hold"
             tracking.putaway_status = "blocked"
@@ -558,7 +625,10 @@ class InboundService:
             tracking.stock_location_id = hold.id
             exception.destination_location_id = hold.id
             exception_id = str(exception.id)
+            pending_notification = exception
         self.db.commit()
+        if pending_notification is not None:
+            InboundExceptionService(self.db).notify_supervisors(pending_notification)
 
         return {
             "scan_item_id": str(scan_item.id),
@@ -574,6 +644,200 @@ class InboundService:
             "total_boxes_scanned": session.total_boxes_scanned,
             "exception_id": exception_id,
             "exception_status": "pending_approval" if exception_id else None,
+            # Decision-required response for an over-receipt (E-12): the extra
+            # units are already in HOLD and wait for a supervisor disposition.
+            "requires_decision": excess_alert is not None,
+            "decision_options": (
+                list(excess_alert["decision_options"]) if excess_alert else []
+            ),
+            "excess_qty": excess_alert["excess_qty"] if excess_alert else None,
+            "expected_qty": excess_alert["expected_qty"] if excess_alert else None,
+            "scanned_qty": excess_alert["scanned_qty"] if excess_alert else None,
+        }
+
+    # ------------------------------------------------------------------
+    # SCAN-TIME CONTROLS (duplicate identity, excess receipt)
+    # ------------------------------------------------------------------
+
+    def _session_is_internal_transfer(
+        self, session: ScanSession, organization_id: UUID
+    ) -> bool:
+        """True when the session's ASN is an internal transfer."""
+        if not session.asn_order_id:
+            return False
+        from app.models.asn_order import AsnOrder
+
+        return (
+            self.db.query(AsnOrder.asn_type)
+            .filter(
+                AsnOrder.id == session.asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .scalar()
+        ) == "internal_transfer"
+
+    def _reject_duplicate_active_stock(
+        self,
+        *,
+        qr_identifier: str,
+        payload,
+        session: ScanSession,
+        organization_id: UUID,
+        worker_id: UUID,
+        qr_data: str,
+    ) -> None:
+        """Hard-stop a scan whose identity is already in active stock (E-13).
+
+        The exception is recorded (and the supervisor alerted) *before* the scan
+        is rejected, so the attempted double receipt stays visible, and no stock
+        or receipt line is created for it.
+        """
+        from app.services.inbound_exception_service import (
+            DUPLICATE_SERIAL_REASON,
+            InboundExceptionService,
+        )
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        hit = ScannedItemTrackingService(self.db).find_active_stock(
+            qr_identifier, organization_id
+        )
+        if hit is None:
+            return
+
+        exception_service = InboundExceptionService(self.db)
+        exception = exception_service.create_scan_exception(
+            organization_id=organization_id,
+            warehouse_id=session.warehouse_id,
+            session_id=session.id,
+            asn_order_id=session.asn_order_id,
+            exception_type="duplicate_serial",
+            reason_code=DUPLICATE_SERIAL_REASON,
+            qr_identifier=qr_identifier,
+            sku=payload.sku,
+            batch_number=payload.batch,
+            quantity=payload.qty or 1,
+            raw_qr_data=qr_data,
+            actor_id=worker_id,
+        )
+        self.db.commit()
+        exception_service.notify_supervisors(exception)
+        raise StateError(
+            message=(
+                "Duplicate identity: this carton or unit is already in stock and "
+                "cannot be received again"
+            ),
+            current_state="already_in_stock",
+            required_state=["not_in_stock"],
+            code="DUPLICATE_SERIAL",
+            hint=(
+                f"'{qr_identifier}' is {hit['detail']}. Do not receive it again — "
+                "raise a stock investigation if the physical unit is at the dock."
+            ),
+        )
+
+    def _matched_asn_line(self, asn_order, item, payload):
+        """The ASN line this scan belongs to, by item or SKU/GTIN/item-code."""
+        keys: set[str] = set()
+        if item is not None:
+            keys.update(key for key in (item.sku, item.gtin, item.item_code) if key)
+        if payload.sku:
+            keys.add(payload.sku)
+
+        for line in asn_order.items:
+            if item is not None and line.item_id == item.id:
+                return line
+            line_item = line.item
+            if line_item is None:
+                continue
+            for key in (line_item.sku, line_item.gtin, line_item.item_code):
+                if key and key in keys:
+                    return line
+        return None
+
+    def _scan_item_eaches(
+        self, raw_quantity, packaging_unit_id: UUID | None
+    ) -> Decimal:
+        """Eaches represented by a scan (raw quantity × packaging factor)."""
+        raw = Decimal(str(raw_quantity or 0))
+        if packaging_unit_id:
+            packaging_unit = self.db.get(ItemPackagingUnit, packaging_unit_id)
+            factor = getattr(packaging_unit, "conversion_factor", None)
+            if factor is not None:
+                return raw * Decimal(str(factor))
+        return raw
+
+    def _scanned_eaches_for_line(self, session_id: UUID, line) -> Decimal:
+        """Eaches already scanned in this session for one ASN line."""
+        line_item = line.item
+        keys = {
+            key
+            for key in (
+                getattr(line_item, "sku", None),
+                getattr(line_item, "gtin", None),
+                getattr(line_item, "item_code", None),
+            )
+            if key
+        }
+        if not keys:
+            return Decimal("0")
+
+        rows = (
+            self.db.query(ScanSessionItem)
+            .filter(
+                ScanSessionItem.session_id == session_id,
+                ScanSessionItem.sku.in_(keys),
+            )
+            .all()
+        )
+        return sum(
+            (
+                self._scan_item_eaches(row.raw_quantity, row.packaging_unit_id)
+                for row in rows
+            ),
+            Decimal("0"),
+        )
+
+    def _detect_scan_excess(
+        self,
+        *,
+        session_id: UUID,
+        asn_order,
+        item,
+        payload,
+        packaging_unit_id: UUID | None,
+    ) -> dict | None:
+        """Flag an over-receipt against the ASN line for this scan (E-12).
+
+        Returns the decision payload when this scan pushes the ASN line over its
+        expected quantity, otherwise ``None``. Quantities are compared in eaches
+        (the same unit ``approve_slip`` aggregates), so packaging units do not
+        distort the check.
+        """
+        line = self._matched_asn_line(asn_order, item, payload)
+        if line is None:
+            return None
+
+        expected = Decimal(str(line.qty or 0))
+        if expected <= 0:
+            return None
+
+        already = self._scanned_eaches_for_line(session_id, line)
+        scanned_now = self._scan_item_eaches(payload.qty or 1, packaging_unit_id)
+        projected = already + scanned_now
+        if projected <= expected:
+            return None
+
+        return {
+            "asn_order_item_id": str(line.id),
+            "expected_qty": float(expected),
+            "scanned_qty": float(projected),
+            "excess_qty": float(projected - expected),
+            "reason_code": "EXCESS",
+            "destination": "HOLD",
+            # Existing disposition actions that resolve the decision.
+            "decision_options": ["move_to_hold", "return_to_sender", "dispose"],
         }
 
     # ------------------------------------------------------------------
@@ -1146,7 +1410,7 @@ class InboundService:
     # APPROVE SLIP
     # ------------------------------------------------------------------
 
-    def approve_slip(
+    def approve_slip(  # noqa: C901 - pre-existing complexity, refactor queued
         self,
         slip_id: UUID,
         organization_id: UUID,
@@ -1214,6 +1478,10 @@ class InboundService:
                         "quantity": existing_item.quantity,
                         "box_count": existing_item.box_count,
                         "flag": existing_item.flag,
+                        # Shortage evidence recorded at the dock must survive the
+                        # regeneration, otherwise the approved receipt loses it.
+                        "reason_code": existing_item.reason_code,
+                        "short_qty": existing_item.short_qty,
                         "rejection_reason": existing_item.rejection_reason,
                         "rejected_by": existing_item.rejected_by,
                         "rejected_at": existing_item.rejected_at,
@@ -1452,7 +1720,7 @@ class InboundService:
     # RECEIVING STOCK ENTRY (ERP traceability)
     # ------------------------------------------------------------------
 
-    def _create_receiving_stock_entry(
+    def _create_receiving_stock_entry(  # noqa: C901 - pre-existing complexity
         self,
         slip,
         organization_id: UUID,
@@ -1605,7 +1873,7 @@ class InboundService:
     # SYNC ASN DELIVERED QTY
     # ------------------------------------------------------------------
 
-    def _sync_asn_delivered_qty(
+    def _sync_asn_delivered_qty(  # noqa: C901 - pre-existing complexity
         self, asn_order_id: UUID, organization_id: UUID
     ) -> None:
         """Update delivered_qty on ASN items based on accepted receiving slips."""
@@ -1827,87 +2095,314 @@ class InboundService:
     # FLAG LINE ITEM
     # ------------------------------------------------------------------
 
-    def flag_line_item(
+    #: Flags accepted by :meth:`flag_line_item`
+    FLAG_VALUES = ("short", "damaged", "excess", "hold", "quarantine")
+
+    #: Flags that physically segregate stock into a non-pickable bin and create
+    #: a reason-coded inbound exception for supervisor disposition.
+    SEGREGATION_FLAGS = ("damaged", "excess", "hold", "quarantine")
+
+    #: Reason-code categories accepted per flag value.
+    _FLAG_REASON_CATEGORIES = {
+        "short": {"short"},
+        "damaged": {"damage"},
+        "excess": {"excess", "unexpected_sku"},
+        "hold": {"hold"},
+        "quarantine": {"quarantine"},
+    }
+
+    def flag_line_item(  # noqa: C901
         self,
         slip_id: UUID,
         item_id: UUID,
         flag: str,
         notes: str | None,
         organization_id: UUID,
+        *,
+        reason_code: str | None = None,
+        destination: str | None = None,
+        short_qty: int | None = None,
+        actor_id: UUID | None = None,
+        enforce_short_qty: bool = True,
     ) -> dict:
         """
-        Flag a receiving slip line item as SHORT or DAMAGED.
+        Flag / classify a receiving slip line item.
 
-        Validates that the slip exists and is in PENDING_REVIEW status,
-        and that the item belongs to the slip.
+        ``short`` records a shortage against the ASN expectation: the operator's
+        short quantity and reason code are stored on the line, nothing is
+        physically segregated (nothing was received) and the outstanding balance
+        stays traceable against the ASN.
+
+        ``damaged`` / ``excess`` / ``hold`` / ``quarantine`` segregate the units
+        into a non-pickable HOLD or QUARANTINE bin and create a reason-coded
+        inbound exception that a supervisor must dispose of.
 
         Args:
-            slip_id: UUID of the receiving slip.
+            slip_id: UUID of the receiving slip (must be ``pending_review``).
             item_id: UUID of the receiving slip item to flag.
-            flag: Flag value ('short' or 'damaged').
-            notes: Optional notes about the discrepancy.
+            flag: One of ``short``, ``damaged``, ``excess``, ``hold``,
+                ``quarantine``.
+            notes: Optional free-text note.
             organization_id: Organization UUID for tenant isolation.
+            reason_code: Reason code from ``GET /inbound/exception-reasons``.
+            destination: ``HOLD`` or ``QUARANTINE`` (segregation flags only).
+            short_qty: Units missing against the ASN expectation (``short`` only).
+            actor_id: User performing the flag (for the exception audit trail).
+            enforce_short_qty: When false, a ``short`` flag may be recorded
+                without a quantity (legacy bulk-status path where the missing
+                count is not captured). The reason code is still mandatory.
 
         Returns:
-            Dictionary representation of the updated ReceivingSlipItem.
+            Dictionary with the updated line plus any created exception.
 
         Raises:
-            NotFoundError: If slip or item is not found.
-            StateError: If slip is not in PENDING_REVIEW status.
-            ValidationError: If flag value is invalid.
+            ValidationError: 400 with field-level details and a ``hint`` for the
+                caller (missing/invalid reason code or short quantity, wrong
+                destination, flag not allowed for this line, …).
+            NotFoundError: 404 if the slip or line does not exist.
+            StateError: 409 if the slip is no longer ``pending_review``.
 
         Requirements: 7.5
         """
-        valid_flags = ("short", "damaged")
-        if flag not in valid_flags:
+        normalized_flag = (flag or "").strip().lower()
+
+        if normalized_flag not in self.FLAG_VALUES:
             raise ValidationError(
-                message=f"Invalid flag value. Must be one of: {', '.join(valid_flags)}",
+                message=f"Flag '{flag}' is not supported for a receipt line",
                 details=[
                     {
                         "field": "flag",
-                        "reason": f"Flag must be one of: {', '.join(valid_flags)}",
+                        "reason": f"'{flag}' is not a supported flag value",
+                        "hint": f"Use one of: {', '.join(self.FLAG_VALUES)}",
                     }
                 ],
+                code="FLAG_VALUE_INVALID",
+                hint=f"Use one of: {', '.join(self.FLAG_VALUES)}",
             )
 
         # Validate slip exists and is in correct state
         slip = self.slip_repo.get_by_id(slip_id, organization_id)
         if slip is None:
             raise NotFoundError(
-                message="Receiving slip not found",
+                message=f"Receiving slip '{slip_id}' was not found",
                 entity_type="ReceivingSlip",
                 entity_id=str(slip_id),
+                code="RECEIVING_SLIP_NOT_FOUND",
+                hint=(
+                    "Open the receiving slip list and refresh — the slip may have "
+                    "been rejected or belong to another warehouse."
+                ),
             )
 
         if slip.status != "pending_review":
             raise StateError(
-                message="Receiving slip must be in pending_review status to flag items",
+                message=(
+                    f"Receipt lines can only be flagged while the slip is pending "
+                    f"review (current status: '{slip.status}')"
+                ),
                 current_state=slip.status,
                 required_state=["pending_review"],
+                code="SLIP_NOT_PENDING_REVIEW",
+                hint=(
+                    "Flags must be applied before the Draft Receipt Note is "
+                    "approved. Use a shortage/exception correction if it is "
+                    "already approved."
+                ),
             )
 
         # Validate item exists and belongs to this slip
         item = self.slip_repo.get_item_by_id(item_id, organization_id)
         if item is None:
             raise NotFoundError(
-                message="Receiving slip item not found",
+                message=f"Receipt line '{item_id}' was not found",
                 entity_type="ReceivingSlipItem",
                 entity_id=str(item_id),
+                code="RECEIPT_LINE_NOT_FOUND",
+                hint="Refresh the receiving slip — the line may have been removed.",
             )
 
         if item.slip_id != slip_id:
             raise ValidationError(
-                message="Item does not belong to the specified receiving slip",
+                message="Receipt line does not belong to the specified slip",
                 details=[
                     {
                         "field": "item_id",
-                        "reason": f"Item {item_id} does not belong to slip {slip_id}",
+                        "reason": (
+                            f"Line {item_id} belongs to slip {item.slip_id}, "
+                            f"not {slip_id}"
+                        ),
+                        "hint": "Reload the slip and retry with one of its own lines.",
                     }
                 ],
+                code="RECEIPT_LINE_SLIP_MISMATCH",
+                hint="Reload the receiving slip and retry with one of its own lines.",
             )
 
-        # Update the flag
-        updated_item = self.slip_repo.update_item_flag(item_id, flag, notes)
+        reason = self._resolve_flag_reason(
+            flag=normalized_flag,
+            reason_code=reason_code,
+            organization_id=organization_id,
+        )
+        normalized_destination = (destination or "").strip().upper() or None
+
+        from app.services.inbound_exception_service import InboundExceptionService
+
+        # ── Destination rules ──────────────────────────────────────────────
+        if normalized_flag in self.SEGREGATION_FLAGS:
+            if normalized_destination is None:
+                normalized_destination = (
+                    reason.default_destination or "QUARANTINE"
+                ).upper()
+            allowed_destinations = sorted(InboundExceptionService.DESTINATIONS)
+            if normalized_destination not in InboundExceptionService.DESTINATIONS:
+                raise ValidationError(
+                    message=(
+                        f"Destination '{destination}' is not a segregation bin that "
+                        f"can hold {normalized_flag} stock"
+                    ),
+                    details=[
+                        {
+                            "field": "destination",
+                            "reason": (
+                                f"'{destination}' is not a supported destination"
+                            ),
+                            "hint": "Use " + ", ".join(allowed_destinations),
+                        }
+                    ],
+                    code="DESTINATION_INVALID",
+                    hint="Use " + ", ".join(allowed_destinations) + ".",
+                )
+        elif normalized_destination is not None:
+            raise ValidationError(
+                message=(
+                    "A short receipt is not physically segregated, so no "
+                    "destination bin may be supplied"
+                ),
+                details=[
+                    {
+                        "field": "destination",
+                        "reason": "destination must be omitted when flag=short",
+                        "hint": (
+                            "Shorted units were never received, so nothing is "
+                            "moved. Remove 'destination' from the request."
+                        ),
+                    }
+                ],
+                code="DESTINATION_NOT_ALLOWED",
+                hint="Remove 'destination' from the request for a short line.",
+            )
+
+        # ── Short-quantity rules ───────────────────────────────────────────
+        if normalized_flag == "short":
+            outstanding = self._outstanding_asn_qty(slip, item)
+            if short_qty is None and enforce_short_qty:
+                raise ValidationError(
+                    message="A short quantity is required when flagging a shortage",
+                    details=[
+                        {
+                            "field": "short_qty",
+                            "reason": "Missing required field 'short_qty'",
+                            "hint": (
+                                "Send the number of units missing against the ASN "
+                                "expectation (>= 1)."
+                            ),
+                        }
+                    ],
+                    code="SHORT_QTY_REQUIRED",
+                    hint="Send short_qty = units missing against the ASN expectation.",
+                )
+            if (
+                outstanding is not None
+                and short_qty is not None
+                and short_qty > outstanding
+            ):
+                raise ValidationError(
+                    message=(
+                        f"Shortage of {short_qty} unit(s) exceeds the outstanding "
+                        f"quantity for this ASN line"
+                    ),
+                    details=[
+                        {
+                            "field": "short_qty",
+                            "reason": (
+                                f"short_qty ({short_qty}) is greater than the "
+                                f"outstanding quantity ({outstanding})"
+                            ),
+                            "hint": (
+                                f"Enter at most {outstanding} unit(s), or verify the "
+                                f"ASN expectation with the supervisor."
+                            ),
+                        }
+                    ],
+                    code="SHORT_QTY_EXCEEDS_EXPECTED",
+                    hint=f"Enter a value between 1 and {outstanding}.",
+                )
+        elif short_qty is not None:
+            raise ValidationError(
+                message="A short quantity is only valid for the 'short' flag",
+                details=[
+                    {
+                        "field": "short_qty",
+                        "reason": f"short_qty is not allowed when flag={normalized_flag}",
+                        "hint": (
+                            "Use the exception quantity on the exception record "
+                            "instead, or flag the line as 'short'."
+                        ),
+                    }
+                ],
+                code="SHORT_QTY_NOT_ALLOWED",
+                hint="Remove 'short_qty' or use flag=short.",
+            )
+
+        # ── Apply ──────────────────────────────────────────────────────────
+        exception_id: str | None = None
+        exception_status: str | None = None
+        destination_location_id: str | None = None
+        condition_code = "GOOD"
+
+        if normalized_flag == "short":
+            # Pure ledger flag: nothing is received, nothing is segregated.
+            updated_item = self.slip_repo.update_item_flag(
+                item_id,
+                normalized_flag,
+                notes,
+                reason_code=reason.code,
+                short_qty=short_qty,
+            )
+            # A shortage is not a damaged/held unit, so the condition is GOOD.
+            if updated_item is not None and updated_item.condition_code != "GOOD":
+                updated_item.condition_code = "GOOD"
+                self.db.commit()
+                self.db.refresh(updated_item)
+        else:
+            from app.services.inbound_exception_service import InboundExceptionService
+
+            exception_service = InboundExceptionService(self.db)
+            exception = exception_service.classify_slip_item(
+                slip_id=slip_id,
+                slip_item_id=item_id,
+                organization_id=organization_id,
+                actor_id=actor_id,
+                classification=normalized_flag,
+                reason_code=reason.code,
+                destination=normalized_destination,
+                note=notes,
+            )
+            exception_id = str(exception.id)
+            exception_status = exception.status
+            destination_location_id = (
+                str(exception.destination_location_id)
+                if exception.destination_location_id
+                else None
+            )
+            condition_code = exception.condition_code or "GOOD"
+            updated_item = self.slip_repo.get_item_by_id(item_id, organization_id)
+            # The line is no longer a shortage, so a previously recorded short
+            # quantity would be misleading.
+            if updated_item is not None and updated_item.short_qty is not None:
+                updated_item.short_qty = None
+                self.db.commit()
+                self.db.refresh(updated_item)
 
         return {
             "id": str(updated_item.id),
@@ -1917,8 +2412,124 @@ class InboundService:
             "quantity": updated_item.quantity,
             "box_count": updated_item.box_count,
             "flag": updated_item.flag,
+            "reason_code": updated_item.reason_code,
+            "short_qty": updated_item.short_qty,
+            "condition_code": updated_item.condition_code or condition_code,
+            "exception_id": exception_id,
+            "exception_status": exception_status,
+            "destination": normalized_destination if exception_id else None,
+            "destination_location_id": destination_location_id,
             "notes": updated_item.notes,
         }
+
+    def _resolve_flag_reason(
+        self,
+        *,
+        flag: str,
+        reason_code: str | None,
+        organization_id: UUID,
+    ):
+        """Validate the operator's reason code for the requested flag.
+
+        Every flag needs a reason code so the discrepancy is always explicable.
+        The reason code must be active, visible to the organization and belong to
+        a category that matches the flag.
+        """
+        from app.models.inbound_exception import InboundExceptionReason
+
+        expected_categories = self._FLAG_REASON_CATEGORIES.get(flag, set())
+
+        visible = (
+            self.db.query(InboundExceptionReason)
+            .filter(
+                InboundExceptionReason.is_active.is_(True),
+                (InboundExceptionReason.organization_id.is_(None))
+                | (InboundExceptionReason.organization_id == organization_id),
+                InboundExceptionReason.category.in_(expected_categories),
+            )
+            .order_by(InboundExceptionReason.code)
+            .all()
+        )
+        allowed_codes = [reason.code for reason in visible]
+
+        if not reason_code:
+            raise ValidationError(
+                message=f"A reason code is required to flag a line as '{flag}'",
+                details=[
+                    {
+                        "field": "reason_code",
+                        "reason": "Missing required field 'reason_code'",
+                        "hint": f"Use one of: {', '.join(allowed_codes)}",
+                    }
+                ],
+                code="REASON_CODE_REQUIRED",
+                hint=f"Pick one of: {', '.join(allowed_codes)}",
+            )
+
+        reason = next(
+            (
+                candidate
+                for candidate in visible
+                if candidate.code.upper() == reason_code.strip().upper()
+            ),
+            None,
+        )
+        if reason is None:
+            raise ValidationError(
+                message=(
+                    f"Reason code '{reason_code}' is not valid for a '{flag}' line"
+                ),
+                details=[
+                    {
+                        "field": "reason_code",
+                        "reason": (
+                            f"'{reason_code}' is unknown, inactive, or belongs to a "
+                            f"different exception category"
+                        ),
+                        "hint": f"Use one of: {', '.join(allowed_codes)}",
+                    }
+                ],
+                code="REASON_CODE_INVALID",
+                hint=f"Pick one of: {', '.join(allowed_codes)}",
+            )
+
+        return reason
+
+    def _outstanding_asn_qty(self, slip, line) -> int | None:
+        """Remaining units expected on the ASN line matching this receipt line.
+
+        ``None`` when the slip has no linked ASN line for the SKU, in which case
+        the shortage quantity cannot be cross-checked against an expectation.
+        """
+        from decimal import Decimal
+
+        if not slip.asn_order_id:
+            return None
+
+        from app.models.asn_order import AsnOrder
+
+        asn = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == slip.asn_order_id,
+                AsnOrder.organization_id == slip.organization_id,
+            )
+            .first()
+        )
+        if asn is None:
+            return None
+
+        for asn_item in asn.items:
+            item = asn_item.item
+            keys = {item.sku, item.item_code, item.gtin} if item else set()
+            keys.discard(None)
+            if line.sku not in keys:
+                continue
+            expected = Decimal(str(asn_item.qty or 0))
+            received = Decimal(str(asn_item.delivered_qty or 0))
+            outstanding = expected - received
+            return int(outstanding) if outstanding > 0 else 0
+        return None
 
     # ------------------------------------------------------------------
     # REJECT SLIP ITEM (Item-Level)
@@ -2057,11 +2668,23 @@ class InboundService:
         organization_id: UUID,
         user_id: UUID | None = None,
     ) -> list[dict]:
-        """Apply per-item status updates (rejected / ok / short / damaged).
+        """Apply per-item status updates in bulk.
 
         This is the bulk equivalent of calling the individual reject / flag
-        endpoints — one request, one payload, with a per-item ``status``.
+        endpoints — one request, one payload, with a per-item ``status`` —
+        covering every flag the single-line endpoint accepts: ``rejected``,
+        ``ok``, ``short``, ``damaged``, ``excess``, ``hold`` and ``quarantine``.
         """
+        # Canonical reason code per flag, used when the payload omits one, so a
+        # discrepancy is always reason-coded (and never silently dropped).
+        default_reason_codes = {
+            "short": "SHORT_PHYSICAL",
+            "damaged": "DAMAGED",
+            "excess": "EXCESS",
+            "hold": "HOLD",
+            "quarantine": "QUARANTINE",
+        }
+
         results: list[dict] = []
         for entry in items:
             status = entry.status
@@ -2076,7 +2699,7 @@ class InboundService:
                         notes=entry.notes,
                     )
                 )
-            elif status in ("short", "damaged"):
+            elif status in self.FLAG_VALUES:
                 results.append(
                     self.flag_line_item(
                         slip_id=slip_id,
@@ -2084,6 +2707,12 @@ class InboundService:
                         flag=status,
                         notes=entry.notes,
                         organization_id=organization_id,
+                        reason_code=getattr(entry, "reason_code", None)
+                        or default_reason_codes[status],
+                        short_qty=getattr(entry, "short_qty", None),
+                        destination=getattr(entry, "destination", None),
+                        actor_id=user_id,
+                        enforce_short_qty=False,
                     )
                 )
             elif status == "ok":
@@ -2100,7 +2729,10 @@ class InboundService:
                     details=[
                         {
                             "field": "items",
-                            "reason": "status must be one of: rejected, ok, short, damaged",
+                            "reason": (
+                                "status must be one of: rejected, ok, "
+                                + ", ".join(self.FLAG_VALUES)
+                            ),
                         }
                     ],
                 )
@@ -2170,6 +2802,8 @@ class InboundService:
             "quantity": updated_item.quantity,
             "box_count": updated_item.box_count,
             "flag": updated_item.flag,
+            "reason_code": updated_item.reason_code,
+            "short_qty": updated_item.short_qty,
             "rejection_reason": updated_item.rejection_reason,
             "notes": updated_item.notes,
             "rejected_at": None,
@@ -2379,7 +3013,7 @@ class InboundService:
             )
         self.db.commit()
 
-    def _generate_receiving_slip(
+    def _generate_receiving_slip(  # noqa: C901 - pre-existing complexity
         self,
         session,
         items: list,
@@ -2606,7 +3240,9 @@ class InboundService:
     def _slip_base_dict(self, slip, groups: list) -> dict:
         """Convert a ReceivingSlip to a plain dict without QSeal enrichment."""
         # Fetch ASN info directly from DB — more reliable than lazy/eager-loaded relationships
-        asn_order_id = str(slip.asn_order_id) if slip.asn_order_id else None
+        asn_order_id = (  # noqa: F841 - pre-existing dead local; the dict reads slip directly
+            str(slip.asn_order_id) if slip.asn_order_id else None
+        )
         asn_order_no = None
         if slip.asn_order_id:
             from app.models.asn_order import AsnOrder
@@ -2708,7 +3344,7 @@ class InboundService:
     # SLIP TO DICT
     # ------------------------------------------------------------------
 
-    def _slip_to_dict(self, slip) -> dict:
+    def _slip_to_dict(self, slip) -> dict:  # noqa: C901 - pre-existing complexity
         """Convert a ReceivingSlip model to a dictionary, enriched with QSeal parent/child data.
 
         Items sharing the same QSeal parent are grouped together.
@@ -2833,7 +3469,7 @@ class InboundService:
 
         # Build lookup: serial_number → child detail (for merging into items)
         child_detail_map = {}
-        for pid, children in parent_children_map.items():
+        for pid, children in parent_children_map.items():  # noqa: B007 - pre-existing
             for c in children:
                 child_detail_map[c["serial_number"]] = {
                     "manufacturing_date": c.get("manufacturing_date"),

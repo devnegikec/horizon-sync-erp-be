@@ -162,6 +162,17 @@ INBOUND_EXCEPTION_READ = "inbound_exception.read"
 INBOUND_EXCEPTION_CREATE = "inbound_exception.create"
 INBOUND_EXCEPTION_DISPOSE = "inbound_exception.dispose"
 
+# Returns (customer returns) module — R-10 / X-02.
+# ``return.receive`` and ``return.classify`` are dock (handheld) duties;
+# ``return.register`` is back-office and ``return.approve`` / ``return.dispose``
+# additionally require warehouse-manager authority at the warehouse level.
+RETURN_READ = "return.read"
+RETURN_REGISTER = "return.register"
+RETURN_RECEIVE = "return.receive"
+RETURN_CLASSIFY = "return.classify"
+RETURN_APPROVE = "return.approve"
+RETURN_DISPOSE = "return.dispose"
+
 # QR scanning (Inbound + Outbound)
 WMS_SCAN = "wms.scan"
 
@@ -186,6 +197,10 @@ WMS_WORKER_PERMISSIONS = [
     ASN_ORDER_READ,
     STOCK_ENTRY_CREATE,
     STOCK_ENTRY_READ,
+    # Returns: the dock may receive and classify returned units, never approve.
+    RETURN_READ,
+    RETURN_RECEIVE,
+    RETURN_CLASSIFY,
 ]
 
 
