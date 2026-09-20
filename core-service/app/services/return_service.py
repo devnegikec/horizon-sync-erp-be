@@ -665,26 +665,7 @@ class ReturnService:
                 ),
             )
 
-        quantity = self._to_decimal(payload.get("qty") or 1) or Decimal("1")
-        if quantity <= 0:
-            # A negative or zero qty used to flow straight through, decrementing
-            # the line/session received counters.
-            raise ValidationError(
-                "Scanned quantity must be greater than zero",
-                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
-                code="RETURN_QTY_INVALID",
-            )
-        if quantity != quantity.to_integral_value():
-            # Segregation, disposition and put-away all run on whole units (the
-            # linked InboundException.quantity is an Integer), so a fractional
-            # scan used to be truncated there while stock received the full
-            # amount — silently losing the difference from the audit trail.
-            raise ValidationError(
-                "Return scans must be whole units",
-                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
-                code="RETURN_QTY_NOT_WHOLE",
-                hint="Segregation and disposition are tracked in whole units.",
-            )
+        quantity = self._scan_quantity(payload)
         new_total = self._to_decimal(line.received_qty) + quantity
         over_receipt = new_total > self._to_decimal(line.expected_qty)
 
@@ -1820,6 +1801,42 @@ class ReturnService:
                 code="RETURN_APPROVAL_REQUIRED",
                 hint="Ask a warehouse manager to approve or dispose of this note.",
             ) from None
+
+    @staticmethod
+    def _scan_quantity(payload: dict) -> Decimal:
+        """Validate the quantity carried by a scan payload.
+
+        Parsed strictly, so an explicit ``0`` or a non-numeric value is rejected
+        instead of being silently coerced to ``1`` by a falsy default. Return
+        receiving, segregation and disposition all run on whole units (the linked
+        ``InboundException.quantity`` is an Integer), so a fractional scan is
+        refused rather than truncated later and lost from the audit trail.
+        """
+        raw_qty = payload.get("qty")
+        if raw_qty is None:
+            return Decimal("1")
+        try:
+            quantity = Decimal(str(raw_qty))
+        except (InvalidOperation, ValueError):
+            raise ValidationError(
+                "The scanned quantity is not a number",
+                details=[{"field": "qty", "reason": f"Received '{raw_qty}'"}],
+                code="RETURN_QTY_INVALID",
+            ) from None
+        if quantity <= 0:
+            raise ValidationError(
+                "Scanned quantity must be greater than zero",
+                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
+                code="RETURN_QTY_INVALID",
+            )
+        if quantity != quantity.to_integral_value():
+            raise ValidationError(
+                "Return scans must be whole units",
+                details=[{"field": "qty", "reason": f"Received '{quantity}'"}],
+                code="RETURN_QTY_NOT_WHOLE",
+                hint="Segregation and disposition are tracked in whole units.",
+            )
+        return quantity
 
     @staticmethod
     def _to_decimal(value) -> Decimal:
