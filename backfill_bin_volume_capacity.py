@@ -124,13 +124,14 @@ def main() -> None:
         return
 
     with engine.begin() as c:
-        for loc_id, _code, _cap, _uom, _cur, new_cc in plan:
+        for loc_id, _code, _cap, _uom, cur, new_cc in plan:
             c.execute(
                 text(
                     "UPDATE warehouse_locations SET max_volume_cc = :v "
-                    "WHERE id = :id AND is_active IS TRUE"
+                    "WHERE id = :id AND is_active IS TRUE "
+                    "AND max_volume_cc IS NOT DISTINCT FROM :cur"
                 ),
-                {"v": new_cc, "id": loc_id},
+                {"v": new_cc, "id": loc_id, "cur": cur},
             )
     print(f"\nApplied. Updated max_volume_cc on {len(plan)} bins.")
 
