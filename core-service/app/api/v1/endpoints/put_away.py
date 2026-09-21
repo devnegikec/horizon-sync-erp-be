@@ -208,6 +208,7 @@ def _build_item_response(
         manufacturing_date=meta.get("manufacturing_date"),
         expiry_date=meta.get("expiry_date"),
         quantity=float(item.quantity),
+        packaging_unit_id=str(item.packaging_unit_id) if item.packaging_unit_id else None,
         bin_location_id=str(item.bin_location_id) if item.bin_location_id else None,
         bin_location_code=bin_location_code,
         suggested_bin_code=bin_location_code,

@@ -65,10 +65,12 @@ class VolumetricAssignmentService:
             org_id: Organization ID for tenant isolation.
             db: SQLAlchemy session shared with the caller's transaction.
         """
+        base_unit_cache: dict = {}
         for item in put_away_list_items:
             packaging_unit = self._get_packaging_unit(item, db)
-            required_volume_cc = self._calc_volume(item.quantity, packaging_unit)
-            required_weight_g = self._calc_weight(item.quantity, packaging_unit)
+            base_unit = self._get_base_unit(item.item_id, db, base_unit_cache)
+            required_volume_cc = self._calc_volume(item.quantity, packaging_unit, base_unit)
+            required_weight_g = self._calc_weight(item.quantity, packaging_unit, base_unit)
 
             bin_loc = self._find_best_bin(
                 item_id=item.item_id,
@@ -85,6 +87,77 @@ class VolumetricAssignmentService:
     # ------------------------------------------------------------------
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _d(value) -> Decimal | None:
+        """Coerce a numeric value (Decimal/int/float/str) to Decimal, else None.
+
+        Mock objects (MagicMock) and other non-numeric values are treated as
+        missing so the pure-logic tests remain green.
+        """
+        if value is None:
+            return None
+        if isinstance(value, (Decimal, int, float, str)):
+            try:
+                return Decimal(str(value))
+            except Exception:
+                return None
+        return None
+
+    @classmethod
+    def _factor(cls, pu) -> Decimal:
+        """Return the packaging unit's conversion factor (Eaches per pack).
+
+        Non-numeric or missing factors fall back to 1 (base unit).
+        """
+        if pu is None:
+            return Decimal("1")
+        c = cls._d(getattr(pu, "conversion_factor", None))
+        if c is None or c < 1:
+            return Decimal("1")
+        return c
+
+    @classmethod
+    def _unit_volume_cc(cls, pu) -> Decimal | None:
+        """Volume of one packaging unit in cc (mm³ → cc)."""
+        if pu is None:
+            return None
+        l = cls._d(getattr(pu, "length_mm", None))
+        w = cls._d(getattr(pu, "width_mm", None))
+        h = cls._d(getattr(pu, "height_mm", None))
+        if l is None or w is None or h is None:
+            return None
+        return l * w * h / Decimal("1000")
+
+    @classmethod
+    def _unit_weight_g(cls, pu) -> Decimal | None:
+        """Weight of one packaging unit in grams."""
+        if pu is None:
+            return None
+        return cls._d(getattr(pu, "weight_grams", None))
+
+    def _get_base_unit(
+        self,
+        item_id,
+        db: Session,
+        cache: dict | None = None,
+    ) -> ItemPackagingUnit | None:
+        """Return the item's base-unit packaging row, with a per-call cache."""
+        if item_id is None:
+            return None
+        if cache is not None and item_id in cache:
+            return cache[item_id]
+        base = (
+            db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.is_base_unit.is_(True),
+            )
+            .first()
+        )
+        if cache is not None:
+            cache[item_id] = base
+        return base
 
     def _get_packaging_unit(
         self,
@@ -110,50 +183,52 @@ class VolumetricAssignmentService:
         self,
         quantity: Decimal,
         pu: ItemPackagingUnit | None,
+        base_pu: ItemPackagingUnit | None = None,
     ) -> Decimal | None:
-        """Calculate the required volume in cubic centimetres (cc).
+        """Calculate the required volume in cubic centimetres (cc), MC-aware.
 
-        Converts mm³ to cc by dividing by 1000.  Returns None (unconstrained)
-        when any of the three dimensions is null or when no packaging unit is
-        provided (Req 7.3, 4.4).
-
-        Args:
-            quantity: Number of units being put away.
-            pu: The packaging unit with physical dimensions, or None.
-
-        Returns:
-            ``quantity * L * W * H / 1000`` as a Decimal, or None.
+        Intact master cartons occupy ``floor(qty / c)`` full cartons; the loose
+        remainder occupies base-unit (IC) volume. Returns None (unconstrained)
+        when neither the packaging unit nor the base unit carries dimensions.
         """
-        if pu and pu.length_mm and pu.width_mm and pu.height_mm:
-            return (
-                Decimal(str(quantity))
-                * Decimal(str(pu.length_mm))
-                * Decimal(str(pu.width_mm))
-                * Decimal(str(pu.height_mm))
-                / Decimal("1000")
-            )
-        return None
+        qty = Decimal(str(quantity))
+        c = self._factor(pu)
+        n_full = qty // c
+        n_loose = qty - n_full * c
+
+        pu_vol = self._unit_volume_cc(pu)
+        base_vol = self._unit_volume_cc(base_pu)
+        full_vol = pu_vol if pu_vol is not None else base_vol
+        if full_vol is None and base_vol is None:
+            return None
+        return n_full * (full_vol or Decimal("0")) + n_loose * (
+            base_vol or Decimal("0")
+        )
 
     def _calc_weight(
         self,
         quantity: Decimal,
         pu: ItemPackagingUnit | None,
+        base_pu: ItemPackagingUnit | None = None,
     ) -> Decimal | None:
-        """Calculate the required weight in grams.
+        """Calculate the required weight in grams, MC-aware.
 
-        Returns None (unconstrained) when weight_grams is null or when no
-        packaging unit is provided (Req 7.4, 4.4).
-
-        Args:
-            quantity: Number of units being put away.
-            pu: The packaging unit with weight data, or None.
-
-        Returns:
-            ``quantity * weight_grams`` as a Decimal, or None.
+        Returns None (unconstrained) when neither the packaging unit nor the
+        base unit carries a weight.
         """
-        if pu and pu.weight_grams:
-            return Decimal(str(quantity)) * Decimal(str(pu.weight_grams))
-        return None
+        qty = Decimal(str(quantity))
+        c = self._factor(pu)
+        n_full = qty // c
+        n_loose = qty - n_full * c
+
+        pu_w = self._unit_weight_g(pu)
+        base_w = self._unit_weight_g(base_pu)
+        full_w = pu_w if pu_w is not None else base_w
+        if full_w is None and base_w is None:
+            return None
+        return n_full * (full_w or Decimal("0")) + n_loose * (
+            base_w or Decimal("0")
+        )
 
     def _find_best_bin(
         self,
@@ -207,14 +282,21 @@ class VolumetricAssignmentService:
                 SELECT
                     bsl.bin_location_id,
                     COALESCE(SUM(
-                        bsl.quantity_on_hand
-                        * ipu.length_mm * ipu.width_mm * ipu.height_mm / 1000.0
-                    ), 0) AS occupied_volume_cc,
+                        FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(ipu.length_mm * ipu.width_mm * ipu.height_mm, base.length_mm * base.width_mm * base.height_mm, 0)
+                        + MOD(bsl.quantity_on_hand, NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(base.length_mm * base.width_mm * base.height_mm, 0)
+                    ) / 1000.0, 0) AS occupied_volume_cc,
                     COALESCE(SUM(
-                        bsl.quantity_on_hand * ipu.weight_grams
+                        FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(ipu.weight_grams, base.weight_grams, 0)
+                        + MOD(bsl.quantity_on_hand, NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
+                        * COALESCE(base.weight_grams, 0)
                     ), 0) AS occupied_weight_g
                 FROM bin_stock_levels bsl
                 LEFT JOIN item_packaging_units ipu ON ipu.id = bsl.packaging_unit_id
+                LEFT JOIN item_packaging_units base
+                       ON base.item_id = bsl.item_id AND base.is_base_unit = TRUE
                 WHERE bsl.organization_id = :org_id
                 GROUP BY bsl.bin_location_id
             ),

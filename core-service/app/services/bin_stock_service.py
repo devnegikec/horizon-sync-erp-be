@@ -30,6 +30,12 @@ from app.models.stock_movement import StockMovement
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.capacity_service import CapacityService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    compute_bin_occupancy,
+    compute_item_required_cc_and_grams,
+)
 
 
 class BinStockService:
@@ -38,6 +44,88 @@ class BinStockService:
     def __init__(self, db: Session):
         self.db = db
         self.capacity_service = CapacityService(db)
+
+    def validate_capacity(
+        self,
+        bin_id: UUID,
+        item_id: UUID,
+        org_id: UUID,
+        quantity: Decimal,
+        packaging_unit_id: UUID | None = None,
+    ) -> None:
+        """Validate that ``quantity`` of ``item_id`` can be added to the bin
+        without exceeding count, volume, or weight capacity.
+
+        Used by callers that add stock as multiple per-unit rows (e.g. one row
+        per serial of a master carton) but must check the whole carton's
+        volume/weight once up front. Does not write any stock.
+        """
+        bin_location = self._get_active_bin(bin_id, org_id)
+        bin_capacity = Decimal(str(bin_location.capacity or 0))
+        current_stock_in_bin = Decimal("0")
+        if bin_capacity > 0:
+            current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+        self._validate_capacity(
+            bin_location=bin_location,
+            item_id=item_id,
+            packaging_unit_id=packaging_unit_id,
+            quantity=quantity,
+            bin_capacity=bin_capacity,
+            current_stock_in_bin=current_stock_in_bin,
+        )
+
+    def _validate_capacity(
+        self,
+        bin_location: WarehouseLocation,
+        item_id: UUID,
+        packaging_unit_id: UUID | None,
+        quantity: Decimal,
+        bin_capacity: Decimal,
+        current_stock_in_bin: Decimal,
+    ) -> None:
+        """Raise ValidationError if adding ``quantity`` would exceed the bin's
+        count, volume, or weight capacity."""
+        if bin_capacity > 0:
+            available_capacity = bin_capacity - current_stock_in_bin
+            if quantity > available_capacity:
+                raise ValidationError(
+                    f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                    f"Available capacity is {available_capacity} "
+                    f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
+                )
+
+        # Volume/weight capacity enforcement (null limit = unconstrained).
+        if (
+            bin_location.max_volume_cc is not None
+            or bin_location.max_weight_grams is not None
+        ):
+            required_cc, required_g = compute_item_required_cc_and_grams(
+                self.db, item_id, packaging_unit_id, quantity
+            )
+            occupied_m3, occupied_kg = compute_bin_occupancy(
+                self.db, bin_location.id
+            )
+            if bin_location.max_volume_cc is not None and required_cc is not None:
+                occupied_cc = occupied_m3 * CC_PER_M3
+                limit_cc = Decimal(str(bin_location.max_volume_cc))
+                if occupied_cc + required_cc > limit_cc:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Volume capacity exceeded: occupied {occupied_cc} cc + "
+                        f"required {required_cc} cc > limit {limit_cc} cc"
+                    )
+            if (
+                bin_location.max_weight_grams is not None
+                and required_g is not None
+            ):
+                occupied_g = occupied_kg * G_PER_KG
+                limit_g = Decimal(str(bin_location.max_weight_grams))
+                if occupied_g + required_g > limit_g:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Weight capacity exceeded: occupied {occupied_g} g + "
+                        f"required {required_g} g > limit {limit_g} g"
+                    )
 
     def add_stock(
         self,
@@ -49,7 +137,9 @@ class BinStockService:
         *,
         commit: bool = True,
         sync_warehouse: bool = True,
+        packaging_unit_id: UUID | None = None,
         inventory_status: str | None = None,
+        skip_validate: bool = False,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -89,18 +179,21 @@ class BinStockService:
         # Get and validate the bin location
         bin_location = self._get_active_bin(bin_id, org_id)
 
-        # Check capacity won't be exceeded (skip if capacity is 0 = unlimited)
+        # Current stock is also used for the available_capacity update below.
         bin_capacity = Decimal(str(bin_location.capacity or 0))
         current_stock_in_bin = Decimal("0")
         if bin_capacity > 0:
             current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
-            available_capacity = bin_capacity - current_stock_in_bin
-            if quantity > available_capacity:
-                raise ValidationError(
-                    f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
-                    f"Available capacity is {available_capacity} "
-                    f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
-                )
+
+        if not skip_validate:
+            self._validate_capacity(
+                bin_location=bin_location,
+                item_id=item_id,
+                packaging_unit_id=packaging_unit_id,
+                quantity=quantity,
+                bin_capacity=bin_capacity,
+                current_stock_in_bin=current_stock_in_bin,
+            )
 
         # Create or update the BinStockLevel record
         bin_stock = self._get_or_create_bin_stock(
@@ -109,6 +202,7 @@ class BinStockService:
             org_id=org_id,
             batch_number=batch_number,
             for_update=True,
+            packaging_unit_id=packaging_unit_id,
             inventory_status=inventory_status,
         )
         bin_stock.quantity_on_hand = (
@@ -867,6 +961,7 @@ class BinStockService:
         org_id: UUID,
         batch_number: str | None = None,
         for_update: bool = False,
+        packaging_unit_id: UUID | None = None,
         inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Get an existing BinStockLevel or create a new one.
@@ -910,10 +1005,16 @@ class BinStockService:
                 organization_id=org_id,
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
+                packaging_unit_id=packaging_unit_id,
                 inventory_status=effective_status,
             )
             self.db.add(bin_stock)
             self.db.flush()
+        elif packaging_unit_id is not None:
+            # Keep packaging metadata current on an existing row (e.g. a
+            # serialized carton whose rows were first created loose), so
+            # later capacity math uses the right outer dimensions.
+            bin_stock.packaging_unit_id = packaging_unit_id
 
         return bin_stock
 

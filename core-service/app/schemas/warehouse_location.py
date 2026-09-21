@@ -29,6 +29,8 @@ class CreateLocationRequest(BaseModel):
     capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal = Field(default=Decimal("0"))
     position_y: Decimal = Field(default=Decimal("0"))
+    max_volume_cc: Decimal | None = Field(None, ge=0, description="Max volume capacity in cubic centimetres (cc)")
+    max_weight_grams: Decimal | None = Field(None, ge=0, description="Max weight capacity in grams")
 
 
 class UpdateLocationRequest(BaseModel):
@@ -39,6 +41,8 @@ class UpdateLocationRequest(BaseModel):
     capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal | None = None
     position_y: Decimal | None = None
+    max_volume_cc: Decimal | None = Field(None, ge=0)
+    max_weight_grams: Decimal | None = Field(None, ge=0)
 
 
 # ===========================================
@@ -63,6 +67,8 @@ class LocationResponse(BaseModel):
     capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
+    max_volume_cc: Decimal | None = None
+    max_weight_grams: Decimal | None = None
     is_active: bool = True
     is_pickable: bool = True
     version: int = 1
@@ -89,6 +95,8 @@ class LocationTree(BaseModel):
     capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
+    max_volume_cc: Decimal | None = None
+    max_weight_grams: Decimal | None = None
     is_active: bool = True
     is_pickable: bool = True
     qr_code: str | None = None

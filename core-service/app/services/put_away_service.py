@@ -28,7 +28,6 @@ from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
-from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
 from app.services.capacity_service import CapacityService
@@ -450,7 +449,14 @@ class PutAwayService:
             )
 
     def _items_per_master_pack(self, item_id: UUID, org_id: UUID) -> int | None:
-        """Return the item's master-pack size (items per pack), or None."""
+        """Return the item's master-pack size (items per pack), or None.
+
+        ``items_per_master_pack`` is preferred; when absent it falls back to the
+        master-carton ``conversion_factor``. In this deployment they are the same
+        number — warehouse ASN movement only deals with whole master cartons,
+        never the Each/IC level — so ``conversion_factor`` is the single source
+        of truth and ``items_per_master_pack`` is an optional explicit override.
+        """
         from app.models.item_packaging_unit import ItemPackagingUnit
 
         row = (
@@ -464,7 +470,23 @@ class PutAwayService:
             )
             .first()
         )
-        return row[0] if row else None
+        if row is not None:
+            return row[0]
+
+        master = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.organization_id == org_id,
+                ItemPackagingUnit.is_active.is_(True),
+                ItemPackagingUnit.conversion_factor > 1,
+            )
+            .order_by(ItemPackagingUnit.conversion_factor.asc())
+            .first()
+        )
+        if master is None:
+            return None
+        return int(master.conversion_factor)
 
     def _build_put_away_specs(
         self, slip: ReceivingSlip, org_id: UUID, mode: str
@@ -537,18 +559,26 @@ class PutAwayService:
             item = lines[0]["item"]
             pack_size = self._items_per_master_pack(item_id, org_id)
             if pack_size:
-                serials = [ln["slip_item"].batch_number for ln in lines]
-                for i in range(0, len(serials), pack_size):
-                    chunk = serials[i : i + pack_size]
-                    source_lines.append(
-                        {
-                            "item": item,
-                            "sku": lines[0]["slip_item"].sku,
-                            "quantity": Decimal(len(chunk)),
-                            "batch_number": chunk[0],
-                            "serial_nos": chunk,
-                        }
-                    )
+                # Group lines by packaging unit so each master-pack chunk keeps
+                # its own carton's packaging unit (never borrow a sibling's).
+                by_pu: dict = {}
+                for ln in lines:
+                    pu_id = ln["slip_item"].packaging_unit_id
+                    by_pu.setdefault(pu_id, []).append(ln)
+                for pu_id, pu_lines in by_pu.items():
+                    serials = [ln["slip_item"].batch_number for ln in pu_lines]
+                    for i in range(0, len(serials), pack_size):
+                        chunk = serials[i : i + pack_size]
+                        source_lines.append(
+                            {
+                                "item": item,
+                                "sku": pu_lines[0]["slip_item"].sku,
+                                "quantity": Decimal(len(chunk)),
+                                "batch_number": chunk[0],
+                                "serial_nos": chunk,
+                                "packaging_unit_id": pu_id,
+                            }
+                        )
             else:
                 for ln in lines:
                     si = ln["slip_item"]
@@ -559,6 +589,7 @@ class PutAwayService:
                             "quantity": Decimal(str(si.quantity)),
                             "batch_number": si.batch_number,
                             "serial_nos": None,
+                            "packaging_unit_id": si.packaging_unit_id,
                         }
                     )
 
@@ -588,6 +619,7 @@ class PutAwayService:
                         "quantity": quantity,
                         "bin_location_id": None,
                         "serial_nos": list(serial_nos) if serial_nos else None,
+                        "packaging_unit_id": line.get("packaging_unit_id"),
                     }
                 continue
 
@@ -617,6 +649,7 @@ class PutAwayService:
                         "quantity": assignment["quantity"],
                         "bin_location_id": assignment["bin_location_id"],
                         "serial_nos": split_serials or None,
+                        "packaging_unit_id": line.get("packaging_unit_id"),
                     }
                 )
 
@@ -685,6 +718,7 @@ class PutAwayService:
                 sku=spec["sku"],
                 batch_number=spec["batch_number"],
                 serial_nos=spec.get("serial_nos"),
+                packaging_unit_id=spec.get("packaging_unit_id"),
                 quantity=spec["quantity"],
                 bin_location_id=spec["bin_location_id"],
                 sort_order=idx if mode == "manual" else 0,
@@ -978,6 +1012,18 @@ class PutAwayService:
         serial_nos = put_away_item.serial_nos or []
         bin_stock = None
         if serial_nos:
+            # A master carton occupies more volume than its loose serials, so
+            # validate the whole pack's volume/weight once up front; then add
+            # one row per serial without re-checking (count is additive).
+            self.bin_stock_service.validate_capacity(
+                bin_id=target_bin_id,
+                item_id=put_away_item.item_id,
+                org_id=org_id,
+                quantity=Decimal(len(serial_nos)),
+                packaging_unit_id=getattr(
+                    put_away_item, "packaging_unit_id", None
+                ),
+            )
             for serial in serial_nos:
                 self.bin_stock_service.add_stock(
                     bin_id=target_bin_id,
@@ -985,7 +1031,11 @@ class PutAwayService:
                     quantity=Decimal("1"),
                     org_id=org_id,
                     batch_number=serial,
+                    packaging_unit_id=getattr(
+                        put_away_item, "packaging_unit_id", None
+                    ),
                     commit=False,
+                    skip_validate=True,
                 )
         else:
             bin_stock = self.bin_stock_service.add_stock(
@@ -994,16 +1044,8 @@ class PutAwayService:
                 quantity=Decimal(str(put_away_item.quantity)),
                 org_id=org_id,
                 batch_number=put_away_item.batch_number,
+                packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
             )
-
-        # If the put-away item carries a packaging_unit_id, propagate it to the
-        # BinStockLevel row as metadata (Req 3.3).
-        put_away_packaging_unit_id = getattr(put_away_item, "packaging_unit_id", None)
-        if put_away_packaging_unit_id is not None:
-            bin_stock.packaging_unit_id = put_away_packaging_unit_id
-            self.db.flush()
-            # Recompute capacity with the actual (case-pack) dimensions.
-            BinCapacityService(self.db).refresh_bin(target_bin_id, org_id)
 
         # Mark item as completed
         put_away_item.status = "completed"

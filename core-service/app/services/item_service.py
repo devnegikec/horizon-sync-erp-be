@@ -747,7 +747,135 @@ class ItemService:
         base.width_mm = packaging_details.width_mm
         base.height_mm = packaging_details.height_mm
         base.weight_grams = packaging_details.weight_grams
+
+        self._upsert_master_pack_unit(item, base, packaging_details, organization_id)
+
         self.db.flush()
+
+    def _upsert_master_pack_unit(
+        self, item: Item, base, packaging_details, organization_id: UUID
+    ) -> None:
+        """Create/update the master-carton packaging unit from the master-pack size.
+
+        The MC outer dimensions are estimated from the base-unit dimensions using
+        a packing fill factor and a carton wall thickness, unless explicit
+        ``master_pack_*`` overrides are supplied in ``packaging_details``. Missing
+        dimensions are estimated individually — an operator-supplied dimension is
+        never overwritten by an estimate.
+        """
+        from decimal import Decimal
+
+        mp = getattr(packaging_details, "items_per_master_pack", None)
+        if mp is None:
+            cf = getattr(packaging_details, "conversion_factor", None)
+            if cf is not None and Decimal(str(cf)) > 1:
+                mp = int(Decimal(str(cf)))
+
+        # Clearing the master-pack size (or setting it to 1) deactivates any
+        # existing MC row so downstream grouping stops treating the item as
+        # cartonized.
+        if not mp or mp <= 1:
+            for row in (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item.id,
+                    ItemPackagingUnit.is_base_unit.is_(False),
+                    ItemPackagingUnit.is_active.is_(True),
+                )
+                .all()
+            ):
+                row.is_active = False
+            return
+
+        unit_name = (
+            getattr(packaging_details, "master_pack_unit_name", None)
+            or f"Master Pack of {mp}"
+        )
+
+        mc = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.unit_name == unit_name,
+            )
+            .first()
+        )
+
+        # Explicit overrides (None = not provided → leave existing / estimate).
+        l = getattr(packaging_details, "master_pack_length_mm", None)
+        w = getattr(packaging_details, "master_pack_width_mm", None)
+        h = getattr(packaging_details, "master_pack_height_mm", None)
+        wt = getattr(packaging_details, "master_pack_weight_grams", None)
+
+        fill = getattr(packaging_details, "master_pack_fill_factor", None)
+        void = getattr(packaging_details, "master_pack_void_fill_pct", None)
+        thickness = getattr(
+            packaging_details, "master_pack_wall_thickness_mm", None
+        )
+
+        # Estimation knobs only used when estimating; defaults match the schema.
+        eff_fill = Decimal(str(fill)) if fill is not None else Decimal("0.75")
+        eff_void = Decimal(str(void)) if void is not None else Decimal("0.10")
+        eff_thickness = (
+            Decimal(str(thickness)) if thickness is not None else Decimal("3")
+        )
+
+        if mc is None:
+            # Estimate each missing dimension individually; never overwrite a
+            # dimension the operator supplied.
+            if (l is None or w is None or h is None) and base is not None:
+                if base.length_mm and base.width_mm and base.height_mm:
+                    scale = (
+                        float(mp) * (1.0 + float(eff_void)) / max(float(eff_fill), 0.01)
+                    ) ** (1.0 / 3.0)
+                    if l is None:
+                        l = Decimal(str(round(float(base.length_mm) * scale + 2.0 * float(eff_thickness), 2)))
+                    if w is None:
+                        w = Decimal(str(round(float(base.width_mm) * scale + 2.0 * float(eff_thickness), 2)))
+                    if h is None:
+                        h = Decimal(str(round(float(base.height_mm) * scale + 2.0 * float(eff_thickness), 2)))
+
+            if wt is None and base is not None and base.weight_grams:
+                wt = Decimal(str(mp)) * Decimal(str(base.weight_grams))
+
+            mc = ItemPackagingUnit(
+                organization_id=organization_id,
+                item_id=item.id,
+                unit_name=unit_name,
+                conversion_factor=Decimal(str(mp)),
+                items_per_master_pack=int(mp),
+                length_mm=l,
+                width_mm=w,
+                height_mm=h,
+                weight_grams=wt,
+                master_pack_fill_factor=eff_fill,
+                master_pack_void_fill_pct=eff_void,
+                master_pack_wall_thickness_mm=eff_thickness,
+                is_base_unit=False,
+                is_active=True,
+            )
+            self.db.add(mc)
+        else:
+            # Update the count and any explicitly-provided overrides; never
+            # overwrite operator-entered values with estimates or defaults.
+            mc.conversion_factor = Decimal(str(mp))
+            mc.items_per_master_pack = int(mp)
+            mc.is_base_unit = False
+            mc.is_active = True
+            if fill is not None:
+                mc.master_pack_fill_factor = eff_fill
+            if void is not None:
+                mc.master_pack_void_fill_pct = eff_void
+            if thickness is not None:
+                mc.master_pack_wall_thickness_mm = eff_thickness
+            if l is not None:
+                mc.length_mm = l
+            if w is not None:
+                mc.width_mm = w
+            if h is not None:
+                mc.height_mm = h
+            if wt is not None:
+                mc.weight_grams = wt
 
     def delete_item(
         self,

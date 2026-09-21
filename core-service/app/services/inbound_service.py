@@ -1512,9 +1512,16 @@ class InboundService:
         # ------------------------------------------------------------------
         # Step 2: Convert raw_quantity → Eaches and aggregate by (sku, batch)
         # ------------------------------------------------------------------
-        # key: (sku, batch_number) → {"eaches_qty": int, "box_count": int}
+        # key: (sku, batch_number) → {"eaches_qty": int, "box_count": int,
+        #     "packaging_unit_id": UUID | None, "pu_mixed": bool}
         slip_items_by_key: dict[tuple[str, str], dict] = defaultdict(
-            lambda: {"eaches_qty": 0, "box_count": 0}
+            lambda: {
+                "eaches_qty": 0,
+                "box_count": 0,
+                "packaging_unit_id": None,
+                "pu_mixed": False,
+                "pu_seen": False,
+            }
         )
 
         # Batch-load packaging units referenced by this slip's scan items.
@@ -1554,6 +1561,19 @@ class InboundService:
                 continue
             slip_items_by_key[key]["eaches_qty"] += eaches_qty
             slip_items_by_key[key]["box_count"] += 1
+            # Track the packaging unit so the slip line (and downstream
+            # put-away) can use MC outer dimensions. Mixed MC + loose scans of
+            # the same SKU/batch fall back to null (base-unit) volume.
+            agg = slip_items_by_key[key]
+            if not agg["pu_mixed"]:
+                if not agg["pu_seen"]:
+                    agg["packaging_unit_id"] = scan_item.packaging_unit_id
+                    agg["pu_seen"] = True
+                elif agg["packaging_unit_id"] != scan_item.packaging_unit_id:
+                    # A loose (None) scan followed by a carton scan (or vice
+                    # versa) is mixed stock — fall back to base-unit volume.
+                    agg["pu_mixed"] = True
+                    agg["packaging_unit_id"] = None
 
         # ------------------------------------------------------------------
         # Step 3: Delete existing receiving_slip_items and recreate with
@@ -1571,6 +1591,7 @@ class InboundService:
                 "batch_number": batch_number,
                 "quantity": agg["eaches_qty"],
                 "box_count": agg["box_count"],
+                "packaging_unit_id": agg.get("packaging_unit_id"),
                 "flag": "ok",
             }
             self.slip_repo.add_item(slip_id, item_data, commit=False)
