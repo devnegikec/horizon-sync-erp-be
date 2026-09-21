@@ -1,0 +1,115 @@
+name: Deploy to Railway (BW-staging)
+
+# Deploys the `stage` branch to the BW-staging Railway project on every push to
+# (or merge into) `stage`.
+#
+# Why GitHub Actions instead of Railway's native Git auto-deploy?
+# Railway gates Git-triggered deployments whose commit author it does not
+# recognise as a project member, leaving them stuck in the NEEDS_APPROVAL state.
+# `railway up` deploys the checked-out source instead (no Git commit author), so
+# it is never subject to that gate.
+#
+# Required repository secret:
+#   RAILWAY_TOKEN  — a *project* token for BW-staging
+#                    (Railway → project → Settings → Tokens), scoped to `staging`.
+#
+# See RAILWAY_STAGE_DEPLOY.md for the full runbook.
+
+on:
+  push:
+    branches:
+      - stage
+    paths:
+      - "core-service/**"
+      - "identity-service/**"
+      - "Dockerfile.core"
+      - "Dockerfile.identity"
+      - "railway.toml"
+      - ".github/workflows/deploy-stage.yml"
+
+# Never cancel a deploy that is already in flight.
+concurrency:
+  group: railway-bw-staging
+  cancel-in-progress: false
+
+env:
+  RAILWAY_PROJECT_ID: fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
+  RAILWAY_ENVIRONMENT_ID: 42a3b024-6059-47e2-a977-0e4377ef6e13
+
+jobs:
+  deploy:
+    name: Deploy stage → BW-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy core service (brandwise-2.0)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --service brandwise-2.0 \
+            --message "stage ${GITHUB_SHA::7} (${GITHUB_REF_NAME})" \
+            --ci
+
+      - name: Deploy identity service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --service identity-service \
+            --message "stage ${GITHUB_SHA::7} (${GITHUB_REF_NAME})" \
+            --ci
+
+      - name: Wait for deployments to become active
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 900 ))
+          for svc in brandwise-2.0 identity-service; do
+            echo "::group::$svc"
+            while :; do
+              status=$(railway deployment list \
+                --project "$RAILWAY_PROJECT_ID" \
+                --environment "$RAILWAY_ENVIRONMENT_ID" \
+                --service "$svc" --json | jq -r '.[0].status')
+              echo "$svc: $status"
+              case "$status" in
+                SUCCESS) break ;;
+                FAILED|CRASHED|REMOVED)
+                  echo "::error::$svc deployment finished with status $status"
+                  exit 1 ;;
+              esac
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::$svc did not reach SUCCESS within 15m (last: $status)"
+                exit 1
+              fi
+              sleep 15
+            done
+            echo "::endgroup::"
+          done
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### 🚀 BW-staging deployment"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Result | ${{ job.status }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Branch | \`${{ github.ref_name }}\` |"
+            echo "| Project | [BW-staging](https://railway.com/project/$RAILWAY_PROJECT_ID) |"
+          } >> "$GITHUB_STEP_SUMMARY"
