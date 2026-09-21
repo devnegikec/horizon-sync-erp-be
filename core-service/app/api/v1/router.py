@@ -72,6 +72,7 @@ from app.api.v1.endpoints import (
     quality_inspections,
     quotations,
     reconciliations,
+    returns,
     rfqs,
     sales_orders,
     scan_events,
@@ -349,6 +350,9 @@ api_router.include_router(
     prefix="/quality-inspections",
     tags=["Quality Inspections"],
 )
+# Returns (customer returns) module — R-01..R-08
+api_router.include_router(returns.router, prefix="/returns", tags=["Returns"])
+
 # Phase 5: Order Processing
 api_router.include_router(pick_lists.router, prefix="/pick-lists", tags=["Pick Lists"])
 # Pick exception framework (PR-03 / T-02 + T-05) — reason codes + immutable audit

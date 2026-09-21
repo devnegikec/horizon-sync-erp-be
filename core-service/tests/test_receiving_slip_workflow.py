@@ -346,48 +346,104 @@ class TestRejectSlip:
         assert "Rejection reason is required" in exc_info.value.message
 
 
-class TestFlagLineItem:
-    """Tests for flag_line_item method."""
+def _first_reason_code(db_session, org_id, flag="short"):
+    """First seeded, active reason code for the flag's category (or skip)."""
+    from app.models.inbound_exception import InboundExceptionReason
 
-    def test_flags_item_as_short(self, inbound_service, pending_review_slip, org_id):
-        """Should update item flag to 'short'."""
+    categories = {
+        "short": ["short"],
+        "damaged": ["damage"],
+        "excess": ["excess", "unexpected_sku"],
+    }[flag]
+    reason = (
+        db_session.query(InboundExceptionReason)
+        .filter(
+            InboundExceptionReason.category.in_(categories),
+            InboundExceptionReason.is_active.is_(True),
+            (InboundExceptionReason.organization_id.is_(None))
+            | (InboundExceptionReason.organization_id == org_id),
+        )
+        .order_by(InboundExceptionReason.code)
+        .first()
+    )
+    if reason is None:
+        pytest.skip(f"no seeded inbound exception reason for {categories}")
+    return reason.code
+
+
+class TestFlagLineItem:
+    """Tests for flag_line_item (reason-coded short receipts and exceptions)."""
+
+    def test_flags_item_as_short(
+        self, inbound_service, pending_review_slip, org_id, db_session
+    ):
+        """A short line keeps its reason code and short quantity."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+        reason_code = _first_reason_code(db_session, org_id, "short")
 
         result = inbound_service.flag_line_item(
-            slip_id, item_id, "short", "Missing 5 units", org_id
+            slip_id,
+            item_id,
+            "short",
+            "Missing 5 units",
+            org_id,
+            reason_code=reason_code,
+            short_qty=5,
         )
 
         assert result["flag"] == "short"
         assert result["notes"] == "Missing 5 units"
+        assert result["reason_code"] == reason_code
+        assert result["short_qty"] == 5
+        # A short receipt is a ledger-only record: nothing is segregated.
+        assert result["exception_id"] is None
+        assert result["destination"] is None
 
-    def test_flags_item_as_damaged(self, inbound_service, pending_review_slip, org_id):
-        """Should update item flag to 'damaged'."""
+    def test_flags_item_as_damaged_creates_exception(
+        self, inbound_service, pending_review_slip, org_id, db_session
+    ):
+        """Damaged lines open a supervisor exception (if the SKU is in master)."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+        reason_code = _first_reason_code(db_session, org_id, "damaged")
 
         result = inbound_service.flag_line_item(
-            slip_id, item_id, "damaged", "Water damage on boxes", org_id
+            slip_id,
+            item_id,
+            "damaged",
+            "Water damage on boxes",
+            org_id,
+            reason_code=reason_code,
         )
 
         assert result["flag"] == "damaged"
         assert result["notes"] == "Water damage on boxes"
+        assert result["reason_code"] == reason_code
 
     def test_flags_item_with_no_notes(
-        self, inbound_service, pending_review_slip, org_id
+        self, inbound_service, pending_review_slip, org_id, db_session
     ):
         """Should allow flagging without notes."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
 
-        result = inbound_service.flag_line_item(slip_id, item_id, "short", None, org_id)
+        result = inbound_service.flag_line_item(
+            slip_id,
+            item_id,
+            "short",
+            None,
+            org_id,
+            reason_code=_first_reason_code(db_session, org_id, "short"),
+            short_qty=1,
+        )
 
         assert result["flag"] == "short"
 
     def test_raises_validation_error_for_invalid_flag(
         self, inbound_service, pending_review_slip, org_id
     ):
-        """Should raise ValidationError for invalid flag values."""
+        """Invalid flags list the accepted values in the hint."""
         slip_id = uuid.UUID(pending_review_slip["id"])
         item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
 
@@ -396,7 +452,114 @@ class TestFlagLineItem:
                 slip_id, item_id, "invalid_flag", None, org_id
             )
 
-        assert "Invalid flag value" in exc_info.value.message
+        error = exc_info.value
+        assert error.code == "FLAG_VALUE_INVALID"
+        assert "short" in error.hint
+        assert error.details[0]["field"] == "flag"
+
+    def test_missing_reason_code_is_actionable(
+        self, inbound_service, pending_review_slip, org_id
+    ):
+        """A missing reason code returns the field, reason and a hint."""
+        slip_id = uuid.UUID(pending_review_slip["id"])
+        item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+
+        with pytest.raises(ValidationError) as exc_info:
+            inbound_service.flag_line_item(
+                slip_id, item_id, "short", None, org_id, short_qty=1
+            )
+
+        error = exc_info.value
+        assert error.code == "REASON_CODE_REQUIRED"
+        assert error.details[0]["field"] == "reason_code"
+        assert error.details[0]["hint"]
+        assert error.hint
+
+    def test_unknown_reason_code_is_rejected(
+        self, inbound_service, pending_review_slip, org_id
+    ):
+        """Unknown / wrong-category reason codes are rejected with a hint."""
+        slip_id = uuid.UUID(pending_review_slip["id"])
+        item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+
+        with pytest.raises(ValidationError) as exc_info:
+            inbound_service.flag_line_item(
+                slip_id,
+                item_id,
+                "short",
+                None,
+                org_id,
+                reason_code="NOT_A_REAL_CODE",
+                short_qty=1,
+            )
+
+        error = exc_info.value
+        assert error.code == "REASON_CODE_INVALID"
+        assert error.details[0]["field"] == "reason_code"
+
+    def test_short_quantity_is_required(
+        self, inbound_service, pending_review_slip, org_id, db_session
+    ):
+        """flag=short without short_qty explains exactly what to send."""
+        slip_id = uuid.UUID(pending_review_slip["id"])
+        item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+
+        with pytest.raises(ValidationError) as exc_info:
+            inbound_service.flag_line_item(
+                slip_id,
+                item_id,
+                "short",
+                None,
+                org_id,
+                reason_code=_first_reason_code(db_session, org_id, "short"),
+            )
+
+        error = exc_info.value
+        assert error.code == "SHORT_QTY_REQUIRED"
+        assert error.details[0]["field"] == "short_qty"
+
+    def test_destination_is_rejected_for_short(
+        self, inbound_service, pending_review_slip, org_id, db_session
+    ):
+        """Shorts are not segregated, so a destination bin is invalid."""
+        slip_id = uuid.UUID(pending_review_slip["id"])
+        item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+
+        with pytest.raises(ValidationError) as exc_info:
+            inbound_service.flag_line_item(
+                slip_id,
+                item_id,
+                "short",
+                None,
+                org_id,
+                reason_code=_first_reason_code(db_session, org_id, "short"),
+                short_qty=1,
+                destination="HOLD",
+            )
+
+        error = exc_info.value
+        assert error.code == "DESTINATION_NOT_ALLOWED"
+        assert error.details[0]["field"] == "destination"
+
+    def test_invalid_destination_for_damaged(
+        self, inbound_service, pending_review_slip, org_id, db_session
+    ):
+        """A segregation flag only accepts HOLD or QUARANTINE."""
+        slip_id = uuid.UUID(pending_review_slip["id"])
+        item_id = uuid.UUID(pending_review_slip["items"][0]["id"])
+
+        with pytest.raises(ValidationError) as exc_info:
+            inbound_service.flag_line_item(
+                slip_id,
+                item_id,
+                "damaged",
+                None,
+                org_id,
+                reason_code=_first_reason_code(db_session, org_id, "damaged"),
+                destination="SHELF-1",
+            )
+
+        assert exc_info.value.code == "DESTINATION_INVALID"
 
     def test_raises_not_found_for_missing_slip(self, inbound_service, org_id):
         """Should raise NotFoundError for non-existent slip."""
@@ -408,7 +571,9 @@ class TestFlagLineItem:
                 fake_slip_id, fake_item_id, "short", None, org_id
             )
 
-        assert "Receiving slip not found" in exc_info.value.message
+        assert "was not found" in exc_info.value.message
+        assert exc_info.value.code == "RECEIVING_SLIP_NOT_FOUND"
+        assert exc_info.value.hint
 
     def test_raises_not_found_for_missing_item(
         self, inbound_service, pending_review_slip, org_id
@@ -420,7 +585,8 @@ class TestFlagLineItem:
         with pytest.raises(NotFoundError) as exc_info:
             inbound_service.flag_line_item(slip_id, fake_item_id, "short", None, org_id)
 
-        assert "Receiving slip item not found" in exc_info.value.message
+        assert "was not found" in exc_info.value.message
+        assert exc_info.value.code == "RECEIPT_LINE_NOT_FOUND"
 
     def test_raises_state_error_for_non_pending_review_slip(
         self, inbound_service, pending_review_slip, org_id
@@ -437,6 +603,8 @@ class TestFlagLineItem:
             inbound_service.flag_line_item(slip_id, item_id, "short", None, org_id)
 
         assert exc_info.value.current_state == "pending_putaway"
+        assert exc_info.value.code == "SLIP_NOT_PENDING_REVIEW"
+        assert exc_info.value.hint
 
     def test_raises_validation_error_for_item_not_belonging_to_slip(
         self,
@@ -489,3 +657,4 @@ class TestFlagLineItem:
             )
 
         assert "does not belong" in exc_info.value.message
+        assert exc_info.value.code == "RECEIPT_LINE_SLIP_MISMATCH"

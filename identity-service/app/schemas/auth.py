@@ -48,6 +48,7 @@ class LoginUserResponse(BaseModel):
     language: str | None = None
     extra_data: dict | None = None
     organization_id: str | None = None
+    permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 

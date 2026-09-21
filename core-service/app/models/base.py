@@ -557,6 +557,7 @@ class NotificationType(str, enum.Enum):
     PUT_AWAY_LIST_CREATED = "put_away_list_created"
     PICK_LIST_CREATED = "pick_list_created"
     PICK_EXCEPTION = "pick_exception"
+    INBOUND_EXCEPTION = "inbound_exception"
     ERP_SYNC_FAILED = "erp_sync_failed"
     TRANSFER_PICK_CREATED = "transfer_pick_created"
 
