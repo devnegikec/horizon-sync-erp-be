@@ -130,6 +130,7 @@ def _iter_bin_stock_rows(db: Session, *, warehouse_id=None, bin_id=None):
             func.max(base.width_mm),
             func.max(base.height_mm),
             func.max(base.weight_grams),
+            func.max(base.items_per_master_pack),
         )
         .outerjoin(
             base,
@@ -163,12 +164,16 @@ def _iter_bin_stock_rows(db: Session, *, warehouse_id=None, bin_id=None):
     # Per-item cache for the master-pack fallback (avoids an N+1 query per row).
     mc_cache: dict[uuid.UUID, ItemPackagingUnit | None] = {}
     for row in rows:
-        bin_loc_id, item_id, packaging_unit_id, qty, bl, bw, bh, bwt = row
+        bin_loc_id, item_id, packaging_unit_id, qty, bl, bw, bh, bwt, base_ipp = row
 
         pu: ItemPackagingUnit | None = None
         if packaging_unit_id is not None:
             pu = db.get(ItemPackagingUnit, packaging_unit_id)
-        if pu is None:
+        # Only fall back to the master-pack unit for items explicitly configured
+        # to move in master packs (base row items_per_master_pack > 1); ordinary
+        # Eaches stock must not be re-cubed as cartons.
+        ipp = _num(base_ipp)
+        if pu is None and ipp is not None and ipp > 1:
             if item_id not in mc_cache:
                 mc_cache[item_id] = (
                     db.query(ItemPackagingUnit)
@@ -284,10 +289,21 @@ def compute_item_required_cc_and_grams(
     measured (no dimensions / no weight on either the packaging unit or the base
     unit), matching the "null = unconstrained" convention.
     """
+    base = (
+        db.query(ItemPackagingUnit)
+        .filter(
+            ItemPackagingUnit.item_id == item_id,
+            ItemPackagingUnit.is_base_unit.is_(True),
+        )
+        .first()
+    )
+
     ipu = db.get(ItemPackagingUnit, packaging_unit_id) if packaging_unit_id else None
-    if ipu is None:
-        # Match occupancy: fall back to the item's active master-pack unit so
-        # enforcement and reporting agree on MC outer dimensions.
+    # Match occupancy: only fall back to the master-pack unit for items
+    # explicitly configured to move in master packs (items_per_master_pack > 1);
+    # ordinary Eaches stock must be measured with base-unit dimensions.
+    base_ipp = _num(base.items_per_master_pack) if base is not None else None
+    if ipu is None and base_ipp is not None and base_ipp > 1:
         ipu = (
             db.query(ItemPackagingUnit)
             .filter(
@@ -299,14 +315,6 @@ def compute_item_required_cc_and_grams(
             .order_by(ItemPackagingUnit.conversion_factor.asc())
             .first()
         )
-    base = (
-        db.query(ItemPackagingUnit)
-        .filter(
-            ItemPackagingUnit.item_id == item_id,
-            ItemPackagingUnit.is_base_unit.is_(True),
-        )
-        .first()
-    )
 
     qty_d = _num(quantity) or Decimal("0")
     c = _num(ipu.conversion_factor) if ipu is not None else Decimal("1")

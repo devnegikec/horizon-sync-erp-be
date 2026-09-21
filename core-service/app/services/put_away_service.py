@@ -1012,6 +1012,18 @@ class PutAwayService:
         serial_nos = put_away_item.serial_nos or []
         bin_stock = None
         if serial_nos:
+            # A master carton occupies more volume than its loose serials, so
+            # validate the whole pack's volume/weight once up front; then add
+            # one row per serial without re-checking (count is additive).
+            self.bin_stock_service.validate_capacity(
+                bin_id=target_bin_id,
+                item_id=put_away_item.item_id,
+                org_id=org_id,
+                quantity=Decimal(len(serial_nos)),
+                packaging_unit_id=getattr(
+                    put_away_item, "packaging_unit_id", None
+                ),
+            )
             for serial in serial_nos:
                 self.bin_stock_service.add_stock(
                     bin_id=target_bin_id,
@@ -1023,6 +1035,7 @@ class PutAwayService:
                         put_away_item, "packaging_unit_id", None
                     ),
                     commit=False,
+                    skip_validate=True,
                 )
         else:
             bin_stock = self.bin_stock_service.add_stock(
