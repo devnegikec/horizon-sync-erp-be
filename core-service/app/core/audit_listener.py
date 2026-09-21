@@ -34,6 +34,13 @@ GLOBAL_EXCLUDE_FIELDS: set[str] = {
     "secret_key",
     "token",
     "refresh_token",
+    "access_token",
+    "auth_token",
+    "client_secret",
+    "private_key",
+    "private_key_encrypted",
+    "webhook_secret",
+    "secrete_code",
 }
 
 
@@ -114,6 +121,7 @@ def _create_audit_entry(
         user_id=uuid.UUID(ctx.user_id) if ctx.user_id else None,
         organization_id=uuid.UUID(ctx.organization_id) if ctx.organization_id else None,
         action=action,
+        role=ctx.role,
         table_name=table_name,
         record_id=record_id,
         old_values=old_values,
@@ -123,6 +131,20 @@ def _create_audit_entry(
         user_agent=ctx.user_agent,
     )
     session.add(audit_log)
+
+
+# ── Tables never audited (audit/log tables + history) ───────────────────────
+# Auditing these would recurse (audit_logs is written by this very listener) or
+# double-log data that is already captured elsewhere.
+AUDIT_EXCLUDE_TABLES: set[str] = {
+    "audit_logs",
+    "account_audit_log",
+    "admin_audit_logs",
+    "payment_audit_log",
+    "user_activity_logs",
+    "pick_exception_audit",
+    "status_transitions",
+}
 
 
 # ── Event handlers ───────────────────────────────────────────────────────────
@@ -238,7 +260,11 @@ def _after_delete(mapper, connection, target):  # noqa: ARG001
 
 
 def register_audit_listeners() -> None:
-    """Attach audit event listeners to every model with ``__audited__ = True``.
+    """Attach audit event listeners to every model by default.
+
+    Models explicitly opted out with ``__audited__ = False`` and the
+    audit/log tables in ``AUDIT_EXCLUDE_TABLES`` are skipped (auditing the
+    audit tables themselves would recurse or double-log).
 
     Call this once at application startup (e.g. in FastAPI lifespan).
     """
@@ -247,11 +273,14 @@ def register_audit_listeners() -> None:
     count = 0
     for mapper in Base.registry.mappers:
         cls = mapper.class_
-        if getattr(cls, "__audited__", False):
-            event.listen(cls, "after_insert", _after_insert)
-            event.listen(cls, "after_update", _after_update)
-            event.listen(cls, "after_delete", _after_delete)
-            count += 1
-            logger.debug("Registered audit listeners for %s", cls.__name__)
+        if getattr(cls, "__audited__", None) is False:
+            continue
+        if getattr(cls, "__tablename__", None) in AUDIT_EXCLUDE_TABLES:
+            continue
+        event.listen(cls, "after_insert", _after_insert)
+        event.listen(cls, "after_update", _after_update)
+        event.listen(cls, "after_delete", _after_delete)
+        count += 1
+        logger.debug("Registered audit listeners for %s", cls.__name__)
 
     logger.info("Audit listeners registered for %d model(s).", count)
