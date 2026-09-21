@@ -20,50 +20,10 @@ from app.models.scan_session import ScanSession
 from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
-from app.models.warehouse_user import WarehouseUser
+
+from app.core.warehouse_scope import get_user_warehouse_ids
 
 router = APIRouter()
-
-
-def _get_user_warehouse_ids(
-    db: Session,
-    user_id: UUID,
-    organization_id: UUID,
-    user_type: str,
-    permissions: list[str],
-) -> list[UUID] | None:
-    """Return the list of warehouse IDs assigned to this user.
-
-    Returns None if the user has global/admin access (meaning no filter should
-    be applied and all warehouses are visible).
-    """
-    if user_type in ("system_admin", "organization_admin") or "*.*" in permissions:
-        return None  # global access — no warehouse filter
-
-    # Check for primary (mother-warehouse) assignment → global access
-    has_primary = (
-        db.query(WarehouseUser)
-        .filter(
-            WarehouseUser.organization_id == organization_id,
-            WarehouseUser.user_id == user_id,
-            WarehouseUser.is_primary == True,
-            WarehouseUser.is_active == True,
-        )
-        .first()
-    )
-    if has_primary:
-        return None  # global access
-
-    rows = (
-        db.query(WarehouseUser.warehouse_id)
-        .filter(
-            WarehouseUser.organization_id == organization_id,
-            WarehouseUser.user_id == user_id,
-            WarehouseUser.is_active == True,
-        )
-        .all()
-    )
-    return [r.warehouse_id for r in rows]
 
 
 @router.get("/stats")
@@ -106,7 +66,7 @@ async def get_wms_dashboard_stats(
 
     # ── Warehouse scope ────────────────────────────────────────────────────
     # Respect the optional ?warehouse_id filter AND the user's own assignments.
-    user_wh_ids = _get_user_warehouse_ids(
+    user_wh_ids = get_user_warehouse_ids(
         db, current_user.id, org_id, current_user.user_type, current_user.permissions
     )
 
