@@ -42,16 +42,27 @@ def test_qseal_child_scan_persists_product_batch_and_request_metadata():
     block = SimpleNamespace(batch="BATCH-001")
     event = SimpleNamespace(id=uuid4(), verification_status="valid")
 
+    increment_query = _query(None)
     db = Mock()
     db.query.side_effect = [
         _query(child),  # initial QSealParameters lookup
         _query(child),  # context QSealParameters lookup
         _query(item),
         _query(block),
+        increment_query,  # atomic scan_count increment
     ]
     service = QSealService(db)
     service.repo.get_by_serial = Mock(return_value=None)
     service.repo.record_scan = Mock(return_value=event)
+    service.suspicion_service.assess = Mock(
+        return_value={
+            "is_suspicious": False,
+            "risk_score": 0,
+            "suspicious_reasons": [],
+            "review_status": "not_flagged",
+            "flagged_at": None,
+        }
+    )
 
     result = service.record_scan(
         QSealScanRequest(serial_number=child.serial_number, latitude=18.52),
@@ -76,7 +87,9 @@ def test_qseal_child_scan_persists_product_batch_and_request_metadata():
     assert payload["ip_address"] == "203.0.113.10"
     assert payload["referrer_url"] == "https://client.example/qseal"
     assert payload["language"] == "en-IN,en;q"
-    assert item.scan_count == 3
+    # The counter is incremented atomically in the database (so concurrent
+    # scans cannot lose an update) rather than on the in-memory instance.
+    increment_query.update.assert_called_once()
     assert item.last_scanned_at is not None
 
 

@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-from app.alembic_guards import has_column, has_index
+from app.alembic_guards import has_column, has_constraint, has_index
 
 
 revision: str = "115_add_qseal_scan_context"
@@ -44,7 +44,14 @@ def upgrade() -> None:
         ),
     )
     for name, column, target in foreign_keys:
-        op.create_foreign_key(name, "qr_scan_events", target.split(".")[0], [column], [target.split(".")[1]])
+        if not has_constraint("qr_scan_events", name):
+            op.create_foreign_key(
+                name,
+                "qr_scan_events",
+                target.split(".")[0],
+                [column],
+                [target.split(".")[1]],
+            )
 
     for name, column in (
         ("ix_qr_scan_events_product_id", "product_id"),

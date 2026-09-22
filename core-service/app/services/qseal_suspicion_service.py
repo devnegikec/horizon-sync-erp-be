@@ -33,7 +33,9 @@ class QSealSuspicionService:
         )
         delta_lat = lat2 - lat1
         delta_lon = lon2 - lon1
-        value = sin(delta_lat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(delta_lon / 2) ** 2
+        value = (
+            sin(delta_lat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(delta_lon / 2) ** 2
+        )
         return earth_radius_km * 2 * asin(sqrt(min(1.0, value)))
 
     def _previous_for_serial(self, payload: dict) -> list[QRScanEvent]:
@@ -103,17 +105,29 @@ class QSealSuspicionService:
         current_lon = payload.get("longitude")
         if current_lat is not None and current_lon is not None:
             for prior in previous:
-                if prior.latitude is None or prior.longitude is None or not prior.scan_timestamp:
+                if (
+                    prior.latitude is None
+                    or prior.longitude is None
+                    or not prior.scan_timestamp
+                ):
                     continue
-                elapsed = timestamp - prior.scan_timestamp
-                if elapsed <= timedelta(hours=6):
-                    if self._distance_km(current_lat, current_lon, prior.latitude, prior.longitude) >= 500:
-                        add(self.LOCATION_CHANGE)
-                        break
+                # Compare only against the most recent located scan. A distant
+                # older scan inside the window is not evidence of impossible
+                # travel when the latest scan is nearby.
+                if timestamp - prior.scan_timestamp <= timedelta(hours=6) and (
+                    self._distance_km(
+                        current_lat, current_lon, prior.latitude, prior.longitude
+                    )
+                    >= 500
+                ):
+                    add(self.LOCATION_CHANGE)
+                break
 
         # A source producing 25 or more QSeal events in one hour is useful as
         # a review signal, but it is not enough by itself to block a scan.
-        if self._source_count(payload) >= 25:
+        # ``_source_count`` excludes the current scan, so add it back to test
+        # the threshold against the full hourly total.
+        if self._source_count(payload) + 1 >= 25:
             add(self.HIGH_VOLUME_SOURCE)
 
         score = min(score, 100)
