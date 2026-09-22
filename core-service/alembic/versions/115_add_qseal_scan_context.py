@@ -13,7 +13,6 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 from app.alembic_guards import has_column, has_constraint, has_index
 
-
 revision: str = "115_add_qseal_scan_context"
 down_revision: str | None = "deac8f2179e0"
 branch_labels: str | Sequence[str] | None = None
