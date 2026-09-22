@@ -99,6 +99,9 @@ def _resolve_scope(
     )
     if warehouse_id:
         q = q.filter(Warehouse.id == warehouse_id)
+        if user_wh_ids is not None:
+            # Non-global users may only query warehouses assigned to them.
+            q = q.filter(Warehouse.id.in_(user_wh_ids))
     elif user_wh_ids is not None:
         q = q.filter(Warehouse.id.in_(user_wh_ids))
 
@@ -412,7 +415,7 @@ async def receiving_variance_report(
             pagination=_paginate(page, page_size, 0),
         )
 
-    clauses = ["ai.organization_id = :org"]
+    clauses = ["a.organization_id = :org"]
     params: dict = {"org": str(org_id)}
     if wh_id_strs:
         ph = ", ".join(f":wh{i}" for i in range(len(wh_id_strs)))
@@ -428,10 +431,17 @@ async def receiving_variance_report(
 
     where_sql = " AND ".join(clauses)
 
+    # Aggregate expected qty at the ASN × item level so multiple ASN lines
+    # sharing an SKU collapse into one row (received qty is only keyed by SKU).
     base_from = """
-        FROM asn_order_items ai
-        JOIN asn_orders a ON a.id = ai.asn_order_id
-        JOIN items i ON i.id = ai.item_id
+        FROM (
+            SELECT asn_order_id, item_id, SUM(qty) AS expected
+            FROM asn_order_items
+            WHERE organization_id = :org
+            GROUP BY asn_order_id, item_id
+        ) exp
+        JOIN asn_orders a ON a.id = exp.asn_order_id
+        JOIN items i ON i.id = exp.item_id
         LEFT JOIN warehouses_extended w ON w.id = a.warehouse_id_to
         LEFT JOIN (
             SELECT rs.asn_order_id, rsi.sku, SUM(rsi.quantity) AS received
@@ -444,11 +454,11 @@ async def receiving_variance_report(
 
     summ_row = db.execute(
         text(
-            "SELECT COALESCE(SUM(ai.qty), 0), "
+            "SELECT COALESCE(SUM(exp.expected), 0), "
             "COALESCE(SUM(COALESCE(recv.received, 0)), 0), "
-            "COUNT(ai.id), "
-            "COUNT(*) FILTER (WHERE ai.qty > COALESCE(recv.received, 0)), "
-            "COUNT(*) FILTER (WHERE ai.qty < COALESCE(recv.received, 0)) "
+            "COUNT(*), "
+            "COUNT(*) FILTER (WHERE exp.expected > COALESCE(recv.received, 0)), "
+            "COUNT(*) FILTER (WHERE exp.expected < COALESCE(recv.received, 0)) "
             f"{base_from} WHERE {where_sql}"
         ),
         params,
@@ -471,7 +481,7 @@ async def receiving_variance_report(
             "SELECT a.id, a.asn_order_no, a.order_date, a.status, "
             "a.warehouse_id_to, w.name, "
             "i.id, i.item_code, i.item_name, i.sku, "
-            "ai.qty, COALESCE(recv.received, 0) "
+            "exp.expected, COALESCE(recv.received, 0) "
             f"{base_from} WHERE {where_sql} "
             f"ORDER BY a.order_date DESC {limit_clause}"
         ),
@@ -540,18 +550,15 @@ async def bin_capacity_report(
             pagination=_paginate(page, page_size, 0),
         )
 
-    bins_q = db.query(WarehouseLocation).filter(
+    base_filters = [
         WarehouseLocation.organization_id == org_id,
         WarehouseLocation.is_active == True,
         WarehouseLocation.location_type == "bin",
-    )
+    ]
     if warehouse_id:
-        bins_q = bins_q.filter(WarehouseLocation.warehouse_id == warehouse_id)
+        base_filters.append(WarehouseLocation.warehouse_id == warehouse_id)
     else:
-        bins_q = bins_q.filter(WarehouseLocation.warehouse_id.in_(wh_ids))
-
-    all_bins = bins_q.all()
-    total_bins = len(all_bins)
+        base_filters.append(WarehouseLocation.warehouse_id.in_(wh_ids))
 
     # Reuse the (already fixed) volumetric engine for occupied volume/weight.
     occupancy: dict[str, tuple[Decimal, Decimal]] = {}
@@ -560,26 +567,39 @@ async def bin_capacity_report(
         occupancy.update(compute_warehouse_bin_occupancy(db, wid))
         counts.update(compute_warehouse_bin_counts(db, wid))
 
-    summary = BinCapacitySummary(total_bins=total_bins)
-    rows: list[BinCapacityRow] = []
-    for b in all_bins:
-        key = str(b.id)
-        occ_m3, occ_kg = occupancy.get(key, (Decimal("0"), Decimal("0")))
-        units, packs = counts.get(key, (Decimal("0"), Decimal("0")))
+    # Summary from a lightweight (id, capacity) projection — avoids loading
+    # full WarehouseLocation objects for every bin.
+    summary = BinCapacitySummary()
+    summary.total_occupied_cc = (
+        sum(float(m3) for m3, _ in occupancy.values()) * 1_000_000
+    )
+    summary.total_occupied_grams = (
+        sum(float(kg) for _, kg in occupancy.values()) * 1000
+    )
 
+    cap_rows = (
+        db.query(
+            WarehouseLocation.id,
+            WarehouseLocation.max_volume_cc,
+            WarehouseLocation.max_weight_grams,
+        )
+        .filter(*base_filters)
+        .all()
+    )
+
+    for bin_id, max_vol, max_wt in cap_rows:
+        key = str(bin_id)
+        occ_m3, occ_kg = occupancy.get(key, (Decimal("0"), Decimal("0")))
         occ_cc = float(occ_m3) * 1_000_000
         occ_g = float(occ_kg) * 1000
-        cap_cc = float(b.max_volume_cc) if b.max_volume_cc is not None else None
-        cap_g = (
-            float(b.max_weight_grams) if b.max_weight_grams is not None else None
-        )
+        cap_cc = float(max_vol) if max_vol is not None else None
+        cap_g = float(max_wt) if max_wt is not None else None
         vol_pct = (occ_cc / cap_cc * 100) if cap_cc else None
         w_pct = (occ_g / cap_g * 100) if cap_g else None
 
+        summary.total_bins += 1
         summary.total_capacity_cc += cap_cc or 0
-        summary.total_occupied_cc += occ_cc
         summary.total_capacity_grams += cap_g or 0
-        summary.total_occupied_grams += occ_g
         if cap_cc is not None:
             summary.bins_with_volume_capacity += 1
         if cap_g is not None:
@@ -593,24 +613,6 @@ async def bin_capacity_report(
         ):
             summary.full_bins += 1
 
-        rows.append(
-            BinCapacityRow(
-                bin_id=b.id,
-                code=b.code,
-                full_path=b.full_path,
-                location_type=b.location_type,
-                is_pickable=bool(b.is_pickable),
-                unit_count=float(units),
-                master_pack_count=float(packs),
-                occupied_cc=occ_cc,
-                capacity_cc=cap_cc,
-                volume_utilization_pct=vol_pct,
-                occupied_grams=occ_g,
-                capacity_grams=cap_g,
-                weight_utilization_pct=w_pct,
-            )
-        )
-
     summary.volume_utilization_pct = (
         (summary.total_occupied_cc / summary.total_capacity_cc * 100)
         if summary.total_capacity_cc
@@ -622,12 +624,50 @@ async def bin_capacity_report(
         else None
     )
 
+    # Rows — paginate in SQL so only the requested page loads full objects;
+    # CSV export stays bounded by MAX_EXPORT_ROWS.
+    rows_q = db.query(WarehouseLocation).filter(*base_filters).order_by(
+        WarehouseLocation.full_path
+    )
+    if format == "csv":
+        rows_q = rows_q.limit(MAX_EXPORT_ROWS)
+    else:
+        rows_q = rows_q.offset((page - 1) * page_size).limit(page_size)
+
+    rows: list[BinCapacityRow] = []
+    for b in rows_q.all():
+        key = str(b.id)
+        occ_m3, occ_kg = occupancy.get(key, (Decimal("0"), Decimal("0")))
+        units, packs = counts.get(key, (Decimal("0"), Decimal("0")))
+        occ_cc = float(occ_m3) * 1_000_000
+        occ_g = float(occ_kg) * 1000
+        cap_cc = float(b.max_volume_cc) if b.max_volume_cc is not None else None
+        cap_g = (
+            float(b.max_weight_grams) if b.max_weight_grams is not None else None
+        )
+        rows.append(
+            BinCapacityRow(
+                bin_id=b.id,
+                code=b.code,
+                full_path=b.full_path,
+                location_type=b.location_type,
+                is_pickable=bool(b.is_pickable),
+                unit_count=float(units),
+                master_pack_count=float(packs),
+                occupied_cc=occ_cc,
+                capacity_cc=cap_cc,
+                volume_utilization_pct=(occ_cc / cap_cc * 100) if cap_cc else None,
+                occupied_grams=occ_g,
+                capacity_grams=cap_g,
+                weight_utilization_pct=(occ_g / cap_g * 100) if cap_g else None,
+            )
+        )
+
     if format == "csv":
         return _csv_response("bin_capacity.csv", rows, BinCapacityRow)
 
-    start = (page - 1) * page_size
     return BinCapacityReportResponse(
         summary=summary,
-        rows=rows[start : start + page_size],
-        pagination=_paginate(page, page_size, total_bins),
+        rows=rows,
+        pagination=_paginate(page, page_size, summary.total_bins),
     )
