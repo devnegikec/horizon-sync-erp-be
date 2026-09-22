@@ -1,15 +1,43 @@
 """QSeal endpoints — hierarchical parent-child QSeal management"""
 
+from datetime import datetime
 from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user, require_permission
+from app.dependencies import CurrentUser, get_current_user, require_feature_flag, require_permission
 from app.models.product_item import ProductItem
+from app.schemas.qseal import (
+    QSealAggregationGroupedResponse,
+    QSealAggregationResponse,
+    QSealAutoLinkRequest,
+    QSealAutoLinkResponse,
+    QSealAnalyticsSummaryResponse,
+    QSealChildCreate,
+    QSealChildListResponse,
+    QSealDeviceAnalyticsResponse,
+    QSealGeographyAnalyticsResponse,
+    QSealHistoryItem,
+    QSealHistoryResponse,
+    QSealLabelDownloadResponse,
+    QSealMapRequest,
+    QSealMapResponse,
+    QSealParentCreate,
+    QSealParentDetailResponse,
+    QSealParentListResponse,
+    QSealParentResponse,
+    QSealProductAnalyticsResponse,
+    QSealScanRequest,
+    QSealScanResponse,
+    QSealScanTrendResponse,
+    QSealSuspiciousReviewRequest,
+    QSealSuspiciousScanResponse,
+)
 from app.schemas.qseal_activation import (
     ActivationScanRequest,
     ActivationScanResponse,
@@ -30,24 +58,6 @@ from app.schemas.qseal_activation import (
     SerialActivationResponse,
 )
 from app.services.qseal_activation_service import QSealActivationService
-from app.schemas.qseal import (
-    QSealAggregationGroupedResponse,
-    QSealAggregationResponse,
-    QSealAutoLinkRequest,
-    QSealAutoLinkResponse,
-    QSealChildCreate,
-    QSealChildListResponse,
-    QSealHistoryResponse,
-    QSealLabelDownloadResponse,
-    QSealMapRequest,
-    QSealMapResponse,
-    QSealParentCreate,
-    QSealParentDetailResponse,
-    QSealParentListResponse,
-    QSealParentResponse,
-    QSealScanRequest,
-    QSealScanResponse,
-)
 from app.services.qseal_service import QSealService
 
 router = APIRouter()
@@ -398,11 +408,17 @@ def map_children(
 )
 def record_scan(
     req: QSealScanRequest,
+    request: Request,
     organization_id: UUID = Query(...),
     service: QSealService = Depends(get_service),
 ):
     """No auth required — called from the consumer-facing QSeal landing page."""
-    return service.record_scan(req, organization_id)
+    return service.record_scan(
+        req,
+        organization_id,
+        request_headers=dict(request.headers),
+        client_ip=request.client.host if request.client else None,
+    )
 
 
 # ── QSeal History ─────────────────────────────────────────────────────────────
@@ -411,19 +427,239 @@ def record_scan(
 @router.get(
     "/history",
     response_model=QSealHistoryResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
     summary="Get QSeal scan history",
 )
 def get_scan_history(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    risk_filter: str | None = Query(None),
     serial_number: str | None = Query(
         None, description="Filter to a specific node serial"
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
 ):
     org_id = current_user.organization_id
-    return service.get_scan_history(org_id, serial_number, page, page_size)
+    return service.get_scan_history(
+        org_id,
+        serial_number,
+        page,
+        page_size,
+        date_from,
+        date_to,
+        product_id,
+        block_id,
+        batch,
+        qseal_type,
+        risk_filter,
+    )
+
+
+# ── Client-facing QSeal Analytics ────────────────────────────────────────────
+
+
+def _analytics_filters(
+    date_from: datetime | None,
+    date_to: datetime | None,
+    product_id: UUID | None,
+    block_id: UUID | None,
+    batch: str | None,
+    qseal_type: str | None,
+    serial_number: str | None,
+    risk_filter: str | None = None,
+) -> dict:
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "product_id": product_id,
+        "block_id": block_id,
+        "batch": batch,
+        "qseal_type": qseal_type,
+        "serial_number": serial_number,
+        "risk_filter": risk_filter,
+    }
+
+
+@router.get(
+    "/analytics/summary",
+    response_model=QSealAnalyticsSummaryResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Get client-facing QSeal scan summary",
+)
+def get_qseal_analytics_summary(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_scan_analytics_summary(
+        current_user.organization_id,
+        **_analytics_filters(date_from, date_to, product_id, block_id, batch, qseal_type, serial_number, risk_filter),
+    )
+
+
+@router.get(
+    "/analytics/suspicious",
+    response_model=QSealSuspiciousScanResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="List suspicious QSeal scan events",
+)
+def get_qseal_suspicious_analytics(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    review_status: str | None = Query(None),
+    min_risk_score: int | None = Query(None, ge=0, le=100),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_suspicious_scan_analytics(
+        current_user.organization_id,
+        page=page,
+        page_size=page_size,
+        review_status=review_status,
+        limit_score=min_risk_score,
+        **_analytics_filters(
+            date_from, date_to, product_id, None, batch, None, serial_number, risk_filter
+        ),
+    )
+
+
+@router.patch(
+    "/analytics/suspicious/{event_id}",
+    response_model=QSealHistoryItem,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Review or dismiss a suspicious QSeal scan",
+)
+def review_qseal_suspicious_scan(
+    event_id: UUID,
+    data: QSealSuspiciousReviewRequest,
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.update")),
+):
+    return service.review_suspicious_scan(
+        event_id, current_user.organization_id, data.review_status
+    )
+
+
+@router.get(
+    "/analytics/trends",
+    response_model=QSealScanTrendResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Get QSeal scan trends over time",
+)
+def get_qseal_analytics_trends(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_scan_analytics_trends(
+        current_user.organization_id,
+        **_analytics_filters(date_from, date_to, product_id, block_id, batch, qseal_type, serial_number, risk_filter),
+    )
+
+
+@router.get(
+    "/analytics/products",
+    response_model=QSealProductAnalyticsResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Get product-level QSeal scan analytics",
+)
+def get_qseal_product_analytics(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_product_scan_analytics(
+        current_user.organization_id,
+        limit=limit,
+        **_analytics_filters(date_from, date_to, product_id, block_id, batch, qseal_type, serial_number, risk_filter),
+    )
+
+
+@router.get(
+    "/analytics/geography",
+    response_model=QSealGeographyAnalyticsResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Get geographic distribution of QSeal scans",
+)
+def get_qseal_geography_analytics(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_geography_scan_analytics(
+        current_user.organization_id,
+        limit=limit,
+        **_analytics_filters(date_from, date_to, product_id, block_id, batch, qseal_type, serial_number, risk_filter),
+    )
+
+
+@router.get(
+    "/analytics/devices",
+    response_model=QSealDeviceAnalyticsResponse,
+    dependencies=[Depends(require_feature_flag(ANALYTICS_MODULE_ENABLED))],
+    summary="Get QSeal scans grouped by device type",
+)
+def get_qseal_device_analytics(
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    product_id: UUID | None = Query(None),
+    block_id: UUID | None = Query(None),
+    batch: str | None = Query(None),
+    qseal_type: str | None = Query(None),
+    serial_number: str | None = Query(None),
+    risk_filter: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    service: QSealService = Depends(get_service),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+):
+    return service.get_device_scan_analytics(
+        current_user.organization_id,
+        limit=limit,
+        **_analytics_filters(date_from, date_to, product_id, block_id, batch, qseal_type, serial_number, risk_filter),
+    )
 
 
 # ── Label Download ────────────────────────────────────────────────────────────

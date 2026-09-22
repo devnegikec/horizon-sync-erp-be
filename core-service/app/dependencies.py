@@ -15,6 +15,7 @@ from app.database import get_db
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
+feature_flag_security = HTTPBearer(auto_error=False)
 
 
 @dataclass
@@ -309,10 +310,47 @@ def require_feature_flag(flag_name: str):
         router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
     """
     from app.core.constants import FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
-    from app.services.feature_flag_service import is_feature_enabled
+    from app.services.feature_flag_service import (
+        is_feature_enabled,
+        is_feature_enabled_for_org,
+    )
 
-    async def _check_flag(db: Session = Depends(get_db)) -> None:
-        if not is_feature_enabled(flag_name, db):
+    async def _check_flag(
+        db: Session = Depends(get_db),
+        credentials: HTTPAuthorizationCredentials | None = Depends(
+            feature_flag_security
+        ),
+    ) -> None:
+        enabled = False
+
+        # Authenticated module requests should honor a tenant override. Keep
+        # the bearer token optional because this router also contains public
+        # QR scan ingestion endpoints, which must continue using the global
+        # flag when no user token is present.
+        if credentials:
+            try:
+                token = credentials.credentials
+                payload = decode_token(token)
+                if payload and payload.get("type") == "access":
+                    organization_id, _permissions = await _get_user_org_and_permissions(
+                        token
+                    )
+                    if organization_id is not None:
+                        enabled = is_feature_enabled_for_org(
+                            flag_name, db, organization_id
+                        )
+                    else:
+                        enabled = is_feature_enabled(flag_name, db)
+                else:
+                    enabled = is_feature_enabled(flag_name, db)
+            except Exception:
+                # The endpoint's own authentication dependency, when present,
+                # remains responsible for rejecting invalid user tokens.
+                enabled = is_feature_enabled(flag_name, db)
+        else:
+            enabled = is_feature_enabled(flag_name, db)
+
+        if not enabled:
             raise HTTPException(
                 status_code=HTTP_FEATURE_DISABLED,
                 detail={
