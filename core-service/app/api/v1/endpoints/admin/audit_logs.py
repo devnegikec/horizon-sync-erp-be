@@ -8,13 +8,19 @@ import logging
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.authorization import SYSTEM_ADMIN_REPORTING_READ
+from app.core.audit_modules import MODULES, tables_for_module
 from app.dependencies import CurrentUser, require_permission
-from app.schemas.audit_log import AuditLogHistoryResponse, AuditLogListResponse
+from app.schemas.audit_log import (
+    AuditLogHistoryResponse,
+    AuditLogListResponse,
+    AuditModuleInfo,
+    AuditModuleListResponse,
+)
 from app.services.audit_log_service import AuditLogService
 
 router = APIRouter()
@@ -30,6 +36,16 @@ async def list_audit_logs(
     action: str | None = Query(
         None, description="Filter by action (CREATE, UPDATE, DELETE)"
     ),
+    role: str | None = Query(
+        None, description="Filter by user role (JWT user_type value)"
+    ),
+    module: str | None = Query(
+        None,
+        description=(
+            "Filter by business module (Inventory, WMS, Revenue, QSeal, "
+            "Users, Roles, Settings, Other)"
+        ),
+    ),
     date_from: datetime | None = Query(None, description="Filter from date"),
     date_to: datetime | None = Query(None, description="Filter to date"),
     changed_field: str | None = Query(None, description="Filter by changed field name"),
@@ -39,6 +55,15 @@ async def list_audit_logs(
     current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
 ) -> AuditLogListResponse:
     """Return a cross-org paginated list of audit log entries."""
+    table_names: list[str] | None = None
+    if module:
+        if module not in MODULES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown module '{module}'. Valid modules: {', '.join(MODULES)}",
+            )
+        table_names = tables_for_module(module)
+
     service = AuditLogService(db)
     return service.list_audit_logs(
         organization_id=organization_id,
@@ -46,11 +71,26 @@ async def list_audit_logs(
         record_id=record_id,
         user_id=user_id,
         action=action,
+        role=role,
+        table_names=table_names,
         date_from=date_from,
         date_to=date_to,
         changed_field=changed_field,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/modules", response_model=AuditModuleListResponse)
+async def list_audit_modules(
+    current_user: CurrentUser = Depends(require_permission(SYSTEM_ADMIN_REPORTING_READ)),
+) -> AuditModuleListResponse:
+    """Return the module → tables catalog for the audit UI filter."""
+    return AuditModuleListResponse(
+        modules=[
+            AuditModuleInfo(module=m, tables=tables_for_module(m))
+            for m in MODULES
+        ]
     )
 
 
