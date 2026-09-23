@@ -111,17 +111,18 @@ def upgrade() -> None:
             )
         ).scalar()
         if duplicate:
-            print(
-                "WARNING: serial_nos has duplicate (organization_id, item_id, "
-                "serial_no) rows — skipping unique index creation. Reconcile "
-                "duplicates and re-run this migration."
+            # Fail rather than skip: if we skipped, Alembic would still record
+            # this migration as applied and never retry the constraint.
+            raise RuntimeError(
+                "serial_nos has duplicate (organization_id, item_id, serial_no) "
+                "rows. Reconcile the duplicates, then re-run "
+                "`alembic upgrade head` to create the unique index."
             )
-        else:
-            op.create_unique_constraint(
-                SERIAL_NOS_UNIQUE,
-                "serial_nos",
-                ["organization_id", "item_id", "serial_no"],
-            )
+        op.create_unique_constraint(
+            SERIAL_NOS_UNIQUE,
+            "serial_nos",
+            ["organization_id", "item_id", "serial_no"],
+        )
 
     # ── T0.3 / T0.6: inbound exception reason codes ────────────────────
     if has_table("inbound_exception_reasons"):

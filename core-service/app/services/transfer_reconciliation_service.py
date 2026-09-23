@@ -12,6 +12,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.asn_order import AsnOrder, AsnOrderSerialLine
@@ -35,6 +36,13 @@ class TransferReconciliationService:
         Returns a summary dict with the ASNs processed and exceptions created.
         """
         cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
+
+        # Serialize concurrent runs so two workers cannot both find no existing
+        # exception and insert duplicate open MISSING_SERIAL rows for one ASN.
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": "transfer:missing-serial-reconcile"},
+        )
 
         rows = (
             self.db.query(AsnOrderSerialLine, AsnOrder)
@@ -60,6 +68,7 @@ class TransferReconciliationService:
 
         created = 0
         skipped = 0
+        created_exceptions: list[tuple[InboundException, str]] = []
         for bucket in missing_by_asn.values():
             asn = bucket["asn"]
             serials = bucket["serials"]
@@ -104,6 +113,7 @@ class TransferReconciliationService:
             self.db.add(exception)
             self.db.flush()
             created += 1
+            created_exceptions.append((exception, asn.asn_order_no))
             logger.info(
                 "MISSING_SERIAL raised for ASN '%s' — %d serial(s)",
                 asn.asn_order_no,
@@ -112,26 +122,17 @@ class TransferReconciliationService:
 
         self.db.commit()
 
-        # Notify supervisors after the exceptions are committed (best-effort).
+        # Notify supervisors for the exceptions created by THIS run only, so a
+        # later scheduled run does not re-notify the same ASN.
         from app.services.inbound_exception_service import InboundExceptionService
 
         notifier = InboundExceptionService(self.db)
         notified = 0
-        for bucket in missing_by_asn.values():
-            exception = (
-                self.db.query(InboundException)
-                .filter(
-                    InboundException.asn_order_id == bucket["asn"].id,
-                    InboundException.reason_code == MISSING_SERIAL_REASON,
-                    InboundException.status == "open",
-                )
-                .first()
+        for exception, asn_no in created_exceptions:
+            notified += notifier.notify_supervisors(
+                exception,
+                title=f"Missing serials: ASN {asn_no}",
             )
-            if exception is not None:
-                notified += notifier.notify_supervisors(
-                    exception,
-                    title=f"Missing serials: ASN {bucket['asn'].asn_order_no}",
-                )
 
         return {
             "asns_with_missing_serials": len(missing_by_asn),

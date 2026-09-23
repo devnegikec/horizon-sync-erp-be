@@ -68,22 +68,25 @@ def _scalar_backfill_sql(table: str, id_column: str) -> str:
            SET product_item_id = pi.id
           FROM product_items pi
          WHERE pi.organization_id = t.organization_id
+           AND pi.deleted_at IS NULL
            AND pi.serial_number = t.{id_column}
            AND t.product_item_id IS NULL
     """
 
 
 def _array_backfill_sql(table: str) -> str:
+    # ``serial_nos`` is JSONB but some rows store a scalar rather than an array.
+    # Match only the FIRST serial (``->> 0``) so a multi-serial line resolves to
+    # a deterministic product item instead of an unspecified one from an IN() join.
     return f"""
         UPDATE {table} t
            SET product_item_id = pi.id
           FROM product_items pi
          WHERE pi.organization_id = t.organization_id
+           AND pi.deleted_at IS NULL
            AND t.serial_nos IS NOT NULL
-           AND t.serial_nos <> '[]'::jsonb
-           AND pi.serial_number IN (
-                 SELECT jsonb_array_elements_text(t.serial_nos)
-               )
+           AND jsonb_typeof(t.serial_nos) = 'array'
+           AND pi.serial_number = (t.serial_nos ->> 0)
            AND t.product_item_id IS NULL
     """
 

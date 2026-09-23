@@ -172,13 +172,17 @@ def compute_asn_reconciliation(
     pending_total = sum(li["pending_qty"] for li in line_items)
     over_total = sum(li["over_qty"] for li in line_items)
 
-    has_exceptions = unresolved_exception_count > 0 or any(
-        li["rejected_qty"]
-        or li["excess_qty"]
-        or li["damaged_qty"]
-        or li["hold_qty"]
-        or li["over_qty"]
-        for li in line_items
+    has_exceptions = (
+        unresolved_exception_count > 0
+        or unexpected_serials_count > 0
+        or any(
+            li["rejected_qty"]
+            or li["excess_qty"]
+            or li["damaged_qty"]
+            or li["hold_qty"]
+            or li["over_qty"]
+            for li in line_items
+        )
     )
 
     ready_for_receipt_note = (

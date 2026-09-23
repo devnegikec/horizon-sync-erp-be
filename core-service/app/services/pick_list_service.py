@@ -981,7 +981,9 @@ class PickListService:
                 )
             current.append(payload.id)
             matching_pick_item.serial_nos = current
-            if product_item is not None:
+            # First unit wins: a pick line can carry several serials but only
+            # one product_item_id; keep the first instead of the last scan.
+            if product_item is not None and matching_pick_item.product_item_id is None:
                 matching_pick_item.product_item_id = product_item.id
 
         # Check for over-picking (EX-021 tolerance)

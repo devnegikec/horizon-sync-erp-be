@@ -419,19 +419,21 @@ async def get_receiving_summary(
         )
         .all()
     ]
-    unexpected_serials = [
-        exc.qr_identifier
-        for exc in db.query(InboundException)
-        .filter(
-            InboundException.asn_order_id == asn_order_id,
-            InboundException.organization_id == current_user.organization_id,
-            InboundException.exception_type.in_(
-                ("serial_not_in_asn", "wrong_item")
-            ),
-        )
-        .all()
-        if exc.qr_identifier
-    ]
+    unexpected_serials = list(
+        {
+            exc.qr_identifier
+            for exc in db.query(InboundException)
+            .filter(
+                InboundException.asn_order_id == asn_order_id,
+                InboundException.organization_id == current_user.organization_id,
+                InboundException.exception_type.in_(
+                    ("serial_not_in_asn", "wrong_item")
+                ),
+            )
+            .all()
+            if exc.qr_identifier
+        }
+    )
 
     # Include the in-progress session only when it belongs to the requested
     # ASN and organisation. Finalized sessions are already represented by

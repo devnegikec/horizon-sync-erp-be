@@ -1143,6 +1143,28 @@ class InboundService:
                 .all()
             }
 
+        # Resolve each child's inventory Item so the serial line can be matched
+        # on serial AND item (wrong-item detection).
+        child_item_id_by_serial: dict[str, UUID] = {}
+        if pi_by_serial:
+            child_product_ids = {
+                pi.product_id for pi in pi_by_serial.values() if pi.product_id
+            }
+            if child_product_ids:
+                product_to_item = {
+                    i.qr_product_id: i.id
+                    for i in self.db.query(Item)
+                    .filter(
+                        Item.qr_product_id.in_(child_product_ids),
+                        Item.organization_id == organization_id,
+                        Item.deleted_at.is_(None),
+                    )
+                    .all()
+                }
+                for serial, pi in pi_by_serial.items():
+                    if pi.product_id and pi.product_id in product_to_item:
+                        child_item_id_by_serial[serial] = product_to_item[pi.product_id]
+
         exception_service = InboundExceptionService(self.db)
         tracking_svc = ScannedItemTrackingService(self.db)
         now = datetime.now(UTC)
@@ -1155,7 +1177,20 @@ class InboundService:
 
         for child in children:
             serial = child.serial_number
-            line = lines_by_serial.get(serial)
+            sl = lines_by_serial.get(serial)
+            child_item_id = child_item_id_by_serial.get(serial)
+
+            # A serial on a different ASN line must not be claimed (T0.4 parity).
+            if (
+                sl is not None
+                and child_item_id is not None
+                and sl.item_id != child_item_id
+            ):
+                line = None
+                wrong_item = True
+            else:
+                line = sl
+                wrong_item = False
 
             if line is None:
                 # Not expected on this ASN → record an exception (no stock).
@@ -1173,13 +1208,15 @@ class InboundService:
                     )
                     if resolved_item is not None:
                         sku = resolved_item.sku or resolved_item.item_code
+                exception_type = "wrong_item" if wrong_item else "serial_not_in_asn"
+                reason_code = "WRONG_ITEM" if wrong_item else "UNEXPECTED_SERIAL"
                 exception = exception_service.create_scan_exception(
                     organization_id=organization_id,
                     warehouse_id=session.warehouse_id,
                     session_id=session.id,
                     asn_order_id=asn_order.id,
-                    exception_type="serial_not_in_asn",
-                    reason_code="UNEXPECTED_SERIAL",
+                    exception_type=exception_type,
+                    reason_code=reason_code,
                     qr_identifier=serial,
                     sku=sku,
                     batch_number=None,
@@ -1195,7 +1232,7 @@ class InboundService:
                         "status": "unexpected",
                         "sku": sku,
                         "item_name": None,
-                        "reason_code": "UNEXPECTED_SERIAL",
+                        "reason_code": reason_code,
                     }
                 )
                 continue

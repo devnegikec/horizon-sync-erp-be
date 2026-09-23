@@ -192,16 +192,27 @@ class TestSerialAwareReconciliation:
         result = compute_asn_reconciliation(
             [_line(expected=10, accepted=10)],
             serial_lines=serial_lines,
-            unexpected_serials=["S9"],
         )
 
         assert result["expected_serials"] == 3
         assert result["received_serials"] == 2
         assert result["missing_serials"] == 1
-        assert result["unexpected_serials"] == 1
+        assert result["unexpected_serials"] == 0
         # Quantity output is untouched.
         assert result["reconciliation_status"] == "reconciled"
         assert result["scanned_total_qty"] == 10
+
+    def test_unexpected_serial_blocks_reconciled(self):
+        """An unexpected serial means the ASN cannot be marked ready (review fix)."""
+        result = compute_asn_reconciliation(
+            [_line(expected=10, accepted=10)],
+            serial_lines=[{"serial_no": "S1", "received": True}],
+            unexpected_serials=["S9"],
+        )
+
+        assert result["unexpected_serials"] == 1
+        assert result["reconciliation_status"] == "exception"
+        assert result["ready_for_receipt_note"] is False
 
     def test_no_serial_lines_yields_zero_serial_counts(self):
         result = compute_asn_reconciliation([_line(expected=10)])
