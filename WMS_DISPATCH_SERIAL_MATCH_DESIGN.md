@@ -253,12 +253,12 @@ Effort: S ≤ 1 day · M ≤ 3 days · L ≤ 1 week.
 
 | ID | Task | Effort | Status |
 |---|---|---|---|
-| **T3.1** | Scheduled Celery beat reconciliation for missing serials | M | ⬜ |
-| **T3.2** | Serial-aware `compute_asn_reconciliation` | M | ⬜ |
-| **T3.3** | Gate ASN closure on unreceived serial lines | M | ⬜ |
-| **T3.4** | Tests for the transfer serial path | M | ⬜ |
-| **T3.5** | Typed FKs from `qr_scan_events` to documents | M | ⬜ |
-| **T3.6** | Consolidate the two dispatch paths | L | ⬜ |
+| **T3.1** | Scheduled Celery beat reconciliation for missing serials | M | ✅ |
+| **T3.2** | Serial-aware `compute_asn_reconciliation` | M | ✅ |
+| **T3.3** | Gate ASN closure on unreceived serial lines | M | ✅ |
+| **T3.4** | Tests for the transfer serial path | M | ✅ |
+| **T3.5** | Typed FKs from `qr_scan_events` to documents | M | ✅ |
+| **T3.6** | Consolidate the two dispatch paths | L | ⬜ (deferred) |
 
 ### Phase 4 — Optional standards hardening
 

@@ -563,6 +563,8 @@ class InboundService:
         scan_event = QRScanEvent(
             organization_id=organization_id,
             product_item_id=product_item.id if product_item else None,
+            asn_order_id=session.asn_order_id,
+            scan_session_id=session_id,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             device_type=device_type,
@@ -1308,6 +1310,8 @@ class InboundService:
         # T2.3 — one audit event for the whole carton scan.
         scan_event = QRScanEvent(
             organization_id=organization_id,
+            asn_order_id=session.asn_order_id,
+            scan_session_id=session_id,
             serial_number=parent_track.serial_number,
             scan_timestamp=datetime.now(UTC),
             device_type=device_type,

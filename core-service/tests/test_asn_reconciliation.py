@@ -178,3 +178,44 @@ class TestPartialReceipt:
         assert result["matched_items"] == 1
         assert result["partial_items"] == 1
         assert result["short_total_qty"] == 3
+
+
+class TestSerialAwareReconciliation:
+    """T3.2 — the serial section reported alongside the quantity output."""
+
+    def test_serial_counts_reported_without_changing_quantity_output(self):
+        serial_lines = [
+            {"serial_no": "S1", "received": True},
+            {"serial_no": "S2", "received": True},
+            {"serial_no": "S3", "received": False},
+        ]
+        result = compute_asn_reconciliation(
+            [_line(expected=10, accepted=10)],
+            serial_lines=serial_lines,
+            unexpected_serials=["S9"],
+        )
+
+        assert result["expected_serials"] == 3
+        assert result["received_serials"] == 2
+        assert result["missing_serials"] == 1
+        assert result["unexpected_serials"] == 1
+        # Quantity output is untouched.
+        assert result["reconciliation_status"] == "reconciled"
+        assert result["scanned_total_qty"] == 10
+
+    def test_no_serial_lines_yields_zero_serial_counts(self):
+        result = compute_asn_reconciliation([_line(expected=10)])
+
+        assert result["expected_serials"] == 0
+        assert result["received_serials"] == 0
+        assert result["missing_serials"] == 0
+        assert result["unexpected_serials"] == 0
+
+    def test_all_serials_received_has_no_missing(self):
+        serial_lines = [{"serial_no": "S1", "received": True}]
+        result = compute_asn_reconciliation([], serial_lines=serial_lines)
+
+        assert result["expected_serials"] == 1
+        assert result["received_serials"] == 1
+        assert result["missing_serials"] == 0
+

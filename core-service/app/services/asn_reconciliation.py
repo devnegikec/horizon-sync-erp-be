@@ -22,6 +22,8 @@ def compute_asn_reconciliation(
     active_scans_by_sku: dict[str, int] | None = None,
     unresolved_exception_count: int = 0,
     include_active_session: bool = False,
+    serial_lines: list[dict[str, Any]] | None = None,
+    unexpected_serials: list[str] | None = None,
 ) -> dict[str, Any]:
     """Compute per-line status and ASN-level reconciliation state.
 
@@ -44,6 +46,16 @@ def compute_asn_reconciliation(
         ``ready_for_receipt_note`` and ``is_partial_receipt``.
     """
     scans = active_scans_by_sku or {}
+
+    # ── Serial-aware section (T3.2) ────────────────────────────────────
+    # Optional: keep the existing quantity output intact; serial counts are
+    # reported alongside for serialized internal transfers.
+    expected_serials = len(serial_lines) if serial_lines else 0
+    received_serials = (
+        sum(1 for s in serial_lines if s.get("received")) if serial_lines else 0
+    )
+    missing_serials = expected_serials - received_serials
+    unexpected_serials_count = len(unexpected_serials) if unexpected_serials else 0
 
     # Pre-compute finalized physical quantities per line.
     base: list[dict[str, Any]] = []
@@ -202,4 +214,8 @@ def compute_asn_reconciliation(
         "reconciliation_status": reconciliation_status,
         "ready_for_receipt_note": ready_for_receipt_note,
         "is_partial_receipt": reconciliation_status == "partial" and short_total > 0,
+        "expected_serials": expected_serials,
+        "received_serials": received_serials,
+        "missing_serials": missing_serials,
+        "unexpected_serials": unexpected_serials_count,
     }

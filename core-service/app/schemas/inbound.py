@@ -897,6 +897,10 @@ class AsnReceivingSummaryResponse(BaseModel):
     active_session_id: str | None = None
     linked_slips: list[LinkedReceivingSlipSummary]
     line_items: list[AsnLineItemReceivingSummary]
+    expected_serials: int = 0
+    received_serials: int = 0
+    missing_serials: int = 0
+    unexpected_serials: int = 0
 
 
 # ------------------------------------------------------------------
