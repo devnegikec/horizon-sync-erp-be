@@ -144,6 +144,22 @@ async def export_asn_epcis(
     return svc.epcis_events(asn_order_id, current_user.organization_id)
 
 
+@router.get("/{asn_order_id}/transfer-verification")
+async def get_transfer_verification(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """Per-serial transfer verification report (received/in-transit/missing/unexpected).
+
+    Requires asn_order.read.
+    """
+    from app.services.transfer_verification_service import TransferVerificationService
+
+    svc = TransferVerificationService(db)
+    return svc.verification_report(asn_order_id, current_user.organization_id)
+
+
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)
 async def update_asn_order(
     asn_order_id: UUID,

@@ -35,6 +35,42 @@ class RecordScanRequest(BaseModel):
     os: str | None = Field(None, max_length=50, description="Operating system info")
 
 
+class ScanCartonRequest(BaseModel):
+    """Schema for receiving a full master carton from its parent QR."""
+
+    qr_data: str = Field(
+        ..., min_length=1, description="Raw QR payload of the master-carton (parent) label"
+    )
+    device_type: str | None = Field(
+        None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
+    )
+    os: str | None = Field(None, max_length=50, description="Operating system info")
+
+
+class ScanCartonSerialResult(BaseModel):
+    """Per-serial outcome of a carton scan."""
+
+    serial_no: str
+    status: str  # received | duplicate | unexpected
+    sku: str | None = None
+    item_name: str | None = None
+    reason_code: str | None = None
+
+
+class ScanCartonResult(BaseModel):
+    """Summary of a server-side master-carton receive."""
+
+    session_id: str
+    carton: str | None = None
+    carton_serial: str | None = None
+    expected: int = 0
+    received: int = 0
+    duplicate: int = 0
+    unexpected: int = 0
+    exception_ids: list[str] = Field(default_factory=list)
+    serials: list[ScanCartonSerialResult] = Field(default_factory=list)
+
+
 class RemoveScansRequest(BaseModel):
     """Schema for removing one or more scanned items from an open session."""
 
@@ -260,6 +296,7 @@ class SessionResponse(BaseModel):
     warehouse_id: str
     dock_location: str | None = None
     asn_order_id: str | None = None
+    serialization_mode: str | None = None
     vehicle_arrival_id: str | None = None
     vehicle_no: str | None = None
     status: str
@@ -348,6 +385,8 @@ class ReceivingSlipItemData(BaseModel):
     quantity: int
     box_count: int
     flag: str
+    serial_nos: list[str] | None = None
+    received_serial_count: int = 0
     condition_code: str | None = None
     exception_status: str | None = None
     exception_destination_location_id: str | None = None

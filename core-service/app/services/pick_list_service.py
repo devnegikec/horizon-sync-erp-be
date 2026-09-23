@@ -981,6 +981,8 @@ class PickListService:
                 )
             current.append(payload.id)
             matching_pick_item.serial_nos = current
+            if product_item is not None:
+                matching_pick_item.product_item_id = product_item.id
 
         # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))
@@ -1034,6 +1036,7 @@ class PickListService:
         # Record scan event in qr_scan_events
         scan_event = QRScanEvent(
             organization_id=org_id,
+            product_item_id=product_item.id if product_item else None,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             extra_data={

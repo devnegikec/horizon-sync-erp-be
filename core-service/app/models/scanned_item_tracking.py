@@ -54,6 +54,12 @@ class ScannedItemTracking(Base):
         ForeignKey("items.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     sku = Column(String(100), nullable=False)
     batch_number = Column(String(100), nullable=True)
     quantity = Column(Integer, nullable=False, default=1)

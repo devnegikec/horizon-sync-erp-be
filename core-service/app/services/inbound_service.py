@@ -525,6 +525,7 @@ class InboundService:
             "batch_number": payload.batch,
             "raw_qr_data": qr_data,
             "packaging_unit_id": packaging_unit_id,
+            "product_item_id": product_item.id if product_item else None,
         }
         scan_item = self.session_repo.add_item(session_id, item_data)
 
@@ -543,6 +544,7 @@ class InboundService:
                 scan_item_id=scan_item.id,
                 qr_identifier=payload.id,
                 item_id=item.id,
+                product_item_id=product_item.id if product_item else None,
                 sku=item.sku or item.item_code or payload.sku,
                 quantity=payload.qty or 1,
                 batch_number=payload.batch,
@@ -560,6 +562,7 @@ class InboundService:
         # Record scan event in qr_scan_events table
         scan_event = QRScanEvent(
             organization_id=organization_id,
+            product_item_id=product_item.id if product_item else None,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             device_type=device_type,
@@ -876,15 +879,51 @@ class InboundService:
             # Non-serialized transfer — nothing to verify.
             return
 
-        line = next((sl for sl in serial_lines if sl.serial_no == serial_no), None)
+        # T0.4 — match on serial AND item so a serial on ASN line X cannot be
+        # claimed while scanning an item that resolved to line Y.
+        line = next(
+            (
+                sl
+                for sl in serial_lines
+                if sl.serial_no == serial_no and sl.item_id == item.id
+            ),
+            None,
+        )
         if line is None:
+            # Distinguish a true wrong-item (serial on the ASN, different line)
+            # from an unexpected serial (not on the ASN at all).
+            wrong_item_line = next(
+                (sl for sl in serial_lines if sl.serial_no == serial_no), None
+            )
+            if wrong_item_line is not None:
+                exception_type = "wrong_item"
+                reason_code = "WRONG_ITEM"
+                message = (
+                    "Serial belongs to a different item on this transfer ASN: "
+                    "scan stopped and exception recorded"
+                )
+                reason_detail = (
+                    f"serial '{serial_no}' is on ASN {asn_order.asn_order_no} "
+                    f"under a different item"
+                )
+            else:
+                exception_type = "serial_not_in_asn"
+                reason_code = "UNEXPECTED_SERIAL"
+                message = (
+                    "Serial not expected on this transfer ASN: "
+                    "scan stopped and exception recorded"
+                )
+                reason_detail = (
+                    f"serial '{serial_no}' is not in ASN {asn_order.asn_order_no}"
+                )
+
             exception = InboundExceptionService(self.db).create_scan_exception(
                 organization_id=organization_id,
                 warehouse_id=session.warehouse_id,
                 session_id=session.id,
                 asn_order_id=asn_order.id,
-                exception_type="serial_not_in_asn",
-                reason_code="EXCESS",
+                exception_type=exception_type,
+                reason_code=reason_code,
                 qr_identifier=serial_no,
                 sku=item.sku or item.item_code,
                 batch_number=None,
@@ -895,17 +934,11 @@ class InboundService:
             )
             self.db.commit()
             raise ValidationError(
-                message=(
-                    "Serial not expected on this transfer ASN: "
-                    "scan stopped and exception recorded"
-                ),
+                message=message,
                 details=[
                     {
                         "field": "qr_data",
-                        "reason": (
-                            f"Exception {exception.id}: serial '{serial_no}' "
-                            f"is not in ASN {asn_order.asn_order_no}"
-                        ),
+                        "reason": f"Exception {exception.id}: {reason_detail}",
                     }
                 ],
             )
@@ -957,6 +990,357 @@ class InboundService:
                     remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
                 )
             )
+
+    # ------------------------------------------------------------------
+    # CARTON SCAN (server-side master-carton expansion)
+    # ------------------------------------------------------------------
+
+    def scan_carton(  # noqa: C901 - pre-existing complexity
+        self,
+        session_id: UUID,
+        qr_data: str,
+        worker_id: UUID,
+        organization_id: UUID,
+        device_type: str | None = None,
+        os: str | None = None,
+    ) -> dict:
+        """Receive a full master carton by scanning its parent QR (T2.2 / T2.3 / T2.4).
+
+        Expands the carton server-side via the QSeal parent/child hierarchy and
+        verifies each child serial against the internal-transfer ASN in one
+        transaction. Matching units are received; units already received are
+        reported as duplicates; units not on the ASN raise an
+        ``UNEXPECTED_SERIAL`` exception. One audit event is written for the
+        carton scan, and the response carries a per-serial + carton summary.
+        """
+        from app.models.asn_order import AsnOrder, AsnOrderSerialLine
+        from app.models.item import Item
+        from app.models.product_item import ProductItem
+        from app.models.qseal import QSealParameters, QSealTrack
+        from app.models.scan_session import ScanSessionItem
+        from app.models.serial_no import SerialNo, SerialNoHistory
+        from app.services.inbound_exception_service import InboundExceptionService
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        session = self.session_repo.get_by_id(session_id, organization_id)
+        if session is None:
+            raise NotFoundError(
+                message="Scan session not found",
+                entity_type="ScanSession",
+                entity_id=str(session_id),
+            )
+        if session.status != "open":
+            raise StateError(
+                message="Cannot record scan on a closed session",
+                current_state=session.status,
+                required_state=["open"],
+            )
+
+        asn_order = (
+            self.db.query(AsnOrder)
+            .filter(
+                AsnOrder.id == session.asn_order_id,
+                AsnOrder.organization_id == organization_id,
+            )
+            .first()
+        ) if session.asn_order_id else None
+        if asn_order is None or asn_order.asn_type != "internal_transfer":
+            raise ValidationError(
+                message="Carton receive is only supported for internal-transfer ASNs",
+                details=[
+                    {
+                        "field": "session_id",
+                        "reason": "The session is not linked to an internal-transfer ASN",
+                    }
+                ],
+            )
+
+        payload = decode_qr_payload(
+            qr_data, db=self.db, organization_id=organization_id
+        )
+
+        # Resolve the master carton: QSealTrack parent by its serial (or id).
+        parent_track = (
+            self.db.query(QSealTrack)
+            .filter(
+                QSealTrack.organization_id == organization_id,
+                QSealTrack.serial_number == payload.id,
+            )
+            .first()
+        )
+        if parent_track is None:
+            try:
+                track_id = UUID(payload.id)
+            except (ValueError, AttributeError):
+                track_id = None
+            if track_id is not None:
+                parent_track = self.db.get(QSealTrack, track_id)
+        if parent_track is None:
+            raise ValidationError(
+                message="Master carton not found for scanned QR",
+                details=[
+                    {
+                        "field": "qr_data",
+                        "reason": (
+                            f"Carton '{payload.id}' does not resolve to a QSeal parent"
+                        ),
+                    }
+                ],
+            )
+
+        children = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.parent_id == parent_track.id,
+                QSealParameters.organization_id == organization_id,
+            )
+            .order_by(QSealParameters.created_at.asc())
+            .all()
+        )
+        if not children:
+            raise ValidationError(
+                message="Master carton has no linked units",
+                details=[
+                    {
+                        "field": "qr_data",
+                        "reason": f"Carton '{parent_track.serial_number}' has no linked units",
+                    }
+                ],
+            )
+
+        serial_lines = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(
+                AsnOrderSerialLine.asn_order_id == asn_order.id,
+                AsnOrderSerialLine.organization_id == organization_id,
+            )
+            .all()
+        )
+        lines_by_serial = {sl.serial_no: sl for sl in serial_lines}
+
+        # Batch-resolve items and product items.
+        item_ids = {line.item_id for line in serial_lines}
+        item_by_id: dict[UUID, Item] = {}
+        if item_ids:
+            item_by_id = {
+                i.id: i for i in self.db.query(Item).filter(Item.id.in_(item_ids)).all()
+            }
+
+        child_serials = [c.serial_number for c in children if c.serial_number]
+        pi_by_serial: dict[str, ProductItem] = {}
+        if child_serials:
+            pi_by_serial = {
+                pi.serial_number: pi
+                for pi in self.db.query(ProductItem)
+                .filter(
+                    ProductItem.serial_number.in_(child_serials),
+                    ProductItem.organization_id == organization_id,
+                )
+                .all()
+            }
+
+        exception_service = InboundExceptionService(self.db)
+        tracking_svc = ScannedItemTrackingService(self.db)
+        now = datetime.now(UTC)
+
+        serials_results: list[dict] = []
+        received_count = 0
+        duplicate_count = 0
+        unexpected_count = 0
+        exception_ids: list[str] = []
+
+        for child in children:
+            serial = child.serial_number
+            line = lines_by_serial.get(serial)
+
+            if line is None:
+                # Not expected on this ASN → record an exception (no stock).
+                product_item = pi_by_serial.get(serial)
+                sku = None
+                if product_item is not None:
+                    resolved_item = (
+                        self.db.query(Item)
+                        .filter(
+                            Item.qr_product_id == product_item.product_id,
+                            Item.organization_id == organization_id,
+                            Item.deleted_at.is_(None),
+                        )
+                        .first()
+                    )
+                    if resolved_item is not None:
+                        sku = resolved_item.sku or resolved_item.item_code
+                exception = exception_service.create_scan_exception(
+                    organization_id=organization_id,
+                    warehouse_id=session.warehouse_id,
+                    session_id=session.id,
+                    asn_order_id=asn_order.id,
+                    exception_type="serial_not_in_asn",
+                    reason_code="UNEXPECTED_SERIAL",
+                    qr_identifier=serial,
+                    sku=sku,
+                    batch_number=None,
+                    quantity=1,
+                    raw_qr_data=serial,
+                    actor_id=worker_id,
+                )
+                exception_ids.append(str(exception.id))
+                unexpected_count += 1
+                serials_results.append(
+                    {
+                        "serial_no": serial,
+                        "status": "unexpected",
+                        "sku": sku,
+                        "item_name": None,
+                        "reason_code": "UNEXPECTED_SERIAL",
+                    }
+                )
+                continue
+
+            if line.received:
+                duplicate_count += 1
+                serials_results.append(
+                    {
+                        "serial_no": serial,
+                        "status": "duplicate",
+                        "sku": (item_by_id[line.item_id].sku if line.item_id in item_by_id else None),
+                        "item_name": (
+                            item_by_id[line.item_id].item_name
+                            if line.item_id in item_by_id
+                            else None
+                        ),
+                        "reason_code": None,
+                    }
+                )
+                continue
+
+            # Atomically claim the serial line (concurrent-safe, mirroring the
+            # single-scan path).
+            claim = self.db.execute(
+                text(
+                    "UPDATE asn_order_serial_lines "
+                    "SET received = true, received_at = :now, received_by = :worker "
+                    "WHERE id = :line_id AND received = false"
+                ),
+                {"line_id": str(line.id), "now": now, "worker": str(worker_id)},
+            )
+            if claim.rowcount == 0:
+                duplicate_count += 1
+                serials_results.append(
+                    {
+                        "serial_no": serial,
+                        "status": "duplicate",
+                        "sku": None,
+                        "item_name": None,
+                        "reason_code": None,
+                    }
+                )
+                continue
+
+            item = item_by_id.get(line.item_id)
+            product_item = pi_by_serial.get(serial)
+
+            # Chain of custody: transfer_in at the destination warehouse.
+            serial_row = (
+                self.db.query(SerialNo)
+                .filter(
+                    SerialNo.organization_id == organization_id,
+                    SerialNo.serial_no == serial,
+                    SerialNo.item_id == line.item_id,
+                )
+                .first()
+            )
+            if serial_row is not None:
+                serial_row.warehouse_id = asn_order.warehouse_id_to
+                serial_row.status = "in_stock"
+                self.db.add(
+                    SerialNoHistory(
+                        organization_id=organization_id,
+                        serial_no_id=serial_row.id,
+                        transaction_type="transfer_in",
+                        transaction_id=asn_order.id,
+                        from_warehouse_id=asn_order.warehouse_id_from,
+                        to_warehouse_id=asn_order.warehouse_id_to,
+                        remarks=f"Internal transfer ASN {asn_order.asn_order_no}",
+                    )
+                )
+
+            sku = (item.sku or item.item_code) if item else None
+            scan_item = ScanSessionItem(
+                organization_id=organization_id,
+                session_id=session_id,
+                qr_identifier=serial,
+                sku=sku or serial,
+                raw_quantity=1,
+                batch_number=serial,
+                raw_qr_data=serial,
+                product_item_id=product_item.id if product_item else None,
+            )
+            self.db.add(scan_item)
+            self.db.flush()
+
+            tracking_svc.create_from_scan(
+                organization_id=organization_id,
+                warehouse_id=session.warehouse_id,
+                session_id=session_id,
+                scan_item_id=scan_item.id,
+                qr_identifier=serial,
+                item_id=line.item_id,
+                product_item_id=product_item.id if product_item else None,
+                sku=sku or serial,
+                quantity=1,
+                batch_number=serial,
+                scanned_by=worker_id,
+            )
+
+            received_count += 1
+            serials_results.append(
+                {
+                    "serial_no": serial,
+                    "status": "received",
+                    "sku": sku,
+                    "item_name": item.item_name if item else None,
+                    "reason_code": None,
+                }
+            )
+
+        # T2.3 — one audit event for the whole carton scan.
+        scan_event = QRScanEvent(
+            organization_id=organization_id,
+            serial_number=parent_track.serial_number,
+            scan_timestamp=datetime.now(UTC),
+            device_type=device_type,
+            os=os,
+            extra_data={
+                "scan_context": "inbound",
+                "carton_scan": True,
+                "session_id": str(session_id),
+                "worker_id": str(worker_id),
+                "carton_id": str(parent_track.id),
+                "carton_serial": parent_track.serial_number,
+                "expanded_serials": [c.serial_number for c in children if c.serial_number],
+            },
+        )
+        self.db.add(scan_event)
+
+        if session.total_boxes_scanned is None:
+            session.total_boxes_scanned = 0
+        session.total_boxes_scanned += received_count
+
+        self.db.commit()
+
+        return {
+            "session_id": str(session_id),
+            "carton": parent_track.name,
+            "carton_serial": parent_track.serial_number,
+            "expected": len(children),
+            "received": received_count,
+            "duplicate": duplicate_count,
+            "unexpected": unexpected_count,
+            "exception_ids": exception_ids,
+            "serials": serials_results,
+        }
 
     # ------------------------------------------------------------------
     # END SESSION
@@ -3080,6 +3464,23 @@ class InboundService:
             organization_id, "receiving_slip"
         )
 
+        # T1.1 — identify which batch values are actually unit serials, so the
+        # persisted serial_nos only carries real serials (never ordinary batches).
+        from app.models.product_item import ProductItem
+
+        batch_values = {item.batch_number for item in items if item.batch_number}
+        serial_batches: set[str] = set()
+        if batch_values:
+            serial_batches = {
+                row[0]
+                for row in self.db.query(ProductItem.serial_number)
+                .filter(
+                    ProductItem.serial_number.in_(batch_values),
+                    ProductItem.organization_id == organization_id,
+                )
+                .all()
+            }
+
         # Aggregate items by SKU + batch
         sku_batch_agg: dict[tuple[str, str], dict] = defaultdict(
             lambda: {"quantity": 0, "box_count": 0}
@@ -3122,6 +3523,7 @@ class InboundService:
                 "quantity": agg["quantity"],
                 "box_count": agg["box_count"],
                 "flag": "ok",
+                "serial_nos": [batch] if batch in serial_batches else None,
             }
             self.slip_repo.add_item(slip.id, item_data)
 
@@ -3181,8 +3583,10 @@ class InboundService:
     def _session_to_dict(self, session) -> dict:
         """Convert a ScanSession model to a dictionary."""
         asn_order_no = None
+        serialization_mode = None
         if session.asn_order_id and hasattr(session, "asn_order") and session.asn_order:
             asn_order_no = session.asn_order.asn_order_no
+            serialization_mode = session.asn_order.serialization_mode
 
         return {
             "id": str(session.id),
@@ -3193,6 +3597,7 @@ class InboundService:
             "dock_location": session.dock_location,
             "asn_order_id": str(session.asn_order_id) if session.asn_order_id else None,
             "asn_order_no": asn_order_no,
+            "serialization_mode": serialization_mode,
             "vehicle_arrival_id": str(session.vehicle_arrival_id)
             if session.vehicle_arrival_id
             else None,
@@ -3524,6 +3929,8 @@ class InboundService:
                     "expiry_date": child_detail.get("expiry_date"),
                     "quantity": item.quantity,
                     "box_count": item.box_count,
+                    "serial_nos": item.serial_nos or [],
+                    "received_serial_count": len(item.serial_nos or []),
                     "flag": item.flag,
                     "condition_code": item.condition_code,
                     "exception_status": item.exception_status,

@@ -99,6 +99,12 @@ class ScanSessionItem(Base):
         ForeignKey("item_packaging_units.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Constraints
     __table_args__ = (

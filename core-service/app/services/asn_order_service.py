@@ -1136,6 +1136,7 @@ class AsnOrderService:
             "reference_id": asn_order.reference_id,
             "reference_no": asn_order.reference_no,
             "asn_type": asn_order.asn_type or "purchase",
+            "serialization_mode": asn_order.serialization_mode,
             "linked_pick_list_id": (
                 str(asn_order.linked_pick_list_id)
                 if asn_order.linked_pick_list_id
