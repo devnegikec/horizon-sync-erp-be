@@ -14,7 +14,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 
 from alembic import op
-from app.alembic_guards import has_column, has_table
+from app.alembic_guards import has_column, has_index, has_table
 
 revision: str = "126_add_audit_log_role"
 down_revision: str | Sequence[str] | None = "125_bin_stock_status_unique"
@@ -31,6 +31,11 @@ def upgrade() -> None:
             "audit_logs",
             sa.Column("role", sa.String(50), nullable=True),
         )
+
+    # Guarded separately from the column: the two can exist independently on a
+    # database where this migration was partly applied. Nesting the index inside
+    # the column guard would silently leave role filtering unindexed.
+    if not has_index("audit_logs", "ix_audit_logs_role"):
         op.create_index("ix_audit_logs_role", "audit_logs", ["role"])
 
 
@@ -38,6 +43,10 @@ def downgrade() -> None:
     if not has_table("audit_logs"):
         return
 
-    if has_column("audit_logs", "role"):
+    # The index may be absent while the column is present, so it needs its own
+    # guard -- an unconditional drop would raise and abort the downgrade.
+    if has_index("audit_logs", "ix_audit_logs_role"):
         op.drop_index("ix_audit_logs_role", table_name="audit_logs")
+
+    if has_column("audit_logs", "role"):
         op.drop_column("audit_logs", "role")

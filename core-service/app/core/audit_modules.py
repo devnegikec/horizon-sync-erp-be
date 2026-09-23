@@ -8,13 +8,19 @@ Notes:
 - Users and Roles activity (login/logout, role assignment) is recorded by the
   identity service, not core-service, so those modules are sparse here
   (``Users`` has only ``warehouse_users``; ``Roles`` is empty).
-- ``Other`` holds marketing / communication / public-QR tables that don't fit
-  the seven business modules.
-- When a new table is added, add it to ``_MODULE_TABLES`` — unmapped tables
-  fall back to ``Other`` in responses but are not matched by the ``Other``
-  filter until listed here.
+- ``Other`` is the fallback bucket. It always resolves to every audited table
+  that no enabled module claims, so a row labelled ``Other`` is always
+  selectable through the ``module`` filter.
+- When a new table is added, add it to ``_MODULE_TABLES`` to give it a real
+  module; until then it is labelled — and filterable as — ``Other``.
 """
 
+OTHER_MODULE = "Other"
+
+# Every module value ``table_to_module`` can return must be listed here: the
+# ``module`` filter on GET /admin/audit-logs rejects anything else with a 400.
+# Revenue/Settings stay disabled until their tables are reviewed -- their rows
+# fall into ``OTHER_MODULE`` and remain filterable there.
 MODULES: list[str] = [
     "Inventory",
     "WMS",
@@ -23,7 +29,7 @@ MODULES: list[str] = [
     "Users",
     "Roles",
     # "Settings",
-    # "Other",
+    OTHER_MODULE,
 ]
 
 _MODULE_TABLES: dict[str, list[str]] = {
@@ -220,10 +226,54 @@ TABLE_MODULE_MAP: dict[str, str] = {
 
 
 def table_to_module(table_name: str) -> str:
-    """Return the business module for a table, defaulting to ``Other``."""
-    return TABLE_MODULE_MAP.get(table_name, "Other")
+    """Return the business module for a table, defaulting to ``Other``.
+
+    The result is always a member of ``MODULES``, so a module taken from a
+    response row can be fed straight back into the ``module`` filter.
+    """
+    module = TABLE_MODULE_MAP.get(table_name)
+    if module is None or module not in MODULES:
+        return OTHER_MODULE
+    return module
+
+
+def _tables_owned_by_enabled_modules() -> set[str]:
+    """Table names claimed by a module that is actually selectable."""
+    return {
+        table
+        for module, tables in _MODULE_TABLES.items()
+        if module in MODULES
+        for table in tables
+    }
+
+
+def _audited_table_names() -> set[str]:
+    """Table names of every model that emits audit entries.
+
+    Mirrors ``register_audit_listeners`` so the fallback bucket contains
+    exactly the tables whose rows can appear in the audit log.
+    """
+    from app.core.audit_listener import AUDIT_EXCLUDE_TABLES
+    from app.database import Base
+
+    names: set[str] = set()
+    for mapper in Base.registry.mappers:
+        cls = mapper.class_
+        if getattr(cls, "__audited__", None) is False:
+            continue
+        table = getattr(cls, "__tablename__", None)
+        if table and table not in AUDIT_EXCLUDE_TABLES:
+            names.add(table)
+    return names
 
 
 def tables_for_module(module: str) -> list[str]:
-    """Return the core tables belonging to *module* (empty for unknown)."""
+    """Return the core tables belonging to *module* (empty for unknown).
+
+    ``Other`` is the fallback bucket, so it resolves to every audited table
+    that no enabled module claims. That keeps the set of filterable modules in
+    step with the set of module values the API can emit.
+    """
+    if module == OTHER_MODULE:
+        return sorted(_audited_table_names() - _tables_owned_by_enabled_modules())
     return list(_MODULE_TABLES.get(module, []))

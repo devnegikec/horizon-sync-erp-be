@@ -87,16 +87,31 @@ def _get_model_values(instance, excluded_fields: set[str]) -> dict:
 
 
 def _get_record_id(target) -> uuid.UUID | None:
-    """Extract the primary-key value from *target*."""
+    """Extract the primary-key value from *target* as a UUID, if it is one.
+
+    Returns ``None`` when the key is missing or not UUID-shaped. Some audited
+    tables use a natural primary key (``system_config.key`` is a string), and
+    coercing those raises. Because the event handlers swallow their own errors,
+    that would silently drop the audit entry entirely -- so return ``None`` and
+    let the mutation still be recorded, just without a UUID record id.
+    """
     mapper = inspect(target).mapper
     pk_cols = mapper.primary_key
-    if pk_cols:
-        pk_value = getattr(target, pk_cols[0].key)
-        if isinstance(pk_value, uuid.UUID):
-            return pk_value
-        if pk_value is not None:
-            return uuid.UUID(str(pk_value))
-    return None
+    if not pk_cols:
+        return None
+    pk_value = getattr(target, pk_cols[0].key, None)
+    if pk_value is None:
+        return None
+    if isinstance(pk_value, uuid.UUID):
+        return pk_value
+    try:
+        return uuid.UUID(str(pk_value))
+    except (AttributeError, TypeError, ValueError):
+        logger.debug(
+            "Non-UUID primary key on %s; recording audit entry without a record id.",
+            getattr(target, "__tablename__", "?"),
+        )
+        return None
 
 
 # ── Audit entry helper ───────────────────────────────────────────────────────
