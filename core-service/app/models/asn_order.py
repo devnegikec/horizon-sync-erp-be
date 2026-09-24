@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -75,6 +76,21 @@ class AsnOrder(Base):
     remarks = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # ── Short-delivery closure ────────────────────────────────────────
+    # A partially delivered ASN can be formally closed as a short delivery by
+    # a warehouse manager: the outstanding quantity is accepted as a loss, the
+    # reason is recorded here, and the ASN's open shortage balances are written
+    # off. Mirrors the ``inbound_short_balances`` closure columns.
+    short_closed = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Residual short (expected − received) accepted at closure time.
+    short_closed_qty = Column(Numeric(15, 3), nullable=True)
+    close_reason_code = Column(String(80), nullable=True)
+    close_note = Column(Text, nullable=True)
+    closed_by = Column(UUID(as_uuid=True), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)

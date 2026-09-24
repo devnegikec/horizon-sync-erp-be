@@ -1,5 +1,10 @@
 """WMS Reports API endpoints — tabular, filterable operational reports.
 
+Every path below is relative to the global ``/api/v1`` prefix (see
+``app/main.py``), so the full route is e.g.
+``GET /api/v1/wms/reports/stock-movements`` — calling it without ``/api/v1``
+returns 404.
+
 MVP reports:
 - GET /wms/reports/stock-movements   — movement ledger (in/out/transfer/adjust)
 - GET /wms/reports/inventory-aging   — non-moving / slow-moving stock
@@ -29,6 +34,7 @@ from app.models.item import Item
 from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
+from app.schemas.common import PaginationMeta
 from app.schemas.wms_report import (
     BinCapacityReportResponse,
     BinCapacityRow,
@@ -43,7 +49,6 @@ from app.schemas.wms_report import (
     StockMovementRow,
     StockMovementSummary,
 )
-from app.schemas.common import PaginationMeta
 from app.services.capacity_math import (
     compute_warehouse_bin_counts,
     compute_warehouse_bin_occupancy,
@@ -573,9 +578,7 @@ async def bin_capacity_report(
     summary.total_occupied_cc = (
         sum(float(m3) for m3, _ in occupancy.values()) * 1_000_000
     )
-    summary.total_occupied_grams = (
-        sum(float(kg) for _, kg in occupancy.values()) * 1000
-    )
+    summary.total_occupied_grams = sum(float(kg) for _, kg in occupancy.values()) * 1000
 
     cap_rows = (
         db.query(
@@ -626,8 +629,10 @@ async def bin_capacity_report(
 
     # Rows — paginate in SQL so only the requested page loads full objects;
     # CSV export stays bounded by MAX_EXPORT_ROWS.
-    rows_q = db.query(WarehouseLocation).filter(*base_filters).order_by(
-        WarehouseLocation.full_path
+    rows_q = (
+        db.query(WarehouseLocation)
+        .filter(*base_filters)
+        .order_by(WarehouseLocation.full_path)
     )
     if format == "csv":
         rows_q = rows_q.limit(MAX_EXPORT_ROWS)
@@ -642,9 +647,7 @@ async def bin_capacity_report(
         occ_cc = float(occ_m3) * 1_000_000
         occ_g = float(occ_kg) * 1000
         cap_cc = float(b.max_volume_cc) if b.max_volume_cc is not None else None
-        cap_g = (
-            float(b.max_weight_grams) if b.max_weight_grams is not None else None
-        )
+        cap_g = float(b.max_weight_grams) if b.max_weight_grams is not None else None
         rows.append(
             BinCapacityRow(
                 bin_id=b.id,
