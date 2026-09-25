@@ -297,6 +297,7 @@ class ScannedItemTrackingService:
         putaway_by: UUID,
         put_away_list_id: UUID | None = None,
         put_away_item_id: UUID | None = None,
+        quantity: int | None = None,
     ) -> ScannedItemTracking:
         """Complete put-away for an item. Tries to enter stock if receiving is also done."""
         tracking = (
@@ -308,6 +309,9 @@ class ScannedItemTrackingService:
 
         if not tracking:
             raise ValueError(f"No tracking found for QR: {qr_identifier}")
+
+        if quantity is not None:
+            tracking.quantity = quantity
 
         ok, err = self.can_put_away(qr_identifier)
         if not ok:

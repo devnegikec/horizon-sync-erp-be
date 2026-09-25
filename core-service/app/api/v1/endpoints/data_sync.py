@@ -110,6 +110,31 @@ class ReceiveAsnOptions(BaseModel):
         return value
 
 
+class ResetPickListOptions(BaseModel):
+    """Options for the 'reset_picklist' data-sync feature.
+
+    Provide exactly one identifier: either a UUID (``order_id``/``pick_list_id``)
+    or a human-readable document number (``order_no``/``pick_list_no``).
+    """
+
+    order_id: UUID | None = Field(
+        default=None,
+        description="Reset every pick list generated from this outbound order (UUID)",
+    )
+    pick_list_id: UUID | None = Field(
+        default=None,
+        description="Reset a single pick list (UUID)",
+    )
+    order_no: str | None = Field(
+        default=None,
+        description="Order number e.g. 'ORD-2026-00024' (alternative to order_id)",
+    )
+    pick_list_no: str | None = Field(
+        default=None,
+        description="Pick list number e.g. 'PL-2026-00052' (alternative to pick_list_id)",
+    )
+
+
 class DataSyncRequest(BaseModel):
     """Request body for on-demand data sync."""
 
@@ -135,6 +160,10 @@ class DataSyncRequest(BaseModel):
     receive_asn: ReceiveAsnOptions | None = Field(
         default=None,
         description="Options for the 'receive_asn' feature (create ASN + receiving slip from QR blocks)",
+    )
+    reset_picklist: ResetPickListOptions | None = Field(
+        default=None,
+        description="Options for the 'reset_picklist' feature (wipe a pick list for retesting)",
     )
 
 
@@ -204,6 +233,9 @@ async def sync_data_features(
         stock_boost_qty=request.stock_boost_qty,
         receive_asn_options=(
             request.receive_asn.model_dump() if request.receive_asn else None
+        ),
+        reset_picklist_options=(
+            request.reset_picklist.model_dump() if request.reset_picklist else None
         ),
     )
 
