@@ -6,11 +6,15 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.constants.constants_asn_orders import (
+    ASN_ORDER,
+    INTERNAL_TRANSFER,
+    STOCK_RECEIPT,
+)
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.asn_order import AsnOrder, AsnOrderItem
 from app.models.base import AsnOrderStatus
 from app.repositories.asn_order_repository import AsnOrderRepository
-from app.constants.constants_asn_orders import STOCK_RECEIPT, ASN_ORDER, INTERNAL_TRANSFER
 
 
 class AsnOrderService:
@@ -552,6 +556,25 @@ class AsnOrderService:
             raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         new_status_enum = AsnOrderStatus(new_status)
+
+        # Closing short is not a plain status flip: it needs manager approval,
+        # a validated reason and the shortage write-off, all of which live in
+        # ``close_short``. Block it here so this endpoint cannot shortcut that.
+        if new_status_enum == AsnOrderStatus.CLOSED:
+            from app.core.exceptions import StateError
+
+            raise StateError(
+                message=(
+                    "Closing an ASN must go through the short-delivery close "
+                    "endpoint so manager approval and the shortage write-off "
+                    "are applied"
+                ),
+                current_state=asn_order.status.value,
+                required_state=[AsnOrderStatus.CLOSED.value],
+                code="ASN_CLOSE_REQUIRES_APPROVAL",
+                hint="Use POST /asn-orders/{id}/close with a reason_code.",
+            )
+
         self._validate_status_transition(asn_order.status, new_status_enum)
 
         # T3.3 — block closure while unreceived transfer serials remain. The
@@ -669,6 +692,170 @@ class AsnOrderService:
             )
 
         return self._to_response(asn_order)
+
+    # ── short-delivery closure ────────────────────────────────────────
+
+    def close_short(
+        self,
+        asn_order_id: UUID,
+        organization_id: UUID,
+        *,
+        user,
+        reason_code: str | None,
+        note: str | None = None,
+    ) -> dict:
+        """Close an ASN as a short delivery, accepting the outstanding quantity.
+
+        A warehouse manager formally gives up on the residual quantity of a
+        ``partially_delivered`` ASN. The closure records who/why/when, snapshots
+        the accepted shortfall onto the ASN, and writes off that ASN's open
+        shortage balances with the same reason — so the short ledger does not
+        stay open behind an order that is already closed.
+
+        ``reason_code`` is mandatory whenever a residual short exists, because
+        the closure is a final, auditable write-off. Authority is scoped to the
+        ASN's destination warehouse.
+        """
+        import logging
+        from datetime import UTC, datetime
+
+        from app.core.exceptions import StateError
+        from app.services.inbound_short_balance_service import (
+            InboundShortBalanceService,
+        )
+
+        logger = logging.getLogger(__name__)
+
+        asn_order = self.repo.get_by_id_with_items(asn_order_id, organization_id)
+        if not asn_order:
+            raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
+
+        # Serialize concurrent closures so the second caller observes the
+        # committed closed state instead of closing (and writing off) twice.
+        # ``populate_existing`` is required: without it SQLAlchemy returns the
+        # already-loaded (pre-lock) instance and the stale status check below
+        # would let a concurrent request close the ASN a second time.
+        (
+            self.db.query(AsnOrder)
+            .filter(AsnOrder.id == asn_order.id)
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
+
+        if asn_order.status in (AsnOrderStatus.CLOSED, AsnOrderStatus.CANCELLED):
+            raise StateError(
+                message=(
+                    f"ASN {asn_order.asn_order_no} is already "
+                    f"{asn_order.status.value} and cannot be closed again"
+                ),
+                current_state=asn_order.status.value,
+                required_state=[
+                    AsnOrderStatus.PARTIALLY_DELIVERED.value,
+                    AsnOrderStatus.DELIVERED.value,
+                ],
+                code="ASN_ALREADY_CLOSED",
+                hint=(
+                    "Only a confirmed, partially delivered or delivered ASN can "
+                    "be closed as a short delivery."
+                ),
+            )
+
+        # Raises when the transition is not allowed for the current status.
+        # Re-raise with a code + hint so the frontend can explain the refusal
+        # instead of surfacing a bare ValueError.
+        try:
+            self._validate_status_transition(asn_order.status, AsnOrderStatus.CLOSED)
+        except ValueError as exc:
+            raise StateError(
+                message=str(exc),
+                current_state=asn_order.status.value,
+                required_state=[
+                    AsnOrderStatus.PARTIALLY_DELIVERED.value,
+                    AsnOrderStatus.DELIVERED.value,
+                ],
+                code="ASN_NOT_CLOSABLE",
+                hint=(
+                    "Only a partially delivered or delivered ASN can be closed "
+                    "as a short delivery."
+                ),
+            ) from exc
+
+        self._assert_can_close_short(user, asn_order)
+
+        short_svc = InboundShortBalanceService(self.db)
+        residual_short = short_svc.open_short_total(asn_order.id, organization_id)
+
+        reason = None
+        if residual_short > 0:
+            reason = short_svc.resolve_close_reason(reason_code, organization_id)
+
+        accepted_short = Decimal("0")
+        if reason is not None:
+            _, accepted_short = short_svc.write_off_open_for_asn(
+                asn_order_id=asn_order.id,
+                organization_id=organization_id,
+                reason_code=reason.code,
+                note=note,
+                actor_id=getattr(user, "id", None),
+            )
+
+        actor_id = getattr(user, "id", None)
+        asn_order.status = AsnOrderStatus.CLOSED
+        asn_order.short_closed = accepted_short > 0
+        asn_order.short_closed_qty = accepted_short
+        asn_order.close_reason_code = reason.code if reason is not None else None
+        asn_order.close_note = note
+        asn_order.closed_by = actor_id
+        asn_order.closed_at = datetime.now(UTC)
+        asn_order.updated_by = actor_id
+
+        self.db.commit()
+        self.db.refresh(asn_order)
+
+        logger.info(
+            "Closed ASN '%s' as short delivery (accepted short: %s)",
+            asn_order.asn_order_no,
+            asn_order.short_closed_qty,
+        )
+        return self._to_response(asn_order)
+
+    def _assert_can_close_short(self, user, asn_order: AsnOrder) -> None:
+        """Require warehouse-manager authority, scoped to the ASN warehouse."""
+        from app.core.exceptions import StateError
+        from app.services.inbound_exception_service import InboundExceptionService
+
+        # Authority is scoped to the *destination* warehouse. Never fall back
+        # to the origin warehouse: that would let the wrong warehouse manager
+        # approve the closure.
+        warehouse_id = asn_order.warehouse_id_to
+
+        if warehouse_id is not None:
+            permitted = InboundExceptionService(self.db).is_manager(user, warehouse_id)
+        else:
+            permissions = getattr(user, "permissions", None) or []
+            permitted = (
+                getattr(user, "user_type", None)
+                in {"system_admin", "organization_admin"}
+                or "*.*" in permissions
+                or "warehouse.manage" in permissions
+            )
+
+        if permitted:
+            return
+
+        raise StateError(
+            message=(
+                "Warehouse Manager approval is required to accept a short delivery"
+            ),
+            current_state="not_manager",
+            required_state=["manager"],
+            code="ASN_CLOSE_APPROVAL_REQUIRED",
+            hint=(
+                "Ask a warehouse manager (or an organization admin) for this "
+                "warehouse to close the ASN."
+            ),
+        )
 
     # ── internal-transfer fulfilment ──────────────────────────────────
 
@@ -1045,6 +1232,9 @@ class AsnOrderService:
             ],
             AsnOrderStatus.PARTIALLY_DELIVERED: [
                 AsnOrderStatus.DELIVERED,
+                # A partially delivered ASN can be closed as a short delivery
+                # (residual quantity accepted as a loss) by a warehouse manager.
+                AsnOrderStatus.CLOSED,
                 AsnOrderStatus.CANCELLED,
             ],
             AsnOrderStatus.DELIVERED: [
@@ -1183,6 +1373,16 @@ class AsnOrderService:
             "transfer_progress": self._transfer_progress(asn_order),
             "remarks": asn_order.remarks,
             "submitted_at": asn_order.submitted_at,
+            "short_closed": bool(asn_order.short_closed),
+            "short_closed_qty": (
+                float(asn_order.short_closed_qty)
+                if asn_order.short_closed_qty is not None
+                else None
+            ),
+            "close_reason_code": asn_order.close_reason_code,
+            "close_note": asn_order.close_note,
+            "closed_by": asn_order.closed_by,
+            "closed_at": asn_order.closed_at,
             "created_by": asn_order.created_by,
             "updated_by": asn_order.updated_by,
             "created_at": asn_order.created_at,
@@ -1230,5 +1430,6 @@ class AsnOrderService:
             "from_warehouse": from_warehouse,
             "to_warehouse": to_warehouse,
             "vehicle_arrivals": self._vehicle_arrivals_for_response(asn_order),
+            "short_closed": bool(asn_order.short_closed),
             "created_at": asn_order.created_at,
         }

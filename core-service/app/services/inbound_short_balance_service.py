@@ -472,6 +472,82 @@ class InboundShortBalanceService:
         return balance
 
     # ------------------------------------------------------------------
+    # ASN-LEVEL CLOSURE (short delivery)
+    # ------------------------------------------------------------------
+
+    def resolve_close_reason(
+        self, reason_code: str | None, organization_id: UUID
+    ) -> InboundExceptionReason:
+        """Validate a manager-supplied shortage closure reason code."""
+        return self._resolve_reason(reason_code, organization_id)
+
+    def open_short_total(self, asn_order_id: UUID, organization_id: UUID) -> Decimal:
+        """Total residual short still outstanding across an ASN's lines."""
+        total = (
+            self.db.query(func.coalesce(func.sum(InboundShortBalance.short_qty), 0))
+            .filter(
+                InboundShortBalance.organization_id == organization_id,
+                InboundShortBalance.asn_order_id == asn_order_id,
+                InboundShortBalance.status == BALANCE_STATUS_OPEN,
+            )
+            .scalar()
+        )
+        return Decimal(str(total or 0))
+
+    def write_off_open_for_asn(
+        self,
+        *,
+        asn_order_id: UUID,
+        organization_id: UUID,
+        reason_code: str,
+        note: str | None,
+        actor_id: UUID | None,
+    ) -> tuple[int, Decimal]:
+        """Write off every open shortage on an ASN; returns ``(count, total_qty)``.
+
+        Used when the ASN itself is closed as a short delivery: one manager
+        approval covers all of that ASN's residual lines, so they are closed
+        with the same reason instead of being left open indefinitely.
+        """
+        # Lock the open balances so a concurrent receipt/closure cannot hand
+        # the same rows to a second write-off (duplicate events, wrong totals).
+        balances = (
+            self.db.query(InboundShortBalance)
+            .filter(
+                InboundShortBalance.organization_id == organization_id,
+                InboundShortBalance.asn_order_id == asn_order_id,
+                InboundShortBalance.status == BALANCE_STATUS_OPEN,
+            )
+            .with_for_update()
+            .all()
+        )
+        written_off = 0
+        total = Decimal("0")
+        now = datetime.now(UTC)
+        for balance in balances:
+            short_qty = Decimal(str(balance.short_qty or 0))
+            if short_qty <= 0:
+                continue
+            from_status = balance.status
+            balance.status = BALANCE_STATUS_WRITTEN_OFF
+            balance.close_reason_code = reason_code
+            balance.close_note = note
+            balance.closed_by = actor_id
+            balance.closed_at = now
+            self._event(
+                balance,
+                event_type="written_off",
+                from_status=from_status,
+                to_status=BALANCE_STATUS_WRITTEN_OFF,
+                reason_code=reason_code,
+                note=note,
+                actor_id=actor_id,
+            )
+            written_off += 1
+            total += short_qty
+        return written_off, total
+
+    # ------------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------------
 

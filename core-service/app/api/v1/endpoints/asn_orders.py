@@ -17,6 +17,7 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.item import Item
 from app.schemas.asn_order import (
+    AsnOrderCloseRequest,
     AsnOrderCreate,
     AsnOrderListItem,
     AsnOrderListResponse,
@@ -227,6 +228,35 @@ async def confirm_asn_order(
         current_user.id,
         current_user.user_type,
         current_user.permissions,
+    )
+    return AsnOrderResponse.model_validate(data)
+
+
+@router.post("/{asn_order_id}/close", response_model=AsnOrderResponse)
+async def close_asn_order(
+    asn_order_id: UUID,
+    body: AsnOrderCloseRequest | None = None,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Close an ASN as a short delivery, accepting the outstanding quantity.
+
+    A warehouse manager gives up on the residual quantity of a partially
+    delivered ASN. The closure records who/why/when, snapshots the accepted
+    shortfall, and writes off the ASN's open shortage balances with the same
+    reason.
+
+    Requires asn_order.update plus warehouse-manager authority for the ASN's
+    destination warehouse. ``reason_code`` is mandatory while a short quantity
+    is still outstanding.
+    """
+    svc = AsnOrderService(db)
+    data = svc.close_short(
+        asn_order_id,
+        current_user.organization_id,
+        user=current_user,
+        reason_code=body.reason_code if body else None,
+        note=body.note if body else None,
     )
     return AsnOrderResponse.model_validate(data)
 
