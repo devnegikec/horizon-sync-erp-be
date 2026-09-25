@@ -49,7 +49,9 @@ def test_exception_permissions_separate_operator_classification_from_disposition
 
 
 def test_exception_service_only_accepts_known_lifecycle_values():
-    assert {"HOLD", "QUARANTINE"} == InboundExceptionService.DESTINATIONS
+    # ``DAMAGED`` joined the destinations in migration 122 (G-D2 / E-06), which
+    # routes damaged stock to its own non-pickable bin instead of QUARANTINE.
+    assert {"HOLD", "QUARANTINE", "DAMAGED"} == InboundExceptionService.DESTINATIONS
     assert "release_to_receiving" in InboundExceptionService.FINAL_DISPOSITIONS
     assert "move_to_hold" in InboundExceptionService.FINAL_DISPOSITIONS
     assert "move_to_quarantine" in InboundExceptionService.FINAL_DISPOSITIONS
