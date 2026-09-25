@@ -16,6 +16,8 @@ class AuditLogListItem(BaseModel):
     user_id: UUID | None
     organization_id: UUID | None
     action: str
+    role: str | None = None
+    module: str | None = None
     table_name: str
     record_id: UUID
     old_values: dict | None
@@ -72,3 +74,16 @@ class AuditLogHistoryResponse(BaseModel):
     table_name: str
     history: list[AuditLogDetail]
     pagination: PaginationMeta
+
+
+class AuditModuleInfo(BaseModel):
+    """A business module and the core tables that map to it."""
+
+    module: str
+    tables: list[str]
+
+
+class AuditModuleListResponse(BaseModel):
+    """Catalog of audit modules for the UI filter."""
+
+    modules: list[AuditModuleInfo]
