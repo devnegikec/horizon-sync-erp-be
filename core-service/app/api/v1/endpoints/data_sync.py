@@ -12,7 +12,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -133,6 +133,20 @@ class ResetPickListOptions(BaseModel):
         default=None,
         description="Pick list number e.g. 'PL-2026-00052' (alternative to pick_list_id)",
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_identifier(self):
+        provided = [
+            name
+            for name in ("order_id", "pick_list_id", "order_no", "pick_list_no")
+            if getattr(self, name) is not None
+        ]
+        if len(provided) != 1:
+            raise ValueError(
+                "Provide exactly one of order_id, pick_list_id, order_no or "
+                "pick_list_no to reset"
+            )
+        return self
 
 
 class DataSyncRequest(BaseModel):

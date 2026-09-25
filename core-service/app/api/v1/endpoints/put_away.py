@@ -817,11 +817,17 @@ def _enqueue_bulk_job(
     from app.config import settings
     from app.tasks.putaway_tasks import complete_bulk_putaway_task
 
+    # Populate total_items up front so the poll endpoint reports meaningful
+    # progress while the job is still queued (instead of 0 until it finishes).
+    item_count = len(
+        request_data.get("item_ids") or request_data.get("items") or []
+    )
     job = BulkPutAwayJob(
         organization_id=organization_id,
         put_away_list_id=put_away_list_id,
         job_type=job_type,
         status=BulkPutAwayJobStatus.QUEUED,
+        total_items=item_count,
         request_data={
             "organization_id": str(organization_id),
             "worker_id": str(worker_id),
@@ -832,10 +838,18 @@ def _enqueue_bulk_job(
     db.commit()
     db.refresh(job)
 
-    complete_bulk_putaway_task.apply_async(
-        args=[str(job.id)],
-        queue=settings.celery_qr_queue_name,
-    )
+    try:
+        complete_bulk_putaway_task.apply_async(
+            args=[str(job.id)],
+            queue=settings.celery_qr_queue_name,
+        )
+    except Exception as exc:  # noqa: BLE001 — broker/connection failure
+        # The job row is already committed as QUEUED; mark it FAILED so the
+        # client surfaces the error instead of polling a job that never runs.
+        job.status = BulkPutAwayJobStatus.FAILED
+        job.error = f"Failed to enqueue worker task: {exc}"
+        db.commit()
+        raise
     return job
 
 
@@ -936,6 +950,24 @@ async def complete_putaway_bulk(
 
     **Returns:** 202 with a job id — poll `GET /put-away/bulk-jobs/{job_id}`.
     """
+    # Validate the optional direct put-away list against the caller's org so a
+    # worker cannot attach their QR completion to another organization's list.
+    if data.put_away_list_id is not None:
+        put_away_list = (
+            db.query(PutAwayList)
+            .filter(
+                PutAwayList.id == data.put_away_list_id,
+                PutAwayList.organization_id == current_user.organization_id,
+            )
+            .first()
+        )
+        if put_away_list is None:
+            raise NotFoundError(
+                message="Put-away list not found",
+                entity_type="PutAwayList",
+                entity_id=str(data.put_away_list_id),
+            )
+
     job = _enqueue_bulk_job(
         db=db,
         organization_id=current_user.organization_id,

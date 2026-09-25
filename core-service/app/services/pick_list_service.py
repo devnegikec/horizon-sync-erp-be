@@ -1365,15 +1365,26 @@ class PickListService:
         self.validate_over_pick(org_id, required_qty, new_picked)
 
         # Capture all child serials (duplicate hard stop before mutating).
-        current = list(matching_pick_item.serial_nos or [])
-        already = set(current)
-        duplicate = next((s for s in child_serials if s in already), None)
+        # QR-serialized lines pre-assign their expected serials in `serial_nos`,
+        # so track the actually-picked set separately in `extra_data` —
+        # comparing against `serial_nos` would reject the first carton scan as
+        # a duplicate.
+        extra = dict(matching_pick_item.extra_data or {})
+        picked = set(extra.get("picked_serials") or [])
+        duplicate = next((s for s in child_serials if s in picked), None)
         if duplicate is not None:
             raise ValidationError(
                 f"Serial '{duplicate}' has already been picked for this line"
             )
-        current.extend(child_serials)
-        matching_pick_item.serial_nos = current
+        picked.update(child_serials)
+        extra["picked_serials"] = sorted(picked)
+        matching_pick_item.extra_data = extra
+
+        # Legacy serialized lines start with an empty `serial_nos`; capture the
+        # scanned serials there so they propagate to the transfer ASN at
+        # dispatch. QR-serialized lines already carry their expected serials.
+        if not (matching_pick_item.serial_nos or []):
+            matching_pick_item.serial_nos = list(child_serials)
 
         # First unit's ProductItem key (deterministic for the whole line).
         if matching_pick_item.product_item_id is None and child_serials:

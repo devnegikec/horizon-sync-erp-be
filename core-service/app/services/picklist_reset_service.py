@@ -147,11 +147,14 @@ class PickListResetService:
     def _reset_pick_list(self, pl, org_id: UUID) -> dict:
         from app.models.base import PickListStatus
 
+        # On-hand stock is decremented only at dispatch (IN_TRANSIT/DELIVERED/
+        # COMPLETED). READY_FOR_DISPATCH still means picked-but-undispatched,
+        # so its warehouse reservation must be released rather than on-hand
+        # restored.
         was_dispatched = pl.status in (
             PickListStatus.IN_TRANSIT,
             PickListStatus.DELIVERED,
             PickListStatus.COMPLETED,
-            PickListStatus.READY_FOR_DISPATCH,
         )
 
         self._restore_bin_stock(pl, org_id)
@@ -228,16 +231,16 @@ class PickListResetService:
         """Reverse the warehouse stock-level effect of the pick list."""
         from app.models.stock_level import StockLevel
 
-        picked_by_item: dict[UUID, int] = {}
-        reserved_by_item: dict[UUID, int] = {}
+        picked_by_item: dict[UUID, Decimal] = {}
+        reserved_by_item: dict[UUID, Decimal] = {}
         warehouse_by_item: dict[UUID, UUID] = {}
         for item in pl.items:
-            picked_by_item[item.item_id] = picked_by_item.get(item.item_id, 0) + int(
-                item.picked_qty or 0
-            )
-            reserved_by_item[item.item_id] = reserved_by_item.get(item.item_id, 0) + int(
-                item.qty or 0
-            )
+            picked_by_item[item.item_id] = picked_by_item.get(
+                item.item_id, Decimal("0")
+            ) + Decimal(str(item.picked_qty or 0))
+            reserved_by_item[item.item_id] = reserved_by_item.get(
+                item.item_id, Decimal("0")
+            ) + Decimal(str(item.qty or 0))
             warehouse_by_item.setdefault(item.item_id, item.warehouse_id)
 
         for item_id, warehouse_id in warehouse_by_item.items():
@@ -259,13 +262,17 @@ class PickListResetService:
             if was_dispatched:
                 # Reverse the dispatch-time on-hand decrement. The reservation
                 # was consumed at dispatch, so it is not re-released here.
-                on_hand += Decimal(picked_by_item.get(item_id, 0))
+                on_hand += picked_by_item.get(item_id, Decimal("0"))
             else:
-                # Release the reservation taken at pick-list generation.
-                reserved = max(
-                    Decimal("0"),
-                    reserved - Decimal(reserved_by_item.get(item_id, 0)),
-                )
+                # Release the reservation taken at pick-list generation. Only
+                # order-driven pick lists reserve warehouse stock; legacy/
+                # invoice pick lists never did, so releasing for them would
+                # consume another pick list's reservation.
+                if pl.reference_type == "outbound_order":
+                    reserved = max(
+                        Decimal("0"),
+                        reserved - reserved_by_item.get(item_id, Decimal("0")),
+                    )
                 on_hand = Decimal(str(stock_level.quantity_on_hand or 0))
 
             stock_level.quantity_on_hand = on_hand
@@ -377,7 +384,7 @@ class PickListResetService:
             GateVerificationItem,
             GateVerificationSession,
         )
-        from app.models.packing_slip import PackingSlipItem
+        from app.models.packing_slip import PackingSlip, PackingSlipItem
         from app.models.pick_exception import PickException, PickExceptionAudit
         from app.models.pick_idempotency import PickIdempotencyKey
         from app.models.pick_list import PickListItem
@@ -456,10 +463,33 @@ class PickListResetService:
             GateVerificationSession.pick_list_id == pl_id
         ).delete(synchronize_session=False)
 
-        # Packing slip + delivery note line items.
+        # Packing slip + delivery note line items. A slip can pack multiple
+        # pick lists, so remove this pick list's items first, then drop any
+        # parent slip left with no remaining items.
+        packing_slip_ids = [
+            row[0]
+            for row in self.db.query(PackingSlipItem.packing_slip_id)
+            .filter(PackingSlipItem.pick_list_id == pl_id)
+            .distinct()
+            .all()
+        ]
         self.db.query(PackingSlipItem).filter(
             PackingSlipItem.pick_list_id == pl_id
         ).delete(synchronize_session=False)
+        if packing_slip_ids:
+            remaining_slip_ids = {
+                row[0]
+                for row in self.db.query(PackingSlipItem.packing_slip_id)
+                .filter(PackingSlipItem.packing_slip_id.in_(packing_slip_ids))
+                .all()
+            }
+            empty_slip_ids = [
+                sid for sid in packing_slip_ids if sid not in remaining_slip_ids
+            ]
+            if empty_slip_ids:
+                self.db.query(PackingSlip).filter(
+                    PackingSlip.id.in_(empty_slip_ids)
+                ).delete(synchronize_session=False)
 
         delivery_note_ids = [
             row[0]
@@ -517,5 +547,13 @@ class PickListResetService:
             .first()
         )
         if order is None:
+            return
+        # Only revert orders that have actually progressed past confirmation
+        # (i.e. a pick list existed for them). Draft/confirmed orders with no
+        # pick lists are left untouched.
+        if order.status not in (
+            OutboundOrderStatus.PENDING_PICKING,
+            OutboundOrderStatus.COMPLETED,
+        ):
             return
         order.status = OutboundOrderStatus.CONFIRMED

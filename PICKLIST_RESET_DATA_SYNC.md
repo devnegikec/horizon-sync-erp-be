@@ -77,7 +77,11 @@ Gated behind `organization.update` (same as the rest of the Data Sync screen).
 
 ## Notes / limits
 
-- Destructive and idempotent-ish (re-running is safe; it just finds nothing to reset).
+- Destructive. Re-running with an `order_id`/`order_no` is a safe no-op once the
+  order is back to `confirmed` (no pick lists remain and the order is no longer
+  `pending_picking`/`completed`). Re-running with a `pick_list_id`/
+  `pick_list_no` that no longer exists returns a not-found error — use the
+  order identifier to re-target an already-reset order.
 - If the transfer was **already received** at the destination warehouse, the
   destination-side stock movement is not reversed — only the source-side
   dispatch/ASN artifacts are cleaned. Re-check destination stock levels for

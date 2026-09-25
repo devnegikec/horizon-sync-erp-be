@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ValidationError
 from app.models.scanned_item_tracking import ScannedItemTracking
 
 logger = logging.getLogger(__name__)
@@ -311,6 +312,14 @@ class ScannedItemTrackingService:
             raise ValueError(f"No tracking found for QR: {qr_identifier}")
 
         if quantity is not None:
+            if quantity < 1:
+                raise ValidationError("Put-away quantity must be at least 1")
+            stored_qty = int(tracking.quantity or 0)
+            if quantity > stored_qty:
+                raise ValidationError(
+                    f"Cannot put away {quantity} unit(s): only {stored_qty} "
+                    f"received for QR '{qr_identifier}'"
+                )
             tracking.quantity = quantity
 
         ok, err = self.can_put_away(qr_identifier)
