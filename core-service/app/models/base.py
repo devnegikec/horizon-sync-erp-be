@@ -3,6 +3,27 @@
 import enum
 
 # ===========================================
+# ORGANIZATION ENUMS
+# ===========================================
+
+
+class OrganizationStatus(str, enum.Enum):
+    """Organization status enumeration (mirrors the identity service).
+
+    Used by the billing-automation tasks that read organization state from the
+    identity service and write status transitions back (e.g. auto-deactivation
+    for non-payment).
+    """
+
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+    TRIAL = "trial"
+    OVERDUE = "overdue"
+    DEACTIVATED = "deactivated"
+
+
+# ===========================================
 # INVENTORY ENUMS
 # ===========================================
 

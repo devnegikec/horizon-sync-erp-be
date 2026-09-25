@@ -139,6 +139,7 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_QR_QUEUE_NAME: qr-generation
       CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      BULK_PUTAWAY_SYNC_THRESHOLD: ${BULK_PUTAWAY_SYNC_THRESHOLD:-20}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4201,http://localhost:4200,http://localhost:4300,http://localhost:3000,http://localhost:3001}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}

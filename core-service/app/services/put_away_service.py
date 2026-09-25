@@ -952,6 +952,7 @@ class PutAwayService:
         worker_id: UUID,
         org_id: UUID,
         bin_id_override: UUID | None = None,
+        check_completion: bool = True,
     ) -> PutAwayListItem:
         """Complete a put-away item, updating bin stock and marking as COMPLETED.
 
@@ -964,6 +965,8 @@ class PutAwayService:
             org_id: Organization ID for scoping.
             bin_id_override: Optional bin location ID to use instead of the
                 pre-assigned bin_location_id on the put-away item.
+            check_completion: When False, skip the list/slip completion check
+                (a bulk caller runs it once after the loop).
 
         Returns:
             The updated PutAwayListItem.
@@ -1080,12 +1083,261 @@ class PutAwayService:
             bin_id=target_bin_id, worker_id=worker_id, org_id=org_id
         )
 
-        # Check if all items in the put-away list are done
-        self._check_and_update_list_completion(put_away_item.put_away_list_id)
+        # Check if all items in the put-away list are done (skipped by bulk
+        # callers, which run it once at the end).
+        if check_completion:
+            self._check_and_update_list_completion(put_away_item.put_away_list_id)
 
         self.db.commit()
         self.db.refresh(put_away_item)
         return put_away_item
+
+    # ── BULK PUT-AWAY ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _bulk_error(exc: Exception) -> tuple[str, str]:
+        """Extract a (code, message) pair for a per-item bulk failure."""
+        code = getattr(exc, "code", None) or getattr(exc, "error_code", None)
+        message = getattr(exc, "message", None) or str(exc)
+        if not code:
+            code = "VALIDATION_ERROR"
+        return code, message
+
+    @staticmethod
+    def _item_success(item: PutAwayListItem) -> dict:
+        bin_code = None
+        if item.bin_location:
+            bin_code = item.bin_location.full_path or item.bin_location.code
+        return {
+            "id": str(item.id),
+            "item_id": str(item.item_id),
+            "sku": item.sku,
+            "batch_number": item.batch_number,
+            "quantity": float(item.quantity),
+            "bin_location_id": str(item.bin_location_id)
+            if item.bin_location_id
+            else None,
+            "bin_location_code": bin_code,
+            "status": item.status,
+            "completed_at": item.completed_at.isoformat()
+            if item.completed_at
+            else None,
+        }
+
+    @staticmethod
+    def _tracking_success(tracking) -> dict:
+        return {
+            "id": str(tracking.id),
+            "qr_identifier": tracking.qr_identifier,
+            "sku": tracking.sku,
+            "batch_number": tracking.batch_number,
+            "quantity": tracking.quantity,
+            "bin_location_id": str(tracking.bin_location_id)
+            if tracking.bin_location_id
+            else None,
+            "putaway_status": tracking.putaway_status,
+            "stock_entered": bool(tracking.stock_entered),
+            "completed_at": tracking.putaway_at.isoformat()
+            if tracking.putaway_at
+            else None,
+        }
+
+    def complete_items_bulk(
+        self,
+        put_away_list_id: UUID,
+        item_ids: list[UUID],
+        worker_id: UUID,
+        org_id: UUID,
+        bin_id_override: UUID | None = None,
+    ) -> dict:
+        """Complete many put-away items into the same bin, one transaction each.
+
+        Each item is completed independently so a capacity overflow on one item
+        never hides the success of the others. Returns per-item results.
+        """
+        completed: list[dict] = []
+        failed: list[dict] = []
+        for item_id in item_ids:
+            # The single endpoint scopes completion to the put-away list; do the
+            # same here so a stray item id cannot complete against another list.
+            member = (
+                self.db.query(PutAwayListItem)
+                .filter(
+                    PutAwayListItem.id == item_id,
+                    PutAwayListItem.put_away_list_id == put_away_list_id,
+                    PutAwayListItem.organization_id == org_id,
+                )
+                .first()
+            )
+            if member is None:
+                failed.append(
+                    {
+                        "item_id": str(item_id),
+                        "error": "NOT_FOUND",
+                        "message": "Put-away list item not found",
+                    }
+                )
+                continue
+
+            try:
+                item = self.complete_item(
+                    put_away_item_id=item_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                    bin_id_override=bin_id_override,
+                    check_completion=False,
+                )
+            except (ValidationError, NotFoundError, StateError, ValueError) as exc:
+                # Roll back the failed item's partial mutations so they don't
+                # leak into the next item's transaction.
+                self.db.rollback()
+                code, message = self._bulk_error(exc)
+                failed.append(
+                    {"item_id": str(item_id), "error": code, "message": message}
+                )
+                continue
+
+            completed.append(self._item_success(item))
+
+        # Run the list/slip completion check once instead of once per item.
+        self._check_and_update_list_completion(put_away_list_id)
+        self.db.commit()
+
+        return {
+            "completed": completed,
+            "failed": failed,
+            "summary": {
+                "completed_count": len(completed),
+                "failed_count": len(failed),
+            },
+        }
+
+    def _carton_child_serials(self, qr: str, org_id: UUID) -> list[str] | None:
+        """Return the child unit serials if ``qr`` is a master-carton serial.
+
+        Returns ``None`` when ``qr`` does not resolve to a QSealTrack parent, and
+        an empty list when the carton has no linked units.
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        track = (
+            self.db.query(QSealTrack)
+            .filter(
+                QSealTrack.organization_id == org_id,
+                QSealTrack.serial_number == qr,
+            )
+            .first()
+        )
+        if track is None:
+            return None
+        rows = (
+            self.db.query(QSealParameters.serial_number)
+            .filter(
+                QSealParameters.parent_id == track.id,
+                QSealParameters.organization_id == org_id,
+            )
+            .all()
+        )
+        return [r[0] for r in rows if r[0]]
+
+    def complete_putaway_bulk(
+        self,
+        bin_id: UUID,
+        items: list[dict],
+        worker_id: UUID,
+        org_id: UUID,
+        put_away_list_id: UUID | None = None,
+    ) -> dict:
+        """Bulk-complete put-away by QR, one transaction per item.
+
+        A ``qr`` may be a unit serial or a master-carton serial; a carton serial
+        is expanded into its child unit serials and each child is completed.
+        """
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        tracking_svc = ScannedItemTrackingService(self.db)
+        completed: list[dict] = []
+        failed: list[dict] = []
+
+        for entry in items:
+            qr = entry["qr"]
+            quantity = entry.get("quantity")
+
+            try:
+                tracking = tracking_svc.complete_putaway(
+                    qr_identifier=qr,
+                    bin_location_id=bin_id,
+                    putaway_by=worker_id,
+                    put_away_list_id=put_away_list_id,
+                    quantity=quantity,
+                )
+            except ValueError as exc:
+                self.db.rollback()
+                if "No tracking found" in str(exc):
+                    # Not a unit serial — try master-carton expansion.
+                    child_serials = self._carton_child_serials(qr, org_id)
+                    if child_serials is None:
+                        failed.append(
+                            {"qr": qr, "error": "NOT_FOUND", "message": str(exc)}
+                        )
+                        continue
+                    if not child_serials:
+                        failed.append(
+                            {
+                                "qr": qr,
+                                "error": "NOT_FOUND",
+                                "message": "Master carton has no linked units",
+                            }
+                        )
+                        continue
+                    for child in child_serials:
+                        try:
+                            child_tracking = tracking_svc.complete_putaway(
+                                qr_identifier=child,
+                                bin_location_id=bin_id,
+                                putaway_by=worker_id,
+                                put_away_list_id=put_away_list_id,
+                            )
+                        except (
+                            ValueError,
+                            ValidationError,
+                            NotFoundError,
+                            StateError,
+                        ) as exc2:
+                            self.db.rollback()
+                            code, message = self._bulk_error(exc2)
+                            if (
+                                code == "VALIDATION_ERROR"
+                                and "No tracking found" in message
+                            ):
+                                code = "NOT_FOUND"
+                            failed.append(
+                                {"qr": child, "error": code, "message": message}
+                            )
+                        else:
+                            completed.append(self._tracking_success(child_tracking))
+                    continue
+                code, message = self._bulk_error(exc)
+                failed.append({"qr": qr, "error": code, "message": message})
+                continue
+            except (ValidationError, NotFoundError, StateError) as exc:
+                self.db.rollback()
+                code, message = self._bulk_error(exc)
+                failed.append({"qr": qr, "error": code, "message": message})
+                continue
+
+            completed.append(self._tracking_success(tracking))
+
+        return {
+            "completed": completed,
+            "failed": failed,
+            "summary": {
+                "completed_count": len(completed),
+                "failed_count": len(failed),
+            },
+        }
 
     def skip_item(
         self, put_away_item_id: UUID, reason: str, org_id: UUID

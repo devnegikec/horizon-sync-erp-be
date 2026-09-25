@@ -10,6 +10,7 @@ Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -246,6 +247,17 @@ class OutboundService:
             .all()
         }
 
+        # Sum the dispatched (picked) quantity per item across the pick list's
+        # master-pack lines. Assigning per line inside the loop previously
+        # overwrote the ASN item's shipped_qty with the LAST line's qty (e.g.
+        # 4 instead of the full 20), corrupting the transfer stock entry.
+        shipped_by_item: dict[UUID, Decimal] = {}
+        for line in pick_list.items:
+            line_qty = Decimal(str(line.picked_qty or line.qty or 0))
+            shipped_by_item[line.item_id] = (
+                shipped_by_item.get(line.item_id, Decimal("0")) + line_qty
+            )
+
         for line in pick_list.items:
             asn_item = (
                 self.db.query(AsnOrderItem)
@@ -259,7 +271,9 @@ class OutboundService:
             # serialized and non-serialized lines, so the transfer stock entry
             # doesn't fall back to the full ordered quantity.
             if asn_item is not None:
-                asn_item.shipped_qty = line.picked_qty or line.qty
+                asn_item.shipped_qty = shipped_by_item.get(
+                    line.item_id, Decimal("0")
+                )
 
             serials = [s for s in (line.serial_nos or []) if s]
             if not serials:

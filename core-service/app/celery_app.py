@@ -9,7 +9,11 @@ broker_url = settings.celery_broker_url or settings.redis_url
 celery_app = Celery(
     "horizon_core",
     broker=broker_url,
-    include=["app.qr_block_tasks", "app.tasks.transfer_reconciliation"],
+    include=[
+        "app.qr_block_tasks",
+        "app.tasks.transfer_reconciliation",
+        "app.tasks.putaway_tasks",
+    ],
 )
 celery_app.conf.update(
     task_default_queue=settings.celery_qr_queue_name,
