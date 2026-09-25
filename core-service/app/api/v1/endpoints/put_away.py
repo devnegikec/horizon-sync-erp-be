@@ -11,9 +11,11 @@ Requirements: 8.1, 8.5, 8.6
 """
 
 import json
+from typing import Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -24,13 +26,20 @@ from app.core.authorization import (
     WMS_SCAN,
     is_worker_scope,
 )
+from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.bulk_put_away_job import BulkPutAwayJob, BulkPutAwayJobStatus
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
+    BulkPutAwayJobAccepted,
+    BulkPutAwayJobResponse,
     CompletePutAwayItemRequest,
+    CompletePutAwayItemsRequest,
+    CompletePutAwayItemsResponse,
+    CompletePutawayBulkRequest,
     GeneratePutAwayRequest,
     PutAwayItemGroup,
     PutAwayItemGroupItem,
@@ -793,6 +802,234 @@ async def complete_put_away_item(
         created_at=completed_item.created_at.isoformat()
         if completed_item.created_at
         else None,
+    )
+
+
+def _enqueue_bulk_job(
+    db: Session,
+    organization_id: UUID,
+    worker_id: UUID,
+    job_type: str,
+    request_data: dict,
+    put_away_list_id: UUID | None = None,
+) -> BulkPutAwayJob:
+    """Create a queued bulk put-away job and enqueue its worker task."""
+    from app.config import settings
+    from app.tasks.putaway_tasks import complete_bulk_putaway_task
+
+    # Populate total_items up front so the poll endpoint reports meaningful
+    # progress while the job is still queued (instead of 0 until it finishes).
+    item_count = len(
+        request_data.get("item_ids") or request_data.get("items") or []
+    )
+    job = BulkPutAwayJob(
+        organization_id=organization_id,
+        put_away_list_id=put_away_list_id,
+        job_type=job_type,
+        status=BulkPutAwayJobStatus.QUEUED,
+        total_items=item_count,
+        request_data={
+            "organization_id": str(organization_id),
+            "worker_id": str(worker_id),
+            **request_data,
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    try:
+        complete_bulk_putaway_task.apply_async(
+            args=[str(job.id)],
+            queue=settings.celery_qr_queue_name,
+        )
+    except Exception as exc:  # noqa: BLE001 — broker/connection failure
+        # The job row is already committed as QUEUED; mark it FAILED so the
+        # client surfaces the error instead of polling a job that never runs.
+        job.status = BulkPutAwayJobStatus.FAILED
+        job.error = f"Failed to enqueue worker task: {exc}"
+        db.commit()
+        raise
+    return job
+
+
+@router.post(
+    "/{put_away_list_id}/complete",
+    response_model=Union[CompletePutAwayItemsResponse, BulkPutAwayJobAccepted],
+    summary="Bulk-complete put-away items",
+    description=(
+        "Complete multiple put-away items into one bin. Small batches (<= "
+        f"{settings.bulk_putaway_sync_threshold} items) complete synchronously "
+        "and return the per-item result directly; larger batches are queued "
+        "and polled via GET /put-away/bulk-jobs/{id}."
+    ),
+)
+async def complete_put_away_items(
+    put_away_list_id: UUID,
+    data: CompletePutAwayItemsRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk-complete several put-away list items into one bin.
+
+    **Request Body:**
+    - **bin_id**: Optional bin override (omit to use each item's pre-assigned bin)
+    - **item_ids**: Put-away item UUIDs to complete
+
+    **Returns:**
+    - Small batch: `200` with the `{completed, failed, summary}` result.
+    - Large batch: `202` with a job id — poll `GET /put-away/bulk-jobs/{job_id}`.
+    """
+    put_away_list = (
+        db.query(PutAwayList)
+        .filter(
+            PutAwayList.id == put_away_list_id,
+            PutAwayList.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if put_away_list is None:
+        raise NotFoundError(
+            message="Put-away list not found",
+            entity_type="PutAwayList",
+            entity_id=str(put_away_list_id),
+        )
+
+    # Small batches complete inline — one HTTP call, no polling.
+    if len(data.item_ids) <= settings.bulk_putaway_sync_threshold:
+        result = PutAwayService(db).complete_items_bulk(
+            put_away_list_id=put_away_list_id,
+            item_ids=data.item_ids,
+            worker_id=current_user.id,
+            org_id=current_user.organization_id,
+            bin_id_override=data.bin_id,
+        )
+        return CompletePutAwayItemsResponse(**result)
+
+    # Large batches run in the background and are polled for the result.
+    job = _enqueue_bulk_job(
+        db=db,
+        organization_id=current_user.organization_id,
+        worker_id=current_user.id,
+        job_type="items",
+        put_away_list_id=put_away_list_id,
+        request_data={
+            "put_away_list_id": str(put_away_list_id),
+            "item_ids": [str(i) for i in data.item_ids],
+            "bin_id": str(data.bin_id) if data.bin_id else None,
+        },
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=BulkPutAwayJobAccepted(
+            job_id=str(job.id), status="queued"
+        ).model_dump(),
+    )
+
+
+@router.post(
+    "/complete/bulk",
+    response_model=BulkPutAwayJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Bulk-complete put-away by QR (async)",
+    description="Enqueue a bulk put-away of multiple QR items; poll GET /put-away/bulk-jobs/{id}",
+)
+async def complete_putaway_bulk(
+    data: CompletePutawayBulkRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Enqueue a bulk completion of several QR-identified items into one bin.
+
+    **Request Body:**
+    - **bin_id**: Bin location UUID to put away into
+    - **put_away_list_id**: Optional direct put-away list to attach items to
+    - **items**: list of `{ qr, quantity? }`
+
+    **Returns:** 202 with a job id — poll `GET /put-away/bulk-jobs/{job_id}`.
+    """
+    # Validate the optional direct put-away list against the caller's org so a
+    # worker cannot attach their QR completion to another organization's list.
+    if data.put_away_list_id is not None:
+        put_away_list = (
+            db.query(PutAwayList)
+            .filter(
+                PutAwayList.id == data.put_away_list_id,
+                PutAwayList.organization_id == current_user.organization_id,
+            )
+            .first()
+        )
+        if put_away_list is None:
+            raise NotFoundError(
+                message="Put-away list not found",
+                entity_type="PutAwayList",
+                entity_id=str(data.put_away_list_id),
+            )
+
+    job = _enqueue_bulk_job(
+        db=db,
+        organization_id=current_user.organization_id,
+        worker_id=current_user.id,
+        job_type="qr",
+        put_away_list_id=data.put_away_list_id,
+        request_data={
+            "bin_id": str(data.bin_id),
+            "put_away_list_id": str(data.put_away_list_id)
+            if data.put_away_list_id
+            else None,
+            "items": [i.model_dump() for i in data.items],
+        },
+    )
+    return BulkPutAwayJobAccepted(job_id=str(job.id), status="queued")
+
+
+@router.get(
+    "/bulk-jobs/{job_id}",
+    response_model=BulkPutAwayJobResponse,
+    summary="Poll a bulk put-away job",
+    description="Return the status and per-item result of an async bulk put-away job",
+)
+async def get_bulk_put_away_job(
+    job_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Poll an async bulk put-away job.
+
+    **Returns:** `status` (queued / processing / completed / failed), live
+    `progress`, and the per-item `result` once complete.
+    """
+    job = (
+        db.query(BulkPutAwayJob)
+        .filter(
+            BulkPutAwayJob.id == job_id,
+            BulkPutAwayJob.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if job is None:
+        raise NotFoundError(
+            message="Bulk put-away job not found",
+            entity_type="BulkPutAwayJob",
+            entity_id=str(job_id),
+        )
+    return BulkPutAwayJobResponse(
+        job_id=str(job.id),
+        status=job.status,
+        job_type=job.job_type,
+        put_away_list_id=str(job.put_away_list_id) if job.put_away_list_id else None,
+        progress={
+            "total": job.total_items,
+            "completed": job.completed_items,
+            "failed": job.failed_items,
+        },
+        result=job.result,
+        error=job.error,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
     )
 
 

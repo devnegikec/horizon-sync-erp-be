@@ -7,7 +7,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.types import UUID
+from app.models.types import JSONB, UUID
 
 
 class ReceivingSlip(Base):
@@ -105,6 +105,9 @@ class ReceivingSlipItem(Base):
     reason_code = Column(String(80), nullable=True, index=True)
     # Units short against the ASN expectation for this line (flag == 'short')
     short_qty = Column(Integer, nullable=True)
+    # Unit serials received on this line (serialized transfers). Populated at
+    # slip generation; keeps the document of record self-describing (T1.1).
+    serial_nos = Column(JSONB, nullable=True)
     notes = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), nullable=True)

@@ -419,6 +419,14 @@ SYNCABLE_FEATURES = [
             "Run one step or the whole chain."
         ),
     },
+    {
+        "key": "reset_picklist",
+        "label": "Reset PickList",
+        "description": (
+            "Wipe a pick list generated from an order (and its dispatch/ASN "
+            "artifacts) so the order can be re-picked from scratch."
+        ),
+    },
 ]
 
 SYNCABLE_FEATURE_KEYS = {feature["key"] for feature in SYNCABLE_FEATURES}
@@ -570,6 +578,7 @@ class OrganizationOnboardingService:
         warehouse_id: UUID | None = None,
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
+        reset_picklist_options: dict | None = None,
     ) -> dict:
         """Seed the requested default data categories on demand.
 
@@ -606,6 +615,7 @@ class OrganizationOnboardingService:
                 warehouse_id,
                 stock_boost_qty,
                 receive_asn_options,
+                reset_picklist_options,
             )
 
         self.db.commit()
@@ -631,6 +641,7 @@ class OrganizationOnboardingService:
         warehouse_id: UUID | None = None,
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
+        reset_picklist_options: dict | None = None,
     ) -> dict:
         """Dispatch a single feature key to its idempotent seed routine."""
         if key == "currencies":
@@ -655,7 +666,35 @@ class OrganizationOnboardingService:
             return self._seed_receive_asn(
                 organization_id, user_id, now, warehouse_id, receive_asn_options
             )
+        if key == "reset_picklist":
+            return self._reset_picklist(
+                organization_id, reset_picklist_options or {}
+            )
         return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
+
+    def _reset_picklist(
+        self, organization_id: UUID, options: dict
+    ) -> dict:
+        """Reset a pick list (or all pick lists of an order) for retesting."""
+        from app.services.picklist_reset_service import PickListResetService
+
+        order_id = options.get("order_id")
+        pick_list_id = options.get("pick_list_id")
+        order_no = options.get("order_no")
+        pick_list_no = options.get("pick_list_no")
+        service = PickListResetService(self.db)
+        summary = service.reset(
+            organization_id=organization_id,
+            order_id=UUID(str(order_id)) if order_id else None,
+            pick_list_id=UUID(str(pick_list_id)) if pick_list_id else None,
+            order_no=order_no,
+            pick_list_no=pick_list_no,
+        )
+        return {
+            "reset": summary["pick_lists_reset"],
+            "orders_reset": summary["orders_reset"],
+            "details": summary["details"],
+        }
 
     # ------------------------------------------------------------------
     # Product/Item dual-mode feature flags (catalog vs WMS)

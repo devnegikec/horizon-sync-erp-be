@@ -145,6 +145,22 @@ async def export_asn_epcis(
     return svc.epcis_events(asn_order_id, current_user.organization_id)
 
 
+@router.get("/{asn_order_id}/transfer-verification")
+async def get_transfer_verification(
+    asn_order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(ASN_ORDER_READ)),
+    db: Session = Depends(get_db),
+):
+    """Per-serial transfer verification report (received/in-transit/missing/unexpected).
+
+    Requires asn_order.read.
+    """
+    from app.services.transfer_verification_service import TransferVerificationService
+
+    svc = TransferVerificationService(db)
+    return svc.verification_report(asn_order_id, current_user.organization_id)
+
+
 @router.put("/{asn_order_id}", response_model=AsnOrderResponse)
 async def update_asn_order(
     asn_order_id: UUID,
@@ -420,6 +436,35 @@ async def get_receiving_summary(
     # Get per-line-item receiving summary
     line_items_data = asn_repo.get_receiving_summary(asn_order_id)
 
+    # Serial-aware reconciliation inputs (T3.2): dispatched serial lines plus
+    # the unexpected serials recorded as inbound exceptions for this ASN.
+    from app.models.asn_order import AsnOrderSerialLine
+
+    serial_lines = [
+        {"serial_no": sl.serial_no, "received": bool(sl.received)}
+        for sl in db.query(AsnOrderSerialLine)
+        .filter(
+            AsnOrderSerialLine.asn_order_id == asn_order_id,
+            AsnOrderSerialLine.organization_id == current_user.organization_id,
+        )
+        .all()
+    ]
+    unexpected_serials = list(
+        {
+            exc.qr_identifier
+            for exc in db.query(InboundException)
+            .filter(
+                InboundException.asn_order_id == asn_order_id,
+                InboundException.organization_id == current_user.organization_id,
+                InboundException.exception_type.in_(
+                    ("serial_not_in_asn", "wrong_item")
+                ),
+            )
+            .all()
+            if exc.qr_identifier
+        }
+    )
+
     # Include the in-progress session only when it belongs to the requested
     # ASN and organisation. Finalized sessions are already represented by
     # their receiving slips, so including them here would double-count scans.
@@ -471,6 +516,8 @@ async def get_receiving_summary(
         active_scans_by_sku=active_scans_by_sku,
         unresolved_exception_count=unresolved_exception_count,
         include_active_session=active_session_id is not None,
+        serial_lines=serial_lines,
+        unexpected_serials=unexpected_serials,
     )
     line_items = [AsnLineItemReceivingSummary(**li) for li in summary["line_items"]]
 
@@ -525,4 +572,8 @@ async def get_receiving_summary(
         active_session_id=active_session_id,
         linked_slips=linked_slips,
         line_items=line_items,
+        expected_serials=summary["expected_serials"],
+        received_serials=summary["received_serials"],
+        missing_serials=summary["missing_serials"],
+        unexpected_serials=summary["unexpected_serials"],
     )

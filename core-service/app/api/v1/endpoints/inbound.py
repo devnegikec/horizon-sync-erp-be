@@ -60,6 +60,8 @@ from app.schemas.inbound import (
     RemoveScansRequest,
     RemoveScansResponse,
     ResolveFloatingItemRequest,
+    ScanCartonRequest,
+    ScanCartonResult,
     ScanResult,
     SessionResponse,
     SessionSummary,
@@ -214,6 +216,42 @@ async def record_scan(
         os=data.os,
     )
     return ScanResult(**result)
+
+
+@router.post(
+    "/sessions/{session_id}/scan-carton",
+    response_model=ScanCartonResult,
+    status_code=status.HTTP_201_CREATED,
+    summary="Receive a full master carton",
+    description="Scan a master-carton (parent) QR and receive all its linked units",
+)
+async def scan_carton(
+    session_id: UUID,
+    data: ScanCartonRequest,
+    current_user: CurrentUser = Depends(require_permission(RECEIVING_SLIP_CREATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Receive a full master carton in one scan.
+
+    Expands the carton server-side via the QSeal parent/child hierarchy and
+    verifies every child serial against the linked internal-transfer ASN.
+
+    **Returns:** Carton summary with a per-serial outcome (received / duplicate
+    / unexpected). Unexpected serials are recorded as inbound exceptions.
+
+    Requirements: T2.2 / T2.3 / T2.4
+    """
+    service = InboundService(db)
+    result = service.scan_carton(
+        session_id=session_id,
+        qr_data=data.qr_data,
+        worker_id=current_user.id,
+        organization_id=current_user.organization_id,
+        device_type=data.device_type,
+        os=data.os,
+    )
+    return ScanCartonResult(**result)
 
 
 @router.post(

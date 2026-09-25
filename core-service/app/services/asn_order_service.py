@@ -577,6 +577,39 @@ class AsnOrderService:
 
         self._validate_status_transition(asn_order.status, new_status_enum)
 
+        # T3.3 — block closure while unreceived transfer serials remain. The
+        # operator must short-close the missing units (with approval) first.
+        if (
+            new_status_enum == AsnOrderStatus.CLOSED
+            and asn_order.asn_type == "internal_transfer"
+        ):
+            from app.models.asn_order import AsnOrderSerialLine
+
+            unreceived = (
+                self.db.query(AsnOrderSerialLine)
+                .filter(
+                    AsnOrderSerialLine.asn_order_id == asn_order.id,
+                    AsnOrderSerialLine.received.is_(False),
+                )
+                .count()
+            )
+            if unreceived > 0:
+                raise ValidationError(
+                    message=(
+                        f"Cannot close ASN {asn_order.asn_order_no}: "
+                        f"{unreceived} serial(s) have not been received"
+                    ),
+                    details=[
+                        {
+                            "field": "status",
+                            "reason": (
+                                "Short-close the unreceived serials with approval "
+                                "before closing the ASN"
+                            ),
+                        }
+                    ],
+                )
+
         payload = {
             "status": new_status_enum,
             "updated_by": user_id,
@@ -1326,6 +1359,7 @@ class AsnOrderService:
             "reference_id": asn_order.reference_id,
             "reference_no": asn_order.reference_no,
             "asn_type": asn_order.asn_type or "purchase",
+            "serialization_mode": asn_order.serialization_mode,
             "linked_pick_list_id": (
                 str(asn_order.linked_pick_list_id)
                 if asn_order.linked_pick_list_id

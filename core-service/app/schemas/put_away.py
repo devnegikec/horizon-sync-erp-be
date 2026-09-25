@@ -268,3 +268,122 @@ class CompletePutawayResponse(BaseModel):
     putaway_status: str
     stock_entered: bool = False
     completed_at: str | None = None
+
+
+# ===========================================
+# BULK PUT-AWAY (one request, many items)
+# ===========================================
+
+
+class BulkPutAwaySummary(BaseModel):
+    """Rollup of a bulk put-away request."""
+
+    completed_count: int = 0
+    failed_count: int = 0
+
+
+class CompletePutAwayItemsRequest(BaseModel):
+    """Bulk-complete put-away list items into the same bin."""
+
+    bin_id: UUID | None = Field(
+        None,
+        description="Bin location UUID. Omit to use each item's pre-assigned bin.",
+    )
+    item_ids: list[UUID] = Field(..., min_length=1, description="Put-away item UUIDs")
+
+
+class CompletePutAwayItemSuccess(BaseModel):
+    id: str
+    item_id: str
+    sku: str | None = None
+    batch_number: str | None = None
+    quantity: float
+    bin_location_id: str | None = None
+    bin_location_code: str | None = None
+    status: str
+    completed_at: str | None = None
+
+
+class CompletePutAwayItemFailure(BaseModel):
+    item_id: str
+    error: str
+    message: str
+
+
+class CompletePutAwayItemsResponse(BaseModel):
+    completed: list[CompletePutAwayItemSuccess] = []
+    failed: list[CompletePutAwayItemFailure] = []
+    summary: BulkPutAwaySummary
+
+
+class CompletePutawayBulkItem(BaseModel):
+    """A single QR to complete in a bulk put-away request."""
+
+    qr: str = Field(..., min_length=1, description="QR identifier / serial")
+    quantity: int | None = Field(None, ge=1, description="Optional quantity override")
+
+
+class CompletePutawayBulkRequest(BaseModel):
+    """Bulk-complete put-away by QR into the same bin."""
+
+    bin_id: UUID = Field(..., description="Bin location UUID to put away into")
+    put_away_list_id: UUID | None = Field(
+        None, description="Optional direct put-away list to attach items to"
+    )
+    items: list[CompletePutawayBulkItem] = Field(..., min_length=1)
+
+
+class CompletePutawayBulkSuccess(BaseModel):
+    id: str
+    qr_identifier: str
+    sku: str
+    batch_number: str | None = None
+    quantity: int
+    bin_location_id: str | None = None
+    putaway_status: str
+    stock_entered: bool = False
+    completed_at: str | None = None
+
+
+class CompletePutawayBulkFailure(BaseModel):
+    qr: str
+    error: str
+    message: str
+
+
+class CompletePutawayBulkResponse(BaseModel):
+    completed: list[CompletePutawayBulkSuccess] = []
+    failed: list[CompletePutawayBulkFailure] = []
+    summary: BulkPutAwaySummary
+
+
+# ===========================================
+# BULK PUT-AWAY — ASYNC JOB TRACKING
+# ===========================================
+
+
+class BulkPutAwayJobAccepted(BaseModel):
+    """202 response after enqueuing an async bulk put-away job."""
+
+    job_id: str
+    status: str
+
+
+class BulkPutAwayJobProgress(BaseModel):
+    total: int = 0
+    completed: int = 0
+    failed: int = 0
+
+
+class BulkPutAwayJobResponse(BaseModel):
+    """Polling response for an async bulk put-away job."""
+
+    job_id: str
+    status: str
+    job_type: str | None = None
+    put_away_list_id: str | None = None
+    progress: BulkPutAwayJobProgress
+    result: dict | None = None
+    error: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None

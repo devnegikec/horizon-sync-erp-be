@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     celery_qr_queue_name: str = "qr-generation"
     celery_visibility_timeout_seconds: int = 7200
 
+    # Bulk put-away: batches up to this many items complete synchronously in
+    # the request (no async job + polling); larger batches are queued.
+    bulk_putaway_sync_threshold: int = 20
+
+    # Transfer serial reconciliation (T3.1) — unreceived serials older than
+    # this many hours raise a MISSING_SERIAL exception.
+    missing_serial_alert_hours: int = 72
+
     # Audit Trail
     audit_async_enabled: bool = False
     audit_flush_interval: float = 1.0

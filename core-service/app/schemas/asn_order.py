@@ -129,6 +129,7 @@ class AsnOrderResponse(AsnOrderBase):
     close_note: str | None = None
     closed_by: UUID | None = None
     closed_at: datetime | None = None
+    serialization_mode: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[AsnOrderItemResponse] = []

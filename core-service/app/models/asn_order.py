@@ -63,6 +63,10 @@ class AsnOrder(Base):
     # ``purchase`` | ``internal_transfer`` — internal transfers drive a source
     # pick list and carry unit-level serials on their line items.
     asn_type = Column(String(20), nullable=True)
+    # Verification mode set at dispatch: ``serialized`` when unit serials were
+    # captured and propagated, ``quantity_only`` otherwise. Drives the
+    # "quantity-only verification" banner on the receiving UI (T0.1).
+    serialization_mode = Column(String(20), nullable=True)
     # Auto-created source pick list for an internal-transfer ASN (visibility
     # for the destination/creation side). Kept for backward compatibility with
     # ASNs created before the order-driven outbound flow.
@@ -192,6 +196,12 @@ class AsnOrderSerialLine(Base):
         nullable=False,
     )
     serial_no = Column(String(100), nullable=False)
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     bin_location_id = Column(UUID(as_uuid=True), nullable=True)
     expected_qty = Column(Integer, default=1, nullable=False)
     received = Column(Boolean, default=False, nullable=False)
