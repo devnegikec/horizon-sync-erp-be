@@ -273,6 +273,38 @@ def test_a_finished_asn_cannot_be_closed_again(short_svc, status):
     assert excinfo.value.code == "ASN_ALREADY_CLOSED"
 
 
+def test_close_authority_does_not_fall_back_to_the_source_warehouse(short_svc):
+    """A missing destination warehouse must not let the origin manager approve."""
+    svc = _service()
+    asn = _asn(warehouse_id_to=None)
+    svc.repo.get_by_id_with_items.return_value = asn
+    short_svc.residual = Decimal("2")
+    short_svc.written_off = (1, Decimal("2"))
+    # The stub would happily report "manager" for the source warehouse.
+    svc.db.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(StateError) as excinfo:
+        svc.close_short(
+            asn.id, uuid.uuid4(), user=_user(user_type="user"), reason_code="X"
+        )
+
+    assert excinfo.value.code == "ASN_CLOSE_APPROVAL_REQUIRED"
+    assert asn.status is AsnOrderStatus.PARTIALLY_DELIVERED
+
+
+def test_generic_status_endpoint_cannot_close_an_asn(short_svc):
+    """Closing must go through close_short (approval + reason + write-off)."""
+    svc = _service()
+    asn = _asn()
+    svc.repo.get_by_id_with_items.return_value = asn
+
+    with pytest.raises(StateError) as excinfo:
+        svc.update_status(asn.id, "closed", uuid.uuid4(), uuid.uuid4())
+
+    assert excinfo.value.code == "ASN_CLOSE_REQUIRES_APPROVAL"
+    assert asn.status is AsnOrderStatus.PARTIALLY_DELIVERED
+
+
 # ── persistence / API contract ─────────────────────────────────────────────
 
 

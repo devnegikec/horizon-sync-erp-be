@@ -509,6 +509,8 @@ class InboundShortBalanceService:
         approval covers all of that ASN's residual lines, so they are closed
         with the same reason instead of being left open indefinitely.
         """
+        # Lock the open balances so a concurrent receipt/closure cannot hand
+        # the same rows to a second write-off (duplicate events, wrong totals).
         balances = (
             self.db.query(InboundShortBalance)
             .filter(
@@ -516,6 +518,7 @@ class InboundShortBalanceService:
                 InboundShortBalance.asn_order_id == asn_order_id,
                 InboundShortBalance.status == BALANCE_STATUS_OPEN,
             )
+            .with_for_update()
             .all()
         )
         written_off = 0

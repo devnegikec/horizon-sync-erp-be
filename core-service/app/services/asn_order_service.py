@@ -556,6 +556,25 @@ class AsnOrderService:
             raise ResourceNotFoundException(f"ASN Order {asn_order_id} not found")
 
         new_status_enum = AsnOrderStatus(new_status)
+
+        # Closing short is not a plain status flip: it needs manager approval,
+        # a validated reason and the shortage write-off, all of which live in
+        # ``close_short``. Block it here so this endpoint cannot shortcut that.
+        if new_status_enum == AsnOrderStatus.CLOSED:
+            from app.core.exceptions import StateError
+
+            raise StateError(
+                message=(
+                    "Closing an ASN must go through the short-delivery close "
+                    "endpoint so manager approval and the shortage write-off "
+                    "are applied"
+                ),
+                current_state=asn_order.status.value,
+                required_state=[AsnOrderStatus.CLOSED.value],
+                code="ASN_CLOSE_REQUIRES_APPROVAL",
+                hint="Use POST /asn-orders/{id}/close with a reason_code.",
+            )
+
         self._validate_status_transition(asn_order.status, new_status_enum)
 
         payload = {
@@ -680,10 +699,14 @@ class AsnOrderService:
 
         # Serialize concurrent closures so the second caller observes the
         # committed closed state instead of closing (and writing off) twice.
+        # ``populate_existing`` is required: without it SQLAlchemy returns the
+        # already-loaded (pre-lock) instance and the stale status check below
+        # would let a concurrent request close the ASN a second time.
         (
             self.db.query(AsnOrder)
             .filter(AsnOrder.id == asn_order.id)
             .with_for_update()
+            .populate_existing()
             .first()
         )
 
@@ -769,7 +792,10 @@ class AsnOrderService:
         from app.core.exceptions import StateError
         from app.services.inbound_exception_service import InboundExceptionService
 
-        warehouse_id = asn_order.warehouse_id_to or asn_order.warehouse_id_from
+        # Authority is scoped to the *destination* warehouse. Never fall back
+        # to the origin warehouse: that would let the wrong warehouse manager
+        # approve the closure.
+        warehouse_id = asn_order.warehouse_id_to
 
         if warehouse_id is not None:
             permitted = InboundExceptionService(self.db).is_manager(user, warehouse_id)
