@@ -29,6 +29,26 @@ class QRScanEvent(Base):
     product_item_id = Column(
         UUID(as_uuid=True), ForeignKey("product_items.id"), nullable=True
     )
+    # Typed document references (T3.5) — replace extra_data string joins so
+    # scan events can be correlated to their ASN / session / dispatch by key.
+    asn_order_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("asn_orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    scan_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("scan_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    dispatch_record_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dispatch_records.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # QSeal analytics context. These fields are denormalized snapshots so the
     # dashboard can filter/group scan events without reconstructing the QSeal
     # hierarchy after products or batches have changed.

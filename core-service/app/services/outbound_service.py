@@ -187,6 +187,7 @@ class OutboundService:
         logger = logging.getLogger(__name__)
 
         from app.models.asn_order import AsnOrder, AsnOrderItem, AsnOrderSerialLine
+        from app.models.item import Item
         from app.models.serial_no import SerialNo, SerialNoHistory
 
         asn_order = self._resolve_transfer_asn(pick_list, org_id)
@@ -200,6 +201,42 @@ class OutboundService:
 
         dest_warehouse_id = asn_order.warehouse_id_to
         source_warehouse_id = asn_order.warehouse_id_from or pick_list.warehouse_id
+
+        # T0.2 — surface serialized items that ship without captured serials.
+        # ``has_serial_no`` is the same gate the pick path uses to decide whether
+        # to capture serials, so a serialized line with no serials means the pick
+        # was completed without scanning units (or the item is non-serialized).
+        item_ids = {line.item_id for line in pick_list.items}
+        serialized_item_ids = {
+            row[0]
+            for row in self.db.query(Item.id)
+            .filter(
+                Item.id.in_(item_ids),
+                Item.has_serial_no.is_(True),
+            )
+            .all()
+        }
+
+        # T1.3 — resolve ProductItem keys for the unit serials so the serial
+        # lines reference the ProductItem by key, not just string.
+        from app.models.product_item import ProductItem
+
+        all_serials = [
+            s for line in pick_list.items for s in (line.serial_nos or []) if s
+        ]
+        product_item_id_by_serial: dict[str, UUID] = {}
+        if all_serials:
+            product_items = (
+                self.db.query(ProductItem)
+                .filter(
+                    ProductItem.serial_number.in_(all_serials),
+                    ProductItem.organization_id == org_id,
+                )
+                .all()
+            )
+            product_item_id_by_serial = {
+                pi.serial_number: pi.id for pi in product_items
+            }
 
         # Keep the operation idempotent across repeat dispatch calls.
         existing = {
@@ -226,6 +263,14 @@ class OutboundService:
 
             serials = [s for s in (line.serial_nos or []) if s]
             if not serials:
+                if line.item_id in serialized_item_ids:
+                    logger.warning(
+                        "Internal-transfer dispatch: serialized item %s on pick "
+                        "list '%s' shipped with no captured serials — quantity-only "
+                        "verification will apply for this line",
+                        line.item_id,
+                        pick_list.id,
+                    )
                 continue
 
             if asn_item is not None:
@@ -241,6 +286,7 @@ class OutboundService:
                         asn_order_id=asn_order.id,
                         asn_item_id=asn_item.id if asn_item else None,
                         item_id=line.item_id,
+                        product_item_id=product_item_id_by_serial.get(serial_no),
                         serial_no=serial_no,
                         bin_location_id=line.bin_location_id,
                     )
@@ -271,6 +317,18 @@ class OutboundService:
                             ),
                         )
                     )
+
+        # T0.1 — make the verification mode explicit on the ASN. Any serial line
+        # (from this dispatch or an earlier one) means the transfer is serialized;
+        # otherwise the destination can only verify by quantity.
+        serial_line_count = (
+            self.db.query(AsnOrderSerialLine)
+            .filter(AsnOrderSerialLine.asn_order_id == asn_order.id)
+            .count()
+        )
+        asn_order.serialization_mode = (
+            "serialized" if serial_line_count > 0 else "quantity_only"
+        )
 
         logger.info(
             "Propagated transfer serials for ASN '%s' at dispatch",

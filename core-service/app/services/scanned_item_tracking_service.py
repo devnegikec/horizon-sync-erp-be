@@ -72,6 +72,7 @@ class ScannedItemTrackingService:
         scan_item_id: UUID,
         qr_identifier: str,
         item_id: UUID,
+        product_item_id: UUID | None = None,
         sku: str,
         quantity: int = 1,
         batch_number: str | None = None,
@@ -85,6 +86,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=scan_item_id,
             qr_identifier=qr_identifier,
             item_id=item_id,
+            product_item_id=product_item_id,
             sku=sku,
             batch_number=batch_number,
             quantity=quantity,
@@ -179,6 +181,22 @@ class ScannedItemTrackingService:
                 f"No Item found for QR id='{payload.id}' sku='{payload.sku}'"
             )
 
+        # T1.3 — resolve the ProductItem key for the unit serial (best effort).
+        product_item_id = None
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if product_item is not None:
+            product_item_id = product_item.id
+
         tracking = ScannedItemTracking(
             organization_id=organization_id,
             warehouse_id=warehouse_id,
@@ -186,6 +204,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=None,
             qr_identifier=payload.id,
             item_id=item.id,
+            product_item_id=product_item_id,
             sku=item.sku or item.item_code or payload.sku,
             batch_number=payload.batch,
             quantity=payload.qty or 1,

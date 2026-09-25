@@ -566,7 +566,21 @@ class PutAwayService:
                     pu_id = ln["slip_item"].packaging_unit_id
                     by_pu.setdefault(pu_id, []).append(ln)
                 for pu_id, pu_lines in by_pu.items():
-                    serials = [ln["slip_item"].batch_number for ln in pu_lines]
+                    # T1.1 — prefer serials persisted on the slip line; fall back
+                    # to batch_number for slips created before the column.
+                    serials: list[str] = []
+                    for ln in pu_lines:
+                        si = ln["slip_item"]
+                        persisted = list(si.serial_nos or [])
+                        if persisted:
+                            serials.extend(persisted)
+                        elif si.batch_number:
+                            # Legacy line without persisted serials: batch_number
+                            # is the unit serial. Honour quantity so a qty>1 line
+                            # does not silently lose units.
+                            serials.extend(
+                                [si.batch_number] * max(1, int(si.quantity or 1))
+                            )
                     for i in range(0, len(serials), pack_size):
                         chunk = serials[i : i + pack_size]
                         source_lines.append(

@@ -122,6 +122,7 @@ class AsnOrderResponse(AsnOrderBase):
     linked_order_id: UUID | None = None
     linked_order_no: str | None = None
     transfer_progress: AsnOrderTransferProgress | None = None
+    serialization_mode: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[AsnOrderItemResponse] = []
