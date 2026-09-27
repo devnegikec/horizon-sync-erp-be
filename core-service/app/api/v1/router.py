@@ -45,6 +45,7 @@ from app.api.v1.endpoints import (
     journal_entries,
     landed_cost,
     landing_pages,
+    layout_design,
     location_allocations,
     location_scans,
     material_requests,
@@ -173,6 +174,12 @@ api_router.include_router(
     floor_plans.router,
     prefix="/floor-plans",
     tags=["Floor Plan Designer"],
+)
+# JSON Layout Designer (import a layout document, validate, preview, apply)
+api_router.include_router(
+    layout_design.router,
+    prefix="/layout-design",
+    tags=["Layout Designer"],
 )
 api_router.include_router(
     wms_3d.router,
