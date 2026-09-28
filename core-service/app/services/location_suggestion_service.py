@@ -212,8 +212,10 @@ class LocationSuggestionService:
             if not cap["is_available"]:
                 continue
             remaining = None
+            available_uom = "units"
             if cap["volume"]["capacity_m3"] is not None:
                 remaining = cap["volume"]["capacity_m3"] - cap["volume"]["occupied_m3"]
+                available_uom = "volume"
                 if required_m3 is not None and required_m3 > remaining:
                     continue
                 if cap["volume"]["capacity_m3"] > 0:
@@ -251,6 +253,7 @@ class LocationSuggestionService:
                     score=score,
                     reasons=reasons,
                     available_capacity=available,
+                    capacity_uom=available_uom,
                     distance_from_worker=dist_from_worker,
                 )
             )
@@ -778,6 +781,7 @@ class LocationSuggestionService:
         distance_from_worker: float,
         batch_number: str | None = None,
         expiry_date: date | None = None,
+        capacity_uom: str = "units",
     ) -> dict:
         # Rough estimate: 1 metre/second walking + 5s handling.
         estimated_time = int(distance_from_worker + 5)
@@ -792,6 +796,7 @@ class LocationSuggestionService:
             "score": round(score, 2),
             "reasons": reasons,
             "available_capacity": float(available_capacity),
+            "capacity_uom": capacity_uom,
             "distance_from_worker": round(distance_from_worker, 2),
             "estimated_time_seconds": estimated_time,
             "batch_number": batch_number,

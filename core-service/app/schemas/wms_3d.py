@@ -24,6 +24,7 @@ class CapacityVolume(BaseModel):
 
     capacity_m3: float | None = None
     occupied_m3: float = 0.0
+    available_m3: float | None = None
     pct: float | None = None
 
 
@@ -32,6 +33,7 @@ class CapacityWeight(BaseModel):
 
     capacity_kg: float | None = None
     occupied_kg: float = 0.0
+    available_kg: float | None = None
     pct: float | None = None
 
 
@@ -51,7 +53,8 @@ class LayoutBin(BaseModel):
     code: str
     full_path: str | None = None
     position: Position3D
-    # Legacy unit-count capacity: 0 when the bin is volume/weight limited.
+    # ``capacity``/``available_capacity`` are expressed in ``capacity_uom``:
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
     capacity: float
     available_capacity: float
     capacity_uom: str | None = None
@@ -115,7 +118,7 @@ class StatusReservedBy(BaseModel):
 
 class StatusBin(BaseModel):
     bin_id: UUID
-    # Legacy unit-count capacity: 0 when the bin is volume/weight limited.
+    # ``capacity``/``available_capacity`` are expressed in ``capacity_uom``.
     capacity: float = 0.0
     available_capacity: float = 0.0
     capacity_uom: str | None = None
@@ -164,6 +167,8 @@ class Suggestion(BaseModel):
     score: float
     reasons: list[str] = Field(default_factory=list)
     available_capacity: float
+    # 'units' (count), 'volume' (m³) — the measure of ``available_capacity``.
+    capacity_uom: str = "units"
     distance_from_worker: float
     estimated_time_seconds: int
     batch_number: str | None = None

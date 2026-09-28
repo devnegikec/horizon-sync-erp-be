@@ -242,17 +242,19 @@ class Warehouse3DService:
     ) -> dict:
         """Volume/weight-aware capacity view for one bin.
 
-        ``capacity`` / ``available_capacity`` keep their legacy **unit-count**
-        meaning and become ``0`` when the bin is limited by volume/weight instead
-        (new-layout bins store their limit in ``max_volume_cc`` or ``capacity``
-        with ``capacity_uom='volume'``). ``fill_percentage`` and the ``volume`` /
-        ``weight`` blocks are the physical measures, so a 1.2 m³ bin reports a
-        real fill instead of ``on_hand / 1.2 × 100``.
-        """
-        count_cap = effective_bin_count_capacity(bin_loc)
-        capacity = Decimal(str(count_cap)) if count_cap is not None else Decimal("0")
-        available = capacity - on_hand if count_cap is not None else Decimal("0")
+        ``capacity`` / ``available_capacity`` are reported **in the bin's own
+        measure**, described by ``capacity_uom``:
 
+        * a count-limited bin → units (legacy behaviour),
+        * a volume-limited bin (``max_volume_cc``, or ``capacity`` with
+          ``capacity_uom='volume'``) → m³,
+        * a weight-limited bin → kg.
+
+        This matters because new-layout bins carry ``capacity = 1.2`` m³, so
+        reporting a unit count would either be wrong or a constant ``0`` that
+        never moves when stock is stored. ``fill_percentage`` and the ``volume``
+        / ``weight`` blocks are the physical measures.
+        """
         cap_m3 = None
         if self._use_volume(warehouse):
             limit_cc = effective_bin_volume_limit_cc(bin_loc)
@@ -263,6 +265,27 @@ class Warehouse3DService:
             limit_g = effective_bin_weight_limit_g(bin_loc)
             if limit_g is not None:
                 cap_kg = limit_g / G_PER_KG
+
+        available_m3 = (cap_m3 - occupied_m3) if cap_m3 is not None else None
+        available_kg = (cap_kg - occupied_kg) if cap_kg is not None else None
+
+        count_cap = effective_bin_count_capacity(bin_loc)
+        if count_cap is not None:
+            capacity = Decimal(str(count_cap))
+            available = capacity - on_hand
+            capacity_uom = bin_loc.capacity_uom or "units"
+        elif available_m3 is not None:
+            capacity = cap_m3
+            available = available_m3
+            capacity_uom = "volume"
+        elif available_kg is not None:
+            capacity = cap_kg
+            available = available_kg
+            capacity_uom = "weight"
+        else:
+            capacity = Decimal("0")
+            available = Decimal("0")
+            capacity_uom = bin_loc.capacity_uom
 
         vol_pct = (occupied_m3 / cap_m3 * 100) if cap_m3 else None
         wt_pct = (occupied_kg / cap_kg * 100) if cap_kg else None
@@ -279,16 +302,22 @@ class Warehouse3DService:
         return {
             "capacity": float(capacity),
             "available_capacity": float(available),
-            "capacity_uom": bin_loc.capacity_uom,
+            "capacity_uom": capacity_uom,
             "fill_percentage": round(float(binding), 1),
             "volume": {
                 "capacity_m3": float(cap_m3) if cap_m3 is not None else None,
                 "occupied_m3": float(occupied_m3),
+                "available_m3": float(available_m3)
+                if available_m3 is not None
+                else None,
                 "pct": round(float(vol_pct), 1) if vol_pct is not None else None,
             },
             "weight": {
                 "capacity_kg": float(cap_kg) if cap_kg is not None else None,
                 "occupied_kg": float(occupied_kg),
+                "available_kg": float(available_kg)
+                if available_kg is not None
+                else None,
                 "pct": round(float(wt_pct), 1) if wt_pct is not None else None,
             },
         }

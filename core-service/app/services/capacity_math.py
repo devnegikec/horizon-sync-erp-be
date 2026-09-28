@@ -141,6 +141,40 @@ def effective_bin_count_capacity(bin_loc) -> Decimal | None:
     return None
 
 
+def effective_available_capacity(
+    bin_loc,
+    *,
+    occupied_m3: Decimal,
+    occupied_kg: Decimal,
+    unit_count: Decimal,
+) -> Decimal:
+    """Remaining capacity of a bin, expressed in the bin's **own** measure.
+
+    Mirrors the reported ``capacity`` + ``capacity_uom`` pair:
+
+    * count-limited bin → remaining units (``count capacity - unit_count``),
+    * volume-limited bin → remaining m³ (``capacity_m3 - occupied_m3``),
+    * weight-limited bin → remaining kg,
+    * no limit configured → ``0``.
+
+    Cached onto ``WarehouseLocation.available_capacity`` so the location tree and
+    bin pickers show a value that actually moves when stock is stored.
+    """
+    count_cap = effective_bin_count_capacity(bin_loc)
+    if count_cap is not None:
+        return count_cap - unit_count
+
+    volume_cc = effective_bin_volume_limit_cc(bin_loc)
+    if volume_cc is not None:
+        return (volume_cc / CC_PER_M3) - occupied_m3
+
+    weight_g = effective_bin_weight_limit_g(bin_loc)
+    if weight_g is not None:
+        return (weight_g / G_PER_KG) - occupied_kg
+
+    return Decimal("0")
+
+
 def _row_occupied(
     qty,
     conversion_factor,

@@ -31,6 +31,7 @@ from app.services.capacity_math import (
     compute_item_required_cc_and_grams,
     compute_warehouse_bin_counts,
     compute_warehouse_bin_occupancy,
+    effective_available_capacity,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
     effective_bin_weight_limit_g,
@@ -241,6 +242,16 @@ class BinCapacityService:
         bin_loc.capacity_weight_pct = metrics["wt_pct"]
         bin_loc.bin_state = state
         bin_loc.is_available = is_available
+        # Keep the cached remaining capacity in the bin's own measure (units /
+        # m³ / kg) so the location tree and bin pickers never show a stale or
+        # unit-count-derived number for a volume-limited bin.
+        units, _packs, _count_cap, _count_pct = self._bin_counts(bin_loc)
+        bin_loc.available_capacity = effective_available_capacity(
+            bin_loc,
+            occupied_m3=metrics["occupied_m3"],
+            occupied_kg=metrics["occupied_kg"],
+            unit_count=units,
+        )
         self.db.flush()
 
         try:

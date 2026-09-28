@@ -34,6 +34,7 @@ from app.services.capacity_math import (
     G_PER_KG,
     compute_bin_occupancy,
     compute_item_required_cc_and_grams,
+    effective_available_capacity,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
     effective_bin_weight_limit_g,
@@ -218,10 +219,7 @@ class BinStockService:
         self.db.flush()
 
         # Update the bin's own available_capacity (recalculate_ancestors only walks up)
-        if bin_capacity is not None:
-            bin_location.available_capacity = bin_capacity - (
-                current_stock_in_bin + quantity
-            )
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
@@ -382,8 +380,7 @@ class BinStockService:
                 error_count += 1
 
         # Update bin's available_capacity and version
-        if bin_capacity is not None:
-            bin_location.available_capacity = bin_capacity - current_stock_in_bin
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
@@ -475,9 +472,7 @@ class BinStockService:
         self.db.flush()
 
         # Update the bin's own available_capacity (recalculate_ancestors only walks up)
-        bin_capacity = effective_bin_count_capacity(bin_location)
-        if bin_capacity is not None:
-            bin_location.available_capacity = bin_capacity - (current_qty - quantity)
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
@@ -673,6 +668,12 @@ class BinStockService:
     ) -> list[dict]:
         """Return all bins containing a specific item with quantities and available capacity.
 
+        ``bin_capacity`` / ``available_capacity`` are reported in the bin's own
+        measure (see ``capacity_uom``): units for a count-limited bin, m³ for a
+        volume-limited bin, kg for a weight-limited bin. New-layout bins store
+        ``capacity = 1.2`` m³, so subtracting a unit count from it would report a
+        meaningless (often negative) number.
+
         Args:
             item_id: The item to search for.
             org_id: Organization ID for scoping.
@@ -700,9 +701,30 @@ class BinStockService:
             if bin_location is None:
                 continue
 
-            total_stock_in_bin = self._get_total_stock_in_bin(bs.bin_location_id)
-            bin_capacity = Decimal(str(bin_location.capacity or 0))
-            available_capacity = bin_capacity - total_stock_in_bin
+            count_cap = effective_bin_count_capacity(bin_location)
+            if count_cap is not None:
+                total_stock_in_bin = self._get_total_stock_in_bin(bs.bin_location_id)
+                bin_capacity = count_cap
+                available_capacity = count_cap - total_stock_in_bin
+                capacity_uom = bin_location.capacity_uom or "units"
+            else:
+                occupied_m3, occupied_kg = compute_bin_occupancy(
+                    self.db, bin_location.id
+                )
+                limit_cc = effective_bin_volume_limit_cc(bin_location)
+                limit_g = effective_bin_weight_limit_g(bin_location)
+                if limit_cc is not None:
+                    bin_capacity = limit_cc / CC_PER_M3
+                    available_capacity = bin_capacity - occupied_m3
+                    capacity_uom = "volume"
+                elif limit_g is not None:
+                    bin_capacity = limit_g / G_PER_KG
+                    available_capacity = bin_capacity - occupied_kg
+                    capacity_uom = "weight"
+                else:
+                    bin_capacity = Decimal("0")
+                    available_capacity = Decimal("0")
+                    capacity_uom = bin_location.capacity_uom
 
             results.append(
                 {
@@ -716,6 +738,7 @@ class BinStockService:
                     "batch_number": bs.batch_number,
                     "bin_capacity": bin_capacity,
                     "available_capacity": available_capacity,
+                    "capacity_uom": capacity_uom,
                     "is_active": bin_location.is_active,
                     "created_at": bs.created_at,
                 }
@@ -953,6 +976,23 @@ class BinStockService:
             )
 
         return bin_location
+
+    def _available_capacity(self, bin_location: WarehouseLocation) -> Decimal:
+        """Remaining capacity of a bin, expressed in the bin's own measure.
+
+        Units for a count-limited bin, m³ for a volume-limited bin (the
+        ``capacity_uom='volume'`` new-layout bins), kg for a weight-limited bin.
+        Call after the stock write has been flushed so the occupancy read
+        reflects it — this is what the location tree and bin pickers display as
+        "available volume".
+        """
+        occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_location.id)
+        return effective_available_capacity(
+            bin_location,
+            occupied_m3=occupied_m3,
+            occupied_kg=occupied_kg,
+            unit_count=self._get_total_stock_in_bin(bin_location.id),
+        )
 
     def _get_total_stock_in_bin(self, bin_id: UUID) -> Decimal:
         """Get the total quantity of all items currently in a bin."""

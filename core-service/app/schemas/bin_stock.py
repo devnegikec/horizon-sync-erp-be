@@ -98,6 +98,8 @@ class BinStockInfoResponse(BaseModel):
     batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
+    capacity_uom: str | None = None
     is_active: bool = True
     created_at: datetime
 
