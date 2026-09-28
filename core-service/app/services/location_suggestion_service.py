@@ -224,6 +224,17 @@ class LocationSuggestionService:
                     )
                     score += capacity_ratio * 10
                     reasons.append(f"{round(capacity_ratio * 100)}% volume available")
+            elif cap["weight"]["capacity_kg"] is not None:
+                # Weight-limited bin: report the remaining kilograms rather than
+                # a zero "units" figure the client cannot interpret.
+                remaining = cap["weight"]["capacity_kg"] - cap["weight"]["occupied_kg"]
+                available_uom = "weight"
+                if cap["weight"]["capacity_kg"] > 0:
+                    weight_ratio = float(remaining) / float(
+                        cap["weight"]["capacity_kg"]
+                    )
+                    score += weight_ratio * 10
+                    reasons.append(f"{round(weight_ratio * 100)}% weight available")
             available = (
                 Decimal(str(remaining)) if remaining is not None else Decimal("0")
             )

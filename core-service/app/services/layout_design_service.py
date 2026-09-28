@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
@@ -154,6 +155,15 @@ class LayoutDesignService:
             )
 
         warehouse = self._get_warehouse(warehouse_id, organization_id)
+
+        # Serialise concurrent applies for this warehouse: the reconciliation
+        # below reads existing paths and then inserts missing ones, so two
+        # applies racing here could both observe a path as missing and create
+        # duplicates. Transaction-scoped, so it releases at the commit below.
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"layout-apply:{warehouse.id}"},
+        )
 
         existing_rows = {
             row.full_path: row
