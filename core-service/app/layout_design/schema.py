@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.layout_design.geometry import DEFAULT_UTILIZATION
+from app.layout_design.geometry import DEFAULT_UTILIZATION, EPS
 from app.layout_design.naming import (
     DEFAULT_BIN_CODE_PATTERN,
     NamingScheme,
@@ -147,6 +147,23 @@ class Lane(BaseModel):
                 raise ValueError("skipBays entries are 1-based bay numbers")
         return value
 
+    @model_validator(mode="after")
+    def _check_segments_within_lane(self) -> Lane:
+        """Reject runs that extend past the lane's declared length.
+
+        ``LaneSegment`` only sees itself, so a segment entirely beyond
+        ``lengthM`` used to compile silently: every bay fell outside the run
+        (``inRackRun`` false), producing a lane whose declared runs do not match
+        the geometry it yields — with no diagnostic at all.
+        """
+        for segment in self.segments or ():
+            if segment.endM > self.lengthM + EPS:
+                raise ValueError(
+                    f"Lane segment endM ({segment.endM}) must not exceed the lane "
+                    f"length ({self.lengthM})"
+                )
+        return self
+
     @property
     def resolvedSegments(self) -> list[LaneSegment]:
         """The lane's runs, materialising the implicit single RACK run.
@@ -210,7 +227,9 @@ class LayoutOptions(BaseModel):
 
     namingScheme: NamingScheme = "wms_typed"
     defaultZoneCode: str = DEFAULT_ZONE_CODE
-    utilization: Positive = DEFAULT_UTILIZATION
+    #: Share of a bin's raw volume considered usable. Capped at 1 so a bin can
+    #: never claim more usable volume than it physically has.
+    utilization: float = Field(default=DEFAULT_UTILIZATION, gt=0, le=1)
 
 
 class LayoutDoc(BaseModel):

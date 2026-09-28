@@ -223,12 +223,32 @@ class BinCapacityService:
         full, almost = self._effective_thresholds(bin_loc, warehouse)
         state = self._derive_state(metrics["binding_pct"], full, almost)
         units, _packs, count_cap, _count_pct = self._bin_counts(bin_loc)
-        is_available = (
-            bool(bin_loc.is_active)
-            and metrics["binding_pct"] < full
-            and (count_cap is None or units < count_cap)
+        is_available = self._is_available(
+            bin_loc, metrics["binding_pct"], full, units, count_cap
         )
         return metrics, state, is_available
+
+    @staticmethod
+    def _is_available(
+        bin_loc: WarehouseLocation,
+        binding_pct: Decimal,
+        full: Decimal,
+        units: Decimal,
+        count_cap: Decimal | None,
+    ) -> bool:
+        """Whether the bin can accept normal stock right now.
+
+        A bin that is active but not pickable is a segregation location (HOLD /
+        QUARANTINE); it must never be reported as available for normal put-away
+        or picking, so ``is_pickable`` is part of the answer everywhere the flag
+        is derived.
+        """
+        return (
+            bool(bin_loc.is_active)
+            and bool(bin_loc.is_pickable)
+            and binding_pct < full
+            and (count_cap is None or units < count_cap)
+        )
 
     # ------------------------------------------------------------ refresh
 
@@ -334,10 +354,8 @@ class BinCapacityService:
                     "qr_code": bin_loc.qr_code,
                     "bin_state": state,
                     "binding_pct": metrics["binding_pct"],
-                    "is_available": (
-                        bool(bin_loc.is_active)
-                        and metrics["binding_pct"] < full
-                        and (count_cap is None or units < count_cap)
+                    "is_available": self._is_available(
+                        bin_loc, metrics["binding_pct"], full, units, count_cap
                     ),
                 }
             )
@@ -423,10 +441,8 @@ class BinCapacityService:
                 n["bin_state"] = state
                 units, packs = bin_counts.get(str(loc.id), (Decimal("0"), Decimal("0")))
                 count_cap = effective_bin_count_capacity(loc)
-                n["is_available"] = (
-                    bool(loc.is_active)
-                    and m["binding_pct"] < full
-                    and (count_cap is None or units < count_cap)
+                n["is_available"] = self._is_available(
+                    loc, m["binding_pct"], full, units, count_cap
                 )
                 n["unit_count"] = units
                 n["master_pack_count"] = packs
@@ -575,21 +591,46 @@ class BinCapacityService:
         )
         return {str(r[0]) for r in rows}
 
-    def _required_volume_m3(self, item_id: UUID | None, qty) -> Decimal | None:
-        """Required m³ for an incoming put-away (None when unknown).
+    def _required_cc_and_grams(
+        self, item_id: UUID | None, qty
+    ) -> tuple[Decimal | None, Decimal | None]:
+        """Required volume (cc) and weight (g) for an incoming put-away.
 
         Master-pack aware: an intact carton occupies its outer volume, not
         ``conversion_factor`` × base-unit volume — the same math the occupancy
-        engine uses, so a fit check compares like with like.
+        engine uses, so a fit check compares like with like. ``None`` for a
+        dimension means it cannot be measured (unconstrained).
         """
         if item_id is None or qty is None:
-            return None
-        required_cc, _required_g = compute_item_required_cc_and_grams(
-            self.db, item_id, None, qty
-        )
-        if required_cc is None:
-            return None
-        return required_cc / CC_PER_M3
+            return None, None
+        return compute_item_required_cc_and_grams(self.db, item_id, None, qty)
+
+    def _required_fits(
+        self,
+        bin_loc: WarehouseLocation,
+        warehouse: Warehouse | None,
+        occupied_m3: Decimal,
+        occupied_kg: Decimal,
+        required_cc: Decimal | None,
+        required_g: Decimal | None,
+    ) -> bool:
+        """Whether the bin still has room for the required volume *and* weight.
+
+        Both dimensions are checked (each only when the warehouse enables it and
+        the bin carries a limit), so a weight-limited bin is not accepted merely
+        because the item's volume happens to fit.
+        """
+        if self._use_volume(warehouse) and required_cc is not None:
+            limit_cc = effective_bin_volume_limit_cc(bin_loc)
+            if limit_cc is not None:
+                if occupied_m3 * CC_PER_M3 + required_cc > limit_cc:
+                    return False
+        if self._use_weight(warehouse) and required_g is not None:
+            limit_g = effective_bin_weight_limit_g(bin_loc)
+            if limit_g is not None:
+                if occupied_kg * G_PER_KG + required_g > limit_g:
+                    return False
+        return True
 
     def get_available_bins(
         self,
@@ -602,8 +643,10 @@ class BinCapacityService:
         """Availability-filtered candidate bins for put-away or pick."""
         warehouse = self._get_warehouse(warehouse_id)
         reserved = self._reserved_bin_ids(org_id)
-        required_m3 = (
-            self._required_volume_m3(item_id, qty) if task_type == "put_away" else None
+        required_cc, required_g = (
+            self._required_cc_and_grams(item_id, qty)
+            if task_type == "put_away"
+            else (None, None)
         )
 
         bins = (
@@ -653,10 +696,15 @@ class BinCapacityService:
             else:  # put_away
                 if metrics["binding_pct"] >= full:
                     continue
-                if required_m3 is not None and metrics["capacity_m3"] is not None:
-                    remaining = metrics["capacity_m3"] - occupied_m3
-                    if required_m3 > remaining:
-                        continue
+                if not self._required_fits(
+                    bin_loc,
+                    warehouse,
+                    occupied_m3,
+                    occupied_kg,
+                    required_cc,
+                    required_g,
+                ):
+                    continue
                 available = True
 
             results.append(

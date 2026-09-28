@@ -730,7 +730,10 @@ def _compile_lane(
     bay_path = naming.join_path(
         aisle_path, naming.wms_segment("bay", lane_index, lane.code, scheme)
     )
-    bay_key = f"{aisle.code}/{lane.code}"
+    # Lane identity for the overlap diagnostic. Lane codes may legitimately
+    # repeat inside one aisle, so the ordinal is part of the key: sharing a key
+    # would make ``_overlapping_pairs`` skip the pair as a self-comparison.
+    bay_key = f"{aisle.code}/{lane.code}#{lane_index}"
 
     for index in range(bay_count):
         bay_seq = index + 1

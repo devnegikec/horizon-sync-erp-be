@@ -338,6 +338,63 @@ class TestDocumentDiagnostics:
 
         assert "BIN_CODE_DUPLICATE" in codes_of(compiled)
 
+    def test_duplicate_lane_code_overlap_is_still_detected(self):
+        """A repeated lane code must not hide the overlap diagnostic.
+
+        The overlap sweep keys rectangles by lane; if two lanes in one aisle
+        share a code they share a key and the pair used to be skipped as a
+        self-comparison, so overlapping racking went unreported.
+        """
+        document = copy.deepcopy(MINIMAL)
+        aisle = document["aisles"][0]
+        aisle["lanes"].append(copy.deepcopy(aisle["lanes"][0]))
+
+        compiled = build_layout(document)
+
+        assert "LANE_OVERLAP" in codes_of(compiled)
+
+    def test_lane_segment_beyond_lane_length_is_rejected(self):
+        """A run past ``lengthM`` yields no bays, so it must not compile."""
+        document = copy.deepcopy(MINIMAL)
+        lane = document["aisles"][0]["lanes"][0]
+        lane["segments"] = [{"kind": "RACK", "startM": 0, "endM": lane["lengthM"] + 25}]
+
+        compiled = build_layout(document)
+
+        assert "LAYOUT_DOC_INVALID" in codes_of(compiled)
+        assert compiled.applyable is False
+
+    def test_lane_segments_within_length_still_compile(self):
+        document = copy.deepcopy(MINIMAL)
+        lane = document["aisles"][0]["lanes"][0]
+        half = lane["lengthM"] / 2
+        lane["segments"] = [
+            {"kind": "RACK", "startM": 0, "endM": half},
+            {"kind": "GAP", "startM": half, "endM": lane["lengthM"]},
+        ]
+
+        compiled = build_layout(document)
+
+        assert compiled.applyable is True
+
+    def test_utilization_above_one_is_rejected(self):
+        """Usable volume can never exceed physical volume."""
+        document = copy.deepcopy(MINIMAL)
+        document.setdefault("layout", {})["utilization"] = 1.5
+
+        compiled = build_layout(document)
+
+        assert "LAYOUT_DOC_INVALID" in codes_of(compiled)
+        assert compiled.applyable is False
+
+    def test_utilization_of_one_is_allowed(self):
+        document = copy.deepcopy(MINIMAL)
+        document.setdefault("layout", {})["utilization"] = 1.0
+
+        compiled = build_layout(document)
+
+        assert compiled.applyable is True
+
 
 class TestRuleRegistry:
     def test_registry_is_complete_and_consistent(self):

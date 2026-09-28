@@ -383,9 +383,11 @@ class VolumetricAssignmentService:
                     bsl.bin_location_id,
                     COALESCE(SUM(
                         FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
-                        * COALESCE(ipu.length_mm * ipu.width_mm * ipu.height_mm, base.length_mm * base.width_mm * base.height_mm, 0)
+                        * (COALESCE(ipu.length_mm, base.length_mm, 0)
+                           * COALESCE(ipu.width_mm, base.width_mm, 0)
+                           * COALESCE(ipu.height_mm, base.height_mm, 0))
                         + MOD(bsl.quantity_on_hand, NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
-                        * COALESCE(base.length_mm * base.width_mm * base.height_mm, 0)
+                        * (COALESCE(base.length_mm, 0) * COALESCE(base.width_mm, 0) * COALESCE(base.height_mm, 0))
                     ) / 1000.0, 0) AS occupied_volume_cc,
                     COALESCE(SUM(
                         FLOOR(bsl.quantity_on_hand / NULLIF(GREATEST(COALESCE(ipu.conversion_factor, 1), 1), 0))
