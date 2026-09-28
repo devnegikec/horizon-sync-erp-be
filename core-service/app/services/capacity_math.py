@@ -61,6 +61,120 @@ def _dims_volume_mm3(l, w, h) -> Decimal | None:
     return _num(l) * _num(w) * _num(h)  # type: ignore[operator]
 
 
+# ---------------------------------------------------------------------------
+# Effective bin limits (single source of truth)
+# ---------------------------------------------------------------------------
+#
+# A bin can carry its physical limit in two ways:
+#   * ``max_volume_cc`` / ``max_weight_grams`` — the modern layout-designer
+#     columns, and
+#   * the legacy ``capacity`` column, whose meaning is given by
+#     ``capacity_uom`` (``volume`` = m³, ``weight`` = kg, blank/``units`` =
+#     a unit *count*).
+#
+# Putting a physical limit into ``capacity`` used to be interpreted as a unit
+# count by the put-away allocator, so a bin holding "1.2 m³" was treated as
+# "1.2 eaches free" and every item was split one-per-bin. These helpers give
+# every caller the same reading of the two encodings.
+
+
+def _coerce_limit(value) -> Decimal | None:
+    """Coerce a candidate numeric limit, ignoring non-numeric stand-ins."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float, str)):
+        try:
+            return Decimal(str(value))
+        except Exception:  # noqa: BLE001 - defensive, mirrors _d
+            return None
+    return None
+
+
+def _capacity_uom(bin_loc) -> str:
+    """Normalized ``capacity_uom`` of a bin ('volume', 'weight', 'units', '')."""
+    return str(getattr(bin_loc, "capacity_uom", None) or "").strip().lower()
+
+
+def effective_bin_volume_limit_cc(bin_loc) -> Decimal | None:
+    """Effective volume limit of a bin in cc, or ``None`` if unconstrained.
+
+    ``max_volume_cc`` wins; otherwise a legacy ``capacity`` expressed in m³
+    (``capacity_uom == 'volume'``) is converted to cc so new-layout bins that
+    store ``capacity = 1.2`` still enforce a real 1,200,000 cc limit.
+    """
+    max_volume = _coerce_limit(getattr(bin_loc, "max_volume_cc", None))
+    if max_volume is not None:
+        return max_volume
+    if _capacity_uom(bin_loc) == "volume":
+        capacity = _coerce_limit(getattr(bin_loc, "capacity", None))
+        if capacity is not None and capacity > 0:
+            return capacity * CC_PER_M3
+    return None
+
+
+def effective_bin_weight_limit_g(bin_loc) -> Decimal | None:
+    """Effective weight limit of a bin in grams, or ``None`` if unconstrained."""
+    max_weight = _coerce_limit(getattr(bin_loc, "max_weight_grams", None))
+    if max_weight is not None:
+        return max_weight
+    if _capacity_uom(bin_loc) == "weight":
+        capacity = _coerce_limit(getattr(bin_loc, "capacity", None))
+        if capacity is not None and capacity > 0:
+            return capacity * G_PER_KG
+    return None
+
+
+def effective_bin_count_capacity(bin_loc) -> Decimal | None:
+    """Legacy unit-count capacity, or ``None``.
+
+    Only meaningful when ``capacity`` is *not* a physical measure — i.e. when
+    ``capacity_uom`` is blank or ``units``. A volume/weight bin returns ``None``
+    so its ``1.2`` m³ is never mistaken for "1.2 items".
+    """
+    if _capacity_uom(bin_loc) in ("volume", "weight"):
+        return None
+    capacity = _coerce_limit(getattr(bin_loc, "capacity", None))
+    if capacity is not None and capacity > 0:
+        return capacity
+    return None
+
+
+def effective_available_capacity(
+    bin_loc,
+    *,
+    occupied_m3: Decimal,
+    occupied_kg: Decimal,
+    unit_count: Decimal,
+) -> Decimal:
+    """Remaining capacity of a bin, expressed in the bin's **own** measure.
+
+    Mirrors the reported ``capacity`` + ``capacity_uom`` pair:
+
+    * count-limited bin → remaining units (``count capacity - unit_count``),
+    * volume-limited bin → remaining m³ (``capacity_m3 - occupied_m3``),
+    * weight-limited bin → remaining kg,
+    * no limit configured → ``0``.
+
+    Cached onto ``WarehouseLocation.available_capacity`` so the location tree and
+    bin pickers show a value that actually moves when stock is stored.
+    """
+    count_cap = effective_bin_count_capacity(bin_loc)
+    if count_cap is not None:
+        return count_cap - unit_count
+
+    volume_cc = effective_bin_volume_limit_cc(bin_loc)
+    if volume_cc is not None:
+        return (volume_cc / CC_PER_M3) - occupied_m3
+
+    weight_g = effective_bin_weight_limit_g(bin_loc)
+    if weight_g is not None:
+        return (weight_g / G_PER_KG) - occupied_kg
+
+    return Decimal("0")
+
+
 def _row_occupied(
     qty,
     conversion_factor,
@@ -93,10 +207,9 @@ def _row_occupied(
     h = _num(pu_height) if pu_height is not None else _num(base_height)
     pu_vol = _dims_volume_mm3(l, w, h) or Decimal("0")
 
-    base_vol = (
-        _dims_volume_mm3(_num(base_length), _num(base_width), _num(base_height))
-        or Decimal("0")
-    )
+    base_vol = _dims_volume_mm3(
+        _num(base_length), _num(base_width), _num(base_height)
+    ) or Decimal("0")
 
     vol = n_full * pu_vol + n_loose * base_vol
 
