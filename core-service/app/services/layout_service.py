@@ -12,6 +12,13 @@ from app.core.exceptions import ValidationError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import LocationType, WarehouseLocation
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 
 # Valid parent type mapping: child_type -> expected parent location_type
 # "zone" parent is the warehouse itself (parent_location_id is None)
@@ -286,9 +293,45 @@ class LayoutService:
         location_map: dict[UUID, dict] = {}
         roots: list[dict] = []
 
+        # Live volume/weight rollup keyed by location id (one implementation, in
+        # BinCapacityService). Ancestors carry no limit columns of their own, so
+        # without this they reported the legacy unit-count zeros — and their
+        # cached `available_capacity` is `0 - used_eaches`, which is how a zone
+        # ends up reporting a *negative* available capacity.
+        rollup: dict[str, dict] = {}
+        if locations:
+            from app.services.bin_capacity_service import BinCapacityService
+
+            for entry in self._iter_capacity_nodes(
+                BinCapacityService(self.db).get_capacity_tree(
+                    warehouse_id, organization_id
+                )
+            ):
+                rollup[str(entry["node"])] = entry
+
+        # The warehouse decides which dimensions capacity tracking uses at all;
+        # the fallback below must honour the same switches as the rollup, or a
+        # bin reports a physical limit the rest of the system ignores.
+        warehouse = (
+            self.db.query(Warehouse)
+            .filter(
+                Warehouse.id == warehouse_id,
+                Warehouse.organization_id == organization_id,
+            )
+            .first()
+        )
+        use_volume = getattr(warehouse, "use_volume", None) is not False
+        use_weight = getattr(warehouse, "use_weight", None) is True
+
         for loc in locations:
             # Build raw code (Z01, A01, B01, L01, BN001) — no dashes
             individual_code = self._build_raw_code(loc.location_type, loc.code or "")
+            capacity, total_capacity, available, capacity_uom = self._reported_capacity(
+                loc,
+                rollup.get(str(loc.id)),
+                use_volume=use_volume,
+                use_weight=use_weight,
+            )
             node = {
                 "id": loc.id,
                 "warehouse_id": loc.warehouse_id,
@@ -296,13 +339,17 @@ class LayoutService:
                 "code": individual_code,
                 "full_path": "",  # computed below from parent chain
                 "name": loc.name,
-                "capacity": loc.capacity,
-                "total_capacity": loc.total_capacity,
-                "available_capacity": loc.available_capacity,
-                "capacity_uom": loc.capacity_uom,
+                "capacity": capacity,
+                "total_capacity": total_capacity,
+                "available_capacity": available,
+                "capacity_uom": capacity_uom,
                 "position_x": loc.position_x,
                 "position_y": loc.position_y,
+                "max_volume_cc": loc.max_volume_cc,
+                "max_weight_grams": loc.max_weight_grams,
                 "is_active": loc.is_active,
+                "is_pickable": loc.is_pickable,
+                "qr_code": loc.qr_code,
                 "parent_location_id": loc.parent_location_id,
                 "children": [],
             }
@@ -321,6 +368,138 @@ class LayoutService:
                 roots.append(node)
 
         return roots
+
+    @staticmethod
+    def _iter_capacity_nodes(node: dict[str, Any]):
+        """Yield a capacity-tree node and all of its descendants."""
+        yield node
+        for child in node.get("children", []):
+            yield from LayoutService._iter_capacity_nodes(child)
+
+    @staticmethod
+    def _binding_capacity(
+        entry: dict[str, Any],
+    ) -> tuple[Decimal, Decimal, Decimal, str] | None:
+        """Binding dimension of a rollup entry as ``(capacity, total, available, uom)``.
+
+        ``BinCapacityService`` derives bin state from the *binding* dimension
+        (``binding_pct = max(vol_pct, wt_pct)``), so the reported capacity has to
+        use the same one. Always exposing volume made a bin whose weight is at
+        95% look nearly empty. ``None`` when the entry limits neither dimension.
+        """
+        candidates: list[tuple[Decimal, tuple[Decimal, Decimal, Decimal, str]]] = []
+
+        volume = entry["volume"]
+        if volume["capacity_m3"] is not None:
+            candidates.append(
+                (
+                    volume["pct"] or Decimal("0"),
+                    (
+                        volume["capacity_m3"],
+                        volume["capacity_m3"],
+                        volume["capacity_m3"] - volume["occupied_m3"],
+                        "volume",
+                    ),
+                )
+            )
+
+        weight = entry["weight"]
+        if weight["capacity_kg"] is not None:
+            candidates.append(
+                (
+                    weight["pct"] or Decimal("0"),
+                    (
+                        weight["capacity_kg"],
+                        weight["capacity_kg"],
+                        weight["capacity_kg"] - weight["occupied_kg"],
+                        "weight",
+                    ),
+                )
+            )
+
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item[0])[1]
+
+    @staticmethod
+    def _reported_capacity(
+        loc: WarehouseLocation,
+        rollup_entry: dict[str, Any] | None = None,
+        *,
+        use_volume: bool = True,
+        use_weight: bool = False,
+    ) -> tuple[Decimal, Decimal, Decimal, str | None]:
+        """Capacity of a location in its own measure.
+
+        Returns ``(capacity, total_capacity, available_capacity, capacity_uom)``.
+
+        A layout bin carries its physical limit in ``max_volume_cc`` /
+        ``max_weight_grams`` with ``capacity_uom='volume'``, and deliberately
+        leaves the legacy unit-count ``capacity`` / ``total_capacity`` columns at
+        0 so ``CapacityService`` is unaffected. Returning those raw made every
+        layout bin report ``capacity: 0`` while ``available_capacity`` was a real
+        cubic-metre figure.
+
+        The live rollup wins when it limits a dimension (the *binding* one, so
+        the number matches ``bin_state``); otherwise the rollup's aggregated
+        ``count_capacity`` covers count-limited bins and their ancestors; only
+        then are the location's own limits considered, gated on the warehouse's
+        ``use_volume`` / ``use_weight`` switches so the tree cannot advertise a
+        dimension the rest of the system ignores.
+        """
+        if rollup_entry is not None:
+            binding = LayoutService._binding_capacity(rollup_entry)
+            if binding is not None:
+                return binding
+
+            # Count-limited layout: the bin's own limit is aggregated onto every
+            # ancestor, so read the rollup rather than the ancestor's 0 column.
+            rollup_count = rollup_entry["count_capacity"]
+            if rollup_count is not None:
+                units = rollup_entry["unit_count"]
+                return (
+                    rollup_count,
+                    rollup_count,
+                    rollup_count - units,
+                    loc.capacity_uom,
+                )
+
+        count_cap = effective_bin_count_capacity(loc)
+        if count_cap is not None:
+            return (
+                count_cap,
+                loc.total_capacity,
+                loc.available_capacity,
+                loc.capacity_uom,
+            )
+
+        if use_volume:
+            volume_cc = effective_bin_volume_limit_cc(loc)
+            if volume_cc is not None:
+                capacity_m3 = volume_cc / CC_PER_M3
+                return capacity_m3, capacity_m3, loc.available_capacity, "volume"
+
+        if use_weight:
+            weight_g = effective_bin_weight_limit_g(loc)
+            if weight_g is not None:
+                capacity_kg = weight_g / G_PER_KG
+                return capacity_kg, capacity_kg, loc.available_capacity, "weight"
+
+        stored_uom = (loc.capacity_uom or "").strip().lower()
+        if (stored_uom == "volume" and not use_volume) or (
+            stored_uom == "weight" and not use_weight
+        ):
+            # The measure this location was configured in is not tracked by the
+            # warehouse, so its stored capacity/available numbers must not be
+            # advertised as usable capacity.
+            return Decimal("0"), Decimal("0"), Decimal("0"), None
+
+        return (
+            loc.capacity,
+            loc.total_capacity,
+            loc.available_capacity,
+            loc.capacity_uom,
+        )
 
     # ------------------------------------------------------------------
     # LIST LOCATIONS (with filters and pagination)
@@ -475,9 +654,7 @@ class LayoutService:
         # Count occupied bins (active bins with stock > 0)
         if active_bin_ids:
             occupied_bins = (
-                self.db.query(
-                    func.count(func.distinct(BinStockLevel.bin_location_id))
-                )
+                self.db.query(func.count(func.distinct(BinStockLevel.bin_location_id)))
                 .filter(
                     BinStockLevel.bin_location_id.in_(active_bin_ids),
                     BinStockLevel.quantity_on_hand > 0,
@@ -488,32 +665,18 @@ class LayoutService:
         else:
             occupied_bins = 0
 
-        # Total capacity of active bins in subtree
-        if active_bin_ids:
-            total_capacity = (
-                self.db.query(func.sum(WarehouseLocation.capacity))
-                .filter(WarehouseLocation.id.in_(active_bin_ids))
-                .scalar()
-                or Decimal("0")
-            )
+        # Capacity in the location's own measure, from the same rollup the tree
+        # reports. Layout bins carry their physical limit in `max_volume_cc` with
+        # `capacity_uom='volume'` and leave the legacy unit-count `capacity`
+        # columns at 0, so summing `WarehouseLocation.capacity` against stock
+        # *units* reported zero total capacity and a negative available capacity
+        # on a volume warehouse.
+        measure = self._subtree_capacity(location)
+        if measure is not None:
+            total_capacity, used_capacity, available_capacity, capacity_uom = measure
         else:
-            total_capacity = Decimal("0")
-
-        # Used capacity (sum of stock in active bins)
-        if active_bin_ids:
-            used_capacity = (
-                self.db.query(func.sum(BinStockLevel.quantity_on_hand))
-                .filter(
-                    BinStockLevel.bin_location_id.in_(active_bin_ids),
-                    BinStockLevel.quantity_on_hand > 0,
-                )
-                .scalar()
-                or Decimal("0")
-            )
-        else:
-            used_capacity = Decimal("0")
-
-        available_capacity = total_capacity - used_capacity
+            total_capacity = used_capacity = available_capacity = Decimal("0")
+            capacity_uom = location.capacity_uom
 
         # Distinct items in active bins
         if active_bin_ids:
@@ -541,8 +704,47 @@ class LayoutService:
             "total_capacity": total_capacity,
             "used_capacity": used_capacity,
             "available_capacity": available_capacity,
+            "capacity_uom": capacity_uom,
             "distinct_items": distinct_items,
         }
+
+    def _subtree_capacity(
+        self, location: WarehouseLocation
+    ) -> tuple[Decimal, Decimal, Decimal, str | None] | None:
+        """Capacity/used/available for a location's subtree, in its own measure.
+
+        Reuses ``BinCapacityService.get_capacity_tree`` — the same rollup the
+        location tree reports — so the summary and the tree cannot disagree.
+        Returns ``None`` when the location is absent from the rollup (for example
+        a deactivated location, which it filters out).
+        """
+        from app.services.bin_capacity_service import BinCapacityService
+
+        tree = BinCapacityService(self.db).get_capacity_tree(
+            location.warehouse_id, location.organization_id
+        )
+        entry = next(
+            (
+                node
+                for node in self._iter_capacity_nodes(tree)
+                if str(node["node"]) == str(location.id)
+            ),
+            None,
+        )
+        if entry is None:
+            return None
+
+        binding = self._binding_capacity(entry)
+        if binding is not None:
+            capacity, _total, available, uom = binding
+            return capacity, capacity - available, available, uom
+
+        count_cap = entry["count_capacity"]
+        if count_cap is not None:
+            units = entry["unit_count"]
+            return count_cap, units, count_cap - units, location.capacity_uom
+
+        return None
 
     # ------------------------------------------------------------------
     # SEARCH LOCATIONS
