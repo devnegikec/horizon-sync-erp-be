@@ -1,0 +1,118 @@
+name: Deploy to Railway (Stage)
+
+# Auto-deploys the backend to the BW-staging project's `staging` environment.
+#
+# Why GitHub Actions instead of Railway's native Git trigger:
+#   Railway gates Git-triggered deploys whose commit author is not a member of the
+#   Railway project (=> status NEEDS_APPROVAL, and the build never runs).
+#   An authenticated `railway up` uploads source with no commit author, so it is
+#   never gated.
+#
+# Requires repo secret: RAILWAY_TOKEN_STAGE  (a BW-staging *project* token)
+# Do NOT reuse the name RAILWAY_TOKEN — that one targets the dev project.
+#
+# Migrations run inside the container via each service's startCommand
+# (`alembic upgrade heads && uvicorn ...`), so a failed migration blocks startup
+# and fails the deployment. The verification step below enforces that.
+
+on:
+  push:
+    branches:
+      - stage
+    paths:
+      - "core-service/**"
+      - "identity-service/**"
+      - "Dockerfile.core"
+      - "Dockerfile.identity"
+      - "Dockerfile.worker"
+      - "railway.toml"
+      - ".github/workflows/deploy-stage.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: railway-stage
+  cancel-in-progress: false
+
+env:
+  RAILWAY_PROJECT_ID: fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
+  RAILWAY_ENV: staging
+
+jobs:
+  deploy:
+    name: Deploy backend services
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      # identity-service first: core-service validates tokens against it.
+      - name: Deploy identity-service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGE }}
+        run: |
+          railway up \
+            -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" -s identity-service \
+            -m "stage: ${GITHUB_SHA::7} (identity-service)" -d
+
+      - name: Deploy core-service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGE }}
+        run: |
+          railway up \
+            -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" -s core-service \
+            -m "stage: ${GITHUB_SHA::7} (core-service)" -d
+
+      - name: Deploy qr-worker
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGE }}
+        run: |
+          railway up \
+            -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" -s qr-worker \
+            -m "stage: ${GITHUB_SHA::7} (qr-worker)" -d
+
+      - name: Verify every deployment reached SUCCESS
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGE }}
+        run: |
+          set -uo pipefail
+          failed=""
+          for svc in identity-service core-service qr-worker; do
+            echo "::group::verifying $svc"
+            ok=0
+            for i in $(seq 1 60); do
+              status=$(railway deployment list \
+                -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" -s "$svc" --json 2>/dev/null \
+                | python3 -c "import sys,json;d=json.load(sys.stdin);print((d[0] if isinstance(d,list) and d else {}).get('status',''))" \
+                2>/dev/null || echo "")
+              echo "$svc attempt $i/60: ${status:-<no status>}"
+              case "$status" in
+                SUCCESS) ok=1; break ;;
+                FAILED|CRASHED|REMOVED) echo "::error::$svc deployment is $status"; break ;;
+              esac
+              sleep 15
+            done
+            [ "$ok" = "1" ] || failed="$failed $svc"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::deployments did not reach SUCCESS:$failed"
+            exit 1
+          fi
+          echo "✅ all backend services deployed successfully"
+
+      - name: Dump deploy logs on failure
+        if: failure()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGE }}
+        run: |
+          for svc in identity-service core-service qr-worker; do
+            echo "=============== $svc (last 100 deploy log lines) ==============="
+            railway logs -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" -s "$svc" -d -n 100 || true
+          done
