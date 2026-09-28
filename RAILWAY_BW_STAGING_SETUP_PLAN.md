@@ -580,11 +580,12 @@ railway add -s horizon-ui
 cd /Users/devnegi/Documents/www/erpproject/horizon-sync
 
 railway variable set \
-  NX_API_BASE_URL='https://identity-api.horizon.ciphercode.ai' \
-  NX_API_IDENTITY_URL='https://identity-api.horizon.ciphercode.ai' \
-  NX_API_CORE_URL='https://api.horizon.ciphercode.ai' \
-  NX_SEARCH_API_BASE_URL='https://api.horizon.ciphercode.ai' \
+  NX_API_BASE_URL='https://identity-api.ciphercode.ai' \
+  NX_API_IDENTITY_URL='https://identity-api.ciphercode.ai' \
+  NX_API_CORE_URL='https://api.ciphercode.ai' \
+  NX_SEARCH_API_BASE_URL='https://api.ciphercode.ai' \
   NX_NODE_ENV=production \
+  PORT=80 \
   -p "$PROJ" -e "$ENV" -s horizon-ui --skip-deploys
 
 railway up -p "$PROJ" -e "$ENV" -s horizon-ui -m "staging: horizon-ui initial deploy" -d
@@ -618,6 +619,40 @@ curl -s -o /dev/null -w 'healthz   %{http_code}\n' https://app.horizon.ciphercod
 
 All must be `200`. `/inventory/remoteEntry.js` returning 404 is the classic module-federation
 failure (platform shell renders but inventory routes are blank).
+
+---
+
+### 6.7 ⚠️ PORT must be pinned to 80 (learned the hard way)
+
+**Symptom:** every URL returns **502** `Application failed to respond`, even though nginx
+starts cleanly and the Railway domain reports port `80`.
+
+**Cause:** Railway injects its own `PORT` into the container at runtime. The nginx image's
+`20-envsubst-on-templates.sh` substitutes `listen ${PORT}` with **Railway's** value — not 80.
+So:
+
+| nginx listens on                       | healthcheck (Railway's $PORT) | domain (target 80) | result                                            |
+| -------------------------------------- | ----------------------------- | ------------------ | ------------------------------------------------- |
+| Railway's `$PORT`                      | ✅ passes                     | ❌ nothing on 80   | deployment `SUCCESS` but **502** on every request |
+| hardcoded `80`                         | ❌ fails                      | ❌                 | deployment **FAILED**                             |
+| hardcoded `80` + service var `PORT=80` | ✅ passes                     | ✅ serves          | **works**                                         |
+
+The fix is two-part, and **both parts are required**:
+
+1. `nginx.railway.conf` uses a fixed `listen 80;` (copied to `/etc/nginx/conf.d/default.conf`,
+   _not_ `/etc/nginx/templates/`), so envsubst never sees it.
+2. The service has a variable **`PORT=80`**, so Railway's healthcheck probes the same port
+   the domain targets.
+
+> The `PORT=80` variable is easy to miss because `railway variable list` will not show a
+> `PORT` that Railway injects implicitly — only the one you set.
+
+**Checkpoint D0 — the deployment only counts as healthy when BOTH are true:**
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<ui-domain>/healthz   # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://<ui-domain>/            # 200
+```
 
 ---
 
