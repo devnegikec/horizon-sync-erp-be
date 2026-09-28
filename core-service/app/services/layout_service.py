@@ -12,6 +12,13 @@ from app.core.exceptions import ValidationError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import LocationType, WarehouseLocation
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 
 # Valid parent type mapping: child_type -> expected parent location_type
 # "zone" parent is the warehouse itself (parent_location_id is None)
@@ -286,9 +293,28 @@ class LayoutService:
         location_map: dict[UUID, dict] = {}
         roots: list[dict] = []
 
+        # Live volume/weight rollup keyed by location id (one implementation, in
+        # BinCapacityService). Ancestors carry no limit columns of their own, so
+        # without this they reported the legacy unit-count zeros — and their
+        # cached `available_capacity` is `0 - used_eaches`, which is how a zone
+        # ends up reporting a *negative* available capacity.
+        rollup: dict[str, dict] = {}
+        if locations:
+            from app.services.bin_capacity_service import BinCapacityService
+
+            for entry in self._iter_capacity_nodes(
+                BinCapacityService(self.db).get_capacity_tree(
+                    warehouse_id, organization_id
+                )
+            ):
+                rollup[str(entry["node"])] = entry
+
         for loc in locations:
             # Build raw code (Z01, A01, B01, L01, BN001) — no dashes
             individual_code = self._build_raw_code(loc.location_type, loc.code or "")
+            capacity, total_capacity, available, capacity_uom = self._reported_capacity(
+                loc, rollup.get(str(loc.id))
+            )
             node = {
                 "id": loc.id,
                 "warehouse_id": loc.warehouse_id,
@@ -296,13 +322,17 @@ class LayoutService:
                 "code": individual_code,
                 "full_path": "",  # computed below from parent chain
                 "name": loc.name,
-                "capacity": loc.capacity,
-                "total_capacity": loc.total_capacity,
-                "available_capacity": loc.available_capacity,
-                "capacity_uom": loc.capacity_uom,
+                "capacity": capacity,
+                "total_capacity": total_capacity,
+                "available_capacity": available,
+                "capacity_uom": capacity_uom,
                 "position_x": loc.position_x,
                 "position_y": loc.position_y,
+                "max_volume_cc": loc.max_volume_cc,
+                "max_weight_grams": loc.max_weight_grams,
                 "is_active": loc.is_active,
+                "is_pickable": loc.is_pickable,
+                "qr_code": loc.qr_code,
                 "parent_location_id": loc.parent_location_id,
                 "children": [],
             }
@@ -321,6 +351,70 @@ class LayoutService:
                 roots.append(node)
 
         return roots
+
+    @staticmethod
+    def _iter_capacity_nodes(node: dict[str, Any]):
+        """Yield a capacity-tree node and all of its descendants."""
+        yield node
+        for child in node.get("children", []):
+            yield from LayoutService._iter_capacity_nodes(child)
+
+    @staticmethod
+    def _reported_capacity(
+        loc: WarehouseLocation,
+        rollup_entry: dict[str, Any] | None = None,
+    ) -> tuple[Decimal, Decimal, Decimal, str | None]:
+        """Capacity of a location in its own measure.
+
+        Returns ``(capacity, total_capacity, available_capacity, capacity_uom)``.
+
+        A layout bin carries its physical limit in ``max_volume_cc`` /
+        ``max_weight_grams`` with ``capacity_uom='volume'``, and deliberately
+        leaves the legacy unit-count ``capacity`` / ``total_capacity`` columns at
+        0 so ``CapacityService`` is unaffected. Returning those raw made every
+        layout bin report ``capacity: 0`` while ``available_capacity`` was a real
+        cubic-metre figure.
+
+        The live rollup is preferred when present, so a bin *and* each of its
+        ancestors report the same measure: units for a count-limited location,
+        m³ for a volume-limited one, kg for a weight-limited one. Locations with
+        no limit at all keep their stored values.
+        """
+        if rollup_entry is not None:
+            capacity_m3 = rollup_entry["volume"]["capacity_m3"]
+            if capacity_m3 is not None:
+                available_m3 = capacity_m3 - rollup_entry["volume"]["occupied_m3"]
+                return capacity_m3, capacity_m3, available_m3, "volume"
+            capacity_kg = rollup_entry["weight"]["capacity_kg"]
+            if capacity_kg is not None:
+                available_kg = capacity_kg - rollup_entry["weight"]["occupied_kg"]
+                return capacity_kg, capacity_kg, available_kg, "weight"
+
+        count_cap = effective_bin_count_capacity(loc)
+        if count_cap is not None:
+            return (
+                count_cap,
+                loc.total_capacity,
+                loc.available_capacity,
+                loc.capacity_uom,
+            )
+
+        volume_cc = effective_bin_volume_limit_cc(loc)
+        if volume_cc is not None:
+            capacity_m3 = volume_cc / CC_PER_M3
+            return capacity_m3, capacity_m3, loc.available_capacity, "volume"
+
+        weight_g = effective_bin_weight_limit_g(loc)
+        if weight_g is not None:
+            capacity_kg = weight_g / G_PER_KG
+            return capacity_kg, capacity_kg, loc.available_capacity, "weight"
+
+        return (
+            loc.capacity,
+            loc.total_capacity,
+            loc.available_capacity,
+            loc.capacity_uom,
+        )
 
     # ------------------------------------------------------------------
     # LIST LOCATIONS (with filters and pagination)
@@ -475,9 +569,7 @@ class LayoutService:
         # Count occupied bins (active bins with stock > 0)
         if active_bin_ids:
             occupied_bins = (
-                self.db.query(
-                    func.count(func.distinct(BinStockLevel.bin_location_id))
-                )
+                self.db.query(func.count(func.distinct(BinStockLevel.bin_location_id)))
                 .filter(
                     BinStockLevel.bin_location_id.in_(active_bin_ids),
                     BinStockLevel.quantity_on_hand > 0,
@@ -490,26 +582,20 @@ class LayoutService:
 
         # Total capacity of active bins in subtree
         if active_bin_ids:
-            total_capacity = (
-                self.db.query(func.sum(WarehouseLocation.capacity))
-                .filter(WarehouseLocation.id.in_(active_bin_ids))
-                .scalar()
-                or Decimal("0")
-            )
+            total_capacity = self.db.query(func.sum(WarehouseLocation.capacity)).filter(
+                WarehouseLocation.id.in_(active_bin_ids)
+            ).scalar() or Decimal("0")
         else:
             total_capacity = Decimal("0")
 
         # Used capacity (sum of stock in active bins)
         if active_bin_ids:
-            used_capacity = (
-                self.db.query(func.sum(BinStockLevel.quantity_on_hand))
-                .filter(
-                    BinStockLevel.bin_location_id.in_(active_bin_ids),
-                    BinStockLevel.quantity_on_hand > 0,
-                )
-                .scalar()
-                or Decimal("0")
-            )
+            used_capacity = self.db.query(
+                func.sum(BinStockLevel.quantity_on_hand)
+            ).filter(
+                BinStockLevel.bin_location_id.in_(active_bin_ids),
+                BinStockLevel.quantity_on_hand > 0,
+            ).scalar() or Decimal("0")
         else:
             used_capacity = Decimal("0")
 

@@ -203,6 +203,23 @@ class LayoutDesignService:
                 [row for row in desired.rows if row.full_path], existing_rows
             )
 
+        # Populate the derived capacity cache for the materialised bins. A layout
+        # apply writes the physical limits (`max_volume_cc`, `capacity_uom`) but
+        # leaves the legacy unit-count `capacity` columns at 0, so without this
+        # step every bin's `capacity_volume_pct` / `bin_state` / `available_capacity`
+        # stays NULL/0 and the 3-D view and bin pickers show nothing until the
+        # first stock movement happens to refresh a bin.
+        #
+        # The session is `autoflush=False`, so the new rows must be flushed
+        # before the capacity queries can see them. The per-bin Redis event is
+        # suppressed: one `layout.applied` event is published after the commit.
+        self.db.flush()
+        from app.services.bin_capacity_service import BinCapacityService
+
+        BinCapacityService(self.db).refresh_warehouse(
+            warehouse.id, organization_id, publish=False
+        )
+
         plan = WarehouseFloorPlan(
             id=uuid.uuid4(),
             organization_id=organization_id,

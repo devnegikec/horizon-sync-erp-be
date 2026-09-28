@@ -252,8 +252,13 @@ class BinCapacityService:
 
     # ------------------------------------------------------------ refresh
 
-    def refresh_bin(self, bin_id: UUID, org_id: UUID) -> dict:
-        """Recompute and persist cached capacity state for one bin."""
+    def refresh_bin(self, bin_id: UUID, org_id: UUID, publish: bool = True) -> dict:
+        """Recompute and persist cached capacity state for one bin.
+
+        ``publish=False`` skips the per-bin ``bin.state.changed`` event, for bulk
+        callers that emit a single higher-level event instead (a layout apply
+        already publishes ``layout.applied`` for the whole warehouse).
+        """
         bin_loc = self._get_bin(bin_id, org_id)
         warehouse = self._get_warehouse(bin_loc.warehouse_id)
         metrics, state, is_available = self._evaluate_bin(bin_loc, warehouse)
@@ -274,22 +279,31 @@ class BinCapacityService:
         )
         self.db.flush()
 
-        try:
-            redis_pubsub.publish_bin_event(
-                "bin.state.changed",
-                bin_id,
-                bin_loc.warehouse_id,
-                bin_state=state,
-                binding_pct=float(metrics["binding_pct"]),
-                is_available=is_available,
-            )
-        except Exception as exc:  # non-critical, never block the caller
-            logger.warning("capacity event publish failed: %s", exc)
+        if publish:
+            try:
+                redis_pubsub.publish_bin_event(
+                    "bin.state.changed",
+                    bin_id,
+                    bin_loc.warehouse_id,
+                    bin_state=state,
+                    binding_pct=float(metrics["binding_pct"]),
+                    is_available=is_available,
+                )
+            except Exception as exc:  # non-critical, never block the caller
+                logger.warning("capacity event publish failed: %s", exc)
 
         return self._response_for_bin(bin_loc, metrics, state, is_available)
 
-    def refresh_warehouse(self, warehouse_id: UUID, org_id: UUID) -> int:
-        """Recompute cached capacity for every bin in a warehouse."""
+    def refresh_warehouse(
+        self, warehouse_id: UUID, org_id: UUID, publish: bool = True
+    ) -> int:
+        """Recompute cached capacity for every active bin in a warehouse.
+
+        This is the call that turns the freshly materialised physical limits of
+        a layout apply (``max_volume_cc`` / ``capacity_uom='volume'``) into the
+        cached state the 3-D view and bin pickers read: ``capacity_volume_pct``,
+        ``bin_state``, ``is_available`` and ``available_capacity``.
+        """
         bins = (
             self.db.query(WarehouseLocation)
             .filter(
@@ -301,7 +315,7 @@ class BinCapacityService:
             .all()
         )
         for bin_loc in bins:
-            self.refresh_bin(bin_loc.id, org_id)
+            self.refresh_bin(bin_loc.id, org_id, publish=publish)
         return len(bins)
 
     # ------------------------------------------------------------ reads
