@@ -24,12 +24,22 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.item import Item
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    MM3_PER_CC,
+    compute_bin_occupancy,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService
@@ -457,7 +467,6 @@ class PutAwayService:
         never the Each/IC level — so ``conversion_factor`` is the single source
         of truth and ``items_per_master_pack`` is an optional explicit override.
         """
-        from app.models.item_packaging_unit import ItemPackagingUnit
 
         row = (
             self.db.query(ItemPackagingUnit.items_per_master_pack)
@@ -637,35 +646,22 @@ class PutAwayService:
                     }
                 continue
 
-            bin_assignments = self._assign_bins(
-                item_id=item.id,
-                item_group_id=item.item_group_id,
-                quantity=quantity,
-                warehouse_id=slip.warehouse_id,
-                org_id=org_id,
+            # Auto mode: one spec per master pack (or per slip line), with NO bin
+            # yet. Bin selection is done exactly once, volumetrically, in
+            # ``_create_list_from_specs``. Pre-splitting the pack here by the
+            # legacy count-based allocator fragmented a single SKU into one line
+            # per bin — the "multiple put-aways / one item per bin" symptom.
+            item_specs.append(
+                {
+                    "item_id": item.id,
+                    "sku": line["sku"],
+                    "batch_number": batch_number,
+                    "quantity": quantity,
+                    "bin_location_id": None,
+                    "serial_nos": list(serial_nos) if serial_nos else None,
+                    "packaging_unit_id": line.get("packaging_unit_id"),
+                }
             )
-            serial_cursor = 0
-            for assignment in bin_assignments:
-                qty = int(assignment["quantity"])
-                split_serials = (
-                    serial_nos[serial_cursor : serial_cursor + qty]
-                    if serial_nos
-                    else None
-                )
-                serial_cursor += qty
-                item_specs.append(
-                    {
-                        "item_id": item.id,
-                        "sku": line["sku"],
-                        "batch_number": split_serials[0]
-                        if split_serials
-                        else batch_number,
-                        "quantity": assignment["quantity"],
-                        "bin_location_id": assignment["bin_location_id"],
-                        "serial_nos": split_serials or None,
-                        "packaging_unit_id": line.get("packaging_unit_id"),
-                    }
-                )
 
         if manual_grouped:
             item_specs.extend(manual_grouped.values())
@@ -751,13 +747,18 @@ class PutAwayService:
         self._link_tracking_to_items(slip, put_away_items)
 
         if mode == "auto":
-            # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
+            # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7).
+            # This is the single bin-selection pass: specs reach here without a
+            # bin, so one SKU consolidates into as few bins as it physically fits.
             volumetric_service = VolumetricAssignmentService()
             volumetric_service.assign_bins(
                 put_away_list_items=put_away_list.items,
                 warehouse_id=slip.warehouse_id,
                 org_id=org_id,
                 db=self.db,
+                reserved_bin_ids=self.reservation_service.get_reserved_bin_ids(
+                    org_id=org_id, warehouse_id=slip.warehouse_id
+                ),
             )
             self.db.flush()
 
@@ -1037,9 +1038,7 @@ class PutAwayService:
                 item_id=put_away_item.item_id,
                 org_id=org_id,
                 quantity=Decimal(len(serial_nos)),
-                packaging_unit_id=getattr(
-                    put_away_item, "packaging_unit_id", None
-                ),
+                packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
             )
             for serial in serial_nos:
                 self.bin_stock_service.add_stock(
@@ -1048,9 +1047,7 @@ class PutAwayService:
                     quantity=Decimal("1"),
                     org_id=org_id,
                     batch_number=serial,
-                    packaging_unit_id=getattr(
-                        put_away_item, "packaging_unit_id", None
-                    ),
+                    packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
                     commit=False,
                     skip_validate=True,
                 )
@@ -1425,6 +1422,7 @@ class PutAwayService:
         quantity: Decimal,
         warehouse_id: UUID,
         org_id: UUID,
+        packaging_unit_id: UUID | None = None,
     ) -> list[dict]:
         """Assign bins for an item respecting allocations and capacity.
 
@@ -1433,8 +1431,11 @@ class PutAwayService:
         2. Preferred allocations for the item's group — try those first
         3. Unallocated bins — fall back if preferred bins insufficient
 
-        Filters bins by: is_active=True, available_capacity >= needed quantity.
-        Splits across bins if single bin insufficient.
+        Bins are sized by their **physical** capacity — ``max_volume_cc`` /
+        ``max_weight_grams``, or a legacy ``capacity`` whose ``capacity_uom`` is
+        ``volume`` / ``weight`` — with the legacy unit-count ``capacity`` used
+        only when the bin carries no physical limit. Splits across bins only
+        when a single bin genuinely cannot hold the quantity.
 
         Args:
             item_id: The item to assign bins for.
@@ -1442,6 +1443,7 @@ class PutAwayService:
             quantity: Total quantity to assign.
             warehouse_id: The warehouse to search bins in.
             org_id: Organization ID for scoping.
+            packaging_unit_id: Optional packaging unit used to size one unit.
 
         Returns:
             List of dicts with bin_location_id and quantity.
@@ -1450,6 +1452,10 @@ class PutAwayService:
         """
         assignments: list[dict] = []
         remaining_qty = quantity
+
+        # One unit's physical footprint, so a bin's volume/weight limit can be
+        # turned into "how many eaches fit" rather than being read as a count.
+        unit_cc, unit_g = self._unit_volume_weight(item_id, org_id, packaging_unit_id)
 
         # Exclude bins actively reserved by workers so generated put-away tasks
         # do not collide with in-progress work (FR-CW-01).
@@ -1484,7 +1490,12 @@ class PutAwayService:
                     exclusive_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    exclusive_bins, remaining_qty, org_id, reserved_bin_ids
+                    exclusive_bins,
+                    remaining_qty,
+                    org_id,
+                    reserved_bin_ids,
+                    unit_cc,
+                    unit_g,
                 )
                 # For exclusive allocations, we don't fall back to other bins
                 if remaining_qty > 0:
@@ -1518,14 +1529,24 @@ class PutAwayService:
                     preferred_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    preferred_bins, remaining_qty, org_id, reserved_bin_ids
+                    preferred_bins,
+                    remaining_qty,
+                    org_id,
+                    reserved_bin_ids,
+                    unit_cc,
+                    unit_g,
                 )
 
         # Step 3: Fall back to unallocated bins if still remaining
         if remaining_qty > 0:
             unallocated_bins = self._get_unallocated_bins(warehouse_id, org_id)
             additional_assignments, remaining_qty = self._fill_bins(
-                unallocated_bins, remaining_qty, org_id, reserved_bin_ids
+                unallocated_bins,
+                remaining_qty,
+                org_id,
+                reserved_bin_ids,
+                unit_cc,
+                unit_g,
             )
             assignments.extend(additional_assignments)
 
@@ -1631,6 +1652,8 @@ class PutAwayService:
         quantity: Decimal,
         org_id: UUID,
         reserved_bin_ids: set[UUID] | None = None,
+        unit_cc: Decimal | None = None,
+        unit_g: Decimal | None = None,
     ) -> tuple[list[dict], Decimal]:
         """Fill bins with the given quantity, respecting capacity.
 
@@ -1642,6 +1665,8 @@ class PutAwayService:
             quantity: Remaining quantity to assign.
             org_id: Organization ID.
             reserved_bin_ids: Bin ids currently reserved by workers.
+            unit_cc: Volume of one unit (cc) used to size volume-limited bins.
+            unit_g: Weight of one unit (g) used to size weight-limited bins.
 
         Returns:
             Tuple of (assignments list, remaining quantity).
@@ -1657,14 +1682,14 @@ class PutAwayService:
             if bin_loc.id in reserved:
                 continue
 
-            # Calculate available capacity for this bin
-            available = self._get_bin_available_capacity(bin_loc)
+            # Available capacity expressed in eaches (None = unconstrained).
+            available = self._get_bin_available_capacity(bin_loc, unit_cc, unit_g)
 
-            if available <= 0:
+            if available is not None and available <= 0:
                 continue
 
             # Assign as much as possible to this bin
-            assign_qty = min(remaining, available)
+            assign_qty = remaining if available is None else min(remaining, available)
             assignments.append(
                 {
                     "bin_location_id": bin_loc.id,
@@ -1675,18 +1700,111 @@ class PutAwayService:
 
         return assignments, remaining
 
-    def _get_bin_available_capacity(self, bin_loc: WarehouseLocation) -> Decimal:
-        """Get the available capacity of a bin location."""
-        bin_capacity = Decimal(str(bin_loc.capacity or 0))
+    def _unit_volume_weight(
+        self,
+        item_id: UUID,
+        org_id: UUID,
+        packaging_unit_id: UUID | None = None,
+    ) -> tuple[Decimal | None, Decimal | None]:
+        """Volume (cc) and weight (g) of one unit of an item.
 
-        # Get current stock in the bin
-        current_stock = (
-            self.db.query(
-                func.coalesce(func.sum(BinStockLevel.quantity_on_hand), Decimal("0"))
+        Prefers the packaging unit the stock moves in, falling back to the
+        item's base unit and then its smallest active master-pack unit. Missing
+        dimensions fall back per-dimension to the base unit; ``None`` means
+        "cannot be measured" (the bin limit is then ignored for that dimension).
+        """
+        unit = None
+        if packaging_unit_id is not None:
+            unit = self.db.get(ItemPackagingUnit, packaging_unit_id)
+        base = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.is_base_unit.is_(True),
             )
-            .filter(BinStockLevel.bin_location_id == bin_loc.id)
-            .scalar()
-        ) or Decimal("0")
+            .first()
+        )
+        if unit is None:
+            unit = base
+        if unit is None:
+            unit = (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item_id,
+                    ItemPackagingUnit.is_active.is_(True),
+                    ItemPackagingUnit.conversion_factor > 1,
+                )
+                .order_by(ItemPackagingUnit.conversion_factor.asc())
+                .first()
+            )
+        if unit is None:
+            return None, None
+
+        def _dim(value, fallback):
+            return value if value is not None else fallback
+
+        length = _dim(unit.length_mm, base.length_mm if base else None)
+        width = _dim(unit.width_mm, base.width_mm if base else None)
+        height = _dim(unit.height_mm, base.height_mm if base else None)
+        unit_cc = None
+        if length and width and height:
+            unit_cc = (
+                Decimal(str(length)) * Decimal(str(width)) * Decimal(str(height))
+            ) / MM3_PER_CC
+
+        weight = _dim(unit.weight_grams, base.weight_grams if base else None)
+        unit_g = Decimal(str(weight)) if weight is not None else None
+        return unit_cc, unit_g
+
+    def _get_bin_available_capacity(
+        self,
+        bin_loc: WarehouseLocation,
+        unit_cc: Decimal | None = None,
+        unit_g: Decimal | None = None,
+    ) -> Decimal | None:
+        """How many eaches this bin can still take, or ``None`` if unconstrained.
+
+        The limit comes from the bin's **physical** capacity — ``max_volume_cc``
+        / ``max_weight_grams``, or a legacy ``capacity`` carrying
+        ``capacity_uom='volume'`` (m³) or ``'weight'`` (kg). Only a bin that has
+        neither falls back to the legacy unit-count ``capacity``; a bin with no
+        usable limit at all is treated as unconstrained.
+
+        Quantities already promised to *pending* put-away items on the bin are
+        subtracted so a batch of assignments cannot over-allocate it.
+        """
+        limits: list[Decimal] = []
+
+        vol_limit_cc = effective_bin_volume_limit_cc(bin_loc)
+        wt_limit_g = effective_bin_weight_limit_g(bin_loc)
+        if (vol_limit_cc is not None and unit_cc) or (
+            wt_limit_g is not None and unit_g
+        ):
+            occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_loc.id)
+            if vol_limit_cc is not None and unit_cc:
+                free_cc = vol_limit_cc - occupied_m3 * CC_PER_M3
+                limits.append(max(Decimal("0"), free_cc // unit_cc))
+            if wt_limit_g is not None and unit_g:
+                free_g = wt_limit_g - occupied_kg * G_PER_KG
+                limits.append(max(Decimal("0"), free_g // unit_g))
+
+        count_cap = effective_bin_count_capacity(bin_loc)
+        if count_cap is not None:
+            current_stock = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(BinStockLevel.quantity_on_hand), Decimal("0")
+                    )
+                )
+                .filter(BinStockLevel.bin_location_id == bin_loc.id)
+                .scalar()
+            ) or Decimal("0")
+            limits.append(max(Decimal("0"), count_cap - Decimal(str(current_stock))))
+
+        if not limits:
+            return None
+
+        available = min(limits)
 
         # Subtract quantities already promised to pending put-away items so a
         # batch of assignments cannot over-allocate the same bin.
@@ -1701,9 +1819,7 @@ class PutAwayService:
             .scalar()
         ) or Decimal("0")
 
-        return (
-            bin_capacity - Decimal(str(current_stock)) - Decimal(str(pending_put_away))
-        )
+        return max(Decimal("0"), available - Decimal(str(pending_put_away)))
 
     def _optimize_item_routing(self, put_away_items: list[PutAwayListItem]) -> None:
         """Optimize the routing order for put-away items using the RoutingOptimizer.

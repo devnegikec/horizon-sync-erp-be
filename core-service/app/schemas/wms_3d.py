@@ -19,6 +19,22 @@ class Position3D(BaseModel):
     z: float = 0
 
 
+class CapacityVolume(BaseModel):
+    """Physical volume measure of a bin (new-layout bins are volume-limited)."""
+
+    capacity_m3: float | None = None
+    occupied_m3: float = 0.0
+    pct: float | None = None
+
+
+class CapacityWeight(BaseModel):
+    """Physical weight measure of a bin."""
+
+    capacity_kg: float | None = None
+    occupied_kg: float = 0.0
+    pct: float | None = None
+
+
 # ===========================================
 # LAYOUT (5.1)
 # ===========================================
@@ -35,8 +51,12 @@ class LayoutBin(BaseModel):
     code: str
     full_path: str | None = None
     position: Position3D
+    # Legacy unit-count capacity: 0 when the bin is volume/weight limited.
     capacity: float
     available_capacity: float
+    capacity_uom: str | None = None
+    volume: CapacityVolume | None = None
+    weight: CapacityWeight | None = None
     fill_percentage: float
     is_active: bool = True
     is_reserved: bool
@@ -95,6 +115,12 @@ class StatusReservedBy(BaseModel):
 
 class StatusBin(BaseModel):
     bin_id: UUID
+    # Legacy unit-count capacity: 0 when the bin is volume/weight limited.
+    capacity: float = 0.0
+    available_capacity: float = 0.0
+    capacity_uom: str | None = None
+    volume: CapacityVolume | None = None
+    weight: CapacityWeight | None = None
     fill_percentage: float
     is_reserved: bool
     reserved_by: StatusReservedBy | None = None

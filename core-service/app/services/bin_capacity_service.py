@@ -21,17 +21,19 @@ from app.core import redis_pubsub
 from app.core.exceptions import NotFoundError
 from app.models.bin_reservation import BinReservation
 from app.models.bin_stock_level import BinStockLevel
-from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
 from app.services.capacity_math import (
     CC_PER_M3,
     G_PER_KG,
-    MM3_PER_M3,
     compute_bin_counts,
     compute_bin_occupancy,
+    compute_item_required_cc_and_grams,
     compute_warehouse_bin_counts,
     compute_warehouse_bin_occupancy,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,11 +78,19 @@ class BinCapacityService:
 
     @staticmethod
     def _use_volume(warehouse: Warehouse | None) -> bool:
-        return warehouse.use_volume if warehouse and warehouse.use_volume is not None else True
+        return (
+            warehouse.use_volume
+            if warehouse and warehouse.use_volume is not None
+            else True
+        )
 
     @staticmethod
     def _use_weight(warehouse: Warehouse | None) -> bool:
-        return warehouse.use_weight if warehouse and warehouse.use_weight is not None else False
+        return (
+            warehouse.use_weight
+            if warehouse and warehouse.use_weight is not None
+            else False
+        )
 
     def _effective_thresholds(
         self, bin_loc: WarehouseLocation, warehouse: Warehouse | None
@@ -121,13 +131,21 @@ class BinCapacityService:
         use_volume = self._use_volume(warehouse)
         use_weight = self._use_weight(warehouse)
 
+        # A bin's volume limit may live in ``max_volume_cc`` (layout designer)
+        # or in ``capacity`` with ``capacity_uom='volume'`` (m³). Read both
+        # through the shared helper so a 1.2 m³ bin is never mistaken for a
+        # 1.2-item count.
         cap_m3 = None
-        if use_volume and bin_loc.max_volume_cc is not None:
-            cap_m3 = Decimal(str(bin_loc.max_volume_cc)) / CC_PER_M3
+        if use_volume:
+            vol_limit_cc = effective_bin_volume_limit_cc(bin_loc)
+            if vol_limit_cc is not None:
+                cap_m3 = vol_limit_cc / CC_PER_M3
 
         cap_kg = None
-        if use_weight and bin_loc.max_weight_grams is not None:
-            cap_kg = Decimal(str(bin_loc.max_weight_grams)) / G_PER_KG
+        if use_weight:
+            wt_limit_g = effective_bin_weight_limit_g(bin_loc)
+            if wt_limit_g is not None:
+                cap_kg = wt_limit_g / G_PER_KG
 
         vol_pct = (occupied_m3 / cap_m3 * 100) if cap_m3 else None
         wt_pct = (occupied_kg / cap_kg * 100) if cap_kg else None
@@ -149,11 +167,13 @@ class BinCapacityService:
         self,
         bin_loc: WarehouseLocation,
     ) -> tuple[Decimal, Decimal, Decimal | None, Decimal | None]:
-        """Return (unit_count, master_pack_count, count_capacity, count_pct)."""
+        """Return (unit_count, master_pack_count, count_capacity, count_pct).
+
+        ``count_capacity`` is the legacy *unit-count* limit and is only applied
+        when the bin does not carry a physical (volume/weight) capacity.
+        """
         units, packs = compute_bin_counts(self.db, bin_loc.id)
-        cap = Decimal(str(bin_loc.capacity)) if bin_loc.capacity else None
-        if cap is not None and cap <= 0:
-            cap = None
+        cap = effective_bin_count_capacity(bin_loc)
         pct = (units / cap * 100) if cap else None
         return units, packs, cap, pct
 
@@ -287,7 +307,9 @@ class BinCapacityService:
             occupied_m3, occupied_kg = occupancy.get(
                 str(bin_loc.id), (Decimal("0"), Decimal("0"))
             )
-            metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
+            metrics = self._compute_metrics(
+                bin_loc, warehouse, occupied_m3, occupied_kg
+            )
             full, almost = self._effective_thresholds(bin_loc, warehouse)
             state = self._derive_state(metrics["binding_pct"], full, almost)
             units, _packs, count_cap, _count_pct = self._bin_counts(bin_loc)
@@ -346,8 +368,16 @@ class BinCapacityService:
                 "level": loc.location_type,
                 "code": loc.code,
                 "full_path": loc.full_path,
-                "volume": {"occupied_m3": Decimal("0"), "capacity_m3": None, "pct": None},
-                "weight": {"occupied_kg": Decimal("0"), "capacity_kg": None, "pct": None},
+                "volume": {
+                    "occupied_m3": Decimal("0"),
+                    "capacity_m3": None,
+                    "pct": None,
+                },
+                "weight": {
+                    "occupied_kg": Decimal("0"),
+                    "capacity_kg": None,
+                    "pct": None,
+                },
                 "unit_count": Decimal("0"),
                 "master_pack_count": Decimal("0"),
                 "count_capacity": None,
@@ -357,7 +387,9 @@ class BinCapacityService:
                 "is_available": None,
                 "children": [],
                 "_loc": loc,
-                "_parent": str(loc.parent_location_id) if loc.parent_location_id else None,
+                "_parent": str(loc.parent_location_id)
+                if loc.parent_location_id
+                else None,
             }
 
         for loc in locations:
@@ -378,12 +410,8 @@ class BinCapacityService:
                 }
                 n["binding_pct"] = m["binding_pct"]
                 n["bin_state"] = state
-                units, packs = bin_counts.get(
-                    str(loc.id), (Decimal("0"), Decimal("0"))
-                )
-                count_cap = Decimal(str(loc.capacity)) if loc.capacity else None
-                if count_cap is not None and count_cap <= 0:
-                    count_cap = None
+                units, packs = bin_counts.get(str(loc.id), (Decimal("0"), Decimal("0")))
+                count_cap = effective_bin_count_capacity(loc)
                 n["is_available"] = (
                     bool(loc.is_active)
                     and m["binding_pct"] < full
@@ -467,18 +495,24 @@ class BinCapacityService:
         total_cap_m3 = None
         for c in children:
             if c["volume"]["capacity_m3"] is not None:
-                total_cap_m3 = (total_cap_m3 or Decimal("0")) + c["volume"]["capacity_m3"]
+                total_cap_m3 = (total_cap_m3 or Decimal("0")) + c["volume"][
+                    "capacity_m3"
+                ]
         total_kg = sum((c["weight"]["occupied_kg"] for c in children), Decimal("0"))
         total_cap_kg = None
         for c in children:
             if c["weight"]["capacity_kg"] is not None:
-                total_cap_kg = (total_cap_kg or Decimal("0")) + c["weight"]["capacity_kg"]
+                total_cap_kg = (total_cap_kg or Decimal("0")) + c["weight"][
+                    "capacity_kg"
+                ]
         total_units = sum((c["unit_count"] for c in children), Decimal("0"))
         total_packs = sum((c["master_pack_count"] for c in children), Decimal("0"))
         total_count_cap = None
         for c in children:
             if c["count_capacity"] is not None:
-                total_count_cap = (total_count_cap or Decimal("0")) + c["count_capacity"]
+                total_count_cap = (total_count_cap or Decimal("0")) + c[
+                    "count_capacity"
+                ]
         pcts = [
             p
             for p in (
@@ -506,7 +540,9 @@ class BinCapacityService:
             "unit_count": total_units,
             "master_pack_count": total_packs,
             "count_capacity": total_count_cap,
-            "count_pct": (total_units / total_count_cap * 100) if total_count_cap else None,
+            "count_pct": (total_units / total_count_cap * 100)
+            if total_count_cap
+            else None,
             "binding_pct": max(pcts) if pcts else Decimal("0"),
             "bin_state": None,
             "is_available": None,
@@ -529,26 +565,20 @@ class BinCapacityService:
         return {str(r[0]) for r in rows}
 
     def _required_volume_m3(self, item_id: UUID | None, qty) -> Decimal | None:
-        """Required m³ for an incoming put-away (None when unknown)."""
+        """Required m³ for an incoming put-away (None when unknown).
+
+        Master-pack aware: an intact carton occupies its outer volume, not
+        ``conversion_factor`` × base-unit volume — the same math the occupancy
+        engine uses, so a fit check compares like with like.
+        """
         if item_id is None or qty is None:
             return None
-        base = (
-            self.db.query(ItemPackagingUnit)
-            .filter(
-                ItemPackagingUnit.item_id == item_id,
-                ItemPackagingUnit.is_base_unit.is_(True),
-            )
-            .first()
+        required_cc, _required_g = compute_item_required_cc_and_grams(
+            self.db, item_id, None, qty
         )
-        if base is None or not (base.length_mm and base.width_mm and base.height_mm):
+        if required_cc is None:
             return None
-        mm3 = (
-            Decimal(str(qty))
-            * Decimal(str(base.length_mm))
-            * Decimal(str(base.width_mm))
-            * Decimal(str(base.height_mm))
-        )
-        return mm3 / MM3_PER_M3
+        return required_cc / CC_PER_M3
 
     def get_available_bins(
         self,
@@ -572,6 +602,9 @@ class BinCapacityService:
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.location_type == "bin",
                 WarehouseLocation.is_active.is_(True),
+                # Segregation bins (HOLD / QUARANTINE) are active but not
+                # pickable — normal put-away and picking must never target them.
+                WarehouseLocation.is_pickable.is_(True),
             )
             .all()
         )
@@ -587,7 +620,9 @@ class BinCapacityService:
                 use_volume=self._use_volume(warehouse),
                 use_weight=self._use_weight(warehouse),
             )
-            metrics = self._compute_metrics(bin_loc, warehouse, occupied_m3, occupied_kg)
+            metrics = self._compute_metrics(
+                bin_loc, warehouse, occupied_m3, occupied_kg
+            )
             full, almost = self._effective_thresholds(bin_loc, warehouse)
             state = self._derive_state(metrics["binding_pct"], full, almost)
 
@@ -620,6 +655,11 @@ class BinCapacityService:
                     "full_path": bin_loc.full_path,
                     "bin_state": state,
                     "binding_pct": metrics["binding_pct"],
+                    "remaining_m3": (
+                        metrics["capacity_m3"] - occupied_m3
+                        if metrics["capacity_m3"] is not None
+                        else None
+                    ),
                     "is_available": available,
                 }
             )
