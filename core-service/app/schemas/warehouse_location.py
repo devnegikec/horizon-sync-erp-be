@@ -29,8 +29,12 @@ class CreateLocationRequest(BaseModel):
     capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal = Field(default=Decimal("0"))
     position_y: Decimal = Field(default=Decimal("0"))
-    max_volume_cc: Decimal | None = Field(None, ge=0, description="Max volume capacity in cubic centimetres (cc)")
-    max_weight_grams: Decimal | None = Field(None, ge=0, description="Max weight capacity in grams")
+    max_volume_cc: Decimal | None = Field(
+        None, ge=0, description="Max volume capacity in cubic centimetres (cc)"
+    )
+    max_weight_grams: Decimal | None = Field(
+        None, ge=0, description="Max weight capacity in grams"
+    )
 
 
 class UpdateLocationRequest(BaseModel):
@@ -117,6 +121,9 @@ class LocationSummary(BaseModel):
     total_capacity: Decimal = Decimal("0")
     used_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg) — the measure of
+    # the capacity figures above.
+    capacity_uom: str | None = None
     item_count: int = 0
 
 
