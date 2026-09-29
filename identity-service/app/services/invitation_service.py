@@ -482,7 +482,26 @@ class InvitationService:
         existing_user = self.user_repo.get_user_by_email(invitation.email)
 
         if existing_user:
-            return existing_user
+            # A pending user is created when the invitation is sent (with an
+            # empty password_hash placeholder). On acceptance we must set the
+            # password and activate the account, otherwise the user is left
+            # with a blank password and remains pending/unable to log in.
+            from app.core.security import hash_password
+
+            update_data = {
+                "password_hash": hash_password(password),
+                "status": UserStatus.ACTIVE,
+                "is_active": True,
+                "email_verified": True,
+                "email_verified_at": datetime.now(UTC),
+            }
+
+            if first_name:
+                update_data["first_name"] = first_name
+            if last_name:
+                update_data["last_name"] = last_name
+
+            return self.user_repo.update_user(existing_user, update_data)
 
         # Create new user
         from app.core.security import hash_password
@@ -506,16 +525,33 @@ class InvitationService:
         # Assign primary role (if provided)
         primary_role_id = invitation.role_id
         if primary_role_id:
-            user_org_role = UserOrganizationRole(
-                user_id=user.id,
-                organization_id=invitation.organization_id,
-                role_id=primary_role_id,
-                is_active=True,
-                is_primary=True,
-                status="active",
-                joined_at=datetime.now(UTC),
+            existing = (
+                self.db.query(UserOrganizationRole)
+                .filter(
+                    UserOrganizationRole.user_id == user.id,
+                    UserOrganizationRole.organization_id == invitation.organization_id,
+                )
+                .first()
             )
-            self.db.add(user_org_role)
+            if existing:
+                # Reuse the membership created when the invitation was sent
+                # instead of inserting a duplicate row for the same user/org.
+                existing.role_id = primary_role_id
+                existing.is_active = True
+                existing.is_primary = True
+                existing.status = "active"
+                existing.joined_at = datetime.now(UTC)
+            else:
+                user_org_role = UserOrganizationRole(
+                    user_id=user.id,
+                    organization_id=invitation.organization_id,
+                    role_id=primary_role_id,
+                    is_active=True,
+                    is_primary=True,
+                    status="active",
+                    joined_at=datetime.now(UTC),
+                )
+                self.db.add(user_org_role)
 
         # Apply custom permissions
         custom_permission_ids = []
