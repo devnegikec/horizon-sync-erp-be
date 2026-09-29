@@ -301,3 +301,37 @@ class CoreServiceClient:
                 return None
 
         return None
+
+    # ------------------------------------------------------------------
+    # Feature flags (module gating for role/permission responses)
+    # ------------------------------------------------------------------
+
+    async def list_global_feature_flags(self) -> dict[str, bool] | None:
+        """Fetch every GLOBAL feature flag from the Core Service.
+
+        Calls GET /api/v1/internal/feature-flags (protected by the shared
+        ``X-Internal-Secret`` header) and returns a ``{name: enabled}`` map.
+
+        Returns:
+            dict: Flag name → enabled boolean, or ``None`` on any error. The
+            ``None`` sentinel lets callers distinguish a transport failure
+            (fail open) from a successful empty listing.
+        """
+        url = f"{self.base_url}/api/v1/internal/feature-flags"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, headers=self._internal_headers())
+                response.raise_for_status()
+                payload = response.json()
+            return {
+                item["name"]: bool(item.get("enabled", False))
+                for item in payload.get("flags", [])
+                if isinstance(item, dict) and item.get("name")
+            }
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
+            logger.warning(
+                "Failed to fetch GLOBAL feature flags from Core Service: %s",
+                e,
+                extra={"event": "feature_flags_fetch_error"},
+            )
+            return None

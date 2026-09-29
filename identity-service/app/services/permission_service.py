@@ -338,6 +338,7 @@ class PermissionService:
     def get_permissions_grouped_by_category(
         self, organization_id: UUID | None = None, module: str | None = None,
         include_system_admin: bool = False,
+        disabled_resources: set[str] | None = None,
     ) -> dict:
         """
         Get permissions grouped by category for UI display.
@@ -345,6 +346,9 @@ class PermissionService:
         Args:
             organization_id: Optional organization ID to filter permissions
             module: Optional module filter
+            include_system_admin: Include system_admin.* permissions
+            disabled_resources: Set of permission-code prefixes disabled by
+                feature flags (permissions in these modules are omitted).
 
         Returns:
             Dictionary with categories and uncategorized permissions
@@ -366,6 +370,13 @@ class PermissionService:
             permissions = [
                 p for p in permissions
                 if not (p.module == "system_admin" or p.code.startswith("system_admin."))
+            ]
+
+        # Feature-flag gating: drop permissions of disabled modules
+        if disabled_resources:
+            permissions = [
+                p for p in permissions
+                if p.code.split(".")[0] not in disabled_resources
             ]
 
         # Deduplicate only within the same code namespace (prefix before first dot).
@@ -475,6 +486,9 @@ class PermissionService:
                 "Inventory Management": "box",
                 "Accounting": "calculator",
                 "Billing & Subscriptions": "credit-card",
+                # WMS categories (module stored as "wms" in the DB)
+                "inbound": "box",
+                "returns": "box",
             }
             icon = icon_map.get(category_name)
 
@@ -489,6 +503,9 @@ class PermissionService:
                 "Inventory": "inventory",
                 "Accounting": "accounting",
                 "Billing & Subscriptions": "billing",
+                # WMS categories roll up under the Inventory module.
+                "inbound": "inventory",
+                "returns": "inventory",
             }
             category_module = category_to_module.get(category_name)
 

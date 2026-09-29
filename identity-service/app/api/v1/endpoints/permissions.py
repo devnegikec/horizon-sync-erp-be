@@ -19,6 +19,7 @@ from app.schemas.permission import (
     PermissionResponse,
     PermissionUpdate,
 )
+from app.services.feature_flag_gate import get_disabled_resource_prefixes
 from app.services.permission_service import PermissionService
 
 router = APIRouter()
@@ -125,12 +126,14 @@ async def get_permissions_grouped(
     logger.info("Fetching permissions grouped by category")
 
     permission_service = PermissionService(db)
+    disabled = await get_disabled_resource_prefixes()
 
     try:
         result = permission_service.get_permissions_grouped_by_category(
             organization_id=organization_id,
             module=module,
             include_system_admin=include_system_admin,
+            disabled_resources=disabled,
         )
 
         # No additional post-filtering needed — system_admin exclusion is handled
