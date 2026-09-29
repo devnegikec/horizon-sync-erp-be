@@ -5,7 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user
+from app.dependencies import require_permission
+from app.core.authorization import BRAND_TRUST_CREATE, BRAND_TRUST_READ, BRAND_TRUST_UPDATE
 from app.database import get_db
 from app.schemas.brand_trust import (
     AssessmentListResponse,
@@ -64,7 +65,7 @@ def get_questions(
 def start_assessment(
     data: StartAssessmentRequest,
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_CREATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -81,7 +82,7 @@ def list_assessments(
     page_size: int = Query(20, ge=1, le=100),
     status: str | None = Query(None, description="in_progress | submitted | scored"),
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.list_assessments(org_id, page, page_size, status)
@@ -96,7 +97,7 @@ def submit_assessment(
     assessment_id: UUID,
     data: SubmitAssessmentRequest,
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_CREATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.submit_assessment(assessment_id, data, org_id)
@@ -112,7 +113,7 @@ def submit_assessment(
 def get_report(
     assessment_id: UUID,
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.get_report(assessment_id, org_id)
@@ -127,7 +128,7 @@ def get_report(
 def get_pdf(
     assessment_id: UUID,
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.get_pdf_url(assessment_id, org_id)
@@ -143,7 +144,7 @@ async def send_report_email(
     assessment_id: UUID,
     req: SendReportEmailRequest,
     service: BrandTrustService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BRAND_TRUST_UPDATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])

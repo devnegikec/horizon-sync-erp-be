@@ -40,6 +40,7 @@ services:
       # Core Service Integration
       CORE_SERVICE_URL: http://core-service:8001
       CORE_SERVICE_TIMEOUT: 10
+      CORE_SERVICE_SECRET: ${CORE_SERVICE_SECRET:-internal-dev-secret-change-me}
       ENABLE_AUTO_CHART_CREATION: ${ENABLE_AUTO_CHART_CREATION:-true}
       CHART_CREATION_RETRY_ATTEMPTS: 3
     ports:
@@ -69,6 +70,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
+      INTERNAL_SERVICE_SECRET: ${CORE_SERVICE_SECRET:-internal-dev-secret-change-me}
       # Single shared Railway DB — same URL for identity tables
       IDENTITY_DATABASE_URL: ${DATABASE_URL}
       # Redis is not started by this file; core-service only touches Redis lazily

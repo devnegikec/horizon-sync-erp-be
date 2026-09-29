@@ -13,7 +13,12 @@ from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user, require_feature_flag
+from app.dependencies import CurrentUser, require_feature_flag, require_permission
+from app.core.authorization import (
+    RECONCILIATION_CREATE,
+    RECONCILIATION_READ,
+    RECONCILIATION_UPDATE,
+)
 from app.models.bank_account import BankAccount
 from app.models.bank_transaction import BankTransaction
 from app.models.bank_reconciliation import BankReconciliation
@@ -59,7 +64,7 @@ async def get_unreconciled_transactions(
     bank_account_id: UUID = Query(..., description="Bank account UUID"),
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -115,7 +120,7 @@ async def get_unreconciled_journal_entries(
     gl_account_id: UUID = Query(..., description="GL account UUID"),
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -170,7 +175,7 @@ async def get_unreconciled_journal_entries(
 )
 async def create_manual_reconciliation(
     data: ManualReconciliationRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -221,7 +226,7 @@ async def create_manual_reconciliation(
 )
 async def create_many_to_one_reconciliation(
     data: ManyToOneReconciliationRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -271,7 +276,7 @@ async def create_many_to_one_reconciliation(
 )
 async def run_auto_reconciliation(
     data: AutoReconciliationRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -312,7 +317,7 @@ async def run_auto_reconciliation(
 )
 async def confirm_suggested_match(
     reconciliation_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -360,7 +365,7 @@ async def confirm_suggested_match(
 async def reject_suggested_match(
     reconciliation_id: UUID,
     data: RejectReconciliationRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -410,7 +415,7 @@ async def reject_suggested_match(
 async def undo_reconciliation(
     reconciliation_id: UUID,
     data: UndoReconciliationRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -469,7 +474,7 @@ async def get_suggested_matches(
     date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     min_confidence: Optional[float] = Query(None, description="Minimum match confidence (0.0-1.0)"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -583,7 +588,7 @@ async def generate_reconciliation_report(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by transaction status (pending, cleared, reconciled, void)"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -602,7 +607,7 @@ async def generate_reconciliation_report(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -766,7 +771,7 @@ async def export_reconciliation_report_csv(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -872,7 +877,7 @@ async def export_reconciliation_report_pdf(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -966,7 +971,7 @@ async def generate_reconciliation_report(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1130,7 +1135,7 @@ async def export_reconciliation_report_csv(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1236,7 +1241,7 @@ async def export_reconciliation_report_pdf(
     date_from: str = Query(..., description="Start date (YYYY-MM-DD)"),
     date_to: str = Query(..., description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, cleared, reconciled, void"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """

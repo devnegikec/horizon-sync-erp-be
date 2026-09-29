@@ -25,7 +25,14 @@ from app.schemas.messaging import (
     WhatsAppWebhookPayload,
 )
 from app.services.messaging_service import MessagingService
-from app.dependencies import get_current_user
+from app.dependencies import require_permission
+from app.core.authorization import (
+    MESSAGING_CREATE,
+    MESSAGING_DELETE,
+    MESSAGING_READ,
+    MESSAGING_SEND,
+    MESSAGING_UPDATE,
+)
 
 router = APIRouter()
 
@@ -45,7 +52,7 @@ def get_service(db: Session = Depends(get_db)) -> MessagingService:
 def create_template(
     data: MessageTemplateCreate,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_CREATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -63,7 +70,7 @@ def list_templates(
     channel: str | None = Query(None, description="Filter by channel: sms|whatsapp|rcs|email"),
     search: str | None = Query(None),
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.list_templates(org_id, page, page_size, channel, search)
@@ -77,7 +84,7 @@ def list_templates(
 def get_template(
     template_id: UUID,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     tmpl = service.get_template(template_id, org_id)
@@ -95,7 +102,7 @@ def update_template(
     template_id: UUID,
     data: MessageTemplateUpdate,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_UPDATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -113,7 +120,7 @@ def update_template(
 def delete_template(
     template_id: UUID,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_DELETE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -132,7 +139,7 @@ def delete_template(
 def create_bulk_job(
     data: BulkMessageJobCreate,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_SEND)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -148,7 +155,7 @@ def list_jobs(
     page_size: int = Query(20, ge=1, le=100),
     message_type: str | None = Query(None),
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.list_jobs(org_id, page, page_size, message_type)
@@ -162,7 +169,7 @@ def list_jobs(
 def get_job(
     job_id: UUID,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     job = service.get_job(job_id, org_id)
@@ -182,7 +189,7 @@ def get_job(
 def create_scheduled_message(
     data: ScheduledMessageCreate,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_SEND)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -197,7 +204,7 @@ def list_scheduled(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.list_scheduled(org_id, page, page_size)
@@ -214,7 +221,7 @@ def list_scheduled(
 def send_whatsapp(
     data: WhatsAppSendRequest,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_SEND)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -256,7 +263,7 @@ def sms_webhook(payload: SMSWebhookPayload, service: MessagingService = Depends(
 def send_rcs(
     data: RCSSendRequest,
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_SEND)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -272,7 +279,7 @@ def send_rcs(
 )
 def get_credit_summary(
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.get_credit_summary(org_id)
@@ -285,7 +292,7 @@ def get_credit_summary(
 def get_credit_balance(
     credit_type: str = Query(..., description="sms|whatsapp|rcs"),
     service: MessagingService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(MESSAGING_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     balance = service.get_credit_balance(org_id, credit_type)

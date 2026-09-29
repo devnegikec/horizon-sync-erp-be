@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # Core Service Integration
     core_service_url: str = "http://localhost:8001"
     core_service_timeout: int = 10  # seconds
+    # Shared secret sent as X-Internal-Secret to core-service internal
+    # endpoints (must match core-service's INTERNAL_SERVICE_SECRET).
+    core_service_secret: str = ""
     enable_auto_chart_creation: bool = True
     chart_creation_retry_attempts: int = 3
 

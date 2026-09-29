@@ -5,7 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user
+from app.dependencies import require_permission
+from app.core.authorization import (
+    SHORT_URL_CREATE,
+    SHORT_URL_DELETE,
+    SHORT_URL_READ,
+    SHORT_URL_UPDATE,
+)
 from app.database import get_db
 from app.schemas.short_url import (
     ResolveURLResponse,
@@ -34,7 +40,7 @@ def get_service(db: Session = Depends(get_db)) -> ShortURLService:
 def generate_short_url(
     data: ShortURLCreate,
     service: ShortURLService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(SHORT_URL_CREATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     user_id = UUID(current_user["user_id"])
@@ -69,7 +75,7 @@ def list_short_urls(
     is_active: bool | None = Query(None),
     search: str | None = Query(None, description="Search by slug or title"),
     service: ShortURLService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(SHORT_URL_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.list_urls(org_id, page, page_size, is_active, search)
@@ -85,7 +91,7 @@ def list_short_urls(
 def get_short_url(
     url_id: UUID,
     service: ShortURLService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(SHORT_URL_READ)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.get_url(url_id, org_id)
@@ -102,7 +108,7 @@ def update_short_url(
     url_id: UUID,
     data: ShortURLUpdate,
     service: ShortURLService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(SHORT_URL_UPDATE)),
 ):
     org_id = UUID(current_user["organization_id"])
     return service.update_url(url_id, data, org_id)
@@ -118,7 +124,7 @@ def update_short_url(
 def delete_short_url(
     url_id: UUID,
     service: ShortURLService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(SHORT_URL_DELETE)),
 ):
     org_id = UUID(current_user["organization_id"])
     service.delete_url(url_id, org_id)

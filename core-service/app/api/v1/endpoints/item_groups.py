@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_GROUP_CREATE, ITEM_GROUP_DELETE, ITEM_GROUP_READ, ITEM_GROUP_UPDATE
 from app.models.item_group import ItemGroup
 from app.schemas.common import PaginationMeta
 from app.schemas.item_group import (
@@ -69,7 +70,7 @@ def _build_tax_info(tax_template) -> TaxInfo | None:
 )
 async def create_item_group(
     item_group_data: ItemGroupCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -111,7 +112,7 @@ async def list_item_groups(
     search: str | None = Query(None, description="Search in name, code"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -163,7 +164,7 @@ async def list_item_groups(
     description="Get item groups as a hierarchical tree structure",
 )
 async def get_item_group_tree(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -184,7 +185,7 @@ async def get_item_group_tree(
     description="Get all active item groups in the organization as a flat list",
 )
 async def get_active_item_groups(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -209,7 +210,7 @@ async def get_active_item_groups(
 )
 async def get_item_group(
     item_group_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -240,7 +241,7 @@ async def get_item_group(
 async def update_item_group(
     item_group_id: UUID,
     item_group_data: ItemGroupUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -276,7 +277,7 @@ async def delete_item_group(
     force: bool = Query(
         False, description="Force delete even if has children or items"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -311,7 +312,7 @@ async def delete_item_group(
 )
 async def import_item_groups(
     file: UploadFile = File(..., description="CSV file with item group data"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_CREATE)),
     db: Session = Depends(get_db),
 ) -> ItemGroupImportResponse:
     """

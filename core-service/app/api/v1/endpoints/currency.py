@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import CURRENCY_CREATE, CURRENCY_DELETE, CURRENCY_READ, CURRENCY_UPDATE, EXCHANGE_RATE_CREATE, EXCHANGE_RATE_DELETE, EXCHANGE_RATE_READ, EXCHANGE_RATE_UPDATE
 from app.models.currency_master import CurrencyMaster
 from app.models.exchange_rate import ExchangeRate
 from app.services.currency_service import CurrencyService
@@ -123,7 +124,7 @@ class CurrencyListResponse(BaseModel):
     description="Get the organization's base currency",
 )
 async def get_base_currency(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -160,7 +161,7 @@ async def get_base_currency(
 )
 async def set_base_currency(
     data: BaseCurrencyUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -206,7 +207,7 @@ async def set_base_currency(
     description="Get the list of currencies for the organization",
 )
 async def list_currencies(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -254,7 +255,7 @@ async def list_currencies(
 )
 async def create_currency(
     data: CurrencyCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -311,7 +312,7 @@ async def create_currency(
 )
 async def delete_currency(
     currency_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -366,7 +367,7 @@ async def list_exchange_rates(
     to_currency: str | None = Query(None, description="Filter by target currency"),
     start_date: date | None = Query(None, description="Filter by start date"),
     end_date: date | None = Query(None, description="Filter by end date"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -417,7 +418,7 @@ async def get_exchange_rate(
     from_currency: str,
     to_currency: str,
     effective_date: date | None = Query(None, description="Date for exchange rate"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -471,7 +472,7 @@ async def get_exchange_rate(
 )
 async def create_exchange_rate(
     data: ExchangeRateCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -508,7 +509,7 @@ async def create_exchange_rate(
 async def update_exchange_rate(
     rate_id: UUID,
     data: ExchangeRateUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -549,7 +550,7 @@ async def update_exchange_rate(
 )
 async def delete_exchange_rate(
     rate_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -584,7 +585,7 @@ async def delete_exchange_rate(
 )
 async def convert_currency(
     data: CurrencyConversionRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """

@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import STOCK_ENTRY_CREATE, STOCK_ENTRY_DELETE, STOCK_ENTRY_READ, STOCK_ENTRY_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_entry import (
     StockEntryCreate,
@@ -27,7 +28,7 @@ router = APIRouter()
 @router.post("", response_model=StockEntryResponse, status_code=status.HTTP_201_CREATED)
 async def create_stock_entry(
     data: StockEntryCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a stock entry with optional line items."""
@@ -48,7 +49,7 @@ async def list_stock_entries(
     search: str | None = None,
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_READ)),
     db: Session = Depends(get_db),
 ):
     """List stock entries with filters."""
@@ -75,7 +76,7 @@ async def list_stock_entries(
 @router.get("/{entry_id}", response_model=StockEntryResponse)
 async def get_stock_entry(
     entry_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_READ)),
     db: Session = Depends(get_db),
 ):
     """Get stock entry by ID including line items."""
@@ -88,7 +89,7 @@ async def get_stock_entry(
 async def update_stock_entry(
     entry_id: UUID,
     data: StockEntryUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update stock entry header (draft only)."""
@@ -100,7 +101,7 @@ async def update_stock_entry(
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_stock_entry(
     entry_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a draft stock entry."""
@@ -119,7 +120,7 @@ async def delete_stock_entry(
 async def add_stock_entry_item(
     entry_id: UUID,
     data: StockEntryItemCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Add a line item to a draft stock entry."""
@@ -133,7 +134,7 @@ async def update_stock_entry_item(
     entry_id: UUID,
     item_id: UUID,
     data: StockEntryItemUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a line item in a draft stock entry."""
@@ -146,7 +147,7 @@ async def update_stock_entry_item(
 async def delete_stock_entry_item(
     entry_id: UUID,
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Remove a line item from a draft stock entry."""
@@ -157,7 +158,7 @@ async def delete_stock_entry_item(
 @router.post("/{entry_id}/submit", response_model=StockEntryResponse)
 async def submit_stock_entry(
     entry_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Submit (confirm) a draft stock entry.
@@ -179,7 +180,7 @@ async def submit_stock_entry(
 @router.post("/{entry_id}/reprocess", response_model=StockEntryResponse)
 async def reprocess_stock_entry(
     entry_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Reprocess stock levels for a submitted entry that was confirmed without

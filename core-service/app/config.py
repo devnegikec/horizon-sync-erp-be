@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Identity Service URL (for auth validation and permissions)
     identity_service_url: str = "http://identity-service:8000"
 
+    # Shared secret for internal service-to-service endpoints (identity-service
+    # → core-service). Requests must present this in the X-Internal-Secret
+    # header. Empty disables the check only for local development convenience,
+    # so this MUST be set in deployed environments.
+    internal_service_secret: str = ""
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True

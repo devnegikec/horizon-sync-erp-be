@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import (
+    CurrentUser,
+    require_internal_service,
+    require_permission,
+)
+from app.core.authorization import CHART_OF_ACCOUNT_CREATE
 from app.schemas.chart_of_accounts_setup import (
     DefaultChartSetupRequest,
     DefaultChartSetupResponse,
@@ -27,11 +32,16 @@ router = APIRouter()
     response_model=DefaultChartSetupResponse,
     status_code=status.HTTP_200_OK,
     summary="Create default chart of accounts",
-    description="Create default chart of accounts for an organization. This endpoint is idempotent.",
+    description=(
+        "Create default chart of accounts for an organization. This endpoint is "
+        "idempotent and is called by the Identity Service during organization "
+        "creation. Protected by the X-Internal-Secret shared-secret header."
+    ),
 )
 async def create_default_chart_of_accounts(
     request: DefaultChartSetupRequest,
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_internal_service),
 ):
     """
     Create default chart of accounts for an organization.
@@ -119,7 +129,7 @@ async def create_default_chart_of_accounts(
 async def trigger_default_chart_creation(
     organization_id: UUID,
     request: ManualTriggerRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_CREATE)),
     db: Session = Depends(get_db),
 ):
     """

@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user, require_feature_flag
+from app.dependencies import CurrentUser, require_feature_flag, require_permission
+from app.core.authorization import ANALYTICS_READ
 from app.schemas.analytics import (
     CTABreakdownResponse,
     CTAConfigCreate,
@@ -86,7 +87,7 @@ def record_interaction(
 def list_interactions(
     scan_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     return service.list_interactions(scan_id, current_user.organization_id)
 
@@ -103,7 +104,7 @@ def list_scan_events(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.list_scan_events(
@@ -121,7 +122,7 @@ def get_scan_analytics(
     date_to: datetime | None = Query(None),
     serial_number: str | None = Query(None, description="Filter to a single serial"),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_scan_analytics(org_id, date_from, date_to, serial_number)
@@ -139,7 +140,7 @@ def get_interaction_funnel(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_interaction_funnel(org_id, date_from, date_to)
@@ -154,7 +155,7 @@ def get_cta_breakdown(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_cta_breakdown(org_id, date_from, date_to)
@@ -170,7 +171,7 @@ def get_geo_heatmap(
     date_to: datetime | None = Query(None),
     limit: int = Query(500, ge=1, le=5000),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_geo_heatmap(org_id, date_from, date_to, limit)
@@ -185,7 +186,7 @@ def get_device_timeline(
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_device_timeline(org_id, date_from, date_to)
@@ -204,7 +205,7 @@ def create_cta_config(
     product_id: UUID,
     data: CTAConfigCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     config = service.create_cta_config(data, current_user.organization_id, product_id)
     if config is None:
@@ -220,7 +221,7 @@ def create_cta_config(
 def list_cta_configs(
     product_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     return service.list_cta_configs(current_user.organization_id, product_id)
 
@@ -234,7 +235,7 @@ def get_cta_config(
     product_id: UUID,
     config_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     config = service.get_cta_config(config_id, current_user.organization_id)
     if config is None or config.product_id != product_id:
@@ -252,7 +253,7 @@ def update_cta_config(
     config_id: UUID,
     data: CTAConfigUpdate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     config = service.update_cta_config(
         config_id,
@@ -274,7 +275,7 @@ def delete_cta_config(
     product_id: UUID,
     config_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ) -> None:
     deleted = service.delete_cta_config(
         config_id,
@@ -297,7 +298,7 @@ def delete_cta_config(
 def record_meta_snapshot(
     data: MetaCampaignCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.record_meta_snapshot(data, org_id)
@@ -313,7 +314,7 @@ def list_meta_campaigns(
     page_size: int = Query(20, ge=1, le=100),
     campaign_id: str | None = Query(None, description="Filter by Meta campaign ID"),
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     return service.list_meta_campaigns(org_id, page, page_size, campaign_id)
@@ -327,7 +328,7 @@ def list_meta_campaigns(
 def get_meta_campaign(
     mc_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
 ):
     org_id = current_user.organization_id
     mc = service.get_meta_campaign(mc_id, org_id)

@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.pick_config import catalog_entries
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user, require_permission
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import PICK_SETTING_READ
 from app.schemas.pick_settings import (
     PickConfigCatalogResponse,
     PickSettingsResponse,
@@ -54,7 +55,7 @@ async def get_pick_config_catalog(
     summary="Get effective pick settings for pick execution (any authenticated user)",
 )
 async def get_pick_settings_runtime(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PICK_SETTING_READ)),
     db: Session = Depends(get_db),
 ) -> PickSettingsResponse:
     """Return defaults merged with this organization's overrides.

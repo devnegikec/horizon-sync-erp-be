@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import CUSTOMER_CREATE, CUSTOMER_DELETE, CUSTOMER_READ, CUSTOMER_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.customer import (
     CustomerCreate,
@@ -30,7 +31,7 @@ router = APIRouter()
 )
 async def create_customer(
     customer_data: CustomerCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CUSTOMER_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -74,7 +75,7 @@ async def list_customers(
     search: str | None = Query(None, description="Search in name, code, email, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -121,7 +122,7 @@ async def list_customers(
 )
 async def get_customer(
     customer_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -151,7 +152,7 @@ async def get_customer(
 async def update_customer(
     customer_id: UUID,
     customer_data: CustomerUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CUSTOMER_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -184,7 +185,7 @@ async def update_customer(
 )
 async def delete_customer(
     customer_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CUSTOMER_DELETE)),
     db: Session = Depends(get_db),
 ):
     """

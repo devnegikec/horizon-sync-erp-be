@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import (
+    COMMUNICATION_DELETE,
+    COMMUNICATION_READ,
+    COMMUNICATION_SEND,
+    COMMUNICATION_UPDATE,
+)
 from app.schemas.common import PaginationMeta
 from app.schemas.communication import (
     CommunicationCreate,
@@ -27,7 +33,7 @@ router = APIRouter()
 )
 async def create_communication(
     body: CommunicationCreate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_SEND)),
     db: Session = Depends(get_db),
 ):
     """
@@ -59,7 +65,7 @@ async def list_communications(
     ),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -89,7 +95,7 @@ async def list_communications(
 @router.get("/{communication_id}", response_model=CommunicationResponse)
 async def get_communication(
     communication_id: UUID,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_READ)),
     db: Session = Depends(get_db),
 ):
     """Get communication log by ID."""
@@ -102,7 +108,7 @@ async def get_communication(
 async def update_communication_status(
     communication_id: UUID,
     body: CommunicationStatusUpdate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -124,7 +130,7 @@ async def update_communication_status(
 @router.delete("/{communication_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_communication(
     communication_id: UUID,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete communication log."""
@@ -136,7 +142,7 @@ async def delete_communication(
 @router.post("/send", response_model=SendEmailResponse)
 async def send_email(
     body: SendEmailRequest,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(COMMUNICATION_SEND)),
     db: Session = Depends(get_db),
 ):
     """
