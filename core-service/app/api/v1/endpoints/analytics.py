@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
 from app.dependencies import CurrentUser, require_feature_flag, require_permission
-from app.core.authorization import ANALYTICS_READ
+from app.core.authorization import (
+    ANALYTICS_CREATE,
+    ANALYTICS_DELETE,
+    ANALYTICS_READ,
+    ANALYTICS_UPDATE,
+)
 from app.schemas.analytics import (
     CTABreakdownResponse,
     CTAConfigCreate,
@@ -205,7 +210,7 @@ def create_cta_config(
     product_id: UUID,
     data: CTAConfigCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_CREATE)),
 ):
     config = service.create_cta_config(data, current_user.organization_id, product_id)
     if config is None:
@@ -253,7 +258,7 @@ def update_cta_config(
     config_id: UUID,
     data: CTAConfigUpdate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_UPDATE)),
 ):
     config = service.update_cta_config(
         config_id,
@@ -275,7 +280,7 @@ def delete_cta_config(
     product_id: UUID,
     config_id: UUID,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_DELETE)),
 ) -> None:
     deleted = service.delete_cta_config(
         config_id,
@@ -298,7 +303,7 @@ def delete_cta_config(
 def record_meta_snapshot(
     data: MetaCampaignCreate,
     service: AnalyticsService = Depends(get_service),
-    current_user: CurrentUser = Depends(require_permission(ANALYTICS_READ)),
+    current_user: CurrentUser = Depends(require_permission(ANALYTICS_CREATE)),
 ):
     org_id = current_user.organization_id
     return service.record_meta_snapshot(data, org_id)

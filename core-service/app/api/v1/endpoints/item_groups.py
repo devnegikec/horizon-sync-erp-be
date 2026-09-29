@@ -312,7 +312,7 @@ async def delete_item_group(
 )
 async def import_item_groups(
     file: UploadFile = File(..., description="CSV file with item group data"),
-    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_CREATE)),
+    current_user: CurrentUser = Depends(require_permission(ITEM_GROUP_UPDATE)),
     db: Session = Depends(get_db),
 ) -> ItemGroupImportResponse:
     """

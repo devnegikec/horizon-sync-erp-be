@@ -18,6 +18,7 @@ from app.dependencies import CurrentUser, require_feature_flag, require_permissi
 from app.core.authorization import (
     BANK_ACCOUNT_CREATE,
     BANK_ACCOUNT_DELETE,
+    BANK_ACCOUNT_MANAGE,
     BANK_ACCOUNT_READ,
     BANK_ACCOUNT_UPDATE,
 )

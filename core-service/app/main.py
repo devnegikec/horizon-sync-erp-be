@@ -135,6 +135,21 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
 
+    # Internal service-to-service endpoints require a shared secret. Fail loudly
+    # when it's missing outside development so onboarding calls are not silently
+    # rejected at request time.
+    if not settings.internal_service_secret:
+        if settings.environment == "production":
+            raise RuntimeError(
+                "Critical startup failure: INTERNAL_SERVICE_SECRET is not configured. "
+                "Internal service-to-service endpoints (identity→core onboarding) "
+                "would reject every request."
+            )
+        logger.warning(
+            "INTERNAL_SERVICE_SECRET is empty — internal service-to-service "
+            "endpoints will return 503 until it is configured."
+        )
+
     # Ensure master organization exists and setup customer relationships (Steps 1 & 2)
     skip_master_setup = os.getenv("SKIP_MASTER_ORG_SETUP", "").lower() in (
         "1",

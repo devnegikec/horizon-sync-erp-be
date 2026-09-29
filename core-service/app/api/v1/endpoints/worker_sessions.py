@@ -12,8 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, require_permission
-from app.core.authorization import WAREHOUSE_READ
+from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.worker_session import (
     WorkerSessionLoginRequest,
     WorkerSessionResponse,
@@ -35,7 +34,7 @@ router = APIRouter()
 )
 async def start_worker_session(
     data: WorkerSessionLoginRequest,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -71,7 +70,7 @@ async def start_worker_session(
 )
 async def touch_worker_session(
     session_id: UUID,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -100,7 +99,7 @@ async def touch_worker_session(
 )
 async def end_worker_session(
     session_id: UUID,
-    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """

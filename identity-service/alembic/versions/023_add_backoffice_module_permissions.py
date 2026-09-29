@@ -75,6 +75,22 @@ PERMISSIONS = [
     ("put_away_rule.create", "Create Put-Away Rule", "Add a put-away rule", "put_away_rule", "create", "inventory"),
     ("put_away_rule.update", "Update Put-Away Rule", "Edit a put-away rule", "put_away_rule", "update", "inventory"),
     ("put_away_rule.delete", "Delete Put-Away Rule", "Remove a put-away rule", "put_away_rule", "delete", "inventory"),
+    # Backfill: item_group / batch / serial / chart_of_account CRUD rows that
+    # core-service now enforces but that were never seeded on fresh installs.
+    ("item_group.read", "Read Item Groups", "View item groups", "item_group", "read", "inventory"),
+    ("item_group.create", "Create Item Group", "Add an item group", "item_group", "create", "inventory"),
+    ("item_group.update", "Update Item Group", "Edit an item group", "item_group", "update", "inventory"),
+    ("item_group.delete", "Delete Item Group", "Remove an item group", "item_group", "delete", "inventory"),
+    ("item_group.manage", "Manage Item Groups", "Full item group administration", "item_group", "manage", "inventory"),
+    ("batch.update", "Update Batch", "Edit a batch/lot", "batch", "update", "inventory"),
+    ("batch.delete", "Delete Batch", "Remove a batch/lot", "batch", "delete", "inventory"),
+    ("batch.manage", "Manage Batches", "Full batch administration", "batch", "manage", "inventory"),
+    ("serial.create", "Create Serial", "Create a serial number", "serial", "create", "inventory"),
+    ("serial.update", "Update Serial", "Edit a serial number", "serial", "update", "inventory"),
+    ("serial.delete", "Delete Serial", "Remove a serial number", "serial", "delete", "inventory"),
+    ("serial.manage", "Manage Serials", "Full serial number administration", "serial", "manage", "inventory"),
+    ("chart_of_account.delete", "Delete Chart Of Account", "Remove an account", "chart_of_account", "delete", "accounting"),
+    ("chart_of_account.manage", "Manage Chart Of Accounts", "Full chart of accounts administration", "chart_of_account", "manage", "accounting"),
     # Banking
     ("bank_account.read", "Read Bank Accounts", "View bank accounts and their masked identifiers", "bank_account", "read", "banking"),
     ("bank_account.create", "Create Bank Account", "Add a new bank account", "bank_account", "create", "banking"),
@@ -87,6 +103,9 @@ PERMISSIONS = [
     ("reconciliation.delete", "Delete Reconciliation", "Remove a reconciliation", "reconciliation", "delete", "banking"),
     # Analytics
     ("analytics.read", "Read Analytics", "View analytics dashboards and reports", "analytics", "read", "reporting"),
+    ("analytics.create", "Create Analytics", "Create analytics configurations (CTA, snapshots)", "analytics", "create", "reporting"),
+    ("analytics.update", "Update Analytics", "Edit analytics configurations", "analytics", "update", "reporting"),
+    ("analytics.delete", "Delete Analytics", "Remove analytics configurations", "analytics", "delete", "reporting"),
     # Messaging / Communications
     ("messaging.read", "Read Messaging", "View messaging channels and history", "messaging", "read", "messaging"),
     ("messaging.create", "Create Messaging", "Create message templates", "messaging", "create", "messaging"),

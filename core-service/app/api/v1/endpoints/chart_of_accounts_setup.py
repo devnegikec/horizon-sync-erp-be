@@ -147,6 +147,17 @@ async def trigger_default_chart_creation(
     - 422 Unprocessable Entity: Invalid request data
     - 500 Internal Server Error: Chart creation failed
     """
+    # Tenant isolation: only system admins may trigger chart creation for an
+    # arbitrary organization; org-scoped users are limited to their own org.
+    if (
+        current_user.user_type != "system_admin"
+        and organization_id != current_user.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot create a chart of accounts for another organization",
+        )
+
     if not is_feature_enabled(BOOK_CHART_OF_ACCOUNT_ENABLED, db):
         raise HTTPException(
             status_code=HTTP_FEATURE_DISABLED,

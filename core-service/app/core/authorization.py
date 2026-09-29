@@ -152,6 +152,9 @@ REPORT_READ = "report.read"
 
 # Analytics (module is additionally gated by the analytics feature flag)
 ANALYTICS_READ = "analytics.read"
+ANALYTICS_CREATE = "analytics.create"
+ANALYTICS_UPDATE = "analytics.update"
+ANALYTICS_DELETE = "analytics.delete"
 
 # Banking
 BANK_ACCOUNT_READ = "bank_account.read"
