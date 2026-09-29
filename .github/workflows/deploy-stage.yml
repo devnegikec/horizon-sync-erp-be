@@ -8,6 +8,8 @@ name: Deploy to Railway (Stage)
 #   An authenticated `railway up` uploads source with no commit author, so it is
 #   never gated.
 #
+# Trigger: ANY push/merge to `stage` (no path filter) + manual workflow_dispatch.
+#
 # Requires repo secret: RAILWAY_TOKEN_STAGE  (a BW-staging *project* token)
 # Do NOT reuse the name RAILWAY_TOKEN — that one targets the dev project.
 #
@@ -19,14 +21,6 @@ on:
   push:
     branches:
       - stage
-    paths:
-      - "core-service/**"
-      - "identity-service/**"
-      - "Dockerfile.core"
-      - "Dockerfile.identity"
-      - "Dockerfile.worker"
-      - "railway.toml"
-      - ".github/workflows/deploy-stage.yml"
   workflow_dispatch:
 
 concurrency:
