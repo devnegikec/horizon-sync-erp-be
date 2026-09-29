@@ -35,6 +35,7 @@ from app.api.v1.endpoints import (
     feature_flags_admin,
     floor_plans,
     inbound,
+    internal_feature_flags,
     internal_warehouse_users,
     invoices,
     item_groups,
@@ -285,6 +286,12 @@ api_router.include_router(
 # Internal Warehouse Users (service-to-service, no auth)
 api_router.include_router(
     internal_warehouse_users.router,
+    prefix="",  # No prefix since endpoint already includes /internal
+    tags=["Internal"],
+)
+# Internal feature flag listing (service-to-service, X-Internal-Secret)
+api_router.include_router(
+    internal_feature_flags.router,
     prefix="",  # No prefix since endpoint already includes /internal
     tags=["Internal"],
 )
