@@ -28,7 +28,7 @@ All four are **CNAME**, TTL **300**, zone `ciphercode.ai`.
 | Record name                  | Type  | Value (must include trailing dot in Route 53) |
 | ---------------------------- | ----- | --------------------------------------------- |
 | `app.ciphercode.ai`          | CNAME | `ytn9in59.up.railway.app.`                    |
-| `admin.ciphercode.ai`        | CNAME | `w3o0989o.up.railway.app.`                    |
+| `stage-admin.ciphercode.ai`  | CNAME | `w3o0989o.up.railway.app.`                    |
 | `api.ciphercode.ai`          | CNAME | `smgzukh2.up.railway.app.`                    |
 | `identity-api.ciphercode.ai` | CNAME | `ogrr04jh.up.railway.app.`                    |
 
@@ -72,7 +72,7 @@ python3 - <<'PY'
 import json
 d = json.load(open('/tmp/r53.json'))
 want = {
-    'app.ciphercode.ai.', 'admin.ciphercode.ai.',
+    'app.ciphercode.ai.', 'stage-admin.ciphercode.ai.',
     'api.ciphercode.ai.', 'identity-api.ciphercode.ai.',
     '*.ciphercode.ai.',
 }
@@ -98,7 +98,7 @@ Write `/tmp/railway-cnames.json`:
 
 ```json
 {
-  "Comment": "Railway staging: app/admin/api/identity-api for Horizon Sync BW-staging",
+  "Comment": "Railway staging: app/stage-admin/api/identity-api for Horizon Sync BW-staging",
   "Changes": [
     {
       "Action": "UPSERT",
@@ -112,7 +112,7 @@ Write `/tmp/railway-cnames.json`:
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "admin.ciphercode.ai",
+        "Name": "stage-admin.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
         "ResourceRecords": [{ "Value": "w3o0989o.up.railway.app" }]
@@ -159,7 +159,7 @@ echo "INSYNC"
 ## Step 4 — verify resolution
 
 ```bash
-for H in app admin api identity-api; do
+for H in app stage-admin api identity-api; do
   printf '%-16s ' "$H.ciphercode.ai"
   dig +short CNAME "$H.ciphercode.ai" @8.8.8.8 | tr '\n' ' '
   echo
@@ -170,7 +170,7 @@ Expected (TTL is 300, allow up to ~5 minutes):
 
 ```
 app.ciphercode.ai            ytn9in59.up.railway.app.
-admin.ciphercode.ai          w3o0989o.up.railway.app.
+stage-admin.ciphercode.ai    w3o0989o.up.railway.app.
 api.ciphercode.ai            smgzukh2.up.railway.app.
 identity-api.ciphercode.ai   ogrr04jh.up.railway.app.
 ```
@@ -188,7 +188,7 @@ No action needed; Railway detects the records and provisions certificates (usual
 ```bash
 railway domain status app.ciphercode.ai -s horizon-ui -e staging \
   --project fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
-# repeat for admin.ciphercode.ai (same service),
+# repeat for stage-admin.ciphercode.ai (same service),
 #   api.ciphercode.ai  -> core-service
 #   identity-api.ciphercode.ai -> identity-service
 ```
@@ -197,7 +197,7 @@ Then confirm the hosts actually serve:
 
 ```bash
 curl -sI https://app.ciphercode.ai/healthz        # 200
-curl -sI https://admin.ciphercode.ai/healthz      # 200
+curl -sI https://stage-admin.ciphercode.ai/healthz # 200
 curl -sI https://api.ciphercode.ai/health          # 200
 curl -sI https://identity-api.ciphercode.ai/health # 200
 ```
