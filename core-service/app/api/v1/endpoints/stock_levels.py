@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import STOCK_LEVEL_CREATE, STOCK_LEVEL_READ, STOCK_LEVEL_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_level import (
     StockLevelCreate,
@@ -24,7 +25,7 @@ router = APIRouter()
 @router.post("", response_model=StockLevelResponse, status_code=status.HTTP_201_CREATED)
 async def create_stock_level(
     data: StockLevelCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create or upsert a stock level for an item in a warehouse."""
@@ -42,7 +43,7 @@ async def list_stock_levels(
     search: str | None = Query(None, description="Search by item name or item code"),
     sort_by: str = Query("updated_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_READ)),
     db: Session = Depends(get_db),
 ):
     """List stock levels with filters."""
@@ -67,7 +68,7 @@ async def list_stock_levels(
 async def get_stock_level_by_location(
     item_id: UUID = Query(..., description="Item (product) ID"),
     warehouse_id: UUID = Query(..., description="Warehouse ID"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_READ)),
     db: Session = Depends(get_db),
 ):
     """Get stock level for an item in a warehouse. 404 if not found."""
@@ -79,7 +80,7 @@ async def get_stock_level_by_location(
 @router.get("/{level_id}", response_model=StockLevelResponse)
 async def get_stock_level(
     level_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_READ)),
     db: Session = Depends(get_db),
 ):
     """Get stock level by ID."""
@@ -94,7 +95,7 @@ async def update_stock_level_by_location(
     item_id: UUID = Query(...),
     warehouse_id: UUID = Query(...),
     data: StockLevelUpdate = ...,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update stock level for an item in a warehouse."""
@@ -107,7 +108,7 @@ async def update_stock_level_by_location(
 async def update_stock_level(
     level_id: UUID,
     data: StockLevelUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_LEVEL_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update stock level by ID."""

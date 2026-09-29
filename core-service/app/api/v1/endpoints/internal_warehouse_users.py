@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_internal_service
 from app.services.warehouse_user_service import WarehouseUserService
 
 logger = logging.getLogger(__name__)
@@ -53,13 +54,14 @@ class InternalWarehouseUserResponse(BaseModel):
     description=(
         "Creates a WarehouseUser record linking a user to a warehouse. "
         "Called by the Identity Service during warehouse worker creation. "
-        "No user authentication required — this is an internal endpoint."
+        "Protected by the X-Internal-Secret shared-secret header."
     ),
     tags=["Internal"],
 )
 async def internal_assign_user_to_warehouse(
     request: InternalWarehouseUserCreateRequest,
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_internal_service),
 ) -> InternalWarehouseUserResponse:
     """
     Internal endpoint to assign a user to a warehouse.

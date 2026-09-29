@@ -83,6 +83,7 @@ services:
       # Core Service Integration
       CORE_SERVICE_URL: http://core-service:8001
       CORE_SERVICE_TIMEOUT: 10
+      CORE_SERVICE_SECRET: ${CORE_SERVICE_SECRET:-dev-internal-secret-testing}
       ENABLE_AUTO_CHART_CREATION: ${ENABLE_AUTO_CHART_CREATION:-true}
       CHART_CREATION_RETRY_ATTEMPTS: 3
 
@@ -132,6 +133,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
+      INTERNAL_SERVICE_SECRET: ${CORE_SERVICE_SECRET:-dev-internal-secret-testing}
       IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
       SKIP_MASTER_ORG_SETUP: ${SKIP_MASTER_ORG_SETUP:-false}
       REDIS_URL: redis://redis:6379/0

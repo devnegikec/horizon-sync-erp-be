@@ -10,7 +10,8 @@ from app.core.bulk_operations import (
     BulkImportValidator,
     FileFormat,
 )
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_db, require_permission
+from app.core.authorization import BULK_IMPORT_CREATE, BULK_IMPORT_READ
 from app.schemas.bulk_operations import (
     BulkImportJobDetailResponse,
     BulkImportJobResponse,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/bulk-import", tags=["Bulk Operations"])
 async def upload_import_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_IMPORT_CREATE)),
 ) -> BulkImportJobResponse:
     """
     Upload a file for bulk item import.
@@ -144,7 +145,7 @@ async def upload_import_file(
 async def get_import_job_status(
     job_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_IMPORT_READ)),
 ) -> BulkImportJobDetailResponse:
     """
     Get the status of a bulk import job.
@@ -189,7 +190,7 @@ async def get_import_job_status(
 async def get_import_job_errors(
     job_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_IMPORT_READ)),
 ) -> list[ImportErrorDetail]:
     """
     Get detailed error information for a failed import job.
@@ -236,7 +237,7 @@ async def list_import_jobs(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_IMPORT_READ)),
 ) -> PaginatedBulkImportResponse:
     """
     List bulk import jobs for the current organization.

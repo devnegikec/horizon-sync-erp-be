@@ -14,7 +14,14 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user, require_feature_flag
+from app.dependencies import CurrentUser, require_feature_flag, require_permission
+from app.core.authorization import (
+    BANK_ACCOUNT_CREATE,
+    BANK_ACCOUNT_DELETE,
+    BANK_ACCOUNT_MANAGE,
+    BANK_ACCOUNT_READ,
+    BANK_ACCOUNT_UPDATE,
+)
 from app.models.bank_account import BankAccount
 from app.schemas.bank_account import (
     BankAccountCreate,
@@ -55,7 +62,7 @@ router = APIRouter(
 async def create_bank_account(
     account_id: UUID,
     data: BankAccountCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -112,7 +119,7 @@ async def create_bank_account(
 async def list_bank_accounts_for_gl_account(
     account_id: UUID,
     include_inactive: bool = Query(False, description="Include inactive bank accounts"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -173,7 +180,7 @@ async def list_bank_accounts(
     ),
     is_active: bool | None = Query(None, description="Filter by active status"),
     is_primary: bool | None = Query(None, description="Filter by primary status"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -229,7 +236,7 @@ async def list_bank_accounts_internal(
     page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
     is_active: bool | None = Query(None, description="Filter by active status"),
     is_primary: bool | None = Query(None, description="Filter by primary status"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -285,7 +292,7 @@ async def list_bank_accounts_internal(
 )
 async def get_bank_account(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -328,7 +335,7 @@ async def get_bank_account(
 async def update_bank_account(
     bank_account_id: UUID,
     data: BankAccountUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -387,7 +394,7 @@ async def update_bank_account(
 )
 async def delete_bank_account(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -432,7 +439,7 @@ async def delete_bank_account(
 )
 async def activate_bank_account(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -474,7 +481,7 @@ async def activate_bank_account(
 )
 async def deactivate_bank_account(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -523,7 +530,7 @@ async def deactivate_bank_account(
 )
 async def get_bank_account_history(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -576,7 +583,7 @@ async def get_bank_account_history(
     description="Get summary statistics and overview of all banking accounts",
 )
 async def get_banking_overview(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -622,7 +629,7 @@ async def get_banking_overview(
 async def create_default_bank_account(
     organization_id: UUID,
     skip_on_error: bool = Query(True, description="Skip creation if error occurs"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -713,7 +720,7 @@ async def import_transactions_csv(
     bank_account_id: UUID,
     file: UploadFile = File(..., description="CSV file with transaction data"),
     force_import: bool = Query(False, description="Force import duplicates with is_duplicate flag"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -797,7 +804,7 @@ async def import_transactions_pdf(
     bank_account_id: UUID,
     file: UploadFile = File(..., description="PDF bank statement file"),
     force_import: bool = Query(False, description="Force import duplicates with is_duplicate flag"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -874,7 +881,7 @@ async def import_transactions_mt940(
     bank_account_id: UUID,
     file: UploadFile = File(..., description="MT940 SWIFT format file"),
     force_import: bool = Query(False, description="Force import duplicates with is_duplicate flag"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -970,7 +977,7 @@ async def list_bank_transactions(
     date_from: Optional[str] = Query(None, description="Filter transactions from this date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter transactions to this date (YYYY-MM-DD)"),
     search: Optional[str] = Query(None, description="Search in description or reference"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1103,7 +1110,7 @@ async def list_bank_transactions(
 )
 async def get_bank_account_balance(
     bank_account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BANK_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """

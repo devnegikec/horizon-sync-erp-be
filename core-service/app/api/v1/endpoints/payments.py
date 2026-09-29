@@ -14,7 +14,8 @@ from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import PAYMENT_CREATE, PAYMENT_READ, PAYMENT_UPDATE
 from app.schemas.payment_entry import (
     CancelPaymentRequest,
     PaymentEntryCreate,
@@ -46,7 +47,7 @@ router = APIRouter()
 )
 async def create_payment_entry(
     data: PaymentEntryCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -154,7 +155,7 @@ async def list_payment_entries(
     ),
     sort_by: str = Query("payment_date", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -217,7 +218,7 @@ async def list_payment_entries(
 )
 async def get_payment_entry(
     payment_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -256,7 +257,7 @@ async def get_payment_entry(
 async def update_payment_entry(
     payment_id: UUID,
     data: PaymentEntryUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -346,7 +347,7 @@ async def update_payment_entry(
 )
 async def confirm_payment(
     payment_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -388,7 +389,7 @@ async def confirm_payment(
 async def cancel_payment(
     payment_id: UUID,
     data: CancelPaymentRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -435,7 +436,7 @@ async def cancel_payment(
 async def create_allocation(
     payment_id: UUID,
     data: PaymentReferenceCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -488,7 +489,7 @@ async def create_allocation(
 )
 async def get_payment_allocations(
     payment_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -526,7 +527,7 @@ async def get_payment_allocations(
 )
 async def remove_allocation(
     allocation_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -566,7 +567,7 @@ async def remove_allocation(
 )
 async def generate_receipt(
     payment_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -629,7 +630,7 @@ async def get_reconciliation_report(
         alias="status",
         description="Filter by status: Draft, Confirmed, or Cancelled",
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -691,7 +692,7 @@ async def export_reconciliation_report(
         alias="status",
         description="Filter by status: Draft, Confirmed, or Cancelled",
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PAYMENT_READ)),
     db: Session = Depends(get_db),
 ):
     """

@@ -7,6 +7,8 @@ from uuid import UUID
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,10 @@ class CoreServiceClient:
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+
+    def _internal_headers(self) -> dict:
+        """Shared-secret header required by core-service internal endpoints."""
+        return {"X-Internal-Secret": settings.core_service_secret}
 
     async def assign_user_to_warehouse(
         self,
@@ -63,7 +69,7 @@ class CoreServiceClient:
             "is_primary": False,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=self._internal_headers())
             response.raise_for_status()
             return response.json()
 
@@ -98,7 +104,7 @@ class CoreServiceClient:
             "created_by": created_by,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=self._internal_headers())
             response.raise_for_status()
             return response.json()
 
@@ -215,7 +221,7 @@ class CoreServiceClient:
             "created_by": created_by,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=self._internal_headers())
             response.raise_for_status()
             return response.json()
 

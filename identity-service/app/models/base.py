@@ -99,10 +99,40 @@ class ResourceType(str, enum.Enum):
     CHART_OF_ACCOUNT = "chart_of_account"
     PAYMENT = "payment"
     BILLING = "billing"  # Task 1C-1: System admin billing permissions
+    CURRENCY = "currency"
+    EXCHANGE_RATE = "exchange_rate"
+
+    # Banking
+    BANK_ACCOUNT = "bank_account"
+    RECONCILIATION = "reconciliation"
+
+    # Inventory — extended
+    STOCK_LEVEL = "stock_level"
+    STOCK_SETTINGS = "stock_settings"
+    STOCK_RECONCILIATION = "stock_reconciliation"
+    PUT_AWAY_RULE = "put_away_rule"
 
     # Analytics & Reports
     REPORT = "report"
     REPORTING = "reporting"  # Task 1C-1: System admin reporting permissions
+    ANALYTICS = "analytics"
+
+    # Messaging & Communications
+    MESSAGING = "messaging"
+    COMMUNICATION = "communication"
+
+    # Marketing
+    BRAND_TRUST = "brand_trust"
+    SHORT_URL = "short_url"
+
+    # Data import / export
+    BULK_EXPORT = "bulk_export"
+    BULK_IMPORT = "bulk_import"
+
+    # Taxes & settings
+    CHARGE_TEMPLATE = "charge_template"
+    DOCUMENT_NUMBERING = "document_numbering"
+    PICK_SETTING = "pick_setting"
 
     # General
     SETTING = "setting"
