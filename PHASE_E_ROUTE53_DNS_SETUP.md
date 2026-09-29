@@ -27,9 +27,9 @@ All four are **CNAME**, TTL **300**, zone `ciphercode.ai`.
 
 | Record name                  | Type  | Value (must include trailing dot in Route 53) |
 | ---------------------------- | ----- | --------------------------------------------- |
-| `app.ciphercode.ai`          | CNAME | `ytn9in59.up.railway.app.`                    |
+| `horizon.ciphercode.ai`      | CNAME | `ytn9in59.up.railway.app.`                    |
 | `stage-admin.ciphercode.ai`  | CNAME | `w3o0989o.up.railway.app.`                    |
-| `api.ciphercode.ai`          | CNAME | `smgzukh2.up.railway.app.`                    |
+| `core-api.ciphercode.ai`     | CNAME | `smgzukh2.up.railway.app.`                    |
 | `identity-api.ciphercode.ai` | CNAME | `ogrr04jh.up.railway.app.`                    |
 
 > ⚠️ Each target is **unique per hostname**. Do not point all four at the same value.
@@ -72,8 +72,8 @@ python3 - <<'PY'
 import json
 d = json.load(open('/tmp/r53.json'))
 want = {
-    'app.ciphercode.ai.', 'stage-admin.ciphercode.ai.',
-    'api.ciphercode.ai.', 'identity-api.ciphercode.ai.',
+    'horizon.ciphercode.ai.', 'stage-admin.ciphercode.ai.',
+    'core-api.ciphercode.ai.', 'identity-api.ciphercode.ai.',
     '*.ciphercode.ai.',
 }
 for r in d['ResourceRecordSets']:
@@ -98,12 +98,12 @@ Write `/tmp/railway-cnames.json`:
 
 ```json
 {
-  "Comment": "Railway staging: app/stage-admin/api/identity-api for Horizon Sync BW-staging",
+  "Comment": "Railway staging: horizon/stage-admin/core-api/identity-api for Horizon Sync BW-staging",
   "Changes": [
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "app.ciphercode.ai",
+        "Name": "horizon.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
         "ResourceRecords": [{ "Value": "ytn9in59.up.railway.app" }]
@@ -121,7 +121,7 @@ Write `/tmp/railway-cnames.json`:
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "api.ciphercode.ai",
+        "Name": "core-api.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
         "ResourceRecords": [{ "Value": "smgzukh2.up.railway.app" }]
@@ -159,8 +159,8 @@ echo "INSYNC"
 ## Step 4 — verify resolution
 
 ```bash
-for H in app stage-admin api identity-api; do
-  printf '%-16s ' "$H.ciphercode.ai"
+for H in horizon stage-admin core-api identity-api; do
+  printf '%-24s ' "$H.ciphercode.ai"
   dig +short CNAME "$H.ciphercode.ai" @8.8.8.8 | tr '\n' ' '
   echo
 done
@@ -169,10 +169,10 @@ done
 Expected (TTL is 300, allow up to ~5 minutes):
 
 ```
-app.ciphercode.ai            ytn9in59.up.railway.app.
-stage-admin.ciphercode.ai    w3o0989o.up.railway.app.
-api.ciphercode.ai            smgzukh2.up.railway.app.
-identity-api.ciphercode.ai   ogrr04jh.up.railway.app.
+horizon.ciphercode.ai      ytn9in59.up.railway.app.
+stage-admin.ciphercode.ai  w3o0989o.up.railway.app.
+core-api.ciphercode.ai     smgzukh2.up.railway.app.
+identity-api.ciphercode.ai ogrr04jh.up.railway.app.
 ```
 
 Note: `dig +short CNAME` returning the Railway target is the correct result. A leftover
@@ -186,20 +186,20 @@ No action needed; Railway detects the records and provisions certificates (usual
 1–10 minutes). Check with:
 
 ```bash
-railway domain status app.ciphercode.ai -s horizon-ui -e staging \
+railway domain status horizon.ciphercode.ai -s horizon-ui -e staging \
   --project fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
 # repeat for stage-admin.ciphercode.ai (same service),
-#   api.ciphercode.ai  -> core-service
+#   core-api.ciphercode.ai  -> core-service
 #   identity-api.ciphercode.ai -> identity-service
 ```
 
 Then confirm the hosts actually serve:
 
 ```bash
-curl -sI https://app.ciphercode.ai/healthz        # 200
-curl -sI https://stage-admin.ciphercode.ai/healthz # 200
-curl -sI https://api.ciphercode.ai/health          # 200
-curl -sI https://identity-api.ciphercode.ai/health # 200
+curl -sI https://horizon.ciphercode.ai/healthz      # 200
+curl -sI https://stage-admin.ciphercode.ai/healthz  # 200
+curl -sI https://core-api.ciphercode.ai/health      # 200
+curl -sI https://identity-api.ciphercode.ai/health  # 200
 ```
 
 ---
