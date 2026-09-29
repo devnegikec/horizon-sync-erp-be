@@ -306,15 +306,16 @@ class CoreServiceClient:
     # Feature flags (module gating for role/permission responses)
     # ------------------------------------------------------------------
 
-    async def list_global_feature_flags(self) -> dict[str, bool]:
+    async def list_global_feature_flags(self) -> dict[str, bool] | None:
         """Fetch every GLOBAL feature flag from the Core Service.
 
         Calls GET /api/v1/internal/feature-flags (protected by the shared
         ``X-Internal-Secret`` header) and returns a ``{name: enabled}`` map.
 
         Returns:
-            dict: Flag name → enabled boolean. Empty dict on any error
-            (callers must treat a failed lookup as fail-open).
+            dict: Flag name → enabled boolean, or ``None`` on any error. The
+            ``None`` sentinel lets callers distinguish a transport failure
+            (fail open) from a successful empty listing.
         """
         url = f"{self.base_url}/api/v1/internal/feature-flags"
         try:
@@ -333,4 +334,4 @@ class CoreServiceClient:
                 e,
                 extra={"event": "feature_flags_fetch_error"},
             )
-            return {}
+            return None

@@ -197,6 +197,11 @@ MODULES: list[ModuleDefinition] = [
             ),
             ModuleResource("payment", "Payments", ["read", "create", "update"]),
             ModuleResource(
+                "journal_entry",
+                "Journal Entries",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
                 "currency",
                 "Currencies",
                 ["read", "create", "update", "delete"],

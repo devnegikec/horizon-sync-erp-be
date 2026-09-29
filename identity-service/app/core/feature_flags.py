@@ -58,6 +58,13 @@ RESOURCE_FLAG_MAP: dict[str, str] = {
     "serial": INVENTORY_MODULE_ENABLED,
     "pick_list": INVENTORY_MODULE_ENABLED,
     "asn_order": INVENTORY_MODULE_ENABLED,
+    # WMS operations live inside the Inventory module, so they follow the
+    # inventory flag (``wms_enabled`` is a TENANT-scoped dual-mode flag, not a
+    # GLOBAL module toggle).
+    "receiving_slip": INVENTORY_MODULE_ENABLED,
+    "inbound_exception": INVENTORY_MODULE_ENABLED,
+    "return": INVENTORY_MODULE_ENABLED,
+    "wms": INVENTORY_MODULE_ENABLED,
     # Books / Accounting (incl. banking)
     "chart_of_account": BOOK_CHART_OF_ACCOUNT_ENABLED,
     "payment": BOOK_MODULE_ENABLED,
