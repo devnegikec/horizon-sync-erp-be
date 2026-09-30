@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Optional
 from uuid import UUID
 
 import httpx
@@ -40,18 +39,22 @@ class CoreServiceClient:
         organization_id: UUID,
         warehouse_id: UUID,
         role: str = "operator",
+        is_primary: bool = False,
     ) -> dict:
         """Create a warehouse-user assignment in Core Service.
 
         Calls POST /api/v1/internal/warehouse-users on the Core Service to assign
         a user to a specific warehouse with a given operational role.
         This is a service-to-service endpoint that does not require user auth.
+        Idempotent: an existing active assignment for the same user+warehouse is
+        updated rather than duplicated.
 
         Args:
             user_id: UUID of the user to assign
             organization_id: UUID of the organization
             warehouse_id: UUID of the warehouse
             role: Warehouse role (supervisor, manager, operator, coordinator)
+            is_primary: If True the user sees every warehouse (mother warehouse)
 
         Returns:
             dict: Response from Core Service
@@ -66,12 +69,58 @@ class CoreServiceClient:
             "organization_id": str(organization_id),
             "warehouse_id": str(warehouse_id),
             "role": role,
-            "is_primary": False,
+            "is_primary": is_primary,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, headers=self._internal_headers())
+            response = await client.post(
+                url, json=payload, headers=self._internal_headers()
+            )
             response.raise_for_status()
             return response.json()
+
+    async def get_warehouse_assignments(
+        self,
+        organization_id: UUID | None = None,
+        user_ids: list[UUID] | None = None,
+        warehouse_id: UUID | None = None,
+        is_active: bool = True,
+    ) -> list[dict]:
+        """Read warehouse<->user assignments from Core Service.
+
+        Calls GET /api/v1/internal/warehouse-users. The ``warehouse_users`` table
+        lives in the Core Service database, so this is the only supported way for
+        the Identity Service to read a worker's assigned warehouses.
+
+        Args:
+            organization_id: UUID of the organization (optional; required by the
+                endpoint only when the caller has an organization scope)
+            user_ids: Optional list of user UUIDs to restrict the result to
+            warehouse_id: Optional warehouse UUID to restrict the result to
+            is_active: Filter on the assignment's is_active flag
+
+        Returns:
+            list[dict]: Assignments with user_id, warehouse_id, role,
+            is_primary and is_active. Ordered primary-first.
+
+        Raises:
+            httpx.RequestError: If the request fails due to connection issues
+            httpx.HTTPStatusError: If the response status code indicates an error
+        """
+        url = f"{self.base_url}/api/v1/internal/warehouse-users"
+        params: dict[str, str] = {"is_active": str(is_active).lower()}
+        if organization_id:
+            params["organization_id"] = str(organization_id)
+        if user_ids:
+            params["user_ids"] = ",".join(str(u) for u in user_ids)
+        if warehouse_id:
+            params["warehouse_id"] = str(warehouse_id)
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(
+                url, params=params, headers=self._internal_headers()
+            )
+            response.raise_for_status()
+            return response.json().get("users", [])
 
     # ------------------------------------------------------------------
     # Chart of Accounts
@@ -104,7 +153,9 @@ class CoreServiceClient:
             "created_by": created_by,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, headers=self._internal_headers())
+            response = await client.post(
+                url, json=payload, headers=self._internal_headers()
+            )
             response.raise_for_status()
             return response.json()
 
@@ -114,7 +165,7 @@ class CoreServiceClient:
         currency: str,
         created_by: str,
         max_retries: int = 3,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Attempt to create default chart of accounts with exponential backoff retry.
 
         Args:
@@ -221,7 +272,9 @@ class CoreServiceClient:
             "created_by": created_by,
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, headers=self._internal_headers())
+            response = await client.post(
+                url, json=payload, headers=self._internal_headers()
+            )
             response.raise_for_status()
             return response.json()
 
@@ -231,7 +284,7 @@ class CoreServiceClient:
         base_currency: str,
         created_by: str,
         max_retries: int = 3,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Seed organization defaults with exponential backoff retry.
 
         Args:
