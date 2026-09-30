@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_CREATE, ITEM_DELETE, ITEM_READ, ITEM_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.item_price import (
     ItemPriceBulkCreate,
@@ -32,7 +33,7 @@ router = APIRouter()
 )
 async def create_item_price(
     item_price_data: ItemPriceCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -70,7 +71,7 @@ async def create_item_price(
 )
 async def bulk_create_item_prices(
     bulk_data: ItemPriceBulkCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -114,7 +115,7 @@ async def list_item_prices(
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     include_item: bool = Query(False, description="Include item details"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -169,7 +170,7 @@ async def list_item_prices(
 async def get_item_price(
     item_price_id: UUID,
     include_item: bool = Query(False, description="Include item details"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -203,7 +204,7 @@ async def get_item_price(
 async def update_item_price(
     item_price_id: UUID,
     item_price_data: ItemPriceUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -236,7 +237,7 @@ async def update_item_price(
 )
 async def delete_item_price(
     item_price_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -267,7 +268,7 @@ async def delete_item_price(
 async def get_item_prices_by_item(
     item_id: UUID,
     valid_on: datetime | None = Query(None, description="Filter by validity date"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """

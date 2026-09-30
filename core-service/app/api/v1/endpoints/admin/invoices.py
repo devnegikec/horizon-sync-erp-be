@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.authorization import SYSTEM_ADMIN_BILLING_CREATE, SYSTEM_ADMIN_BILLING_READ
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, require_admin, require_permission
 from app.schemas.admin_invoice import AdminInvoiceListResponse
 from app.schemas.invoice import InvoiceCreate, InvoiceResponse
 from app.schemas.invoice_payment import InvoicePaymentRequest, MarkInvoicePaidRequest
@@ -168,6 +168,7 @@ async def capture_payment_intent(
 @router.post("/debug-payment-data")
 async def debug_payment_data(
     request_data: dict,
+    current_user: CurrentUser = Depends(require_admin),
 ) -> dict:
     """Debug endpoint to see raw payment data format."""
     logger.info(f"=== Debug endpoint called ===")

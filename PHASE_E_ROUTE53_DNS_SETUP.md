@@ -5,6 +5,35 @@ does not touch any existing record.
 
 ---
 
+> ## ⚠️ STATUS: applied — and the hostnames were RENAMED on 2026-09-29
+>
+> The staging stack now lives on:
+>
+> | Host | Serves | CNAME target |
+> | ---- | ------ | ------------ |
+> | `horizon.ciphercode.ai` | platform UI (+ `/inventory/`, `/admin/`) | `0h3c6rcx.up.railway.app.` |
+> | `stage-admin.ciphercode.ai` | admin UI | `k0mxq160.up.railway.app.` |
+> | `core-api.ciphercode.ai` | core-service | `plfiytzz.up.railway.app.` |
+> | `identity-api.ciphercode.ai` | identity-service | `ogrr04jh.up.railway.app.` |
+>
+> The old `app.` / `admin.` / `api.ciphercode.ai` records were **deleted** as part of
+> that rename, so those names fall back to the `*.ciphercode.ai` wildcard again.
+>
+> **Two things the sections below get wrong and you must not copy blindly:**
+> 1. The targets in the tables further down are the **old** hostnames' targets. Railway
+>    issues a **distinct target per hostname** — never reuse another domain's target.
+> 2. Railway now also requires a **TXT ownership record** per custom domain,
+>    `_railway-verify.<host>` = `railway-verify=<token>`, alongside the CNAME. Read both
+>    from `railway domain <host> -s <service> -e staging --project <id>`.
+> 3. `horizon.ciphercode.ai` was previously an alias **A** record to a (since deleted)
+>    `fastapi-alb-new` load balancer. Route 53 will not accept a CNAME while that A
+>    record exists — delete it first.
+>
+> Also apply the domain's port: `railway domain update <host> --port <80|8001|8000>`.
+> Without it the domain has **no port** and backend hosts return **502**.
+
+---
+
 ## Verified facts (checked 2026-09-29)
 
 | Fact                           | Value                                                                                                                                                           |
@@ -23,17 +52,20 @@ record** — other subdomains presumably depend on it.
 
 ## Records to create
 
-All four are **CNAME**, TTL **300**, zone `ciphercode.ai`.
+Superseded by the STATUS block above. The current set is three **CNAME** + three **TXT**
+records at TTL **300** in zone `ciphercode.ai`, plus the unchanged `identity-api` pair:
 
-| Record name                  | Type  | Value (must include trailing dot in Route 53) |
-| ---------------------------- | ----- | --------------------------------------------- |
-| `app.ciphercode.ai`          | CNAME | `ytn9in59.up.railway.app.`                    |
-| `admin.ciphercode.ai`        | CNAME | `w3o0989o.up.railway.app.`                    |
-| `api.ciphercode.ai`          | CNAME | `smgzukh2.up.railway.app.`                    |
-| `identity-api.ciphercode.ai` | CNAME | `ogrr04jh.up.railway.app.`                    |
+| Record name | Type | Value |
+| ----------- | ---- | ----- |
+| `horizon.ciphercode.ai` | CNAME | `0h3c6rcx.up.railway.app.` |
+| `stage-admin.ciphercode.ai` | CNAME | `k0mxq160.up.railway.app.` |
+| `core-api.ciphercode.ai` | CNAME | `plfiytzz.up.railway.app.` |
+| `identity-api.ciphercode.ai` | CNAME | `ogrr04jh.up.railway.app.` |
+| `_railway-verify.<each new host>` | TXT | `"railway-verify=<token from railway domain>"` |
 
-> ⚠️ Each target is **unique per hostname**. Do not point all four at the same value.
-> These values are issued by Railway for these specific domains; do not invent them.
+> ⚠️ Each target is **unique per hostname**. Do not point several hostnames at one value,
+> and never copy a target from a different domain — Railway verifies each hostname against
+> the target it issued for it.
 
 ---
 
@@ -72,8 +104,8 @@ python3 - <<'PY'
 import json
 d = json.load(open('/tmp/r53.json'))
 want = {
-    'app.ciphercode.ai.', 'admin.ciphercode.ai.',
-    'api.ciphercode.ai.', 'identity-api.ciphercode.ai.',
+    'horizon.ciphercode.ai.', 'stage-admin.ciphercode.ai.',
+    'core-api.ciphercode.ai.', 'identity-api.ciphercode.ai.',
     '*.ciphercode.ai.',
 }
 for r in d['ResourceRecordSets']:
@@ -98,33 +130,33 @@ Write `/tmp/railway-cnames.json`:
 
 ```json
 {
-  "Comment": "Railway staging: app/admin/api/identity-api for Horizon Sync BW-staging",
+  "Comment": "Railway staging: horizon/stage-admin/core-api/identity-api for Horizon Sync BW-staging",
   "Changes": [
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "app.ciphercode.ai",
+        "Name": "horizon.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
-        "ResourceRecords": [{ "Value": "ytn9in59.up.railway.app" }]
+        "ResourceRecords": [{ "Value": "0h3c6rcx.up.railway.app" }]
       }
     },
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "admin.ciphercode.ai",
+        "Name": "stage-admin.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
-        "ResourceRecords": [{ "Value": "w3o0989o.up.railway.app" }]
+        "ResourceRecords": [{ "Value": "k0mxq160.up.railway.app" }]
       }
     },
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "api.ciphercode.ai",
+        "Name": "core-api.ciphercode.ai",
         "Type": "CNAME",
         "TTL": 300,
-        "ResourceRecords": [{ "Value": "smgzukh2.up.railway.app" }]
+        "ResourceRecords": [{ "Value": "plfiytzz.up.railway.app" }]
       }
     },
     {
@@ -159,8 +191,8 @@ echo "INSYNC"
 ## Step 4 — verify resolution
 
 ```bash
-for H in app admin api identity-api; do
-  printf '%-16s ' "$H.ciphercode.ai"
+for H in horizon stage-admin core-api identity-api; do
+  printf '%-24s ' "$H.ciphercode.ai"
   dig +short CNAME "$H.ciphercode.ai" @8.8.8.8 | tr '\n' ' '
   echo
 done
@@ -169,10 +201,10 @@ done
 Expected (TTL is 300, allow up to ~5 minutes):
 
 ```
-app.ciphercode.ai            ytn9in59.up.railway.app.
-admin.ciphercode.ai          w3o0989o.up.railway.app.
-api.ciphercode.ai            smgzukh2.up.railway.app.
-identity-api.ciphercode.ai   ogrr04jh.up.railway.app.
+horizon.ciphercode.ai      0h3c6rcx.up.railway.app.
+stage-admin.ciphercode.ai  k0mxq160.up.railway.app.
+core-api.ciphercode.ai     plfiytzz.up.railway.app.
+identity-api.ciphercode.ai ogrr04jh.up.railway.app.
 ```
 
 Note: `dig +short CNAME` returning the Railway target is the correct result. A leftover
@@ -186,20 +218,20 @@ No action needed; Railway detects the records and provisions certificates (usual
 1–10 minutes). Check with:
 
 ```bash
-railway domain status app.ciphercode.ai -s horizon-ui -e staging \
+railway domain status horizon.ciphercode.ai -s horizon-ui -e staging \
   --project fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
-# repeat for admin.ciphercode.ai (same service),
-#   api.ciphercode.ai  -> core-service
+# repeat for stage-admin.ciphercode.ai (same service),
+#   core-api.ciphercode.ai  -> core-service
 #   identity-api.ciphercode.ai -> identity-service
 ```
 
 Then confirm the hosts actually serve:
 
 ```bash
-curl -sI https://app.ciphercode.ai/healthz        # 200
-curl -sI https://admin.ciphercode.ai/healthz      # 200
-curl -sI https://api.ciphercode.ai/health          # 200
-curl -sI https://identity-api.ciphercode.ai/health # 200
+curl -sI https://horizon.ciphercode.ai/healthz      # 200
+curl -sI https://stage-admin.ciphercode.ai/healthz  # 200
+curl -sI https://core-api.ciphercode.ai/health      # 200
+curl -sI https://identity-api.ciphercode.ai/health  # 200
 ```
 
 ---
@@ -213,4 +245,4 @@ curl -sI https://identity-api.ciphercode.ai/health # 200
 3. **Do not add A/AAAA records** for these four names.
 4. **Do not reuse one CNAME value for all four** — each is hostname-specific.
 5. Do not omit the trailing dot mis-match: Route 53 stores values like
-   `ytn9in59.up.railway.app.` (the console/CLI adds it).
+   `0h3c6rcx.up.railway.app.` (the console/CLI adds it).

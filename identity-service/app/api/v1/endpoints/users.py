@@ -12,6 +12,7 @@ from app.core.authorization import (
     validate_user_in_organization,
 )
 from app.core.exceptions import DuplicateEmailException, UserNotFoundException
+from app.core.feature_flags import filter_permission_codes
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.models.base import UserType
@@ -29,6 +30,7 @@ from app.schemas.user import (
     UserStatusCounts,
     UserUpdate,
 )
+from app.services.feature_flag_gate import get_disabled_resource_prefixes
 from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -354,6 +356,10 @@ async def get_my_permissions(
     )
 
     permissions = [code for (code,) in permission_codes if code]
+
+    # Feature-flag gating: drop permissions of disabled modules
+    disabled = await get_disabled_resource_prefixes()
+    permissions = filter_permission_codes(permissions, disabled)
 
     logger.info(
         f"User {current_user.id} has {len(permissions)} permissions "

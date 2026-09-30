@@ -31,14 +31,15 @@
 ### 0.5 Domain — RESOLVED
 
 **`ciphercode.ai` is the base domain** (confirmed 2026-09-28; the earlier "cipercode"
-was a typo). Final hostnames:
+was a typo). Final hostnames (renamed 2026-09-29 — the old `app.`/`admin.`/`api.`
+hostnames were deleted, see `PHASE_E_ROUTE53_DNS_SETUP.md`):
 
-| Host                         | Serves                                   |
-| ---------------------------- | ---------------------------------------- |
-| `app.ciphercode.ai`          | platform UI (+ `/inventory/`, `/admin/`) |
-| `admin.ciphercode.ai`        | admin UI                                 |
-| `api.ciphercode.ai`          | core-service                             |
-| `identity-api.ciphercode.ai` | identity-service                         |
+| Host                          | Serves                                   |
+| ----------------------------- | ---------------------------------------- |
+| `horizon.ciphercode.ai`       | platform UI (+ `/inventory/`, `/admin/`) |
+| `stage-admin.ciphercode.ai`   | admin UI                                 |
+| `core-api.ciphercode.ai`      | core-service                             |
+| `identity-api.ciphercode.ai`  | identity-service                         |
 
 ### 0.6 Service naming caveat (CLI 5.26.1)
 
@@ -582,8 +583,9 @@ cd /Users/devnegi/Documents/www/erpproject/horizon-sync
 railway variable set \
   NX_API_BASE_URL='https://identity-api.ciphercode.ai' \
   NX_API_IDENTITY_URL='https://identity-api.ciphercode.ai' \
-  NX_API_CORE_URL='https://api.ciphercode.ai' \
-  NX_SEARCH_API_BASE_URL='https://api.ciphercode.ai' \
+  NX_API_CORE_URL='https://core-api.ciphercode.ai' \
+  NX_SEARCH_API_BASE_URL='https://core-api.ciphercode.ai' \
+  NX_PLATFORM_APP_URL='https://horizon.ciphercode.ai' \
   NX_NODE_ENV=production \
   PORT=80 \
   -p "$PROJ" -e "$ENV" -s horizon-ui --skip-deploys

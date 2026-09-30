@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import STOCK_SETTINGS_READ, STOCK_SETTINGS_UPDATE
 from app.schemas.stock_settings import (
     StockSettingsCreate,
     StockSettingsResponse,
@@ -17,7 +18,7 @@ router = APIRouter()
 
 @router.get("", response_model=StockSettingsResponse)
 async def get_stock_settings(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_SETTINGS_READ)),
     db: Session = Depends(get_db),
 ):
     """Get stock settings for the current organization. 404 if not created yet."""
@@ -29,7 +30,7 @@ async def get_stock_settings(
 @router.put("", response_model=StockSettingsResponse)
 async def upsert_stock_settings(
     data: StockSettingsUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_SETTINGS_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Create or update stock settings for the current organization (upsert)."""
@@ -43,7 +44,7 @@ async def upsert_stock_settings(
 )
 async def create_stock_settings(
     data: StockSettingsCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_SETTINGS_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Create or overwrite stock settings for the current organization."""

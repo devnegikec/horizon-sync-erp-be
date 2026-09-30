@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import require_internal_service
 from app.services.organization_onboarding_service import OrganizationOnboardingService
 
 logger = logging.getLogger(__name__)
@@ -73,13 +74,15 @@ class OrganizationDefaultsResponse(BaseModel):
     description=(
         "Seeds default currency, UOMs, tax templates, and item groups for a newly "
         "created organization. This endpoint is idempotent and is called by the "
-        "Identity Service during organization creation. No user authentication required."
+        "Identity Service during organization creation. Protected by the "
+        "X-Internal-Secret shared-secret header."
     ),
     tags=["Organization Setup"],
 )
 async def seed_organization_defaults(
     request: OrganizationDefaultsRequest,
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_internal_service),
 ) -> OrganizationDefaultsResponse:
     """
     Seed default master data for a new organization.
