@@ -16,6 +16,12 @@ ITEM_READ = "item.read"
 ITEM_CREATE = "item.create"
 ITEM_UPDATE = "item.update"
 ITEM_DELETE = "item.delete"
+ITEM_MANAGE = "item.manage"
+ITEM_GROUP_READ = "item_group.read"
+ITEM_GROUP_CREATE = "item_group.create"
+ITEM_GROUP_UPDATE = "item_group.update"
+ITEM_GROUP_DELETE = "item_group.delete"
+ITEM_GROUP_MANAGE = "item_group.manage"
 
 # Master data
 CUSTOMER_READ = "customer.read"
@@ -38,15 +44,30 @@ STOCK_ENTRY_UPDATE = "stock_entry.update"
 STOCK_ENTRY_DELETE = "stock_entry.delete"
 BATCH_READ = "batch.read"
 BATCH_CREATE = "batch.create"
-SERIAL_NO_READ = "serial_no.read"
-SERIAL_NO_CREATE = "serial_no.create"
+BATCH_UPDATE = "batch.update"
+BATCH_DELETE = "batch.delete"
+BATCH_MANAGE = "batch.manage"
+SERIAL_READ = "serial.read"
+SERIAL_CREATE = "serial.create"
+SERIAL_UPDATE = "serial.update"
+SERIAL_DELETE = "serial.delete"
+SERIAL_MANAGE = "serial.manage"
+# Legacy aliases — the canonical resource is "serial", not "serial_no".
+SERIAL_NO_READ = SERIAL_READ
+SERIAL_NO_CREATE = SERIAL_CREATE
 STOCK_LEVEL_READ = "stock_level.read"
+STOCK_LEVEL_CREATE = "stock_level.create"
+STOCK_LEVEL_UPDATE = "stock_level.update"
 STOCK_RECONCILIATION_READ = "stock_reconciliation.read"
 STOCK_RECONCILIATION_CREATE = "stock_reconciliation.create"
+STOCK_RECONCILIATION_UPDATE = "stock_reconciliation.update"
+STOCK_RECONCILIATION_DELETE = "stock_reconciliation.delete"
 STOCK_SETTINGS_READ = "stock_settings.read"
 STOCK_SETTINGS_UPDATE = "stock_settings.update"
 PUT_AWAY_RULE_READ = "put_away_rule.read"
 PUT_AWAY_RULE_CREATE = "put_away_rule.create"
+PUT_AWAY_RULE_UPDATE = "put_away_rule.update"
+PUT_AWAY_RULE_DELETE = "put_away_rule.delete"
 
 # Phase 4: Quality
 QUALITY_INSPECTION_READ = "quality_inspection.read"
@@ -76,6 +97,9 @@ INVOICE_CREATE = "invoice.create"
 INVOICE_UPDATE = "invoice.update"
 PAYMENT_READ = "payment.read"
 PAYMENT_CREATE = "payment.create"
+PAYMENT_UPDATE = "payment.update"
+PAYMENT_DELETE = "payment.delete"
+PAYMENT_MANAGE = "payment.manage"
 JOURNAL_ENTRY_READ = "journal_entry.read"
 JOURNAL_ENTRY_CREATE = "journal_entry.create"
 JOURNAL_ENTRY_UPDATE = "journal_entry.update"
@@ -112,6 +136,89 @@ EXCHANGE_RATE_READ = "exchange_rate.read"
 EXCHANGE_RATE_CREATE = "exchange_rate.create"
 EXCHANGE_RATE_UPDATE = "exchange_rate.update"
 EXCHANGE_RATE_DELETE = "exchange_rate.delete"
+
+# Procurement
+PURCHASE_ORDER_READ = "purchase_order.read"
+PURCHASE_ORDER_CREATE = "purchase_order.create"
+PURCHASE_ORDER_UPDATE = "purchase_order.update"
+PURCHASE_ORDER_DELETE = "purchase_order.delete"
+PURCHASE_ORDER_MANAGE = "purchase_order.manage"
+
+# Settings / Reporting
+SETTING_READ = "setting.read"
+SETTING_UPDATE = "setting.update"
+SETTING_MANAGE = "setting.manage"
+REPORT_READ = "report.read"
+
+# Analytics (module is additionally gated by the analytics feature flag)
+ANALYTICS_READ = "analytics.read"
+ANALYTICS_CREATE = "analytics.create"
+ANALYTICS_UPDATE = "analytics.update"
+ANALYTICS_DELETE = "analytics.delete"
+
+# Banking
+BANK_ACCOUNT_READ = "bank_account.read"
+BANK_ACCOUNT_CREATE = "bank_account.create"
+BANK_ACCOUNT_UPDATE = "bank_account.update"
+BANK_ACCOUNT_DELETE = "bank_account.delete"
+BANK_ACCOUNT_MANAGE = "bank_account.manage"
+RECONCILIATION_READ = "reconciliation.read"
+RECONCILIATION_CREATE = "reconciliation.create"
+RECONCILIATION_UPDATE = "reconciliation.update"
+RECONCILIATION_DELETE = "reconciliation.delete"
+
+# QSeal / QR marketing & verification
+QSEAL_READ = "qseal.read"
+QSEAL_CREATE = "qseal.create"
+QSEAL_UPDATE = "qseal.update"
+QSEAL_DELETE = "qseal.delete"
+QSEAL_MANAGE = "qseal.manage"
+LANDING_PAGE_READ = "landing_page.read"
+LANDING_PAGE_CREATE = "landing_page.create"
+LANDING_PAGE_UPDATE = "landing_page.update"
+LANDING_PAGE_DELETE = "landing_page.delete"
+LANDING_PAGE_MANAGE = "landing_page.manage"
+
+# Messaging / Communications
+MESSAGING_READ = "messaging.read"
+MESSAGING_CREATE = "messaging.create"
+MESSAGING_UPDATE = "messaging.update"
+MESSAGING_DELETE = "messaging.delete"
+MESSAGING_SEND = "messaging.send"
+COMMUNICATION_READ = "communication.read"
+COMMUNICATION_CREATE = "communication.create"
+COMMUNICATION_UPDATE = "communication.update"
+COMMUNICATION_DELETE = "communication.delete"
+COMMUNICATION_SEND = "communication.send"
+BRAND_TRUST_READ = "brand_trust.read"
+BRAND_TRUST_CREATE = "brand_trust.create"
+BRAND_TRUST_UPDATE = "brand_trust.update"
+
+# Bulk import / export
+BULK_EXPORT_READ = "bulk_export.read"
+BULK_EXPORT_CREATE = "bulk_export.create"
+BULK_IMPORT_CREATE = "bulk_import.create"
+BULK_IMPORT_READ = "bulk_import.read"
+
+# Tax & charges templates
+CHARGE_TEMPLATE_READ = "charge_template.read"
+CHARGE_TEMPLATE_CREATE = "charge_template.create"
+CHARGE_TEMPLATE_UPDATE = "charge_template.update"
+CHARGE_TEMPLATE_DELETE = "charge_template.delete"
+
+# Short URLs (admin management; resolution is public)
+SHORT_URL_READ = "short_url.read"
+SHORT_URL_CREATE = "short_url.create"
+SHORT_URL_UPDATE = "short_url.update"
+SHORT_URL_DELETE = "short_url.delete"
+
+# Document numbering
+DOCUMENT_NUMBERING_READ = "document_numbering.read"
+DOCUMENT_NUMBERING_UPDATE = "document_numbering.update"
+
+# Pick settings
+PICK_SETTING_READ = "pick_setting.read"
+PICK_SETTING_UPDATE = "pick_setting.update"
 
 # Audit
 AUDIT_READ = "audit.read"

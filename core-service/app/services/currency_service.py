@@ -2,8 +2,9 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from uuid import UUID
 
-from sqlalchemy import and_, desc
+from sqlalchemy import and_, desc, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -93,6 +94,7 @@ class CurrencyService:
         from_currency: str,
         to_currency: str,
         effective_date: date | None = None,
+        organization_id: UUID | None = None,
     ) -> Decimal:
         """
         Get exchange rate between two currencies.
@@ -101,6 +103,8 @@ class CurrencyService:
             from_currency: Source currency code
             to_currency: Target currency code
             effective_date: Date for which to get the rate (defaults to today)
+            organization_id: When provided, scope to this org's rates plus
+                legacy global (NULL) rates, preferring the org-specific one.
 
         Returns:
             Exchange rate as Decimal
@@ -122,18 +126,21 @@ class CurrencyService:
             effective_date = date.today()
 
         # Query for the most recent rate on or before the effective date
-        rate_record = (
-            self.db.query(ExchangeRate)
-            .filter(
-                and_(
-                    ExchangeRate.from_currency == from_currency,
-                    ExchangeRate.to_currency == to_currency,
-                    ExchangeRate.effective_date <= effective_date,
+        query = self.db.query(ExchangeRate).filter(
+            and_(
+                ExchangeRate.from_currency == from_currency,
+                ExchangeRate.to_currency == to_currency,
+                ExchangeRate.effective_date <= effective_date,
+            )
+        )
+        if organization_id is not None:
+            query = query.filter(
+                or_(
+                    ExchangeRate.organization_id == organization_id,
+                    ExchangeRate.organization_id.is_(None),
                 )
             )
-            .order_by(desc(ExchangeRate.effective_date))
-            .first()
-        )
+        rate_record = query.order_by(desc(ExchangeRate.effective_date)).first()
 
         if not rate_record:
             raise ExchangeRateNotFoundException(
@@ -149,6 +156,7 @@ class CurrencyService:
         to_currency: str,
         rate: Decimal,
         effective_date: date,
+        organization_id: UUID | None = None,
     ) -> ExchangeRate:
         """
         Set exchange rate between two currencies.
@@ -158,6 +166,7 @@ class CurrencyService:
             to_currency: Target currency code
             rate: Exchange rate value
             effective_date: Date from which this rate is effective
+            organization_id: Owning organization (tenant scoping)
 
         Returns:
             Created ExchangeRate record
@@ -179,7 +188,7 @@ class CurrencyService:
                 f"Cannot set exchange rate for same currency ({from_currency})"
             )
 
-        # Check if rate already exists for this date
+        # Check if rate already exists for this date and organization.
         existing_rate = (
             self.db.query(ExchangeRate)
             .filter(
@@ -187,6 +196,7 @@ class CurrencyService:
                     ExchangeRate.from_currency == from_currency,
                     ExchangeRate.to_currency == to_currency,
                     ExchangeRate.effective_date == effective_date,
+                    ExchangeRate.organization_id == organization_id,
                 )
             )
             .first()
@@ -201,6 +211,7 @@ class CurrencyService:
 
         # Create new rate
         exchange_rate = ExchangeRate(
+            organization_id=organization_id,
             from_currency=from_currency,
             to_currency=to_currency,
             rate=rate,

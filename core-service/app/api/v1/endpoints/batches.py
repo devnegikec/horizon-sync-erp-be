@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import BATCH_CREATE, BATCH_DELETE, BATCH_READ, BATCH_UPDATE
 from app.schemas.batch import (
     BatchCreate,
     BatchListItem,
@@ -23,7 +24,7 @@ router = APIRouter()
 @router.post("", response_model=BatchResponse, status_code=status.HTTP_201_CREATED)
 async def create_batch(
     data: BatchCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BATCH_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a new batch. Batch number must be unique per item."""
@@ -41,7 +42,7 @@ async def list_batches(
     search: str | None = Query(None),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BATCH_READ)),
     db: Session = Depends(get_db),
 ):
     """List batches with pagination and filters."""
@@ -65,7 +66,7 @@ async def list_batches(
 @router.get("/{batch_id}", response_model=BatchResponse)
 async def get_batch(
     batch_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BATCH_READ)),
     db: Session = Depends(get_db),
 ):
     """Get batch by ID."""
@@ -79,7 +80,7 @@ async def get_batch(
 async def update_batch(
     batch_id: UUID,
     data: BatchUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BATCH_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a batch."""
@@ -92,7 +93,7 @@ async def update_batch(
 @router.delete("/{batch_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_batch(
     batch_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(BATCH_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a batch (hard delete)."""
