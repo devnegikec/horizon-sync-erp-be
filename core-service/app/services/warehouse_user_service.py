@@ -32,7 +32,7 @@ class WarehouseUserService:
                 WarehouseUser.organization_id == organization_id,
                 WarehouseUser.user_id == payload["user_id"],
                 WarehouseUser.warehouse_id == payload["warehouse_id"],
-                WarehouseUser.is_active == True,
+                WarehouseUser.is_active.is_(True),
             )
             .first()
         )
@@ -102,7 +102,7 @@ class WarehouseUserService:
             .join(Warehouse, WarehouseUser.warehouse_id == Warehouse.id)
             .filter(
                 WarehouseUser.organization_id == organization_id,
-                WarehouseUser.is_active == True,
+                WarehouseUser.is_active.is_(True),
             )
         )
         if warehouse_id:
@@ -146,6 +146,36 @@ class WarehouseUserService:
             has_prev=page > 1,
         )
         return items, pagination
+
+    def list_assignments(
+        self,
+        organization_id: UUID,
+        user_ids: list[UUID] | None = None,
+        warehouse_id: UUID | None = None,
+        is_active: bool = True,
+    ) -> list[WarehouseUser]:
+        """Return raw assignments for service-to-service reads.
+
+        Unlike :meth:`get_list` this is unpaginated and returns the ORM rows, so
+        the Identity Service can read worker→warehouse assignments without
+        touching the ``warehouse_users`` table directly (it lives in this
+        service's database).
+
+        Ordering puts ``is_primary`` rows first so the first row for a user is
+        the meaningful one.
+        """
+        query = self.db.query(WarehouseUser).filter(
+            WarehouseUser.organization_id == organization_id,
+            WarehouseUser.is_active == is_active,
+        )
+        if user_ids:
+            query = query.filter(WarehouseUser.user_id.in_(list(user_ids)))
+        if warehouse_id:
+            query = query.filter(WarehouseUser.warehouse_id == warehouse_id)
+
+        return query.order_by(
+            WarehouseUser.is_primary.desc(), WarehouseUser.created_at.asc()
+        ).all()
 
     def get_user_warehouses(
         self,
@@ -192,7 +222,7 @@ class WarehouseUserService:
             omitted for them instead of filtering on ``NULL`` (which would
             silently return nothing).
             """
-            query = self.db.query(Warehouse).filter(Warehouse.is_active == True)
+            query = self.db.query(Warehouse).filter(Warehouse.is_active.is_(True))
             if org_id is not None:
                 query = query.filter(Warehouse.organization_id == org_id)
             warehouses = query.order_by(Warehouse.name).all()
@@ -230,8 +260,8 @@ class WarehouseUserService:
             .filter(
                 WarehouseUser.organization_id == org_id,
                 WarehouseUser.user_id == user_id,
-                WarehouseUser.is_primary == True,
-                WarehouseUser.is_active == True,
+                WarehouseUser.is_primary.is_(True),
+                WarehouseUser.is_active.is_(True),
             )
             .first()
         )
@@ -245,7 +275,7 @@ class WarehouseUserService:
             .filter(
                 WarehouseUser.organization_id == org_id,
                 WarehouseUser.user_id == user_id,
-                WarehouseUser.is_active == True,
+                WarehouseUser.is_active.is_(True),
             )
             .order_by(Warehouse.name)
             .all()
