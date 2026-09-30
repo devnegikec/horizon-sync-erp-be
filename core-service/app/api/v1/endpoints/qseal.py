@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import ANALYTICS_MODULE_ENABLED
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user, require_feature_flag, require_permission
+from app.dependencies import CurrentUser, require_feature_flag, require_permission
+from app.core.authorization import QSEAL_CREATE, QSEAL_READ, QSEAL_UPDATE
 from app.models.product_item import ProductItem
 from app.schemas.qseal import (
     QSealAggregationGroupedResponse,
@@ -306,7 +307,7 @@ def mobile_settings_get(
 def create_parent(
     data: QSealParentCreate,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_CREATE)),
 ):
     org_id = current_user.organization_id
     return service.create_parent(data, org_id)
@@ -324,7 +325,7 @@ def list_parents(
         None, description="Filter by type: shipper, pallet, container"
     ),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     return service.list_parents(org_id, page, page_size, qseal_type)
@@ -338,7 +339,7 @@ def list_parents(
 def get_parent(
     node_id: UUID,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_parent(node_id, org_id)
@@ -357,7 +358,7 @@ def create_child(
     parent_id: UUID,
     data: QSealChildCreate,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_CREATE)),
 ):
     org_id = current_user.organization_id
     return service.create_child(parent_id, data, org_id)
@@ -373,7 +374,7 @@ def list_children(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     return service.list_children(parent_id, org_id, page, page_size)
@@ -391,7 +392,7 @@ def map_children(
     parent_id: UUID,
     req: QSealMapRequest,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_UPDATE)),
 ):
     org_id = current_user.organization_id
     return service.map_children(parent_id, req, org_id)
@@ -673,7 +674,7 @@ def get_qseal_device_analytics(
 def get_labels(
     parent_id: UUID,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_labels(parent_id, org_id)
@@ -690,7 +691,7 @@ def get_labels(
 def get_parent_linked_units(
     parent_id: UUID,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     """Returns parent node + all QSealParameters children linked to it.
 
@@ -713,7 +714,7 @@ def get_block_parents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     return service.get_parents_by_block(block_id, org_id, page, page_size)
@@ -726,7 +727,7 @@ def get_block_parents(
 def download_block_parents(
     block_id: UUID,
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     org_id = current_user.organization_id
     excel_bytes, filename = service.get_parents_excel(block_id, org_id)
@@ -784,7 +785,7 @@ def list_aggregation(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     service: QSealService = Depends(get_service),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(QSEAL_READ)),
 ):
     """Return one row per generated unit with its parent link + activation.
 

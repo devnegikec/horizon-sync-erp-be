@@ -17,7 +17,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import STOCK_RECONCILIATION_CREATE, STOCK_RECONCILIATION_DELETE, STOCK_RECONCILIATION_READ, STOCK_RECONCILIATION_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_reconciliation import (
     ReconciliationUploadPreview,
@@ -53,7 +54,7 @@ router = APIRouter()
 )
 async def download_reconciliation_template(
     warehouse_id: UUID = Query(..., description="Warehouse to generate template for"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """Download a CSV template pre-populated with current stock for the selected warehouse."""
@@ -80,7 +81,7 @@ async def download_reconciliation_template(
 async def upload_reconciliation(
     warehouse_id: str = Form(..., description="Warehouse UUID"),
     file: UploadFile = File(..., description="CSV file with actual_qty filled in"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -124,7 +125,7 @@ async def upload_reconciliation(
 )
 async def confirm_reconciliation(
     reconciliation_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -155,7 +156,7 @@ async def confirm_reconciliation(
 )
 async def create_stock_reconciliation(
     data: StockReconciliationCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a stock reconciliation with optional line items."""
@@ -173,7 +174,7 @@ async def list_stock_reconciliations(
     search: str | None = None,
     sort_by: str = Query("posting_date"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """List stock reconciliations with filters."""
@@ -199,7 +200,7 @@ async def list_stock_reconciliations(
 @router.get("/{rec_id}", response_model=StockReconciliationResponse)
 async def get_stock_reconciliation(
     rec_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_READ)),
     db: Session = Depends(get_db),
 ):
     """Get stock reconciliation by ID including line items."""
@@ -212,7 +213,7 @@ async def get_stock_reconciliation(
 async def update_stock_reconciliation(
     rec_id: UUID,
     data: StockReconciliationUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update stock reconciliation header (draft only)."""
@@ -226,7 +227,7 @@ async def update_stock_reconciliation(
 @router.delete("/{rec_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_stock_reconciliation(
     rec_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a draft stock reconciliation."""
@@ -245,7 +246,7 @@ async def delete_stock_reconciliation(
 async def add_stock_reconciliation_item(
     rec_id: UUID,
     data: StockReconciliationItemCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Add a line item to a draft stock reconciliation."""
@@ -259,7 +260,7 @@ async def update_stock_reconciliation_item(
     rec_id: UUID,
     item_id: UUID,
     data: StockReconciliationItemUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a line item in a draft stock reconciliation."""
@@ -272,7 +273,7 @@ async def update_stock_reconciliation_item(
 async def delete_stock_reconciliation_item(
     rec_id: UUID,
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_RECONCILIATION_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Remove a line item from a draft stock reconciliation."""

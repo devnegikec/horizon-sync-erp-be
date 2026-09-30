@@ -68,7 +68,7 @@ def get_market(
     service: DestinationMarketService = Depends(get_service),
      current_user: CurrentUser = Depends(require_permission("landing.read")),
 ):
-    org_id = UUID(current_user["organization_id"])
+    org_id = current_user.organization_id
     return service.get_market(market_id, org_id)
 
 

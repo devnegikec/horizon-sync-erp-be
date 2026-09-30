@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_CREATE, ITEM_DELETE, ITEM_READ, ITEM_UPDATE
 from app.models.item import Item
 from app.schemas.common import PaginationMeta
 from app.schemas.item import (
@@ -38,7 +39,7 @@ class RejectItemRequest(BaseModel):
 )
 async def create_item(
     item_data: ItemCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -93,7 +94,7 @@ async def list_items(
     ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -171,7 +172,7 @@ async def list_items(
 )
 async def get_item_by_sku(
     sku: str,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """Lookup an item by SKU, item_code, or barcode.
@@ -213,7 +214,7 @@ async def get_item_by_sku(
 )
 async def get_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -256,7 +257,7 @@ async def get_item(
 async def update_item(
     item_id: UUID,
     item_data: ItemUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -289,7 +290,7 @@ async def update_item(
 )
 async def delete_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -318,7 +319,7 @@ async def delete_item(
 )
 async def submit_item_for_approval(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -337,7 +338,7 @@ async def submit_item_for_approval(
 )
 async def approve_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -357,7 +358,7 @@ async def approve_item(
 async def reject_item(
     item_id: UUID,
     body: RejectItemRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -377,7 +378,7 @@ async def reject_item(
 )
 async def get_item_qr_product(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -426,7 +427,7 @@ async def list_item_qr_serials(
     item_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """

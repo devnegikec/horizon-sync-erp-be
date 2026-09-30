@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import PUT_AWAY_RULE_CREATE, PUT_AWAY_RULE_DELETE, PUT_AWAY_RULE_READ, PUT_AWAY_RULE_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away_rule import (
     PutAwayRuleCreate,
@@ -25,7 +26,7 @@ router = APIRouter()
 )
 async def create_put_away_rule(
     data: PutAwayRuleCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PUT_AWAY_RULE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a put away rule."""
@@ -45,7 +46,7 @@ async def list_put_away_rules(
     search: str | None = None,
     sort_by: str = Query("priority"),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PUT_AWAY_RULE_READ)),
     db: Session = Depends(get_db),
 ):
     """List put away rules with filters."""
@@ -71,7 +72,7 @@ async def list_put_away_rules(
 @router.get("/{rule_id}", response_model=PutAwayRuleResponse)
 async def get_put_away_rule(
     rule_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PUT_AWAY_RULE_READ)),
     db: Session = Depends(get_db),
 ):
     """Get put away rule by ID."""
@@ -85,7 +86,7 @@ async def get_put_away_rule(
 async def update_put_away_rule(
     rule_id: UUID,
     data: PutAwayRuleUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PUT_AWAY_RULE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a put away rule."""
@@ -97,7 +98,7 @@ async def update_put_away_rule(
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_put_away_rule(
     rule_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(PUT_AWAY_RULE_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a put away rule."""

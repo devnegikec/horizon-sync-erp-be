@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import STOCK_ENTRY_CREATE, STOCK_ENTRY_READ
 from app.schemas.common import PaginationMeta
 from app.schemas.stock_entry import _resolve_asn_numbers_in_remarks
 from app.schemas.stock_movement import (
@@ -53,7 +54,7 @@ def _resolve_user_names(user_ids: set[str]) -> dict[str, str]:
 )
 async def create_stock_movement(
     data: StockMovementCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Record a stock movement (in, out, transfer, adjustment)."""
@@ -76,7 +77,7 @@ async def list_stock_movements(
     search: str | None = Query(None, description="Search by item name, item code or notes"),
     sort_by: str = Query("performed_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_READ)),
     db: Session = Depends(get_db),
 ):
     """List stock movements with filters."""
@@ -137,7 +138,7 @@ async def list_stock_movements(
 @router.get("/{movement_id}", response_model=StockMovementResponse)
 async def get_stock_movement(
     movement_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(STOCK_ENTRY_READ)),
     db: Session = Depends(get_db),
 ):
     """Get a stock movement by ID."""
