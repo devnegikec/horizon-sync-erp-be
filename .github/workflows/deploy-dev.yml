@@ -1,84 +1,108 @@
 name: Deploy to Railway (Dev)
 
+# Auto-deploys the backend to the BW-dev project's `dev` environment.
+# Trigger: ANY push/merge to `dev`.
+#
+# Requires repo secret: RAILWAY_TOKEN_DEV  (a BW-dev *project* token for the `dev` environment)
+#
+# NOTE: never export a variable called RAILWAY_ENV in this workflow — the Railway
+# CLI reads that name as its own config and every CLI call then fails with
+# "Unauthorized"/"Project not found". We use RW_* names instead.
+#
+# Migrations run inside the container via each service's startCommand
+# (`alembic upgrade heads && uvicorn ...`), so a failed migration blocks startup
+# and fails the deployment. The verification step below enforces that.
+
 on:
   push:
     branches:
       - dev
-    paths:
-      - "identity-service/**"
-      - "core-service/**"
-      # - "search-service/**"
-      # - "nginx-gateway/**"
-      - "docker-compose.yml"
-      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch:
 
 concurrency:
   group: railway-dev
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  RW_PROJECT_ID: d567a56d-48b5-4a48-8a2b-250cb88c4217
+  RW_ENVIRONMENT: dev
 
 jobs:
   deploy:
+    name: Deploy backend services
     runs-on: ubuntu-latest
-    environment:
-      name: dev
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Railway CLI
         run: |
           curl -fsSL https://railway.com/install.sh | sh
-          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
 
-      - name: Deploy Identity Service
-        if: success()
-        run: |
-          railway up ./identity-service \
-            --path-as-root \
-            --service="${{ secrets.RAILWAY_IDENTITY_SERVICE_ID }}" \
-            --detach
+      # identity-service first: core-service validates tokens against it.
+      - name: Deploy identity-service
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      - name: Deploy Core Service
-        if: success()
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
         run: |
-          railway up ./core-service \
-            --path-as-root \
-            --service="${{ secrets.RAILWAY_CORE_SERVICE_ID }}" \
-            --detach
+          railway up \
+            -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s identity-service \
+            -m "dev: ${GITHUB_SHA::7} (identity-service)" -d
+
+      - name: Deploy core-service
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      # - name: Deploy Search Service
-      #   if: success()
-      #   run: |
-      #     railway up ./search-service \
-      #       --path-as-root \
-      #       --service="${{ secrets.RAILWAY_SEARCH_SERVICE_ID }}" \
-      #       --detach
-      #   env:
-      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      # - name: Deploy Nginx Gateway
-      #   if: success()
-      #   run: |
-      #     railway up ./nginx-gateway \
-      #       --path-as-root \
-      #       --service="${{ secrets.RAILWAY_NGINX_SERVICE_ID }}" \
-      #       --detach
-      #   env:
-      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-      - name: Deployment Summary
-        if: always()
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
         run: |
-          echo "### 🚀 Railway Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Identity Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Core Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Dashboard**: https://railway.com/dashboard" >> $GITHUB_STEP_SUMMARY
+          railway up \
+            -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s core-service \
+            -m "dev: ${GITHUB_SHA::7} (core-service)" -d
+
+      - name: Deploy qr-worker
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
+        run: |
+          railway up \
+            -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s qr-worker \
+            -m "dev: ${GITHUB_SHA::7} (qr-worker)" -d
+
+      - name: Verify every deployment reached SUCCESS
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
+        run: |
+          set -uo pipefail
+          failed=""
+          for svc in identity-service core-service qr-worker; do
+            echo "::group::verifying $svc"
+            ok=0
+            for i in $(seq 1 60); do
+              status=$(railway deployment list \
+                -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s "$svc" --json 2>/dev/null \
+                | python3 -c "import sys,json;d=json.load(sys.stdin);print((d[0] if isinstance(d,list) and d else {}).get('status',''))" \
+                2>/dev/null || echo "")
+              echo "$svc attempt $i/60: ${status:-<no status>}"
+              case "$status" in
+                SUCCESS) ok=1; break ;;
+                FAILED|CRASHED|REMOVED) echo "::error::$svc deployment is $status"; break ;;
+              esac
+              sleep 15
+            done
+            [ "$ok" = "1" ] || failed="$failed $svc"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::deployments did not reach SUCCESS:$failed"
+            exit 1
+          fi
+          echo "✅ all backend services deployed successfully"
+
+      - name: Dump deploy logs on failure
+        if: failure()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
+        run: |
+          for svc in identity-service core-service qr-worker; do
+            echo "=============== $svc (last 100 deploy log lines) ==============="
+            railway logs -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s "$svc" -d -n 100 || true
+          done
