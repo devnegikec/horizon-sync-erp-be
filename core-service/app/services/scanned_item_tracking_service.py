@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ValidationError
 from app.models.scanned_item_tracking import ScannedItemTracking
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ class ScannedItemTrackingService:
         scan_item_id: UUID,
         qr_identifier: str,
         item_id: UUID,
+        product_item_id: UUID | None = None,
         sku: str,
         quantity: int = 1,
         batch_number: str | None = None,
@@ -85,6 +87,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=scan_item_id,
             qr_identifier=qr_identifier,
             item_id=item_id,
+            product_item_id=product_item_id,
             sku=sku,
             batch_number=batch_number,
             quantity=quantity,
@@ -179,6 +182,22 @@ class ScannedItemTrackingService:
                 f"No Item found for QR id='{payload.id}' sku='{payload.sku}'"
             )
 
+        # T1.3 — resolve the ProductItem key for the unit serial (best effort).
+        product_item_id = None
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if product_item is not None:
+            product_item_id = product_item.id
+
         tracking = ScannedItemTracking(
             organization_id=organization_id,
             warehouse_id=warehouse_id,
@@ -186,6 +205,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=None,
             qr_identifier=payload.id,
             item_id=item.id,
+            product_item_id=product_item_id,
             sku=item.sku or item.item_code or payload.sku,
             batch_number=payload.batch,
             quantity=payload.qty or 1,
@@ -278,6 +298,7 @@ class ScannedItemTrackingService:
         putaway_by: UUID,
         put_away_list_id: UUID | None = None,
         put_away_item_id: UUID | None = None,
+        quantity: int | None = None,
     ) -> ScannedItemTracking:
         """Complete put-away for an item. Tries to enter stock if receiving is also done."""
         tracking = (
@@ -289,6 +310,17 @@ class ScannedItemTrackingService:
 
         if not tracking:
             raise ValueError(f"No tracking found for QR: {qr_identifier}")
+
+        if quantity is not None:
+            if quantity < 1:
+                raise ValidationError("Put-away quantity must be at least 1")
+            stored_qty = int(tracking.quantity or 0)
+            if quantity > stored_qty:
+                raise ValidationError(
+                    f"Cannot put away {quantity} unit(s): only {stored_qty} "
+                    f"received for QR '{qr_identifier}'"
+                )
+            tracking.quantity = quantity
 
         ok, err = self.can_put_away(qr_identifier)
         if not ok:

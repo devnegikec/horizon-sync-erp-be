@@ -100,6 +100,32 @@ class ItemPackagingDetails(BaseModel):
     height_mm: Decimal | None = Field(None, ge=0)
     weight_grams: Decimal | None = Field(None, ge=0)
 
+    # Master-carton (MC) overrides & estimation knobs. When omitted, the MC
+    # outer dimensions are estimated from the base-unit dims using the fill
+    # factor and wall thickness below.
+    master_pack_unit_name: str | None = Field(None, max_length=100)
+    master_pack_length_mm: Decimal | None = Field(None, ge=0)
+    master_pack_width_mm: Decimal | None = Field(None, ge=0)
+    master_pack_height_mm: Decimal | None = Field(None, ge=0)
+    master_pack_weight_grams: Decimal | None = Field(None, ge=0)
+    master_pack_fill_factor: Decimal = Field(
+        Decimal("0.75"),
+        gt=0,
+        le=1,
+        description="Packing efficiency used to estimate MC outer volume from base dims",
+    )
+    master_pack_wall_thickness_mm: Decimal = Field(
+        Decimal("3"),
+        ge=0,
+        description="Carton wall thickness per side added when estimating MC dims",
+    )
+    master_pack_void_fill_pct: Decimal = Field(
+        Decimal("0.10"),
+        ge=0,
+        le=1,
+        description="Extra volume allowance (fraction) for dunnage/bubble wrap added when estimating MC dims",
+    )
+
 
 class ItemCreate(ItemBase):
     """Schema for creating a new item"""

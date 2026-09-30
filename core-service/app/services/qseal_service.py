@@ -6,8 +6,13 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.product_item import ProductItem
+from app.models.qr_block import QRBlock
+from app.models.qr_scan_event import QRScanEvent
+from app.models.qseal import QSealParameters
 from app.repositories.qseal_repository import QSealRepository
 from app.schemas.qseal import (
     QSealChildCreate,
@@ -15,6 +20,8 @@ from app.schemas.qseal import (
     QSealParentCreate,
     QSealScanRequest,
 )
+from app.services.qseal_suspicion_service import QSealSuspicionService
+from app.services.user_agent_service import parse_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +30,7 @@ class QSealService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = QSealRepository(db)
+        self.suspicion_service = QSealSuspicionService(db)
 
     def _to_response_dict(self, node) -> dict:
         return {
@@ -189,18 +197,28 @@ class QSealService:
 
     # ── QSeal Scan ────────────────────────────────────────────────────────────
 
-    def record_scan(self, req: QSealScanRequest, organization_id: UUID):
+    def record_scan(
+        self,
+        req: QSealScanRequest,
+        organization_id: UUID,
+        request_headers: dict | None = None,
+        client_ip: str | None = None,
+    ):
+        """Resolve and record a QSeal scan for client-facing analytics.
+
+        Every accepted or rejected serial creates an event. Rejected events
+        are intentionally retained so clients can see invalid/inactive scan
+        activity instead of treating it as missing data.
+        """
         # Resolve the QSealTrack parent strictly within the supplied tenant.
         # The /scan endpoint is public and organization_id is caller-supplied,
         # so a global fallback here would let a caller resolve (and expose)
         # another tenant's QSeal node.
         node = self.repo.get_by_serial(req.serial_number, organization_id)
-        is_parent = True
 
         # 2. Fallback: try QSealParameters (child units from ProductItems)
+        child = None
         if not node:
-            from app.models.qseal import QSealParameters
-
             child = (
                 self.db.query(QSealParameters)
                 .filter(
@@ -209,52 +227,16 @@ class QSealService:
                 )
                 .first()
             )
-            if child:
-                is_parent = False
-                # Build a pseudo-node response with parent info
-                parent_node = None
-                parent_serial = None
-                if child.parent_id:
-                    parent_node = self.repo.get_by_id(child.parent_id, organization_id)
-                    parent_serial = parent_node.serial_number if parent_node else None
 
-                # Record scan event
-                scan_payload = {
-                    "organization_id": organization_id,
-                    "serial_number": req.serial_number,
-                    "scan_timestamp": datetime.now(UTC),
-                    "device_type": req.device_type,
-                    "os": req.os,
-                    "browser": req.browser,
-                    "ip_address": req.ip_address,
-                    "latitude": req.latitude,
-                    "longitude": req.longitude,
-                    "city": req.city,
-                    "state": req.state,
-                    "country": req.country,
-                    "extra_data": req.extra_data,
-                }
-                self.repo.record_scan(scan_payload)
-
-                logger.info(
-                    "[QSEAL] child scan recorded serial=%s org=%s parent=%s",
-                    req.serial_number,
-                    organization_id,
-                    parent_serial,
-                )
-                return {
-                    "node_id": child.id,
-                    "serial_number": child.serial_number,
-                    "qseal_type": "child_unit",
-                    "name": f"Unit {child.serial_number or ''}",
-                    "parent_id": child.parent_id,
-                    "parent_serial": parent_serial,
-                    "children_count": 0,
-                    "message": f"Child QSeal unit scanned. Parent: {parent_serial or 'none'}.",
-                }
-
-        # 3. Not found in either table
-        if not node:
+        # 3. Not found in either table. Keep the rejected scan for analytics.
+        if not node and not child:
+            self._record_scan_event(
+                req,
+                organization_id,
+                verification_status="not_found",
+                request_headers=request_headers,
+                client_ip=client_ip,
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
@@ -263,23 +245,41 @@ class QSealService:
                 ),
             )
 
-        # Record scan for parent node
-        scan_payload = {
-            "organization_id": organization_id,
-            "serial_number": req.serial_number,
-            "scan_timestamp": datetime.now(UTC),
-            "device_type": req.device_type,
-            "os": req.os,
-            "browser": req.browser,
-            "ip_address": req.ip_address,
-            "latitude": req.latitude,
-            "longitude": req.longitude,
-            "city": req.city,
-            "state": req.state,
-            "country": req.country,
-            "extra_data": req.extra_data,
-        }
-        self.repo.record_scan(scan_payload)
+        # 4. Record a valid parent or child scan with the resolved context.
+        event = self._record_scan_event(
+            req,
+            organization_id,
+            node=node,
+            verification_status="valid",
+            request_headers=request_headers,
+            client_ip=client_ip,
+        )
+
+        if child:
+            parent_node = None
+            parent_serial = None
+            if child.parent_id:
+                parent_node = self.repo.get_by_id(child.parent_id, organization_id)
+                parent_serial = parent_node.serial_number if parent_node else None
+
+            logger.info(
+                "[QSEAL] child scan recorded serial=%s org=%s parent=%s",
+                req.serial_number,
+                organization_id,
+                parent_serial,
+            )
+            return {
+                "node_id": child.id,
+                "serial_number": child.serial_number,
+                "qseal_type": "child_unit",
+                "name": f"Unit {child.serial_number or ''}",
+                "parent_id": child.parent_id,
+                "parent_serial": parent_serial,
+                "children_count": 0,
+                "message": f"Child QSeal unit scanned. Parent: {parent_serial or 'none'}.",
+                "scan_event_id": event.id,
+                "verification_status": event.verification_status,
+            }
 
         children_count = self.repo.count_children(node.id)
         logger.info(
@@ -297,7 +297,172 @@ class QSealService:
             "parent_id": node.parent_id,
             "children_count": children_count,
             "message": f"QSeal scan recorded for {node.qseal_type or 'node'} '{node.name}'.",
+            "scan_event_id": event.id,
+            "verification_status": event.verification_status,
         }
+
+    def _record_scan_event(
+        self,
+        req: QSealScanRequest,
+        organization_id: UUID,
+        *,
+        node=None,
+        verification_status: str,
+        request_headers: dict | None = None,
+        client_ip: str | None = None,
+    ) -> QRScanEvent:
+        """Persist a QSeal scan and its product/batch context."""
+        headers = request_headers or {}
+        user_agent = headers.get("user-agent")
+        parsed_agent = parse_user_agent(user_agent)
+        child = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.serial_number == req.serial_number,
+                QSealParameters.organization_id == organization_id,
+            )
+            .first()
+        )
+        item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == req.serial_number,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+        product_id = child.product_id if child else (item.product_id if item else None)
+        block_id = child.block_id if child else (item.block_id if item else None)
+
+        # Auto-linked master-pack parents do not carry product/block fields on
+        # QSealTrack. Infer them only when all directly linked units agree;
+        # mixed-content parents remain intentionally unscoped.
+        if node and not child and not product_id:
+            linked_params = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.parent_id == node.id,
+                    QSealParameters.organization_id == organization_id,
+                )
+                .all()
+            )
+            product_ids = {
+                param.product_id for param in linked_params if param.product_id
+            }
+            block_ids = {param.block_id for param in linked_params if param.block_id}
+            if len(product_ids) == 1:
+                product_id = next(iter(product_ids))
+            if len(block_ids) == 1:
+                block_id = next(iter(block_ids))
+
+        batch = None
+        if block_id:
+            block = (
+                self.db.query(QRBlock)
+                .filter(
+                    QRBlock.id == block_id,
+                    QRBlock.organization_id == organization_id,
+                )
+                .first()
+            )
+            batch = block.batch if block else None
+
+        qseal_type = (
+            "child_unit"
+            if child
+            else (node.qseal_type if node and node.qseal_type else "unknown")
+        )
+        payload = {
+            "organization_id": organization_id,
+            "product_item_id": item.id if item else None,
+            "product_id": product_id,
+            "block_id": block_id,
+            "qseal_track_id": node.id if node else None,
+            "qseal_parameter_id": child.id if child else None,
+            "serial_number": req.serial_number,
+            "batch": batch,
+            "qseal_type": qseal_type,
+            "scan_timestamp": datetime.now(UTC),
+            "verification_status": verification_status,
+            "device_type": req.device_type or (parsed_agent or {}).get("device_type"),
+            "os": req.os or (parsed_agent or {}).get("os"),
+            "browser": req.browser or (parsed_agent or {}).get("browser"),
+            "user_agent_raw": user_agent,
+            "user_agent_parsed": parsed_agent,
+            # Prefer the server-observed client IP so a public caller cannot
+            # spoof unique sources through the request body and evade the
+            # high-volume suspicion rule.
+            "ip_address": client_ip or req.ip_address,
+            "latitude": req.latitude,
+            "longitude": req.longitude,
+            "city": req.city,
+            "state": req.state,
+            "country": req.country,
+            "street_address": req.street_address,
+            "referrer_url": headers.get("referer"),
+            "language": (headers.get("accept-language") or "")[:10] or None,
+            "is_bot": bool(parsed_agent and parsed_agent.get("is_bot")),
+            "extra_data": req.extra_data,
+        }
+
+        # Suspicion is recorded as a review signal. It never blocks the scan
+        # response, so a client can still see the verification result while
+        # the tenant gets an actionable explanation in Analytics.
+        try:
+            payload.update(self.suspicion_service.assess(payload))
+        except StopIteration:
+            # Test doubles and partially configured adapters may not expose
+            # the optional historical lookup; use the same safe baseline.
+            logger.debug(
+                "[QSEAL] suspicious scan history lookup unavailable serial=%s",
+                req.serial_number,
+            )
+            payload.update(
+                {
+                    "is_suspicious": False,
+                    "risk_score": 0,
+                    "suspicious_reasons": [],
+                    "review_status": "not_flagged",
+                    "flagged_at": None,
+                }
+            )
+        except Exception:
+            # Suspicion enrichment must never make the public scan endpoint
+            # unavailable. A failed statement can leave the session unusable,
+            # so roll back before continuing; the event is still retained with
+            # a safe baseline and can be re-evaluated by a later backfill job.
+            self.db.rollback()
+            logger.exception(
+                "[QSEAL] suspicious scan assessment failed serial=%s org=%s",
+                req.serial_number,
+                organization_id,
+            )
+            payload.update(
+                {
+                    "is_suspicious": False,
+                    "risk_score": 0,
+                    "suspicious_reasons": [],
+                    "review_status": "not_flagged",
+                    "flagged_at": None,
+                }
+            )
+
+        if item and verification_status == "valid":
+            # Keep the existing operational counter in sync with the event
+            # stream used by the QSeal aggregation view. Increment in the
+            # database so concurrent scans of the same serial cannot lose an
+            # update to a read-modify-write race.
+            self.db.query(ProductItem).filter(ProductItem.id == item.id).update(
+                {ProductItem.scan_count: func.coalesce(ProductItem.scan_count, 0) + 1},
+                synchronize_session=False,
+            )
+            item.last_scanned_at = payload["scan_timestamp"]
+            if payload["is_suspicious"]:
+                item.is_suspicious = True
+
+        return self.repo.record_scan(payload)
 
     # ── QSeal History ─────────────────────────────────────────────────────────
 
@@ -307,14 +472,123 @@ class QSealService:
         serial_number: str | None = None,
         page: int = 1,
         page_size: int = 50,
+        date_from=None,
+        date_to=None,
+        product_id: UUID | None = None,
+        block_id: UUID | None = None,
+        batch: str | None = None,
+        qseal_type: str | None = None,
+        risk_filter: str | None = None,
     ):
+        self._validate_analytics_range(date_from, date_to, risk_filter)
         items, total = self.repo.list_scan_history(
-            organization_id, serial_number, page, page_size
+            organization_id,
+            serial_number,
+            page,
+            page_size,
+            date_from,
+            date_to,
+            product_id,
+            block_id,
+            batch,
+            qseal_type,
+            risk_filter,
         )
         return {
             "events": items,
             "pagination": self._paginate(items, total, page, page_size),
         }
+
+    # ── Client-facing analytics ──────────────────────────────────────────────
+
+    @staticmethod
+    def _validate_analytics_range(date_from, date_to, risk_filter=None):
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="date_from must be earlier than or equal to date_to",
+            )
+        if risk_filter not in (None, "all", "suspicious", "high_risk", "unreviewed"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="risk_filter must be all, suspicious, high_risk, or unreviewed",
+            )
+
+    def get_scan_analytics_summary(self, organization_id: UUID, **filters):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_scan_summary(organization_id, **filters)
+
+    def get_scan_analytics_trends(self, organization_id: UUID, **filters):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_scan_trends(organization_id, **filters)
+
+    def get_product_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_product_analytics(organization_id, limit=limit, **filters)
+
+    def get_geography_scan_analytics(
+        self, organization_id: UUID, limit: int = 500, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_geography_analytics(
+            organization_id, limit=limit, **filters
+        )
+
+    def get_device_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_device_analytics(organization_id, limit=limit, **filters)
+
+    def get_suspicious_scan_analytics(
+        self,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 50,
+        review_status: str | None = None,
+        limit_score: int | None = None,
+        **filters,
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        items, total = self.repo.list_suspicious_scans(
+            organization_id,
+            page=page,
+            page_size=page_size,
+            review_status=review_status,
+            limit_score=limit_score,
+            **filters,
+        )
+        return {
+            "items": items,
+            "pagination": self._paginate(items, total, page, page_size),
+        }
+
+    def review_suspicious_scan(
+        self, event_id: UUID, organization_id: UUID, review_status: str
+    ):
+        event = self.repo.update_suspicious_review(
+            event_id, organization_id, review_status
+        )
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Suspicious QSeal scan not found",
+            )
+        return event
 
     # ── Label Download ────────────────────────────────────────────────────────
 

@@ -27,6 +27,10 @@ class BinCapacityResponse(BaseModel):
     full_path: str | None = None
     volume: VolumeCapacity
     weight: WeightCapacity
+    unit_count: Decimal = Decimal("0")
+    master_pack_count: Decimal = Decimal("0")
+    count_capacity: Decimal | None = None
+    count_pct: Decimal | None = None
     binding_pct: Decimal
     bin_state: str
     is_available: bool
@@ -41,6 +45,10 @@ class CapacityTreeNode(BaseModel):
     full_path: str | None = None
     volume: VolumeCapacity
     weight: WeightCapacity
+    unit_count: Decimal = Decimal("0")
+    master_pack_count: Decimal = Decimal("0")
+    count_capacity: Decimal | None = None
+    count_pct: Decimal | None = None
     binding_pct: Decimal | None = None
     bin_state: str | None = None
     is_available: bool | None = None

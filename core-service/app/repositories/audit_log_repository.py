@@ -11,6 +11,8 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.audit_modules import table_to_module
+
 
 class AuditLogRepository:
     def __init__(self, db: Session):
@@ -23,6 +25,8 @@ class AuditLogRepository:
         record_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         action: str | None = None,
+        role: str | None = None,
+        table_names: list[str] | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         changed_field: str | None = None,
@@ -45,6 +49,15 @@ class AuditLogRepository:
             where_clauses.append("al.table_name = :table_name")
             params["table_name"] = table_name
 
+        if table_names is not None:
+            if table_names:
+                placeholders = ", ".join(f":tn_{i}" for i in range(len(table_names)))
+                where_clauses.append(f"al.table_name IN ({placeholders})")
+                for i, tn in enumerate(table_names):
+                    params[f"tn_{i}"] = tn
+            else:
+                where_clauses.append("1=0")
+
         if record_id:
             where_clauses.append("al.record_id = :record_id")
             params["record_id"] = record_id
@@ -56,6 +69,10 @@ class AuditLogRepository:
         if action:
             where_clauses.append("al.action = :action")
             params["action"] = action
+
+        if role:
+            where_clauses.append("al.role = :role")
+            params["role"] = role
 
         if date_from:
             where_clauses.append("al.created_at >= :date_from")
@@ -86,7 +103,7 @@ class AuditLogRepository:
         rows = self.db.execute(
             text(
                 f"""
-                SELECT al.id, al.user_id, al.organization_id, al.action,
+                SELECT al.id, al.user_id, al.organization_id, al.action, al.role,
                        al.table_name, al.record_id, al.old_values, al.new_values,
                        al.changed_fields, al.ip_address, al.created_at
                 FROM audit_logs al
@@ -150,7 +167,7 @@ class AuditLogRepository:
         rows = self.db.execute(
             text(
                 f"""
-                SELECT al.id, al.user_id, al.organization_id, al.action,
+                SELECT al.id, al.user_id, al.organization_id, al.action, al.role,
                        al.table_name, al.record_id, al.old_values, al.new_values,
                        al.changed_fields, al.ip_address, al.created_at
                 FROM audit_logs al
@@ -171,6 +188,8 @@ class AuditLogRepository:
             "user_id": row.user_id,
             "organization_id": row.organization_id,
             "action": row.action,
+            "role": row.role,
+            "module": table_to_module(row.table_name),
             "table_name": row.table_name,
             "record_id": row.record_id,
             "old_values": row.old_values,

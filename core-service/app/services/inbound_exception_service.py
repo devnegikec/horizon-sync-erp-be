@@ -94,14 +94,20 @@ class InboundExceptionService:
             return "hold"
         return cls.DESTINATION_RECEIVING_STATUS.get(destination.strip().upper(), "hold")
 
-    def assert_manager(self, user, warehouse_id: UUID) -> None:
-        """Require a warehouse manager or an organization/system-level superior."""
+    def is_manager(self, user, warehouse_id: UUID) -> bool:
+        """Return True when *user* may approve for *warehouse_id*.
+
+        Organization/system admins and holders of ``*.*`` or
+        ``warehouse.manage`` qualify organization-wide; everyone else needs an
+        active ``manager`` assignment for that specific warehouse.
+        """
+        permissions = getattr(user, "permissions", None) or []
         if (
-            user.user_type in {"system_admin", "organization_admin"}
-            or "*.*" in user.permissions
-            or "warehouse.manage" in user.permissions
+            getattr(user, "user_type", None) in {"system_admin", "organization_admin"}
+            or "*.*" in permissions
+            or "warehouse.manage" in permissions
         ):
-            return
+            return True
         assignment = (
             self.db.query(WarehouseUser)
             .filter(
@@ -113,12 +119,17 @@ class InboundExceptionService:
             )
             .first()
         )
-        if assignment is None:
-            raise StateError(
-                message="Warehouse Manager approval is required for this exception disposition",
-                current_state="not_manager",
-                required_state=["manager"],
-            )
+        return assignment is not None
+
+    def assert_manager(self, user, warehouse_id: UUID) -> None:
+        """Require a warehouse manager or an organization/system-level superior."""
+        if self.is_manager(user, warehouse_id):
+            return
+        raise StateError(
+            message="Warehouse Manager approval is required for this exception disposition",
+            current_state="not_manager",
+            required_state=["manager"],
+        )
 
     def list_reasons(
         self,

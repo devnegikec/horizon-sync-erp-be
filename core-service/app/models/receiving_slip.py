@@ -7,7 +7,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.models.types import UUID
+from app.models.types import JSONB, UUID
 
 
 class ReceivingSlip(Base):
@@ -90,6 +90,14 @@ class ReceivingSlipItem(Base):
     batch_number = Column(String(100), nullable=False)
     quantity = Column(Integer, nullable=False)
     box_count = Column(Integer, default=0)
+    # Packaging unit (IC/MC) chosen at receiving scan; carried into put-away
+    # so the volumetric capacity engine uses MC outer dimensions.
+    packaging_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("item_packaging_units.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     flag = Column(String(20), default="ok")
     condition_code = Column(String(30), nullable=False, default="GOOD")
     exception_status = Column(String(30), nullable=True)
@@ -97,6 +105,9 @@ class ReceivingSlipItem(Base):
     reason_code = Column(String(80), nullable=True, index=True)
     # Units short against the ASN expectation for this line (flag == 'short')
     short_qty = Column(Integer, nullable=True)
+    # Unit serials received on this line (serialized transfers). Populated at
+    # slip generation; keeps the document of record self-describing (T1.1).
+    serial_nos = Column(JSONB, nullable=True)
     notes = Column(Text, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), nullable=True)
@@ -130,6 +141,7 @@ class ReceivingSlipItem(Base):
     # Relationships
     slip = relationship("ReceivingSlip", back_populates="items")
     bin_location = relationship("WarehouseLocation", foreign_keys=[bin_location_id])
+    packaging_unit = relationship("ItemPackagingUnit")
 
     def __repr__(self):
         return (

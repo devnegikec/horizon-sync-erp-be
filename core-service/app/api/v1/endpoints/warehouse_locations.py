@@ -18,7 +18,7 @@ from app.schemas.warehouse_location import (
     PaginatedLocations,
     UpdateLocationRequest,
 )
-from app.services.layout_service import LayoutService
+from app.services.layout_service import _UNSET, LayoutService
 
 router = APIRouter()
 
@@ -65,6 +65,8 @@ async def create_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc,
+        max_weight_grams=data.max_weight_grams,
     )
     return LocationResponse.model_validate(location)
 
@@ -251,6 +253,12 @@ async def update_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc
+        if "max_volume_cc" in data.model_fields_set
+        else _UNSET,
+        max_weight_grams=data.max_weight_grams
+        if "max_weight_grams" in data.model_fields_set
+        else _UNSET,
     )
     return LocationResponse.model_validate(location)
 
@@ -317,6 +325,7 @@ async def get_location_summary(
         total_capacity=summary["total_capacity"],
         used_capacity=summary["used_capacity"],
         available_capacity=summary["available_capacity"],
+        capacity_uom=summary.get("capacity_uom"),
         item_count=summary.get("distinct_items", 0),
     )
 

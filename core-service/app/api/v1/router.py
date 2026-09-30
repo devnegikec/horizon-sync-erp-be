@@ -45,6 +45,7 @@ from app.api.v1.endpoints import (
     journal_entries,
     landed_cost,
     landing_pages,
+    layout_design,
     location_allocations,
     location_scans,
     material_requests,
@@ -98,6 +99,7 @@ from app.api.v1.endpoints import (
     wms_3d,
     wms_dashboard,
     wms_devices,
+    wms_reports,
     worker_sessions,
     worker_tasks,
 )
@@ -173,6 +175,12 @@ api_router.include_router(
     prefix="/floor-plans",
     tags=["Floor Plan Designer"],
 )
+# JSON Layout Designer (import a layout document, validate, preview, apply)
+api_router.include_router(
+    layout_design.router,
+    prefix="/layout-design",
+    tags=["Layout Designer"],
+)
 api_router.include_router(
     wms_3d.router,
     prefix="/wms-3d",
@@ -187,6 +195,11 @@ api_router.include_router(
     wms_dashboard.router,
     prefix="/wms-dashboard",
     tags=["WMS Dashboard"],
+)
+api_router.include_router(
+    wms_reports.router,
+    prefix="/wms/reports",
+    tags=["WMS Reports"],
 )
 api_router.include_router(
     location_allocations.router,

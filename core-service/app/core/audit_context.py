@@ -15,6 +15,7 @@ class AuditContext:
 
     user_id: str | None = None
     organization_id: str | None = None
+    role: str | None = None
     ip_address: str | None = None
     user_agent: str | None = None
 

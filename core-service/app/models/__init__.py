@@ -85,6 +85,7 @@ from app.models.brand_trust import (
 )
 from app.models.bulk_export_job import BulkExportJob
 from app.models.bulk_import_job import BulkImportJob
+from app.models.bulk_put_away_job import BulkPutAwayJob, BulkPutAwayJobStatus
 
 # Bulk Import/Export module
 # Campaigns & Coupons module

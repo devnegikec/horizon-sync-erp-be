@@ -119,6 +119,12 @@ class PickListItem(Base):
     loose_qty = Column(Numeric(15, 3), nullable=True)
     batch_no = Column(String(100), nullable=True)
     serial_nos = Column(JSONB, nullable=True)
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     sort_order = Column(Integer, default=0)
     # Column added by migration 047 for bin location tracking
     bin_location_id = Column(

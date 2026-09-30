@@ -28,7 +28,7 @@ from app.models.put_away_rule import PutAwayRule
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
-from app.services.capacity_math import MM3_PER_M3
+from app.services.capacity_math import CC_PER_M3, compute_item_required_cc_and_grams
 
 Position = tuple[float, float, float]
 
@@ -212,8 +212,10 @@ class LocationSuggestionService:
             if not cap["is_available"]:
                 continue
             remaining = None
+            available_uom = "units"
             if cap["volume"]["capacity_m3"] is not None:
                 remaining = cap["volume"]["capacity_m3"] - cap["volume"]["occupied_m3"]
+                available_uom = "volume"
                 if required_m3 is not None and required_m3 > remaining:
                     continue
                 if cap["volume"]["capacity_m3"] > 0:
@@ -222,6 +224,17 @@ class LocationSuggestionService:
                     )
                     score += capacity_ratio * 10
                     reasons.append(f"{round(capacity_ratio * 100)}% volume available")
+            elif cap["weight"]["capacity_kg"] is not None:
+                # Weight-limited bin: report the remaining kilograms rather than
+                # a zero "units" figure the client cannot interpret.
+                remaining = cap["weight"]["capacity_kg"] - cap["weight"]["occupied_kg"]
+                available_uom = "weight"
+                if cap["weight"]["capacity_kg"] > 0:
+                    weight_ratio = float(remaining) / float(
+                        cap["weight"]["capacity_kg"]
+                    )
+                    score += weight_ratio * 10
+                    reasons.append(f"{round(weight_ratio * 100)}% weight available")
             available = (
                 Decimal(str(remaining)) if remaining is not None else Decimal("0")
             )
@@ -251,6 +264,7 @@ class LocationSuggestionService:
                     score=score,
                     reasons=reasons,
                     available_capacity=available,
+                    capacity_uom=available_uom,
                     distance_from_worker=dist_from_worker,
                 )
             )
@@ -323,6 +337,9 @@ class LocationSuggestionService:
                     WarehouseLocation.id == bs.bin_location_id,
                     WarehouseLocation.warehouse_id == warehouse_id,
                     WarehouseLocation.is_active.is_(True),
+                    # Segregation bins (HOLD / QUARANTINE) are active but not
+                    # pickable — a picker must never be sent to them.
+                    WarehouseLocation.is_pickable.is_(True),
                 )
                 .first()
             )
@@ -605,24 +622,18 @@ class LocationSuggestionService:
         return bin_ids
 
     def _required_volume_m3(self, item: Item, quantity: Decimal) -> Decimal | None:
-        """Required m³ for an incoming put-away (None when dimensions are unknown)."""
-        base = (
-            self.db.query(ItemPackagingUnit)
-            .filter(
-                ItemPackagingUnit.item_id == item.id,
-                ItemPackagingUnit.is_base_unit.is_(True),
-            )
-            .first()
+        """Required m³ for an incoming put-away (None when dimensions are unknown).
+
+        Master-pack aware: an intact carton occupies its outer volume, so the
+        fit check compares against the same occupancy math the capacity service
+        uses (mirrors ``capacity_math``).
+        """
+        required_cc, _required_g = compute_item_required_cc_and_grams(
+            self.db, item.id, None, quantity
         )
-        if base is None or not (base.length_mm and base.width_mm and base.height_mm):
+        if required_cc is None:
             return None
-        mm3 = (
-            Decimal(str(quantity))
-            * Decimal(str(base.length_mm))
-            * Decimal(str(base.width_mm))
-            * Decimal(str(base.height_mm))
-        )
-        return mm3 / MM3_PER_M3
+        return required_cc / CC_PER_M3
 
     def _allocation_priority_map(
         self, org_id: UUID, item_group_id: UUID | None
@@ -781,6 +792,7 @@ class LocationSuggestionService:
         distance_from_worker: float,
         batch_number: str | None = None,
         expiry_date: date | None = None,
+        capacity_uom: str = "units",
     ) -> dict:
         # Rough estimate: 1 metre/second walking + 5s handling.
         estimated_time = int(distance_from_worker + 5)
@@ -795,6 +807,7 @@ class LocationSuggestionService:
             "score": round(score, 2),
             "reasons": reasons,
             "available_capacity": float(available_capacity),
+            "capacity_uom": capacity_uom,
             "distance_from_worker": round(distance_from_worker, 2),
             "estimated_time_seconds": estimated_time,
             "batch_number": batch_number,

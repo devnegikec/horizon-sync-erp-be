@@ -217,9 +217,24 @@ class GateVerificationService:
         )
         self.db.add(gate_item)
 
+        # T1.4 — best-effort ProductItem resolution for the scan event (gate
+        # scans may be box labels, so a miss leaves the FK NULL).
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == org_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
         # Record scan event in qr_scan_events with gate context
         scan_event = QRScanEvent(
             organization_id=org_id,
+            product_item_id=product_item.id if product_item else None,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             device_type=device_type,
