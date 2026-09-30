@@ -531,6 +531,8 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "stock_level.read",
+            "stock_reconciliation.read",
             "inbound_exception.read",
             "inbound_exception.create",
             "inbound_exception.dispose",
