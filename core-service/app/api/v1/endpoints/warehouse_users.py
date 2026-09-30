@@ -41,6 +41,7 @@ async def assign_user_to_warehouse(
         organization_id=current_user.organization_id,
         created_by=current_user.id,
     )
+    db.commit()
     return WarehouseUserResponse.model_validate(data)
 
 
@@ -141,6 +142,7 @@ async def update_warehouse_user(
         data=body.model_dump(exclude_none=True),
         organization_id=current_user.organization_id,
     )
+    db.commit()
     return WarehouseUserResponse.model_validate(data)
 
 
@@ -156,4 +158,5 @@ async def delete_warehouse_user(
         assignment_id=assignment_id,
         organization_id=current_user.organization_id,
     )
+    db.commit()
     return None
