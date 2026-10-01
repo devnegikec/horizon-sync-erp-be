@@ -32,6 +32,7 @@ from app.schemas.qr_product import (
     QRActivationParamsResponse,
     QRBlockCreate,
     QRBlockResponse,
+    QRBlockStatusCounts,
     QRProductCreate,
     QRProductImageResponse,
     QRProductListResponse,
@@ -252,9 +253,11 @@ async def list_org_qr_blocks(
         created_from,
         created_to,
     )
+    status_counts = svc.get_block_status_counts(current_user.organization_id)
     return OrgBlockListResponse(
         blocks=[OrgBlockListItem(**b) for b in blocks],
         pagination=pagination,
+        status_counts=QRBlockStatusCounts(**status_counts),
     )
 
 
