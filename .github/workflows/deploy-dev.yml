@@ -1,9 +1,12 @@
 name: Deploy to Railway (Dev)
 
-# Auto-deploys the backend to the BW-dev project's `dev` environment.
+# Auto-deploys the backend to the `dev` environment of the BW-2.0 project
+# (fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090). That environment is a replica of
+# `staging` and deploys from this `dev` branch.
 # Trigger: ANY push/merge to `dev`.
 #
-# Requires repo secret: RAILWAY_TOKEN_DEV  (a BW-dev *project* token for the `dev` environment)
+# Requires repo secret: RAILWAY_TOKEN_DEV
+#   (a project token for BW-2.0 scoped to its `dev` environment)
 #
 # NOTE: never export a variable called RAILWAY_ENV in this workflow — the Railway
 # CLI reads that name as its own config and every CLI call then fails with
@@ -24,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RW_PROJECT_ID: d567a56d-48b5-4a48-8a2b-250cb88c4217
+  RW_PROJECT_ID: fd8e8c06-a0a1-4592-9d6e-9a63c6cfb090
   RW_ENVIRONMENT: dev
 
 jobs:
