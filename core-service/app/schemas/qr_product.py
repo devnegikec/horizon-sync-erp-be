@@ -487,12 +487,40 @@ class OrgBlockListItem(BaseModel):
     download_url: str | None
     download_available: bool = False
     artifact_generated_at: datetime | None = None
+    # Master-pack (carton) support. ``master_pack_download_available`` tells the
+    # UI whether to render the per-row "download master pack" action.
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
+    master_pack_count: int = 0
+    master_pack_download_available: bool = False
+    # Per-block statistics, aggregated for the whole block (not just the page).
+    activated_count: int = 0
+    deactivated_count: int = 0
+    total_scans: int = 0
+    unique_serials: int = 0
+    suspicious_count: int = 0
+    last_scanned_at: datetime | None = None
     completed_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
+class QRBlockStatusCounts(BaseModel):
+    """Summary counts of QR blocks by status for the organization.
+
+    Mirrors ``AsnOrderStatusCounts``: counts are organization-wide and are not
+    narrowed by the list filters or pagination.
+    """
+
+    total: int = 0
+    pending: int = 0
+    in_progress: int = 0
+    completed: int = 0
+    failed: int = 0
+
+
 class OrgBlockListResponse(BaseModel):
     blocks: list[OrgBlockListItem]
     pagination: dict[str, Any]
+    status_counts: QRBlockStatusCounts = Field(default_factory=QRBlockStatusCounts)

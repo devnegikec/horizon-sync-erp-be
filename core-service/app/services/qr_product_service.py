@@ -1686,6 +1686,9 @@ class QRProductService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
+        stats_by_block = self.block_repo.get_block_stats(
+            [block.id for block, _ in rows], organization_id
+        )
         enriched = []
         for block, product_name in rows:
             block_dict = {
@@ -1695,8 +1698,17 @@ class QRProductService:
             block_dict["distribution_channel"] = block.distribution_channel
             block_dict["destination_market"] = block.destination_market
             block_dict["download_available"] = block.download_available
+            block_dict.update(stats_by_block.get(block.id, {}))
+            # Drives the per-row "download master pack" button in the UI.
+            block_dict["master_pack_download_available"] = bool(
+                block.master_pack_enabled and block_dict.get("master_pack_count", 0) > 0
+            )
             enriched.append(block_dict)
         return enriched, pagination
+
+    def get_block_status_counts(self, organization_id: UUID) -> dict:
+        """Organization-wide QR block counts by status, for list-view tiles."""
+        return self.block_repo.get_status_counts(organization_id)
 
     # ── Product Items ─────────────────────────────────────────────────────────
 
