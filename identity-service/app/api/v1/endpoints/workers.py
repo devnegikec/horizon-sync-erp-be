@@ -15,6 +15,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.core.authorization import has_permission
+from app.core.error_handler import http_error
 from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
@@ -224,6 +225,35 @@ def _set_password(user: User, password: str) -> None:
     user.password_hash = hash_password(password)
 
 
+def _login_username_taken_in_org(
+    db: Session,
+    org_id: str | None,
+    login_username: str,
+    exclude_user_id=None,
+) -> bool:
+    """True if another user in the same organization already uses this username.
+
+    Worker ``login_username`` values are unique per organization, not globally —
+    two workers in different organizations may share the same username. Without
+    an organization context this falls back to the legacy global check.
+    """
+    if not org_id:
+        q = db.query(User).filter(User.login_username == login_username)
+    else:
+        q = (
+            db.query(User)
+            .join(UserOrganizationRole, UserOrganizationRole.user_id == User.id)
+            .filter(
+                UserOrganizationRole.organization_id == org_id,
+                UserOrganizationRole.is_active == True,  # noqa: E712
+                User.login_username == login_username,
+            )
+        )
+    if exclude_user_id is not None:
+        q = q.filter(User.id != exclude_user_id)
+    return q.first() is not None
+
+
 @router.post("/workers", status_code=status.HTTP_201_CREATED)
 async def create_worker(
     body: dict,
@@ -252,14 +282,15 @@ async def create_worker(
         wids = [body["warehouse_id"]] + wids
 
     if db.query(User).filter(User.email == email).first():
-        raise HTTPException(409, f"Email {email} already exists")
+        raise http_error(409, f"Email {email} already exists", code="EMAIL_TAKEN")
     if db.query(User).filter(User.qr_code == qr).first():
-        raise HTTPException(409, f"QR code {qr} already in use")
-    if (
-        login_username
-        and db.query(User).filter(User.login_username == login_username).first()
-    ):
-        raise HTTPException(409, f"Login username {login_username} already in use")
+        raise http_error(409, f"QR code {qr} already in use", code="QR_CODE_TAKEN")
+    if login_username and _login_username_taken_in_org(db, org_id, login_username):
+        raise http_error(
+            409,
+            f"Login username {login_username} already in use",
+            code="LOGIN_USERNAME_TAKEN",
+        )
 
     user = User(
         email=email,
@@ -388,10 +419,21 @@ async def update_worker(
         "display_name",
         "phone",
         "employee_id",
-        "login_username",
     ]:
         if f in body and body[f] is not None:
             setattr(user, f, body[f])
+
+    if "login_username" in body and body["login_username"] is not None:
+        new_lu = body["login_username"]
+        if new_lu and _login_username_taken_in_org(
+            db, _primary_org_id(user, db), new_lu, exclude_user_id=user.id
+        ):
+            raise http_error(
+                409,
+                f"Login username {new_lu} already in use",
+                code="LOGIN_USERNAME_TAKEN",
+            )
+        user.login_username = new_lu
 
     if "email" in body and body["email"] is not None:
         user.email = body["email"]
@@ -469,7 +511,10 @@ async def import_workers(
         except HTTPException as exc:
             db.rollback()
             failed += 1
-            errors.append({"row": idx + 1, "error": exc.detail})
+            detail = exc.detail
+            if isinstance(detail, dict):
+                detail = detail.get("message") or detail.get("code") or "Unknown error"
+            errors.append({"row": idx + 1, "error": detail})
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             failed += 1

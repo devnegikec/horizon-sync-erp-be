@@ -343,7 +343,7 @@ class TestInvoiceConfirmationEndpointValidation:
         
         # Verify error message mentions permission
         data = response.json()
-        assert "permission" in data["detail"].lower() or "forbidden" in data["detail"].lower()
+        assert "permission" in data["detail"]["message"].lower() or "forbidden" in data["detail"]["message"].lower()
 
 
 class TestInvoiceConfirmationEndpointResponseStructure:

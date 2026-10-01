@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import api_router
 from app.config import settings
+from app.core.error_handler import status_code_name
 from app.core.exceptions import (
     AccountLockedException,
     AuthenticationError,
@@ -335,6 +336,40 @@ async def resource_not_found_exception_handler(
             "message": str(exc),
             "timestamp": datetime.now(UTC).isoformat(),
         },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Normalize plain HTTPException responses to the standard error shape.
+
+    Endpoints that raise ``HTTPException(detail="...")`` otherwise return the
+    FastAPI default ``{"detail": ...}`` body. This flattens every HTTPException
+    into ``{"error", "message", "timestamp"}`` so the UI has one consistent
+    contract. Structured details produced by ``http_error()`` are preserved.
+    """
+    detail = exc.detail
+    details = None
+    if isinstance(detail, dict) and "message" in detail:
+        code = detail.get("code") or status_code_name(exc.status_code)
+        message = detail.get("message")
+        details = detail.get("details")
+    else:
+        code = status_code_name(exc.status_code)
+        message = str(detail)
+
+    content = {
+        "error": code,
+        "message": message,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if details:
+        content["details"] = details
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=exc.headers,
     )
 
 
