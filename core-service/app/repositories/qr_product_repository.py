@@ -44,19 +44,25 @@ class QRProductRepository:
         search: str | None = None,
         is_active: bool | None = None,
     ) -> tuple[list[QRProduct], int]:
-        q = self.db.query(QRProduct).options(
-            joinedload(QRProduct.serial_prefix_setting)
-        ).filter(
-            QRProduct.organization_id == organization_id,
-            QRProduct.deleted_at.is_(None),
+        q = (
+            self.db.query(QRProduct)
+            .options(joinedload(QRProduct.serial_prefix_setting))
+            .filter(
+                QRProduct.organization_id == organization_id,
+                QRProduct.deleted_at.is_(None),
+            )
         )
         if search:
             q = q.filter(QRProduct.name.ilike(f"%{search}%"))
         if is_active is not None:
             q = q.filter(QRProduct.is_active == is_active)
         total = q.count()
-        items = q.order_by(QRProduct.created_at.desc()) \
-                 .offset((page - 1) * page_size).limit(page_size).all()
+        items = (
+            q.order_by(QRProduct.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total
 
     def update(self, product: QRProduct, data: dict) -> QRProduct:
@@ -137,17 +143,25 @@ class QRBlockRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[QRBlock], int]:
-        q = self.db.query(QRBlock).options(
-            joinedload(QRBlock.channel_setting),
-            joinedload(QRBlock.destination_setting),
-        ).filter(
-            QRBlock.product_id == product_id,
-            QRBlock.organization_id == organization_id,
-            QRBlock.deleted_at.is_(None),
+        q = (
+            self.db.query(QRBlock)
+            .options(
+                joinedload(QRBlock.channel_setting),
+                joinedload(QRBlock.destination_setting),
+            )
+            .filter(
+                QRBlock.product_id == product_id,
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
         )
         total = q.count()
-        items = q.order_by(QRBlock.created_at.desc()) \
-                 .offset((page - 1) * page_size).limit(page_size).all()
+        items = (
+            q.order_by(QRBlock.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total
 
     def list_by_org(
@@ -201,6 +215,133 @@ class QRBlockRepository:
         )
         return rows, total
 
+    def get_status_counts(self, organization_id: UUID) -> dict:
+        """Count QR blocks by status for the organization.
+
+        Organization-wide and independent of the list filters/pagination,
+        matching ``AsnOrderRepository.get_status_counts``.
+        """
+        rows = (
+            self.db.query(QRBlock.status, func.count(QRBlock.id))
+            .filter(
+                QRBlock.organization_id == organization_id,
+                QRBlock.deleted_at.is_(None),
+            )
+            .group_by(QRBlock.status)
+            .all()
+        )
+
+        counts = {
+            "total": 0,
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "failed": 0,
+        }
+        for status, count in rows:
+            key = status.value if hasattr(status, "value") else str(status)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
+
+    def get_block_stats(
+        self,
+        block_ids: list[UUID],
+        organization_id: UUID,
+    ) -> dict[UUID, dict]:
+        """Aggregate per-block statistics for one page of blocks.
+
+        Runs three grouped queries (units, scans, master packs) instead of one
+        per block, so the list endpoint stays constant in query count.
+        """
+        from app.models.qseal import QSealParameters
+
+        if not block_ids:
+            return {}
+
+        stats: dict[UUID, dict] = {
+            block_id: {
+                "activated_count": 0,
+                "deactivated_count": 0,
+                "suspicious_count": 0,
+                "total_scans": 0,
+                "unique_serials": 0,
+                "last_scanned_at": None,
+                "master_pack_count": 0,
+            }
+            for block_id in block_ids
+        }
+
+        unit_rows = (
+            self.db.query(
+                ProductItem.block_id,
+                func.count(ProductItem.id),
+                func.count(ProductItem.id).filter(ProductItem.qr_active.is_(True)),
+                func.count(ProductItem.id).filter(ProductItem.is_suspicious.is_(True)),
+            )
+            .filter(
+                ProductItem.organization_id == organization_id,
+                ProductItem.block_id.in_(block_ids),
+                ProductItem.deleted_at.is_(None),
+            )
+            .group_by(ProductItem.block_id)
+            .all()
+        )
+        for block_id, units, activated, suspicious in unit_rows:
+            if block_id not in stats:
+                continue
+            active = int(activated or 0)
+            stats[block_id]["activated_count"] = active
+            stats[block_id]["deactivated_count"] = int(units or 0) - active
+            stats[block_id]["suspicious_count"] = int(suspicious or 0)
+
+        # ``ProductItem.last_scanned_at`` is not maintained by every scan path
+        # (the public validate/record_scan flow only touches ``scan_date``), so
+        # the truthful "last scan" comes from the scan events themselves.
+        scan_rows = (
+            self.db.query(
+                ProductItem.block_id,
+                func.count(QRScanEvent.id),
+                func.count(func.distinct(QRScanEvent.serial_number)),
+                func.max(QRScanEvent.scan_timestamp),
+            )
+            .join(ProductItem, QRScanEvent.product_item_id == ProductItem.id)
+            .filter(
+                ProductItem.organization_id == organization_id,
+                ProductItem.block_id.in_(block_ids),
+                ProductItem.deleted_at.is_(None),
+            )
+            .group_by(ProductItem.block_id)
+            .all()
+        )
+        for block_id, total_scans, unique_serials, last_scanned in scan_rows:
+            if block_id not in stats:
+                continue
+            stats[block_id]["total_scans"] = int(total_scans or 0)
+            stats[block_id]["unique_serials"] = int(unique_serials or 0)
+            stats[block_id]["last_scanned_at"] = last_scanned
+
+        pack_rows = (
+            self.db.query(
+                QSealParameters.block_id,
+                func.count(func.distinct(QSealParameters.parent_id)),
+            )
+            .filter(
+                QSealParameters.organization_id == organization_id,
+                QSealParameters.block_id.in_(block_ids),
+                QSealParameters.parent_id.isnot(None),
+            )
+            .group_by(QSealParameters.block_id)
+            .all()
+        )
+        for block_id, packs in pack_rows:
+            if block_id not in stats:
+                continue
+            stats[block_id]["master_pack_count"] = int(packs or 0)
+
+        return stats
+
     def get_monthly_credit_used(self, organization_id: UUID) -> int:
         """Sum QR credits used in the current calendar month"""
         now = datetime.now(UTC)
@@ -215,8 +356,9 @@ class QRBlockRepository:
         )
         return int(result)
 
-    def record_credit_usage(self, organization_id: UUID, block_id: UUID,
-                            quantity: int) -> QRCreditUsage:
+    def record_credit_usage(
+        self, organization_id: UUID, block_id: UUID, quantity: int
+    ) -> QRCreditUsage:
         usage = QRCreditUsage(
             organization_id=organization_id,
             block_id=block_id,
@@ -236,8 +378,9 @@ class ProductItemRepository:
         self.db.commit()
         return len(items)
 
-    def get_by_serial(self, serial_number: str,
-                      organization_id: UUID) -> ProductItem | None:
+    def get_by_serial(
+        self, serial_number: str, organization_id: UUID
+    ) -> ProductItem | None:
         return (
             self.db.query(ProductItem)
             .filter(
@@ -310,8 +453,12 @@ class ProductItemRepository:
             ProductItem.deleted_at.is_(None),
         )
         total = q.count()
-        items = q.order_by(ProductItem.created_at.asc()) \
-                 .offset((page - 1) * page_size).limit(page_size).all()
+        items = (
+            q.order_by(ProductItem.created_at.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total
 
     def list_by_product(
@@ -343,9 +490,7 @@ class ProductItemRepository:
         total, active = (
             self.db.query(
                 func.count(ProductItem.id),
-                func.count(ProductItem.id).filter(
-                    ProductItem.qr_active.is_(True)
-                ),
+                func.count(ProductItem.id).filter(ProductItem.qr_active.is_(True)),
             )
             .filter(
                 ProductItem.block_id == block_id,
@@ -356,9 +501,7 @@ class ProductItemRepository:
         )
         return int(total or 0), int(active or 0)
 
-    def soft_delete_by_block(
-        self, block_id: UUID, organization_id: UUID
-    ) -> int:
+    def soft_delete_by_block(self, block_id: UUID, organization_id: UUID) -> int:
         """Deactivate generated items when their Block generation fails."""
         return (
             self.db.query(ProductItem)
@@ -397,8 +540,7 @@ class ProductItemRepository:
         self.db.refresh(event)
         return event
 
-    def get_scan_analytics(self, product_id: UUID,
-                           organization_id: UUID) -> dict:
+    def get_scan_analytics(self, product_id: UUID, organization_id: UUID) -> dict:
         """Aggregate scan stats for a product"""
         base = (
             self.db.query(QRScanEvent)
@@ -410,8 +552,10 @@ class ProductItemRepository:
         )
         total_scans = base.count()
         unique_serials = (
-            base.with_entities(func.count(func.distinct(QRScanEvent.serial_number)))
-            .scalar() or 0
+            base.with_entities(
+                func.count(func.distinct(QRScanEvent.serial_number))
+            ).scalar()
+            or 0
         )
         suspicious = (
             self.db.query(func.count(ProductItem.id))
@@ -420,7 +564,8 @@ class ProductItemRepository:
                 ProductItem.organization_id == organization_id,
                 ProductItem.is_suspicious.is_(True),
             )
-            .scalar() or 0
+            .scalar()
+            or 0
         )
         by_country = (
             base.with_entities(
@@ -451,7 +596,6 @@ class ProductItemRepository:
                 for r in by_country
             ],
             "scans_by_day": [
-                {"day": str(r.day)[:10], "count": r.count}
-                for r in by_day
+                {"day": str(r.day)[:10], "count": r.count} for r in by_day
             ],
         }
