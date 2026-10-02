@@ -39,7 +39,9 @@ class ScanCartonRequest(BaseModel):
     """Schema for receiving a full master carton from its parent QR."""
 
     qr_data: str = Field(
-        ..., min_length=1, description="Raw QR payload of the master-carton (parent) label"
+        ...,
+        min_length=1,
+        description="Raw QR payload of the master-carton (parent) label",
     )
     device_type: str | None = Field(
         None, max_length=50, description="Device type (e.g., 'mobile', 'tablet')"
@@ -306,6 +308,21 @@ class SessionResponse(BaseModel):
     created_at: str | None = None
 
 
+class ScanWarning(BaseModel):
+    """Non-blocking warning attached to a scan result.
+
+    Currently raised when the scanned serial is expected on a different ASN
+    (RCA_ASN-2026-00014 fix 7.4). The scan still succeeds — the warning just
+    surfaces the likely "wrong ASN opened" mistake immediately.
+    """
+
+    type: str
+    message: str
+    qr_identifier: str | None = None
+    expected_asn_order_id: str | None = None
+    expected_asn_order_no: str | None = None
+
+
 class ScanResult(BaseModel):
     """Response schema for a recorded scan."""
 
@@ -327,6 +344,8 @@ class ScanResult(BaseModel):
     excess_qty: float | None = None
     expected_qty: float | None = None
     scanned_qty: float | None = None
+    # Non-blocking warning, e.g. the serial belongs to another ASN (fix 7.4).
+    warning: ScanWarning | None = None
 
 
 class BatchBreakdown(BaseModel):
@@ -346,6 +365,21 @@ class SKUBreakdown(BaseModel):
     batches: list[BatchBreakdown]
 
 
+class BlockedScan(BaseModel):
+    """A scan refused by the active-stock gate and therefore not recorded.
+
+    Surfaced on close-session / session-summary responses so the operator is
+    warned that a unit was dropped instead of closing the session believing
+    every unit was captured (RCA_ASN-2026-00014 fix 7.3).
+    """
+
+    qr_identifier: str | None = None
+    sku: str | None = None
+    reason: str
+    detail: str | None = None
+    exception_id: str | None = None
+
+
 class SessionSummary(BaseModel):
     """Response schema for session summary with per-SKU/batch aggregation."""
 
@@ -360,6 +394,8 @@ class SessionSummary(BaseModel):
     total_boxes: int
     total_quantity: int
     items: list[SKUBreakdown]
+    # Scans dropped by the duplicate-identity gate (fix 7.3).
+    blocked_scans: list[BlockedScan] = Field(default_factory=list)
 
 
 class QSealParentInfo(BaseModel):
@@ -421,6 +457,8 @@ class ReceivingSlipResponse(BaseModel):
     rejection_reason: str | None = None
     notes: str | None = None
     groups: list[ReceivingSlipItemGroup] = []
+    # Scans dropped by the duplicate-identity gate during this session (fix 7.3).
+    blocked_scans: list[BlockedScan] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 

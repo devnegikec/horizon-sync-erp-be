@@ -292,6 +292,15 @@ class InboundService:
             qr_data, db=self.db, organization_id=organization_id
         )
 
+        # Warn early (non-blocking) when the serial is expected on another ASN:
+        # the "wrong ASN opened" mistake should surface on the first mis-scan,
+        # not after the whole carton set has been scanned (RCA fix 7.4).
+        asn_mismatch_warning = self._cross_asn_scan_warning(
+            qr_identifier=payload.id,
+            session=session,
+            organization_id=organization_id,
+        )
+
         # The duplicate gates below are check-then-insert, so concurrent scans of
         # the same label could both pass and each create a receipt line. A
         # transaction-scoped advisory lock keyed on the identity serializes them
@@ -649,6 +658,9 @@ class InboundService:
             "total_boxes_scanned": session.total_boxes_scanned,
             "exception_id": exception_id,
             "exception_status": "pending_approval" if exception_id else None,
+            # Non-blocking cross-ASN warning (fix 7.4); ``None`` when the serial
+            # belongs to this session's ASN (or the session has no ASN).
+            "warning": asn_mismatch_warning,
             # Decision-required response for an over-receipt (E-12): the extra
             # units are already in HOLD and wait for a supervisor disposition.
             "requires_decision": excess_alert is not None,
@@ -741,6 +753,117 @@ class InboundService:
                 "raise a stock investigation if the physical unit is at the dock."
             ),
         )
+
+    def _blocked_scans_for_session(
+        self, session_id: UUID, organization_id: UUID
+    ) -> list[dict]:
+        """Unresolved duplicate-identity scans for a session.
+
+        A scan blocked by the active-stock gate (E-13) raises a ``StateError``
+        and queues a ``duplicate_serial`` exception, but nothing told the
+        operator the unit was dropped. Returning these on close/summary lets the
+        handheld warn "1 unit was not recorded" instead of silently short-
+        receiving the shipment (RCA_ASN-2026-00014, fix 7.3).
+        """
+        from app.models.inbound_exception import InboundException
+
+        rows = (
+            self.db.query(InboundException)
+            .filter(
+                InboundException.organization_id == organization_id,
+                InboundException.session_id == session_id,
+                InboundException.exception_type == "duplicate_serial",
+                InboundException.status == "pending_approval",
+            )
+            .order_by(InboundException.created_at.asc())
+            .all()
+        )
+        return [
+            {
+                "qr_identifier": row.qr_identifier,
+                "sku": row.sku,
+                "reason": "duplicate_serial",
+                "detail": (
+                    "Already in stock — this unit was NOT recorded on the receipt."
+                ),
+                "exception_id": str(row.id),
+            }
+            for row in rows
+        ]
+
+    def _cross_asn_scan_warning(
+        self, *, qr_identifier: str, session: ScanSession, organization_id: UUID
+    ) -> dict | None:
+        """Warn when a scanned serial is expected on a *different* ASN.
+
+        Catches the "session opened against the wrong ASN/warehouse" mistake as
+        soon as the first mis-scanned unit arrives, instead of after the whole
+        carton set has been scanned and the slip is rejected (RCA_ASN-2026-00014,
+        fix 7.4). Read-only and non-blocking: it surfaces a warning in the scan
+        response but never stops the scan.
+        """
+        if not session.asn_order_id:
+            return None
+
+        from app.models.asn_order import AsnOrder, AsnOrderItem, AsnOrderSerialLine
+
+        # Canonical serial → ASN mapping (serialized / internal-transfer ASNs).
+        serial_hit = (
+            self.db.query(AsnOrder.id, AsnOrder.asn_order_no)
+            .join(AsnOrderSerialLine, AsnOrderSerialLine.asn_order_id == AsnOrder.id)
+            .filter(
+                AsnOrder.organization_id == organization_id,
+                AsnOrderSerialLine.organization_id == organization_id,
+                AsnOrderSerialLine.serial_no == qr_identifier,
+                AsnOrderSerialLine.asn_order_id != session.asn_order_id,
+                AsnOrder.status.notin_(["cancelled", "closed"]),
+            )
+            .first()
+        )
+        if serial_hit is not None:
+            return self._wrong_asn_warning(qr_identifier, serial_hit[0], serial_hit[1])
+
+        # ASN line serial lists (JSONB) for ASNs whose serials are not split out.
+        # ``jsonb_exists`` is PostgreSQL-only, so skip it on other dialects
+        # (e.g. the SQLite test database) where the JSON column has no such
+        # operator — the serial-line check above already covers those.
+        bind = self.db.get_bind()
+        if bind is None or bind.dialect.name != "postgresql":
+            return None
+
+        from sqlalchemy import func
+
+        line_hit = (
+            self.db.query(AsnOrder.id, AsnOrder.asn_order_no)
+            .join(AsnOrderItem, AsnOrderItem.asn_order_id == AsnOrder.id)
+            .filter(
+                AsnOrder.organization_id == organization_id,
+                AsnOrder.id != session.asn_order_id,
+                AsnOrder.status.notin_(["cancelled", "closed"]),
+                func.jsonb_exists(AsnOrderItem.serial_nos, qr_identifier),
+            )
+            .first()
+        )
+        if line_hit is not None:
+            return self._wrong_asn_warning(qr_identifier, line_hit[0], line_hit[1])
+
+        return None
+
+    @staticmethod
+    def _wrong_asn_warning(
+        qr_identifier: str, asn_order_id, asn_order_no: str | None
+    ) -> dict:
+        return {
+            "type": "wrong_asn",
+            "qr_identifier": qr_identifier,
+            "expected_asn_order_id": str(asn_order_id),
+            "expected_asn_order_no": asn_order_no,
+            "message": (
+                f"'{qr_identifier}' is expected on "
+                f"{asn_order_no or 'another ASN'}, not this ASN. "
+                "Check that you opened the correct ASN and warehouse."
+            ),
+        }
 
     def _matched_asn_line(self, asn_order, item, payload):
         """The ASN line this scan belongs to, by item or SKU/GTIN/item-code."""
@@ -1041,13 +1164,17 @@ class InboundService:
             )
 
         asn_order = (
-            self.db.query(AsnOrder)
-            .filter(
-                AsnOrder.id == session.asn_order_id,
-                AsnOrder.organization_id == organization_id,
+            (
+                self.db.query(AsnOrder)
+                .filter(
+                    AsnOrder.id == session.asn_order_id,
+                    AsnOrder.organization_id == organization_id,
+                )
+                .first()
             )
-            .first()
-        ) if session.asn_order_id else None
+            if session.asn_order_id
+            else None
+        )
         if asn_order is None or asn_order.asn_type != "internal_transfer":
             raise ValidationError(
                 message="Carton receive is only supported for internal-transfer ASNs",
@@ -1243,7 +1370,11 @@ class InboundService:
                     {
                         "serial_no": serial,
                         "status": "duplicate",
-                        "sku": (item_by_id[line.item_id].sku if line.item_id in item_by_id else None),
+                        "sku": (
+                            item_by_id[line.item_id].sku
+                            if line.item_id in item_by_id
+                            else None
+                        ),
                         "item_name": (
                             item_by_id[line.item_id].item_name
                             if line.item_id in item_by_id
@@ -1360,7 +1491,9 @@ class InboundService:
                 "worker_id": str(worker_id),
                 "carton_id": str(parent_track.id),
                 "carton_serial": parent_track.serial_number,
-                "expanded_serials": [c.serial_number for c in children if c.serial_number],
+                "expanded_serials": [
+                    c.serial_number for c in children if c.serial_number
+                ],
             },
         )
         self.db.add(scan_event)
@@ -1448,7 +1581,14 @@ class InboundService:
             actor_id=worker_id,
         )
 
-        return self._slip_to_dict(slip)
+        result = self._slip_to_dict(slip)
+        # Make dropped scans loud: a unit refused by the duplicate-identity gate
+        # never reached the receipt, so the operator must be told at close time
+        # instead of closing the session believing every unit was captured.
+        result["blocked_scans"] = self._blocked_scans_for_session(
+            session_id, organization_id
+        )
+        return result
 
     # ------------------------------------------------------------------
     # CANCEL SESSION
@@ -1759,6 +1899,9 @@ class InboundService:
             "total_boxes": total_boxes,
             "total_quantity": total_quantity,
             "items": items_breakdown,
+            "blocked_scans": self._blocked_scans_for_session(
+                session_id, organization_id
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -2503,6 +2646,11 @@ class InboundService:
                 required_state=["pending_review"],
             )
 
+        # Reverse every stock effect this slip created *before* flipping it to
+        # rejected, so a failed reversal leaves the slip pending_review instead
+        # of half-rejected with stale stock still on hand (RCA_ASN-2026-00014).
+        self._reverse_slip_stock(slip, organization_id)
+
         updated_slip = self.slip_repo.update_rejection_reason(slip_id, reason.strip())
         self.db.refresh(updated_slip)
 
@@ -2519,6 +2667,123 @@ class InboundService:
         )
 
         return self._slip_to_dict(updated_slip)
+
+    # ------------------------------------------------------------------
+    # STOCK REVERSAL ON REJECT
+    # ------------------------------------------------------------------
+
+    def _reverse_slip_stock(self, slip, organization_id: UUID) -> int:
+        """Reverse every stock effect a receiving slip created.
+
+        A slip can book physical stock *before* approval: segregation flags
+        (``damaged``/``excess``/``hold``/``quarantine``) move the units straight
+        into a non-pickable HOLD/QUARANTINE/DAMAGED bin at classification time.
+        Rejecting the slip must undo that booking too — otherwise the identity
+        stays "on hand" forever and the duplicate-identity gate refuses to ever
+        receive the physical unit again (see
+        ``RCA_ASN-2026-00014_RECEIVING_COUNT_MISMATCH.md``).
+
+        Mirrors :meth:`remove_scan_items`: each tracking row that owns stock for
+        the slip is reversed and detached, and the slip's pending exceptions are
+        closed. Failures propagate so partial state is never committed silently.
+
+        Returns the number of stock rows reversed.
+        """
+        from app.models.inbound_exception import InboundException
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        trackings: dict = {}
+        for tracking in (
+            self.db.query(ScannedItemTracking)
+            .filter(ScannedItemTracking.receiving_slip_id == slip.id)
+            .all()
+        ):
+            trackings[tracking.id] = tracking
+
+        # Row-level exceptions raised against the slip link their tracking row
+        # even when ``receiving_slip_id`` was never written on it.
+        exceptions = (
+            self.db.query(InboundException)
+            .filter(InboundException.slip_id == slip.id)
+            .all()
+        )
+        for exception in exceptions:
+            if exception.tracking_id and exception.tracking_id not in trackings:
+                tracking = self.db.get(ScannedItemTracking, exception.tracking_id)
+                if tracking is not None:
+                    trackings[tracking.id] = tracking
+
+        return self._reverse_stock_effects(
+            list(trackings.values()), exceptions, organization_id
+        )
+
+    def _reverse_slip_line_stock(self, slip, item, organization_id: UUID) -> int:
+        """Reverse the segregated stock a single receipt line created.
+
+        Single-line rejection is the line-level twin of :meth:`reject_slip`.
+        """
+        from app.models.inbound_exception import InboundException
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.scan_session_id == slip.session_id,
+                ScannedItemTracking.qr_identifier == item.batch_number,
+            )
+            .all()
+        )
+        exceptions = (
+            self.db.query(InboundException)
+            .filter(InboundException.slip_item_id == item.id)
+            .all()
+        )
+        return self._reverse_stock_effects(trackings, exceptions, organization_id)
+
+    def _reverse_stock_effects(
+        self, trackings, exceptions, organization_id: UUID
+    ) -> int:
+        """Remove the bin stock owned by ``trackings`` and close ``exceptions``.
+
+        Shared by slip-level and line-level rejection. Stock is removed with
+        ``commit=False`` so every reversal and the status change land in one
+        transaction; any failure rolls the whole request back rather than
+        leaving a unit held in a bin with no owning receipt.
+
+        Returns the number of stock rows reversed.
+        """
+        from decimal import Decimal
+
+        from app.services.bin_stock_service import BinStockService
+
+        bin_stock_service = BinStockService(self.db)
+        reversed_count = 0
+        for tracking in trackings:
+            if not (tracking.stock_entered and tracking.stock_location_id):
+                continue
+            bin_stock_service.remove_stock(
+                bin_id=tracking.stock_location_id,
+                item_id=tracking.item_id,
+                quantity=Decimal(str(tracking.quantity or 1)),
+                org_id=organization_id,
+                batch_number=tracking.batch_number,
+                commit=False,
+            )
+            tracking.stock_entered = False
+            tracking.stock_entered_at = None
+            tracking.stock_location_id = None
+            # A rejected unit must not read as receivable on the tracking axis.
+            tracking.receiving_status = "rejected"
+            reversed_count += 1
+
+        # The slip's exceptions no longer reflect reality — close them so they
+        # stop surfacing in the supervisor queue as pending work.
+        for exception in exceptions:
+            if exception.status not in ("closed", "released", "cancelled"):
+                exception.status = "cancelled"
+
+        self.db.flush()
+        return reversed_count
 
     # ------------------------------------------------------------------
     # FLAG LINE ITEM
@@ -3038,6 +3303,11 @@ class InboundService:
                     }
                 ],
             )
+
+        # Release any physical stock this line created (a flagged line holds
+        # units in HOLD/QUARANTINE). Rejecting the line must undo that booking,
+        # exactly like reject_slip does at slip level.
+        self._reverse_slip_line_stock(slip, item, organization_id)
 
         updated_item = self.slip_repo.reject_item(
             item_id, reason.strip(), rejected_by=rejected_by, notes=notes
