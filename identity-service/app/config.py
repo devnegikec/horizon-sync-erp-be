@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Get the project root directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ENV_FILE = os.path.join(BASE_DIR, ".env")
+# Switch environments without editing this file, e.g.:
+#   ENV_FILE=.env.production uvicorn app.main:app --reload
+# Defaults to the service's own `.env`.
+ENV_FILE = os.environ.get("ENV_FILE") or os.path.join(BASE_DIR, ".env")
 
 
 class Settings(BaseSettings):

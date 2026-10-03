@@ -6,7 +6,11 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.workers import require_worker_manager
+from app.api.v1.endpoints.workers import (
+    _login_username_taken_in_org,
+    require_worker_manager,
+)
+from app.core.error_handler import http_error
 from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import CurrentUser, get_core_service_client, require_admin
@@ -120,17 +124,28 @@ async def create_warehouse_worker(  # noqa: C901
         .first()
     )
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Email {worker_email} is already registered",
+        raise http_error(
+            status.HTTP_409_CONFLICT,
+            f"Email {worker_email} is already registered",
+            code="EMAIL_TAKEN",
         )
 
     # Check if QR code already exists
     existing_qr = db.query(User).filter(User.qr_code == qr_code).first()
     if existing_qr:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"QR code {qr_code} is already in use",
+        raise http_error(
+            status.HTTP_409_CONFLICT,
+            f"QR code {qr_code} is already in use",
+            code="QR_CODE_TAKEN",
+        )
+
+    if body.login_username and _login_username_taken_in_org(
+        db, org_id, body.login_username
+    ):
+        raise http_error(
+            status.HTTP_409_CONFLICT,
+            f"Login username {body.login_username} already in use",
+            code="LOGIN_USERNAME_TAKEN",
         )
 
     # Find the warehouse_work_user role

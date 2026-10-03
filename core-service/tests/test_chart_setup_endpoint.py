@@ -162,7 +162,7 @@ class TestCreateDefaultChartEndpoint:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert "Failed to create default chart of accounts" in data["detail"]
+        assert "Failed to create default chart of accounts" in data["detail"]["message"]
 
     def test_create_default_chart_default_currency(self, db_session):
         """Test currency defaults to USD when not provided"""
@@ -518,4 +518,4 @@ class TestTriggerDefaultChartEndpoint:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert "Failed to create default chart of accounts" in data["detail"]
+        assert "Failed to create default chart of accounts" in data["detail"]["message"]

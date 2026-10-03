@@ -98,7 +98,7 @@ def test_register_duplicate_email(client, test_user_data):
 
     logger.info(f"Response status: {response.status_code}")
     assert response.status_code == status.HTTP_409_CONFLICT
-    assert "already registered" in response.json()["detail"]
+    assert "already registered" in response.json()["message"]
     logger.info("Duplicate email registration handled correctly")
 
 

@@ -9,9 +9,10 @@ import sys
 import warnings
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from http import HTTPStatus
 
 import sqlalchemy as sa
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -278,7 +279,20 @@ app.mount(
 
 
 # Exception handlers
-def create_error_response(status_code: int, message: str, code: str):
+def status_code_name(status_code: int) -> str:
+    """Map an HTTP status code to a stable, UI-friendly error code.
+
+    e.g. 409 -> "CONFLICT", 404 -> "NOT_FOUND", 423 -> "LOCKED".
+    """
+    try:
+        return HTTPStatus(status_code).name
+    except ValueError:
+        return f"HTTP_{status_code}"
+
+
+def create_error_response(
+    status_code: int, message: str, code: str, headers: dict | None = None
+):
     """Utility to create consistent error responses"""
     return JSONResponse(
         status_code=status_code,
@@ -289,6 +303,60 @@ def create_error_response(status_code: int, message: str, code: str):
                 "code": code,
             }
         },
+        headers=headers,
+    )
+
+
+def http_error(
+    status_code: int,
+    message: str,
+    code: str | None = None,
+    details: dict | None = None,
+) -> HTTPException:
+    """Build an HTTPException carrying a structured error body.
+
+    The global HTTPException handler below flattens this into the same
+    ``{"detail": {"message", "status_code", "code"}}`` shape used by the other
+    exception handlers, so the UI gets one consistent contract.
+    """
+    payload: dict = {
+        "message": message,
+        "status_code": status_code,
+        "code": code or status_code_name(status_code),
+    }
+    if details:
+        payload["details"] = details
+    return HTTPException(status_code=status_code, detail=payload)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Normalize plain HTTPException responses to the standard error shape.
+
+    Endpoints that raise ``HTTPException(detail="...")`` otherwise return the
+    FastAPI default ``{"detail": ...}`` string body, inconsistent with the
+    domain exception handlers. This maps every HTTPException into the same
+    ``{"detail": {"message", "status_code", "code"}}`` shape, while preserving
+    any extra keys on structured (dict) details.
+    """
+    detail = exc.detail
+    if isinstance(detail, dict):
+        # Structured detail — pass through unchanged, filling in the standard
+        # code/status_code fields when the caller omitted them.
+        content = dict(detail)
+        content.setdefault("code", status_code_name(exc.status_code))
+        content.setdefault("status_code", exc.status_code)
+    else:
+        content = {
+            "message": str(detail),
+            "status_code": exc.status_code,
+            "code": status_code_name(exc.status_code),
+        }
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": content},
+        headers=exc.headers,
     )
 
 
