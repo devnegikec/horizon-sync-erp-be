@@ -524,3 +524,28 @@ class OrgBlockListResponse(BaseModel):
     blocks: list[OrgBlockListItem]
     pagination: dict[str, Any]
     status_counts: QRBlockStatusCounts = Field(default_factory=QRBlockStatusCounts)
+
+
+# ── Bulk import ──────────────────────────────────────────────────────────────
+
+
+class QRProductImportError(BaseModel):
+    """One rejected row from a QR product bulk import."""
+
+    row: int = Field(..., description="1-based file row (header is row 1)")
+    sku: str | None = None
+    message: str
+
+
+class QRProductImportResult(BaseModel):
+    """Outcome of a QR product bulk import.
+
+    ``created`` and ``updated`` are counts of applied rows; ``failed`` rows are
+    listed in ``errors`` and do not abort the rest of the file.
+    """
+
+    total_rows: int
+    created: int
+    updated: int
+    failed: int
+    errors: list[QRProductImportError] = Field(default_factory=list)

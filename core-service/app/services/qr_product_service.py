@@ -53,6 +53,43 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
+def normalize_sku(value: str | None) -> str | None:
+    """Trim a SKU and treat a blank value as unset.
+
+    Uniqueness compares the trimmed, case-folded value, so '  ABC ' and 'abc'
+    are the same SKU.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def find_active_product_by_sku(
+    db: Session,
+    organization_id: UUID,
+    sku: str | None,
+    *,
+    exclude_product_id: UUID | None = None,
+) -> QRProduct | None:
+    """Return the active QR product holding ``sku`` in the organization.
+
+    Case- and whitespace-insensitive, ignoring soft-deleted products — the same
+    semantics as the partial unique index ``uq_qr_products_org_sku_ci``.
+    """
+    normalized = normalize_sku(sku)
+    if normalized is None:
+        return None
+    query = db.query(QRProduct).filter(
+        QRProduct.organization_id == organization_id,
+        QRProduct.deleted_at.is_(None),
+        func.lower(func.trim(QRProduct.sku)) == normalized.lower(),
+    )
+    if exclude_product_id is not None:
+        query = query.filter(QRProduct.id != exclude_product_id)
+    return query.first()
+
+
 def _build_excel(  # noqa: C901
     rows: list[dict],
     qr_type: str,
@@ -158,6 +195,35 @@ class QRProductService:
             else None
         )
 
+    def _assert_sku_available(
+        self,
+        organization_id: UUID,
+        sku: str | None,
+        *,
+        exclude_product_id: UUID | None = None,
+    ) -> None:
+        """Reject a SKU already used by another active product in the org.
+
+        The partial unique index is the backstop for concurrent creates; this
+        check turns the common case into a clear 409 before any linked Item is
+        created from the same SKU.
+        """
+        existing = find_active_product_by_sku(
+            self.db,
+            organization_id,
+            sku,
+            exclude_product_id=exclude_product_id,
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"SKU '{normalize_sku(sku)}' is already used by product "
+                    f"'{existing.name}'. SKUs must be unique within the "
+                    "organization."
+                ),
+            )
+
     # ── Products ──────────────────────────────────────────────────────────────
 
     def _validate_shelf_life_setting(
@@ -262,6 +328,11 @@ class QRProductService:
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
+        # A QR product's SKU is the organization-wide business key: normalise it
+        # and reserve it before the linked inventory Item copies the same value.
+        product_dict["sku"] = normalize_sku(product_dict.get("sku"))
+        if product_dict["sku"] is not None:
+            self._assert_sku_available(organization_id, product_dict["sku"])
         self._validate_shelf_life_setting(
             product_dict.get("shelf_life_setting_id"), organization_id
         )
@@ -281,7 +352,19 @@ class QRProductService:
                     detail="Brand not found",
                 )
 
-        qr_product = self.product_repo.create(product_dict)
+        try:
+            qr_product = self.product_repo.create(product_dict)
+        except IntegrityError as exc:
+            # Concurrent create with the same SKU (the partial unique index is
+            # the authoritative guard). Surface it as a clean conflict.
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"SKU '{product_dict.get('sku')}' is already used by another "
+                    "product. SKUs must be unique within the organization."
+                ),
+            ) from exc
 
         # Auto-create a corresponding inventory Item linked to this QR product.
         # This ensures every QR product has a trackable item in the ERP without

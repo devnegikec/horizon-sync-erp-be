@@ -1,5 +1,6 @@
 """QR Products API endpoints"""
 
+import io
 from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
@@ -35,6 +36,7 @@ from app.schemas.qr_product import (
     QRBlockStatusCounts,
     QRProductCreate,
     QRProductImageResponse,
+    QRProductImportResult,
     QRProductListResponse,
     QRProductResponse,
     QRProductUpdate,
@@ -43,6 +45,7 @@ from app.schemas.qr_product import (
     ScanAnalyticsResponse,
 )
 from app.services.qr_block_queue import enqueue_qr_block
+from app.services.qr_product_bulk_service import QRProductBulkService
 from app.services.qr_product_service import QRProductService
 from app.services.storage_service import (
     PRODUCT_IMAGE_CONTENT_TYPES,
@@ -101,6 +104,98 @@ async def list_qr_products(
         products=[QRProductResponse.model_validate(p) for p in products],
         pagination=pagination,
     )
+
+
+# ── Bulk import / export (literal paths — MUST be before /{product_id}) ──────
+
+_BULK_MEDIA_TYPES = {
+    "csv": "text/csv",
+    "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+}
+
+
+def _bulk_stream(content: bytes, filename: str, file_format: str):
+    from fastapi.responses import StreamingResponse
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=_BULK_MEDIA_TYPES.get(file_format, "text/csv"),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/export",
+    summary="Export QR products (CSV or XLSX)",
+    description=(
+        "Download every matching QR product. The column layout is identical to "
+        "the import template, so an export can be edited and re-imported."
+    ),
+)
+async def export_qr_products(
+    file_format: Literal["csv", "xlsx"] = Query("csv", alias="format"),
+    is_active: bool | None = Query(None),
+    search: str | None = Query(None, max_length=100),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+    db: Session = Depends(get_db),
+):
+    content, filename = QRProductBulkService(db).export_products(
+        current_user.organization_id,
+        file_format=file_format,
+        is_active=is_active,
+        search=search,
+    )
+    return _bulk_stream(content, filename, file_format)
+
+
+@router.get(
+    "/import/template",
+    summary="Download the QR product import template (CSV or XLSX)",
+)
+async def download_qr_product_import_template(
+    file_format: Literal["csv", "xlsx"] = Query("csv", alias="format"),
+    current_user: CurrentUser = Depends(require_permission("qr_product.read")),
+    db: Session = Depends(get_db),
+):
+    content, filename = QRProductBulkService(db).template(file_format=file_format)
+    return _bulk_stream(content, filename, file_format)
+
+
+@router.post(
+    "/import",
+    response_model=QRProductImportResult,
+    summary="Bulk import QR products (CSV or XLSX)",
+    description=(
+        "Upsert products from a file. Rows are matched on SKU "
+        "(case-insensitive): a match updates the product, otherwise a new "
+        "product (and its linked inventory item) is created. Invalid rows are "
+        "reported per row without aborting the rest of the file."
+    ),
+)
+async def import_qr_products(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(require_permission("qr_product.create")),
+    db: Session = Depends(get_db),
+) -> QRProductImportResult:
+    content = await file.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Uploaded file is empty",
+        )
+    try:
+        result = QRProductBulkService(db).import_products(
+            current_user.organization_id,
+            current_user.id,
+            content,
+            file.filename,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return QRProductImportResult(**result)
 
 
 @router.get(
