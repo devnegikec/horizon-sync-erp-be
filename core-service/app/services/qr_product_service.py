@@ -90,6 +90,46 @@ def find_active_product_by_sku(
     return query.first()
 
 
+#: Packaging keys shared by ``QRProductPackagingDetails`` and the item schema.
+_PACKAGING_KEYS = (
+    "unit_name",
+    "conversion_factor",
+    "items_per_master_pack",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "weight_grams",
+    # Master carton (MC)
+    "master_pack_unit_name",
+    "master_pack_length_mm",
+    "master_pack_width_mm",
+    "master_pack_height_mm",
+    "master_pack_weight_grams",
+    "master_pack_fill_factor",
+    "master_pack_void_fill_pct",
+    "master_pack_wall_thickness_mm",
+)
+
+
+def _to_item_packaging_details(packaging_details: dict):
+    """Map a product packaging payload onto the item packaging schema.
+
+    Covers both the inner carton / base unit (IC) and the master carton (MC),
+    so explicit MC dimensions and the estimation knobs survive the
+    product → linked-item hop.
+    """
+    from app.schemas.item import ItemPackagingDetails
+
+    kwargs = {
+        key: packaging_details[key]
+        for key in _PACKAGING_KEYS
+        if key in packaging_details
+    }
+    kwargs.setdefault("unit_name", "Each")
+    kwargs.setdefault("conversion_factor", Decimal("1"))
+    return ItemPackagingDetails(**kwargs)
+
+
 def _build_excel(  # noqa: C901
     rows: list[dict],
     qr_type: str,
@@ -447,21 +487,9 @@ class QRProductService:
 
             if packaging_details:
                 try:
-                    from app.schemas.item import ItemPackagingDetails
                     from app.services.item_service import ItemService
 
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         item, details, organization_id
                     )
@@ -632,7 +660,6 @@ class QRProductService:
         if packaging_details is not None:
             try:
                 from app.models.item import Item
-                from app.schemas.item import ItemPackagingDetails
                 from app.services.item_service import ItemService
 
                 linked_item = (
@@ -644,18 +671,7 @@ class QRProductService:
                     .first()
                 )
                 if linked_item is not None:
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         linked_item, details, organization_id
                     )

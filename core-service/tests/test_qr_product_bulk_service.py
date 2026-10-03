@@ -86,6 +86,127 @@ class TestParseRow:
         with pytest.raises(ValueError, match="conversion_factor"):
             parse_row({"name": "W", "conversion_factor": "0"}, 2)
 
+    # ── Master carton (MC) ────────────────────────────────────────────────
+
+    def test_master_carton_fields_are_parsed(self):
+        payload = parse_row(
+            {
+                "name": "W",
+                "conversion_factor": "12",
+                "master_pack_unit_name": "Carton of 12",
+                "master_pack_length_mm": "400",
+                "master_pack_width_mm": "300",
+                "master_pack_height_mm": "250",
+                "master_pack_weight_grams": "5400",
+                "master_pack_fill_factor": "0.8",
+                "master_pack_void_fill_pct": "0.15",
+                "master_pack_wall_thickness_mm": "4",
+            },
+            2,
+        )
+        packaging = payload["packaging"]
+        assert packaging["master_pack_unit_name"] == "Carton of 12"
+        assert packaging["master_pack_length_mm"] == Decimal("400")
+        assert packaging["master_pack_width_mm"] == Decimal("300")
+        assert packaging["master_pack_height_mm"] == Decimal("250")
+        assert packaging["master_pack_weight_grams"] == Decimal("5400")
+        assert packaging["master_pack_fill_factor"] == Decimal("0.8")
+        assert packaging["master_pack_void_fill_pct"] == Decimal("0.15")
+        assert packaging["master_pack_wall_thickness_mm"] == Decimal("4")
+        # IC defaults are still applied whenever any packaging column is present.
+        assert packaging["unit_name"] == "Each"
+        assert packaging["conversion_factor"] == Decimal("12")
+
+    def test_master_carton_alone_still_produces_packaging(self):
+        payload = parse_row({"name": "W", "master_pack_unit_name": "Carton"}, 2)
+        assert payload["packaging"]["master_pack_unit_name"] == "Carton"
+        assert payload["packaging"]["unit_name"] == "Each"
+
+    def test_rejects_master_pack_fill_factor_out_of_range(self):
+        with pytest.raises(ValueError, match="master_pack_fill_factor"):
+            parse_row({"name": "W", "master_pack_fill_factor": "0"}, 2)
+        with pytest.raises(ValueError, match="master_pack_fill_factor"):
+            parse_row({"name": "W", "master_pack_fill_factor": "1.2"}, 2)
+
+    def test_rejects_master_pack_void_fill_out_of_range(self):
+        with pytest.raises(ValueError, match="master_pack_void_fill_pct"):
+            parse_row({"name": "W", "master_pack_void_fill_pct": "1.5"}, 2)
+
+    def test_rejects_negative_master_pack_dimension(self):
+        with pytest.raises(ValueError, match="master_pack_length_mm"):
+            parse_row({"name": "W", "master_pack_length_mm": "-1"}, 2)
+
+    # ── Linked inventory item fields ──────────────────────────────────────
+
+    def test_item_fields_are_parsed(self):
+        group_id = uuid4()
+        payload = parse_row(
+            {
+                "name": "W",
+                "description": "A widget",
+                "uom": "Box",
+                "item_group_id": str(group_id),
+                "maintain_stock": "false",
+                "valuation_method": "FIFO",
+                "standard_rate": "19.99",
+                "valuation_rate": "12.50",
+                "min_order_qty": "5",
+                "max_order_qty": "500",
+                "reorder_level": "20",
+                "reorder_qty": "100",
+                "weight_per_unit": "0.75",
+                "weight_uom": "kg",
+                "barcode": "8901234567890",
+                "image_url": "https://example.com/a.jpg",
+                "item_status": "Active",
+            },
+            2,
+        )
+        fields = payload["item_fields"]
+        assert fields["description"] == "A widget"
+        assert fields["uom"] == "Box"
+        assert fields["item_group_id"] == group_id
+        assert fields["maintain_stock"] is False
+        assert fields["valuation_method"] == "fifo"
+        assert fields["standard_rate"] == Decimal("19.99")
+        assert fields["valuation_rate"] == Decimal("12.50")
+        assert fields["min_order_qty"] == 5
+        assert fields["max_order_qty"] == 500
+        assert fields["reorder_level"] == 20
+        assert fields["reorder_qty"] == 100
+        assert fields["weight_per_unit"] == Decimal("0.75")
+        assert fields["weight_uom"] == "kg"
+        assert fields["barcode"] == "8901234567890"
+        assert fields["image_url"] == "https://example.com/a.jpg"
+        assert fields["status"] == "active"
+
+    def test_item_group_name_is_kept_for_later_resolution(self):
+        payload = parse_row({"name": "W", "item_group_name": "Electronics"}, 2)
+        assert payload["item_fields"]["item_group_name"] == "Electronics"
+
+    def test_item_fields_absent_when_no_item_columns(self):
+        assert "item_fields" not in parse_row({"name": "W", "sku": "ABC-1"}, 2)
+
+    def test_rejects_invalid_item_group_id(self):
+        with pytest.raises(ValueError, match="item_group_id"):
+            parse_row({"name": "W", "item_group_id": "not-a-uuid"}, 2)
+
+    def test_rejects_invalid_valuation_method(self):
+        with pytest.raises(ValueError, match="valuation_method"):
+            parse_row({"name": "W", "valuation_method": "guesswork"}, 2)
+
+    def test_rejects_invalid_item_status(self):
+        with pytest.raises(ValueError, match="item_status"):
+            parse_row({"name": "W", "item_status": "archived"}, 2)
+
+    def test_rejects_negative_rate(self):
+        with pytest.raises(ValueError, match="standard_rate"):
+            parse_row({"name": "W", "standard_rate": "-1"}, 2)
+
+    def test_rejects_min_order_qty_below_one(self):
+        with pytest.raises(ValueError, match="min_order_qty"):
+            parse_row({"name": "W", "min_order_qty": "0"}, 2)
+
 
 class TestRenderAndRead:
     def _service(self):
@@ -169,3 +290,110 @@ class TestRenderAndRead:
             [{"name": "Widget", "sku": "ABC-1"}], PRODUCT_COLUMNS, "csv", "exp"
         )
         assert "Widget" in content.decode("utf-8-sig")
+
+
+class TestPackageColumns:
+    def test_template_columns_cover_ic_mc_and_item_fields(self):
+        expected = [
+            # Inner carton (IC)
+            "unit_name",
+            "conversion_factor",
+            "items_per_master_pack",
+            "length_mm",
+            "width_mm",
+            "height_mm",
+            "weight_grams",
+            # Master carton (MC)
+            "master_pack_unit_name",
+            "master_pack_length_mm",
+            "master_pack_width_mm",
+            "master_pack_height_mm",
+            "master_pack_weight_grams",
+            "master_pack_fill_factor",
+            "master_pack_void_fill_pct",
+            "master_pack_wall_thickness_mm",
+            # Linked item
+            "description",
+            "uom",
+            "item_group_id",
+            "item_group_name",
+            "maintain_stock",
+            "valuation_method",
+            "standard_rate",
+            "valuation_rate",
+            "min_order_qty",
+            "max_order_qty",
+            "reorder_level",
+            "reorder_qty",
+            "weight_per_unit",
+            "weight_uom",
+            "barcode",
+            "item_status",
+        ]
+        for column in expected:
+            assert column in PRODUCT_COLUMNS
+
+    def test_columns_are_unique(self):
+        assert len(PRODUCT_COLUMNS) == len(set(PRODUCT_COLUMNS))
+
+
+class TestPackagingFromItem:
+    class _Unit:
+        def __init__(self, **kwargs):
+            self.unit_name = "Each"
+            self.conversion_factor = Decimal("1")
+            self.items_per_master_pack = None
+            self.length_mm = None
+            self.width_mm = None
+            self.height_mm = None
+            self.weight_grams = None
+            self.master_pack_fill_factor = None
+            self.master_pack_void_fill_pct = None
+            self.master_pack_wall_thickness_mm = None
+            self.is_base_unit = False
+            self.is_active = True
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    def test_splits_base_unit_and_carton(self):
+        from app.services.qr_product_bulk_service import _packaging_from_item
+
+        base = self._Unit(
+            unit_name="Each",
+            conversion_factor=Decimal("1"),
+            items_per_master_pack=12,
+            length_mm=Decimal("100"),
+            is_base_unit=True,
+        )
+        carton = self._Unit(
+            unit_name="Carton of 12",
+            conversion_factor=Decimal("12"),
+            length_mm=Decimal("400"),
+            weight_grams=Decimal("5000"),
+            master_pack_fill_factor=Decimal("0.8"),
+            is_base_unit=False,
+        )
+        item = type("Item", (), {"packaging_units": [base, carton]})()
+
+        ic, mc = _packaging_from_item(item)
+        assert ic["unit_name"] == "Each"
+        assert ic["items_per_master_pack"] == 12
+        assert mc["master_pack_unit_name"] == "Carton of 12"
+        assert mc["master_pack_length_mm"] == Decimal("400")
+        assert mc["master_pack_weight_grams"] == Decimal("5000")
+        assert mc["master_pack_fill_factor"] == Decimal("0.8")
+        # The MC dict must not leak the un-prefixed IC keys.
+        assert "unit_name" not in mc
+
+    def test_ignores_inactive_units(self):
+        from app.services.qr_product_bulk_service import _packaging_from_item
+
+        inactive = self._Unit(unit_name="Old Carton", is_active=False)
+        item = type("Item", (), {"packaging_units": [inactive]})()
+        ic, mc = _packaging_from_item(item)
+        assert ic == {} and mc == {}
+
+    def test_returns_empty_dicts_without_item(self):
+        from app.services.qr_product_bulk_service import _packaging_from_item
+
+        assert _packaging_from_item(None) == ({}, {})
