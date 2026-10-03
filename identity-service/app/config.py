@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_max_overflow: int = 10
     db_pool_recycle: int = 1800  # Recycle connections every 30 min
-    db_pool_timeout: int = 30    # Wait up to 30s for a connection
+    db_pool_timeout: int = 30  # Wait up to 30s for a connection
 
     # Security
     secret_key: str
@@ -134,8 +134,7 @@ def _load_secret_from_secrets_manager(secret_id: str, region: str) -> str | None
         return response.get("SecretString")
     except Exception as exc:  # noqa: BLE001 — log and fall back to env/default
         logger.warning(
-            "Failed to load core service secret from AWS Secrets Manager "
-            "(%s): %s",
+            "Failed to load core service secret from AWS Secrets Manager " "(%s): %s",
             secret_id,
             exc,
         )

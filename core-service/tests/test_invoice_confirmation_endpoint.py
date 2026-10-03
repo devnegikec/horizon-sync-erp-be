@@ -4,19 +4,18 @@ Tests the POST /api/v1/invoices/{invoice_id}/confirm endpoint
 """
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
+from app.dependencies import CurrentUser
 from app.main import app
 from app.models.base import AccountStatus, AccountType
 from app.models.chart_of_account import Account
 from app.models.default_account import DefaultAccount
 from app.models.invoice import Invoice
-from app.dependencies import CurrentUser
 
 
 @pytest.fixture
@@ -39,7 +38,12 @@ def mock_user_with_invoice_permissions(organization_id, user_id):
         email="test@example.com",
         organization_id=organization_id,
         user_type="user",
-        permissions=["invoice.create", "invoice.read", "invoice.update", "invoice.delete"],
+        permissions=[
+            "invoice.create",
+            "invoice.read",
+            "invoice.update",
+            "invoice.delete",
+        ],
     )
 
 
@@ -218,7 +222,7 @@ def submitted_invoice(db_session, organization_id, user_id):
 
 class TestInvoiceConfirmationEndpointSuccess:
     """Tests for successful invoice confirmation via API endpoint
-    
+
     **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
     """
 
@@ -229,17 +233,19 @@ class TestInvoiceConfirmationEndpointSuccess:
         sales_default_accounts,
     ):
         """Test POST /api/v1/invoices/{invoice_id}/confirm success
-        
+
         **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
         """
         # Confirm the invoice via API
         response = client_with_permissions.post(
             f"/api/v1/invoices/{draft_sales_invoice.id}/confirm"
         )
-        
+
         # Verify response status code
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
+        assert (
+            response.status_code == 200
+        ), f"Expected 200, got {response.status_code}: {response.text}"
+
         # Verify response data
         data = response.json()
         assert data["id"] == str(draft_sales_invoice.id)
@@ -251,7 +257,7 @@ class TestInvoiceConfirmationEndpointSuccess:
 
 class TestInvoiceConfirmationEndpointValidation:
     """Tests for invoice confirmation endpoint validation
-    
+
     **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
     """
 
@@ -260,7 +266,7 @@ class TestInvoiceConfirmationEndpointValidation:
         client_with_permissions,
     ):
         """Test confirmation with invalid invoice_id returns 404
-        
+
         **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
         """
         # Attempt to confirm non-existent invoice
@@ -268,15 +274,19 @@ class TestInvoiceConfirmationEndpointValidation:
         response = client_with_permissions.post(
             f"/api/v1/invoices/{nonexistent_id}/confirm"
         )
-        
+
         # Verify 404 response
-        assert response.status_code == 404, f"Expected 404, got {response.status_code}: {response.text}"
-        
+        assert (
+            response.status_code == 404
+        ), f"Expected 404, got {response.status_code}: {response.text}"
+
         # Verify error message
         data = response.json()
         # The error response may have different formats, check both
         error_message = data.get("detail", data.get("message", ""))
-        assert "not found" in str(error_message).lower() or str(nonexistent_id) in str(error_message)
+        assert "not found" in str(error_message).lower() or str(nonexistent_id) in str(
+            error_message
+        )
 
     def test_confirm_already_submitted_invoice(
         self,
@@ -285,21 +295,26 @@ class TestInvoiceConfirmationEndpointValidation:
         sales_default_accounts,
     ):
         """Test confirmation with already-submitted invoice returns 400
-        
+
         **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
         """
         # Attempt to confirm already-submitted invoice
         response = client_with_permissions.post(
             f"/api/v1/invoices/{submitted_invoice.id}/confirm"
         )
-        
+
         # Verify 400 response
-        assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-        
+        assert (
+            response.status_code == 400
+        ), f"Expected 400, got {response.status_code}: {response.text}"
+
         # Verify error message mentions status
         data = response.json()
         error_message = data.get("detail", data.get("message", ""))
-        assert "draft" in str(error_message).lower() or "submitted" in str(error_message).lower()
+        assert (
+            "draft" in str(error_message).lower()
+            or "submitted" in str(error_message).lower()
+        )
 
     def test_confirm_without_default_accounts(
         self,
@@ -307,21 +322,27 @@ class TestInvoiceConfirmationEndpointValidation:
         draft_sales_invoice,
     ):
         """Test confirmation without default accounts returns 400
-        
+
         **Validates: Requirements 2.1, 2.2**
         """
         # Attempt to confirm invoice without default accounts configured
         response = client_with_permissions.post(
             f"/api/v1/invoices/{draft_sales_invoice.id}/confirm"
         )
-        
+
         # Verify 400 response
-        assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-        
+        assert (
+            response.status_code == 400
+        ), f"Expected 400, got {response.status_code}: {response.text}"
+
         # Verify error message mentions missing accounts or configuration
         data = response.json()
         error_message = data.get("detail", data.get("message", ""))
-        assert "not configured" in str(error_message).lower() or "required" in str(error_message).lower() or "default account" in str(error_message).lower()
+        assert (
+            "not configured" in str(error_message).lower()
+            or "required" in str(error_message).lower()
+            or "default account" in str(error_message).lower()
+        )
 
     def test_confirm_without_proper_permissions(
         self,
@@ -330,20 +351,25 @@ class TestInvoiceConfirmationEndpointValidation:
         sales_default_accounts,
     ):
         """Test confirmation without proper permissions returns 403
-        
+
         **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
         """
         # Attempt to confirm invoice without update permission
         response = client_without_permissions.post(
             f"/api/v1/invoices/{draft_sales_invoice.id}/confirm"
         )
-        
+
         # Verify 403 response
-        assert response.status_code == 403, f"Expected 403, got {response.status_code}: {response.text}"
-        
+        assert (
+            response.status_code == 403
+        ), f"Expected 403, got {response.status_code}: {response.text}"
+
         # Verify error message mentions permission
         data = response.json()
-        assert "permission" in data["detail"]["message"].lower() or "forbidden" in data["detail"]["message"].lower()
+        assert (
+            "permission" in data["detail"]["message"].lower()
+            or "forbidden" in data["detail"]["message"].lower()
+        )
 
 
 class TestInvoiceConfirmationEndpointResponseStructure:
@@ -360,10 +386,10 @@ class TestInvoiceConfirmationEndpointResponseStructure:
         response = client_with_permissions.post(
             f"/api/v1/invoices/{draft_sales_invoice.id}/confirm"
         )
-        
+
         # Verify response status code
         assert response.status_code == 200
-        
+
         # Verify response includes all required fields
         data = response.json()
         assert "id" in data
@@ -376,9 +402,9 @@ class TestInvoiceConfirmationEndpointResponseStructure:
         assert "party_id" in data
         assert "posting_date" in data
         assert "currency" in data
-        
+
         # Verify submitted_at is not None
         assert data["submitted_at"] is not None
-        
+
         # Verify outstanding_amount equals grand_total
         assert data["outstanding_amount"] == data["grand_total"]

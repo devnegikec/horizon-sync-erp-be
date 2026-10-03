@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
     # Auto-seed system admin roles & permissions (idempotent)
     try:
         from scripts.seed_system_admin_roles import seed_system_admin_roles
+
         seed_system_admin_roles()
         logger.info("System admin roles & permissions seed completed")
     except Exception as e:
@@ -65,13 +66,17 @@ async def lifespan(app: FastAPI):
 
     # Ensure canonical organization.* permissions exist (idempotent safety net)
     try:
-        from app.database import SessionLocal
         from sqlalchemy import text
+
+        from app.database import SessionLocal
+
         db = SessionLocal()
         try:
             for action in ("read", "create", "update", "delete", "manage"):
                 code = f"organization.{action}"
-                db.execute(text("""
+                db.execute(
+                    text(
+                        """
                     INSERT INTO permissions (id, code, name, resource, action, module, is_active, created_at, updated_at, extra_data)
                     SELECT
                         gen_random_uuid(),
@@ -87,7 +92,14 @@ async def lifespan(app: FastAPI):
                     WHERE NOT EXISTS (
                         SELECT 1 FROM permissions WHERE code = :code
                     )
-                """), {"code": code, "name": f"Organization {action.title()}", "action": action})
+                """
+                    ),
+                    {
+                        "code": code,
+                        "name": f"Organization {action.title()}",
+                        "action": action,
+                    },
+                )
             db.commit()
             logger.info("organization.* permissions ensured")
         finally:

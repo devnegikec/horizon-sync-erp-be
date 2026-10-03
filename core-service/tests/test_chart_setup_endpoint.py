@@ -3,7 +3,6 @@
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -252,9 +251,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -318,9 +317,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -398,9 +397,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -454,9 +453,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -503,9 +502,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(

@@ -294,6 +294,8 @@ def _login_username_taken_in_org(
     if exclude_user_id is not None:
         q = q.filter(User.id != exclude_user_id)
     return q.first() is not None
+
+
 async def _worker_ids_for_warehouse(
     client: CoreServiceClient | None,
     warehouse_id: str,
