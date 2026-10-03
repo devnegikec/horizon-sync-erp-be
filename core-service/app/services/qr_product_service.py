@@ -90,6 +90,61 @@ def find_active_product_by_sku(
     return query.first()
 
 
+#: Packaging keys shared by ``QRProductPackagingDetails`` and the item schema.
+_PACKAGING_KEYS = (
+    "unit_name",
+    "conversion_factor",
+    "items_per_master_pack",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "weight_grams",
+    # Master carton (MC)
+    "master_pack_unit_name",
+    "master_pack_length_mm",
+    "master_pack_width_mm",
+    "master_pack_height_mm",
+    "master_pack_weight_grams",
+    "master_pack_fill_factor",
+    "master_pack_void_fill_pct",
+    "master_pack_wall_thickness_mm",
+)
+
+
+def _json_safe_packaging(packaging_details: dict) -> dict:
+    """Make a packaging payload safe for the JSONB ``extra_data`` column.
+
+    ``packaging_details`` carries ``Decimal`` values and the JSONB serializer
+    (``json.dumps``) cannot handle them, so numbers are stored as floats.
+    """
+    return {
+        key: (float(value) if isinstance(value, Decimal) else value)
+        for key, value in packaging_details.items()
+    }
+
+
+def _to_item_packaging_details(packaging_details: dict):
+    """Map a product packaging payload onto the item packaging schema.
+
+    Covers both the inner carton / base unit (IC) and the master carton (MC),
+    so explicit MC dimensions and the estimation knobs survive the
+    product → linked-item hop.
+    """
+    from app.schemas.item import ItemPackagingDetails
+
+    kwargs = {
+        key: value
+        for key, value in packaging_details.items()
+        # Unset (None) values are dropped so the item schema's own "not
+        # provided" semantics win — otherwise a partial packaging update would
+        # reset stored master-carton settings back to schema defaults.
+        if key in _PACKAGING_KEYS and value is not None
+    }
+    kwargs.setdefault("unit_name", "Each")
+    kwargs.setdefault("conversion_factor", Decimal("1"))
+    return ItemPackagingDetails(**kwargs)
+
+
 def _build_excel(  # noqa: C901
     rows: list[dict],
     qr_type: str,
@@ -318,12 +373,7 @@ class QRProductService:
         packaging_details = product_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(product_dict.get("extra_data") or {})
-            # packaging_details contains Decimal values; the JSONB serializer
-            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
-            extra["packaging_details"] = {
-                key: (float(value) if isinstance(value, Decimal) else value)
-                for key, value in packaging_details.items()
-            }
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
@@ -447,21 +497,9 @@ class QRProductService:
 
             if packaging_details:
                 try:
-                    from app.schemas.item import ItemPackagingDetails
                     from app.services.item_service import ItemService
 
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         item, details, organization_id
                     )
@@ -597,7 +635,7 @@ class QRProductService:
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(update_dict.get("extra_data") or {})
-            extra["packaging_details"] = packaging_details
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             update_dict["extra_data"] = extra
 
         if "shelf_life_setting_id" in update_dict:
@@ -632,7 +670,6 @@ class QRProductService:
         if packaging_details is not None:
             try:
                 from app.models.item import Item
-                from app.schemas.item import ItemPackagingDetails
                 from app.services.item_service import ItemService
 
                 linked_item = (
@@ -644,18 +681,7 @@ class QRProductService:
                     .first()
                 )
                 if linked_item is not None:
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         linked_item, details, organization_id
                     )

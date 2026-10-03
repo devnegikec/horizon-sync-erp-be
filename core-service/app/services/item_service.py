@@ -782,12 +782,18 @@ class ItemService:
                 base.is_base_unit = True
 
         base.conversion_factor = packaging_details.conversion_factor
-        if hasattr(packaging_details, "items_per_master_pack"):
-            base.items_per_master_pack = packaging_details.items_per_master_pack
-        base.length_mm = packaging_details.length_mm
-        base.width_mm = packaging_details.width_mm
-        base.height_mm = packaging_details.height_mm
-        base.weight_grams = packaging_details.weight_grams
+        # Only overwrite the optional IC fields the caller actually supplied —
+        # otherwise a partial packaging update would blank stored dimensions.
+        provided = packaging_details.model_fields_set
+        for field in (
+            "items_per_master_pack",
+            "length_mm",
+            "width_mm",
+            "height_mm",
+            "weight_grams",
+        ):
+            if field in provided:
+                setattr(base, field, getattr(packaging_details, field))
 
         self._upsert_master_pack_unit(item, base, packaging_details, organization_id)
 
@@ -828,19 +834,51 @@ class ItemService:
                 row.is_active = False
             return
 
-        unit_name = (
-            getattr(packaging_details, "master_pack_unit_name", None)
-            or f"Master Pack of {mp}"
+        default_unit = f"Master Pack of {mp}"
+        # Active outer rows for this item, outermost first.
+        existing = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.is_base_unit.is_(False),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .order_by(ItemPackagingUnit.conversion_factor.desc())
+            .all()
         )
+
+        # An explicitly named carton wins; otherwise keep the item's existing
+        # carton (and its name) so an unnamed update does not spawn a duplicate
+        # row with a default name.
+        named_unit = getattr(packaging_details, "master_pack_unit_name", None)
+        if named_unit:
+            unit_name = named_unit
+        elif existing:
+            unit_name = existing[0].unit_name
+        else:
+            unit_name = default_unit
+
+        # The base unit and the master carton share a unique (item_id,
+        # unit_name) constraint, so a clashing name would otherwise select the
+        # base row below and demote it to non-base.
+        if base is not None and unit_name == base.unit_name:
+            unit_name = default_unit
 
         mc = (
             self.db.query(ItemPackagingUnit)
             .filter(
                 ItemPackagingUnit.item_id == item.id,
                 ItemPackagingUnit.unit_name == unit_name,
+                ItemPackagingUnit.is_base_unit.is_(False),
             )
             .first()
         )
+
+        # Only one outer row is the master carton; retire the rest so exports
+        # and master-pack grouping stay unambiguous.
+        for stale in existing:
+            if stale.unit_name != unit_name:
+                stale.is_active = False
 
         # Explicit overrides (None = not provided → leave existing / estimate).
         l = getattr(packaging_details, "master_pack_length_mm", None)  # noqa: E741

@@ -12,7 +12,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class QRProductPackagingDetails(BaseModel):
-    """Physical packaging details for a product's base packaging unit."""
+    """Physical packaging details for a product's base packaging unit.
+
+    The first block describes the **inner carton / base packaging unit (IC)** —
+    the "Each"-level pack. The ``master_pack_*`` block describes the
+    **master carton (MC)**: explicit outer dimensions/weight when known, plus
+    the estimation knobs used to derive any dimension that is omitted.
+    """
 
     unit_name: str = Field("Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(Decimal("1"), gt=0)
@@ -25,6 +31,33 @@ class QRProductPackagingDetails(BaseModel):
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
     weight_grams: Decimal | None = Field(None, ge=0)
+
+    # Master carton (MC) — explicit overrides plus estimation knobs. An omitted
+    # dimension is estimated from the base-unit dimensions. The three knobs are
+    # optional on purpose: a null value means "keep the stored setting" (or use
+    # the estimator default) instead of resetting it to a literal default.
+    master_pack_unit_name: str | None = Field(None, max_length=100)
+    master_pack_length_mm: Decimal | None = Field(None, ge=0)
+    master_pack_width_mm: Decimal | None = Field(None, ge=0)
+    master_pack_height_mm: Decimal | None = Field(None, ge=0)
+    master_pack_weight_grams: Decimal | None = Field(None, ge=0)
+    master_pack_fill_factor: Decimal | None = Field(
+        None,
+        gt=0,
+        le=1,
+        description="Packing efficiency used to estimate MC outer volume from base dims",
+    )
+    master_pack_void_fill_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Extra volume allowance (fraction) for dunnage/bubble wrap",
+    )
+    master_pack_wall_thickness_mm: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Carton wall thickness per side (mm) added when estimating MC dims",
+    )
 
 
 class QRProductBase(BaseModel):

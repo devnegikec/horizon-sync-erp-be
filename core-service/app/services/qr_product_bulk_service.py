@@ -26,6 +26,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
+from app.models.item import Item
 from app.models.qr_product import QRProduct
 from app.models.qr_product_setting import QRProductSetting
 from app.schemas.qr_product import (
@@ -61,6 +62,7 @@ PRODUCT_COLUMNS: list[str] = [
     "shelf_life_setting_value",
     "serial_prefix_setting_id",
     "serial_prefix_setting_value",
+    # Inner carton / base packaging unit (IC)
     "unit_name",
     "conversion_factor",
     "items_per_master_pack",
@@ -68,6 +70,33 @@ PRODUCT_COLUMNS: list[str] = [
     "width_mm",
     "height_mm",
     "weight_grams",
+    # Master carton (MC)
+    "master_pack_unit_name",
+    "master_pack_length_mm",
+    "master_pack_width_mm",
+    "master_pack_height_mm",
+    "master_pack_weight_grams",
+    "master_pack_fill_factor",
+    "master_pack_void_fill_pct",
+    "master_pack_wall_thickness_mm",
+    # Linked inventory item (mirrors the item-creation form)
+    "description",
+    "uom",
+    "item_group_id",
+    "item_group_name",
+    "maintain_stock",
+    "valuation_method",
+    "standard_rate",
+    "valuation_rate",
+    "min_order_qty",
+    "max_order_qty",
+    "reorder_level",
+    "reorder_qty",
+    "weight_per_unit",
+    "weight_uom",
+    "barcode",
+    "image_url",
+    "item_status",
 ]
 
 #: Extra, read-only columns included in exports only.
@@ -80,7 +109,8 @@ EXPORT_ONLY_COLUMNS: list[str] = [
     "updated_at",
 ]
 
-_PACKAGING_COLUMNS = (
+#: Inner carton / base packaging unit (IC) columns.
+_IC_PACKAGING_COLUMNS = (
     "unit_name",
     "conversion_factor",
     "items_per_master_pack",
@@ -89,6 +119,29 @@ _PACKAGING_COLUMNS = (
     "height_mm",
     "weight_grams",
 )
+
+#: Master carton (MC) columns.
+_MC_PACKAGING_COLUMNS = (
+    "master_pack_unit_name",
+    "master_pack_length_mm",
+    "master_pack_width_mm",
+    "master_pack_height_mm",
+    "master_pack_weight_grams",
+    "master_pack_fill_factor",
+    "master_pack_void_fill_pct",
+    "master_pack_wall_thickness_mm",
+)
+
+_PACKAGING_COLUMNS = _IC_PACKAGING_COLUMNS + _MC_PACKAGING_COLUMNS
+
+#: Columns forwarded to the linked inventory item.
+_ITEM_TEXT_FIELDS = ("description", "uom", "weight_uom", "barcode", "image_url")
+_ITEM_DECIMAL_FIELDS = ("standard_rate", "valuation_rate", "weight_per_unit")
+_ITEM_INT_FIELDS = ("min_order_qty", "max_order_qty", "reorder_level", "reorder_qty")
+_ITEM_BOOL_FIELDS = ("maintain_stock",)
+
+_ITEM_STATUSES = {"draft", "pending_approval", "active", "inactive", "discontinued"}
+_VALUATION_METHODS = {"fifo", "lifo", "moving_average", "standard"}
 
 _BOOL_TRUE = {"1", "true", "yes", "y", "t"}
 
@@ -162,6 +215,60 @@ def _maybe_uuid(value) -> UUID | None:
         return None
 
 
+def _enum_value(value):
+    """Return the plain string behind a SQLAlchemy enum column."""
+    return getattr(value, "value", value)
+
+
+def _packaging_from_item(item: Item | None) -> tuple[dict, dict]:
+    """Split the linked item's packaging rows into IC and MC field dicts.
+
+    IC is the base ("Each" level) row; MC is the active non-base row. Returns
+    empty dicts when the item has no packaging, so the caller can fall back to
+    the packaging payload stored on the product.
+    """
+    if item is None:
+        return {}, {}
+
+    units = getattr(item, "packaging_units", None) or []
+    base = next((u for u in units if u.is_base_unit and u.is_active), None)
+    # A flat row can only describe one master carton. Pick the outermost active
+    # outer unit deterministically (largest conversion factor, then name) rather
+    # than relying on the relationship's arbitrary row order.
+    carton = max(
+        (u for u in units if not u.is_base_unit and u.is_active),
+        key=lambda u: (u.conversion_factor or 0, u.unit_name or ""),
+        default=None,
+    )
+
+    ic: dict = {}
+    if base is not None:
+        ic = {
+            "unit_name": base.unit_name,
+            "conversion_factor": base.conversion_factor,
+            "items_per_master_pack": base.items_per_master_pack,
+            "length_mm": base.length_mm,
+            "width_mm": base.width_mm,
+            "height_mm": base.height_mm,
+            "weight_grams": base.weight_grams,
+        }
+
+    mc: dict = {}
+    if carton is not None:
+        mc = {
+            "master_pack_unit_name": carton.unit_name,
+            "master_pack_length_mm": carton.length_mm,
+            "master_pack_width_mm": carton.width_mm,
+            "master_pack_height_mm": carton.height_mm,
+            "master_pack_weight_grams": carton.weight_grams,
+            "master_pack_fill_factor": carton.master_pack_fill_factor,
+            "master_pack_void_fill_pct": carton.master_pack_void_fill_pct,
+            "master_pack_wall_thickness_mm": carton.master_pack_wall_thickness_mm,
+        }
+
+    return ic, mc
+
+
 def parse_row(raw: dict, row_number: int) -> dict:
     """Normalise one raw file row into a validated payload.
 
@@ -190,6 +297,10 @@ def parse_row(raw: dict, row_number: int) -> dict:
     packaging = _parse_packaging(raw)
     if packaging:
         payload["packaging"] = packaging
+
+    item_fields = _parse_item_fields(raw)
+    if item_fields:
+        payload["item_fields"] = item_fields
 
     return payload
 
@@ -258,6 +369,16 @@ def _parse_settings(raw: dict, payload: dict) -> None:
             payload[f"{prefix}_value"] = setting_value
 
 
+def _parse_dims(raw: dict, target: dict, fields: tuple[str, ...]) -> None:
+    """Parse non-negative decimal columns into ``target``."""
+    for field in fields:
+        value = _to_decimal(raw.get(field), field=field)
+        if value is not None:
+            if value < 0:
+                raise ValueError(f"{field} cannot be negative")
+            target[field] = value
+
+
 def _parse_packaging(raw: dict) -> dict:
     packaging: dict = {}
 
@@ -279,18 +400,162 @@ def _parse_packaging(raw: dict) -> dict:
             raise ValueError("items_per_master_pack must be greater than 0")
         packaging["items_per_master_pack"] = per_master
 
-    for field in ("length_mm", "width_mm", "height_mm", "weight_grams"):
-        dim = _to_decimal(raw.get(field), field=field)
-        if dim is not None:
-            if dim < 0:
-                raise ValueError(f"{field} cannot be negative")
-            packaging[field] = dim
+    _parse_dims(raw, packaging, ("length_mm", "width_mm", "height_mm", "weight_grams"))
+
+    _parse_master_pack(raw, packaging)
+    _require_master_pack_size(packaging)
 
     if not any(key in packaging for key in _PACKAGING_COLUMNS):
         return {}
     packaging.setdefault("unit_name", "Each")
     packaging.setdefault("conversion_factor", Decimal("1"))
     return packaging
+
+
+def _require_master_pack_size(packaging: dict) -> None:
+    """Reject an MC-only row that carries no master-pack size.
+
+    The item service derives the master-pack count from
+    ``items_per_master_pack`` (or a ``conversion_factor`` greater than 1) and
+    deactivates the carton when neither is supplied — silently discarding the
+    master-carton fields. Fail the row instead.
+    """
+    if not any(key in packaging for key in _MC_PACKAGING_COLUMNS):
+        return
+    if "items_per_master_pack" in packaging:
+        return
+    conversion = packaging.get("conversion_factor")
+    if conversion is not None and conversion > 1:
+        return
+    raise ValueError(
+        "master_pack_* fields require items_per_master_pack "
+        "(or a conversion_factor greater than 1)"
+    )
+
+
+def _parse_master_pack(raw: dict, packaging: dict) -> None:
+    """Parse the master carton (MC) columns into ``packaging``."""
+    unit_name = _as_text(raw.get("master_pack_unit_name"))
+    if unit_name is not None:
+        packaging["master_pack_unit_name"] = unit_name
+
+    _parse_dims(
+        raw,
+        packaging,
+        (
+            "master_pack_length_mm",
+            "master_pack_width_mm",
+            "master_pack_height_mm",
+            "master_pack_weight_grams",
+        ),
+    )
+
+    fill = _to_decimal(
+        raw.get("master_pack_fill_factor"), field="master_pack_fill_factor"
+    )
+    if fill is not None:
+        if not (Decimal("0") < fill <= Decimal("1")):
+            raise ValueError(
+                "master_pack_fill_factor must be greater than 0 and at most 1"
+            )
+        packaging["master_pack_fill_factor"] = fill
+
+    void = _to_decimal(
+        raw.get("master_pack_void_fill_pct"), field="master_pack_void_fill_pct"
+    )
+    if void is not None:
+        if not (Decimal("0") <= void <= Decimal("1")):
+            raise ValueError("master_pack_void_fill_pct must be between 0 and 1")
+        packaging["master_pack_void_fill_pct"] = void
+
+    thickness = _to_decimal(
+        raw.get("master_pack_wall_thickness_mm"), field="master_pack_wall_thickness_mm"
+    )
+    if thickness is not None:
+        if thickness < 0:
+            raise ValueError("master_pack_wall_thickness_mm cannot be negative")
+        packaging["master_pack_wall_thickness_mm"] = thickness
+
+
+def _parse_item_fields(raw: dict) -> dict:
+    """Parse the linked-item columns (uom, group, rates, reorder levels…).
+
+    Values are validated but not resolved — ids are looked up per organization
+    later, so a bad id is reported against the row rather than the whole file.
+    """
+    fields: dict = {}
+    _parse_item_text(raw, fields)
+    _parse_item_numbers(raw, fields)
+    _parse_item_bools(raw, fields)
+    _parse_item_group(raw, fields)
+    _parse_item_enums(raw, fields)
+    return fields
+
+
+def _parse_item_text(raw: dict, fields: dict) -> None:
+    for field in _ITEM_TEXT_FIELDS:
+        text = _as_text(raw.get(field))
+        if text is not None:
+            fields[field] = text
+
+
+def _parse_item_numbers(raw: dict, fields: dict) -> None:
+    for field in _ITEM_DECIMAL_FIELDS:
+        value = _to_decimal(raw.get(field), field=field)
+        if value is not None:
+            if value < 0:
+                raise ValueError(f"{field} cannot be negative")
+            fields[field] = value
+
+    for field in _ITEM_INT_FIELDS:
+        value = _to_int(raw.get(field), field=field)
+        if value is None:
+            continue
+        if value < 0:
+            raise ValueError(f"{field} cannot be negative")
+        if field == "min_order_qty" and value < 1:
+            raise ValueError("min_order_qty must be at least 1")
+        fields[field] = value
+
+
+def _parse_item_bools(raw: dict, fields: dict) -> None:
+    for field in _ITEM_BOOL_FIELDS:
+        if _as_text(raw.get(field)) is not None:
+            fields[field] = _to_bool(raw.get(field), field=field)
+
+
+def _parse_item_group(raw: dict, fields: dict) -> None:
+    group_id_text = _as_text(raw.get("item_group_id"))
+    if group_id_text is not None:
+        group_id = _maybe_uuid(group_id_text)
+        if group_id is None:
+            raise ValueError("item_group_id must be a valid UUID")
+        fields["item_group_id"] = group_id
+
+    group_name = _as_text(raw.get("item_group_name"))
+    if group_name is not None:
+        fields["item_group_name"] = group_name
+
+
+def _parse_item_enums(raw: dict, fields: dict) -> None:
+    valuation_method = _as_text(raw.get("valuation_method"))
+    if valuation_method is not None:
+        valuation_method = valuation_method.lower()
+        if valuation_method not in _VALUATION_METHODS:
+            raise ValueError(
+                "valuation_method must be one of: "
+                + ", ".join(sorted(_VALUATION_METHODS))
+            )
+        fields["valuation_method"] = valuation_method
+
+    item_status = _as_text(raw.get("item_status"))
+    if item_status is not None:
+        item_status = item_status.lower()
+        if item_status not in _ITEM_STATUSES:
+            raise ValueError(
+                "item_status must be one of: " + ", ".join(sorted(_ITEM_STATUSES))
+            )
+        fields["status"] = item_status
 
 
 class QRProductBulkService:
@@ -316,7 +581,8 @@ class QRProductBulkService:
             .options(
                 joinedload(QRProduct.shelf_life_setting),
                 joinedload(QRProduct.serial_prefix_setting),
-                joinedload(QRProduct.items),
+                joinedload(QRProduct.items).joinedload(Item.packaging_units),
+                joinedload(QRProduct.items).joinedload(Item.item_group),
             )
             .filter(
                 QRProduct.organization_id == organization_id,
@@ -344,9 +610,10 @@ class QRProductBulkService:
     @staticmethod
     def _export_row(product: QRProduct) -> dict:
         item = product.items[0] if product.items else None
-        packaging = product.extra_data or {}
-        packaging = packaging.get("packaging_details") or {}
-        return {
+        stored = (product.extra_data or {}).get("packaging_details") or {}
+        ic, mc = _packaging_from_item(item)
+
+        row = {
             "id": str(product.id),
             "name": product.name,
             "sku": product.sku,
@@ -376,23 +643,55 @@ class QRProductBulkService:
                 if product.serial_prefix_setting
                 else None
             ),
-            "unit_name": packaging.get("unit_name"),
-            "conversion_factor": packaging.get("conversion_factor"),
-            "items_per_master_pack": packaging.get("items_per_master_pack"),
-            "length_mm": packaging.get("length_mm"),
-            "width_mm": packaging.get("width_mm"),
-            "height_mm": packaging.get("height_mm"),
-            "weight_grams": packaging.get("weight_grams"),
-            "linked_item_id": str(item.id) if item else None,
-            "linked_item_code": item.item_code if item else None,
-            "serial_prefix": product.serial_prefix,
-            "created_at": product.created_at.isoformat()
-            if product.created_at
-            else None,
-            "updated_at": product.updated_at.isoformat()
-            if product.updated_at
-            else None,
         }
+
+        # Packaging (IC + MC): prefer the live item packaging rows, fall back to
+        # the payload stored on the product's extra_data.
+        for key in _PACKAGING_COLUMNS:
+            if key in ic:
+                row[key] = ic[key]
+            elif key in mc:
+                row[key] = mc[key]
+            else:
+                row[key] = stored.get(key)
+
+        row.update(
+            {
+                "description": item.description if item else None,
+                "uom": item.uom if item else None,
+                "item_group_id": (
+                    str(item.item_group_id) if item and item.item_group_id else None
+                ),
+                "item_group_name": (
+                    item.item_group.name if item and item.item_group else None
+                ),
+                "maintain_stock": item.maintain_stock if item else None,
+                "valuation_method": _enum_value(item.valuation_method)
+                if item
+                else None,
+                "standard_rate": item.standard_rate if item else None,
+                "valuation_rate": item.valuation_rate if item else None,
+                "min_order_qty": item.min_order_qty if item else None,
+                "max_order_qty": item.max_order_qty if item else None,
+                "reorder_level": item.reorder_level if item else None,
+                "reorder_qty": item.reorder_qty if item else None,
+                "weight_per_unit": item.weight_per_unit if item else None,
+                "weight_uom": item.weight_uom if item else None,
+                "barcode": item.barcode if item else None,
+                "image_url": item.image_url if item else None,
+                "item_status": _enum_value(item.status) if item else None,
+                "linked_item_id": str(item.id) if item else None,
+                "linked_item_code": item.item_code if item else None,
+                "serial_prefix": product.serial_prefix,
+                "created_at": product.created_at.isoformat()
+                if product.created_at
+                else None,
+                "updated_at": product.updated_at.isoformat()
+                if product.updated_at
+                else None,
+            }
+        )
+        return row
 
     @staticmethod
     def _render(
@@ -473,8 +772,15 @@ class QRProductBulkService:
     def _upsert_row(self, organization_id: UUID, user_id: UUID, payload: dict) -> bool:
         """Create or update one product. Returns True when a row was created."""
         packaging = payload.get("packaging")
+        item_fields = payload.get("item_fields")
         if payload.get("brand_id") is not None:
             self._assert_brand(organization_id, payload["brand_id"])
+
+        # Resolve item references before any write: the product create/update
+        # below commits internally, so an unknown item group must fail the row
+        # while nothing has been persisted yet.
+        if item_fields:
+            item_fields = self._prepare_item_fields(organization_id, item_fields)
 
         existing = find_active_product_by_sku(
             self.db, organization_id, payload.get("sku")
@@ -492,18 +798,97 @@ class QRProductBulkService:
                 **self._resolved_settings(organization_id, payload, required=False),
                 packaging_details=packaging_details,
             )
-            self.product_service.update_product(
+            product = self.product_service.update_product(
                 existing.id, update, organization_id, user_id
             )
-            return False
+            created = False
+        else:
+            create = QRProductCreate(
+                **self._create_kwargs(payload),
+                **self._resolved_settings(organization_id, payload, required=True),
+                packaging_details=packaging_details,
+            )
+            product = self.product_service.create_product(
+                create, organization_id, user_id
+            )
+            created = True
 
-        create = QRProductCreate(
-            **self._create_kwargs(payload),
-            **self._resolved_settings(organization_id, payload, required=True),
-            packaging_details=packaging_details,
+        if item_fields:
+            self._apply_item_fields(product, item_fields, organization_id, user_id)
+        return created
+
+    def _apply_item_fields(
+        self,
+        product: QRProduct,
+        fields: dict,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Write the row's item-level columns onto the linked inventory item."""
+        from app.schemas.item import ItemUpdate
+        from app.services.item_service import ItemService
+
+        item = (
+            self.db.query(Item)
+            .filter(Item.qr_product_id == product.id, Item.deleted_at.is_(None))
+            .first()
         )
-        self.product_service.create_product(create, organization_id, user_id)
-        return True
+        if item is None:
+            logger.warning(
+                "QR product %s has no linked item — skipping item fields", product.id
+            )
+            return
+
+        ItemService(self.db).update_item(
+            item.id, ItemUpdate(**fields), organization_id, user_id
+        )
+
+    def _prepare_item_fields(self, organization_id: UUID, fields: dict) -> dict:
+        """Resolve the row's item group to an id before anything is written."""
+        resolved = dict(fields)
+        group_ref = resolved.pop("item_group_name", None)
+        if "item_group_id" in resolved:
+            self._assert_item_group(organization_id, resolved["item_group_id"])
+        elif group_ref is not None:
+            resolved["item_group_id"] = self._resolve_item_group(
+                organization_id, group_ref
+            )
+        return resolved
+
+    def _resolve_item_group(self, organization_id: UUID, reference: str) -> UUID:
+        """Resolve an item group by (case-insensitive) name or code."""
+        from app.models.item_group import ItemGroup
+
+        group = (
+            self.db.query(ItemGroup)
+            .filter(
+                ItemGroup.organization_id == organization_id,
+                ItemGroup.deleted_at.is_(None),
+                or_(
+                    func.lower(ItemGroup.name) == reference.lower(),
+                    func.lower(ItemGroup.code) == reference.lower(),
+                ),
+            )
+            .first()
+        )
+        if group is None:
+            raise ValueError(f"item group '{reference}' was not found")
+        return group.id
+
+    def _assert_item_group(self, organization_id: UUID, group_id: UUID) -> None:
+        from app.models.item_group import ItemGroup
+
+        exists = (
+            self.db.query(ItemGroup.id)
+            .filter(
+                ItemGroup.id == group_id,
+                ItemGroup.organization_id == organization_id,
+                ItemGroup.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if exists is None:
+            raise ValueError(f"item group '{group_id}' was not found")
 
     def _resolved_settings(
         self, organization_id: UUID, payload: dict, *, required: bool
