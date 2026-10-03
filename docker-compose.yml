@@ -20,7 +20,10 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-horizon_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-horizon_pass}
-      POSTGRES_DB: ${DB_NAME:-railway}
+      # `postgres` is the built-in maintenance DB. The real databases
+      # (core_db + identity_db) live in THIS ONE container and are created
+      # by init_railway.sql / the sync script — no second container needed.
+      POSTGRES_DB: postgres
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -28,7 +31,9 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./scripts/init_railway.sql:/docker-entrypoint-initdb.d/01_init_railway.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-railway}" ]
+      # `-d postgres` targets the built-in maintenance DB (always exists), so
+      # the check never fails when core_db / identity_db are absent.
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
