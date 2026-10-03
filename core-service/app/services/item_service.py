@@ -84,7 +84,7 @@ class ItemService:
         if attrs:
             item.variant_attributes = attrs
 
-    def _ensure_product_sku(
+    def _ensure_product_sku(  # noqa: C901 - pre-existing complexity
         self, item: Item, organization_id: UUID, user_id: UUID
     ) -> None:
         """Auto-create/link a ProductSKU for a concrete variant item (guarded).
@@ -437,25 +437,46 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not item.qr_product_id:
             try:
-                from app.models.qr_product import QRProduct
+                from sqlalchemy.exc import IntegrityError
 
-                product = QRProduct(
-                    organization_id=organization_id,
-                    name=item.item_name,
-                    sku=item.sku or item.item_code,
-                    gtin=item.barcode,
-                    image_url=item.image_url,
-                    brand_id=item.brand_id,
-                    is_active=True,
-                    created_by=user_id,
-                    updated_by=user_id,
+                from app.models.qr_product import QRProduct
+                from app.services.qr_product_service import (
+                    find_active_product_by_sku,
                 )
-                self.db.add(product)
-                self.db.flush()
+
+                item_sku = item.sku or item.item_code
+                # SKUs are unique per organization, so reuse the product that
+                # already owns this SKU instead of inserting a duplicate.
+                product = find_active_product_by_sku(self.db, organization_id, item_sku)
+                if product is None:
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=item.item_name,
+                                sku=item_sku,
+                                gtin=item.barcode,
+                                image_url=item.image_url,
+                                brand_id=item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(
-                    "Auto-created QR product '%s' for item '%s'",
+                    "Linked QR product '%s' to item '%s'",
                     product.name,
                     item.item_code,
                 )
@@ -605,25 +626,47 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not updated_item.qr_product_id:
             try:
-                from app.models.qr_product import QRProduct
+                from sqlalchemy.exc import IntegrityError
 
-                product = QRProduct(
-                    organization_id=organization_id,
-                    name=updated_item.item_name,
-                    sku=updated_item.sku or updated_item.item_code,
-                    gtin=updated_item.barcode,
-                    image_url=updated_item.image_url,
-                    brand_id=updated_item.brand_id,
-                    is_active=True,
-                    created_by=user_id,
-                    updated_by=user_id,
+                from app.models.qr_product import QRProduct
+                from app.services.qr_product_service import (
+                    find_active_product_by_sku,
                 )
-                self.db.add(product)
-                self.db.flush()
+
+                item_sku = updated_item.sku or updated_item.item_code
+                # SKUs are unique per organization, so reuse the product that
+                # already owns this SKU instead of inserting a duplicate.
+                product = find_active_product_by_sku(self.db, organization_id, item_sku)
+                if product is None:
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=updated_item.item_name,
+                                sku=item_sku,
+                                gtin=updated_item.barcode,
+                                image_url=updated_item.image_url,
+                                brand_id=updated_item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 updated_item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(
-                    "Auto-created QR product for legacy item '%s'",
+                    "Linked QR product '%s' to legacy item '%s'",
+                    product.name,
                     updated_item.item_code,
                 )
             except Exception as e:
@@ -648,9 +691,7 @@ class ItemService:
         self.db.refresh(item)
         return item
 
-    def approve_item(
-        self, item_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> Item:
+    def approve_item(self, item_id: UUID, organization_id: UUID, user_id: UUID) -> Item:
         """Approve a pending item (PENDING_APPROVAL → ACTIVE)."""
         item = self.get_item_by_id(item_id, organization_id)
         if item.status != ItemStatus.PENDING_APPROVAL:
@@ -752,7 +793,7 @@ class ItemService:
 
         self.db.flush()
 
-    def _upsert_master_pack_unit(
+    def _upsert_master_pack_unit(  # noqa: C901 - pre-existing complexity
         self, item: Item, base, packaging_details, organization_id: UUID
     ) -> None:
         """Create/update the master-carton packaging unit from the master-pack size.
@@ -802,16 +843,14 @@ class ItemService:
         )
 
         # Explicit overrides (None = not provided → leave existing / estimate).
-        l = getattr(packaging_details, "master_pack_length_mm", None)
+        l = getattr(packaging_details, "master_pack_length_mm", None)  # noqa: E741
         w = getattr(packaging_details, "master_pack_width_mm", None)
         h = getattr(packaging_details, "master_pack_height_mm", None)
         wt = getattr(packaging_details, "master_pack_weight_grams", None)
 
         fill = getattr(packaging_details, "master_pack_fill_factor", None)
         void = getattr(packaging_details, "master_pack_void_fill_pct", None)
-        thickness = getattr(
-            packaging_details, "master_pack_wall_thickness_mm", None
-        )
+        thickness = getattr(packaging_details, "master_pack_wall_thickness_mm", None)
 
         # Estimation knobs only used when estimating; defaults match the schema.
         eff_fill = Decimal(str(fill)) if fill is not None else Decimal("0.75")
@@ -829,11 +868,35 @@ class ItemService:
                         float(mp) * (1.0 + float(eff_void)) / max(float(eff_fill), 0.01)
                     ) ** (1.0 / 3.0)
                     if l is None:
-                        l = Decimal(str(round(float(base.length_mm) * scale + 2.0 * float(eff_thickness), 2)))
+                        l = Decimal(  # noqa: E741
+                            str(
+                                round(
+                                    float(base.length_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
                     if w is None:
-                        w = Decimal(str(round(float(base.width_mm) * scale + 2.0 * float(eff_thickness), 2)))
+                        w = Decimal(
+                            str(
+                                round(
+                                    float(base.width_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
                     if h is None:
-                        h = Decimal(str(round(float(base.height_mm) * scale + 2.0 * float(eff_thickness), 2)))
+                        h = Decimal(
+                            str(
+                                round(
+                                    float(base.height_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
 
             if wt is None and base is not None and base.weight_grams:
                 wt = Decimal(str(mp)) * Decimal(str(base.weight_grams))
