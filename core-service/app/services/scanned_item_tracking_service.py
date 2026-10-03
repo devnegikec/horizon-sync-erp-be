@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 class ScannedItemTrackingService:
     """Manages the dual-axis state machine for receiving & put-away."""
 
+    #: Receiving-slip statuses for which segregated stock is genuinely on hand
+    #: and must not be received a second time. A stock row whose only receipt is
+    #: outside this set (``rejected``/``cancelled``) is stale — see
+    #: :meth:`_stock_is_from_invalid_receipt`.
+    ACTIVE_RECEIPT_STATUSES = (
+        "pending_review",
+        "pending_putaway",
+        "putaway_in_progress",
+        "putaway_complete",
+    )
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -437,16 +448,31 @@ class ScannedItemTrackingService:
         from app.models.bin_stock_level import BinStockLevel
         from app.models.serial_no import SerialNo
 
-        bin_stock = (
+        bin_stocks = (
             self.db.query(BinStockLevel)
             .filter(
                 BinStockLevel.organization_id == organization_id,
                 BinStockLevel.batch_number == qr_identifier,
                 BinStockLevel.quantity_on_hand > 0,
             )
-            .first()
+            .all()
         )
-        if bin_stock is not None:
+        for bin_stock in bin_stocks:
+            # Defence in depth: a rejected/cancelled receipt leaves its stock
+            # rows behind if the reversal did not run. Such stale rows must not
+            # block the physical unit from being received again, otherwise a
+            # rejected receipt permanently poisons the identity
+            # (RCA_ASN-2026-00014, fix 7.2).
+            if self._stock_is_from_invalid_receipt(
+                bin_stock, qr_identifier, organization_id
+            ):
+                logger.warning(
+                    "Ignoring stale bin stock for '%s' in bin %s — originating "
+                    "receipt is rejected/cancelled",
+                    qr_identifier,
+                    bin_stock.bin_location_id,
+                )
+                continue
             return {
                 "source": "bin_stock",
                 "bin_location_id": bin_stock.bin_location_id,
@@ -506,6 +532,61 @@ class ScannedItemTrackingService:
             }
 
         return None
+
+    def _stock_is_from_invalid_receipt(
+        self, bin_stock, qr_identifier: str, organization_id: UUID
+    ) -> bool:
+        """True when ``bin_stock`` is owned by a receipt that is no longer valid.
+
+        Walks the stock row back to its owning ``scanned_item_tracking`` row and
+        then to the receiving slip — directly (``receiving_slip_id``) or via the
+        exception that segregated it. Stock with no provable receipt link is
+        treated as real, so the duplicate gate stays conservative and never lets
+        an unexplained on-hand row be received twice.
+        """
+        from sqlalchemy import and_
+
+        from app.models.inbound_exception import InboundException
+        from app.models.receiving_slip import ReceivingSlip
+
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                and_(
+                    ScannedItemTracking.organization_id == organization_id,
+                    ScannedItemTracking.qr_identifier == qr_identifier,
+                    ScannedItemTracking.item_id == bin_stock.item_id,
+                    ScannedItemTracking.stock_location_id == bin_stock.bin_location_id,
+                    ScannedItemTracking.stock_entered.is_(True),
+                )
+            )
+            .all()
+        )
+        if not trackings:
+            return False
+
+        for tracking in trackings:
+            slip_id = tracking.receiving_slip_id
+            if slip_id is None:
+                slip_id = (
+                    self.db.query(InboundException.slip_id)
+                    .filter(
+                        InboundException.tracking_id == tracking.id,
+                        InboundException.slip_id.isnot(None),
+                    )
+                    .scalar()
+                )
+            if slip_id is None:
+                # Cannot prove this stock came from a dead receipt → treat real.
+                return False
+            status = (
+                self.db.query(ReceivingSlip.status)
+                .filter(ReceivingSlip.id == slip_id)
+                .scalar()
+            )
+            if status is None or status in self.ACTIVE_RECEIPT_STATUSES:
+                return False
+        return True
 
     def _get_or_create_system_bin(
         self, warehouse_id: UUID, organization_id: UUID, code: str
