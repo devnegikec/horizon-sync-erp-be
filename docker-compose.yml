@@ -1,12 +1,13 @@
 # Horizon Sync Backend — Local stack (identity + core + database)
 #
-# A single local Postgres container hosts one 'railway' database — an exact
-# replica of the Railway deployment, where identity + core share the same DB.
+# A single local Postgres container hosts three databases — core_db, identity_db
+# and search_db — created by scripts/init_railway.sql on a fresh volume.
 #
 # Switch between LOCAL and REMOTE database by changing DATABASE_URL in the
 # root .env file — no other change needed:
-#   LOCAL:  postgresql://horizon_user:horizon_pass@postgres:5432/railway
-#   REMOTE: postgresql://postgres:<password>@roundhouse.proxy.rlwy.net:12893/railway
+#   LOCAL core:     postgresql://horizon_user:horizon_pass@postgres:5432/core_db
+#   LOCAL identity: postgresql://horizon_user:horizon_pass@postgres:5432/identity_db
+#   REMOTE:         postgresql://postgres:<password>@roundhouse.proxy.rlwy.net:12893/railway
 #
 # Start:  docker compose up -d --build
 
@@ -20,7 +21,10 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-horizon_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-horizon_pass}
-      POSTGRES_DB: ${DB_NAME:-railway}
+      # `postgres` is the built-in maintenance DB. The real databases
+      # (core_db + identity_db + search_db) live in THIS ONE container and are
+      # created by init_railway.sql / the sync script — no second container needed.
+      POSTGRES_DB: postgres
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -28,7 +32,9 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./scripts/init_railway.sql:/docker-entrypoint-initdb.d/01_init_railway.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d ${DB_NAME:-railway}" ]
+      # Verify the service databases actually exist (created by init_railway.sql),
+      # so dependent services don't start and fail later.
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-horizon_user} -d core_db && pg_isready -U ${DB_USER:-horizon_user} -d identity_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,7 +67,7 @@ services:
     container_name: horizon_identity
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       PYDEVD_DISABLE_FILE_VALIDATION: "1"
       DEBUG: ${DEBUG:-false}
@@ -127,14 +133,14 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_core
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       IDENTITY_SERVICE_URL: http://identity-service:8000
       INTERNAL_SERVICE_SECRET: ${CORE_SERVICE_SECRET:-dev-internal-secret-testing}
-      IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
+      IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/identity_db}
       SKIP_MASTER_ORG_SETUP: ${SKIP_MASTER_ORG_SETUP:-false}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       REDIS_STREAM_NAME: ${REDIS_STREAM_NAME:-search:events}
@@ -196,7 +202,7 @@ services:
       dockerfile: Dockerfile
     container_name: horizon_qr_worker
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/${DB_NAME:-railway}}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -204,6 +210,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_QR_QUEUE_NAME: ${CELERY_QR_QUEUE_NAME:-qr-generation}
       CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      QR_WORKER_CONCURRENCY: ${QR_WORKER_CONCURRENCY:-2}
       BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
       QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
@@ -222,7 +229,7 @@ services:
     volumes:
       - ./core-service/app:/app/app
     command: >
-      celery -A app.celery_app:celery_app worker --loglevel=${LOG_LEVEL:-INFO} --queues=${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=${QR_WORKER_CONCURRENCY:-2}
+      celery -A app.celery_app:celery_app worker --loglevel=${LOG_LEVEL:-INFO} --queues=${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=$${QR_WORKER_CONCURRENCY:-2}
     networks:
       - horizon_network
     restart: unless-stopped

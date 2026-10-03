@@ -149,6 +149,9 @@ class WorkerLoginRequest(BaseModel):
 
     login_username: str
     password: str
+    # Optional tenant scope so duplicate usernames across organizations resolve
+    # deterministically during login.
+    organization_id: UUID | None = None
 
 
 class QRCodeLoginResponse(BaseModel):

@@ -12,14 +12,17 @@ _engine_kwargs: dict = {
     "pool_pre_ping": True,
     "pool_timeout": settings.db_pool_timeout,
     "echo": settings.debug,
-    "connect_args": {
+}
+# PostgreSQL-only options: TCP keepalives (psycopg2) and connection-pool
+# sizing. sqlite3 rejects the keepalive connect args and manages its own
+# pooling, so these are skipped for SQLite test URLs.
+if settings.database_url.startswith("postgresql"):
+    _engine_kwargs["connect_args"] = {
         "keepalives": 1,
         "keepalives_idle": 30,
         "keepalives_interval": 10,
         "keepalives_count": 5,
-    },
-}
-if not settings.database_url.startswith("sqlite"):
+    }
     _engine_kwargs["pool_size"] = settings.db_pool_size
     _engine_kwargs["max_overflow"] = settings.db_max_overflow
     _engine_kwargs["pool_recycle"] = settings.db_pool_recycle

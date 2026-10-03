@@ -4,6 +4,7 @@
 
 # Environment files
 .env
+.env.*
 .env.stage
 .env.production
 .env.local
@@ -68,7 +69,6 @@ postgres_data/
 
 LOCAL_DB_SETUP.md
 
-sync_local_db.sh
 test_results
 
 # Docker (only in subdirectories, keep root Dockerfile)
@@ -90,7 +90,6 @@ search-service/pyproject.toml
 # Gateway Service
 **/nginx-gateway/Dockerfile
 **/nginx-gateway/.dockerignore
-docker-compose*
 # Keep root .dockerignore, ignore only subdirectory ones
 
 # Identity Service
