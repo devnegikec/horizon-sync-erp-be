@@ -91,7 +91,6 @@ search-service/pyproject.toml
 # Gateway Service
 **/nginx-gateway/Dockerfile
 **/nginx-gateway/.dockerignore
-docker-compose*
 # Keep root .dockerignore, ignore only subdirectory ones
 
 # Identity Service
