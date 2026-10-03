@@ -69,7 +69,6 @@ postgres_data/
 
 LOCAL_DB_SETUP.md
 
-sync_local_db.sh
 test_results
 
 # Docker (only in subdirectories, keep root Dockerfile)

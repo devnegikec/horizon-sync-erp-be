@@ -7,6 +7,12 @@ Postgres container and keeping it refreshed for dev work.
 merges. Your local DB is a **data replica only** — do **not** run `alembic
 upgrade` against it.
 
+> The root `docker-compose.yml` services (`identity-service`, `core-service`)
+> run `alembic upgrade` in their startup command. For syncing, start **only**
+> the `postgres` service (`docker compose up -d postgres`) — never the full
+> stack — or those migrations will rewrite your replica and may fail on
+> revision drift.
+
 ---
 
 ## 1. How it works
@@ -36,8 +42,8 @@ Two modes:
 ## 2. Prerequisites
 
 - Docker Desktop running.
-- The root `docker-compose.yml` `postgres` service (the script starts it via
-  `docker compose up -d postgres`).
+- The root `docker-compose.yml` `postgres` service — start **only** this service
+  (`docker compose up -d postgres`); the script does this automatically.
 - Source URLs for each DB — `CORE_SOURCE_DATABASE_URL` and
   `IDENTITY_SOURCE_DATABASE_URL` (Railway → Postgres → **Connect** → *Public Network*).
 
