@@ -1581,14 +1581,9 @@ class InboundService:
             actor_id=worker_id,
         )
 
-        result = self._slip_to_dict(slip)
-        # Make dropped scans loud: a unit refused by the duplicate-identity gate
-        # never reached the receipt, so the operator must be told at close time
-        # instead of closing the session believing every unit was captured.
-        result["blocked_scans"] = self._blocked_scans_for_session(
-            session_id, organization_id
-        )
-        return result
+        # ``_slip_to_dict`` attaches ``blocked_scans`` itself, so a dropped scan
+        # is reported here (close-session) and on every later slip read.
+        return self._slip_to_dict(slip)
 
     # ------------------------------------------------------------------
     # CANCEL SESSION
@@ -2649,7 +2644,7 @@ class InboundService:
         # Reverse every stock effect this slip created *before* flipping it to
         # rejected, so a failed reversal leaves the slip pending_review instead
         # of half-rejected with stale stock still on hand (RCA_ASN-2026-00014).
-        self._reverse_slip_stock(slip, organization_id)
+        self._reverse_slip_stock(slip, organization_id, reason=reason.strip())
 
         updated_slip = self.slip_repo.update_rejection_reason(slip_id, reason.strip())
         self.db.refresh(updated_slip)
@@ -2672,7 +2667,7 @@ class InboundService:
     # STOCK REVERSAL ON REJECT
     # ------------------------------------------------------------------
 
-    def _reverse_slip_stock(self, slip, organization_id: UUID) -> int:
+    def _reverse_slip_stock(self, slip, organization_id: UUID, *, reason: str) -> int:
         """Reverse every stock effect a receiving slip created.
 
         A slip can book physical stock *before* approval: segregation flags
@@ -2714,34 +2709,45 @@ class InboundService:
                     trackings[tracking.id] = tracking
 
         return self._reverse_stock_effects(
-            list(trackings.values()), exceptions, organization_id
+            list(trackings.values()),
+            exceptions,
+            organization_id,
+            reason=reason,
         )
 
-    def _reverse_slip_line_stock(self, slip, item, organization_id: UUID) -> int:
+    def _reverse_slip_line_stock(
+        self, item, organization_id: UUID, *, reason: str
+    ) -> int:
         """Reverse the segregated stock a single receipt line created.
 
-        Single-line rejection is the line-level twin of :meth:`reject_slip`.
+        Only the stock owned by *this* line is reversed. The line's own inbound
+        exceptions carry the ``tracking_id`` of the row they segregated, so a
+        sibling line sharing the slip/session/batch is never touched (CodeAnt
+        PR #275). Any exception linked to the line is closed as well.
         """
         from app.models.inbound_exception import InboundException
         from app.models.scanned_item_tracking import ScannedItemTracking
 
-        trackings = (
-            self.db.query(ScannedItemTracking)
-            .filter(
-                ScannedItemTracking.scan_session_id == slip.session_id,
-                ScannedItemTracking.qr_identifier == item.batch_number,
-            )
-            .all()
-        )
         exceptions = (
             self.db.query(InboundException)
             .filter(InboundException.slip_item_id == item.id)
             .all()
         )
-        return self._reverse_stock_effects(trackings, exceptions, organization_id)
+        trackings = []
+        seen: set = set()
+        for exception in exceptions:
+            if not exception.tracking_id or exception.tracking_id in seen:
+                continue
+            tracking = self.db.get(ScannedItemTracking, exception.tracking_id)
+            if tracking is not None:
+                trackings.append(tracking)
+                seen.add(tracking.id)
+        return self._reverse_stock_effects(
+            trackings, exceptions, organization_id, reason=reason
+        )
 
     def _reverse_stock_effects(
-        self, trackings, exceptions, organization_id: UUID
+        self, trackings, exceptions, organization_id: UUID, *, reason: str
     ) -> int:
         """Remove the bin stock owned by ``trackings`` and close ``exceptions``.
 
@@ -2750,13 +2756,36 @@ class InboundService:
         transaction; any failure rolls the whole request back rather than
         leaving a unit held in a bin with no owning receipt.
 
+        Each reversed row is marked rejected (with the reason) and, when it was
+        already binned, a retrieval alert is raised. The caller's later
+        ``reject_items`` sweep only looks at ``receiving_status == 'scanned'``
+        rows, so a reversed row must carry its rejection metadata here or it
+        would be silently skipped (CodeAnt PR #275).
+
         Returns the number of stock rows reversed.
         """
         from decimal import Decimal
 
         from app.services.bin_stock_service import BinStockService
+        from app.services.inbound_exception_service import InboundExceptionService
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        # Resolve which inventory-status row each tracking's stock lives in, so
+        # the reversal hits the HOLD/QUARANTINE/DAMAGED row it created rather
+        # than an unrelated ``available`` row in the same bin (CodeAnt PR #275).
+        status_by_tracking: dict = {}
+        for exception in exceptions:
+            if exception.tracking_id and exception.destination:
+                status_by_tracking[exception.tracking_id] = (
+                    InboundExceptionService.inventory_status_for_destination(
+                        exception.destination
+                    )
+                )
 
         bin_stock_service = BinStockService(self.db)
+        tracking_service = ScannedItemTrackingService(self.db)
         reversed_count = 0
         for tracking in trackings:
             if not (tracking.stock_entered and tracking.stock_location_id):
@@ -2767,13 +2796,22 @@ class InboundService:
                 quantity=Decimal(str(tracking.quantity or 1)),
                 org_id=organization_id,
                 batch_number=tracking.batch_number,
+                inventory_status=status_by_tracking.get(tracking.id),
                 commit=False,
             )
             tracking.stock_entered = False
             tracking.stock_entered_at = None
             tracking.stock_location_id = None
-            # A rejected unit must not read as receivable on the tracking axis.
+            # A rejected unit must not read as receivable on the tracking axis,
+            # and it keeps its rejection metadata (+ retrieval alert if binned).
+            was_rejected = tracking.receiving_status == "rejected"
             tracking.receiving_status = "rejected"
+            tracking.rejection_reason = reason
+            if (
+                not was_rejected
+                and getattr(tracking, "putaway_status", None) == "completed"
+            ):
+                tracking_service._notify_retrieval_needed(tracking, reason)
             reversed_count += 1
 
         # The slip's exceptions no longer reflect reality — close them so they
@@ -3307,7 +3345,7 @@ class InboundService:
         # Release any physical stock this line created (a flagged line holds
         # units in HOLD/QUARANTINE). Rejecting the line must undo that booking,
         # exactly like reject_slip does at slip level.
-        self._reverse_slip_line_stock(slip, item, organization_id)
+        self._reverse_slip_line_stock(item, organization_id, reason=reason.strip())
 
         updated_item = self.slip_repo.reject_item(
             item_id, reason.strip(), rejected_by=rejected_by, notes=notes
@@ -3991,6 +4029,12 @@ class InboundService:
             "rejection_reason": slip.rejection_reason,
             "notes": slip.notes,
             "groups": groups,
+            # Scans dropped by the duplicate-identity gate for this session, so
+            # readers of any slip view are not misled into thinking every unit
+            # was captured (CodeAnt PR #275).
+            "blocked_scans": self._blocked_scans_for_session(
+                slip.session_id, slip.organization_id
+            ),
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }
@@ -4289,6 +4333,11 @@ class InboundService:
             "rejection_reason": slip.rejection_reason,
             "notes": slip.notes,
             "groups": grouped_items,
+            # Scans dropped by the duplicate-identity gate for this session
+            # (CodeAnt PR #275) — keeps every slip view consistent.
+            "blocked_scans": self._blocked_scans_for_session(
+                slip.session_id, slip.organization_id
+            ),
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
             "updated_at": slip.updated_at.isoformat() if slip.updated_at else None,
         }

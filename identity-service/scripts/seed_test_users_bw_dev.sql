@@ -21,11 +21,26 @@
 -- Password for every account:  Test@123
 -- Idempotent: safe to run repeatedly.
 --
--- Usage:
---   psql "$IDENTITY_DATABASE_URL" -v ON_ERROR_STOP=1 -f seed_test_users_bw_dev.sql
+-- Usage (the guard below requires the explicit opt-in):
+--   PGOPTIONS="-c app.allow_test_seed=true" psql "$IDENTITY_DATABASE_URL" \
+--       -v ON_ERROR_STOP=1 -f seed_test_users_bw_dev.sql
 -- =============================================================================
 
 BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- 0. Safety guard — this script resets the credentials of well-known test
+--    accounts to a public password. Refuse to run unless the caller explicitly
+--    opts in, so an accidental run against a non-test database cannot hand out
+--    known passwords to those e-mail addresses (CodeAnt PR #275).
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+    IF coalesce(current_setting('app.allow_test_seed', true), '') <> 'true' THEN
+        RAISE EXCEPTION
+            'Refusing to seed test users: this resets known accounts to a public password. Re-run with PGOPTIONS=''-c app.allow_test_seed=true'' (or SET app.allow_test_seed = ''true''; in the same session) if this is a disposable test database.';
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- 1. Tenant organization

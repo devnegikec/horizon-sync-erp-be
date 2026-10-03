@@ -36,6 +36,7 @@ def _tracking(**overrides):
         "quantity": 2,
         "batch_number": "SER-1",
         "receiving_status": "damaged",
+        "putaway_status": "pending",
         "stock_entered_at": object(),
     }
     base.update(overrides)
@@ -57,24 +58,30 @@ class TestReverseStockEffects:
 
         tracking = _tracking()
         stripped_location = tracking.stock_location_id
-        exception = SimpleNamespace(status="pending_approval")
+        exception = SimpleNamespace(
+            status="pending_approval", tracking_id=tracking.id, destination="HOLD"
+        )
         org_id = uuid.uuid4()
 
-        reversed_count = service._reverse_stock_effects([tracking], [exception], org_id)
+        reversed_count = service._reverse_stock_effects(
+            [tracking], [exception], org_id, reason="wrong ASN"
+        )
 
         assert reversed_count == 1
         # Stock removed from the exact location the tracking owned, without
-        # committing mid-way.
+        # committing mid-way, and from the HOLD row (not an available one).
         assert len(calls) == 1
         assert calls[0]["bin_id"] == stripped_location
         assert calls[0]["item_id"] == tracking.item_id
         assert calls[0]["batch_number"] == "SER-1"
+        assert calls[0]["inventory_status"] == "hold"
         assert calls[0]["commit"] is False
         # Tracking detached and marked rejected so the identity can be re-scanned.
         assert tracking.stock_entered is False
         assert tracking.stock_location_id is None
         assert tracking.stock_entered_at is None
         assert tracking.receiving_status == "rejected"
+        assert tracking.rejection_reason == "wrong ASN"
         # Exception closed so it stops surfacing as pending work.
         assert exception.status == "cancelled"
         service.db.flush.assert_called()
@@ -86,7 +93,7 @@ class TestReverseStockEffects:
         )
 
         no_stock = _tracking(stock_entered=False, stock_location_id=None)
-        count = service._reverse_stock_effects([no_stock], [], uuid.uuid4())
+        count = service._reverse_stock_effects([no_stock], [], uuid.uuid4(), reason="x")
 
         assert count == 0
         assert calls == []
@@ -94,11 +101,17 @@ class TestReverseStockEffects:
     def test_does_not_reopen_already_final_exception(self, service, monkeypatch):
         monkeypatch.setattr(BinStockService, "remove_stock", lambda self, **kw: None)
 
-        closed = SimpleNamespace(status="closed")
-        released = SimpleNamespace(status="released")
-        cancelled = SimpleNamespace(status="cancelled")
+        closed = SimpleNamespace(status="closed", tracking_id=None, destination=None)
+        released = SimpleNamespace(
+            status="released", tracking_id=None, destination=None
+        )
+        cancelled = SimpleNamespace(
+            status="cancelled", tracking_id=None, destination=None
+        )
 
-        service._reverse_stock_effects([], [closed, released, cancelled], uuid.uuid4())
+        service._reverse_stock_effects(
+            [], [closed, released, cancelled], uuid.uuid4(), reason="x"
+        )
 
         assert closed.status == "closed"
         assert released.status == "released"
