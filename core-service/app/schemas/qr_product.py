@@ -33,26 +33,28 @@ class QRProductPackagingDetails(BaseModel):
     weight_grams: Decimal | None = Field(None, ge=0)
 
     # Master carton (MC) — explicit overrides plus estimation knobs. An omitted
-    # dimension is estimated from the base-unit dimensions.
+    # dimension is estimated from the base-unit dimensions. The three knobs are
+    # optional on purpose: a null value means "keep the stored setting" (or use
+    # the estimator default) instead of resetting it to a literal default.
     master_pack_unit_name: str | None = Field(None, max_length=100)
     master_pack_length_mm: Decimal | None = Field(None, ge=0)
     master_pack_width_mm: Decimal | None = Field(None, ge=0)
     master_pack_height_mm: Decimal | None = Field(None, ge=0)
     master_pack_weight_grams: Decimal | None = Field(None, ge=0)
-    master_pack_fill_factor: Decimal = Field(
-        Decimal("0.75"),
+    master_pack_fill_factor: Decimal | None = Field(
+        None,
         gt=0,
         le=1,
         description="Packing efficiency used to estimate MC outer volume from base dims",
     )
-    master_pack_void_fill_pct: Decimal = Field(
-        Decimal("0.10"),
+    master_pack_void_fill_pct: Decimal | None = Field(
+        None,
         ge=0,
         le=1,
         description="Extra volume allowance (fraction) for dunnage/bubble wrap",
     )
-    master_pack_wall_thickness_mm: Decimal = Field(
-        Decimal("3"),
+    master_pack_wall_thickness_mm: Decimal | None = Field(
+        None,
         ge=0,
         description="Carton wall thickness per side (mm) added when estimating MC dims",
     )

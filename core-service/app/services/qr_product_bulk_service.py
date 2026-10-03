@@ -232,7 +232,14 @@ def _packaging_from_item(item: Item | None) -> tuple[dict, dict]:
 
     units = getattr(item, "packaging_units", None) or []
     base = next((u for u in units if u.is_base_unit and u.is_active), None)
-    carton = next((u for u in units if not u.is_base_unit and u.is_active), None)
+    # A flat row can only describe one master carton. Pick the outermost active
+    # outer unit deterministically (largest conversion factor, then name) rather
+    # than relying on the relationship's arbitrary row order.
+    carton = max(
+        (u for u in units if not u.is_base_unit and u.is_active),
+        key=lambda u: (u.conversion_factor or 0, u.unit_name or ""),
+        default=None,
+    )
 
     ic: dict = {}
     if base is not None:
@@ -396,12 +403,34 @@ def _parse_packaging(raw: dict) -> dict:
     _parse_dims(raw, packaging, ("length_mm", "width_mm", "height_mm", "weight_grams"))
 
     _parse_master_pack(raw, packaging)
+    _require_master_pack_size(packaging)
 
     if not any(key in packaging for key in _PACKAGING_COLUMNS):
         return {}
     packaging.setdefault("unit_name", "Each")
     packaging.setdefault("conversion_factor", Decimal("1"))
     return packaging
+
+
+def _require_master_pack_size(packaging: dict) -> None:
+    """Reject an MC-only row that carries no master-pack size.
+
+    The item service derives the master-pack count from
+    ``items_per_master_pack`` (or a ``conversion_factor`` greater than 1) and
+    deactivates the carton when neither is supplied — silently discarding the
+    master-carton fields. Fail the row instead.
+    """
+    if not any(key in packaging for key in _MC_PACKAGING_COLUMNS):
+        return
+    if "items_per_master_pack" in packaging:
+        return
+    conversion = packaging.get("conversion_factor")
+    if conversion is not None and conversion > 1:
+        return
+    raise ValueError(
+        "master_pack_* fields require items_per_master_pack "
+        "(or a conversion_factor greater than 1)"
+    )
 
 
 def _parse_master_pack(raw: dict, packaging: dict) -> None:
@@ -747,6 +776,12 @@ class QRProductBulkService:
         if payload.get("brand_id") is not None:
             self._assert_brand(organization_id, payload["brand_id"])
 
+        # Resolve item references before any write: the product create/update
+        # below commits internally, so an unknown item group must fail the row
+        # while nothing has been persisted yet.
+        if item_fields:
+            item_fields = self._prepare_item_fields(organization_id, item_fields)
+
         existing = find_active_product_by_sku(
             self.db, organization_id, payload.get("sku")
         )
@@ -804,18 +839,21 @@ class QRProductBulkService:
             )
             return
 
+        ItemService(self.db).update_item(
+            item.id, ItemUpdate(**fields), organization_id, user_id
+        )
+
+    def _prepare_item_fields(self, organization_id: UUID, fields: dict) -> dict:
+        """Resolve the row's item group to an id before anything is written."""
         resolved = dict(fields)
         group_ref = resolved.pop("item_group_name", None)
-        if "item_group_id" not in resolved and group_ref is not None:
+        if "item_group_id" in resolved:
+            self._assert_item_group(organization_id, resolved["item_group_id"])
+        elif group_ref is not None:
             resolved["item_group_id"] = self._resolve_item_group(
                 organization_id, group_ref
             )
-        elif "item_group_id" in resolved:
-            self._assert_item_group(organization_id, resolved["item_group_id"])
-
-        ItemService(self.db).update_item(
-            item.id, ItemUpdate(**resolved), organization_id, user_id
-        )
+        return resolved
 
     def _resolve_item_group(self, organization_id: UUID, reference: str) -> UUID:
         """Resolve an item group by (case-insensitive) name or code."""

@@ -117,10 +117,41 @@ class TestParseRow:
         assert packaging["unit_name"] == "Each"
         assert packaging["conversion_factor"] == Decimal("12")
 
-    def test_master_carton_alone_still_produces_packaging(self):
-        payload = parse_row({"name": "W", "master_pack_unit_name": "Carton"}, 2)
+    def test_master_carton_only_row_requires_a_pack_size(self):
+        # Without items_per_master_pack (or conversion_factor > 1) the item
+        # service deactivates the carton and silently drops the MC data, so the
+        # row must be rejected instead of accepted and discarded.
+        with pytest.raises(ValueError, match="items_per_master_pack"):
+            parse_row({"name": "W", "master_pack_unit_name": "Carton"}, 2)
+        with pytest.raises(ValueError, match="items_per_master_pack"):
+            parse_row(
+                {"name": "W", "master_pack_length_mm": "400", "conversion_factor": "1"},
+                2,
+            )
+
+    def test_master_carton_only_row_with_pack_size_is_accepted(self):
+        payload = parse_row(
+            {
+                "name": "W",
+                "master_pack_unit_name": "Carton",
+                "items_per_master_pack": "12",
+            },
+            2,
+        )
         assert payload["packaging"]["master_pack_unit_name"] == "Carton"
+        assert payload["packaging"]["items_per_master_pack"] == 12
         assert payload["packaging"]["unit_name"] == "Each"
+
+    def test_master_carton_row_accepts_conversion_factor_above_one(self):
+        payload = parse_row(
+            {
+                "name": "W",
+                "master_pack_unit_name": "Carton",
+                "conversion_factor": "12",
+            },
+            2,
+        )
+        assert payload["packaging"]["conversion_factor"] == Decimal("12")
 
     def test_rejects_master_pack_fill_factor_out_of_range(self):
         with pytest.raises(ValueError, match="master_pack_fill_factor"):
@@ -393,7 +424,55 @@ class TestPackagingFromItem:
         ic, mc = _packaging_from_item(item)
         assert ic == {} and mc == {}
 
+    def test_picks_the_outermost_carton_deterministically(self):
+        from app.services.qr_product_bulk_service import _packaging_from_item
+
+        box = self._Unit(unit_name="Box of 12", conversion_factor=Decimal("12"))
+        pallet = self._Unit(unit_name="Pallet of 144", conversion_factor=Decimal("144"))
+        # Order in the relationship is not guaranteed; the outer unit must win
+        # regardless of the order the rows come back in.
+        for units in ([box, pallet], [pallet, box]):
+            item = type("Item", (), {"packaging_units": units})()
+            _, mc = _packaging_from_item(item)
+            assert mc["master_pack_unit_name"] == "Pallet of 144"
+
     def test_returns_empty_dicts_without_item(self):
         from app.services.qr_product_bulk_service import _packaging_from_item
 
         assert _packaging_from_item(None) == ({}, {})
+
+
+class TestItemPackagingMapping:
+    def test_unset_master_pack_knobs_are_not_forwarded(self):
+        # None must stay None on the item schema, otherwise every partial
+        # packaging update would reset stored MC settings to schema defaults.
+        from app.services.qr_product_service import _to_item_packaging_details
+
+        details = _to_item_packaging_details(
+            {
+                "unit_name": "Each",
+                "conversion_factor": Decimal("1"),
+                "master_pack_fill_factor": None,
+                "master_pack_void_fill_pct": None,
+                "master_pack_wall_thickness_mm": None,
+            }
+        )
+        assert details.master_pack_fill_factor is None
+        assert details.master_pack_void_fill_pct is None
+        assert details.master_pack_wall_thickness_mm is None
+
+    def test_explicit_master_pack_knobs_are_forwarded(self):
+        from app.services.qr_product_service import _to_item_packaging_details
+
+        details = _to_item_packaging_details(
+            {
+                "unit_name": "Each",
+                "conversion_factor": Decimal("1"),
+                "master_pack_fill_factor": Decimal("0.8"),
+                "master_pack_void_fill_pct": Decimal("0.15"),
+                "master_pack_wall_thickness_mm": Decimal("4"),
+            }
+        )
+        assert details.master_pack_fill_factor == Decimal("0.8")
+        assert details.master_pack_void_fill_pct == Decimal("0.15")
+        assert details.master_pack_wall_thickness_mm == Decimal("4")

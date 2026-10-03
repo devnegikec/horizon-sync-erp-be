@@ -111,6 +111,18 @@ _PACKAGING_KEYS = (
 )
 
 
+def _json_safe_packaging(packaging_details: dict) -> dict:
+    """Make a packaging payload safe for the JSONB ``extra_data`` column.
+
+    ``packaging_details`` carries ``Decimal`` values and the JSONB serializer
+    (``json.dumps``) cannot handle them, so numbers are stored as floats.
+    """
+    return {
+        key: (float(value) if isinstance(value, Decimal) else value)
+        for key, value in packaging_details.items()
+    }
+
+
 def _to_item_packaging_details(packaging_details: dict):
     """Map a product packaging payload onto the item packaging schema.
 
@@ -121,9 +133,12 @@ def _to_item_packaging_details(packaging_details: dict):
     from app.schemas.item import ItemPackagingDetails
 
     kwargs = {
-        key: packaging_details[key]
-        for key in _PACKAGING_KEYS
-        if key in packaging_details
+        key: value
+        for key, value in packaging_details.items()
+        # Unset (None) values are dropped so the item schema's own "not
+        # provided" semantics win — otherwise a partial packaging update would
+        # reset stored master-carton settings back to schema defaults.
+        if key in _PACKAGING_KEYS and value is not None
     }
     kwargs.setdefault("unit_name", "Each")
     kwargs.setdefault("conversion_factor", Decimal("1"))
@@ -358,12 +373,7 @@ class QRProductService:
         packaging_details = product_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(product_dict.get("extra_data") or {})
-            # packaging_details contains Decimal values; the JSONB serializer
-            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
-            extra["packaging_details"] = {
-                key: (float(value) if isinstance(value, Decimal) else value)
-                for key, value in packaging_details.items()
-            }
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
@@ -625,7 +635,7 @@ class QRProductService:
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(update_dict.get("extra_data") or {})
-            extra["packaging_details"] = packaging_details
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             update_dict["extra_data"] = extra
 
         if "shelf_life_setting_id" in update_dict:

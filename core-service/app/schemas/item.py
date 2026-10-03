@@ -93,7 +93,9 @@ class ItemPackagingDetails(BaseModel):
     unit_name: str = Field(default="Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
     items_per_master_pack: int | None = Field(
-        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+        None,
+        gt=0,
+        description="Items per master pack (used for QR master pack grouping)",
     )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
@@ -108,19 +110,19 @@ class ItemPackagingDetails(BaseModel):
     master_pack_width_mm: Decimal | None = Field(None, ge=0)
     master_pack_height_mm: Decimal | None = Field(None, ge=0)
     master_pack_weight_grams: Decimal | None = Field(None, ge=0)
-    master_pack_fill_factor: Decimal = Field(
-        Decimal("0.75"),
+    master_pack_fill_factor: Decimal | None = Field(
+        None,
         gt=0,
         le=1,
         description="Packing efficiency used to estimate MC outer volume from base dims",
     )
-    master_pack_wall_thickness_mm: Decimal = Field(
-        Decimal("3"),
+    master_pack_wall_thickness_mm: Decimal | None = Field(
+        None,
         ge=0,
         description="Carton wall thickness per side added when estimating MC dims",
     )
-    master_pack_void_fill_pct: Decimal = Field(
-        Decimal("0.10"),
+    master_pack_void_fill_pct: Decimal | None = Field(
+        None,
         ge=0,
         le=1,
         description="Extra volume allowance (fraction) for dunnage/bubble wrap added when estimating MC dims",
