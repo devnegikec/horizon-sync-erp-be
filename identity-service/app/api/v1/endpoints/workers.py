@@ -495,7 +495,6 @@ async def create_worker(
 async def list_workers(
     search: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
-    user_type: str | None = Query(None),
     warehouse_id: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
