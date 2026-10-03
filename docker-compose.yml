@@ -209,6 +209,7 @@ services:
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_QR_QUEUE_NAME: ${CELERY_QR_QUEUE_NAME:-qr-generation}
       CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      QR_WORKER_CONCURRENCY: ${QR_WORKER_CONCURRENCY:-2}
       BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
       QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
@@ -227,7 +228,7 @@ services:
     volumes:
       - ./core-service/app:/app/app
     command: >
-      celery -A app.celery_app:celery_app worker --loglevel=${LOG_LEVEL:-INFO} --queues=${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=${QR_WORKER_CONCURRENCY:-2}
+      celery -A app.celery_app:celery_app worker --loglevel=${LOG_LEVEL:-INFO} --queues=${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=$${QR_WORKER_CONCURRENCY:-2}
     networks:
       - horizon_network
     restart: unless-stopped

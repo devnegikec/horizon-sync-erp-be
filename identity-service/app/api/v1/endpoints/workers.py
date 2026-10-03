@@ -282,14 +282,9 @@ def _login_username_taken_in_org(
     if not org_id:
         q = db.query(User).filter(User.login_username == login_username)
     else:
-        q = (
-            db.query(User)
-            .join(UserOrganizationRole, UserOrganizationRole.user_id == User.id)
-            .filter(
-                UserOrganizationRole.organization_id == org_id,
-                UserOrganizationRole.is_active == True,  # noqa: E712
-                User.login_username == login_username,
-            )
+        q = db.query(User).filter(
+            User.organization_id == org_id,
+            User.login_username == login_username,
         )
     if exclude_user_id is not None:
         q = q.filter(User.id != exclude_user_id)
@@ -466,6 +461,7 @@ async def create_worker(
         email_verified=True,
         qr_code=qr,
         employee_id=employee_id,
+        organization_id=org_id,
         login_username=login_username,
         login_password=password or None,
     )
@@ -611,7 +607,7 @@ async def update_worker(
     if "login_username" in body and body["login_username"] is not None:
         new_lu = body["login_username"]
         if new_lu and _login_username_taken_in_org(
-            db, _primary_org_id(user, db), new_lu, exclude_user_id=user.id
+            db, user.organization_id or _primary_org_id(user, db), new_lu, exclude_user_id=user.id
         ):
             raise http_error(
                 409,
