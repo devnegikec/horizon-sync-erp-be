@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ── QR Scan Event ─────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ class QRScanEventIngest(BaseModel):
     or external lookups — the client does not need to send them.
     """
 
-    serial_number: str
+    serial_number: str = Field(min_length=1, max_length=75)
     product_item_id: UUID | None = None
     # ── Client-provided (optional) ──────────────────────────────────────
     device_type: str | None = None
@@ -29,10 +29,11 @@ class QRScanEventIngest(BaseModel):
     city: str | None = None
     state: str | None = None
     country: str | None = None
+    street_address: str | None = None
     extra_data: dict[str, Any] | None = None
     # ── Phase 2: CTA & QR type ──────────────────────────────────────────
-    qr_type: str | None = None
-    cta_action: str | None = None
+    qr_type: str | None = Field(default=None, max_length=30)
+    cta_action: str | None = Field(default=None, max_length=50)
 
 
 class QRScanEventResponse(BaseModel):
@@ -50,6 +51,7 @@ class QRScanEventResponse(BaseModel):
     city: str | None
     state: str | None
     country: str | None
+    street_address: str | None
     # ── Phase 2 fields ──────────────────────────────────────────────────
     user_agent_raw: str | None = None
     user_agent_parsed: dict[str, Any] | None = None
@@ -72,7 +74,7 @@ class ScanInteractionIngest(BaseModel):
     video, sharing the page, calling support, etc.
     """
 
-    interaction_type: str
+    interaction_type: str = Field(min_length=1, max_length=50)
     interaction_target: str | None = None
     interaction_data: dict[str, Any] | None = None
 
@@ -110,12 +112,20 @@ class GeoHeatmapItem(BaseModel):
     count: int
 
 
+class GeoHeatmapResponse(BaseModel):
+    points: list[GeoHeatmapItem]
+
+
 class DeviceTimelineItem(BaseModel):
     date: str
     mobile: int
     desktop: int
     tablet: int
     unknown: int
+
+
+class DeviceTimelineResponse(BaseModel):
+    timeline: list[DeviceTimelineItem]
 
 
 class InteractionFunnelResponse(BaseModel):
@@ -159,16 +169,16 @@ class QRScanAnalyticsResponse(BaseModel):
 
 
 class CTAConfigCreate(BaseModel):
-    cta_type: str
-    cta_label: str
+    cta_type: str = Field(min_length=1, max_length=50)
+    cta_label: str = Field(min_length=1, max_length=100)
     cta_target: str | None = None
     display_order: int = 0
     is_active: bool = True
 
 
 class CTAConfigUpdate(BaseModel):
-    cta_type: str | None = None
-    cta_label: str | None = None
+    cta_type: str | None = Field(default=None, min_length=1, max_length=50)
+    cta_label: str | None = Field(default=None, min_length=1, max_length=100)
     cta_target: str | None = None
     display_order: int | None = None
     is_active: bool | None = None

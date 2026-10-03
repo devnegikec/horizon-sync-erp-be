@@ -1,12 +1,18 @@
 """Service layer for QSeal module"""
 
 import logging
+import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.product_item import ProductItem
+from app.models.qr_block import QRBlock
+from app.models.qr_scan_event import QRScanEvent
+from app.models.qseal import QSealParameters
 from app.repositories.qseal_repository import QSealRepository
 from app.schemas.qseal import (
     QSealChildCreate,
@@ -14,6 +20,8 @@ from app.schemas.qseal import (
     QSealParentCreate,
     QSealScanRequest,
 )
+from app.services.qseal_suspicion_service import QSealSuspicionService
+from app.services.user_agent_service import parse_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +30,7 @@ class QSealService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = QSealRepository(db)
+        self.suspicion_service = QSealSuspicionService(db)
 
     def _to_response_dict(self, node) -> dict:
         return {
@@ -188,15 +197,28 @@ class QSealService:
 
     # ── QSeal Scan ────────────────────────────────────────────────────────────
 
-    def record_scan(self, req: QSealScanRequest, organization_id: UUID):
-        # 1. Try QSealTrack (parent nodes)
+    def record_scan(
+        self,
+        req: QSealScanRequest,
+        organization_id: UUID,
+        request_headers: dict | None = None,
+        client_ip: str | None = None,
+    ):
+        """Resolve and record a QSeal scan for client-facing analytics.
+
+        Every accepted or rejected serial creates an event. Rejected events
+        are intentionally retained so clients can see invalid/inactive scan
+        activity instead of treating it as missing data.
+        """
+        # Resolve the QSealTrack parent strictly within the supplied tenant.
+        # The /scan endpoint is public and organization_id is caller-supplied,
+        # so a global fallback here would let a caller resolve (and expose)
+        # another tenant's QSeal node.
         node = self.repo.get_by_serial(req.serial_number, organization_id)
-        is_parent = True
 
         # 2. Fallback: try QSealParameters (child units from ProductItems)
+        child = None
         if not node:
-            from app.models.qseal import QSealParameters
-
             child = (
                 self.db.query(QSealParameters)
                 .filter(
@@ -205,74 +227,59 @@ class QSealService:
                 )
                 .first()
             )
-            if child:
-                is_parent = False
-                # Build a pseudo-node response with parent info
-                parent_node = None
-                parent_serial = None
-                if child.parent_id:
-                    parent_node = self.repo.get_by_id(child.parent_id, organization_id)
-                    parent_serial = parent_node.serial_number if parent_node else None
 
-                # Record scan event
-                scan_payload = {
-                    "organization_id": organization_id,
-                    "serial_number": req.serial_number,
-                    "scan_timestamp": datetime.now(UTC),
-                    "device_type": req.device_type,
-                    "os": req.os,
-                    "browser": req.browser,
-                    "ip_address": req.ip_address,
-                    "latitude": req.latitude,
-                    "longitude": req.longitude,
-                    "city": req.city,
-                    "state": req.state,
-                    "country": req.country,
-                    "extra_data": req.extra_data,
-                }
-                self.repo.record_scan(scan_payload)
-
-                logger.info(
-                    "[QSEAL] child scan recorded serial=%s org=%s parent=%s",
-                    req.serial_number,
-                    organization_id,
-                    parent_serial,
-                )
-                return {
-                    "node_id": child.id,
-                    "serial_number": child.serial_number,
-                    "qseal_type": "child_unit",
-                    "name": f"Unit {child.serial_number or ''}",
-                    "parent_id": child.parent_id,
-                    "parent_serial": parent_serial,
-                    "children_count": 0,
-                    "message": f"Child QSeal unit scanned. Parent: {parent_serial or 'none'}.",
-                }
-
-        # 3. Not found in either table
-        if not node:
+        # 3. Not found in either table. Keep the rejected scan for analytics.
+        if not node and not child:
+            self._record_scan_event(
+                req,
+                organization_id,
+                verification_status="not_found",
+                request_headers=request_headers,
+                client_ip=client_ip,
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No QSeal node found for serial '{req.serial_number}'",
+                detail=(
+                    f"No QSeal node found for serial '{req.serial_number}' "
+                    f"(organization_id={organization_id})"
+                ),
             )
 
-        # Record scan for parent node
-        scan_payload = {
-            "organization_id": organization_id,
-            "serial_number": req.serial_number,
-            "scan_timestamp": datetime.now(UTC),
-            "device_type": req.device_type,
-            "os": req.os,
-            "browser": req.browser,
-            "ip_address": req.ip_address,
-            "latitude": req.latitude,
-            "longitude": req.longitude,
-            "city": req.city,
-            "state": req.state,
-            "country": req.country,
-            "extra_data": req.extra_data,
-        }
-        self.repo.record_scan(scan_payload)
+        # 4. Record a valid parent or child scan with the resolved context.
+        event = self._record_scan_event(
+            req,
+            organization_id,
+            node=node,
+            verification_status="valid",
+            request_headers=request_headers,
+            client_ip=client_ip,
+        )
+
+        if child:
+            parent_node = None
+            parent_serial = None
+            if child.parent_id:
+                parent_node = self.repo.get_by_id(child.parent_id, organization_id)
+                parent_serial = parent_node.serial_number if parent_node else None
+
+            logger.info(
+                "[QSEAL] child scan recorded serial=%s org=%s parent=%s",
+                req.serial_number,
+                organization_id,
+                parent_serial,
+            )
+            return {
+                "node_id": child.id,
+                "serial_number": child.serial_number,
+                "qseal_type": "child_unit",
+                "name": f"Unit {child.serial_number or ''}",
+                "parent_id": child.parent_id,
+                "parent_serial": parent_serial,
+                "children_count": 0,
+                "message": f"Child QSeal unit scanned. Parent: {parent_serial or 'none'}.",
+                "scan_event_id": event.id,
+                "verification_status": event.verification_status,
+            }
 
         children_count = self.repo.count_children(node.id)
         logger.info(
@@ -290,7 +297,172 @@ class QSealService:
             "parent_id": node.parent_id,
             "children_count": children_count,
             "message": f"QSeal scan recorded for {node.qseal_type or 'node'} '{node.name}'.",
+            "scan_event_id": event.id,
+            "verification_status": event.verification_status,
         }
+
+    def _record_scan_event(
+        self,
+        req: QSealScanRequest,
+        organization_id: UUID,
+        *,
+        node=None,
+        verification_status: str,
+        request_headers: dict | None = None,
+        client_ip: str | None = None,
+    ) -> QRScanEvent:
+        """Persist a QSeal scan and its product/batch context."""
+        headers = request_headers or {}
+        user_agent = headers.get("user-agent")
+        parsed_agent = parse_user_agent(user_agent)
+        child = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.serial_number == req.serial_number,
+                QSealParameters.organization_id == organization_id,
+            )
+            .first()
+        )
+        item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == req.serial_number,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+        product_id = child.product_id if child else (item.product_id if item else None)
+        block_id = child.block_id if child else (item.block_id if item else None)
+
+        # Auto-linked master-pack parents do not carry product/block fields on
+        # QSealTrack. Infer them only when all directly linked units agree;
+        # mixed-content parents remain intentionally unscoped.
+        if node and not child and not product_id:
+            linked_params = (
+                self.db.query(QSealParameters)
+                .filter(
+                    QSealParameters.parent_id == node.id,
+                    QSealParameters.organization_id == organization_id,
+                )
+                .all()
+            )
+            product_ids = {
+                param.product_id for param in linked_params if param.product_id
+            }
+            block_ids = {param.block_id for param in linked_params if param.block_id}
+            if len(product_ids) == 1:
+                product_id = next(iter(product_ids))
+            if len(block_ids) == 1:
+                block_id = next(iter(block_ids))
+
+        batch = None
+        if block_id:
+            block = (
+                self.db.query(QRBlock)
+                .filter(
+                    QRBlock.id == block_id,
+                    QRBlock.organization_id == organization_id,
+                )
+                .first()
+            )
+            batch = block.batch if block else None
+
+        qseal_type = (
+            "child_unit"
+            if child
+            else (node.qseal_type if node and node.qseal_type else "unknown")
+        )
+        payload = {
+            "organization_id": organization_id,
+            "product_item_id": item.id if item else None,
+            "product_id": product_id,
+            "block_id": block_id,
+            "qseal_track_id": node.id if node else None,
+            "qseal_parameter_id": child.id if child else None,
+            "serial_number": req.serial_number,
+            "batch": batch,
+            "qseal_type": qseal_type,
+            "scan_timestamp": datetime.now(UTC),
+            "verification_status": verification_status,
+            "device_type": req.device_type or (parsed_agent or {}).get("device_type"),
+            "os": req.os or (parsed_agent or {}).get("os"),
+            "browser": req.browser or (parsed_agent or {}).get("browser"),
+            "user_agent_raw": user_agent,
+            "user_agent_parsed": parsed_agent,
+            # Prefer the server-observed client IP so a public caller cannot
+            # spoof unique sources through the request body and evade the
+            # high-volume suspicion rule.
+            "ip_address": client_ip or req.ip_address,
+            "latitude": req.latitude,
+            "longitude": req.longitude,
+            "city": req.city,
+            "state": req.state,
+            "country": req.country,
+            "street_address": req.street_address,
+            "referrer_url": headers.get("referer"),
+            "language": (headers.get("accept-language") or "")[:10] or None,
+            "is_bot": bool(parsed_agent and parsed_agent.get("is_bot")),
+            "extra_data": req.extra_data,
+        }
+
+        # Suspicion is recorded as a review signal. It never blocks the scan
+        # response, so a client can still see the verification result while
+        # the tenant gets an actionable explanation in Analytics.
+        try:
+            payload.update(self.suspicion_service.assess(payload))
+        except StopIteration:
+            # Test doubles and partially configured adapters may not expose
+            # the optional historical lookup; use the same safe baseline.
+            logger.debug(
+                "[QSEAL] suspicious scan history lookup unavailable serial=%s",
+                req.serial_number,
+            )
+            payload.update(
+                {
+                    "is_suspicious": False,
+                    "risk_score": 0,
+                    "suspicious_reasons": [],
+                    "review_status": "not_flagged",
+                    "flagged_at": None,
+                }
+            )
+        except Exception:
+            # Suspicion enrichment must never make the public scan endpoint
+            # unavailable. A failed statement can leave the session unusable,
+            # so roll back before continuing; the event is still retained with
+            # a safe baseline and can be re-evaluated by a later backfill job.
+            self.db.rollback()
+            logger.exception(
+                "[QSEAL] suspicious scan assessment failed serial=%s org=%s",
+                req.serial_number,
+                organization_id,
+            )
+            payload.update(
+                {
+                    "is_suspicious": False,
+                    "risk_score": 0,
+                    "suspicious_reasons": [],
+                    "review_status": "not_flagged",
+                    "flagged_at": None,
+                }
+            )
+
+        if item and verification_status == "valid":
+            # Keep the existing operational counter in sync with the event
+            # stream used by the QSeal aggregation view. Increment in the
+            # database so concurrent scans of the same serial cannot lose an
+            # update to a read-modify-write race.
+            self.db.query(ProductItem).filter(ProductItem.id == item.id).update(
+                {ProductItem.scan_count: func.coalesce(ProductItem.scan_count, 0) + 1},
+                synchronize_session=False,
+            )
+            item.last_scanned_at = payload["scan_timestamp"]
+            if payload["is_suspicious"]:
+                item.is_suspicious = True
+
+        return self.repo.record_scan(payload)
 
     # ── QSeal History ─────────────────────────────────────────────────────────
 
@@ -300,14 +472,123 @@ class QSealService:
         serial_number: str | None = None,
         page: int = 1,
         page_size: int = 50,
+        date_from=None,
+        date_to=None,
+        product_id: UUID | None = None,
+        block_id: UUID | None = None,
+        batch: str | None = None,
+        qseal_type: str | None = None,
+        risk_filter: str | None = None,
     ):
+        self._validate_analytics_range(date_from, date_to, risk_filter)
         items, total = self.repo.list_scan_history(
-            organization_id, serial_number, page, page_size
+            organization_id,
+            serial_number,
+            page,
+            page_size,
+            date_from,
+            date_to,
+            product_id,
+            block_id,
+            batch,
+            qseal_type,
+            risk_filter,
         )
         return {
             "events": items,
             "pagination": self._paginate(items, total, page, page_size),
         }
+
+    # ── Client-facing analytics ──────────────────────────────────────────────
+
+    @staticmethod
+    def _validate_analytics_range(date_from, date_to, risk_filter=None):
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="date_from must be earlier than or equal to date_to",
+            )
+        if risk_filter not in (None, "all", "suspicious", "high_risk", "unreviewed"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="risk_filter must be all, suspicious, high_risk, or unreviewed",
+            )
+
+    def get_scan_analytics_summary(self, organization_id: UUID, **filters):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_scan_summary(organization_id, **filters)
+
+    def get_scan_analytics_trends(self, organization_id: UUID, **filters):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_scan_trends(organization_id, **filters)
+
+    def get_product_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_product_analytics(organization_id, limit=limit, **filters)
+
+    def get_geography_scan_analytics(
+        self, organization_id: UUID, limit: int = 500, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_geography_analytics(
+            organization_id, limit=limit, **filters
+        )
+
+    def get_device_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_device_analytics(organization_id, limit=limit, **filters)
+
+    def get_suspicious_scan_analytics(
+        self,
+        organization_id: UUID,
+        page: int = 1,
+        page_size: int = 50,
+        review_status: str | None = None,
+        limit_score: int | None = None,
+        **filters,
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        items, total = self.repo.list_suspicious_scans(
+            organization_id,
+            page=page,
+            page_size=page_size,
+            review_status=review_status,
+            limit_score=limit_score,
+            **filters,
+        )
+        return {
+            "items": items,
+            "pagination": self._paginate(items, total, page, page_size),
+        }
+
+    def review_suspicious_scan(
+        self, event_id: UUID, organization_id: UUID, review_status: str
+    ):
+        event = self.repo.update_suspicious_review(
+            event_id, organization_id, review_status
+        )
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Suspicious QSeal scan not found",
+            )
+        return event
 
     # ── Label Download ────────────────────────────────────────────────────────
 
@@ -362,13 +643,17 @@ class QSealService:
                 detail="Parent QSeal node not found",
             )
 
+        # The parent is already org-scoped, so linked units are resolved within
+        # the same organization.
+        parent_org = parent.organization_id or organization_id
+
         # Fetch linked QSealParameters with ProductItem + QRProduct joins
         linked = (
             self.db.query(QSealParameters, ProductItem, QRProduct)
             .outerjoin(
                 ProductItem,
                 (ProductItem.serial_number == QSealParameters.serial_number)
-                & (ProductItem.organization_id == organization_id),
+                & (ProductItem.organization_id == parent_org),
             )
             .outerjoin(
                 QRProduct,
@@ -376,7 +661,7 @@ class QSealService:
             )
             .filter(
                 QSealParameters.parent_id == parent_id,
-                QSealParameters.organization_id == organization_id,
+                QSealParameters.organization_id == parent_org,
             )
             .order_by(QSealParameters.created_at.asc())
             .all()
@@ -487,8 +772,8 @@ class QSealService:
     ) -> tuple[bytes, str]:
         """Generate an Excel file with parent QSeal QR codes for a block.
 
-        Includes embedded QR code images for mobile app scanning.
-        Returns (excel_bytes, filename).
+        Embeds QR code images for mobile app scanning only when the block's
+        ``qr_image`` flag is enabled. Returns (excel_bytes, filename).
         """
         from io import BytesIO
 
@@ -567,13 +852,18 @@ class QSealService:
             .all()
         )
 
-        # Build Excel with embedded QR codes
+        # Build Excel — embed QR code images only when the block requested them
+        include_images = bool(block.qr_image)
         wb = Workbook()
         ws = wb.active
         ws.title = "QSeal Parent QR Codes"
 
-        # Headers: QR URL, QR Code image, Serial, Name, Capacity
-        headers = ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+        # Headers: QR URL, [QR Code image], Serial, Name, Capacity
+        headers = (
+            ["QR URL", "QR Code", "Serial Number", "Name", "Capacity"]
+            if include_images
+            else ["QR URL", "Serial Number", "Name", "Capacity"]
+        )
         bold_font = Font(bold=True)
         for col_idx, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -582,10 +872,14 @@ class QSealService:
 
         # Column widths
         ws.column_dimensions[get_column_letter(1)].width = 55  # QR URL
-        ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
-        ws.column_dimensions[get_column_letter(3)].width = 18  # Serial
-        ws.column_dimensions[get_column_letter(4)].width = 25  # Name
-        ws.column_dimensions[get_column_letter(5)].width = 15  # Capacity
+        if include_images:
+            ws.column_dimensions[get_column_letter(2)].width = 24  # QR Code image
+        serial_col = 3 if include_images else 2
+        name_col = 4 if include_images else 3
+        capacity_col = 5 if include_images else 4
+        ws.column_dimensions[get_column_letter(serial_col)].width = 18  # Serial
+        ws.column_dimensions[get_column_letter(name_col)].width = 25  # Name
+        ws.column_dimensions[get_column_letter(capacity_col)].width = 15  # Capacity
 
         qr_size = 150
         base_url = settings.qr_base_url or f"https://{settings.qr_domain}"
@@ -594,14 +888,16 @@ class QSealService:
             serial = parent.serial_number or ""
             qr_url = f"{base_url}/qseal/{serial}" if serial else ""
 
-            # Row height for QR image
-            ws.row_dimensions[row_idx].height = 115
+            if include_images:
+                # Row height for QR image
+                ws.row_dimensions[row_idx].height = 115
 
             ws.cell(row=row_idx, column=1, value=qr_url)  # QR URL
-            _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
-            ws.cell(row=row_idx, column=3, value=serial)  # Serial Number
-            ws.cell(row=row_idx, column=4, value=parent.name or "")
-            ws.cell(row=row_idx, column=5, value=parent.capacity or 0)
+            if include_images:
+                _embed_qr(ws, qr_url, row_idx, 2, qr_size)  # QR Code image
+            ws.cell(row=row_idx, column=serial_col, value=serial)  # Serial Number
+            ws.cell(row=row_idx, column=name_col, value=parent.name or "")
+            ws.cell(row=row_idx, column=capacity_col, value=parent.capacity or 0)
 
         # Save
         buf = BytesIO()
@@ -610,8 +906,363 @@ class QSealService:
 
         filename = f"qseal_parents_{block.batch}.xlsx"
         logger.info(
-            "[QSEAL] parent excel with QR images generated block=%s parents=%d",
+            "[QSEAL] parent excel generated block=%s parents=%d images=%s",
             block_id,
             len(parents),
+            include_images,
         )
         return buf.getvalue(), filename
+
+    # ── Auto-link (automatic cascade / aggregation) ─────────────────────────
+
+    def auto_link_block(
+        self,
+        block_id: UUID,
+        organization_id: UUID,
+        user_id: UUID | None = None,
+        master_pack_size: int | None = None,
+    ) -> dict:
+        """Automatically cascade a completed block's items into master packs.
+
+        Groups the block's generated ProductItems into chunks of
+        ``master_pack_size``, creating a QSealTrack (shipper) parent per chunk
+        and linking each item via a QSealParameters row. Existing linkage for
+        the block is removed first so the operation is idempotent (re-cascade).
+        """
+        from app.models.product_item import ProductItem
+        from app.models.qr_block import QRBlock
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        block = (
+            self.db.query(QRBlock)
+            .filter(
+                QRBlock.id == block_id,
+                QRBlock.organization_id == organization_id,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not block:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR block not found",
+            )
+
+        if block.status != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Block is not ready (status: {block.status})",
+            )
+
+        pack_size = master_pack_size or block.master_pack_size
+        if not pack_size or pack_size <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="master_pack_size is required to auto-link this block",
+            )
+
+        items = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.block_id == block_id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .order_by(
+                ProductItem.created_at.asc(),
+                ProductItem.serial_number.asc(),
+            )
+            .all()
+        )
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Block has no generated items to link",
+            )
+
+        # Remove previous linkage for this block so re-cascading is idempotent.
+        existing_params = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.block_id == block_id,
+                QSealParameters.organization_id == organization_id,
+            )
+            .all()
+        )
+        orphan_parent_ids = {p.parent_id for p in existing_params if p.parent_id}
+        for p in existing_params:
+            self.db.delete(p)
+        self.db.flush()
+
+        # Delete orphaned QSealTrack parents no longer referenced by any child.
+        for parent_id in orphan_parent_ids:
+            still_referenced = (
+                self.db.query(QSealParameters.id)
+                .filter(QSealParameters.parent_id == parent_id)
+                .first()
+            )
+            has_track_children = (
+                self.db.query(QSealTrack.id)
+                .filter(QSealTrack.parent_id == parent_id)
+                .first()
+            )
+            if not still_referenced and not has_track_children:
+                orphan = (
+                    self.db.query(QSealTrack).filter(QSealTrack.id == parent_id).first()
+                )
+                if orphan:
+                    self.db.delete(orphan)
+
+        now = datetime.now(UTC)
+        parent_count = 0
+        for chunk_start in range(0, len(items), pack_size):
+            chunk = items[chunk_start : chunk_start + pack_size]
+            if not chunk:
+                continue
+
+            parent_serial = self.repo.generate_serial(prefix="QSL")
+            parent_name = f"MP-{block.batch[:10]}-{parent_count + 1}"[:20]
+            parent_node = QSealTrack(
+                id=uuid.uuid4(),
+                organization_id=organization_id,
+                qseal_type="shipper",
+                name=parent_name,
+                capacity=pack_size,
+                serial_number=parent_serial,
+                qseal_code_link=f"/qseal/{parent_serial}",
+                app_cascade_map=False,
+                created_at=now,
+            )
+            self.db.add(parent_node)
+            self.db.flush()
+
+            for item in chunk:
+                self.db.add(
+                    QSealParameters(
+                        id=uuid.uuid4(),
+                        organization_id=organization_id,
+                        product_id=block.product_id,
+                        block_id=block.id,
+                        serial_number=item.serial_number,
+                        manufacturing_date=block.manufacture_date or now.date(),
+                        expiry_date=block.expiry_date or now.date(),
+                        manufacturing_unit="",
+                        dispatch_batch=block.batch,
+                        batch_size=pack_size,
+                        qseal_settings=False,
+                        qseal_cascade=False,
+                        parent_id=parent_node.id,
+                        extra_data={
+                            "item_id": str(item.id),
+                            "master_pack_index": parent_count + 1,
+                        },
+                        created_by=user_id,
+                        created_at=now,
+                    )
+                )
+
+            parent_count += 1
+            logger.info(
+                "[QSEAL] auto-link parent created serial=%s block=%s org=%s items=%d",
+                parent_serial,
+                block.id,
+                organization_id,
+                len(chunk),
+            )
+
+        block.master_pack_enabled = True
+        block.master_pack_size = pack_size
+        block.extra_data = (block.extra_data or {}) | {
+            "qseal_parent_count": parent_count
+        }
+        self.db.commit()
+
+        logger.info(
+            "[QSEAL] auto-link complete block=%s parents=%d items=%d",
+            block.id,
+            parent_count,
+            len(items),
+        )
+        return {
+            "block_id": block.id,
+            "batch": block.batch,
+            "master_pack_size": pack_size,
+            "parent_count": parent_count,
+            "linked_item_count": len(items),
+            "message": (
+                f"Auto-linked {len(items)} items into "
+                f"{parent_count} master pack parent(s)."
+            ),
+        }
+
+    # ── Aggregation log ─────────────────────────────────────────────────────
+
+    def list_aggregation(
+        self,
+        organization_id: UUID,
+        block_id: UUID | None = None,
+        page: int = 1,
+        page_size: int = 50,
+        grouped: bool = False,
+    ) -> dict:
+        """List the aggregation (cascading) log.
+
+        Flat mode (default) returns one row per child unit. Grouped mode nests
+        each child under its parent (master-pack) box so the parent-child link
+        is visible at a glance; unlinked units are returned separately.
+        """
+        from sqlalchemy import func
+
+        from app.models.product_item import ProductItem
+        from app.models.qr_block import QRBlock
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        q = (
+            self.db.query(ProductItem, QSealParameters, QSealTrack, QRBlock)
+            .outerjoin(
+                QSealParameters,
+                (QSealParameters.serial_number == ProductItem.serial_number)
+                & (QSealParameters.block_id == ProductItem.block_id),
+            )
+            .outerjoin(QSealTrack, QSealTrack.id == QSealParameters.parent_id)
+            .outerjoin(QRBlock, QRBlock.id == ProductItem.block_id)
+            .filter(
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+        )
+        if block_id:
+            q = q.filter(ProductItem.block_id == block_id)
+
+        total = q.count()
+
+        if grouped:
+            rows = q.order_by(
+                QSealTrack.serial_number.asc(),
+                ProductItem.created_at.asc(),
+                ProductItem.serial_number.asc(),
+            ).all()
+            return self._build_grouped_aggregation(rows, page, page_size)
+
+        rows = (
+            q.order_by(
+                ProductItem.created_at.asc(),
+                ProductItem.serial_number.asc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        # Per-parent linked child count — used to spot over/under aggregation.
+        count_rows = (
+            self.db.query(
+                QSealParameters.parent_id,
+                func.count(QSealParameters.id),
+            )
+            .filter(
+                QSealParameters.organization_id == organization_id,
+                QSealParameters.parent_id.isnot(None),
+            )
+            .group_by(QSealParameters.parent_id)
+            .all()
+        )
+        parent_counts = {parent_id: count for parent_id, count in count_rows}
+
+        items = []
+        for item, qsp, parent, blk in rows:
+            linked = bool(qsp and qsp.parent_id and parent is not None)
+            items.append(
+                {
+                    "id": item.id,
+                    "block_id": item.block_id,
+                    "batch": blk.batch if blk else None,
+                    "child_serial": item.serial_number,
+                    "activated": bool(item.qr_active),
+                    "scan_count": item.scan_count or 0,
+                    "linked": linked,
+                    "parent_id": parent.id if linked else None,
+                    "parent_serial": parent.serial_number if parent else None,
+                    "parent_name": parent.name if parent else None,
+                    "parent_type": parent.qseal_type if parent else None,
+                    "parent_capacity": parent.capacity if parent else None,
+                    "parent_linked_count": (
+                        parent_counts.get(parent.id, 0) if parent else None
+                    ),
+                    "created_at": item.created_at,
+                }
+            )
+
+        return {
+            "items": items,
+            "pagination": self._paginate(rows, total, page, page_size),
+        }
+
+    def _build_grouped_aggregation(self, rows, page=1, page_size=50) -> dict:
+        """Group aggregation rows by parent (master-pack) box.
+
+        Children are nested under their parent; units without a parent are
+        returned in ``unlinked``. Pagination applies to the parent groups.
+        """
+        groups: dict[UUID, dict] = {}
+        unlinked: list[dict] = []
+
+        for item, qsp, parent, blk in rows:
+            linked = bool(qsp and qsp.parent_id and parent is not None)
+            if linked:
+                group = groups.get(parent.id)
+                if group is None:
+                    group = {
+                        "parent_id": parent.id,
+                        "parent_serial": parent.serial_number,
+                        "parent_name": parent.name,
+                        "parent_type": parent.qseal_type,
+                        "parent_capacity": parent.capacity,
+                        "children": [],
+                    }
+                    groups[parent.id] = group
+                group["children"].append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "created_at": item.created_at,
+                    }
+                )
+            else:
+                unlinked.append(
+                    {
+                        "id": item.id,
+                        "block_id": item.block_id,
+                        "batch": blk.batch if blk else None,
+                        "child_serial": item.serial_number,
+                        "activated": bool(item.qr_active),
+                        "scan_count": item.scan_count or 0,
+                        "linked": False,
+                        "parent_id": None,
+                        "parent_serial": None,
+                        "parent_name": None,
+                        "parent_type": None,
+                        "parent_capacity": None,
+                        "parent_linked_count": None,
+                        "created_at": item.created_at,
+                    }
+                )
+
+        groups_list = []
+        for group in groups.values():
+            group["linked_count"] = len(group["children"])
+            groups_list.append(group)
+
+        total_groups = len(groups_list)
+        start = (page - 1) * page_size
+        page_groups = groups_list[start : start + page_size]
+
+        return {
+            "groups": page_groups,
+            "unlinked": unlinked,
+            "pagination": self._paginate(page_groups, total_groups, page, page_size),
+        }

@@ -2,10 +2,13 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
+from decimal import Decimal
+
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, subqueryload
 
 from app.models.base import StockEntryStatus, StockEntryType
+from app.models.item import Item
 from app.models.stock_entry import StockEntry, StockEntryItem
 
 
@@ -100,12 +103,9 @@ class StockEntryRepository:
         if to_warehouse_id is not None:
             q = q.filter(StockEntry.to_warehouse_id == to_warehouse_id)
         if warehouse_id is not None:
-            q = q.filter(
-                or_(
-                    StockEntry.from_warehouse_id == warehouse_id,
-                    StockEntry.to_warehouse_id == warehouse_id,
-                )
-            )
+            # Filter by target (to) warehouse only — matches the selected
+            # warehouse filter in the Stock Entries tab.
+            q = q.filter(StockEntry.to_warehouse_id == warehouse_id)
         if search:
             t = f"%{search}%"
             q = q.filter(
@@ -115,6 +115,34 @@ class StockEntryRepository:
         col = getattr(StockEntry, sort_by, StockEntry.posting_date)
         q = q.order_by(col.desc() if sort_order == "desc" else col.asc())
         items = q.offset((page - 1) * page_size).limit(page_size).all()
+
+        # Auto-created entries store null total_value. Compute a meaningful
+        # total (qty * (basic_rate or item standard_rate)) so the list shows it.
+        if items:
+            ids = [e.id for e in items]
+            totals = dict(
+                self.db.query(
+                    StockEntryItem.stock_entry_id,
+                    func.coalesce(
+                        func.sum(
+                            StockEntryItem.qty
+                            * func.coalesce(
+                                StockEntryItem.basic_rate,
+                                Item.standard_rate,
+                                Decimal("0"),
+                            )
+                        ),
+                        Decimal("0"),
+                    ),
+                )
+                .join(Item, Item.id == StockEntryItem.item_id)
+                .filter(StockEntryItem.stock_entry_id.in_(ids))
+                .group_by(StockEntryItem.stock_entry_id)
+                .all()
+            )
+            for e in items:
+                e._computed_total_value = totals.get(e.id, Decimal("0"))
+
         return items, total
 
     # ----- Items -----

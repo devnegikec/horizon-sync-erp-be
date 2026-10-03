@@ -26,7 +26,9 @@ def upgrade() -> None:
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
-            server_default=sa.text("uuid_generate_v4()"),
+            # Use the built-in PostgreSQL UUID generator.  This avoids
+            # requiring the optional uuid-ossp extension.
+            server_default=sa.text("gen_random_uuid()"),
             primary_key=True,
         ),
         sa.Column(

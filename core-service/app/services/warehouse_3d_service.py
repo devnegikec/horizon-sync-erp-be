@@ -19,6 +19,14 @@ from app.models.bin_stock_level import BinStockLevel
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_reservation_service import BinReservationService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    compute_warehouse_bin_occupancy,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 
 EXPIRY_WARNING_DAYS = 30  # FR-FE-03
 
@@ -65,6 +73,12 @@ class Warehouse3DService:
 
         # Pre-compute per-bin stock aggregates and reservation state.
         bin_stock = self._bin_stock_map(warehouse_id, org_id)
+        occupancy = compute_warehouse_bin_occupancy(
+            self.db,
+            warehouse_id,
+            use_volume=self._use_volume(warehouse),
+            use_weight=self._use_weight(warehouse),
+        )
         reserved = {
             r.bin_location_id: r
             for r in self.reservation_service.get_active_reservations(
@@ -75,21 +89,21 @@ class Warehouse3DService:
 
         def build_bin(loc: WarehouseLocation) -> dict:
             agg = bin_stock.get(loc.id, {"qty": Decimal("0"), "items": 0})
-            capacity = Decimal(str(loc.capacity or 0))
             on_hand = agg["qty"]
-            available = capacity - on_hand
-            fill_pct = (
-                round(float(on_hand / capacity) * 100, 1) if capacity > 0 else 0.0
-            )
+            occ_m3, occ_kg = occupancy.get(str(loc.id), (Decimal("0"), Decimal("0")))
+            metrics = self._fill_metrics(warehouse, loc, occ_m3, occ_kg, on_hand)
             res = reserved.get(loc.id)
             return {
                 "id": loc.id,
                 "code": loc.code,
                 "full_path": loc.full_path,
                 "position": self._position(loc),
-                "capacity": float(capacity),
-                "available_capacity": float(available),
-                "fill_percentage": fill_pct,
+                "capacity": metrics["capacity"],
+                "available_capacity": metrics["available_capacity"],
+                "capacity_uom": metrics["capacity_uom"],
+                "volume": metrics["volume"],
+                "weight": metrics["weight"],
+                "fill_percentage": metrics["fill_percentage"],
                 "is_active": bool(loc.is_active),
                 "is_reserved": res is not None,
                 "reserved_by_worker_id": res.worker_id if res else None,
@@ -106,9 +120,7 @@ class Warehouse3DService:
             }
             kids = children_by_parent.get(loc.id, [])
             if loc.location_type == "level":
-                node["bins"] = [
-                    build_bin(b) for b in kids if b.location_type == "bin"
-                ]
+                node["bins"] = [build_bin(b) for b in kids if b.location_type == "bin"]
             elif loc.location_type == "bay":
                 node["levels"] = [
                     build_subtree(c) for c in kids if c.location_type == "level"
@@ -146,8 +158,9 @@ class Warehouse3DService:
     def get_status(self, warehouse_id: UUID, org_id: UUID) -> dict:
         """Return current bin fill/reservation status for polling clients."""
         bin_stock = self._bin_stock_map(warehouse_id, org_id)
-        capacities = dict(
-            self.db.query(WarehouseLocation.id, WarehouseLocation.capacity)
+        warehouse = self.db.get(Warehouse, warehouse_id)
+        bin_locations = (
+            self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
                 WarehouseLocation.organization_id == org_id,
@@ -155,6 +168,12 @@ class Warehouse3DService:
                 WarehouseLocation.is_active.is_(True),
             )
             .all()
+        )
+        occupancy = compute_warehouse_bin_occupancy(
+            self.db,
+            warehouse_id,
+            use_volume=self._use_volume(warehouse),
+            use_weight=self._use_weight(warehouse),
         )
 
         now = datetime.now(UTC)
@@ -164,10 +183,11 @@ class Warehouse3DService:
         reserved_by_bin = {r.bin_location_id: r for r in reservations}
 
         bins = []
-        for bin_id, capacity in capacities.items():
-            cap = Decimal(str(capacity or 0))
+        for bin_loc in bin_locations:
+            bin_id = bin_loc.id
             on_hand = bin_stock.get(bin_id, {"qty": Decimal("0")})["qty"]
-            fill_pct = round(float(on_hand / cap) * 100, 1) if cap > 0 else 0.0
+            occ_m3, occ_kg = occupancy.get(str(bin_id), (Decimal("0"), Decimal("0")))
+            metrics = self._fill_metrics(warehouse, bin_loc, occ_m3, occ_kg, on_hand)
             res = reserved_by_bin.get(bin_id)
             reserved_info = None
             if res is not None:
@@ -179,7 +199,12 @@ class Warehouse3DService:
             bins.append(
                 {
                     "bin_id": bin_id,
-                    "fill_percentage": fill_pct,
+                    "capacity": metrics["capacity"],
+                    "available_capacity": metrics["available_capacity"],
+                    "capacity_uom": metrics["capacity_uom"],
+                    "volume": metrics["volume"],
+                    "weight": metrics["weight"],
+                    "fill_percentage": metrics["fill_percentage"],
                     "is_reserved": res is not None,
                     "reserved_by": reserved_info,
                 }
@@ -190,6 +215,112 @@ class Warehouse3DService:
     # ------------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _use_volume(warehouse: Warehouse | None) -> bool:
+        return (
+            warehouse.use_volume
+            if warehouse is not None and warehouse.use_volume is not None
+            else True
+        )
+
+    @staticmethod
+    def _use_weight(warehouse: Warehouse | None) -> bool:
+        return (
+            warehouse.use_weight
+            if warehouse is not None and warehouse.use_weight is not None
+            else False
+        )
+
+    def _fill_metrics(
+        self,
+        warehouse: Warehouse | None,
+        bin_loc: WarehouseLocation,
+        occupied_m3: Decimal,
+        occupied_kg: Decimal,
+        on_hand: Decimal,
+    ) -> dict:
+        """Volume/weight-aware capacity view for one bin.
+
+        ``capacity`` / ``available_capacity`` are reported **in the bin's own
+        measure**, described by ``capacity_uom``:
+
+        * a count-limited bin → units (legacy behaviour),
+        * a volume-limited bin (``max_volume_cc``, or ``capacity`` with
+          ``capacity_uom='volume'``) → m³,
+        * a weight-limited bin → kg.
+
+        This matters because new-layout bins carry ``capacity = 1.2`` m³, so
+        reporting a unit count would either be wrong or a constant ``0`` that
+        never moves when stock is stored. ``fill_percentage`` and the ``volume``
+        / ``weight`` blocks are the physical measures.
+        """
+        cap_m3 = None
+        if self._use_volume(warehouse):
+            limit_cc = effective_bin_volume_limit_cc(bin_loc)
+            if limit_cc is not None:
+                cap_m3 = limit_cc / CC_PER_M3
+        cap_kg = None
+        if self._use_weight(warehouse):
+            limit_g = effective_bin_weight_limit_g(bin_loc)
+            if limit_g is not None:
+                cap_kg = limit_g / G_PER_KG
+
+        available_m3 = (cap_m3 - occupied_m3) if cap_m3 is not None else None
+        available_kg = (cap_kg - occupied_kg) if cap_kg is not None else None
+
+        count_cap = effective_bin_count_capacity(bin_loc)
+        if count_cap is not None:
+            capacity = Decimal(str(count_cap))
+            available = capacity - on_hand
+            capacity_uom = bin_loc.capacity_uom or "units"
+        elif available_m3 is not None:
+            capacity = cap_m3
+            available = available_m3
+            capacity_uom = "volume"
+        elif available_kg is not None:
+            capacity = cap_kg
+            available = available_kg
+            capacity_uom = "weight"
+        else:
+            capacity = Decimal("0")
+            available = Decimal("0")
+            capacity_uom = bin_loc.capacity_uom
+
+        vol_pct = (occupied_m3 / cap_m3 * 100) if cap_m3 else None
+        wt_pct = (occupied_kg / cap_kg * 100) if cap_kg else None
+        pcts = [p for p in (vol_pct, wt_pct) if p is not None]
+        if pcts:
+            binding = max(pcts)
+        else:
+            binding = (
+                (Decimal(str(on_hand)) / capacity * 100)
+                if capacity > 0
+                else Decimal("0")
+            )
+
+        return {
+            "capacity": float(capacity),
+            "available_capacity": float(available),
+            "capacity_uom": capacity_uom,
+            "fill_percentage": round(float(binding), 1),
+            "volume": {
+                "capacity_m3": float(cap_m3) if cap_m3 is not None else None,
+                "occupied_m3": float(occupied_m3),
+                "available_m3": float(available_m3)
+                if available_m3 is not None
+                else None,
+                "pct": round(float(vol_pct), 1) if vol_pct is not None else None,
+            },
+            "weight": {
+                "capacity_kg": float(cap_kg) if cap_kg is not None else None,
+                "occupied_kg": float(occupied_kg),
+                "available_kg": float(available_kg)
+                if available_kg is not None
+                else None,
+                "pct": round(float(wt_pct), 1) if wt_pct is not None else None,
+            },
+        }
 
     def _bin_stock_map(self, warehouse_id: UUID, org_id: UUID) -> dict[UUID, dict]:
         """Map bin_location_id -> {qty, items} for the warehouse."""
@@ -290,6 +421,7 @@ class Warehouse3DService:
                 Item.sku,
                 Item.uom,
                 BinStockLevel.quantity_on_hand,
+                BinStockLevel.inventory_status,
                 BinStockLevel.batch_number,
                 BinStockLevel.expiry_date,
                 BinStockLevel.created_at,
@@ -320,9 +452,10 @@ class Warehouse3DService:
                     "sku": row[3],
                     "uom": row[4],
                     "quantity_on_hand": float(qty),
-                    "batch_number": row[6],
-                    "expiry_date": row[7].isoformat() if row[7] else None,
-                    "created_at": row[8].isoformat() if row[8] else None,
+                    "inventory_status": row[6] or "available",
+                    "batch_number": row[7],
+                    "expiry_date": row[8].isoformat() if row[8] else None,
+                    "created_at": row[9].isoformat() if row[9] else None,
                 }
             )
 

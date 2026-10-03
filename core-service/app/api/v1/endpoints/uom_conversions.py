@@ -10,6 +10,8 @@ from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.schemas.common import PaginationMeta
 from app.schemas.uom_conversion import (
+    UOMConversionBulkRequest,
+    UOMConversionBulkResponse,
     UOMConversionCreate,
     UOMConversionListResponse,
     UOMConversionResponse,
@@ -18,6 +20,32 @@ from app.schemas.uom_conversion import (
 from app.services.uom_conversion_service import UOMConversionService
 
 router = APIRouter()
+
+
+@router.put(
+    "/bulk",
+    response_model=UOMConversionBulkResponse,
+    summary="Bulk upsert UOM conversions",
+    description="Upsert a list of UOM conversions in one request. Returns created/updated counts and per-row errors.",
+)
+async def bulk_upsert_uom_conversions(
+    body: UOMConversionBulkRequest,
+    current_user: CurrentUser = Depends(require_permission(UOM_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """Bulk upsert UOM conversions. Requires uom.update permission."""
+    svc = UOMConversionService(db)
+    created, updated, deleted, errors = svc.bulk_upsert_conversions(
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        conversions=body.conversions,
+    )
+    return UOMConversionBulkResponse(
+        created=created,
+        updated=updated,
+        deleted=deleted,
+        errors=errors,
+    )
 
 
 @router.post(

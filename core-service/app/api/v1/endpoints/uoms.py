@@ -52,6 +52,10 @@ async def list_uoms(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     search: str | None = Query(None, description="Search in name or abbreviation"),
+    uom_type: str | None = Query(
+        None,
+        description="Filter by UOM type(s), comma-separated (count,weight,volume,length,area,time,other)",
+    ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user: CurrentUser = Depends(require_permission(UOM_READ)),
@@ -66,6 +70,7 @@ async def list_uoms(
         search=search,
         sort_by=sort_by,
         sort_order=sort_order,
+        uom_type=uom_type,
     )
     return UOMListResponse(
         uoms=[UOMResponse.model_validate(u) for u in uoms],

@@ -68,6 +68,13 @@ class StockMovementListItem(BaseModel):
     warehouse_id: UUID
     movement_type: str
     quantity: int
+    unit_cost: Decimal | None = None
+    reference_type: str | None = None
+    reference_id: UUID | None = None
+    reference_no: str | None = None
+    notes: str | None = None
+    performed_by: UUID | None = None
+    performed_by_name: str | None = None
     performed_at: datetime
     created_at: datetime
     product: ProductInfo | None = None
@@ -81,7 +88,12 @@ class StockMovementListResponse(BaseModel):
     pagination: PaginationMeta
 
 
-def stock_movement_to_list_item(m: StockMovement) -> StockMovementListItem:
+def stock_movement_to_list_item(
+    m: StockMovement,
+    performed_by_name: str | None = None,
+    reference_no: str | None = None,
+    notes: str | None = None,
+) -> StockMovementListItem:
     """Build list item from ORM without embedding Item/Warehouse (avoids lazy-load loops)."""
 
     product = None
@@ -98,6 +110,13 @@ def stock_movement_to_list_item(m: StockMovement) -> StockMovementListItem:
         if hasattr(m.movement_type, "value")
         else str(m.movement_type),
         quantity=m.quantity,
+        unit_cost=m.unit_cost,
+        reference_type=m.reference_type,
+        reference_id=m.reference_id,
+        reference_no=reference_no,
+        notes=notes if notes is not None else m.notes,
+        performed_by=m.performed_by,
+        performed_by_name=performed_by_name,
         performed_at=m.performed_at,
         created_at=m.created_at,
         product=product,

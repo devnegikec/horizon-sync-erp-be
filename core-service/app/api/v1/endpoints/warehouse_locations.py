@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ from app.schemas.warehouse_location import (
     PaginatedLocations,
     UpdateLocationRequest,
 )
-from app.services.layout_service import LayoutService
+from app.services.layout_service import _UNSET, LayoutService
 
 router = APIRouter()
 
@@ -65,6 +65,8 @@ async def create_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc,
+        max_weight_grams=data.max_weight_grams,
     )
     return LocationResponse.model_validate(location)
 
@@ -251,6 +253,12 @@ async def update_location(
         capacity_uom=data.capacity_uom,
         position_x=data.position_x,
         position_y=data.position_y,
+        max_volume_cc=data.max_volume_cc
+        if "max_volume_cc" in data.model_fields_set
+        else _UNSET,
+        max_weight_grams=data.max_weight_grams
+        if "max_weight_grams" in data.model_fields_set
+        else _UNSET,
     )
     return LocationResponse.model_validate(location)
 
@@ -317,6 +325,7 @@ async def get_location_summary(
         total_capacity=summary["total_capacity"],
         used_capacity=summary["used_capacity"],
         available_capacity=summary["available_capacity"],
+        capacity_uom=summary.get("capacity_uom"),
         item_count=summary.get("distinct_items", 0),
     )
 
@@ -370,3 +379,38 @@ async def get_location_qr_image(
             "Content-Disposition": f"inline; filename=bin-qr-{payload.full_path}.png"
         },
     )
+
+
+@router.get(
+    "/by-qr/{qr_code}",
+    response_model=LocationResponse,
+    summary="Lookup bin by QR code",
+    description="Find a bin location using its 5-character QR code",
+)
+async def lookup_by_qr_code(
+    qr_code: str,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+):
+    """
+    Lookup a bin location by its unique 5-character QR code.
+
+    Returns the full location details including location_id (UUID)
+    needed for put-away API calls.
+    """
+    from app.models.warehouse_location import WarehouseLocation
+
+    loc = (
+        db.query(WarehouseLocation)
+        .filter(
+            WarehouseLocation.qr_code == qr_code.upper(),
+            WarehouseLocation.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if not loc:
+        raise HTTPException(
+            status_code=404, detail=f"Bin with QR code '{qr_code}' not found"
+        )
+
+    return LocationResponse.model_validate(loc)

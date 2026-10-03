@@ -84,6 +84,8 @@ class BatchListItem(BaseModel):
     id: UUID
     batch_no: str
     item_id: UUID
+    sku: str | None = None
+    product_name: str | None = None
     expiry_date: datetime | None = None
     status: str | None = None
     created_at: datetime

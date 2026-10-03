@@ -54,7 +54,7 @@ class UOMConversionRepository:
 
     def get_by_item_and_pair(
         self,
-        item_id: UUID,
+        item_id: UUID | None,
         from_uom: str,
         to_uom: str,
         organization_id: UUID,
@@ -77,6 +77,33 @@ class UOMConversionRepository:
                 UOMConversion.item_id == item_id,
                 UOMConversion.from_uom == from_uom,
                 UOMConversion.to_uom == to_uom,
+                UOMConversion.organization_id == organization_id,
+                UOMConversion.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def get_by_item_and_ids(
+        self,
+        item_id: UUID | None,
+        from_uom_id: UUID | None,
+        to_uom_id: UUID | None,
+        organization_id: UUID,
+    ) -> UOMConversion | None:
+        """
+        Get UOM Conversion by item and UOM id pair (FK-based lookup).
+
+        Prefer this over ``get_by_item_and_pair`` when the caller has resolved
+        UOM IDs, so lookups key off the FK columns rather than name caches.
+        """
+        if from_uom_id is None or to_uom_id is None:
+            return None
+        return (
+            self.db.query(UOMConversion)
+            .filter(
+                UOMConversion.item_id == item_id,
+                UOMConversion.from_uom_id == from_uom_id,
+                UOMConversion.to_uom_id == to_uom_id,
                 UOMConversion.organization_id == organization_id,
                 UOMConversion.deleted_at.is_(None),
             )

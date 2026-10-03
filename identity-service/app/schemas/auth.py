@@ -48,6 +48,7 @@ class LoginUserResponse(BaseModel):
     language: str | None = None
     extra_data: dict | None = None
     organization_id: str | None = None
+    permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -141,6 +142,13 @@ class QRCodeLoginRequest(BaseModel):
 
     qr_code: str | None = None
     barcode: str | None = None
+
+
+class WorkerLoginRequest(BaseModel):
+    """Schema for warehouse worker username + password login (mobile/device fallback)."""
+
+    login_username: str
+    password: str
 
 
 class QRCodeLoginResponse(BaseModel):

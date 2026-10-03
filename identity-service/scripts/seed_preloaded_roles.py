@@ -51,41 +51,60 @@ def _ensure_role_for_org(
     permissions_map: dict[str, Permission],
 ) -> tuple[Role, bool]:
     """
-    Ensure a role matching the template exists for the given org.
+    Ensure a role matching the template exists for the given org and that the
+    role has every permission listed in the template (idempotent).
+
     Returns (role, created) where created=True if a new role was inserted.
+    Existing roles get any missing permission links back-filled, so running
+    this script after a template/permission change repairs older databases.
     """
     existing = (
         db.query(Role)
         .filter(Role.organization_id == org.id, Role.code == template.code)
         .first()
     )
-    if existing:
-        return existing, False
 
-    role = Role(
-        organization_id=org.id,
-        name=template.name,
-        code=template.code,
-        description=template.description,
-        is_system=template.is_system,
-        is_default=False,
-        hierarchy_level=template.hierarchy_level,
-        is_active=True,
-    )
-    db.add(role)
-    db.flush()
+    if existing is None:
+        role = Role(
+            organization_id=org.id,
+            name=template.name,
+            code=template.code,
+            description=template.description,
+            is_system=template.is_system,
+            is_default=False,
+            hierarchy_level=template.hierarchy_level,
+            is_active=True,
+        )
+        db.add(role)
+        db.flush()
+        created = True
+    else:
+        role = existing
+        created = False
 
-    # Assign permissions
+    # Sync permission links (idempotent — adds missing, keeps existing).
+    existing_perm_ids = {
+        rp.permission_id
+        for rp in db.query(RolePermission).filter(
+            RolePermission.role_id == role.id
+        ).all()
+    }
     assigned = 0
     for code in template.permission_codes:
         perm = permissions_map.get(code)
         if perm is None:
             print(f"    ⚠  Permission '{code}' not found in DB — skipping")
             continue
-        db.add(RolePermission(role_id=role.id, permission_id=perm.id))
-        assigned += 1
+        if perm.id not in existing_perm_ids:
+            db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+            assigned += 1
 
-    return role, True
+    if created:
+        print(f"    ✓ Created role + assigned {assigned} permissions: {template.name}")
+    elif assigned:
+        print(f"    ↻ Back-filled {assigned} missing permission(s): {template.name}")
+
+    return role, created
 
 
 # ---------------------------------------------------------------------------

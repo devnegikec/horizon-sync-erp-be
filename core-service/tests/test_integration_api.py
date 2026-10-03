@@ -128,7 +128,7 @@ class TestIntegrationAPI:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "not found" in response.json()["detail"].lower()
+        assert "not found" in response.json()["detail"]["message"].lower()
 
     def test_get_default_account_success(
         self, client, auth_headers, sample_account, db_session
@@ -222,7 +222,7 @@ class TestIntegrationAPI:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        detail = response.json()["detail"].lower()
+        detail = response.json()["detail"]["message"].lower()
         assert "default account" in detail and "configured" in detail
 
     def test_get_default_account_invalid_account(
@@ -247,7 +247,7 @@ class TestIntegrationAPI:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "not found" in response.json()["detail"].lower()
+        assert "not found" in response.json()["detail"]["message"].lower()
 
     def test_deprecated_validate_posting_endpoint(
         self, client, auth_headers, sample_account

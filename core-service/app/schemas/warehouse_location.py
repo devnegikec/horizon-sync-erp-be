@@ -29,6 +29,12 @@ class CreateLocationRequest(BaseModel):
     capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal = Field(default=Decimal("0"))
     position_y: Decimal = Field(default=Decimal("0"))
+    max_volume_cc: Decimal | None = Field(
+        None, ge=0, description="Max volume capacity in cubic centimetres (cc)"
+    )
+    max_weight_grams: Decimal | None = Field(
+        None, ge=0, description="Max weight capacity in grams"
+    )
 
 
 class UpdateLocationRequest(BaseModel):
@@ -39,6 +45,8 @@ class UpdateLocationRequest(BaseModel):
     capacity_uom: str | None = Field(None, max_length=50)
     position_x: Decimal | None = None
     position_y: Decimal | None = None
+    max_volume_cc: Decimal | None = Field(None, ge=0)
+    max_weight_grams: Decimal | None = Field(None, ge=0)
 
 
 # ===========================================
@@ -63,8 +71,12 @@ class LocationResponse(BaseModel):
     capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
+    max_volume_cc: Decimal | None = None
+    max_weight_grams: Decimal | None = None
     is_active: bool = True
+    is_pickable: bool = True
     version: int = 1
+    qr_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -87,7 +99,11 @@ class LocationTree(BaseModel):
     capacity_uom: str | None = None
     position_x: Decimal = Decimal("0")
     position_y: Decimal = Decimal("0")
+    max_volume_cc: Decimal | None = None
+    max_weight_grams: Decimal | None = None
     is_active: bool = True
+    is_pickable: bool = True
+    qr_code: str | None = None
     children: list[LocationTree] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -105,6 +121,9 @@ class LocationSummary(BaseModel):
     total_capacity: Decimal = Decimal("0")
     used_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg) — the measure of
+    # the capacity figures above.
+    capacity_uom: str | None = None
     item_count: int = 0
 
 
@@ -161,3 +180,5 @@ class LocationQRPayload(BaseModel):
     full_path: str
     location_type: str
     location_code: str
+    qr_code: str | None = None  # 5-char short code for quick lookup
+    bin_code: str | None = None  # Alias for qr_code for mobile app compatibility

@@ -9,6 +9,10 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.types import UUID
 
+# Imported so the string-based relationship below resolves when this model is
+# configured in a context that doesn't import the full app (e.g. workers/tests).
+from app.models.packing_slip import PackingSlip  # noqa: F401
+
 
 class DispatchRecord(Base):
     """Final dispatch record linking pick list, gate session, and vehicle."""
@@ -21,13 +25,19 @@ class DispatchRecord(Base):
     pick_list_id = Column(
         UUID(as_uuid=True),
         ForeignKey("pick_lists.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     gate_session_id = Column(
         UUID(as_uuid=True),
         ForeignKey("gate_verification_sessions.id"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    packing_slip_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("packing_slips.id"),
+        nullable=True,
         index=True,
     )
     invoice_reference = Column(String(255), nullable=True)
@@ -48,6 +58,7 @@ class DispatchRecord(Base):
     gate_session = relationship(
         "GateVerificationSession", back_populates="dispatch_records"
     )
+    packing_slip = relationship("PackingSlip", foreign_keys=[packing_slip_id])
 
     def __repr__(self):
         return (

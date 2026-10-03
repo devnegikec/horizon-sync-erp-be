@@ -31,6 +31,9 @@ class PickListItemBase(BaseModel):
     warehouse_id: UUID
     qty: Decimal | float = Field(..., gt=0)
     uom: str = Field(..., min_length=1, max_length=50)
+    per_case_qty: Decimal | float | None = None
+    case_qty: Decimal | float | None = None
+    loose_qty: Decimal | float | None = None
     batch_no: str | None = Field(None, max_length=100)
     serial_nos: list[str] | None = None
     sort_order: int = 0
@@ -48,6 +51,9 @@ class PickListItemResponse(BaseModel):
     qty: Decimal
     picked_qty: Decimal
     uom: str
+    per_case_qty: Decimal | None = None
+    case_qty: Decimal | None = None
+    loose_qty: Decimal | None = None
     batch_no: str | None
     sort_order: int
     created_at: datetime
@@ -77,6 +83,7 @@ class PickListUpdate(BaseModel):
     )
     pick_date: datetime | None = None
     remarks: str | None = Field(None, max_length=1000)
+    assigned_to: UUID | None = None
 
 
 class PickListResponse(PickListBase):
@@ -84,6 +91,7 @@ class PickListResponse(PickListBase):
     organization_id: UUID
     warehouse: NestedReference | None = None
     reference: NestedReferenceWithType | None = None
+    assigned_to: UUID | None = None
     completed_at: datetime | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None

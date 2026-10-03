@@ -6,10 +6,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import CURRENCY_CREATE, CURRENCY_DELETE, CURRENCY_READ, CURRENCY_UPDATE, EXCHANGE_RATE_CREATE, EXCHANGE_RATE_DELETE, EXCHANGE_RATE_READ, EXCHANGE_RATE_UPDATE
 from app.models.currency_master import CurrencyMaster
 from app.models.exchange_rate import ExchangeRate
 from app.services.currency_service import CurrencyService
@@ -123,7 +125,7 @@ class CurrencyListResponse(BaseModel):
     description="Get the organization's base currency",
 )
 async def get_base_currency(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -160,7 +162,7 @@ async def get_base_currency(
 )
 async def set_base_currency(
     data: BaseCurrencyUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -174,11 +176,9 @@ async def set_base_currency(
     **Returns:** Updated base currency
     """
 
-    # Update system_config (global/legacy)
-    service = CurrencyService(db)
-    service.set_base_currency(data.base_currency, str(current_user.id))
-
-    # Also update CurrencyMaster.is_base_currency for this org (org-specific)
+    # Update CurrencyMaster.is_base_currency for this org (org-scoped). We do
+    # NOT write the legacy global system_config fallback — that would let one
+    # organization's change silently alter the fallback seen by other orgs.
     # Clear existing base flag
     db.query(CurrencyMaster).filter(
         CurrencyMaster.organization_id == current_user.organization_id,
@@ -206,7 +206,7 @@ async def set_base_currency(
     description="Get the list of currencies for the organization",
 )
 async def list_currencies(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -254,7 +254,7 @@ async def list_currencies(
 )
 async def create_currency(
     data: CurrencyCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -311,7 +311,7 @@ async def create_currency(
 )
 async def delete_currency(
     currency_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -366,7 +366,7 @@ async def list_exchange_rates(
     to_currency: str | None = Query(None, description="Filter by target currency"),
     start_date: date | None = Query(None, description="Filter by start date"),
     end_date: date | None = Query(None, description="Filter by end date"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -390,8 +390,13 @@ async def list_exchange_rates(
             from_currency, to_currency, start_date, end_date
         )
     else:
-        # Get all rates (with optional date filtering)
-        query = db.query(ExchangeRate)
+        # Get all rates for this org (plus legacy global/NULL rows).
+        query = db.query(ExchangeRate).filter(
+            or_(
+                ExchangeRate.organization_id == current_user.organization_id,
+                ExchangeRate.organization_id.is_(None),
+            )
+        )
 
         if from_currency:
             query = query.filter(ExchangeRate.from_currency == from_currency)
@@ -417,7 +422,7 @@ async def get_exchange_rate(
     from_currency: str,
     to_currency: str,
     effective_date: date | None = Query(None, description="Date for exchange rate"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -435,12 +440,18 @@ async def get_exchange_rate(
     **Returns:** Exchange rate details
     """
     service = CurrencyService(db)
-    rate_value = service.get_exchange_rate(from_currency, to_currency, effective_date)
+    rate_value = service.get_exchange_rate(
+        from_currency, to_currency, effective_date, current_user.organization_id
+    )
 
-    # Get the actual rate record for response
+    # Get the actual rate record for response (org-scoped + legacy global rows)
     query = db.query(ExchangeRate).filter(
         ExchangeRate.from_currency == from_currency,
         ExchangeRate.to_currency == to_currency,
+        or_(
+            ExchangeRate.organization_id == current_user.organization_id,
+            ExchangeRate.organization_id.is_(None),
+        ),
     )
 
     if effective_date:
@@ -471,7 +482,7 @@ async def get_exchange_rate(
 )
 async def create_exchange_rate(
     data: ExchangeRateCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -491,6 +502,7 @@ async def create_exchange_rate(
     """
     service = CurrencyService(db)
     rate = service.set_exchange_rate(
+        organization_id=current_user.organization_id,
         from_currency=data.from_currency,
         to_currency=data.to_currency,
         rate=data.rate,
@@ -508,7 +520,7 @@ async def create_exchange_rate(
 async def update_exchange_rate(
     rate_id: UUID,
     data: ExchangeRateUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -520,8 +532,15 @@ async def update_exchange_rate(
     - **rate_id**: Exchange rate UUID
 
     **Request Body:**
-    - **rate**: New exchange rate value (must be positive)
-    - **effective_date**: New effective date
+    - **rate**: New exc, scoped to this organization
+    rate_record = (
+        db.query(ExchangeRate)
+        .filter(
+            ExchangeRate.id == rate_id,
+            ExchangeRate.organization_id == current_user.organization_id,
+        )
+        .first()
+    
 
     **Returns:** Updated exchange rate
     """
@@ -549,7 +568,7 @@ async def update_exchange_rate(
 )
 async def delete_exchange_rate(
     rate_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(EXCHANGE_RATE_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -562,7 +581,14 @@ async def delete_exchange_rate(
 
     **Returns:** 204 No Content on success
     """
-    rate_record = db.query(ExchangeRate).filter(ExchangeRate.id == rate_id).first()
+    rate_record = (
+        db.query(ExchangeRate)
+        .filter(
+            ExchangeRate.id == rate_id,
+            ExchangeRate.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
 
     if not rate_record:
         raise HTTPException(status_code=404, detail="Exchange rate not found")
@@ -584,7 +610,7 @@ async def delete_exchange_rate(
 )
 async def convert_currency(
     data: CurrencyConversionRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CURRENCY_READ)),
     db: Session = Depends(get_db),
 ):
     """

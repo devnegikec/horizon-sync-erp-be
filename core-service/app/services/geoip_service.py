@@ -8,6 +8,8 @@ import logging
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # ip-api.com free tier: 45 requests/minute, no API key required.
@@ -81,3 +83,61 @@ async def lookup_ip(ip_address: str | None) -> dict | None:
         logger.debug("geoip: lookup failed for %s", ip_address, exc_info=True)
 
     return None
+
+
+async def reverse_geocode(latitude: float, longitude: float) -> dict | None:
+    """Translate browser GPS coordinates into a formatted postal address."""
+    if not settings.reverse_geocoding_url:
+        logger.info("reverse geocoding skipped: no trusted provider configured")
+        return None
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.reverse_geocoding_timeout_seconds,
+            headers={
+                "User-Agent": f"{settings.app_name}/{settings.app_version}",
+                "Accept-Language": "en",
+            },
+        ) as client:
+            response = await client.get(
+                settings.reverse_geocoding_url,
+                params={
+                    "lat": latitude,
+                    "lon": longitude,
+                    "format": "jsonv2",
+                    "addressdetails": 1,
+                    "zoom": 18,
+                },
+            )
+            response.raise_for_status()
+            address = response.json().get("address") or {}
+            city = next(
+                (
+                    address.get(field)
+                    for field in (
+                        "city",
+                        "town",
+                        "village",
+                        "municipality",
+                        "county",
+                    )
+                    if address.get(field)
+                ),
+                None,
+            )
+            result = {
+                "city": city,
+                "state": address.get("state") or address.get("region"),
+                "country": address.get("country"),
+                # Bound provider-controlled text before persisting it. The
+                # display name is Nominatim's human-readable full address.
+                "street_address": (response.json().get("display_name") or None),
+            }
+            if result["street_address"]:
+                result["street_address"] = result["street_address"][:1000]
+            return result if any(result.values()) else None
+    except Exception:
+        logger.warning(
+            "reverse geocoding failed for supplied browser coordinates",
+            exc_info=True,
+        )
+        return None

@@ -9,9 +9,10 @@ import sys
 import warnings
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from http import HTTPStatus
 
 import sqlalchemy as sa
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -135,8 +136,28 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Identity Service URL: {settings.identity_service_url}")
 
+    # Internal service-to-service endpoints require a shared secret. Fail loudly
+    # when it's missing outside development so onboarding calls are not silently
+    # rejected at request time.
+    if not settings.internal_service_secret:
+        if settings.environment == "production":
+            raise RuntimeError(
+                "Critical startup failure: INTERNAL_SERVICE_SECRET is not configured. "
+                "Internal service-to-service endpoints (identity→core onboarding) "
+                "would reject every request."
+            )
+        logger.warning(
+            "INTERNAL_SERVICE_SECRET is empty — internal service-to-service "
+            "endpoints will return 503 until it is configured."
+        )
+
     # Ensure master organization exists and setup customer relationships (Steps 1 & 2)
-    if ensure_single_master_organization:
+    skip_master_setup = os.getenv("SKIP_MASTER_ORG_SETUP", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if ensure_single_master_organization and not skip_master_setup:
         try:
             logger.info(
                 "🚀 Setting up Master Organization and Customer Relationships..."
@@ -155,6 +176,8 @@ async def lifespan(app: FastAPI):
                 logger.warning(
                     "⚠️ Continuing without master organization setup (dev environment)"
                 )
+    elif skip_master_setup:
+        logger.info("⏭️ Skipping master organization setup (SKIP_MASTER_ORG_SETUP=true)")
     else:
         logger.info("⚠️ Master organization setup module not available")
 
@@ -163,9 +186,7 @@ async def lifespan(app: FastAPI):
 
     register_audit_listeners()
 
-    # Background task: clean up expired bin reservations every 60 s
     cleanup_task = asyncio.create_task(_bin_reservation_cleanup_loop())
-    logger.info("Started bin-reservation cleanup background task (interval: 60s)")
 
     yield
     # Shutdown
@@ -258,7 +279,20 @@ app.mount(
 
 
 # Exception handlers
-def create_error_response(status_code: int, message: str, code: str):
+def status_code_name(status_code: int) -> str:
+    """Map an HTTP status code to a stable, UI-friendly error code.
+
+    e.g. 409 -> "CONFLICT", 404 -> "NOT_FOUND", 423 -> "LOCKED".
+    """
+    try:
+        return HTTPStatus(status_code).name
+    except ValueError:
+        return f"HTTP_{status_code}"
+
+
+def create_error_response(
+    status_code: int, message: str, code: str, headers: dict | None = None
+):
     """Utility to create consistent error responses"""
     return JSONResponse(
         status_code=status_code,
@@ -269,6 +303,60 @@ def create_error_response(status_code: int, message: str, code: str):
                 "code": code,
             }
         },
+        headers=headers,
+    )
+
+
+def http_error(
+    status_code: int,
+    message: str,
+    code: str | None = None,
+    details: dict | None = None,
+) -> HTTPException:
+    """Build an HTTPException carrying a structured error body.
+
+    The global HTTPException handler below flattens this into the same
+    ``{"detail": {"message", "status_code", "code"}}`` shape used by the other
+    exception handlers, so the UI gets one consistent contract.
+    """
+    payload: dict = {
+        "message": message,
+        "status_code": status_code,
+        "code": code or status_code_name(status_code),
+    }
+    if details:
+        payload["details"] = details
+    return HTTPException(status_code=status_code, detail=payload)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Normalize plain HTTPException responses to the standard error shape.
+
+    Endpoints that raise ``HTTPException(detail="...")`` otherwise return the
+    FastAPI default ``{"detail": ...}`` string body, inconsistent with the
+    domain exception handlers. This maps every HTTPException into the same
+    ``{"detail": {"message", "status_code", "code"}}`` shape, while preserving
+    any extra keys on structured (dict) details.
+    """
+    detail = exc.detail
+    if isinstance(detail, dict):
+        # Structured detail — pass through unchanged, filling in the standard
+        # code/status_code fields when the caller omitted them.
+        content = dict(detail)
+        content.setdefault("code", status_code_name(exc.status_code))
+        content.setdefault("status_code", exc.status_code)
+    else:
+        content = {
+            "message": str(detail),
+            "status_code": exc.status_code,
+            "code": status_code_name(exc.status_code),
+        }
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": content},
+        headers=exc.headers,
     )
 
 
@@ -761,14 +849,21 @@ async def custom_validation_exception_handler(request: Request, exc: ValidationE
         },
     )
 
-    # Format validation errors with field and reason as per Requirement 10.4
+    # Format validation errors with field and reason as per Requirement 10.4.
+    # ``hint`` is only attached when the service supplied one, so existing
+    # payloads stay byte-for-byte compatible.
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "details": exc.details,  # List of {field, reason, hint?} dicts
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "details": exc.details,  # List of {field, reason} dicts
-        },
+        content=content,
     )
 
 
@@ -787,14 +882,19 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
     )
 
     # Format not found errors with entity_type and entity_id as per Requirement 10.5
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "entity_type": exc.entity_type,
+        "entity_id": exc.entity_id,
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "entity_type": exc.entity_type,
-            "entity_id": exc.entity_id,
-        },
+        content=content,
     )
 
 
@@ -812,14 +912,22 @@ async def state_error_handler(request: Request, exc: StateError):
         },
     )
 
+    content = {
+        "error": exc.code,
+        "message": exc.message,
+        "current_state": exc.current_state,
+        "required_state": exc.required_state,
+    }
+    hint = getattr(exc, "hint", None)
+    if hint:
+        content["hint"] = hint
+    details = getattr(exc, "details", None)
+    if details:
+        content["details"] = details
+
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "current_state": exc.current_state,
-            "required_state": exc.required_state,
-        },
+        content=content,
     )
 
 

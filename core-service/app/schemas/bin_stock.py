@@ -74,7 +74,10 @@ class BinStockLevelResponse(BaseModel):
     organization_id: UUID
     bin_location_id: UUID
     item_id: UUID
+    item_name: str | None = None
+    sku: str | None = None
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -91,9 +94,12 @@ class BinStockInfoResponse(BaseModel):
     warehouse_id: UUID
     item_id: UUID
     quantity_on_hand: Decimal = Decimal("0")
+    inventory_status: str = "available"
     batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
+    capacity_uom: str | None = None
     is_active: bool = True
     created_at: datetime
 
@@ -102,6 +108,70 @@ class BinStockListResponse(BaseModel):
     """Response schema for listing bin stock levels"""
 
     bin_stock_levels: list[BinStockLevelResponse]
+
+
+class BinStockParentQSealInfo(BaseModel):
+    """QSeal parent (master-pack box) info.
+
+    Mirrors ``QSealParentInfo`` used by the inbound receiving-slip detail so the
+    frontend can reuse the same rendering component.
+    """
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class BinStockGroupItem(BaseModel):
+    """A child unit stored in a bin — mirrors ``ReceivingSlipItemData``.
+
+    ``quantity`` stays a ``Decimal`` (not ``int``) because bin stock is stored as
+    ``Numeric(15, 3)`` and can legitimately be fractional for bulk items.
+    """
+
+    id: str
+    name: str | None = None
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: Decimal = Decimal("0")
+    box_count: int = 0
+    flag: str = "ok"
+    condition_code: str | None = None
+    inventory_status: str | None = None
+    exception_status: str | None = None
+    exception_destination_location_id: str | None = None
+    rejection_reason: str | None = None
+    reason_code: str | None = None
+    notes: str | None = None
+
+
+class BinStockItemGroup(BaseModel):
+    """Child units of one product stored under a parent box in a bin.
+
+    Mirrors ``ReceivingSlipItemGroup``.
+    """
+
+    parent_qseal: BinStockParentQSealInfo | None = None
+    product_name: str | None = None
+    items: list[BinStockGroupItem] = []
+
+
+class BinStockParentsResponse(BaseModel):
+    """Response schema for parent (box) aggregation in a bin.
+
+    ``total_parent_boxes`` counts distinct physical parent boxes; ``groups``
+    holds one entry per (parent box, product) pair, mirroring the inbound
+    receiving-slip detail response.
+    """
+
+    bin_id: UUID
+    total_parent_boxes: int = 0
+    groups: list[BinStockItemGroup] = []
 
 
 class BulkAddStockItemResult(BaseModel):

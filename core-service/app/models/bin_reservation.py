@@ -31,7 +31,7 @@ class BinReservation(Base):
         nullable=False,
         index=True,
     )
-    worker_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    worker_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     task_id = Column(UUID(as_uuid=True), nullable=True)
     task_type = Column(String(20), nullable=True)  # 'put_away' or 'pick'
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,50 +20,10 @@ from app.models.scan_session import ScanSession
 from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
-from app.models.warehouse_user import WarehouseUser
-from app.models.wms_worker import WMSWorker
+
+from app.core.warehouse_scope import get_user_warehouse_ids
 
 router = APIRouter()
-
-
-def _get_user_warehouse_ids(
-    db: Session,
-    user_id: UUID,
-    organization_id: UUID,
-    user_type: str,
-) -> list[UUID] | None:
-    """Return the list of warehouse IDs assigned to this user.
-
-    Returns None if the user has global/admin access (meaning no filter should
-    be applied and all warehouses are visible).
-    """
-    if user_type in ("system_admin", "organization_admin"):
-        return None  # global access — no warehouse filter
-
-    # Check for primary (mother-warehouse) assignment → global access
-    has_primary = (
-        db.query(WarehouseUser)
-        .filter(
-            WarehouseUser.organization_id == organization_id,
-            WarehouseUser.user_id == user_id,
-            WarehouseUser.is_primary == True,
-            WarehouseUser.is_active == True,
-        )
-        .first()
-    )
-    if has_primary:
-        return None  # global access
-
-    rows = (
-        db.query(WarehouseUser.warehouse_id)
-        .filter(
-            WarehouseUser.organization_id == organization_id,
-            WarehouseUser.user_id == user_id,
-            WarehouseUser.is_active == True,
-        )
-        .all()
-    )
-    return [r.warehouse_id for r in rows]
 
 
 @router.get("/stats")
@@ -106,8 +66,8 @@ async def get_wms_dashboard_stats(
 
     # ── Warehouse scope ────────────────────────────────────────────────────
     # Respect the optional ?warehouse_id filter AND the user's own assignments.
-    user_wh_ids = _get_user_warehouse_ids(
-        db, current_user.id, org_id, current_user.user_type
+    user_wh_ids = get_user_warehouse_ids(
+        db, current_user.id, org_id, current_user.user_type, current_user.permissions
     )
 
     # Build the effective warehouse list
@@ -143,7 +103,6 @@ async def get_wms_dashboard_stats(
 
     if bin_location_ids:
         # Aggregate qty per (item, warehouse) using bin locations
-        from sqlalchemy import case
         stock_agg = (
             db.query(
                 BinStockLevel.item_id,
@@ -171,15 +130,19 @@ async def get_wms_dashboard_stats(
             elif rl > 0 and qty <= rl:
                 low_stock_count += 1
 
-    active_workers = (
-        db.query(WMSWorker)
-        .filter(
-            WMSWorker.organization_id == org_id,
-            WMSWorker.warehouse_id.in_(wh_id_strs),
-            WMSWorker.is_active == True,
-        )
-        .count()
-    )
+    active_workers = 0
+    if wh_id_strs:
+        placeholders = ", ".join(f":wh{i}" for i in range(len(wh_id_strs)))
+        params = {f"wh{i}": str(w) for i, w in enumerate(wh_id_strs)}
+        active_workers = db.execute(
+            text(
+                f"SELECT count(DISTINCT u.id) FROM users u "
+                f"JOIN warehouse_users wu ON wu.user_id = u.id "
+                f"WHERE u.user_type = 'warehouse_worker' AND u.is_active = true "
+                f"AND wu.is_active = true AND wu.warehouse_id IN ({placeholders})"
+            ),
+            params,
+        ).scalar()
 
     # ── Chart data: inbound / outbound movements in period ────────────────
     # Group by day/week/month bucket depending on period granularity
@@ -249,10 +212,9 @@ async def get_wms_dashboard_stats(
     # ── Recent activity (all types, newest first, paginated) ──────────────
     all_activity: list[dict] = []
 
-    # Scan sessions — join worker name
+    # Scan sessions — resolve worker names from users (batch)
     scan_rows = (
-        db.query(ScanSession, WMSWorker)
-        .outerjoin(WMSWorker, ScanSession.worker_id == WMSWorker.id)
+        db.query(ScanSession)
         .filter(
             ScanSession.organization_id == org_id,
             ScanSession.warehouse_id.in_(wh_id_strs),
@@ -261,10 +223,22 @@ async def get_wms_dashboard_stats(
         .limit(50)
         .all()
     )
-    for sc, worker in scan_rows:
-        worker_name = None
-        if worker:
-            worker_name = worker.display_name or f"{worker.first_name} {worker.last_name}"
+    worker_ids = {sc.worker_id for sc in scan_rows if sc.worker_id}
+    worker_names: dict = {}
+    if worker_ids:
+        placeholders = ", ".join(f":w{i}" for i in range(len(worker_ids)))
+        params = {f"w{i}": w for i, w in enumerate(worker_ids)}
+        rows = db.execute(
+            text(
+                f"SELECT id, display_name, first_name, last_name FROM users "
+                f"WHERE id IN ({placeholders})"
+            ),
+            params,
+        ).fetchall()
+        for uid, dn, fn, ln in rows:
+            worker_names[uid] = dn or f"{fn} {ln}".strip()
+    for sc in scan_rows:
+        worker_name = worker_names.get(sc.worker_id)
         all_activity.append({
             "type": "scan_session",
             "title": f"Scan Session {str(sc.id)[:8].upper()}",
@@ -310,7 +284,7 @@ async def get_wms_dashboard_stats(
         all_activity.append({
             "type": "put_away",
             "title": f"Put-Away {pa.put_away_list_no}",
-            "status": pa.status.value if pa.status else "unknown",
+            "status": pa.status or "unknown",
             "warehouse_id": str(pa.warehouse_id),
             "worker_name": None,
             "created_at": pa.created_at.isoformat() if pa.created_at else None,

@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_READ
 from app.schemas.item import ItemPickerListResponse
 from app.services.item_service import ItemService
 
@@ -21,7 +22,7 @@ router = APIRouter()
 )
 async def item_picker(
     search: str | None = Query(
-        None, description="Search by item name, item code, or barcode"
+        None, description="Search by item name, item code, barcode, or SKU"
     ),
     warehouse_id: UUID | None = Query(
         None, description="Filter stock levels to a specific warehouse"
@@ -29,7 +30,7 @@ async def item_picker(
     limit: int = Query(
         20, ge=1, le=50, description="Maximum number of items to return"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """

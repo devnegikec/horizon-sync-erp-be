@@ -394,12 +394,14 @@ class StockEntryService:
                     f"Item {item.item_id}: source warehouse is required for material issue"
                 )
             sl = self._get_or_create_stock_level(item.item_id, wh, organization_id)
-            sl.quantity_on_hand = (sl.quantity_on_hand or 0) - qty_base
+            on_hand = int(sl.quantity_on_hand or 0)
+            deducted = min(qty_base, on_hand)
+            sl.quantity_on_hand = max(0, on_hand - qty_base)
             sl.quantity_available = max(
                 0, (sl.quantity_on_hand or 0) - (sl.quantity_reserved or 0)
             )
             self._create_movement(
-                entry, item, wh, MovementType.OUT, qty_base, organization_id, user_id
+                entry, item, wh, MovementType.OUT, deducted, organization_id, user_id
             )
 
         elif entry_type in (
@@ -414,12 +416,14 @@ class StockEntryService:
                     f"Item {item.item_id}: both source and target warehouses are required for transfer"
                 )
             sl_src = self._get_or_create_stock_level(item.item_id, src, organization_id)
-            sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
+            src_on_hand = int(sl_src.quantity_on_hand or 0)
+            deducted = min(qty_base, src_on_hand)
+            sl_src.quantity_on_hand = max(0, src_on_hand - qty_base)
             sl_src.quantity_available = max(
                 0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
             )
             self._create_movement(
-                entry, item, src, MovementType.OUT, qty_base, organization_id, user_id
+                entry, item, src, MovementType.OUT, deducted, organization_id, user_id
             )
 
             sl_tgt = self._get_or_create_stock_level(item.item_id, tgt, organization_id)
@@ -439,7 +443,9 @@ class StockEntryService:
                 sl_src = self._get_or_create_stock_level(
                     item.item_id, src, organization_id
                 )
-                sl_src.quantity_on_hand = (sl_src.quantity_on_hand or 0) - qty_base
+                src_on_hand = int(sl_src.quantity_on_hand or 0)
+                deducted = min(qty_base, src_on_hand)
+                sl_src.quantity_on_hand = max(0, src_on_hand - qty_base)
                 sl_src.quantity_available = max(
                     0, (sl_src.quantity_on_hand or 0) - (sl_src.quantity_reserved or 0)
                 )
@@ -448,7 +454,7 @@ class StockEntryService:
                     item,
                     src,
                     MovementType.OUT,
-                    qty_base,
+                    deducted,
                     organization_id,
                     user_id,
                 )

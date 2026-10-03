@@ -34,10 +34,18 @@ GLOBAL_EXCLUDE_FIELDS: set[str] = {
     "secret_key",
     "token",
     "refresh_token",
+    "access_token",
+    "auth_token",
+    "client_secret",
+    "private_key",
+    "private_key_encrypted",
+    "webhook_secret",
+    "secrete_code",
 }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _get_excluded_fields(model_class) -> set[str]:
     """Return the union of global and model-level excluded fields."""
@@ -79,19 +87,35 @@ def _get_model_values(instance, excluded_fields: set[str]) -> dict:
 
 
 def _get_record_id(target) -> uuid.UUID | None:
-    """Extract the primary-key value from *target*."""
+    """Extract the primary-key value from *target* as a UUID, if it is one.
+
+    Returns ``None`` when the key is missing or not UUID-shaped. Some audited
+    tables use a natural primary key (``system_config.key`` is a string), and
+    coercing those raises. Because the event handlers swallow their own errors,
+    that would silently drop the audit entry entirely -- so return ``None`` and
+    let the mutation still be recorded, just without a UUID record id.
+    """
     mapper = inspect(target).mapper
     pk_cols = mapper.primary_key
-    if pk_cols:
-        pk_value = getattr(target, pk_cols[0].key)
-        if isinstance(pk_value, uuid.UUID):
-            return pk_value
-        if pk_value is not None:
-            return uuid.UUID(str(pk_value))
-    return None
+    if not pk_cols:
+        return None
+    pk_value = getattr(target, pk_cols[0].key, None)
+    if pk_value is None:
+        return None
+    if isinstance(pk_value, uuid.UUID):
+        return pk_value
+    try:
+        return uuid.UUID(str(pk_value))
+    except (AttributeError, TypeError, ValueError):
+        logger.debug(
+            "Non-UUID primary key on %s; recording audit entry without a record id.",
+            getattr(target, "__tablename__", "?"),
+        )
+        return None
 
 
 # ── Audit entry helper ───────────────────────────────────────────────────────
+
 
 def _create_audit_entry(
     session,
@@ -112,6 +136,7 @@ def _create_audit_entry(
         user_id=uuid.UUID(ctx.user_id) if ctx.user_id else None,
         organization_id=uuid.UUID(ctx.organization_id) if ctx.organization_id else None,
         action=action,
+        role=ctx.role,
         table_name=table_name,
         record_id=record_id,
         old_values=old_values,
@@ -123,7 +148,22 @@ def _create_audit_entry(
     session.add(audit_log)
 
 
+# ── Tables never audited (audit/log tables + history) ───────────────────────
+# Auditing these would recurse (audit_logs is written by this very listener) or
+# double-log data that is already captured elsewhere.
+AUDIT_EXCLUDE_TABLES: set[str] = {
+    "audit_logs",
+    "account_audit_log",
+    "admin_audit_logs",
+    "payment_audit_log",
+    "user_activity_logs",
+    "pick_exception_audit",
+    "status_transitions",
+}
+
+
 # ── Event handlers ───────────────────────────────────────────────────────────
+
 
 def _after_insert(mapper, connection, target):  # noqa: ARG001
     """Handle after_insert — record a CREATE audit entry."""
@@ -148,7 +188,10 @@ def _after_insert(mapper, connection, target):  # noqa: ARG001
             changed_fields=None,
         )
     except Exception:
-        logger.exception("Audit listener error on INSERT for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on INSERT for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_update(mapper, connection, target):  # noqa: ARG001
@@ -193,7 +236,10 @@ def _after_update(mapper, connection, target):  # noqa: ARG001
             changed_fields=changed_fields,
         )
     except Exception:
-        logger.exception("Audit listener error on UPDATE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on UPDATE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 def _after_delete(mapper, connection, target):  # noqa: ARG001
@@ -219,13 +265,21 @@ def _after_delete(mapper, connection, target):  # noqa: ARG001
             changed_fields=None,
         )
     except Exception:
-        logger.exception("Audit listener error on DELETE for %s", getattr(target, "__tablename__", "?"))
+        logger.exception(
+            "Audit listener error on DELETE for %s",
+            getattr(target, "__tablename__", "?"),
+        )
 
 
 # ── Registration ─────────────────────────────────────────────────────────────
 
+
 def register_audit_listeners() -> None:
-    """Attach audit event listeners to every model with ``__audited__ = True``.
+    """Attach audit event listeners to every model by default.
+
+    Models explicitly opted out with ``__audited__ = False`` and the
+    audit/log tables in ``AUDIT_EXCLUDE_TABLES`` are skipped (auditing the
+    audit tables themselves would recurse or double-log).
 
     Call this once at application startup (e.g. in FastAPI lifespan).
     """
@@ -234,11 +288,14 @@ def register_audit_listeners() -> None:
     count = 0
     for mapper in Base.registry.mappers:
         cls = mapper.class_
-        if getattr(cls, "__audited__", False):
-            event.listen(cls, "after_insert", _after_insert)
-            event.listen(cls, "after_update", _after_update)
-            event.listen(cls, "after_delete", _after_delete)
-            count += 1
-            logger.debug("Registered audit listeners for %s", cls.__name__)
+        if getattr(cls, "__audited__", None) is False:
+            continue
+        if getattr(cls, "__tablename__", None) in AUDIT_EXCLUDE_TABLES:
+            continue
+        event.listen(cls, "after_insert", _after_insert)
+        event.listen(cls, "after_update", _after_update)
+        event.listen(cls, "after_delete", _after_delete)
+        count += 1
+        logger.debug("Registered audit listeners for %s", cls.__name__)
 
     logger.info("Audit listeners registered for %d model(s).", count)

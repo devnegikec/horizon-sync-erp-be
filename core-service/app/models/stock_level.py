@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -16,7 +16,7 @@ class StockLevel(Base):
     __tablename__ = "stock_levels"
     __table_args__ = (
         UniqueConstraint(
-            "product_id", "warehouse_id", name="uq_stock_levels_product_warehouse"
+            "item_id", "warehouse_id", name="uq_stock_levels_item_warehouse"
         ),
     )
 
@@ -24,19 +24,20 @@ class StockLevel(Base):
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     product_id = Column(
+        "item_id",
         UUID(as_uuid=True),
         ForeignKey("items.id", ondelete="CASCADE"),
         nullable=False,
-    )  # references items.id
+    )  # DB column is item_id; attribute kept as product_id for back-compat
     warehouse_id = Column(
         UUID(as_uuid=True),
         ForeignKey("warehouses_extended.id", ondelete="CASCADE"),
         nullable=False,
     )
 
-    quantity_on_hand = Column(Integer, nullable=True, default=0)
-    quantity_reserved = Column(Integer, nullable=True, default=0)
-    quantity_available = Column(Integer, nullable=True, default=0)  # on_hand - reserved
+    quantity_on_hand = Column(Numeric(15, 3), nullable=True, default=0)
+    quantity_reserved = Column(Numeric(15, 3), nullable=True, default=0)
+    quantity_available = Column(Numeric(15, 3), nullable=True, default=0)  # on_hand - reserved
 
     last_counted_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -49,6 +50,11 @@ class StockLevel(Base):
 
     product = relationship("Item", backref="stock_levels")
     warehouse = relationship("Warehouse", backref="stock_levels")
+
+    @property
+    def item_id(self):
+        """Canonical name for the FK column (aliases product_id)."""
+        return self.product_id
 
     def __repr__(self):
         return f"<StockLevel(product_id={self.product_id}, warehouse_id={self.warehouse_id}, qty={self.quantity_on_hand})>"

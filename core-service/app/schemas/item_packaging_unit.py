@@ -12,12 +12,17 @@ class ItemPackagingUnitCreate(BaseModel):
     """Schema for creating a packaging unit for an item"""
 
     unit_name: str = Field(..., min_length=1, max_length=100, description="Name of the packaging unit (e.g. 'Box of 12')")
+    packaging_type_id: Optional[UUID] = Field(None, description="Optional reference to a shared packaging type")
     qr_identifier: Optional[str] = Field(None, max_length=255, description="Optional unique QR identifier for this packaging unit")
     conversion_factor: Decimal = Field(..., gt=0, description="Number of base units (Eaches) in this packaging unit — must be > 0")
+    items_per_master_pack: Optional[int] = Field(None, gt=0, description="Items per master pack (used for QR master pack grouping)")
     length_mm: Optional[Decimal] = Field(None, ge=0, description="Length in millimetres")
     width_mm: Optional[Decimal] = Field(None, ge=0, description="Width in millimetres")
     height_mm: Optional[Decimal] = Field(None, ge=0, description="Height in millimetres")
     weight_grams: Optional[Decimal] = Field(None, ge=0, description="Weight in grams")
+    master_pack_fill_factor: Optional[Decimal] = Field(None, gt=0, le=1, description="Master-carton packing efficiency used to estimate MC outer volume")
+    master_pack_void_fill_pct: Optional[Decimal] = Field(None, ge=0, le=1, description="Master-carton dunnage/bubble-wrap allowance (fraction)")
+    master_pack_wall_thickness_mm: Optional[Decimal] = Field(None, ge=0, description="Master-carton wall thickness per side (mm)")
     is_base_unit: bool = Field(default=False, description="Whether this is the base unit (Each)")
     is_active: bool = Field(default=True, description="Whether this packaging unit is active")
 
@@ -33,12 +38,17 @@ class ItemPackagingUnitUpdate(BaseModel):
     """Schema for partially updating a packaging unit (all fields optional)"""
 
     unit_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    packaging_type_id: Optional[UUID] = None
     qr_identifier: Optional[str] = Field(None, max_length=255)
     conversion_factor: Optional[Decimal] = Field(None, gt=0)
+    items_per_master_pack: Optional[int] = Field(None, gt=0)
     length_mm: Optional[Decimal] = Field(None, ge=0)
     width_mm: Optional[Decimal] = Field(None, ge=0)
     height_mm: Optional[Decimal] = Field(None, ge=0)
     weight_grams: Optional[Decimal] = Field(None, ge=0)
+    master_pack_fill_factor: Optional[Decimal] = Field(None, gt=0, le=1)
+    master_pack_void_fill_pct: Optional[Decimal] = Field(None, ge=0, le=1)
+    master_pack_wall_thickness_mm: Optional[Decimal] = Field(None, ge=0)
     is_base_unit: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -59,12 +69,17 @@ class ItemPackagingUnitResponse(BaseModel):
     organization_id: UUID
     item_id: UUID
     unit_name: str
+    packaging_type_id: Optional[UUID] = None
     qr_identifier: Optional[str] = None
     conversion_factor: Decimal
+    items_per_master_pack: Optional[int] = None
     length_mm: Optional[Decimal] = None
     width_mm: Optional[Decimal] = None
     height_mm: Optional[Decimal] = None
     weight_grams: Optional[Decimal] = None
+    master_pack_fill_factor: Optional[Decimal] = None
+    master_pack_void_fill_pct: Optional[Decimal] = None
+    master_pack_wall_thickness_mm: Optional[Decimal] = None
     is_base_unit: bool
     is_active: bool
     created_at: object

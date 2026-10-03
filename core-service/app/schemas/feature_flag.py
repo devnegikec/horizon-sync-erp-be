@@ -50,6 +50,30 @@ class FeatureFlagEvaluation(BaseModel):
     visible: bool
 
 
+class FeatureFlagTenantUpdate(BaseModel):
+    """Upsert payload for a tenant-scoped feature flag override."""
+
+    enabled: bool | None = None
+    visible: bool | None = None
+    description: str | None = Field(None, max_length=1000)
+
+
+class TenantFeatureFlagResponse(BaseModel):
+    """Effective view of a flag for a tenant (override or inherited global)."""
+
+    name: str
+    description: str | None
+    enabled: bool
+    visible: bool
+    scope: str
+    tenant_id: UUID | None
+    inherited: bool
+
+
+class TenantFeatureFlagListResponse(BaseModel):
+    flags: list[TenantFeatureFlagResponse]
+
+
 class FeatureFlagVisibility(BaseModel):
     feature_name: str
     enabled: bool

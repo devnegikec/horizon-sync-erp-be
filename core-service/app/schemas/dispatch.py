@@ -69,8 +69,9 @@ class DispatchResponse(BaseModel):
     id: str
     organization_id: str
     dispatch_number: str
-    pick_list_id: str
-    gate_session_id: str
+    pick_list_id: str | None = None
+    gate_session_id: str | None = None
+    packing_slip_id: str | None = None
     invoice_reference: str | None = None
     vehicle_number: str | None = None
     driver_name: str | None = None

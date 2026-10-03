@@ -15,7 +15,9 @@ from app.api.v1.endpoints import (
     bulk_export,
     bulk_import,
     campaigns,
-    cascade_qr,
+    capacity,
+    cascade,
+    catalog_import,
     charge_templates,
     chart_of_accounts,
     chart_of_accounts_setup,
@@ -24,13 +26,16 @@ from app.api.v1.endpoints import (
     currency,
     customer_bulk,
     customers,
+    data_sync,
     delivery_notes,
     destinations,
     document_numbering,
     exchange_rates,
     feature_flag_evaluate,
+    feature_flags_admin,
     floor_plans,
     inbound,
+    internal_feature_flags,
     internal_warehouse_users,
     invoices,
     item_groups,
@@ -41,6 +46,7 @@ from app.api.v1.endpoints import (
     journal_entries,
     landed_cost,
     landing_pages,
+    layout_design,
     location_allocations,
     location_scans,
     material_requests,
@@ -48,13 +54,19 @@ from app.api.v1.endpoints import (
     notifications,
     organization_onboarding,
     outbound,
+    packing_slips,
     payments,
+    pick_exceptions,
     pick_lists,
+    pick_settings,
+    products,
     public_marketing,
+    public_qr,
     purchase_orders,
     purchase_receipts,
     put_away,
     put_away_rules,
+    qr_activation,
     qr_credits,
     qr_product_settings,
     qr_products,
@@ -62,11 +74,13 @@ from app.api.v1.endpoints import (
     quality_inspections,
     quotations,
     reconciliations,
+    returns,
     rfqs,
     sales_orders,
     scan_events,
     serial_numbers,
     short_urls,
+    sku_endpoint,
     smart_picking,
     stock_entries,
     stock_entry_bulk_import,
@@ -78,6 +92,7 @@ from app.api.v1.endpoints import (
     tax_templates,
     uom_conversions,
     uoms,
+    vehicle_arrivals,
     warehouse_locations,
     warehouse_users,
     warehouses,
@@ -85,6 +100,8 @@ from app.api.v1.endpoints import (
     wms_3d,
     wms_dashboard,
     wms_devices,
+    wms_reports,
+    worker_sessions,
     worker_tasks,
 )
 
@@ -98,6 +115,20 @@ api_router.include_router(
     feature_flag_evaluate.router,
     prefix="/feature-flags",
     tags=["Feature Flags"],
+)
+
+# Feature flag admin (tenant management, Settings tab)
+api_router.include_router(
+    feature_flags_admin.router,
+    prefix="/feature-flags",
+    tags=["Feature Flags"],
+)
+
+# Data Sync (Settings tab — on-demand per-feature seeding)
+api_router.include_router(
+    data_sync.router,
+    prefix="/data-sync",
+    tags=["Data Sync"],
 )
 
 # Include endpoint routers
@@ -126,6 +157,11 @@ api_router.include_router(
     tags=["Warehouse Locations"],
 )
 api_router.include_router(
+    capacity.router,
+    prefix="/capacity",
+    tags=["Capacity"],
+)
+api_router.include_router(
     warehouse_users.router,
     prefix="/warehouse-users",
     tags=["Warehouse Users"],
@@ -139,6 +175,12 @@ api_router.include_router(
     floor_plans.router,
     prefix="/floor-plans",
     tags=["Floor Plan Designer"],
+)
+# JSON Layout Designer (import a layout document, validate, preview, apply)
+api_router.include_router(
+    layout_design.router,
+    prefix="/layout-design",
+    tags=["Layout Designer"],
 )
 api_router.include_router(
     wms_3d.router,
@@ -156,6 +198,11 @@ api_router.include_router(
     tags=["WMS Dashboard"],
 )
 api_router.include_router(
+    wms_reports.router,
+    prefix="/wms/reports",
+    tags=["WMS Reports"],
+)
+api_router.include_router(
     location_allocations.router,
     prefix="/location-allocations",
     tags=["Location Allocations"],
@@ -166,7 +213,21 @@ api_router.include_router(
     prefix="/inbound",
     tags=["Inbound"],
 )
+# Vehicle arrivals (inbound dock check-in)
+api_router.include_router(
+    vehicle_arrivals.router,
+    prefix="/vehicle-arrivals",
+    tags=["Vehicle Arrivals"],
+)
 # Outbound (SAP invoice-triggered pick lists)
+# NOTE: packing-slips MUST be registered before outbound because outbound
+# declares a catch-all GET /{pick_list_id} route that would otherwise shadow
+# the literal /outbound/packing-slips path (yielding 405 for POST).
+api_router.include_router(
+    packing_slips.router,
+    prefix="/outbound/packing-slips",
+    tags=["Outbound"],
+)
 api_router.include_router(
     outbound.router,
     prefix="/outbound",
@@ -183,6 +244,12 @@ api_router.include_router(
     worker_tasks.router,
     prefix="/worker-tasks",
     tags=["Worker Tasks"],
+)
+# Worker Sessions (handheld login session controls — WF-009)
+api_router.include_router(
+    worker_sessions.router,
+    prefix="/worker-sessions",
+    tags=["Worker Sessions"],
 )
 # Location Scans (QR-based time tracking)
 api_router.include_router(
@@ -222,6 +289,12 @@ api_router.include_router(
     prefix="",  # No prefix since endpoint already includes /internal
     tags=["Internal"],
 )
+# Internal feature flag listing (service-to-service, X-Internal-Secret)
+api_router.include_router(
+    internal_feature_flags.router,
+    prefix="",  # No prefix since endpoint already includes /internal
+    tags=["Internal"],
+)
 # Bank accounts integration
 api_router.include_router(
     bank_accounts.router,
@@ -255,6 +328,11 @@ api_router.include_router(
 api_router.include_router(currencies.router, prefix="/currencies", tags=["Currencies"])
 api_router.include_router(
     exchange_rates.router, prefix="/exchange-rates", tags=["Exchange Rates"]
+)
+# Shared catalog core (Product)
+api_router.include_router(products.router, prefix="/products", tags=["Products"])
+api_router.include_router(
+    catalog_import.router, prefix="/catalog-import", tags=["Catalog Import"]
 )
 # Phase 3: Stock Management
 api_router.include_router(batches.router, prefix="/batches", tags=["Batches"])
@@ -292,8 +370,23 @@ api_router.include_router(
     prefix="/quality-inspections",
     tags=["Quality Inspections"],
 )
+# Returns (customer returns) module — R-01..R-08
+api_router.include_router(returns.router, prefix="/returns", tags=["Returns"])
+
 # Phase 5: Order Processing
 api_router.include_router(pick_lists.router, prefix="/pick-lists", tags=["Pick Lists"])
+# Pick exception framework (PR-03 / T-02 + T-05) — reason codes + immutable audit
+api_router.include_router(
+    pick_exceptions.router,
+    prefix="/pick-exceptions",
+    tags=["Pick Exceptions"],
+)
+# Pick configuration layer (PR-02 / T-17) — tenant-scoped pick.* settings
+api_router.include_router(
+    pick_settings.router,
+    prefix="/pick-settings",
+    tags=["Pick Settings"],
+)
 api_router.include_router(
     delivery_notes.router, prefix="/delivery-notes", tags=["Delivery Notes"]
 )
@@ -376,6 +469,13 @@ api_router.include_router(
     tags=["QR Products"],
 )
 
+# SKU Management module
+api_router.include_router(
+    sku_endpoint.router,
+    prefix="/sku",
+    tags=["SKU Management"],
+)
+
 # Landing Page Config (nested under /products/{productId}/landing-page)
 api_router.include_router(
     landing_pages.router,
@@ -432,13 +532,6 @@ api_router.include_router(
     tags=["Analytics"],
 )
 
-# Cascade / Hierarchical QR module
-api_router.include_router(
-    cascade_qr.router,
-    prefix="/cascade-qr",
-    tags=["Cascade QR"],
-)
-
 # QSeal module
 api_router.include_router(
     qseal.router,
@@ -480,3 +573,19 @@ api_router.include_router(
     prefix="/public",
     tags=["Public"],
 )
+
+api_router.include_router(
+    public_qr.router,
+    prefix="/public/qr",
+    tags=["Public QR Verification"],
+)
+
+
+# QR Activation module
+api_router.include_router(
+    qr_activation.router,
+    prefix="/qr-activation",
+    tags=["QR Activation"],
+)
+
+api_router.include_router(cascade.router, prefix="/cascade", tags=["Cascade"])

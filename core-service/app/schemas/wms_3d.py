@@ -8,7 +8,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ===========================================
 # SHARED
 # ===========================================
@@ -18,6 +17,24 @@ class Position3D(BaseModel):
     x: float = 0
     y: float = 0
     z: float = 0
+
+
+class CapacityVolume(BaseModel):
+    """Physical volume measure of a bin (new-layout bins are volume-limited)."""
+
+    capacity_m3: float | None = None
+    occupied_m3: float = 0.0
+    available_m3: float | None = None
+    pct: float | None = None
+
+
+class CapacityWeight(BaseModel):
+    """Physical weight measure of a bin."""
+
+    capacity_kg: float | None = None
+    occupied_kg: float = 0.0
+    available_kg: float | None = None
+    pct: float | None = None
 
 
 # ===========================================
@@ -36,8 +53,13 @@ class LayoutBin(BaseModel):
     code: str
     full_path: str | None = None
     position: Position3D
+    # ``capacity``/``available_capacity`` are expressed in ``capacity_uom``:
+    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
     capacity: float
     available_capacity: float
+    capacity_uom: str | None = None
+    volume: CapacityVolume | None = None
+    weight: CapacityWeight | None = None
     fill_percentage: float
     is_active: bool = True
     is_reserved: bool
@@ -96,6 +118,12 @@ class StatusReservedBy(BaseModel):
 
 class StatusBin(BaseModel):
     bin_id: UUID
+    # ``capacity``/``available_capacity`` are expressed in ``capacity_uom``.
+    capacity: float = 0.0
+    available_capacity: float = 0.0
+    capacity_uom: str | None = None
+    volume: CapacityVolume | None = None
+    weight: CapacityWeight | None = None
     fill_percentage: float
     is_reserved: bool
     reserved_by: StatusReservedBy | None = None
@@ -139,6 +167,8 @@ class Suggestion(BaseModel):
     score: float
     reasons: list[str] = Field(default_factory=list)
     available_capacity: float
+    # 'units' (count), 'volume' (m³) — the measure of ``available_capacity``.
+    capacity_uom: str = "units"
     distance_from_worker: float
     estimated_time_seconds: int
     batch_number: str | None = None
@@ -199,6 +229,7 @@ class BinStockItem(BaseModel):
     item_code: str
     sku: str | None = None
     quantity_on_hand: float
+    inventory_status: str = "available"
     batch_number: str | None = None
     expiry_date: str | None = None
     uom: str | None = None

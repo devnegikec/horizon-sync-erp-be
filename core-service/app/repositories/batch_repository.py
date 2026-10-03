@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.base import BatchStatus
 from app.models.batch import Batch
@@ -95,5 +95,10 @@ class BatchRepository:
         query = query.order_by(
             sort_col.desc() if sort_order == "desc" else sort_col.asc()
         )
-        items = query.offset((page - 1) * page_size).limit(page_size).all()
+        items = (
+            query.options(joinedload(Batch.item))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
         return items, total

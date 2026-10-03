@@ -54,7 +54,7 @@ class Invoice(Base):
     total_charges = Column(Numeric(15, 2), default=0)
     discount_type = Column(String(20), default="percentage", nullable=True)
     discount_value = Column(Numeric(15, 2), default=0, nullable=True)
-    
+
     # Subscription billing fields (Task 1B-1)
     billing_cycle = Column(String(20), nullable=True)  # monthly, quarterly, yearly
     subscription_period_start = Column(DateTime(timezone=True), nullable=True)

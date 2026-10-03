@@ -28,6 +28,7 @@ class AuditLog(Base):
     user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     action = Column(String(10), nullable=False)
+    role = Column(String(50), nullable=True, index=True)
     table_name = Column(String(100), nullable=False)
     record_id = Column(UUID(as_uuid=True), nullable=False)
     old_values = Column(JSONB, nullable=True)

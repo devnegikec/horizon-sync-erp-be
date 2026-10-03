@@ -4,8 +4,15 @@
 
 # Environment files
 .env
+.env.stage
+.env.production
 .env.local
 .env.*.local
+.sync.env
+.codeant-pr-comments.json
+
+# Local DB sync artifacts
+.db_dumps/
 
 # Python
 __pycache__/
@@ -50,6 +57,7 @@ htmlcov/
 # Logs
 *.log
 logs/
+core-service/uploads/
 
 # OS
 .DS_Store
@@ -58,8 +66,35 @@ Thumbs.db
 # Docker volumes (if local)
 postgres_data/
 
+LOCAL_DB_SETUP.md
+
+sync_local_db.sh
+test_results
+
+# Docker (only in subdirectories, keep root Dockerfile)
+core-service/.hypothesis/
+core-service/.env
+core-service/.env.docker
+core-service/.env.stage
+core-service/.dockerignore
+
+# Serach Service
+search-service/Dockerfile
+search-service/.dockerignore
 search-service/.hypothesis
 search-service/.dockerignore
 search-service//.gitignore
 search-service/alembic/script.py.mako
 search-service/pyproject.toml
+
+# Gateway Service
+**/nginx-gateway/Dockerfile
+**/nginx-gateway/.dockerignore
+docker-compose*
+# Keep root .dockerignore, ignore only subdirectory ones
+
+# Identity Service
+identity-service/.dockerignore
+identity-service/.env
+identity-service/.env.docker
+identity-service/.env.stage

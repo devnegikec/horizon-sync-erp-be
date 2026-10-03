@@ -4,6 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -58,9 +60,41 @@ class AsnOrder(Base):
     reference_type = Column(String(50), nullable=True)
     reference_id = Column(UUID(as_uuid=True), nullable=True)
     reference_no = Column(String(100), nullable=True)
+    # ``purchase`` | ``internal_transfer`` — internal transfers drive a source
+    # pick list and carry unit-level serials on their line items.
+    asn_type = Column(String(20), nullable=True)
+    # Verification mode set at dispatch: ``serialized`` when unit serials were
+    # captured and propagated, ``quantity_only`` otherwise. Drives the
+    # "quantity-only verification" banner on the receiving UI (T0.1).
+    serialization_mode = Column(String(20), nullable=True)
+    # Auto-created source pick list for an internal-transfer ASN (visibility
+    # for the destination/creation side). Kept for backward compatibility with
+    # ASNs created before the order-driven outbound flow.
+    linked_pick_list_id = Column(UUID(as_uuid=True), nullable=True)
+    # Auto-created source outbound order for an internal-transfer ASN (the
+    # order-driven outbound flow generates an ASN-type order at the source
+    # warehouse instead of a direct pick list).
+    linked_order_id = Column(UUID(as_uuid=True), nullable=True)
+    # MATERIAL_TRANSFER stock entry created at dispatch (accounting traceability).
+    linked_stock_entry_id = Column(UUID(as_uuid=True), nullable=True)
     remarks = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # ── Short-delivery closure ────────────────────────────────────────
+    # A partially delivered ASN can be formally closed as a short delivery by
+    # a warehouse manager: the outstanding quantity is accepted as a loss, the
+    # reason is recorded here, and the ASN's open shortage balances are written
+    # off. Mirrors the ``inbound_short_balances`` closure columns.
+    short_closed = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Residual short (expected − received) accepted at closure time.
+    short_closed_qty = Column(Numeric(15, 3), nullable=True)
+    close_reason_code = Column(String(80), nullable=True)
+    close_note = Column(Text, nullable=True)
+    closed_by = Column(UUID(as_uuid=True), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
@@ -73,12 +107,22 @@ class AsnOrder(Base):
 
     from_warehouse = relationship("Warehouse", foreign_keys=[warehouse_id_from])
     to_warehouse = relationship("Warehouse", foreign_keys=[warehouse_id_to])
+    vehicle_arrivals = relationship(
+        "VehicleArrival",
+        secondary="vehicle_arrival_asns",
+        back_populates="asn_orders",
+    )
     items = relationship(
         "AsnOrderItem", back_populates="asn_order", cascade="all, delete-orphan"
     )
+    serial_lines = relationship(
+        "AsnOrderSerialLine", back_populates="asn_order", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
-        return f"<AsnOrder(id={self.id}, no='{self.asn_order_no}', status={self.status})>"
+        return (
+            f"<AsnOrder(id={self.id}, no='{self.asn_order_no}', status={self.status})>"
+        )
 
 
 class AsnOrderItem(Base):
@@ -102,6 +146,10 @@ class AsnOrderItem(Base):
     uom = Column(String(50), nullable=False)
     sort_order = Column(Integer, default=0)
     delivered_qty = Column(Numeric(15, 3), default=0, nullable=False)
+    # Internal-transfer fulfilment tracking (unit-level serials + shipped/received).
+    serial_nos = Column(JSONB, nullable=True)
+    shipped_qty = Column(Numeric(15, 3), default=0, nullable=False)
+    received_qty = Column(Numeric(15, 3), default=0, nullable=False)
     extra_data = Column(JSONB, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -119,3 +167,55 @@ class AsnOrderItem(Base):
             f"<AsnOrderItem(id={self.id}, asn_order_id={self.asn_order_id}, "
             f"item_id={self.item_id}, qty={self.qty})>"
         )
+
+
+class AsnOrderSerialLine(Base):
+    """Unit-level serial line for an internal-transfer ASN.
+
+    One row per serialized unit (SGTIN-like) carried by the ASN. Populated from
+    the source warehouse's outbound pick, verified during destination inbound.
+    """
+
+    __tablename__ = "asn_order_serial_lines"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    asn_order_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("asn_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asn_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("asn_order_items.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    serial_no = Column(String(100), nullable=False)
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    bin_location_id = Column(UUID(as_uuid=True), nullable=True)
+    expected_qty = Column(Integer, default=1, nullable=False)
+    received = Column(Boolean, default=False, nullable=False)
+    received_at = Column(DateTime(timezone=True), nullable=True)
+    received_by = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    asn_order = relationship("AsnOrder", back_populates="serial_lines")
+    item = relationship("Item")
+
+    def __repr__(self):
+        return f"<AsnOrderSerialLine(id={self.id}, serial_no='{self.serial_no}')>"

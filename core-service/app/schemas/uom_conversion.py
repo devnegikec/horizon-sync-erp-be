@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,9 +13,11 @@ from app.schemas.common import PaginationMeta
 class UOMConversionBase(BaseModel):
     """Base UOM Conversion schema with common fields"""
 
-    item_id: UUID
+    item_id: UUID | None = None
     from_uom: str = Field(..., min_length=1, max_length=50)
     to_uom: str = Field(..., min_length=1, max_length=50)
+    from_uom_id: UUID | None = None
+    to_uom_id: UUID | None = None
     conversion_factor: Decimal = Field(..., gt=0)
 
 
@@ -29,6 +32,8 @@ class UOMConversionUpdate(BaseModel):
 
     from_uom: str | None = Field(None, min_length=1, max_length=50)
     to_uom: str | None = Field(None, min_length=1, max_length=50)
+    from_uom_id: UUID | None = None
+    to_uom_id: UUID | None = None
     conversion_factor: Decimal | None = Field(None, gt=0)
 
 
@@ -37,9 +42,11 @@ class UOMConversionResponse(BaseModel):
 
     id: UUID
     organization_id: UUID
-    item_id: UUID
+    item_id: UUID | None = None
     from_uom: str
     to_uom: str
+    from_uom_id: UUID | None = None
+    to_uom_id: UUID | None = None
     conversion_factor: Decimal
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -54,3 +61,35 @@ class UOMConversionListResponse(BaseModel):
 
     uom_conversions: list[UOMConversionResponse]
     pagination: PaginationMeta
+
+
+class UOMConversionBulkItem(BaseModel):
+    """A single UOM conversion row in a bulk upsert request."""
+
+    item_id: UUID | None = None
+    from_uom: str = Field(..., min_length=1, max_length=50)
+    to_uom: str = Field(..., min_length=1, max_length=50)
+    from_uom_id: UUID | None = None
+    to_uom_id: UUID | None = None
+    conversion_factor: Decimal | None = Field(None, gt=0)
+    action: Literal["create", "modify", "delete"] | None = None
+
+
+class UOMConversionBulkRequest(BaseModel):
+    """Bulk upsert request body."""
+
+    conversions: list[UOMConversionBulkItem]
+
+
+class UOMConversionBulkError(BaseModel):
+    row: int
+    error: str
+
+
+class UOMConversionBulkResponse(BaseModel):
+    """Bulk upsert response with per-row error reporting."""
+
+    created: int
+    updated: int
+    deleted: int = 0
+    errors: list[UOMConversionBulkError]

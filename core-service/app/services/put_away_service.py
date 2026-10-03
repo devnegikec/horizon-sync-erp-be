@@ -24,12 +24,22 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import NotFoundError, StateError, ValidationError
 from app.models.bin_stock_level import BinStockLevel
 from app.models.item import Item
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_reservation_service import BinReservationService
 from app.services.bin_stock_service import BinStockService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    MM3_PER_CC,
+    compute_bin_occupancy,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 from app.services.capacity_service import CapacityService
 from app.services.routing_optimizer import BinLocation, RoutingOptimizer
 from app.services.volumetric_assignment_service import VolumetricAssignmentService
@@ -45,20 +55,66 @@ class PutAwayService:
         self.routing_optimizer = RoutingOptimizer()
         self.reservation_service = BinReservationService(db)
 
+    def all_slip_items_put_away(self, slip_id: UUID) -> bool:
+        """Return True when every accepted receiving-slip item has been binned."""
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        accepted = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.slip_id == slip_id,
+                ReceivingSlipItem.flag == "ok",
+            )
+            .all()
+        )
+        return bool(accepted) and all(
+            item.put_away_status == "completed" for item in accepted
+        )
+
+    def mark_slip_putaway_complete(self, slip_id: UUID) -> bool:
+        """Advance a pending_putaway / putaway_in_progress slip to putaway_complete."""
+        slip = self.db.query(ReceivingSlip).filter(ReceivingSlip.id == slip_id).first()
+        if slip is None or slip.status not in (
+            "pending_putaway",
+            "putaway_in_progress",
+        ):
+            return False
+        slip.status = "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+        self.db.flush()
+        # Put-away is the terminal step of receiving — refresh ASN delivered
+        # quantities and delivery status so the ASN closes out correctly.
+        if slip.asn_order_id:
+            from app.services.inbound_service import InboundService
+
+            InboundService(self.db)._sync_asn_delivered_qty(
+                slip.asn_order_id, slip.organization_id
+            )
+        return True
+
     def generate_from_slip(
-        self, slip_id: UUID, org_id: UUID, worker_id: UUID | None = None
+        self,
+        slip_id: UUID,
+        org_id: UUID,
+        worker_id: UUID | None = None,
+        mode: str | None = None,
     ) -> PutAwayList:
         """Generate a put-away list from an approved receiving slip.
 
-        Assigns bins respecting allocations (exclusive first, then preferred,
-        then unallocated) and capacity. Groups items by zone/aisle and sorts
-        by optimal traversal order. Creates a worker task via TaskService
-        if a worker_id is provided.
+        ``mode='auto'`` (default) assigns bins respecting allocations (exclusive
+        first, then preferred, then unallocated) and capacity, groups items by
+        zone/aisle and sorts by optimal traversal order. ``mode='manual'``
+        creates the list with items grouped by SKU but leaves ``bin_location_id``
+        empty so workers assign bins themselves during completion.
+
+        Creates a worker task via TaskService if a worker_id is provided.
 
         Args:
             slip_id: The receiving slip ID to generate put-away from.
             org_id: Organization ID for scoping.
             worker_id: Optional worker ID to assign the put-away task to.
+            mode: 'auto' or 'manual'; None falls back to the organization's
+                ``putaway_mode`` setting.
 
         Returns:
             The created PutAwayList with items assigned to bins.
@@ -69,142 +125,661 @@ class PutAwayService:
 
         Requirements: 8.1, 8.2, 8.3, 8.4, 20.3, 20.4, 20.5, 20.6
         """
-        # Validate the receiving slip
+        mode = self._resolve_putaway_mode(org_id, mode)
+        slip = self._get_pending_putaway_slip(slip_id, org_id)
+        self._ensure_no_existing_list(slip)
+        if worker_id is not None:
+            self._validate_worker(worker_id, slip.warehouse_id, org_id)
+        item_specs, warnings_parts = self._build_put_away_specs(slip, org_id, mode)
+
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        put_away_number = DocumentNumberingService(self.db).get_next_number(
+            org_id, "put_away_list"
+        )
+        return self._create_list_from_specs(
+            slip=slip,
+            org_id=org_id,
+            mode=mode,
+            item_specs=item_specs,
+            worker_id=worker_id,
+            warnings_parts=warnings_parts,
+            put_away_number=put_away_number,
+        )
+
+    def generate_from_slip_for_workers(
+        self,
+        slip_id: UUID,
+        org_id: UUID,
+        worker_ids: list[UUID],
+        mode: str | None = None,
+    ) -> list[PutAwayList]:
+        """Generate one put-away list per worker, distributing slip items.
+
+        Work is divided by SKU: every SKU goes to exactly one worker so two
+        people never put away the same item (into the same bin) at once. Master
+        packs are kept whole on a single worker and the split is balanced by
+        quantity. Only when the slip carries fewer SKUs than workers is a SKU
+        broken up, and then only on master-pack boundaries.
+
+        Args:
+            slip_id: The receiving slip ID to generate put-away from.
+            org_id: Organization ID for scoping.
+            worker_ids: Workers to distribute the put-away work across.
+            mode: 'auto' or 'manual'; None falls back to the organization's
+                ``putaway_mode`` setting.
+
+        Returns:
+            One PutAwayList per worker that received at least one item.
+        """
+        mode = self._resolve_putaway_mode(org_id, mode)
+        slip = self._get_pending_putaway_slip(slip_id, org_id)
+        self._ensure_no_existing_list(slip)
+        item_specs, warnings_parts = self._build_put_away_specs(slip, org_id, mode)
+
+        from app.services.document_numbering_service import DocumentNumberingService
+
+        numbering = DocumentNumberingService(self.db)
+        workers = [w for w in worker_ids if w is not None]
+        for worker_id in workers:
+            self._validate_worker(worker_id, slip.warehouse_id, org_id)
+
+        # No workers supplied → fall back to a single unassigned list.
+        if not workers:
+            number = numbering.get_next_number(org_id, "put_away_list")
+            return [
+                self._create_list_from_specs(
+                    slip=slip,
+                    org_id=org_id,
+                    mode=mode,
+                    item_specs=item_specs,
+                    worker_id=None,
+                    warnings_parts=warnings_parts,
+                    put_away_number=number,
+                )
+            ]
+
+        # Split by SKU, keeping all children of the same master-pack (parent)
+        # together: a worker receives whole SKUs, so the same item is never
+        # worked from two lists, and no physical carton is split either.
+        sku_groups = self._group_specs_by_sku(item_specs, org_id)
+        chunks = self._distribute_balanced(sku_groups, len(workers))
+
+        from app.services.task_service import TaskService
+
+        task_service = TaskService(self.db)
+        lists: list[PutAwayList] = []
+        # The whole split is written in one transaction: a failure part-way
+        # through must not leave committed lists (or a moved slip status)
+        # behind, which would block a retry with a partial split.
+        try:
+            for worker_id, worker_specs in zip(workers, chunks, strict=True):
+                if not worker_specs:
+                    # More workers than distributable units — skip empty chunks.
+                    continue
+                number = numbering.get_next_number(org_id, "put_away_list")
+                put_away_list = self._create_list_from_specs(
+                    slip=slip,
+                    org_id=org_id,
+                    mode=mode,
+                    item_specs=worker_specs,
+                    worker_id=worker_id,
+                    warnings_parts=warnings_parts,
+                    put_away_number=number,
+                    commit=False,
+                )
+                task_service.create_task(
+                    task_type="put_away",
+                    worker_id=worker_id,
+                    reference_id=put_away_list.id,
+                    org_id=org_id,
+                    commit=False,
+                )
+                lists.append(put_away_list)
+
+            # Nothing eligible (all lines skipped) — still return a single list
+            # so the caller sees the warnings, mirroring single-worker behaviour.
+            if not lists:
+                number = numbering.get_next_number(org_id, "put_away_list")
+                lists.append(
+                    self._create_list_from_specs(
+                        slip=slip,
+                        org_id=org_id,
+                        mode=mode,
+                        item_specs=[],
+                        worker_id=None,
+                        warnings_parts=warnings_parts,
+                        put_away_number=number,
+                        commit=False,
+                    )
+                )
+
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        for put_away_list in lists:
+            self.db.refresh(put_away_list)
+        return lists
+
+    # ── Put-away generation helpers ─────────────────────────────────────────
+
+    @staticmethod
+    def _unit_quantity(unit: list[list[dict]]) -> Decimal:
+        """Total quantity of a distributable unit (a SKU or a master pack)."""
+        return sum(
+            (spec["quantity"] for carton in unit for spec in carton),
+            Decimal("0"),
+        )
+
+    @classmethod
+    def _distribute_balanced(
+        cls, sku_groups: list[list[list[dict]]], count: int
+    ) -> list[list[dict]]:
+        """Spread put-away work over ``count`` workers, one SKU per worker.
+
+        ``sku_groups`` holds one entry per SKU, each expressed as that SKU's
+        master-pack (carton) groups, so the carton structure stays available
+        while distributing.
+
+        Whole SKUs are handed out largest-first to the least-loaded worker, so
+        a SKU is never worked from two lists at once and the loads stay even.
+        Only when there are fewer SKUs than workers is a SKU broken up — and
+        then on master-pack boundaries, never mid-carton.
+
+        Returns one flat list of specs per worker (empty lists included for
+        workers that received nothing).
+        """
+        if count <= 0:
+            return []
+
+        # Units still to be handed out. Each unit keeps its carton structure.
+        units: list[list[list[dict]]] = list(sku_groups)
+
+        # Fewer SKUs than workers: expand the biggest SKUs into single-carton
+        # units until every worker can be given something to do.
+        while len(units) < count:
+            split_idx = -1
+            split_qty = Decimal("-1")
+            for idx, unit in enumerate(units):
+                if len(unit) <= 1:
+                    continue
+                qty = cls._unit_quantity(unit)
+                if qty > split_qty:
+                    split_idx, split_qty = idx, qty
+            if split_idx < 0:
+                break
+            largest = units.pop(split_idx)
+            units.extend([[carton] for carton in largest])
+
+        buckets: list[list[list[dict]]] = [[] for _ in range(count)]
+        loads = [Decimal("0")] * count
+        # Largest-first greedy (LPT) keeps the final per-worker load as even as
+        # possible; the index tie-break keeps the result deterministic.
+        for _, unit in sorted(
+            enumerate(units),
+            key=lambda pair: (-cls._unit_quantity(pair[1]), pair[0]),
+        ):
+            target = min(range(count), key=lambda i: (loads[i], i))
+            buckets[target].append(unit)
+            loads[target] += cls._unit_quantity(unit)
+
+        return [
+            [spec for unit in bucket for carton in unit for spec in carton]
+            for bucket in buckets
+        ]
+
+    def _group_specs_by_sku(
+        self, item_specs: list[dict], org_id: UUID
+    ) -> list[list[list[dict]]]:
+        """Group specs by SKU, keeping master-pack (carton) children together.
+
+        Returns one entry per SKU in first-appearance order. Each entry is the
+        SKU's list of carton groups (see ``_group_specs_by_parent``); splitting
+        a SKU across workers would mean two people putting away the same item
+        into the same bin concurrently, so the SKU — not the carton — is the
+        unit work is divided by.
+        """
+        by_sku: dict[str, list[list[dict]]] = {}
+        for carton in self._group_specs_by_parent(item_specs, org_id):
+            # A master pack carries a single SKU; its first spec identifies it.
+            sku = str(carton[0].get("sku") or "")
+            by_sku.setdefault(sku, []).append(carton)
+        return list(by_sku.values())
+
+    def _group_specs_by_parent(
+        self, item_specs: list[dict], org_id: UUID
+    ) -> list[list[dict]]:
+        """Group put-away specs so children of the same master-pack stay together.
+
+        Child serials are stored in each spec's ``batch_number``; their shared
+        parent box is resolved via ``qseal_parameters.parent_id``. Specs without
+        a parent (or without a resolvable child serial) are each treated as an
+        individual carton so a lone unit is never mixed into another pack.
+        """
+        from app.models.qseal import QSealParameters
+
+        batch_numbers = {
+            s.get("batch_number") for s in item_specs if s.get("batch_number")
+        }
+        parent_by_batch: dict[str, UUID | None] = {}
+        if batch_numbers:
+            rows = (
+                self.db.query(QSealParameters.serial_number, QSealParameters.parent_id)
+                .filter(
+                    QSealParameters.serial_number.in_(batch_numbers),
+                    QSealParameters.organization_id == org_id,
+                )
+                .all()
+            )
+            parent_by_batch = {sn: pid for sn, pid in rows if pid}
+
+        groups: dict[str, list[dict]] = {}
+        for spec in item_specs:
+            batch = spec.get("batch_number")
+            parent_id = parent_by_batch.get(batch) if batch else None
+            if parent_id:
+                key = f"parent:{parent_id}"
+            else:
+                key = f"item:{batch or id(spec)}"
+            groups.setdefault(key, []).append(spec)
+
+        return list(groups.values())
+
+    def _resolve_putaway_mode(self, org_id: UUID, mode: str | None) -> str:
+        if mode is None:
+            from app.services.pick_settings_service import PickSettingsService
+
+            mode = str(PickSettingsService(self.db).get_value(org_id, "putaway_mode"))
+        if mode not in {"auto", "manual"}:
+            raise ValidationError(f"Invalid put-away generation mode: {mode}")
+        return mode
+
+    def _get_pending_putaway_slip(self, slip_id: UUID, org_id: UUID) -> ReceivingSlip:
         slip = (
             self.db.query(ReceivingSlip)
             .filter(
                 ReceivingSlip.id == slip_id,
                 ReceivingSlip.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
-
         if slip is None:
             raise NotFoundError(
                 message="Receiving slip not found",
                 entity_type="ReceivingSlip",
                 entity_id=str(slip_id),
             )
-
         if slip.status != "pending_putaway":
             raise StateError(
                 message="Receiving slip must be in pending_putaway status to generate put-away list",
                 current_state=slip.status,
                 required_state=["pending_putaway"],
             )
+        return slip
 
-        # Generate unique put-away list number
-        from app.services.document_numbering_service import DocumentNumberingService
-
-        put_away_number = DocumentNumberingService(self.db).get_next_number(
-            org_id, "put_away_list"
+    def _ensure_no_existing_list(self, slip: ReceivingSlip) -> None:
+        """Reject generation when a put-away list already exists for the slip."""
+        existing = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip.id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
         )
+        if existing is not None:
+            raise ValidationError(
+                f"Put-away list '{existing.put_away_list_no}' already exists "
+                f"for receiving slip '{slip.slip_number}'"
+            )
 
-        # Create the put-away list
-        put_away_list = PutAwayList(
-            organization_id=org_id,
-            warehouse_id=slip.warehouse_id,
-            put_away_list_no=put_away_number,
-            status="pending",
-            reference_type="receiving_slip",
-            reference_id=slip_id,
-            receiving_slip_id=slip_id,
+    def _validate_worker(
+        self, worker_id: UUID, warehouse_id: UUID, org_id: UUID
+    ) -> None:
+        """Reject workers that are nonexistent, inactive, cross-org, or not
+        assigned to this warehouse before they are persisted on a list/task."""
+        from app.models.warehouse_user import WarehouseUser
+
+        assignment = (
+            self.db.query(WarehouseUser)
+            .filter(
+                WarehouseUser.user_id == worker_id,
+                WarehouseUser.organization_id == org_id,
+                WarehouseUser.warehouse_id == warehouse_id,
+                WarehouseUser.is_active == True,  # noqa: E712
+            )
+            .first()
         )
-        self.db.add(put_away_list)
-        self.db.flush()
+        if assignment is None:
+            raise ValidationError(
+                f"Worker '{worker_id}' is not an active member of this warehouse"
+            )
 
-        # Process each receiving slip item and assign bins
-        put_away_items = []
+    def _items_per_master_pack(self, item_id: UUID, org_id: UUID) -> int | None:
+        """Return the item's master-pack size (items per pack), or None.
+
+        ``items_per_master_pack`` is preferred; when absent it falls back to the
+        master-carton ``conversion_factor``. In this deployment they are the same
+        number — warehouse ASN movement only deals with whole master cartons,
+        never the Each/IC level — so ``conversion_factor`` is the single source
+        of truth and ``items_per_master_pack`` is an optional explicit override.
+        """
+
+        row = (
+            self.db.query(ItemPackagingUnit.items_per_master_pack)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.organization_id == org_id,
+                ItemPackagingUnit.is_active.is_(True),
+                ItemPackagingUnit.items_per_master_pack.isnot(None),
+                ItemPackagingUnit.items_per_master_pack > 1,
+            )
+            .first()
+        )
+        if row is not None:
+            return row[0]
+
+        master = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.organization_id == org_id,
+                ItemPackagingUnit.is_active.is_(True),
+                ItemPackagingUnit.conversion_factor > 1,
+            )
+            .order_by(ItemPackagingUnit.conversion_factor.asc())
+            .first()
+        )
+        if master is None:
+            return None
+        return int(master.conversion_factor)
+
+    def _build_put_away_specs(
+        self, slip: ReceivingSlip, org_id: UUID, mode: str
+    ) -> tuple[list[dict], list[str]]:
+        """Resolve eligible slip lines into put-away item specs (no ORM yet).
+
+        Serialized lines are grouped into master packs of
+        ``items_per_master_pack`` — one spec per pack carrying the unit serials
+        in ``serial_nos``. Returns (item_specs, warnings_parts) where each spec
+        has keys item_id, sku, batch_number, quantity, bin_location_id,
+        serial_nos.
+        """
+        item_specs: list[dict] = []
+        manual_grouped: dict[tuple[str, str | None], dict] = {}
         skipped_damaged: list[str] = []
+        skipped_rejected: list[str] = []
+        skipped_exception: list[str] = []
         skipped_unresolved: list[str] = []
+
+        # Step 0: filter + resolve eligible lines (keeps original order).
+        resolved_lines: list[dict] = []
         for slip_item in slip.items:
-            # Skip items flagged as damaged
-            if slip_item.flag == "damaged":
-                skipped_damaged.append(
+            # Only fully accepted, good receipt lines enter normal put-away.
+            # HOLD, QUARANTINE, and EXCESS are physically segregated and
+            # require an explicit manager disposition before release.
+            if slip_item.flag in (
+                "damaged",
+                "rejected",
+                "hold",
+                "quarantine",
+                "excess",
+            ):
+                if slip_item.flag in ("hold", "quarantine", "excess"):
+                    skipped_exception.append(
+                        f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity}, flag: {slip_item.flag})"
+                    )
+                    continue
+                skipped = (
+                    skipped_damaged if slip_item.flag == "damaged" else skipped_rejected
+                )
+                skipped.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number}, qty: {slip_item.quantity})"
                 )
                 continue
 
-            # Resolve item from SKU — match by item_code or sku field.
-            # QR-product-linked items store the GTIN in Item.sku while
-            # manually-created items are typically matched by item_code.
-            item = (
-                self.db.query(Item)
-                .filter(
-                    (Item.item_code == slip_item.sku) | (Item.sku == slip_item.sku),
-                    Item.organization_id == org_id,
-                )
-                .first()
-            )
-
+            # Resolve item from SKU with deterministic priority (item_code →
+            # sku → gtin). QR-product-linked slip items may store the GTIN in
+            # the sku field, so gtin remains included for compatibility.
+            item = self._resolve_item_by_sku(slip_item.sku, org_id)
             if item is None:
-                # If item not found by code, skip this item
                 skipped_unresolved.append(
                     f"{slip_item.sku} (batch: {slip_item.batch_number})"
                 )
                 continue
 
-            quantity = Decimal(str(slip_item.quantity))
-            item_group_id = item.item_group_id
+            resolved_lines.append({"item": item, "slip_item": slip_item})
 
-            # Assign bins for this item
-            bin_assignments = self._assign_bins(
-                item_id=item.id,
-                item_group_id=item_group_id,
-                quantity=quantity,
-                warehouse_id=slip.warehouse_id,
-                org_id=org_id,
+        # Step 1: group serialized lines into master packs, preserving the
+        # order items first appear on the slip.
+        by_item: dict[UUID, list[dict]] = {}
+        item_order: list[UUID] = []
+        for line in resolved_lines:
+            if line["item"].id not in by_item:
+                item_order.append(line["item"].id)
+            by_item.setdefault(line["item"].id, []).append(line)
+
+        source_lines: list[dict] = []
+        for item_id in item_order:
+            lines = by_item[item_id]
+            item = lines[0]["item"]
+            pack_size = self._items_per_master_pack(item_id, org_id)
+            if pack_size:
+                # Group lines by packaging unit so each master-pack chunk keeps
+                # its own carton's packaging unit (never borrow a sibling's).
+                by_pu: dict = {}
+                for ln in lines:
+                    pu_id = ln["slip_item"].packaging_unit_id
+                    by_pu.setdefault(pu_id, []).append(ln)
+                for pu_id, pu_lines in by_pu.items():
+                    # T1.1 — prefer serials persisted on the slip line; fall back
+                    # to batch_number for slips created before the column.
+                    serials: list[str] = []
+                    for ln in pu_lines:
+                        si = ln["slip_item"]
+                        persisted = list(si.serial_nos or [])
+                        if persisted:
+                            serials.extend(persisted)
+                        elif si.batch_number:
+                            # Legacy line without persisted serials: batch_number
+                            # is the unit serial. Honour quantity so a qty>1 line
+                            # does not silently lose units.
+                            serials.extend(
+                                [si.batch_number] * max(1, int(si.quantity or 1))
+                            )
+                    for i in range(0, len(serials), pack_size):
+                        chunk = serials[i : i + pack_size]
+                        source_lines.append(
+                            {
+                                "item": item,
+                                "sku": pu_lines[0]["slip_item"].sku,
+                                "quantity": Decimal(len(chunk)),
+                                "batch_number": chunk[0],
+                                "serial_nos": chunk,
+                                "packaging_unit_id": pu_id,
+                            }
+                        )
+            else:
+                for ln in lines:
+                    si = ln["slip_item"]
+                    source_lines.append(
+                        {
+                            "item": item,
+                            "sku": si.sku,
+                            "quantity": Decimal(str(si.quantity)),
+                            "batch_number": si.batch_number,
+                            "serial_nos": None,
+                            "packaging_unit_id": si.packaging_unit_id,
+                        }
+                    )
+
+        # Step 2: build specs (manual grouping vs auto bin assignment).
+        for line in source_lines:
+            item = line["item"]
+            quantity = line["quantity"]
+            batch_number = line["batch_number"]
+            serial_nos = line.get("serial_nos")
+
+            # Manual mode: leave bin assignment to the worker. Items are
+            # grouped by (SKU, batch) so repeated slip lines merge into one
+            # list item instead of producing duplicate rows.
+            if mode == "manual":
+                key = (line["sku"], batch_number)
+                existing = manual_grouped.get(key)
+                if existing is not None:
+                    existing["quantity"] += quantity
+                    if serial_nos:
+                        existing_serials = existing.setdefault("serial_nos", [])
+                        existing_serials.extend(serial_nos)
+                else:
+                    manual_grouped[key] = {
+                        "item_id": item.id,
+                        "sku": line["sku"],
+                        "batch_number": batch_number,
+                        "quantity": quantity,
+                        "bin_location_id": None,
+                        "serial_nos": list(serial_nos) if serial_nos else None,
+                        "packaging_unit_id": line.get("packaging_unit_id"),
+                    }
+                continue
+
+            # Auto mode: one spec per master pack (or per slip line), with NO bin
+            # yet. Bin selection is done exactly once, volumetrically, in
+            # ``_create_list_from_specs``. Pre-splitting the pack here by the
+            # legacy count-based allocator fragmented a single SKU into one line
+            # per bin — the "multiple put-aways / one item per bin" symptom.
+            item_specs.append(
+                {
+                    "item_id": item.id,
+                    "sku": line["sku"],
+                    "batch_number": batch_number,
+                    "quantity": quantity,
+                    "bin_location_id": None,
+                    "serial_nos": list(serial_nos) if serial_nos else None,
+                    "packaging_unit_id": line.get("packaging_unit_id"),
+                }
             )
 
-            # Create put-away list items from bin assignments
-            for assignment in bin_assignments:
-                put_away_item = PutAwayListItem(
-                    organization_id=org_id,
-                    put_away_list_id=put_away_list.id,
-                    item_id=item.id,
-                    sku=slip_item.sku,
-                    batch_number=slip_item.batch_number,
-                    quantity=assignment["quantity"],
-                    bin_location_id=assignment["bin_location_id"],
-                    sort_order=0,  # Will be set by routing optimizer
-                    status="pending",
-                )
-                self.db.add(put_away_item)
-                put_away_items.append(put_away_item)
+        if manual_grouped:
+            item_specs.extend(manual_grouped.values())
 
-        # Build warnings for skipped items (stored in remarks as JSON)
         warnings_parts: list[str] = []
         if skipped_damaged:
             warnings_parts.append(
                 f"Skipped {len(skipped_damaged)} damaged item(s): "
                 + "; ".join(skipped_damaged)
             )
+        if skipped_rejected:
+            warnings_parts.append(
+                f"Skipped {len(skipped_rejected)} rejected item(s): "
+                + "; ".join(skipped_rejected)
+            )
+        if skipped_exception:
+            warnings_parts.append(
+                f"Skipped {len(skipped_exception)} held/quarantined/excess item(s): "
+                + "; ".join(skipped_exception)
+            )
         if skipped_unresolved:
             warnings_parts.append(
                 f"Skipped {len(skipped_unresolved)} item(s) with unknown SKU (no matching Item found): "
                 + "; ".join(skipped_unresolved)
             )
+
+        return item_specs, warnings_parts
+
+    def _create_list_from_specs(
+        self,
+        slip: ReceivingSlip,
+        org_id: UUID,
+        mode: str,
+        item_specs: list[dict],
+        worker_id: UUID | None,
+        warnings_parts: list[str],
+        put_away_number: str,
+        commit: bool = True,
+    ) -> PutAwayList:
+        """Persist one PutAwayList and its items from pre-built specs.
+
+        ``commit=False`` leaves the write in the caller's transaction so a
+        multi-worker split can commit (or roll back) as a single unit; the
+        caller then owns creating the worker task.
+        """
+        put_away_list = PutAwayList(
+            organization_id=org_id,
+            warehouse_id=slip.warehouse_id,
+            put_away_list_no=put_away_number,
+            status="pending",
+            reference_type="receiving_slip",
+            reference_id=slip.id,
+            receiving_slip_id=slip.id,
+        )
+        self.db.add(put_away_list)
+        self.db.flush()
+
+        put_away_items: list[PutAwayListItem] = []
+        for idx, spec in enumerate(item_specs):
+            put_away_item = PutAwayListItem(
+                organization_id=org_id,
+                put_away_list_id=put_away_list.id,
+                item_id=spec["item_id"],
+                sku=spec["sku"],
+                batch_number=spec["batch_number"],
+                serial_nos=spec.get("serial_nos"),
+                packaging_unit_id=spec.get("packaging_unit_id"),
+                quantity=spec["quantity"],
+                bin_location_id=spec["bin_location_id"],
+                sort_order=idx if mode == "manual" else 0,
+                status="pending",
+            )
+            self.db.add(put_away_item)
+            put_away_items.append(put_away_item)
+
         if warnings_parts:
             put_away_list.remarks = json.dumps({"warnings": warnings_parts})
 
         self.db.flush()
 
-        # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7)
-        volumetric_service = VolumetricAssignmentService()
-        volumetric_service.assign_bins(
-            put_away_list_items=put_away_list.items,
-            warehouse_id=slip.warehouse_id,
-            org_id=org_id,
-            db=self.db,
-        )
-        self.db.flush()
+        # Bind each put-away item to its pending tracking rows by ID so
+        # completion updates exactly those rows (not value-matched duplicates).
+        self._link_tracking_to_items(slip, put_away_items)
 
-        # Optimize routing order for all put-away items
-        self._optimize_item_routing(put_away_items)
+        if mode == "auto":
+            # Volumetric bin assignment — runs in the same transaction (Req 7.1, 7.6, 7.7).
+            # This is the single bin-selection pass: specs reach here without a
+            # bin, so one SKU consolidates into as few bins as it physically fits.
+            volumetric_service = VolumetricAssignmentService()
+            volumetric_service.assign_bins(
+                put_away_list_items=put_away_list.items,
+                warehouse_id=slip.warehouse_id,
+                org_id=org_id,
+                db=self.db,
+                reserved_bin_ids=self.reservation_service.get_reserved_bin_ids(
+                    org_id=org_id, warehouse_id=slip.warehouse_id
+                ),
+            )
+            self.db.flush()
+
+            # Optimize routing order for all put-away items
+            self._optimize_item_routing(put_away_items)
 
         # Assign worker if provided
         if worker_id is not None:
             put_away_list.assigned_to = worker_id
+
+        # Move the slip out of pending_putaway. With items to work it becomes
+        # putaway_in_progress; with nothing eligible it is already complete so
+        # it does not stay stuck with no pending item to trigger completion.
+        slip.status = "putaway_in_progress" if put_away_items else "putaway_complete"
+        slip.updated_at = datetime.now(UTC)
+
+        # A deferred-commit caller owns the transaction (and the worker task),
+        # so the whole multi-worker split lands or fails as one unit.
+        if not commit:
+            self.db.flush()
+            return put_away_list
 
         self.db.commit()
 
@@ -223,12 +798,162 @@ class PutAwayService:
         self.db.refresh(put_away_list)
         return put_away_list
 
+    def _link_tracking_to_items(
+        self, slip: ReceivingSlip, put_away_items: list[PutAwayListItem]
+    ) -> None:
+        """Bind pending tracking rows to their put-away item (by ID).
+
+        Serialized packs bind by their exact serial list; batch lines bind by
+        batch number. Each row is linked at most once so a batch split across
+        bins is not double-linked.
+        """
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        for item in put_away_items:
+            serial_nos = item.serial_nos or []
+            query = self.db.query(ScannedItemTracking).filter(
+                ScannedItemTracking.receiving_slip_id == slip.id,
+                ScannedItemTracking.item_id == item.item_id,
+                ScannedItemTracking.putaway_status == "pending",
+                ScannedItemTracking.put_away_item_id.is_(None),
+            )
+            if serial_nos:
+                query = query.filter(ScannedItemTracking.batch_number.in_(serial_nos))
+            else:
+                query = query.filter(
+                    ScannedItemTracking.batch_number == item.batch_number
+                )
+            for t in query.all():
+                t.put_away_list_id = item.put_away_list_id
+                t.put_away_item_id = item.id
+        self.db.flush()
+
+    def enqueue_released_slip_item(
+        self,
+        slip_item_id: UUID,
+        org_id: UUID,
+        worker_id: UUID | None = None,
+    ) -> PutAwayList:
+        """Add a manager-released exception line to normal put-away.
+
+        A receipt may already have a put-away list when one held line is later
+        released.  Creating a second receipt list would break the one-slip
+        handoff, so the released line is appended to the existing list.
+        """
+        from app.models.receiving_slip import ReceivingSlipItem
+
+        slip_item = (
+            self.db.query(ReceivingSlipItem)
+            .filter(
+                ReceivingSlipItem.id == slip_item_id,
+                ReceivingSlipItem.organization_id == org_id,
+            )
+            .first()
+        )
+        if slip_item is None:
+            raise NotFoundError(
+                message="Receiving slip item not found",
+                entity_type="ReceivingSlipItem",
+                entity_id=str(slip_item_id),
+            )
+        if slip_item.flag != "ok" or slip_item.condition_code != "GOOD":
+            raise StateError(
+                message="Only a released GOOD receipt line can be queued for put-away",
+                current_state=slip_item.flag,
+                required_state=["ok"],
+            )
+
+        slip = self.db.get(ReceivingSlip, slip_item.slip_id)
+        if slip is None:
+            raise NotFoundError(
+                message="Receiving slip not found",
+                entity_type="ReceivingSlip",
+                entity_id=str(slip_item.slip_id),
+            )
+
+        existing_list = (
+            self.db.query(PutAwayList)
+            .filter(
+                PutAwayList.receiving_slip_id == slip.id,
+                PutAwayList.reference_type == "receiving_slip",
+            )
+            .first()
+        )
+        if existing_list is None:
+            # A receipt containing only held/quarantined stock may have been
+            # marked complete without a normal list. Re-open it for the newly
+            # released inventory, then use the standard list generator.
+            slip.status = "pending_putaway"
+            self.db.flush()
+            return self.generate_from_slip(slip.id, org_id, worker_id)
+
+        duplicate = (
+            self.db.query(PutAwayListItem)
+            .filter(
+                PutAwayListItem.put_away_list_id == existing_list.id,
+                PutAwayListItem.sku == slip_item.sku,
+                PutAwayListItem.batch_number == slip_item.batch_number,
+                PutAwayListItem.status.in_(["pending", "in_progress", "completed"]),
+            )
+            .first()
+        )
+        if duplicate is not None:
+            return existing_list
+
+        item = self._resolve_item_by_sku(slip_item.sku, org_id)
+        if item is None:
+            raise ValidationError(
+                f"Released SKU '{slip_item.sku}' no longer resolves to an active item"
+            )
+
+        assignments = self._assign_bins(
+            item_id=item.id,
+            item_group_id=item.item_group_id,
+            quantity=Decimal(str(slip_item.quantity)),
+            warehouse_id=slip.warehouse_id,
+            org_id=org_id,
+        )
+        if not assignments:
+            raise ValidationError(
+                f"No eligible pickable storage bin is available for released SKU '{slip_item.sku}'"
+            )
+
+        new_items: list[PutAwayListItem] = []
+        for assignment in assignments:
+            put_away_item = PutAwayListItem(
+                organization_id=org_id,
+                put_away_list_id=existing_list.id,
+                item_id=item.id,
+                sku=slip_item.sku,
+                batch_number=slip_item.batch_number,
+                quantity=assignment["quantity"],
+                bin_location_id=assignment["bin_location_id"],
+                sort_order=0,
+                status="pending",
+            )
+            self.db.add(put_away_item)
+            new_items.append(put_away_item)
+
+        existing_list.status = "pending"
+        existing_list.completed_at = None
+        if worker_id is not None:
+            existing_list.assigned_to = worker_id
+        # A list now exists with pending work again — the slip is back in
+        # progress rather than awaiting list generation.
+        slip.status = "putaway_in_progress"
+        self.db.flush()
+        self._optimize_item_routing(new_items)
+        self.db.commit()
+        self.db.refresh(existing_list)
+        return existing_list
+
     def complete_item(
         self,
         put_away_item_id: UUID,
         worker_id: UUID,
         org_id: UUID,
         bin_id_override: UUID | None = None,
+        check_completion: bool = True,
     ) -> PutAwayListItem:
         """Complete a put-away item, updating bin stock and marking as COMPLETED.
 
@@ -241,6 +966,8 @@ class PutAwayService:
             org_id: Organization ID for scoping.
             bin_id_override: Optional bin location ID to use instead of the
                 pre-assigned bin_location_id on the put-away item.
+            check_completion: When False, skip the list/slip completion check
+                (a bulk caller runs it once after the loop).
 
         Returns:
             The updated PutAwayListItem.
@@ -258,6 +985,7 @@ class PutAwayService:
                 PutAwayListItem.id == put_away_item_id,
                 PutAwayListItem.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
 
@@ -267,6 +995,13 @@ class PutAwayService:
                 entity_type="PutAwayListItem",
                 entity_id=str(put_away_item_id),
             )
+
+        if put_away_item.status == "completed":
+            # Idempotent retry: the item was already completed (e.g. a retried
+            # batch, double-tap, or a stale client retrying against a different
+            # bin). Return the existing record so clients converge on server
+            # state instead of surfacing a misleading 409.
+            return put_away_item
 
         if put_away_item.status != "pending":
             raise StateError(
@@ -290,26 +1025,54 @@ class PutAwayService:
         ):
             put_away_item.bin_location_id = bin_id_override
 
-        # Add stock to the target bin using BinStockService
-        bin_stock = self.bin_stock_service.add_stock(
-            bin_id=target_bin_id,
-            item_id=put_away_item.item_id,
-            quantity=Decimal(str(put_away_item.quantity)),
-            org_id=org_id,
-            batch_number=put_away_item.batch_number,
-        )
-
-        # If the put-away item carries a packaging_unit_id, propagate it to the
-        # BinStockLevel row as metadata (Req 3.3).
-        put_away_packaging_unit_id = getattr(put_away_item, "packaging_unit_id", None)
-        if put_away_packaging_unit_id is not None:
-            bin_stock.packaging_unit_id = put_away_packaging_unit_id
-            self.db.flush()
+        # Stock enters the final bin directly when the put-away item is
+        # completed. Master-pack lines add one stock row per unit serial.
+        serial_nos = put_away_item.serial_nos or []
+        bin_stock = None
+        if serial_nos:
+            # A master carton occupies more volume than its loose serials, so
+            # validate the whole pack's volume/weight once up front; then add
+            # one row per serial without re-checking (count is additive).
+            self.bin_stock_service.validate_capacity(
+                bin_id=target_bin_id,
+                item_id=put_away_item.item_id,
+                org_id=org_id,
+                quantity=Decimal(len(serial_nos)),
+                packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
+            )
+            for serial in serial_nos:
+                self.bin_stock_service.add_stock(
+                    bin_id=target_bin_id,
+                    item_id=put_away_item.item_id,
+                    quantity=Decimal("1"),
+                    org_id=org_id,
+                    batch_number=serial,
+                    packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
+                    commit=False,
+                    skip_validate=True,
+                )
+        else:
+            bin_stock = self.bin_stock_service.add_stock(
+                bin_id=target_bin_id,
+                item_id=put_away_item.item_id,
+                quantity=Decimal(str(put_away_item.quantity)),
+                org_id=org_id,
+                batch_number=put_away_item.batch_number,
+                packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
+            )
 
         # Mark item as completed
         put_away_item.status = "completed"
         put_away_item.completed_at = datetime.now(UTC)
         self.db.flush()
+
+        # ── NEW: Update tracking records for this put-away ──
+        self._update_tracking_on_putaway(
+            put_away_item=put_away_item,
+            target_bin_id=target_bin_id,
+            worker_id=worker_id,
+            org_id=org_id,
+        )
 
         # Release any reservation the worker held on the destination bin so it
         # becomes immediately available to others (FR-CW lifecycle).
@@ -317,12 +1080,261 @@ class PutAwayService:
             bin_id=target_bin_id, worker_id=worker_id, org_id=org_id
         )
 
-        # Check if all items in the put-away list are done
-        self._check_and_update_list_completion(put_away_item.put_away_list_id)
+        # Check if all items in the put-away list are done (skipped by bulk
+        # callers, which run it once at the end).
+        if check_completion:
+            self._check_and_update_list_completion(put_away_item.put_away_list_id)
 
         self.db.commit()
         self.db.refresh(put_away_item)
         return put_away_item
+
+    # ── BULK PUT-AWAY ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _bulk_error(exc: Exception) -> tuple[str, str]:
+        """Extract a (code, message) pair for a per-item bulk failure."""
+        code = getattr(exc, "code", None) or getattr(exc, "error_code", None)
+        message = getattr(exc, "message", None) or str(exc)
+        if not code:
+            code = "VALIDATION_ERROR"
+        return code, message
+
+    @staticmethod
+    def _item_success(item: PutAwayListItem) -> dict:
+        bin_code = None
+        if item.bin_location:
+            bin_code = item.bin_location.full_path or item.bin_location.code
+        return {
+            "id": str(item.id),
+            "item_id": str(item.item_id),
+            "sku": item.sku,
+            "batch_number": item.batch_number,
+            "quantity": float(item.quantity),
+            "bin_location_id": str(item.bin_location_id)
+            if item.bin_location_id
+            else None,
+            "bin_location_code": bin_code,
+            "status": item.status,
+            "completed_at": item.completed_at.isoformat()
+            if item.completed_at
+            else None,
+        }
+
+    @staticmethod
+    def _tracking_success(tracking) -> dict:
+        return {
+            "id": str(tracking.id),
+            "qr_identifier": tracking.qr_identifier,
+            "sku": tracking.sku,
+            "batch_number": tracking.batch_number,
+            "quantity": tracking.quantity,
+            "bin_location_id": str(tracking.bin_location_id)
+            if tracking.bin_location_id
+            else None,
+            "putaway_status": tracking.putaway_status,
+            "stock_entered": bool(tracking.stock_entered),
+            "completed_at": tracking.putaway_at.isoformat()
+            if tracking.putaway_at
+            else None,
+        }
+
+    def complete_items_bulk(
+        self,
+        put_away_list_id: UUID,
+        item_ids: list[UUID],
+        worker_id: UUID,
+        org_id: UUID,
+        bin_id_override: UUID | None = None,
+    ) -> dict:
+        """Complete many put-away items into the same bin, one transaction each.
+
+        Each item is completed independently so a capacity overflow on one item
+        never hides the success of the others. Returns per-item results.
+        """
+        completed: list[dict] = []
+        failed: list[dict] = []
+        for item_id in item_ids:
+            # The single endpoint scopes completion to the put-away list; do the
+            # same here so a stray item id cannot complete against another list.
+            member = (
+                self.db.query(PutAwayListItem)
+                .filter(
+                    PutAwayListItem.id == item_id,
+                    PutAwayListItem.put_away_list_id == put_away_list_id,
+                    PutAwayListItem.organization_id == org_id,
+                )
+                .first()
+            )
+            if member is None:
+                failed.append(
+                    {
+                        "item_id": str(item_id),
+                        "error": "NOT_FOUND",
+                        "message": "Put-away list item not found",
+                    }
+                )
+                continue
+
+            try:
+                item = self.complete_item(
+                    put_away_item_id=item_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                    bin_id_override=bin_id_override,
+                    check_completion=False,
+                )
+            except (ValidationError, NotFoundError, StateError, ValueError) as exc:
+                # Roll back the failed item's partial mutations so they don't
+                # leak into the next item's transaction.
+                self.db.rollback()
+                code, message = self._bulk_error(exc)
+                failed.append(
+                    {"item_id": str(item_id), "error": code, "message": message}
+                )
+                continue
+
+            completed.append(self._item_success(item))
+
+        # Run the list/slip completion check once instead of once per item.
+        self._check_and_update_list_completion(put_away_list_id)
+        self.db.commit()
+
+        return {
+            "completed": completed,
+            "failed": failed,
+            "summary": {
+                "completed_count": len(completed),
+                "failed_count": len(failed),
+            },
+        }
+
+    def _carton_child_serials(self, qr: str, org_id: UUID) -> list[str] | None:
+        """Return the child unit serials if ``qr`` is a master-carton serial.
+
+        Returns ``None`` when ``qr`` does not resolve to a QSealTrack parent, and
+        an empty list when the carton has no linked units.
+        """
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        track = (
+            self.db.query(QSealTrack)
+            .filter(
+                QSealTrack.organization_id == org_id,
+                QSealTrack.serial_number == qr,
+            )
+            .first()
+        )
+        if track is None:
+            return None
+        rows = (
+            self.db.query(QSealParameters.serial_number)
+            .filter(
+                QSealParameters.parent_id == track.id,
+                QSealParameters.organization_id == org_id,
+            )
+            .all()
+        )
+        return [r[0] for r in rows if r[0]]
+
+    def complete_putaway_bulk(
+        self,
+        bin_id: UUID,
+        items: list[dict],
+        worker_id: UUID,
+        org_id: UUID,
+        put_away_list_id: UUID | None = None,
+    ) -> dict:
+        """Bulk-complete put-away by QR, one transaction per item.
+
+        A ``qr`` may be a unit serial or a master-carton serial; a carton serial
+        is expanded into its child unit serials and each child is completed.
+        """
+        from app.services.scanned_item_tracking_service import (
+            ScannedItemTrackingService,
+        )
+
+        tracking_svc = ScannedItemTrackingService(self.db)
+        completed: list[dict] = []
+        failed: list[dict] = []
+
+        for entry in items:
+            qr = entry["qr"]
+            quantity = entry.get("quantity")
+
+            try:
+                tracking = tracking_svc.complete_putaway(
+                    qr_identifier=qr,
+                    bin_location_id=bin_id,
+                    putaway_by=worker_id,
+                    put_away_list_id=put_away_list_id,
+                    quantity=quantity,
+                )
+            except ValueError as exc:
+                self.db.rollback()
+                if "No tracking found" in str(exc):
+                    # Not a unit serial — try master-carton expansion.
+                    child_serials = self._carton_child_serials(qr, org_id)
+                    if child_serials is None:
+                        failed.append(
+                            {"qr": qr, "error": "NOT_FOUND", "message": str(exc)}
+                        )
+                        continue
+                    if not child_serials:
+                        failed.append(
+                            {
+                                "qr": qr,
+                                "error": "NOT_FOUND",
+                                "message": "Master carton has no linked units",
+                            }
+                        )
+                        continue
+                    for child in child_serials:
+                        try:
+                            child_tracking = tracking_svc.complete_putaway(
+                                qr_identifier=child,
+                                bin_location_id=bin_id,
+                                putaway_by=worker_id,
+                                put_away_list_id=put_away_list_id,
+                            )
+                        except (
+                            ValueError,
+                            ValidationError,
+                            NotFoundError,
+                            StateError,
+                        ) as exc2:
+                            self.db.rollback()
+                            code, message = self._bulk_error(exc2)
+                            if (
+                                code == "VALIDATION_ERROR"
+                                and "No tracking found" in message
+                            ):
+                                code = "NOT_FOUND"
+                            failed.append(
+                                {"qr": child, "error": code, "message": message}
+                            )
+                        else:
+                            completed.append(self._tracking_success(child_tracking))
+                    continue
+                code, message = self._bulk_error(exc)
+                failed.append({"qr": qr, "error": code, "message": message})
+                continue
+            except (ValidationError, NotFoundError, StateError) as exc:
+                self.db.rollback()
+                code, message = self._bulk_error(exc)
+                failed.append({"qr": qr, "error": code, "message": message})
+                continue
+
+            completed.append(self._tracking_success(tracking))
+
+        return {
+            "completed": completed,
+            "failed": failed,
+            "summary": {
+                "completed_count": len(completed),
+                "failed_count": len(failed),
+            },
+        }
 
     def skip_item(
         self, put_away_item_id: UUID, reason: str, org_id: UUID
@@ -386,6 +1398,23 @@ class PutAwayService:
     # PRIVATE HELPERS
     # ------------------------------------------------------------------
 
+    def _resolve_item_by_sku(self, sku_value: str, org_id: UUID) -> Item | None:
+        """Resolve an Item deterministically by item_code → sku → gtin.
+
+        The same value can be one item's GTIN while also being another item's
+        code or SKU, so the previous OR-filtered ``.first()`` could return an
+        arbitrary match. Explicit priority makes the resolution stable.
+        """
+        for column in (Item.item_code, Item.sku, Item.gtin):
+            item = (
+                self.db.query(Item)
+                .filter(column == sku_value, Item.organization_id == org_id)
+                .first()
+            )
+            if item is not None:
+                return item
+        return None
+
     def _assign_bins(
         self,
         item_id: UUID,
@@ -393,6 +1422,7 @@ class PutAwayService:
         quantity: Decimal,
         warehouse_id: UUID,
         org_id: UUID,
+        packaging_unit_id: UUID | None = None,
     ) -> list[dict]:
         """Assign bins for an item respecting allocations and capacity.
 
@@ -401,8 +1431,11 @@ class PutAwayService:
         2. Preferred allocations for the item's group — try those first
         3. Unallocated bins — fall back if preferred bins insufficient
 
-        Filters bins by: is_active=True, available_capacity >= needed quantity.
-        Splits across bins if single bin insufficient.
+        Bins are sized by their **physical** capacity — ``max_volume_cc`` /
+        ``max_weight_grams``, or a legacy ``capacity`` whose ``capacity_uom`` is
+        ``volume`` / ``weight`` — with the legacy unit-count ``capacity`` used
+        only when the bin carries no physical limit. Splits across bins only
+        when a single bin genuinely cannot hold the quantity.
 
         Args:
             item_id: The item to assign bins for.
@@ -410,6 +1443,7 @@ class PutAwayService:
             quantity: Total quantity to assign.
             warehouse_id: The warehouse to search bins in.
             org_id: Organization ID for scoping.
+            packaging_unit_id: Optional packaging unit used to size one unit.
 
         Returns:
             List of dicts with bin_location_id and quantity.
@@ -418,6 +1452,10 @@ class PutAwayService:
         """
         assignments: list[dict] = []
         remaining_qty = quantity
+
+        # One unit's physical footprint, so a bin's volume/weight limit can be
+        # turned into "how many eaches fit" rather than being read as a count.
+        unit_cc, unit_g = self._unit_volume_weight(item_id, org_id, packaging_unit_id)
 
         # Exclude bins actively reserved by workers so generated put-away tasks
         # do not collide with in-progress work (FR-CW-01).
@@ -452,7 +1490,12 @@ class PutAwayService:
                     exclusive_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    exclusive_bins, remaining_qty, org_id, reserved_bin_ids
+                    exclusive_bins,
+                    remaining_qty,
+                    org_id,
+                    reserved_bin_ids,
+                    unit_cc,
+                    unit_g,
                 )
                 # For exclusive allocations, we don't fall back to other bins
                 if remaining_qty > 0:
@@ -486,14 +1529,24 @@ class PutAwayService:
                     preferred_allocations, org_id
                 )
                 assignments, remaining_qty = self._fill_bins(
-                    preferred_bins, remaining_qty, org_id, reserved_bin_ids
+                    preferred_bins,
+                    remaining_qty,
+                    org_id,
+                    reserved_bin_ids,
+                    unit_cc,
+                    unit_g,
                 )
 
         # Step 3: Fall back to unallocated bins if still remaining
         if remaining_qty > 0:
             unallocated_bins = self._get_unallocated_bins(warehouse_id, org_id)
             additional_assignments, remaining_qty = self._fill_bins(
-                unallocated_bins, remaining_qty, org_id, reserved_bin_ids
+                unallocated_bins,
+                remaining_qty,
+                org_id,
+                reserved_bin_ids,
+                unit_cc,
+                unit_g,
             )
             assignments.extend(additional_assignments)
 
@@ -515,6 +1568,7 @@ class PutAwayService:
                 .filter(
                     WarehouseLocation.id == allocation.location_id,
                     WarehouseLocation.is_active == True,  # noqa: E712
+                    WarehouseLocation.is_pickable == True,  # noqa: E712
                 )
                 .first()
             )
@@ -543,6 +1597,7 @@ class PutAwayService:
                 .filter(
                     WarehouseLocation.parent_location_id == current_id,
                     WarehouseLocation.is_active == True,  # noqa: E712
+                    WarehouseLocation.is_pickable == True,  # noqa: E712
                 )
                 .all()
             )
@@ -583,6 +1638,7 @@ class PutAwayService:
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.location_type == "bin",
                 WarehouseLocation.is_active == True,  # noqa: E712
+                WarehouseLocation.is_pickable == True,  # noqa: E712
                 ~WarehouseLocation.id.in_(exclusively_allocated_location_ids),
             )
             .all()
@@ -596,6 +1652,8 @@ class PutAwayService:
         quantity: Decimal,
         org_id: UUID,
         reserved_bin_ids: set[UUID] | None = None,
+        unit_cc: Decimal | None = None,
+        unit_g: Decimal | None = None,
     ) -> tuple[list[dict], Decimal]:
         """Fill bins with the given quantity, respecting capacity.
 
@@ -607,6 +1665,8 @@ class PutAwayService:
             quantity: Remaining quantity to assign.
             org_id: Organization ID.
             reserved_bin_ids: Bin ids currently reserved by workers.
+            unit_cc: Volume of one unit (cc) used to size volume-limited bins.
+            unit_g: Weight of one unit (g) used to size weight-limited bins.
 
         Returns:
             Tuple of (assignments list, remaining quantity).
@@ -622,14 +1682,14 @@ class PutAwayService:
             if bin_loc.id in reserved:
                 continue
 
-            # Calculate available capacity for this bin
-            available = self._get_bin_available_capacity(bin_loc)
+            # Available capacity expressed in eaches (None = unconstrained).
+            available = self._get_bin_available_capacity(bin_loc, unit_cc, unit_g)
 
-            if available <= 0:
+            if available is not None and available <= 0:
                 continue
 
             # Assign as much as possible to this bin
-            assign_qty = min(remaining, available)
+            assign_qty = remaining if available is None else min(remaining, available)
             assignments.append(
                 {
                     "bin_location_id": bin_loc.id,
@@ -640,20 +1700,126 @@ class PutAwayService:
 
         return assignments, remaining
 
-    def _get_bin_available_capacity(self, bin_loc: WarehouseLocation) -> Decimal:
-        """Get the available capacity of a bin location."""
-        bin_capacity = Decimal(str(bin_loc.capacity or 0))
+    def _unit_volume_weight(
+        self,
+        item_id: UUID,
+        org_id: UUID,
+        packaging_unit_id: UUID | None = None,
+    ) -> tuple[Decimal | None, Decimal | None]:
+        """Volume (cc) and weight (g) of one unit of an item.
 
-        # Get current stock in the bin
-        current_stock = (
-            self.db.query(
-                func.coalesce(func.sum(BinStockLevel.quantity_on_hand), Decimal("0"))
+        Prefers the packaging unit the stock moves in, falling back to the
+        item's base unit and then its smallest active master-pack unit. Missing
+        dimensions fall back per-dimension to the base unit; ``None`` means
+        "cannot be measured" (the bin limit is then ignored for that dimension).
+        """
+        unit = None
+        if packaging_unit_id is not None:
+            unit = self.db.get(ItemPackagingUnit, packaging_unit_id)
+        base = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.is_base_unit.is_(True),
             )
-            .filter(BinStockLevel.bin_location_id == bin_loc.id)
+            .first()
+        )
+        if unit is None:
+            unit = base
+        if unit is None:
+            unit = (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item_id,
+                    ItemPackagingUnit.is_active.is_(True),
+                    ItemPackagingUnit.conversion_factor > 1,
+                )
+                .order_by(ItemPackagingUnit.conversion_factor.asc())
+                .first()
+            )
+        if unit is None:
+            return None, None
+
+        def _dim(value, fallback):
+            return value if value is not None else fallback
+
+        length = _dim(unit.length_mm, base.length_mm if base else None)
+        width = _dim(unit.width_mm, base.width_mm if base else None)
+        height = _dim(unit.height_mm, base.height_mm if base else None)
+        unit_cc = None
+        if length and width and height:
+            unit_cc = (
+                Decimal(str(length)) * Decimal(str(width)) * Decimal(str(height))
+            ) / MM3_PER_CC
+
+        weight = _dim(unit.weight_grams, base.weight_grams if base else None)
+        unit_g = Decimal(str(weight)) if weight is not None else None
+        return unit_cc, unit_g
+
+    def _get_bin_available_capacity(
+        self,
+        bin_loc: WarehouseLocation,
+        unit_cc: Decimal | None = None,
+        unit_g: Decimal | None = None,
+    ) -> Decimal | None:
+        """How many eaches this bin can still take, or ``None`` if unconstrained.
+
+        The limit comes from the bin's **physical** capacity — ``max_volume_cc``
+        / ``max_weight_grams``, or a legacy ``capacity`` carrying
+        ``capacity_uom='volume'`` (m³) or ``'weight'`` (kg). Only a bin that has
+        neither falls back to the legacy unit-count ``capacity``; a bin with no
+        usable limit at all is treated as unconstrained.
+
+        Quantities already promised to *pending* put-away items on the bin are
+        subtracted so a batch of assignments cannot over-allocate it.
+        """
+        limits: list[Decimal] = []
+
+        vol_limit_cc = effective_bin_volume_limit_cc(bin_loc)
+        wt_limit_g = effective_bin_weight_limit_g(bin_loc)
+        if (vol_limit_cc is not None and unit_cc) or (
+            wt_limit_g is not None and unit_g
+        ):
+            occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_loc.id)
+            if vol_limit_cc is not None and unit_cc:
+                free_cc = vol_limit_cc - occupied_m3 * CC_PER_M3
+                limits.append(max(Decimal("0"), free_cc // unit_cc))
+            if wt_limit_g is not None and unit_g:
+                free_g = wt_limit_g - occupied_kg * G_PER_KG
+                limits.append(max(Decimal("0"), free_g // unit_g))
+
+        count_cap = effective_bin_count_capacity(bin_loc)
+        if count_cap is not None:
+            current_stock = (
+                self.db.query(
+                    func.coalesce(
+                        func.sum(BinStockLevel.quantity_on_hand), Decimal("0")
+                    )
+                )
+                .filter(BinStockLevel.bin_location_id == bin_loc.id)
+                .scalar()
+            ) or Decimal("0")
+            limits.append(max(Decimal("0"), count_cap - Decimal(str(current_stock))))
+
+        if not limits:
+            return None
+
+        available = min(limits)
+
+        # Subtract quantities already promised to pending put-away items so a
+        # batch of assignments cannot over-allocate the same bin.
+        pending_put_away = (
+            self.db.query(
+                func.coalesce(func.sum(PutAwayListItem.quantity), Decimal("0"))
+            )
+            .filter(
+                PutAwayListItem.bin_location_id == bin_loc.id,
+                PutAwayListItem.status.in_(["pending", "in_progress"]),
+            )
             .scalar()
         ) or Decimal("0")
 
-        return bin_capacity - Decimal(str(current_stock))
+        return max(Decimal("0"), available - Decimal(str(pending_put_away)))
 
     def _optimize_item_routing(self, put_away_items: list[PutAwayListItem]) -> None:
         """Optimize the routing order for put-away items using the RoutingOptimizer.
@@ -708,6 +1874,82 @@ class PutAwayService:
 
         self.db.flush()
 
+    def _update_tracking_on_putaway(
+        self,
+        put_away_item,
+        target_bin_id: UUID,
+        worker_id: UUID,
+        org_id: UUID,
+    ) -> None:
+        """Update scanned_item_tracking records when put-away completes."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        from app.models.scanned_item_tracking import ScannedItemTracking
+
+        put_away_list = put_away_item.put_away_list
+        if not put_away_list or not put_away_list.receiving_slip_id:
+            return
+
+        serial_nos = getattr(put_away_item, "serial_nos", None) or []
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.receiving_slip_id
+                == put_away_list.receiving_slip_id,
+                ScannedItemTracking.item_id == put_away_item.item_id,
+                ScannedItemTracking.put_away_item_id == put_away_item.id,
+                ScannedItemTracking.putaway_status == "pending",
+            )
+            .all()
+        )
+
+        if not trackings:
+            # Fallback for legacy put-away items created before tracking rows
+            # were linked by ID: value-match by serial list or batch number.
+            batch_filter = (
+                ScannedItemTracking.batch_number.in_(serial_nos)
+                if serial_nos
+                else ScannedItemTracking.batch_number == put_away_item.batch_number
+            )
+            trackings = (
+                self.db.query(ScannedItemTracking)
+                .filter(
+                    ScannedItemTracking.receiving_slip_id
+                    == put_away_list.receiving_slip_id,
+                    ScannedItemTracking.item_id == put_away_item.item_id,
+                    batch_filter,
+                    ScannedItemTracking.putaway_status == "pending",
+                )
+                .all()
+            )
+
+        if not trackings:
+            return
+
+        now = datetime.now(UTC)
+        for t in trackings:
+            t.putaway_status = "completed"
+            t.bin_location_id = target_bin_id
+            t.putaway_at = now
+            t.putaway_by = worker_id
+
+            # Stock for this item/batch was already added to the target bin by
+            # complete_item(); mark the tracking rows as entered so the
+            # dual-axis state machine stays consistent (avoid double-counting).
+            if t.receiving_status == "approved" and not t.stock_entered:
+                t.stock_entered = True
+                t.stock_entered_at = now
+            t.stock_location_id = target_bin_id
+
+        self.db.flush()
+        logger.info(
+            "Tracking: %d records updated for put-away item %s",
+            len(trackings),
+            put_away_item.id,
+        )
+
     def _check_and_update_list_completion(self, put_away_list_id: UUID) -> None:
         """Check if all items in a put-away list are done and update statuses.
 
@@ -726,6 +1968,18 @@ class PutAwayService:
         if put_away_list is None:
             return
 
+        # Lock the slip row so concurrent completions of different lists for
+        # the same slip serialize here. Without it, two workers can each see
+        # the other's list still pending and both skip marking the slip done.
+        slip = None
+        if put_away_list.receiving_slip_id:
+            slip = (
+                self.db.query(ReceivingSlip)
+                .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
+                .with_for_update()
+                .first()
+            )
+
         # Count pending items
         pending_count = (
             self.db.query(func.count(PutAwayListItem.id))
@@ -742,13 +1996,35 @@ class PutAwayService:
             put_away_list.completed_at = datetime.now(UTC)
             self.db.flush()
 
-            # Update receiving slip to PUTAWAY_COMPLETE
-            if put_away_list.receiving_slip_id:
-                slip = (
-                    self.db.query(ReceivingSlip)
-                    .filter(ReceivingSlip.id == put_away_list.receiving_slip_id)
-                    .first()
-                )
-                if slip and slip.status == "pending_putaway":
-                    slip.status = "putaway_complete"
-                    self.db.flush()
+            # Update receiving slip to PUTAWAY_COMPLETE only once every
+            # put-away list for the slip is complete (multi-worker splits).
+            if slip is not None:
+                remaining = (
+                    self.db.query(func.count(PutAwayListItem.id))
+                    .join(
+                        PutAwayList, PutAwayList.id == PutAwayListItem.put_away_list_id
+                    )
+                    .filter(
+                        PutAwayList.receiving_slip_id == slip.id,
+                        PutAwayList.reference_type == "receiving_slip",
+                        PutAwayListItem.status == "pending",
+                    )
+                    .scalar()
+                ) or 0
+
+                if remaining == 0:
+                    if slip.status in (
+                        "pending_putaway",
+                        "putaway_in_progress",
+                    ):
+                        slip.status = "putaway_complete"
+                        self.db.flush()
+                        # Put-away is the terminal receiving step — refresh ASN
+                        # delivered quantities and delivery status so the ASN
+                        # closes out as delivered / partially_delivered.
+                        if slip.asn_order_id:
+                            from app.services.inbound_service import InboundService
+
+                            InboundService(self.db)._sync_asn_delivered_qty(
+                                slip.asn_order_id, slip.organization_id
+                            )

@@ -32,6 +32,7 @@ class LocationType(str, enum.Enum):
     BAY = "bay"
     LEVEL = "level"
     BIN = "bin"
+    STAGING = "staging"
 
 
 class PutAwayListStatus(str, enum.Enum):
@@ -100,6 +101,7 @@ class ReceivingSlipStatus(str, enum.Enum):
 
     PENDING_REVIEW = "pending_review"
     PENDING_PUTAWAY = "pending_putaway"
+    PUTAWAY_IN_PROGRESS = "putaway_in_progress"
     PUTAWAY_COMPLETE = "putaway_complete"
     REJECTED = "rejected"
 
@@ -110,6 +112,19 @@ class ReceivingSlipItemFlag(str, enum.Enum):
     OK = "ok"
     SHORT = "short"
     DAMAGED = "damaged"
+    EXCESS = "excess"
+    HOLD = "hold"
+    QUARANTINE = "quarantine"
+
+
+class ReceivingConditionCode(str, enum.Enum):
+    """Standard WMS condition codes carried by receipt lines and exceptions."""
+
+    GOOD = "GOOD"
+    DAMAGED = "DAMAGED"
+    HOLD = "HOLD"
+    QUARANTINE = "QUARANTINE"
+    REJECTED = "REJECTED"
 
 
 class GateVerificationStatus(str, enum.Enum):
@@ -166,8 +181,19 @@ class WarehouseLocation(Base):
     position_z = Column(Numeric(10, 2), default=0)
     max_volume_cc = Column(Numeric(15, 2), nullable=True)
     max_weight_grams = Column(Numeric(15, 2), nullable=True)
+    # Capacity planning (BinCapacityService) — thresholds + cached state
+    full_threshold_pct = Column(Numeric(5, 3), nullable=True)
+    almost_full_threshold_pct = Column(Numeric(5, 3), nullable=True)
+    capacity_volume_pct = Column(Numeric(6, 2), nullable=True)
+    capacity_weight_pct = Column(Numeric(6, 2), nullable=True)
+    bin_state = Column(String(20), nullable=True)
+    is_available = Column(Boolean, nullable=False, default=True)
+    # Receiving, hold, and quarantine bins track physical stock but are never
+    # eligible for ATP or pick-task allocation.
+    is_pickable = Column(Boolean, nullable=False, default=True, index=True)
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)
+    qr_code = Column(String(5), nullable=True, unique=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

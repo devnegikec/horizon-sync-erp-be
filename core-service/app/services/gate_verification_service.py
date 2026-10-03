@@ -84,12 +84,19 @@ class GateVerificationService:
                 entity_id=str(pick_list_id),
             )
 
-        # Validate pick list is in COMPLETED status
-        if pick_list.status != PickListStatus.COMPLETED:
+        # Validate pick list is in a completable state. The order-driven
+        # lifecycle marks picking done as 'pick_complete' (legacy 'completed'
+        # is retained), and a staged pick list may be 'ready_for_dispatch'.
+        gateable = (
+            PickListStatus.COMPLETED,
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.READY_FOR_DISPATCH,
+        )
+        if pick_list.status not in gateable:
             raise StateError(
-                message="Pick list must be in 'completed' status to start gate verification",
+                message="Pick list must be completed before starting gate verification",
                 current_state=pick_list.status.value,
-                required_state=["completed"],
+                required_state=[s.value for s in gateable],
             )
 
         # Create the gate verification session
@@ -210,9 +217,24 @@ class GateVerificationService:
         )
         self.db.add(gate_item)
 
+        # T1.4 — best-effort ProductItem resolution for the scan event (gate
+        # scans may be box labels, so a miss leaves the FK NULL).
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == org_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
         # Record scan event in qr_scan_events with gate context
         scan_event = QRScanEvent(
             organization_id=org_id,
+            product_item_id=product_item.id if product_item else None,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             device_type=device_type,

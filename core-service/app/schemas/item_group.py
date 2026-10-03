@@ -21,6 +21,7 @@ class ItemGroupBase(BaseModel):
     # Defaults
     default_valuation_method: str | None = None
     default_uom: str | None = Field(None, max_length=50)
+    default_uom_id: UUID | None = None
 
     # Tax Templates
     sales_tax_template_id: UUID | None = None
@@ -51,6 +52,7 @@ class ItemGroupUpdate(BaseModel):
     # Defaults
     default_valuation_method: str | None = None
     default_uom: str | None = Field(None, max_length=50)
+    default_uom_id: UUID | None = None
 
     # Tax Templates
     sales_tax_template_id: UUID | None = None
@@ -112,6 +114,7 @@ class ItemGroupResponse(BaseModel):
     # Defaults
     default_valuation_method: str | None = None
     default_uom: str | None = None
+    default_uom_id: UUID | None = None
 
     # Tax Templates
     sales_tax_template_id: UUID | None = None
@@ -143,6 +146,7 @@ class ItemGroupListItem(BaseModel):
     parent: ItemGroupParentInfo | None = None
     default_valuation_method: str | None = None
     default_uom: str | None = None
+    default_uom_id: UUID | None = None
     sales_tax_template_id: UUID | None = None
     purchase_tax_template_id: UUID | None = None
     sales_tax_info: TaxInfo | None = None
@@ -168,6 +172,7 @@ class ItemGroupTreeNode(BaseModel):
     code: str
     default_valuation_method: str | None = None
     default_uom: str | None = None
+    default_uom_id: UUID | None = None
     is_active: bool
     children: list["ItemGroupTreeNode"] = []
 

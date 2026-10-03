@@ -27,14 +27,26 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
     PICK_LIST_CREATE,
     PICK_LIST_READ,
     PICK_LIST_UPDATE,
+    is_worker_scope,
 )
+from app.models.base import PickListStatus
 from app.core.exceptions import ValidationError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
@@ -42,6 +54,11 @@ from app.schemas.dispatch import (
     CreateDispatchRequest,
     DispatchListResponse,
     DispatchResponse,
+)
+from app.schemas.erp_sync import (
+    ErpSyncFlushResponse,
+    ErpSyncListResponse,
+    ErpSyncMessageResponse,
 )
 from app.schemas.gate_verification import (
     GateScanRequest,
@@ -51,16 +68,40 @@ from app.schemas.gate_verification import (
     GateSessionResponse,
 )
 from app.schemas.outbound import (
+    AssignHandlingUnitRequest,
+    AssignWorkerRequest,
+    CreatePickListFromOrderRequest,
+    HandlingUnitAssignmentResponse,
+    OutboundOrderItemResponse,
+    OutboundOrderListItem,
+    OutboundOrderListResponse,
+    OutboundOrderResponse,
+    OutboundOrderStatusCounts,
     OutboundPickListListResponse,
     OutboundPickListResponse,
+    OutboundPickListStatusCounts,
+    PickListAcceptResponse,
+    PickListGroupItem,
+    PickListItemGroup,
+    PickListParentInfo,
     PickListProgress,
     PickScanRequest,
     PickScanResult,
     SAPInvoicePayload,
+    StageScanRequest,
+    StageTransferRequest,
+    UpdatePriorityRequest,
 )
 from app.services.gate_verification_service import GateVerificationService
-from app.services.order_import_service import ImportResult, OrderImportService
+from app.services.order_import_service import OrderImportService
+from app.services.outbound_order_service import OutboundOrderService
 from app.services.outbound_service import OutboundService
+from app.services.pick_idempotency_service import (
+    OPERATION_CANCEL,
+    OPERATION_COMPLETE,
+    OPERATION_SCAN,
+    PickIdempotencyService,
+)
 from app.services.pick_list_service import (
     PickListService,
 )
@@ -302,7 +343,6 @@ async def create_dispatch(
         gate_session_id=data.gate_session_id,
         org_id=current_user.organization_id,
     )
-
     return DispatchResponse(**result)
 
 
@@ -436,29 +476,390 @@ def _compute_progress(pick_list) -> PickListProgress:
     )
 
 
-def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
-    """Convert a PickList model to an OutboundPickListResponse."""
+def _resolve_pick_serials(items, db, qmeta=None) -> dict[str, list[dict]]:
+    """Resolve per-unit serials for each pick list item from its serial_nos.
+
+    ``batch_no`` holds the packing-slip batch number (matches the uploaded
+    PDF), while ``serial_nos`` holds the individual bin-stock serials assigned
+    during bin resolution. Here we only enrich the serials with Mfg/Exp from
+    QSealParameters.
+    """
+    result: dict[str, list[dict]] = {}
+    if not items:
+        return result
+
+    all_serials: set[str] = set()
+    for item in items:
+        serials: list[dict] = []
+        for sn in item.serial_nos or []:
+            if sn:
+                all_serials.add(sn)
+                serials.append(
+                    {
+                        "serial_number": sn,
+                        "manufacturing_date": None,
+                        "expiry_date": None,
+                    }
+                )
+        result[str(item.id)] = serials
+
+    if all_serials and db:
+        try:
+            if qmeta is None:
+                from app.models.qseal import QSealParameters
+
+                qrows = (
+                    db.query(
+                        QSealParameters.serial_number,
+                        QSealParameters.manufacturing_date,
+                        QSealParameters.expiry_date,
+                    )
+                    .filter(QSealParameters.serial_number.in_(all_serials))
+                    .all()
+                )
+                qmeta = {
+                    sn: {
+                        "manufacturing_date": str(m) if m else None,
+                        "expiry_date": str(e) if e else None,
+                    }
+                    for sn, m, e in qrows
+                }
+            for item in items:
+                for s in result[str(item.id)]:
+                    meta = qmeta.get(s["serial_number"]) or {}
+                    s["manufacturing_date"] = meta.get("manufacturing_date")
+                    s["expiry_date"] = meta.get("expiry_date")
+        except Exception:
+            pass
+
+    return result
+
+
+def _resolve_pick_qseal_context(pl, item_map, db, param_by_serial=None, track_by_id=None):
+    """Resolve QSealParameters + QSealTrack lookups for a pick list's lines.
+
+    Only serialized items participate — batch-tracked lines store their batch
+    marker in ``serial_nos`` rather than unit serials, so they are skipped.
+    Pre-computed ``param_by_serial``/``track_by_id`` maps may be supplied to
+    avoid re-querying per pick list. Returns ``(param_by_serial, track_by_id)``.
+
+    These lookups are optional grouping metadata: on any database error we
+    return empty maps so the pick-list response is still produced.
+    """
+    # Collect every serial/batch marker on the lines. QSeal child serials will
+    # resolve to parameters below; batch markers simply won't match. This must
+    # NOT be gated on Item.has_serial_no — items can be QR-serialized
+    # (qr_product_id) while that legacy flag is still False.
+    serials = {
+        s
+        for item in (pl.items or [])
+        for s in (item.serial_nos or [])
+        if s
+    }
+    if not serials or not db:
+        return {}, {}
+
+    if param_by_serial is None or track_by_id is None:
+        try:
+            from app.models.qseal import QSealParameters, QSealTrack
+
+            params = (
+                db.query(
+                    QSealParameters.serial_number,
+                    QSealParameters.parent_id,
+                    QSealParameters.dispatch_batch,
+                    QSealParameters.manufacturing_date,
+                    QSealParameters.expiry_date,
+                )
+                .filter(
+                    QSealParameters.organization_id == pl.organization_id,
+                    QSealParameters.serial_number.in_(serials),
+                )
+                .all()
+            )
+            param_by_serial = {p.serial_number: p for p in params}
+
+            parent_ids = {p.parent_id for p in params if p.parent_id}
+            tracks = (
+                db.query(QSealTrack)
+                .filter(
+                    QSealTrack.organization_id == pl.organization_id,
+                    QSealTrack.id.in_(parent_ids),
+                )
+                .all()
+                if parent_ids
+                else []
+            )
+            track_by_id = {t.id: t for t in tracks}
+        except Exception:
+            return {}, {}
+
+    return param_by_serial, track_by_id
+
+
+def _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id):
+    """Build QSeal master-pack groups mirroring the receiving-slip view.
+
+    Lines whose child serials resolve to the same QSeal parent are merged into
+    one group; batch-tracked lines and serialized lines without a parent each
+    become their own standalone group (``parent_qseal=None``).
+    """
+    groups: dict = {}
+    for item in sorted(pl.items or [], key=lambda i: i.sort_order or 0):
+        info = item_map.get(str(item.item_id), {})
+        sku = info.get("sku")
+        product_name = info.get("item_name")
+        child_serials = [s for s in (item.serial_nos or []) if s]
+
+        # has_serial_no is a legacy WMS flag and can be False even for items
+        # that are QR-serialized (qr_product_id). Treat a line as serialized
+        # when the flag is set OR any of its serial_nos resolves to a QSeal
+        # parameter row; a batch-tracked line's batch marker will not resolve.
+        is_serialized = bool(info.get("has_serial_no")) or any(
+            s in param_by_serial for s in child_serials
+        )
+
+        parent_id = None
+        if is_serialized:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                if param and param.parent_id:
+                    parent_id = param.parent_id
+                    break
+
+        if parent_id:
+            parent_key = str(parent_id)
+        elif not is_serialized:
+            # Include the item id so unrelated lines without a batch are not
+            # collapsed into a single "unknown" group.
+            parent_key = f"batch::{item.batch_no or 'unknown'}::{item.id}"
+        else:
+            parent_key = f"none::{item.id}"
+
+        if parent_key not in groups:
+            parent_info = None
+            track = track_by_id.get(parent_id) if parent_id else None
+            if track is not None:
+                parent_info = PickListParentInfo(
+                    id=str(track.id),
+                    serial_number=track.serial_number,
+                    name=track.name,
+                    qseal_type=track.qseal_type,
+                    capacity=track.capacity,
+                )
+            groups[parent_key] = {
+                "parent_qseal": parent_info,
+                "product_name": product_name,
+                "bin_location_id": str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                "bin_location_path": bin_map.get(str(item.bin_location_id))
+                if item.bin_location_id
+                else None,
+                "handling_unit_id": str(item.handling_unit_id)
+                if item.handling_unit_id
+                else None,
+                "sort_order": item.sort_order or 0,
+                "picked_qty": 0.0,
+                "items": [],
+            }
+
+        if is_serialized and child_serials:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                batch = (param.dispatch_batch if param else None) or item.batch_no
+                groups[parent_key]["items"].append(
+                    PickListGroupItem(
+                        serial_number=serial,
+                        sku=sku,
+                        batch_number=batch or serial,
+                        manufacturing_date=(
+                            str(param.manufacturing_date)
+                            if param and param.manufacturing_date
+                            else None
+                        ),
+                        expiry_date=(
+                            str(param.expiry_date)
+                            if param and param.expiry_date
+                            else None
+                        ),
+                        quantity=1,
+                        box_count=1,
+                    )
+                )
+            # If serial_nos only carries the initial serials, reflect the
+            # remaining quantity so the group total matches the line's qty.
+            remaining = float(item.qty or 0) - len(child_serials)
+            if remaining > 0:
+                groups[parent_key]["items"].append(
+                    PickListGroupItem(
+                        serial_number=None,
+                        sku=sku,
+                        batch_number=item.batch_no,
+                        quantity=remaining,
+                        box_count=1,
+                    )
+                )
+        else:
+            groups[parent_key]["items"].append(
+                PickListGroupItem(
+                    serial_number=None,
+                    sku=sku,
+                    batch_number=item.batch_no
+                    or (child_serials[0] if child_serials else None),
+                    quantity=float(item.qty or 0),
+                    box_count=1,
+                )
+            )
+
+        groups[parent_key]["picked_qty"] += float(item.picked_qty or 0)
+
+    return [PickListItemGroup(**g) for g in groups.values()]
+
+
+def _identity_engine():
+    """Return a read-only engine to the identity database, or None if unset."""
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
+        return None
+    return create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+
+
+def _resolve_worker_names(user_ids: set[UUID]) -> dict[str, str]:
+    """Batch-resolve worker UUIDs to names from the identity database."""
+    if not user_ids:
+        return {}
+    engine = _identity_engine()
+    if engine is None:
+        return {}
+    try:
+        uid_list = [str(u) for u in user_ids]
+        placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+        params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id::text, display_name, first_name, last_name "
+                    f"FROM users WHERE id::text IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        name_by_id: dict[str, str] = {}
+        for uid, display_name, first_name, last_name in rows:
+            name = display_name or f"{first_name or ''} {last_name or ''}".strip()
+            if name:
+                name_by_id[uid] = name
+        return name_by_id
+    except Exception:
+        return {}
+    finally:
+        engine.dispose()
+
+
+def _resolve_worker_name(worker_id, db=None) -> str | None:
+    """Resolve a human-readable worker name for a pick list's assigned worker.
+
+    Workers live in the identity database's ``users`` table
+    (user_type=warehouse_worker). Falls back to the core ``users`` table when
+    the identity database is unavailable, then to the raw UUID.
+    """
+    if not worker_id:
+        return None
+
+    name = _resolve_worker_names({worker_id}).get(str(worker_id))
+    if name:
+        return name
+
+    if db is not None:
+        try:
+            row = db.execute(
+                text(
+                    "SELECT display_name, first_name, last_name "
+                    "FROM users WHERE id=:id"
+                ),
+                {"id": worker_id},
+            ).fetchone()
+            if row:
+                display_name, first_name, last_name = row
+                return display_name or f"{first_name} {last_name}".strip() or str(worker_id)
+        except Exception:
+            pass
+    return str(worker_id)
+
+
+def _pick_list_aging(pl, db) -> dict:
+    """Compute task-aging status (ALT-011) using the org's aging threshold."""
+    threshold = 120
+    if db is not None:
+        try:
+            from app.services.pick_settings_service import PickConfigResolver
+
+            threshold = PickConfigResolver.from_org(db, pl.organization_id).get_int(
+                "aging_threshold_minutes"
+            )
+        except Exception:
+            pass
+    return PickListService.aging_info(pl, threshold)
+
+
+def _pick_list_to_response(
+    pl,
+    db=None,
+    *,
+    item_map=None,
+    bin_map=None,
+    serial_qmeta=None,
+    qseal_params=None,
+    qseal_tracks=None,
+) -> OutboundPickListResponse:
+    """Convert a PickList model to an OutboundPickListResponse.
+
+    Optional pre-computed lookup maps may be supplied to batch lookups across
+    multiple pick lists; when omitted they are fetched per pick list.
+    """
     progress = _compute_progress(pl)
 
     # Batch-fetch item names and SKUs
     item_ids = [item.item_id for item in (pl.items or [])]
-    item_map: dict[str, dict] = {}
-    bin_map: dict[str, str] = {}
-    if item_ids and db:
-        from app.models.item import Item
-        rows = db.query(Item.id, Item.item_name, Item.sku).filter(
-            Item.id.in_(item_ids)
-        ).all()
-        item_map = {str(r.id): {"item_name": r.item_name, "sku": r.sku} for r in rows}
+    if item_map is None:
+        item_map = {}
+        if item_ids and db:
+            from app.models.item import Item
+            rows = db.query(
+                Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
+            ).filter(Item.id.in_(item_ids)).all()
+            item_map = {
+                str(r.id): {
+                    "item_name": r.item_name,
+                    "item_code": r.item_code,
+                    "sku": r.sku or r.item_code,
+                    "has_serial_no": bool(r.has_serial_no),
+                }
+                for r in rows
+            }
 
     # Batch-fetch bin full paths
     bin_ids = [item.bin_location_id for item in (pl.items or []) if item.bin_location_id]
-    if bin_ids and db:
-        from app.models.warehouse_location import WarehouseLocation
-        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
-            WarehouseLocation.id.in_(bin_ids)
-        ).all()
-        bin_map = {str(r.id): r.full_path for r in rows}
+    if bin_map is None:
+        bin_map = {}
+        if bin_ids and db:
+            from app.models.warehouse_location import WarehouseLocation
+            rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
+                WarehouseLocation.id.in_(bin_ids)
+            ).all()
+            bin_map = {str(r.id): r.full_path for r in rows}
+
+    # Resolve per-unit serials for each item line
+    serials_by_item = _resolve_pick_serials(pl.items or [], db, serial_qmeta)
+
+    # Resolve QSeal master-pack context and build the grouped representation
+    param_by_serial, track_by_id = _resolve_pick_qseal_context(
+        pl, item_map, db, qseal_params, qseal_tracks
+    )
+    groups = _build_pick_groups(pl, item_map, bin_map, param_by_serial, track_by_id)
 
     items = []
     for item in pl.items or []:
@@ -473,6 +874,15 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 "qty": float(item.qty),
                 "picked_qty": float(item.picked_qty or 0),
                 "uom": item.uom,
+                "per_case_qty": float(item.per_case_qty)
+                if item.per_case_qty is not None
+                else None,
+                "case_qty": float(item.case_qty)
+                if item.case_qty is not None
+                else None,
+                "loose_qty": float(item.loose_qty)
+                if item.loose_qty is not None
+                else None,
                 "batch_no": item.batch_no,
                 "bin_location_id": str(item.bin_location_id)
                 if item.bin_location_id
@@ -480,9 +890,19 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
                 "bin_location_path": bin_map.get(str(item.bin_location_id))
                 if item.bin_location_id
                 else None,
+                "handling_unit_id": str(item.handling_unit_id)
+                if item.handling_unit_id
+                else None,
                 "sort_order": item.sort_order or 0,
+                "serials": [
+                    {**s, "sku": info.get("sku")}
+                    for s in serials_by_item.get(str(item.id), [])
+                ],
             }
         )
+
+    worker_name = _resolve_worker_name(pl.assigned_to, db)
+    aging = _pick_list_aging(pl, db)
 
     return OutboundPickListResponse(
         id=str(pl.id),
@@ -492,13 +912,120 @@ def _pick_list_to_response(pl, db=None) -> OutboundPickListResponse:
         status=pl.status.value if pl.status else "draft",
         pick_date=pl.pick_date.isoformat() if pl.pick_date else None,
         reference_type=pl.reference_type,
+        reference_id=str(pl.reference_id) if pl.reference_id else None,
         invoice_reference=pl.invoice_reference,
+        order_no=(pl.invoice_data or {}).get("order_no"),
+        assigned_to=str(pl.assigned_to) if pl.assigned_to else None,
+        worker_name=worker_name,
         completed_at=pl.completed_at.isoformat() if pl.completed_at else None,
+        accepted_at=pl.accepted_at.isoformat() if pl.accepted_at else None,
+        accepted_by=str(pl.accepted_by) if pl.accepted_by else None,
         created_at=pl.created_at.isoformat() if pl.created_at else None,
         updated_at=pl.updated_at.isoformat() if pl.updated_at else None,
+        priority=pl.priority or 0,
+        dispatch_cutoff=pl.dispatch_cutoff.isoformat() if pl.dispatch_cutoff else None,
+        wave=pl.wave,
+        route=pl.route,
+        sla_minutes=pl.sla_minutes,
+        age_minutes=aging["age_minutes"],
+        is_aging=aging["is_aging"],
         items=items,
+        groups=groups,
         progress=progress,
     )
+
+
+def _pick_lists_to_responses(pick_lists, db) -> list[OutboundPickListResponse]:
+    """Convert multiple pick lists, batching shared lookups into single queries.
+
+    Avoids per-pick-list QSeal/item/bin query amplification when an order is
+    split into many pick lists.
+    """
+    if not pick_lists:
+        return []
+
+    all_items = [item for pl in pick_lists for item in (pl.items or [])]
+    item_ids = [item.item_id for item in all_items]
+    bin_ids = [item.bin_location_id for item in all_items if item.bin_location_id]
+
+    item_map: dict[str, dict] = {}
+    if item_ids and db:
+        from app.models.item import Item
+        rows = db.query(
+            Item.id, Item.item_name, Item.item_code, Item.sku, Item.has_serial_no
+        ).filter(Item.id.in_(item_ids)).all()
+        item_map = {
+            str(r.id): {
+                "item_name": r.item_name,
+                "item_code": r.item_code,
+                "sku": r.sku or r.item_code,
+                "has_serial_no": bool(r.has_serial_no),
+            }
+            for r in rows
+        }
+
+    bin_map: dict[str, str] = {}
+    if bin_ids and db:
+        from app.models.warehouse_location import WarehouseLocation
+        rows = db.query(WarehouseLocation.id, WarehouseLocation.full_path).filter(
+            WarehouseLocation.id.in_(bin_ids)
+        ).all()
+        bin_map = {str(r.id): r.full_path for r in rows}
+
+    all_serials = {s for item in all_items for s in (item.serial_nos or []) if s}
+    serial_qmeta: dict = {}
+    qseal_params: dict = {}
+    qseal_tracks: dict = {}
+    if all_serials and db:
+        try:
+            from app.models.qseal import QSealParameters, QSealTrack
+
+            params = (
+                db.query(
+                    QSealParameters.serial_number,
+                    QSealParameters.parent_id,
+                    QSealParameters.dispatch_batch,
+                    QSealParameters.manufacturing_date,
+                    QSealParameters.expiry_date,
+                )
+                .filter(
+                    QSealParameters.organization_id == pick_lists[0].organization_id,
+                    QSealParameters.serial_number.in_(all_serials),
+                )
+                .all()
+            )
+            qseal_params = {p.serial_number: p for p in params}
+            serial_qmeta = {
+                p.serial_number: {
+                    "manufacturing_date": (
+                        str(p.manufacturing_date) if p.manufacturing_date else None
+                    ),
+                    "expiry_date": str(p.expiry_date) if p.expiry_date else None,
+                }
+                for p in params
+            }
+            parent_ids = {p.parent_id for p in params if p.parent_id}
+            if parent_ids:
+                tracks = db.query(QSealTrack).filter(
+                    QSealTrack.organization_id == pick_lists[0].organization_id,
+                    QSealTrack.id.in_(parent_ids),
+                ).all()
+                qseal_tracks = {t.id: t for t in tracks}
+        except Exception:
+            pass
+
+    return [
+        _pick_list_to_response(
+            pl,
+            db,
+            item_map=item_map,
+            bin_map=bin_map,
+            serial_qmeta=serial_qmeta,
+            qseal_params=qseal_params,
+            qseal_tracks=qseal_tracks,
+        )
+        for pl in pick_lists
+    ]
 
 
 @router.post(
@@ -540,6 +1067,10 @@ async def create_from_invoice(
                 sku=item.sku,
                 quantity=item.quantity,
                 uom=item.uom,
+                per_case_qty=item.per_case_qty,
+                case_qty=item.case_qty,
+                loose_qty=item.loose_qty,
+                batch_no=item.batch_no,
             )
             for item in data.items
         ],
@@ -549,6 +1080,7 @@ async def create_from_invoice(
         invoice_data=invoice_payload,
         org_id=current_user.organization_id,
         worker_id=current_user.id,
+        assigned_to=data.assigned_to,
     )
 
     return _pick_list_to_response(pick_list, db)
@@ -558,33 +1090,36 @@ async def create_from_invoice(
     "/import",
     response_model=dict,
     status_code=status.HTTP_201_CREATED,
-    summary="Import orders from PDF/CSV and generate pick lists",
-    description="Upload a PDF packing slip or CSV order file to auto-generate pick lists",
+    summary="Import orders from PDF/CSV and create outbound orders",
+    description="Upload a PDF packing slip or CSV order file to create outbound orders",
 )
 async def import_orders(
     file: UploadFile = File(..., description="PDF or CSV order file"),
     warehouse_id: UUID = Query(..., description="Target warehouse UUID"),
+    order_type: str = Query("sap", description="Order type: 'sap' or 'asn'"),
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
-    Import orders from a PDF or CSV file and automatically generate pick lists.
+    Import orders from a PDF or CSV file and create outbound orders.
 
     Supported formats:
     - **PDF**: Packing slips / invoice PDFs with machine-readable text
     - **CSV**: Structured order data with columns for invoice, SKU, quantity, etc.
 
     The service extracts invoice references, line items, and quantities,
-    then creates a pick list for each order found in the file.
+    then creates an outbound order for each order found in the file. Pick
+    lists are generated later from a confirmed order.
 
     **Query Parameters:**
-    - **warehouse_id**: Target warehouse UUID for all generated pick lists
+    - **warehouse_id**: Target warehouse UUID for all created orders
+    - **order_type**: 'sap' (default) or 'asn'
 
     **Request Body:** Multipart file upload (PDF or CSV)
 
     **Returns:**
-    - pick_lists_created: Number of pick lists generated
-    - total_items: Total items across all pick lists
+    - orders_created: Number of outbound orders created
+    - total_items: Total items across all orders
     - errors: Any parsing or creation errors encountered
     """
     if not file.filename:
@@ -600,14 +1135,301 @@ async def import_orders(
         filename=file.filename,
         org_id=current_user.organization_id,
         warehouse_id=warehouse_id,
+        order_type=order_type,
     )
 
     return {
-        "pick_lists_created": result.pick_lists_created,
+        "orders_created": result.orders_created,
         "total_items": result.total_items,
         "errors": result.errors,
         "orders_parsed": len(result.parsed_orders),
     }
+
+
+# =============================================================================
+# OUTBOUND ORDER ENDPOINTS
+# =============================================================================
+# NOTE: literal-path routes ("/orders") must be registered before /{pick_list_id}
+# routes. They use a distinct first path segment so UUID capture is unaffected.
+
+
+def _order_item_map(db, item_ids) -> dict[str, dict]:
+    """Batch-fetch item display fields for a set of item UUIDs."""
+    if not item_ids or db is None:
+        return {}
+    from app.models.item import Item
+
+    rows = db.query(Item.id, Item.item_name, Item.item_code, Item.sku).filter(
+        Item.id.in_(item_ids)
+    ).all()
+    return {
+        str(r.id): {
+            "item_name": r.item_name,
+            "item_code": r.item_code,
+            "sku": r.sku or r.item_code,
+        }
+        for r in rows
+    }
+
+
+def _order_pick_list_map(db, order_ids) -> dict[str, list[str]]:
+    """Batch-fetch pick list IDs referencing each outbound order."""
+    if not order_ids or db is None:
+        return {}
+    from app.models.pick_list import PickList
+
+    rows = (
+        db.query(PickList.id, PickList.reference_id)
+        .filter(PickList.reference_id.in_(order_ids))
+        .all()
+    )
+    result: dict[str, list[str]] = {}
+    for pick_id, order_id in rows:
+        result.setdefault(str(order_id), []).append(str(pick_id))
+    return result
+
+
+def _order_to_list_item(
+    order, item_counts: dict[str, tuple[int, int]]
+) -> OutboundOrderListItem:
+    """Convert an OutboundOrder to a lightweight list item (no line items)."""
+    total_items, in_stock = item_counts.get(str(order.id), (0, 0))
+    return OutboundOrderListItem(
+        id=str(order.id),
+        organization_id=str(order.organization_id),
+        order_no=order.order_no,
+        order_type=order.order_type.value,
+        warehouse_id=str(order.warehouse_id),
+        status=order.status.value,
+        invoice_reference=order.invoice_reference,
+        created_at=order.created_at.isoformat() if order.created_at else None,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        item_count=total_items,
+        in_stock_count=in_stock,
+        out_of_stock_count=total_items - in_stock,
+    )
+
+
+def _order_to_response(
+    order,
+    db,
+    item_map: dict[str, dict] | None = None,
+    pick_list_ids: list[str] | None = None,
+) -> OutboundOrderResponse:
+    """Convert an OutboundOrder model to an OutboundOrderResponse.
+
+    ``item_map`` and ``pick_list_ids`` may be pre-computed by the caller to
+    avoid N+1 queries when serializing a list of orders.
+    """
+    if item_map is None:
+        item_map = _order_item_map(db, [item.item_id for item in (order.items or [])])
+
+    items = []
+    for item in order.items or []:
+        info = item_map.get(str(item.item_id), {})
+        items.append(
+            OutboundOrderItemResponse(
+                id=str(item.id),
+                item_id=str(item.item_id),
+                item_name=info.get("item_name"),
+                sku=item.sku or info.get("sku"),
+                qty=float(item.qty),
+                uom=item.uom,
+                per_case_qty=float(item.per_case_qty)
+                if item.per_case_qty is not None
+                else None,
+                case_qty=float(item.case_qty) if item.case_qty is not None else None,
+                loose_qty=float(item.loose_qty)
+                if item.loose_qty is not None
+                else None,
+                batch_no=item.batch_no,
+                stock_status=item.stock_status.value,
+                available_qty=float(item.available_qty)
+                if item.available_qty is not None
+                else None,
+            )
+        )
+
+    if pick_list_ids is None:
+        from app.models.pick_list import PickList
+
+        pick_list_ids = [
+            str(r[0])
+            for r in db.query(PickList.id)
+            .filter(PickList.reference_id == order.id)
+            .all()
+        ]
+
+    return OutboundOrderResponse(
+        id=str(order.id),
+        organization_id=str(order.organization_id),
+        order_no=order.order_no,
+        order_type=order.order_type.value,
+        warehouse_id=str(order.warehouse_id),
+        status=order.status.value,
+        invoice_reference=order.invoice_reference,
+        source_filename=order.source_filename,
+        remarks=order.remarks,
+        reference_type=order.reference_type,
+        reference_id=str(order.reference_id) if order.reference_id else None,
+        reference_no=order.reference_no,
+        created_at=order.created_at.isoformat() if order.created_at else None,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        pick_list_ids=pick_list_ids,
+        items=items,
+    )
+
+
+@router.get(
+    "/orders",
+    response_model=OutboundOrderListResponse,
+    summary="List outbound orders",
+    description="List outbound orders (ASN/SAP) with optional filters",
+)
+async def list_orders(
+    warehouse_id: UUID | None = Query(None, description="Filter by warehouse ID"),
+    status_filter: str | None = Query(
+        None, alias="status", description="Filter by order status"
+    ),
+    order_type: str | None = Query(
+        None, alias="order_type", description="Filter by order type: asn or sap"
+    ),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    orders, pagination = service.list_orders(
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        status=status_filter,
+        order_type=order_type,
+        page=page,
+        page_size=page_size,
+    )
+
+    # The service refreshed per-line availability in-memory, so compute the
+    # in-stock/out-of-stock counts from live values instead of a stale snapshot.
+    from app.models.base import OutboundOrderItemStockStatus
+
+    item_counts: dict[str, tuple[int, int]] = {}
+    for order in orders:
+        items = order.items or []
+        in_stock = sum(
+            1
+            for it in items
+            if it.stock_status == OutboundOrderItemStockStatus.IN_STOCK
+        )
+        item_counts[str(order.id)] = (len(items), in_stock)
+
+    status_counts = service.get_status_counts(
+        org_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        order_type=order_type,
+    )
+
+    return OutboundOrderListResponse(
+        orders=[_order_to_list_item(order, item_counts) for order in orders],
+        pagination=pagination,
+        status_counts=OutboundOrderStatusCounts(**status_counts),
+    )
+
+
+@router.post(
+    "/orders",
+    response_model=OutboundOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an outbound order manually",
+    description="Create a draft outbound order from an invoice-style payload",
+)
+async def create_order(
+    data: SAPInvoicePayload,
+    order_type: str = Query("sap", description="Order type: 'sap' or 'asn'"),
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    order = service.create_order(
+        org_id=current_user.organization_id,
+        warehouse_id=data.warehouse_id,
+        order_type=order_type,
+        invoice_reference=data.invoice_reference,
+        items=[
+            {
+                "item_id": item.item_id,
+                "sku": item.sku,
+                "quantity": item.quantity,
+                "uom": item.uom,
+                "per_case_qty": item.per_case_qty,
+                "case_qty": item.case_qty,
+                "loose_qty": item.loose_qty,
+                "batch_no": item.batch_no,
+            }
+            for item in data.items
+        ],
+        created_by=current_user.id,
+    )
+    return _order_to_response(order, db)
+
+
+@router.get(
+    "/orders/{order_id}",
+    response_model=OutboundOrderResponse,
+    summary="Get outbound order detail",
+    description="Get an outbound order with its line items and stock status",
+)
+async def get_order(
+    order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_READ)),
+    db: Session = Depends(get_db),
+):
+    order = OutboundOrderService(db).get_order(order_id, current_user.organization_id)
+    return _order_to_response(order, db)
+
+
+@router.post(
+    "/orders/{order_id}/confirm",
+    response_model=OutboundOrderResponse,
+    summary="Confirm an outbound order",
+    description="Confirm an outbound order after reviewing line stock availability",
+)
+async def confirm_order(
+    order_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    order = OutboundOrderService(db).confirm_order(
+        order_id, current_user.organization_id
+    )
+    return _order_to_response(order, db)
+
+
+@router.post(
+    "/orders/{order_id}/generate-pick-lists",
+    response_model=list[OutboundPickListResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate pick lists from an outbound order",
+    description=(
+        "Generate one or more pick lists from a confirmed order. Pass worker_ids "
+        "to split the order lines into one pick list per worker."
+    ),
+)
+async def generate_pick_lists_from_order(
+    order_id: UUID,
+    data: CreatePickListFromOrderRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_CREATE)),
+    db: Session = Depends(get_db),
+):
+    service = OutboundOrderService(db)
+    pick_lists = service.create_pick_lists_from_order(
+        order_id=order_id,
+        org_id=current_user.organization_id,
+        worker_ids=data.worker_ids,
+        mode=data.mode,
+        exclude_out_of_stock=data.exclude_out_of_stock,
+    )
+    return _pick_lists_to_responses(pick_lists, db)
 
 
 @router.get(
@@ -627,7 +1449,8 @@ async def list_pick_lists(
         None, description="Filter by SAP invoice reference"
     ),
     sort_by: str = Query(
-        "created_at", description="Sort field: created_at, pick_list_no, status"
+        "created_at",
+        description="Sort field: created_at, pick_list_no, status, priority",
     ),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),
@@ -656,6 +1479,13 @@ async def list_pick_lists(
     """
     service = PickListService(db)
 
+    # Warehouse workers only see the pick lists assigned to them.
+    assigned_to = (
+        current_user.id
+        if is_worker_scope(current_user.user_type, current_user.permissions)
+        else None
+    )
+
     pick_lists_data, pagination = service.get_list(
         organization_id=current_user.organization_id,
         page=page,
@@ -664,11 +1494,27 @@ async def list_pick_lists(
         status=status_filter,
         sort_by=sort_by,
         sort_order=sort_order,
+        assigned_to=assigned_to,
+    )
+
+    status_counts = service.get_status_counts(
+        organization_id=current_user.organization_id,
+        warehouse_id=warehouse_id,
+        invoice_reference=invoice_reference,
+        assigned_to=assigned_to,
     )
 
     # For the list view, we need to fetch full pick list objects to compute progress
     # The service returns dicts from _to_list_item, so we need to get full objects
     from app.models.pick_list import PickList
+
+    # Batch-resolve worker names from the identity database.
+    assigned_ids = {
+        pl_data.get("assigned_to")
+        for pl_data in pick_lists_data
+        if pl_data.get("assigned_to")
+    }
+    worker_name_map = _resolve_worker_names(assigned_ids)
 
     result_items = []
     for pl_data in pick_lists_data:
@@ -689,6 +1535,7 @@ async def list_pick_lists(
                 continue
 
             progress = _compute_progress(pl)
+            aging = _pick_list_aging(pl, db)
             result_items.append(
                 {
                     "id": str(pl.id),
@@ -697,11 +1544,23 @@ async def list_pick_lists(
                     "warehouse_id": str(pl.warehouse_id),
                     "status": pl.status.value if pl.status else "draft",
                     "invoice_reference": pl.invoice_reference,
+                    "assigned_to": str(pl.assigned_to) if pl.assigned_to else None,
+                    "worker_name": (
+                        worker_name_map.get(str(pl.assigned_to)) or str(pl.assigned_to)
+                    ) if pl.assigned_to else None,
                     "pick_date": pl.pick_date.isoformat() if pl.pick_date else None,
                     "completed_at": pl.completed_at.isoformat()
                     if pl.completed_at
                     else None,
                     "created_at": pl.created_at.isoformat() if pl.created_at else None,
+                    "priority": pl.priority or 0,
+                    "dispatch_cutoff": pl.dispatch_cutoff.isoformat()
+                    if pl.dispatch_cutoff
+                    else None,
+                    "wave": pl.wave,
+                    "route": pl.route,
+                    "age_minutes": aging["age_minutes"],
+                    "is_aging": aging["is_aging"],
                     "progress": progress,
                 }
             )
@@ -709,6 +1568,7 @@ async def list_pick_lists(
     return OutboundPickListListResponse(
         pick_lists=result_items,
         pagination=pagination,
+        status_counts=OutboundPickListStatusCounts(**status_counts),
     )
 
 
@@ -759,6 +1619,164 @@ async def get_pick_list_detail(
 
 
 @router.post(
+    "/{pick_list_id}/assign",
+    response_model=OutboundPickListResponse,
+    summary="Assign or reassign a worker to a pick list",
+    description="Assign a warehouse worker to a pick list. Call again to reassign.",
+)
+async def assign_pick_list_worker(
+    pick_list_id: UUID,
+    data: AssignWorkerRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Assign (or reassign) a worker to a pick list.
+
+    **Path Parameters:**
+    - **pick_list_id**: UUID of the pick list
+
+    **Request Body:**
+    - **worker_id**: UUID of the warehouse worker to assign
+
+    **Returns:** Updated pick list with the assigned worker
+    """
+    service = PickListService(db)
+
+    pick_list = service.assign_worker(
+        pick_list_id=pick_list_id,
+        worker_id=data.worker_id,
+        org_id=current_user.organization_id,
+    )
+
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/accept",
+    response_model=PickListAcceptResponse,
+    summary="Accept a pick task",
+    description="Record the worker accepting the pick task and start the timer (WF-010)",
+)
+async def accept_pick_list(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Accept a pick task (WF-010).
+
+    Records ``accepted_at``/``accepted_by`` (idempotent on the first accept)
+    and moves a ``draft`` pick list to ``in_progress``.
+
+    **Path Parameters:**
+    - **pick_list_id**: UUID of the pick list to accept
+
+    **Returns:** The pick list's identity, status and acceptance info.
+
+    Requirements: WF-010
+    """
+    service = PickListService(db)
+    pick_list = service.accept_task(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        worker_id=current_user.id,
+    )
+    return PickListAcceptResponse(
+        id=str(pick_list.id),
+        pick_list_no=pick_list.pick_list_no,
+        status=pick_list.status.value if pick_list.status else "draft",
+        accepted_at=pick_list.accepted_at.isoformat() if pick_list.accepted_at else None,
+        accepted_by=str(pick_list.accepted_by) if pick_list.accepted_by else None,
+    )
+
+
+@router.post(
+    "/{pick_list_id}/confirm",
+    response_model=OutboundPickListResponse,
+    summary="Confirm a pick list",
+    description="Move a draft pick list to confirmed status",
+)
+async def confirm_pick_list(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).confirm_pick_list(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-ready",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list ready for dispatch",
+    description="Move a pick-complete pick list to ready_for_dispatch",
+)
+async def mark_pick_list_ready(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.READY_FOR_DISPATCH,
+        allowed_from=(
+            PickListStatus.PICK_COMPLETE,
+            PickListStatus.COMPLETED,
+            PickListStatus.READY_FOR_DISPATCH,
+        ),
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-in-transit",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list in transit",
+    description="Move a ready-for-dispatch pick list to in_transit",
+)
+async def mark_pick_list_in_transit(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.IN_TRANSIT,
+        allowed_from=(
+            PickListStatus.READY_FOR_DISPATCH,
+            PickListStatus.IN_TRANSIT,
+        ),
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/mark-delivered",
+    response_model=OutboundPickListResponse,
+    summary="Mark pick list delivered",
+    description="Move an in-transit pick list to delivered",
+)
+async def mark_pick_list_delivered(
+    pick_list_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    pick_list = PickListService(db).transition_status(
+        pick_list_id=pick_list_id,
+        org_id=current_user.organization_id,
+        target=PickListStatus.DELIVERED,
+        allowed_from=(PickListStatus.IN_TRANSIT, PickListStatus.DELIVERED),
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
     "/{pick_list_id}/scan",
     response_model=PickScanResult,
     status_code=status.HTTP_201_CREATED,
@@ -770,6 +1788,7 @@ async def record_pick_scan(
     data: PickScanRequest,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Record a QR code scan against a pick list.
@@ -784,20 +1803,49 @@ async def record_pick_scan(
     **Request Body:**
     - **qr_data**: Raw QR code payload string (JSON)
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task + scan payload.
+
     **Returns:** Scan result with updated quantities
 
-    Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 11.2
+    Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 11.2; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_SCAN,
+        pick_list_id,
+        f"{data.qr_data}|bin={data.bin_location_id}|reason={data.reason_code}",
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_SCAN, key)
+    if replay is not None:
+        return PickScanResult(**replay)
 
     result = service.record_pick_scan(
         pick_list_id=pick_list_id,
         qr_data=data.qr_data,
         worker_id=current_user.id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
+        bin_location_id=data.bin_location_id,
+        reason_code=data.reason_code,
+        reason_quantity=data.reason_quantity,
     )
 
-    return PickScanResult(**result)
+    response = PickScanResult(**result)
+    idempotency.record(
+        org_id,
+        OPERATION_SCAN,
+        key,
+        pick_list_id,
+        PickIdempotencyService.request_hash(
+            f"{data.qr_data}|bin={data.bin_location_id}|reason={data.reason_code}"
+        ),
+        response.model_dump(mode="json"),
+    )
+    return response
 
 
 @router.post(
@@ -810,6 +1858,7 @@ async def complete_pick_list(
     pick_list_id: UUID,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Complete a pick list.
@@ -820,18 +1869,40 @@ async def complete_pick_list(
     **Path Parameters:**
     - **pick_list_id**: UUID of the pick list
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task.
+
     **Returns:** Updated pick list with completed status
 
-    Requirements: 10.6, 10.7
+    Requirements: 10.6, 10.7; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_COMPLETE, pick_list_id
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_COMPLETE, key)
+    if replay is not None:
+        return OutboundPickListResponse(**replay)
 
     pick_list = service.complete_pick_list(
         pick_list_id=pick_list_id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
     )
 
-    return _pick_list_to_response(pick_list, db)
+    response = _pick_list_to_response(pick_list, db)
+    idempotency.record(
+        org_id,
+        OPERATION_COMPLETE,
+        key,
+        pick_list_id,
+        None,
+        response.model_dump(mode="json"),
+    )
+    return response
 
 
 @router.post(
@@ -844,6 +1915,7 @@ async def cancel_pick_list(
     pick_list_id: UUID,
     current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     """
     Cancel a pick list.
@@ -854,15 +1926,159 @@ async def cancel_pick_list(
     **Path Parameters:**
     - **pick_list_id**: UUID of the pick list
 
+    **Headers:**
+    - **Idempotency-Key** (optional): replay guard. When omitted, a
+      deterministic key is derived from the task.
+
     **Returns:** Updated pick list with cancelled status
 
-    Requirements: 11.1, 11.5
+    Requirements: 11.1, 11.5; NFR-003, EX-017
     """
     service = PickListService(db)
+    idempotency = PickIdempotencyService(db)
+    org_id = current_user.organization_id
+
+    key = idempotency_key or PickIdempotencyService.derive_key(
+        OPERATION_CANCEL, pick_list_id
+    )
+    replay = idempotency.get_replay(org_id, OPERATION_CANCEL, key)
+    if replay is not None:
+        return OutboundPickListResponse(**replay)
 
     pick_list = service.cancel_pick_list(
         pick_list_id=pick_list_id,
-        org_id=current_user.organization_id,
+        org_id=org_id,
     )
 
+    response = _pick_list_to_response(pick_list, db)
+    idempotency.record(
+        org_id,
+        OPERATION_CANCEL,
+        key,
+        pick_list_id,
+        None,
+        response.model_dump(mode="json"),
+    )
+    return response
+
+
+@router.post(
+    "/{pick_list_id}/stage-transfer",
+    response_model=OutboundPickListResponse,
+    summary="Transfer pick list to a staging lane",
+    description="Assign a staging lane and move picked stock to in-transit-to-stage",
+)
+async def stage_transfer_pick_list(
+    pick_list_id: UUID,
+    data: StageTransferRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Transfer a pick list to a staging lane (WF-019).
+
+    Validates the staging lane, assigns it to the pick list, and transitions
+    the picked bin stock ``picked → in_transit_to_stage``.
+
+    Requirements: WF-019, EX-019/020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_transfer(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
     return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/stage-scan",
+    response_model=OutboundPickListResponse,
+    summary="Validate staging lane scan",
+    description="Validate the scanned staging lane and mark the pick list staged",
+)
+async def stage_scan_pick_list(
+    pick_list_id: UUID,
+    data: StageScanRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Validate a staging lane scan and mark the pick list staged (WF-020).
+
+    Rejects a wrong staging lane with a hard stop (ALT-008).
+
+    Requirements: WF-020, ALT-008
+    """
+    service = PickListService(db)
+    pick_list = service.stage_scan(
+        pick_list_id=pick_list_id,
+        staging_location_id=data.staging_location_id,
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+
+
+@router.post(
+    "/{pick_list_id}/items/{pick_list_item_id}/handling-unit",
+    response_model=HandlingUnitAssignmentResponse,
+    summary="Associate a handling unit with a pick list item",
+    description="Link a trolley/carton/pallet handling unit to a pick line (WF-018)",
+)
+async def assign_handling_unit(
+    pick_list_id: UUID,
+    pick_list_item_id: UUID,
+    data: AssignHandlingUnitRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Associate a handling unit (trolley/carton/pallet) with a pick list item.
+
+    When ``pick.enable_handling_unit`` is enabled, a handling unit already
+    assigned to another pick item is rejected.
+
+    Requirements: WF-018
+    """
+    service = PickListService(db)
+    pick_item = service.assign_handling_unit(
+        pick_list_item_id=pick_list_item_id,
+        handling_unit_id=data.handling_unit_id,
+        org_id=current_user.organization_id,
+    )
+    return HandlingUnitAssignmentResponse(
+        pick_list_item_id=str(pick_item.id),
+        handling_unit_id=str(pick_item.handling_unit_id),
+    )
+
+
+@router.patch(
+    "/{pick_list_id}/priority",
+    response_model=OutboundPickListResponse,
+    summary="Set task prioritization fields",
+    description="Set manual priority, dispatch cutoff, wave, route, or SLA on a pick list (WF-007)",
+)
+async def update_pick_list_priority(
+    pick_list_id: UUID,
+    data: UpdatePriorityRequest,
+    current_user: CurrentUser = Depends(require_permission(PICK_LIST_UPDATE)),
+    db: Session = Depends(get_db),
+):
+    """
+    Set task prioritization fields on a pick list (WF-007).
+
+    Only the supplied (non-null) fields are updated. ``priority`` is the
+    manual override (higher = more urgent); ``dispatch_cutoff``/``wave``/
+    ``route`` mirror SAP-supplied dispatch data; ``sla_minutes`` overrides
+    the org aging threshold for this task (ALT-011).
+
+    Requirements: WF-007, ALT-011
+    """
+    service = PickListService(db)
+    pick_list = service.update_priority(
+        pick_list_id=pick_list_id,
+        data=data.model_dump(exclude_unset=True),
+        org_id=current_user.organization_id,
+    )
+    return _pick_list_to_response(pick_list, db)
+

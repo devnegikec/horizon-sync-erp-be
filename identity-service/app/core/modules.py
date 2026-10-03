@@ -103,6 +103,11 @@ MODULES: list[ModuleDefinition] = [
         resources=[
             ModuleResource("item", "Items"),
             ModuleResource(
+                "item_group",
+                "Item Groups",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+            ModuleResource(
                 "warehouse",
                 "Warehouses",
                 ["read", "create", "update", "delete", "manage"],
@@ -112,8 +117,36 @@ MODULES: list[ModuleDefinition] = [
                 "Stock Movements",
                 ["read", "create", "update", "delete", "manage"],
             ),
-            ModuleResource("batch", "Batches", ["read"]),
-            ModuleResource("serial", "Serial Numbers", ["read"]),
+            ModuleResource(
+                "stock_level",
+                "Stock Levels",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
+                "stock_settings",
+                "Stock Settings",
+                ["read", "update"],
+            ),
+            ModuleResource(
+                "stock_reconciliation",
+                "Stock Reconciliations",
+                ["read", "create", "update", "delete"],
+            ),
+            ModuleResource(
+                "put_away_rule",
+                "Put-Away Rules",
+                ["read", "create", "update", "delete"],
+            ),
+            ModuleResource(
+                "batch",
+                "Batches",
+                ["read", "update", "delete", "manage"],
+            ),
+            ModuleResource(
+                "serial",
+                "Serial Numbers",
+                ["read", "create", "update", "delete", "manage"],
+            ),
             ModuleResource(
                 "pick_list",
                 "Pick Lists",
@@ -124,18 +157,173 @@ MODULES: list[ModuleDefinition] = [
                 "ASN Orders",
                 ["read", "create", "update", "delete", "manage"],
             ),
+            ModuleResource(
+                "receiving_slip",
+                "Receiving Slips",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
+                "inbound_exception",
+                "Inbound Exceptions",
+                ["read", "create", "dispose"],
+            ),
+            ModuleResource(
+                "return",
+                "Returns",
+                ["read", "register", "receive", "classify", "approve", "dispose"],
+            ),
+            ModuleResource(
+                "qseal",
+                "QSeal",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+            ModuleResource(
+                "wms",
+                "WMS Scan",
+                ["scan"],
+            ),
         ],
     ),
     ModuleDefinition(
         key="accounting",
         label="Accounting",
-        description="Manage chart of accounts, payments, and financial records",
+        description="Manage chart of accounts, payments, currencies, exchange rates, and charge templates",
         icon="calculator",
         resources=[
             ModuleResource(
-                "chart_of_account", "Chart of Accounts", ["read", "create", "update"]
+                "chart_of_account",
+                "Chart of Accounts",
+                ["read", "create", "update", "delete", "manage"],
             ),
             ModuleResource("payment", "Payments", ["read", "create", "update"]),
+            ModuleResource(
+                "journal_entry",
+                "Journal Entries",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
+                "currency",
+                "Currencies",
+                ["read", "create", "update", "delete"],
+            ),
+            ModuleResource(
+                "exchange_rate",
+                "Exchange Rates",
+                ["read", "create", "update", "delete"],
+            ),
+            ModuleResource(
+                "charge_template",
+                "Charge Templates",
+                ["read", "create", "update", "delete"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="banking",
+        label="Banking",
+        description="Manage bank accounts and account reconciliations",
+        icon="calculator",
+        resources=[
+            ModuleResource(
+                "bank_account",
+                "Bank Accounts",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+            ModuleResource(
+                "reconciliation",
+                "Reconciliations",
+                ["read", "create", "update", "delete"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="analytics",
+        label="Analytics & Reporting",
+        description="Manage analytics dashboards, reports, and configurations",
+        icon="box",
+        resources=[
+            ModuleResource(
+                "analytics",
+                "Analytics",
+                ["read", "create", "update", "delete"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="messaging",
+        label="Messaging",
+        description="Manage messaging channels, templates, and communications",
+        icon="shield",
+        resources=[
+            ModuleResource(
+                "messaging",
+                "Messaging",
+                ["read", "create", "update", "delete", "send"],
+            ),
+            ModuleResource(
+                "communication",
+                "Communications",
+                ["read", "create", "update", "delete", "send"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="marketing",
+        label="Marketing",
+        description="Manage brand trust, short URLs, and landing pages",
+        icon="shopping-cart",
+        resources=[
+            ModuleResource(
+                "brand_trust",
+                "Brand Trust",
+                ["read", "create", "update"],
+            ),
+            ModuleResource(
+                "short_url",
+                "Short URLs",
+                ["read", "create", "update", "delete"],
+            ),
+            ModuleResource(
+                "landing_page",
+                "Landing Pages",
+                ["read", "create", "update", "delete", "manage"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="data",
+        label="Data Management",
+        description="Manage bulk import and export jobs",
+        icon="box",
+        resources=[
+            ModuleResource(
+                "bulk_export",
+                "Bulk Exports",
+                ["read", "create"],
+            ),
+            ModuleResource(
+                "bulk_import",
+                "Bulk Imports",
+                ["read", "create"],
+            ),
+        ],
+    ),
+    ModuleDefinition(
+        key="settings",
+        label="Settings",
+        description="Manage document numbering and pick-list settings",
+        icon="shield",
+        resources=[
+            ModuleResource(
+                "document_numbering",
+                "Document Numbering",
+                ["read", "update"],
+            ),
+            ModuleResource(
+                "pick_setting",
+                "Pick Settings",
+                ["read", "update"],
+            ),
         ],
     ),
 ]
@@ -308,6 +496,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -340,6 +531,11 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "item.read",
             "batch.read",
             "serial.read",
+            "stock_level.read",
+            "stock_reconciliation.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
+            "inbound_exception.dispose",
         ],
     ),
     RoleTemplate(
@@ -350,12 +546,21 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
         hierarchy_level=50,
         permission_codes=[
             "warehouse.read",
+            "warehouse.update",
+            "wms.scan",
+            "receiving_slip.create",
+            "receiving_slip.read",
+            "receiving_slip.update",
             "pick_list.read",
             "pick_list.update",
+            "stock_entry.create",
             "stock_entry.read",
             "item.read",
             "batch.read",
             "serial.read",
+            "asn_order.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
         ],
     ),
     RoleTemplate(
@@ -393,6 +598,9 @@ PRELOADED_ORG_ROLES: list[RoleTemplate] = [
             "pick_list.update",
             "stock_entry.create",
             "stock_entry.read",
+            "asn_order.read",
+            "inbound_exception.read",
+            "inbound_exception.create",
         ],
     ),
 ]

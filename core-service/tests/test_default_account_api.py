@@ -428,7 +428,7 @@ class TestUpdateAccountCodeFormat:
 
         assert response.status_code == 400
         data = response.json()
-        assert "invalid regex" in data["detail"].lower()
+        assert "invalid regex" in data["detail"]["message"].lower()
 
     def test_update_format_multiple_times(self, client):
         """Test updating format multiple times"""

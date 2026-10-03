@@ -63,6 +63,7 @@ class ZoneSpec(BaseModel):
 class FloorPlanConfig(BaseModel):
     """Top-level layout configuration — stored as JSONB in the DB."""
     grid_unit: Annotated[float, Field(gt=0)] = 1.0
+    capacity_uom: Literal["units", "volume"] = "units"
     zones: list[ZoneSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")

@@ -7,10 +7,10 @@ from app.models.account_balance import AccountBalance
 from app.models.admin import (
     AdminAuditLog,
     AdminNotification,
+    # FeatureFlag,
     UserActivityLog,
 )
 
-# Analytics module
 # Analytics module
 from app.models.analytics import MetaCampaign
 from app.models.asn_order import AsnOrder, AsnOrderItem
@@ -24,6 +24,7 @@ from app.models.bank_transaction import BankTransaction
 from app.models.base import (
     AccountStatus,
     AccountType,
+    AsnOrderStatus,
     BankAccountHistoryAction,
     BatchStatus,
     CustomerStatus,
@@ -38,6 +39,9 @@ from app.models.base import (
     MaterialRequestStatus,
     MovementType,
     NotificationType,
+    OutboundOrderItemStockStatus,
+    OutboundOrderStatus,
+    OutboundOrderType,
     PaymentAuditAction,
     PaymentEntryStatus,
     PaymentEntryType,
@@ -79,6 +83,9 @@ from app.models.brand_trust import (
     BrandTrustAssessment,
     BrandTrustQuestion,
 )
+from app.models.bulk_export_job import BulkExportJob
+from app.models.bulk_import_job import BulkImportJob
+from app.models.bulk_put_away_job import BulkPutAwayJob, BulkPutAwayJobStatus
 
 # Bulk Import/Export module
 # Campaigns & Coupons module
@@ -110,11 +117,13 @@ from app.models.document_numbering import (
     DocumentNumberingConfig,
     DocumentSequenceCounter,
 )
+from app.models.erp_sync_message import ErpSyncMessage, ErpSyncStatus
 from app.models.exchange_rate import ExchangeRate
 
 # Feature Flag module
 from app.models.feature_flag import FeatureFlag
 from app.models.gate_verification import GateVerificationItem, GateVerificationSession
+from app.models.handling_unit import HandlingUnit, HandlingUnitType
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.item_group import ItemGroup
@@ -123,6 +132,7 @@ from app.models.item_price import ItemPrice
 from app.models.item_supplier import ItemSupplier
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 from app.models.landed_cost import LandedCostVoucher
+from app.models.landing_page import LandingPageConfig
 from app.models.location_allocation import LocationAllocation
 from app.models.location_scan import LocationScan
 from app.models.material_request import MaterialRequest, MaterialRequestLine
@@ -141,11 +151,19 @@ from app.models.messaging import (
     WhatsAppReport,
 )
 from app.models.notification import Notification
+from app.models.outbound_order import OutboundOrder, OutboundOrderItem
+from app.models.packaging_types import PackagingType
 from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
 from app.models.payment_entry import PaymentEntry
 from app.models.payment_reference import PaymentReference
+from app.models.pending_warehouse_assignment import PendingWarehouseAssignment
+from app.models.pick_exception import PickException, PickExceptionAudit
+from app.models.pick_idempotency import PickIdempotencyKey
+from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
+from app.models.product_sku import ProductSKU
+from app.models.products import Product
 
 # Public Marketing module
 # Public Marketing module
@@ -156,12 +174,19 @@ from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.put_away_rule import PutAwayRule
 from app.models.qr_activation import QRActivationParameters, QRActivationTrack
 from app.models.qr_block import QRBlock
-from app.models.qr_credit import QRCreditBalance, QRCreditLedger, QRCreditUsage
+from app.models.qr_credit import (
+    QRCreditBalance,
+    QRCreditLedger,
+    QRCreditReservation,
+    QRCreditUsage,
+)
 from app.models.qr_cta_config import QRCTAConfig
 from app.models.qr_product import QRProduct
+from app.models.qr_product_setting import QRProductSetting
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qr_scan_interaction import QRScanInteraction
 from app.models.qseal import QSealParameters, QSealTrack
+from app.models.qseal_activation_request import QSealActivationRequest
 from app.models.quality_inspection import (
     QualityInspection,
     QualityInspectionParameter,
@@ -179,6 +204,25 @@ from app.models.reminder_config import (
     ReminderStatus,
     ReminderType,
 )
+
+# Returns (customer returns) module — R-01..R-07
+from app.models.returns import (
+    CANCELLABLE_REGISTRATION_STATUSES,
+    CONDITION_DESTINATIONS,
+    CONDITIONS,
+    DISPOSITION_ALLOWED_CONDITIONS,
+    DISPOSITIONS,
+    NOTE_STATUSES,
+    RECEIVABLE_REGISTRATION_STATUSES,
+    REGISTRATION_STATUSES,
+    ReturnReceiptNote,
+    ReturnReceiptNoteEvent,
+    ReturnReceiptNoteItem,
+    ReturnRegistration,
+    ReturnRegistrationItem,
+    ReturnSession,
+    ReturnSessionItem,
+)
 from app.models.rfq import RFQ, RFQLine, RFQSupplier, SupplierQuote
 from app.models.sales_order import SalesOrder, SalesOrderItem
 from app.models.scan_session import ScanSession, ScanSessionItem
@@ -187,12 +231,18 @@ from app.models.serial_no import SerialNo
 # URL Management module
 # URL Management module
 from app.models.short_url import ShortURL
+from app.models.sku_variant_attribute import (
+    ProductSKUAttributeValue,
+    VariantAttribute,
+    VariantAttributeValue,
+)
 from app.models.status_transition import StatusTransition
 from app.models.stock_entry import StockEntry, StockEntryItem
 from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.stock_settings import StockSettings
+from app.models.supplier import Supplier
 from app.models.system_config import SystemConfig
 from app.models.tax_template import TaxRule, TaxTemplate
 from app.models.transaction_breakdown import (
@@ -201,6 +251,7 @@ from app.models.transaction_breakdown import (
 )
 from app.models.uom import UOM
 from app.models.uom_conversion import UOMConversion
+from app.models.vehicle import Vehicle, VehicleArrival
 from app.models.warehouse import Warehouse
 from app.models.warehouse_floor_plan import WarehouseFloorPlan
 
@@ -226,7 +277,7 @@ from app.models.warehouse_user import WarehouseUser
 # Warranty module
 from app.models.warranty import Warranty, WarrantyPeriod
 from app.models.wms_device import WMSDevice, WMSDeviceStatus
-from app.models.wms_worker import WMSWorker, WMSWorkerStatus
+from app.models.worker_session import WorkerSession, WorkerSessionStatus
 from app.models.worker_task import WorkerTask
 
 __all__ = [
@@ -243,6 +294,7 @@ __all__ = [
     "InspectionType",
     "InspectionStatus",
     "ReadingType",
+    "AsnOrderStatus",
     # Customer/Supplier Enums
     "CustomerStatus",
     "SupplierStatus",
@@ -292,13 +344,26 @@ __all__ = [
     "Item",
     "ItemGroup",
     "ItemPackagingUnit",
+    "PackagingType",
     "JournalEntry",
     "JournalEntryLine",
     "PaymentEntry",
     "PaymentReference",
     "PaymentAuditLog",
+    "BulkExportJob",
+    "BulkImportJob",
+    "PendingWarehouseAssignment",
+    "PickList",
+    "PickListItem",
+    "PickException",
+    "PickExceptionAudit",
+    "PickIdempotencyKey",
+    "ErpSyncMessage",
+    "ErpSyncStatus",
     "AsnOrder",
     "AsnOrderItem",
+    "Vehicle",
+    "VehicleArrival",
     "Quotation",
     "QuotationItem",
     "SalesOrder",
@@ -306,6 +371,7 @@ __all__ = [
     "SystemConfig",
     "Warehouse",
     "Customer",
+    "Supplier",
     "Batch",
     "SerialNo",
     "StockEntry",
@@ -325,17 +391,25 @@ __all__ = [
     # QR Products module
     "Brand",
     "QRProduct",
+    "QRProductSetting",
     "QRBlock",
     "ProductItem",
+    "ProductSKU",
+    "Product",
+    "VariantAttribute",
+    "VariantAttributeValue",
+    "ProductSKUAttributeValue",
     "QRActivationParameters",
     "QRActivationTrack",
     "QSealParameters",
     "QSealTrack",
+    "QSealActivationRequest",
     "QRCreditUsage",
     "QRCreditBalance",
+    "QRCreditReservation",
     "QRCreditLedger",
     "QRCTAConfig",
-    "QRCTAConfig",
+    "LandingPageConfig",
     "QRScanEvent",
     "QRScanInteraction",
     # Campaigns & Coupons module
@@ -391,8 +465,6 @@ __all__ = [
     "NotificationType",
     "WarehouseUser",
     "WarehouseUserRole",
-    "WMSWorker",
-    "WMSWorkerStatus",
     "WMSDevice",
     "WMSDeviceStatus",
     # Audit Trail module
@@ -423,9 +495,13 @@ __all__ = [
     "ReceivingSlipItem",
     "GateVerificationSession",
     "GateVerificationItem",
+    "HandlingUnit",
+    "HandlingUnitType",
     "DispatchRecord",
     "WorkerTask",
     "LocationScan",
+    "WorkerSession",
+    "WorkerSessionStatus",
     "PutAwayList",
     "PutAwayListItem",
     # Procurement / Sourcing / Fulfillment modules
@@ -455,4 +531,20 @@ __all__ = [
     "SupplierQuote",
     "StatusTransition",
     "StockSettings",
+    # Returns (customer returns) module — R-01..R-07
+    "ReturnRegistration",
+    "ReturnRegistrationItem",
+    "ReturnSession",
+    "ReturnSessionItem",
+    "ReturnReceiptNote",
+    "ReturnReceiptNoteItem",
+    "ReturnReceiptNoteEvent",
+    "REGISTRATION_STATUSES",
+    "NOTE_STATUSES",
+    "CONDITIONS",
+    "DISPOSITIONS",
+    "DISPOSITION_ALLOWED_CONDITIONS",
+    "CONDITION_DESTINATIONS",
+    "CANCELLABLE_REGISTRATION_STATUSES",
+    "RECEIVABLE_REGISTRATION_STATUSES",
 ]

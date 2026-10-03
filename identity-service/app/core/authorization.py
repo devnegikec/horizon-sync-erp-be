@@ -77,7 +77,9 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
         return False
     if required_permission in permissions:
         return True
-    if "*.*" in permissions:
+    # Full wildcard is org-scoped (organization_admin role): it grants every
+    # org-level permission but never platform-level system_admin.* ones.
+    if "*.*" in permissions and not required_permission.startswith("system_admin."):
         return True
     if "." in required_permission:
         resource, _, _ = required_permission.partition(".")
@@ -133,6 +135,15 @@ def is_system_admin(permissions: list[str]) -> bool:
         "system.admin" in permissions
         or "system_admin.master" in permissions
     )
+
+
+def is_system_admin_or_owner(permissions: list[str]) -> bool:
+    """True for platform system admins OR organization owners (*.* wildcard).
+
+    Organization owners have full authority within their own organization and
+    may perform the same role-management operations as a system admin.
+    """
+    return is_system_admin(permissions) or "*.*" in permissions
 
 
 def is_cross_org_admin(permissions: list[str]) -> bool:

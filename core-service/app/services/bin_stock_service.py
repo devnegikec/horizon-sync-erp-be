@@ -14,13 +14,31 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 18.1, 18.2
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
-from app.models.bin_stock_level import BinStockLevel
+from app.models.base import MovementType
+from app.models.bin_stock_level import (
+    BinStockLevel,
+    InventoryStatus,
+    can_transition_inventory_status,
+)
+from app.models.status_transition import StatusTransition
 from app.models.stock_level import StockLevel
+from app.models.stock_movement import StockMovement
 from app.models.warehouse_location import WarehouseLocation
+from app.services.bin_capacity_service import BinCapacityService
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    compute_bin_occupancy,
+    compute_item_required_cc_and_grams,
+    effective_available_capacity,
+    effective_bin_count_capacity,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
+)
 from app.services.capacity_service import CapacityService
 
 
@@ -31,6 +49,91 @@ class BinStockService:
         self.db = db
         self.capacity_service = CapacityService(db)
 
+    def validate_capacity(
+        self,
+        bin_id: UUID,
+        item_id: UUID,
+        org_id: UUID,
+        quantity: Decimal,
+        packaging_unit_id: UUID | None = None,
+    ) -> None:
+        """Validate that ``quantity`` of ``item_id`` can be added to the bin
+        without exceeding count, volume, or weight capacity.
+
+        Used by callers that add stock as multiple per-unit rows (e.g. one row
+        per serial of a master carton) but must check the whole carton's
+        volume/weight once up front. Does not write any stock.
+        """
+        bin_location = self._get_active_bin(bin_id, org_id)
+        # ``capacity`` is only a unit count when ``capacity_uom`` is blank or
+        # ``units``; for a volume/weight bin the physical limit is enforced
+        # below instead, so 1.2 m³ is never read as "1.2 items".
+        bin_capacity = effective_bin_count_capacity(bin_location)
+        current_stock_in_bin = Decimal("0")
+        if bin_capacity is not None:
+            current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+        self._validate_capacity(
+            bin_location=bin_location,
+            item_id=item_id,
+            packaging_unit_id=packaging_unit_id,
+            quantity=quantity,
+            bin_capacity=bin_capacity,
+            current_stock_in_bin=current_stock_in_bin,
+        )
+
+    def _validate_capacity(
+        self,
+        bin_location: WarehouseLocation,
+        item_id: UUID,
+        packaging_unit_id: UUID | None,
+        quantity: Decimal,
+        bin_capacity: Decimal | None,
+        current_stock_in_bin: Decimal,
+    ) -> None:
+        """Raise ValidationError if adding ``quantity`` would exceed the bin's
+        count, volume, or weight capacity.
+
+        ``bin_capacity`` is the legacy *unit-count* limit, or ``None`` when the
+        bin carries a physical measure instead (``max_volume_cc`` /
+        ``max_weight_grams``, or ``capacity`` with ``capacity_uom`` of
+        ``volume`` / ``weight``).
+        """
+        if bin_capacity is not None:
+            available_capacity = bin_capacity - current_stock_in_bin
+            if quantity > available_capacity:
+                raise ValidationError(
+                    f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                    f"Available capacity is {available_capacity} "
+                    f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
+                )
+
+        # Volume/weight capacity enforcement (null limit = unconstrained).
+        volume_limit_cc = effective_bin_volume_limit_cc(bin_location)
+        weight_limit_g = effective_bin_weight_limit_g(bin_location)
+        if volume_limit_cc is not None or weight_limit_g is not None:
+            required_cc, required_g = compute_item_required_cc_and_grams(
+                self.db, item_id, packaging_unit_id, quantity
+            )
+            occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_location.id)
+            if volume_limit_cc is not None and required_cc is not None:
+                occupied_cc = occupied_m3 * CC_PER_M3
+                limit_cc = volume_limit_cc
+                if occupied_cc + required_cc > limit_cc:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Volume capacity exceeded: occupied {occupied_cc} cc + "
+                        f"required {required_cc} cc > limit {limit_cc} cc"
+                    )
+            if weight_limit_g is not None and required_g is not None:
+                occupied_g = occupied_kg * G_PER_KG
+                limit_g = weight_limit_g
+                if occupied_g + required_g > limit_g:
+                    raise ValidationError(
+                        f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
+                        f"Weight capacity exceeded: occupied {occupied_g} g + "
+                        f"required {required_g} g > limit {limit_g} g"
+                    )
+
     def add_stock(
         self,
         bin_id: UUID,
@@ -38,6 +141,12 @@ class BinStockService:
         quantity: Decimal,
         org_id: UUID,
         batch_number: str | None = None,
+        *,
+        commit: bool = True,
+        sync_warehouse: bool = True,
+        packaging_unit_id: UUID | None = None,
+        inventory_status: str | None = None,
+        skip_validate: bool = False,
     ) -> BinStockLevel:
         """Add stock to a bin location.
 
@@ -58,6 +167,10 @@ class BinStockService:
             quantity: The quantity to add (must be positive).
             org_id: Organization ID for scoping.
             batch_number: Optional batch number for the stock.
+            inventory_status: Status for the resulting stock. Defaults to
+                ``available`` for normal stock; pass ``hold`` / ``quality`` /
+                ``damaged`` when segregating stock (E-05) so status-based
+                reporting and allocation do not treat it as sellable.
 
         Returns:
             The created or updated BinStockLevel record.
@@ -73,17 +186,22 @@ class BinStockService:
         # Get and validate the bin location
         bin_location = self._get_active_bin(bin_id, org_id)
 
-        # Check capacity won't be exceeded (skip if capacity is 0 = unlimited)
-        bin_capacity = Decimal(str(bin_location.capacity or 0))
-        if bin_capacity > 0:
+        # Current stock is also used for the available_capacity update below.
+        # ``capacity`` counts units only when it is not a physical measure.
+        bin_capacity = effective_bin_count_capacity(bin_location)
+        current_stock_in_bin = Decimal("0")
+        if bin_capacity is not None:
             current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
-            available_capacity = bin_capacity - current_stock_in_bin
-            if quantity > available_capacity:
-                raise ValidationError(
-                    f"Cannot add {quantity} to bin '{bin_location.full_path}'. "
-                    f"Available capacity is {available_capacity} "
-                    f"(total capacity: {bin_capacity}, current stock: {current_stock_in_bin})"
-                )
+
+        if not skip_validate:
+            self._validate_capacity(
+                bin_location=bin_location,
+                item_id=item_id,
+                packaging_unit_id=packaging_unit_id,
+                quantity=quantity,
+                bin_capacity=bin_capacity,
+                current_stock_in_bin=current_stock_in_bin,
+            )
 
         # Create or update the BinStockLevel record
         bin_stock = self._get_or_create_bin_stock(
@@ -91,6 +209,9 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
+            packaging_unit_id=packaging_unit_id,
+            inventory_status=inventory_status,
         )
         bin_stock.quantity_on_hand = (
             Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
@@ -98,24 +219,32 @@ class BinStockService:
         self.db.flush()
 
         # Update the bin's own available_capacity (recalculate_ancestors only walks up)
-        bin_location.available_capacity = bin_capacity - (
-            current_stock_in_bin + quantity
-        )
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=quantity,
-        )
+        # Sync warehouse-level stock_levels (skipped when the caller manages
+        # warehouse on_hand itself, e.g. pick-cancel add-back).
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=quantity,
+                quantity_available_delta=quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
+        # Refresh bin volume/weight capacity + 3-D state (mobile-app trigger point)
+        BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         self.db.refresh(bin_stock)
         return bin_stock
 
@@ -169,8 +298,12 @@ class BinStockService:
                 ],
             }
 
-        bin_capacity = Decimal(str(bin_location.capacity or 0))
-        current_stock_in_bin = self._get_total_stock_in_bin(bin_id)
+        bin_capacity = effective_bin_count_capacity(bin_location)
+        current_stock_in_bin = (
+            self._get_total_stock_in_bin(bin_id)
+            if bin_capacity is not None
+            else Decimal("0")
+        )
 
         results = []
         added_count = 0
@@ -187,7 +320,7 @@ class BinStockService:
                     raise ValidationError("Quantity must be positive")
 
                 # Check capacity (cumulative across items in this batch)
-                if bin_capacity > 0:
+                if bin_capacity is not None:
                     available = bin_capacity - current_stock_in_bin
                     if quantity > available:
                         raise ValidationError(
@@ -247,15 +380,14 @@ class BinStockService:
                 error_count += 1
 
         # Update bin's available_capacity and version
-        bin_location.available_capacity = (
-            bin_capacity - current_stock_in_bin if bin_capacity > 0 else Decimal("0")
-        )
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
         # Trigger capacity rollup for ancestors (once for all items)
         if added_count > 0:
             self.capacity_service.recalculate_ancestors(bin_id)
+            BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
         self.db.commit()
 
@@ -273,6 +405,10 @@ class BinStockService:
         quantity: Decimal,
         org_id: UUID,
         batch_number: str | None = None,
+        *,
+        commit: bool = True,
+        sync_warehouse: bool = True,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
         """Remove stock from a bin location.
 
@@ -313,6 +449,8 @@ class BinStockService:
             item_id=item_id,
             org_id=org_id,
             batch_number=batch_number,
+            for_update=True,
+            inventory_status=inventory_status,
         )
 
         if bin_stock is None:
@@ -334,25 +472,194 @@ class BinStockService:
         self.db.flush()
 
         # Update the bin's own available_capacity (recalculate_ancestors only walks up)
-        bin_capacity = Decimal(str(bin_location.capacity or 0))
-        bin_location.available_capacity = bin_capacity - (current_qty - quantity)
+        bin_location.available_capacity = self._available_capacity(bin_location)
         bin_location.version = (bin_location.version or 1) + 1
         self.db.flush()
 
-        # Sync warehouse-level stock_levels (negative delta)
-        self._sync_warehouse_stock(
-            item_id=item_id,
-            warehouse_id=bin_location.warehouse_id,
-            org_id=org_id,
-            quantity_delta=-quantity,
-        )
+        # Sync warehouse-level stock_levels (negative delta). Skipped for pick
+        # scans so warehouse on_hand is decremented exactly once, at dispatch.
+        if sync_warehouse:
+            self._sync_warehouse_stock(
+                item_id=item_id,
+                warehouse_id=bin_location.warehouse_id,
+                org_id=org_id,
+                quantity_delta=-quantity,
+                quantity_available_delta=-quantity
+                if bin_location.is_pickable
+                else Decimal("0"),
+            )
 
         # Trigger capacity rollup
         self.capacity_service.recalculate_ancestors(bin_id)
+        # Refresh bin volume/weight capacity + 3-D state (mobile-app trigger point)
+        BinCapacityService(self.db).refresh_bin(bin_id, org_id)
 
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         self.db.refresh(bin_stock)
         return bin_stock
+
+    def transition_status(
+        self,
+        bin_stock: BinStockLevel,
+        new_status: str,
+        *,
+        user_id: UUID | None = None,
+        commit: bool = True,
+    ) -> BinStockLevel:
+        """Advance a bin stock record through the pick status machine.
+
+        Validates ``available → picked → in_transit_to_stage`` (WF-016 / T-09).
+        A same-status call is a no-op (replay-safe). Every actual transition is
+        audited via a ``StatusTransition`` row.
+
+        Raises:
+            ValidationError: if ``current → new_status`` is not allowed.
+        """
+        current = bin_stock.inventory_status or InventoryStatus.AVAILABLE.value
+        if current == new_status:
+            return bin_stock  # idempotent no-op
+
+        if not can_transition_inventory_status(current, new_status):
+            raise ValidationError(
+                f"Invalid inventory status transition: '{current}' -> '{new_status}'"
+            )
+
+        bin_stock.inventory_status = new_status
+        if user_id is not None:
+            self.db.add(
+                StatusTransition(
+                    entity_type="bin_stock_level",
+                    entity_id=bin_stock.id,
+                    previous_status=current,
+                    new_status=new_status,
+                    user_id=user_id,
+                )
+            )
+
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
+        return bin_stock
+
+    def record_pick_movement(
+        self,
+        *,
+        org_id: UUID,
+        product_id: UUID,
+        warehouse_id: UUID,
+        quantity: Decimal,
+        reference_type: str,
+        reference_id: UUID,
+        performed_by: UUID | None = None,
+        notes: str | None = None,
+    ) -> StockMovement | None:
+        """Post an idempotent OUT movement ledger entry for a pick (WF-016).
+
+        A movement is only written once per (reference_type, reference_id);
+        a replay returns ``None`` without double-posting.
+        """
+        existing = (
+            self.db.query(StockMovement)
+            .filter(
+                StockMovement.organization_id == org_id,
+                StockMovement.reference_type == reference_type,
+                StockMovement.reference_id == reference_id,
+            )
+            .first()
+        )
+        if existing is not None:
+            return None
+
+        movement = StockMovement(
+            organization_id=org_id,
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            movement_type=MovementType.OUT,
+            quantity=int(quantity),
+            reference_type=reference_type,
+            reference_id=reference_id,
+            notes=notes,
+            performed_by=performed_by,
+        )
+        self.db.add(movement)
+        self.db.flush()
+        return movement
+
+    def transfer_stock(
+        self,
+        *,
+        from_bin_id: UUID,
+        to_bin_id: UUID,
+        item_id: UUID,
+        quantity: Decimal,
+        org_id: UUID,
+        batch_number: str | None = None,
+        inventory_status: str | None = None,
+        from_inventory_status: str | None = None,
+    ) -> BinStockLevel:
+        """Atomically move physical stock between bins without changing on-hand.
+
+        Availability changes only when the source and destination have different
+        pickability. This is the hold/quarantine → storage primitive used by
+        inbound exception disposition.
+
+        ``inventory_status`` sets the status of the destination stock, so moving
+        segregated stock into a HOLD/QUARANTINE/DAMAGED bin keeps it non-sellable
+        (E-05). ``from_inventory_status`` identifies which status to take from the
+        source bin when that bin holds more than one.
+        """
+        if from_bin_id == to_bin_id:
+            existing = self._get_bin_stock_record(
+                from_bin_id,
+                item_id,
+                org_id,
+                batch_number,
+                inventory_status=from_inventory_status or inventory_status,
+            )
+            if existing is None:
+                raise NotFoundError(
+                    "No stock record found for source bin",
+                    entity_type="BinStockLevel",
+                    entity_id=f"bin={from_bin_id}, item={item_id}",
+                )
+            return existing
+
+        source = self._get_active_bin(from_bin_id, org_id)
+        target = self._get_active_bin(to_bin_id, org_id)
+        if source.warehouse_id != target.warehouse_id:
+            raise ValidationError(
+                "Stock transfers must remain within the same warehouse"
+            )
+
+        try:
+            self.remove_stock(
+                from_bin_id,
+                item_id,
+                quantity,
+                org_id,
+                batch_number,
+                commit=False,
+                inventory_status=from_inventory_status,
+            )
+            moved = self.add_stock(
+                to_bin_id,
+                item_id,
+                quantity,
+                org_id,
+                batch_number,
+                commit=False,
+                inventory_status=inventory_status,
+            )
+            self.db.commit()
+            self.db.refresh(moved)
+            return moved
+        except Exception:
+            self.db.rollback()
+            raise
 
     def get_bins_for_item(
         self,
@@ -360,6 +667,12 @@ class BinStockService:
         org_id: UUID,
     ) -> list[dict]:
         """Return all bins containing a specific item with quantities and available capacity.
+
+        ``bin_capacity`` / ``available_capacity`` are reported in the bin's own
+        measure (see ``capacity_uom``): units for a count-limited bin, m³ for a
+        volume-limited bin, kg for a weight-limited bin. New-layout bins store
+        ``capacity = 1.2`` m³, so subtracting a unit count from it would report a
+        meaningless (often negative) number.
 
         Args:
             item_id: The item to search for.
@@ -388,9 +701,30 @@ class BinStockService:
             if bin_location is None:
                 continue
 
-            total_stock_in_bin = self._get_total_stock_in_bin(bs.bin_location_id)
-            bin_capacity = Decimal(str(bin_location.capacity or 0))
-            available_capacity = bin_capacity - total_stock_in_bin
+            count_cap = effective_bin_count_capacity(bin_location)
+            if count_cap is not None:
+                total_stock_in_bin = self._get_total_stock_in_bin(bs.bin_location_id)
+                bin_capacity = count_cap
+                available_capacity = count_cap - total_stock_in_bin
+                capacity_uom = bin_location.capacity_uom or "units"
+            else:
+                occupied_m3, occupied_kg = compute_bin_occupancy(
+                    self.db, bin_location.id
+                )
+                limit_cc = effective_bin_volume_limit_cc(bin_location)
+                limit_g = effective_bin_weight_limit_g(bin_location)
+                if limit_cc is not None:
+                    bin_capacity = limit_cc / CC_PER_M3
+                    available_capacity = bin_capacity - occupied_m3
+                    capacity_uom = "volume"
+                elif limit_g is not None:
+                    bin_capacity = limit_g / G_PER_KG
+                    available_capacity = bin_capacity - occupied_kg
+                    capacity_uom = "weight"
+                else:
+                    bin_capacity = Decimal("0")
+                    available_capacity = Decimal("0")
+                    capacity_uom = bin_location.capacity_uom
 
             results.append(
                 {
@@ -400,9 +734,11 @@ class BinStockService:
                     "warehouse_id": bin_location.warehouse_id,
                     "item_id": bs.item_id,
                     "quantity_on_hand": bs.quantity_on_hand,
+                    "inventory_status": bs.inventory_status,
                     "batch_number": bs.batch_number,
                     "bin_capacity": bin_capacity,
                     "available_capacity": available_capacity,
+                    "capacity_uom": capacity_uom,
                     "is_active": bin_location.is_active,
                     "created_at": bs.created_at,
                 }
@@ -446,12 +782,155 @@ class BinStockService:
 
         return (
             self.db.query(BinStockLevel)
+            .options(joinedload(BinStockLevel.item))
             .filter(
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
             )
             .all()
         )
+
+    def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
+        """Return the parent (master-pack) boxes present in a bin, grouped by product.
+
+        Child units are stored in ``bin_stock_levels`` with ``batch_number`` set
+        to the child serial. Each child links to its parent box through
+        ``qseal_parameters.parent_id`` → ``qseal_tracks``. Children of the same
+        parent box and item are grouped together.
+
+        The returned shape mirrors the inbound receiving-slip detail response
+        (``groups[] → parent_qseal / product_name / items[]``) so the frontend can
+        reuse the same rendering component.
+        """
+        from app.models.item import Item
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        # Validate the bin exists for this organization.
+        bin_location = (
+            self.db.query(WarehouseLocation)
+            .filter(
+                WarehouseLocation.id == bin_id,
+                WarehouseLocation.organization_id == org_id,
+            )
+            .first()
+        )
+        if bin_location is None:
+            raise NotFoundError(
+                f"Bin location with ID '{bin_id}' not found",
+                entity_type="WarehouseLocation",
+                entity_id=str(bin_id),
+            )
+
+        rows = (
+            self.db.query(
+                QSealTrack.id,  # 0 parent id
+                QSealTrack.serial_number,  # 1 parent serial
+                QSealTrack.name,  # 2 parent name
+                QSealTrack.qseal_type,  # 3 parent type
+                QSealTrack.capacity,  # 4 parent capacity
+                BinStockLevel.id,  # 5 bin stock level id
+                QSealParameters.serial_number,  # 6 child serial
+                QSealParameters.manufacturing_date,  # 7
+                QSealParameters.expiry_date,  # 8
+                QSealParameters.dispatch_batch,  # 9 real batch number
+                BinStockLevel.item_id,  # 10
+                BinStockLevel.quantity_on_hand,  # 11
+                BinStockLevel.inventory_status,  # 12
+                Item.item_name,  # 13
+                Item.sku,  # 14
+            )
+            .join(QSealParameters, QSealParameters.parent_id == QSealTrack.id)
+            .join(
+                BinStockLevel,
+                BinStockLevel.batch_number == QSealParameters.serial_number,
+            )
+            # Organization is part of the join condition (not the WHERE clause)
+            # so a corrupt cross-tenant item_id yields NULL name/sku instead of
+            # exposing another organization's item (and never drops the row).
+            .outerjoin(
+                Item,
+                and_(
+                    Item.id == BinStockLevel.item_id,
+                    Item.organization_id == org_id,
+                ),
+            )
+            .filter(
+                BinStockLevel.bin_location_id == bin_id,
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.quantity_on_hand > 0,
+                QSealParameters.organization_id == org_id,
+                QSealTrack.organization_id == org_id,
+            )
+            .order_by(
+                QSealTrack.name,
+                QSealTrack.serial_number,
+                QSealParameters.serial_number,
+            )
+            .all()
+        )
+
+        # One group per (parent box, item) pair.
+        groups: dict[tuple[UUID, UUID], dict] = {}
+        # ``qseal_parameters.serial_number`` has no unique constraint, so a
+        # legacy duplicate serial could match one stock row to several parents.
+        # Emit every stock row at most once (the ORDER BY makes "first" stable)
+        # so child units and quantities are never double-counted.
+        seen_stock_level_ids: set[UUID] = set()
+        for row in rows:
+            stock_level_id = row[5]
+            if stock_level_id in seen_stock_level_ids:
+                continue
+            seen_stock_level_ids.add(stock_level_id)
+
+            key = (row[0], row[10])
+            group = groups.get(key)
+            if group is None:
+                group = {
+                    "parent_qseal": {
+                        "id": str(row[0]),
+                        "serial_number": row[1],
+                        "name": row[2],
+                        "qseal_type": row[3],
+                        "capacity": row[4],
+                    },
+                    "product_name": row[13],
+                    "items": [],
+                }
+                groups[key] = group
+
+            child_serial = row[6]
+            quantity = Decimal(str(row[11])) if row[11] is not None else Decimal("0")
+            inventory_status = row[12]
+            group["items"].append(
+                {
+                    "id": str(row[5]),
+                    "name": row[13],
+                    "serial_number": child_serial,
+                    # The child serial is stored in batch_number; the QSeal
+                    # dispatch batch is the human-meaningful batch number.
+                    "batch_number": row[9] or child_serial,
+                    "sku": row[14],
+                    "manufacturing_date": str(row[7]) if row[7] else None,
+                    "expiry_date": str(row[8]) if row[8] else None,
+                    "quantity": quantity,
+                    "box_count": 1,
+                    # Stock sitting in a bin has passed receiving, so it is
+                    # accepted/good; the *_exception/notes fields stay null to
+                    # keep the payload shape identical to receiving slips.
+                    "flag": "ok",
+                    "condition_code": "GOOD",
+                    "inventory_status": inventory_status.value
+                    if hasattr(inventory_status, "value")
+                    else inventory_status,
+                    "exception_status": None,
+                    "exception_destination_location_id": None,
+                    "rejection_reason": None,
+                    "reason_code": None,
+                    "notes": None,
+                }
+            )
+
+        return list(groups.values())
 
     # ------------------------------------------------------------------
     # PRIVATE HELPERS
@@ -498,6 +977,23 @@ class BinStockService:
 
         return bin_location
 
+    def _available_capacity(self, bin_location: WarehouseLocation) -> Decimal:
+        """Remaining capacity of a bin, expressed in the bin's own measure.
+
+        Units for a count-limited bin, m³ for a volume-limited bin (the
+        ``capacity_uom='volume'`` new-layout bins), kg for a weight-limited bin.
+        Call after the stock write has been flushed so the occupancy read
+        reflects it — this is what the location tree and bin pickers display as
+        "available volume".
+        """
+        occupied_m3, occupied_kg = compute_bin_occupancy(self.db, bin_location.id)
+        return effective_available_capacity(
+            bin_location,
+            occupied_m3=occupied_m3,
+            occupied_kg=occupied_kg,
+            unit_count=self._get_total_stock_in_bin(bin_location.id),
+        )
+
     def _get_total_stock_in_bin(self, bin_id: UUID) -> Decimal:
         """Get the total quantity of all items currently in a bin."""
         total = (
@@ -515,18 +1011,41 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
+        packaging_unit_id: UUID | None = None,
+        inventory_status: str | None = None,
     ) -> BinStockLevel:
-        """Get an existing BinStockLevel or create a new one."""
+        """Get an existing BinStockLevel or create a new one.
+
+        When ``for_update`` is true the existing row is locked so concurrent
+        add/remove operations serialize instead of overwriting each other.
+
+        Rows are keyed by ``(bin, item, batch, inventory_status)``, so stock in a
+        different status never shares a row: adding segregated stock updates (or
+        creates) the row for that status instead of re-statusing the whole row
+        and silently flipping units that were already there. Omitting
+        ``inventory_status`` means ``available``.
+        """
+        effective_status = inventory_status or InventoryStatus.AVAILABLE.value
+
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
             BinStockLevel.organization_id == org_id,
+            # ``coalesce`` keeps any legacy NULL-status row addressable.
+            func.coalesce(
+                BinStockLevel.inventory_status, InventoryStatus.AVAILABLE.value
+            )
+            == effective_status,
         )
 
         if batch_number is not None:
             query = query.filter(BinStockLevel.batch_number == batch_number)
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
+
+        if for_update:
+            query = query.with_for_update()
 
         bin_stock = query.first()
 
@@ -537,9 +1056,16 @@ class BinStockService:
                 organization_id=org_id,
                 batch_number=batch_number,
                 quantity_on_hand=Decimal("0"),
+                packaging_unit_id=packaging_unit_id,
+                inventory_status=effective_status,
             )
             self.db.add(bin_stock)
             self.db.flush()
+        elif packaging_unit_id is not None:
+            # Keep packaging metadata current on an existing row (e.g. a
+            # serialized carton whose rows were first created loose), so
+            # later capacity math uses the right outer dimensions.
+            bin_stock.packaging_unit_id = packaging_unit_id
 
         return bin_stock
 
@@ -549,8 +1075,20 @@ class BinStockService:
         item_id: UUID,
         org_id: UUID,
         batch_number: str | None = None,
+        for_update: bool = False,
+        inventory_status: str | None = None,
     ) -> BinStockLevel | None:
-        """Get a specific BinStockLevel record."""
+        """Get a specific BinStockLevel record.
+
+        When ``for_update`` is true the row is locked (SELECT ... FOR UPDATE)
+        so the caller can read-modify-write without losing a concurrent
+        update (e.g. two simultaneous pick scans of the same bin).
+
+        A bin/item/batch can hold several statuses at once, so pass
+        ``inventory_status`` whenever the caller knows which stock it means.
+        Without it the row actually holding stock is preferred (oldest first),
+        which keeps the previous single-row behaviour predictable.
+        """
         query = self.db.query(BinStockLevel).filter(
             BinStockLevel.bin_location_id == bin_id,
             BinStockLevel.item_id == item_id,
@@ -562,6 +1100,22 @@ class BinStockService:
         else:
             query = query.filter(BinStockLevel.batch_number.is_(None))
 
+        if inventory_status is not None:
+            query = query.filter(
+                func.coalesce(
+                    BinStockLevel.inventory_status, InventoryStatus.AVAILABLE.value
+                )
+                == inventory_status
+            )
+
+        query = query.order_by(
+            (BinStockLevel.quantity_on_hand > 0).desc(),
+            BinStockLevel.created_at.asc(),
+        )
+
+        if for_update:
+            query = query.with_for_update()
+
         return query.first()
 
     def _sync_warehouse_stock(
@@ -570,6 +1124,7 @@ class BinStockService:
         warehouse_id: UUID,
         org_id: UUID,
         quantity_delta: Decimal,
+        quantity_available_delta: Decimal | None = None,
     ) -> None:
         """Sync bin-level stock change to the warehouse-level stock_levels table.
 
@@ -580,9 +1135,13 @@ class BinStockService:
             item_id: The item whose stock changed.
             warehouse_id: The warehouse containing the bin.
             org_id: Organization ID.
-            quantity_delta: Positive for additions, negative for removals.
+        quantity_delta: Positive for additions, negative for removals.
+        quantity_available_delta: Availability impact. Stock in non-pickable
+            bins changes on-hand but not ATP.
         """
-        # Get or create the warehouse-level stock record
+        # Get or create the warehouse-level stock record. FOR UPDATE serializes
+        # concurrent bin-level changes to the same (item, warehouse) aggregate
+        # so the read-modify-write below can't lose updates.
         stock_level = (
             self.db.query(StockLevel)
             .filter(
@@ -590,28 +1149,54 @@ class BinStockService:
                 StockLevel.warehouse_id == warehouse_id,
                 StockLevel.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
 
         if stock_level is None:
-            stock_level = StockLevel(
-                organization_id=org_id,
-                product_id=item_id,
-                warehouse_id=warehouse_id,
-                quantity_on_hand=0,
-                quantity_reserved=0,
-                quantity_available=0,
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            # INSERT ... ON CONFLICT DO NOTHING so two concurrent first-time
+            # syncs don't both try to create the row and fail the unique key.
+            self.db.execute(
+                pg_insert(StockLevel)
+                .values(
+                    organization_id=org_id,
+                    product_id=item_id,
+                    warehouse_id=warehouse_id,
+                    quantity_on_hand=0,
+                    quantity_reserved=0,
+                    quantity_available=0,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[StockLevel.product_id, StockLevel.warehouse_id]
+                )
             )
-            self.db.add(stock_level)
             self.db.flush()
+            # Re-fetch under lock (the row may have been inserted concurrently).
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == item_id,
+                    StockLevel.warehouse_id == warehouse_id,
+                    StockLevel.organization_id == org_id,
+                )
+                .with_for_update()
+                .first()
+            )
 
         # Apply the delta
         int_delta = int(quantity_delta)
         current_on_hand = stock_level.quantity_on_hand or 0
-        current_reserved = stock_level.quantity_reserved or 0
 
-        new_on_hand = current_on_hand + int_delta
-        new_available = max(0, new_on_hand - current_reserved)
+        new_on_hand = max(0, current_on_hand + int_delta)
+        available_delta = int(
+            quantity_available_delta
+            if quantity_available_delta is not None
+            else quantity_delta
+        )
+        current_available = stock_level.quantity_available or 0
+        new_available = max(0, current_available + available_delta)
 
         stock_level.quantity_on_hand = new_on_hand
         stock_level.quantity_available = new_available

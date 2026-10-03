@@ -106,22 +106,43 @@ IDENTITY_SERVICE_URL=http://identity-service.railway.internal:8000
 REDIS_URL=<upstash-redis-url>
 ```
 
-### Step 4: Set Up GitHub CI/CD (Auto-Deploy on `dev` Push)
+### Step 4: Set Up GitHub CI/CD (✅ Working)
 
-Railway has **native GitHub integration** — no need for complex GitHub Actions!
+The project uses **GitHub Actions** with **Railway config-as-code** (`railway.toml`). Two files control deployment:
 
-Option A: **Railway Native Git Integration (Recommended)**
+#### 4a. `railway.toml` (repo root) — Config-as-Code
 
-1. Go to your Railway project → **Settings** → **GitHub**
-2. Connect your GitHub repo
-3. Under **Deploy Triggers**, set:
-   - **Branch**: `dev`
-   - **Auto-deploy**: ON
-4. Each push to `dev` triggers an automatic deploy!
+```toml
+[build]
+builder = "dockerfile"
+watchPatterns = ["**/*"]
 
-Option B: **GitHub Actions (More Control)**
+[services.identity-service]
+source = "identity-service/"
+startCommand = "bash -c 'python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
 
-Create `.github/workflows/deploy-dev.yml`:
+[services.identity-service.build]
+dockerfilePath = "Dockerfile.identity"
+
+[services.identity-service.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+
+[services.core-service]
+source = "core-service/"
+startCommand = "bash -c 'python -m alembic upgrade heads || true && uvicorn app.main:app --host 0.0.0.0 --port 8001'"
+
+[services.core-service.build]
+dockerfilePath = "Dockerfile.core"
+
+[services.core-service.deploy]
+healthcheckPath = "/health"
+restartPolicyMaxRetries = 3
+```
+
+> **Key detail**: `startCommand` runs `alembic upgrade head(s)` before starting uvicorn — so **DB migrations run automatically on every deploy**. No separate migration step needed. Core uses `upgrade heads` (plural) because it has diverged migration branches.
+
+#### 4b. `.github/workflows/deploy-dev.yml` — CI Pipeline
 
 ```yaml
 name: Deploy to Railway (Dev)
@@ -130,10 +151,21 @@ on:
   push:
     branches:
       - dev
+    paths:
+      - "identity-service/**"
+      - "core-service/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-dev.yml"
+
+concurrency:
+  group: railway-dev
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: dev
 
     steps:
       - name: Checkout code
@@ -142,59 +174,76 @@ jobs:
       - name: Install Railway CLI
         run: |
           curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
 
       - name: Deploy Identity Service
         run: |
-          cd identity-service
-          railway up --service=identity-service --environment=dev --detach
+          railway up ./identity-service \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_IDENTITY_SERVICE_ID }}" \
+            --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Deploy Core Service
         run: |
-          cd core-service
-          railway up --service=core-service --environment=dev --detach
+          railway up ./core-service \
+            --path-as-root \
+            --service="${{ secrets.RAILWAY_CORE_SERVICE_ID }}" \
+            --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "### 🚀 Railway Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Identity Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Core Service | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
 ```
 
-### Step 5: Run Database Migrations
+> **Search & Nginx** deploy steps are commented out — uncomment when those services are ready.
 
-Railway can auto-run migrations. Create a `railway.json` in each service directory:
+### Step 5: Running Manual DB Migrations
 
-Or set up a **start command override** in Railway dashboard:
+Migrations run **automatically** on deploy via `startCommand`. If you need to run them manually:
 
-```
-bash -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+```bash
+# Create a new migration locally, then deploy
+cd core-service
+python -m alembic revision --autogenerate -m "description"
+git add . && git commit -m "migrations: description"
+git push bworigin dev   # triggers CI deploy → migrations run on startup
+
+# Or run directly on Railway (without redeploy)
+railway run --service=identity-service --environment=production "python -m alembic upgrade head"
+railway run --service=core-service --environment=production "python -m alembic upgrade heads"
 ```
 
 ### Step 6: Set Up a Domain (Optional)
 
 ```bash
-railway domain --environment dev
+railway domain --environment production
 ```
 
-This gives you: `https://identity-service.up.railway.app`
+This gives you: `https://identity-service-production-xxxx.up.railway.app`
 
 ---
 
-## 🔄 CI/CD Flow (Branch → Deploy)
+## 🔄 CI/CD Flow (✅ Working)
 
-```mermaid
-gitGraph
-    commit id: "initial"
-    branch dev
-    checkout dev
-    commit id: "feat: new API"
-    commit id: "fix: bug"
-    checkout main
-    merge dev
-```
+| Trigger               | What Happens                                                                 |
+| --------------------- | ---------------------------------------------------------------------------- |
+| Push to `dev` branch  | GitHub Actions builds & deploys Identity → Core via Railway CLI              |
+| DB Migrations         | Run **automatically** on deploy via `startCommand` in `railway.toml`         |
+| Manual redeploy       | Go to GitHub Actions → "Deploy to Railway (Dev)" → Run workflow              |
 
-| Branch | Environment | Auto-Deploy?           |
-| ------ | ----------- | ---------------------- |
-| `main` | Production  | ❌ Manual only         |
-| `dev`  | Test/Dev    | ✅ Auto-deploy on push |
+| Branch | Environment | Auto-Deploy?           | Status  |
+| ------ | ----------- | ---------------------- | ------- |
+| `main` | Production  | ❌ Manual only         | —       |
+| `dev`  | Production  | ✅ Auto-deploy on push | Working |
 
 ---
 
@@ -218,13 +267,18 @@ railway open
 
 ## 🔧 Troubleshooting
 
-| Issue                | Solution                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| Service won't start  | Check logs: `railway logs --service=identity-service`                                   |
-| DB connection failed | Verify `${{Postgres.DATABASE_URL}}` is set as env var                                   |
-| CORS errors          | Set `CORS_ORIGINS=*` for test env                                                       |
-| Migration fails      | Run manually: `railway run --service=identity-service "python -m alembic upgrade head"` |
-| Out of credits       | Check usage: `railway billing`                                                          |
+| Issue                       | Solution                                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| Service won't start         | Check logs: `railway logs --service=identity-service`                                           |
+| DB connection failed        | Verify `DATABASE_URL` is set as env var on Railway                                              |
+| CORS errors                 | Set `CORS_ORIGINS=*` for test env                                                               |
+| Migration fails             | Migrations run in `startCommand`. Check Railway logs for the service.                           |
+| `railway: command not found`| CLI installs to `$HOME/.railway/bin` — ensure `$GITHUB_PATH` includes it in CI                  |
+| `Environment not found`     | Use `--environment=production` (dev env may not exist on Railway)                               |
+| `Service not found`         | Check `RAILWAY_*_SERVICE_ID` secrets are set in GitHub → Settings → Secrets → Actions           |
+| `--service=""` (empty)      | Missing service ID secret — add `RAILWAY_IDENTITY_SERVICE_ID` / `RAILWAY_CORE_SERVICE_ID`       |
+| Out of credits              | Check usage: `railway billing`                                                                  |
+| PYTHONPATH warning          | Normal — Railway skips env vars that execute code in local processes. Harmless.                 |
 
 ---
 
@@ -255,14 +309,20 @@ Add these to your GitHub repo → Settings → Secrets → Actions:
 | `RAILWAY_IDENTITY_SERVICE_ID` | `495ec8e8-639b-423a-8184-e88a22b70539`                      |
 | `RAILWAY_CORE_SERVICE_ID`     | `ce06d3cb-743c-4ed3-b1f1-c6b4583f5480`                      |
 
-- [ ] Create Upstash Redis (free tier)
-- [ ] Run `railway init` to create project
-- [ ] Deploy identity-service with `railway up`
-- [ ] Deploy core-service with `railway up`
-- [ ] Add PostgreSQL: `railway add --database postgresql`
-- [ ] Create `dev` environment
-- [ ] Set all environment variables
-- [ ] Run database migrations
-- [ ] Connect GitHub repo in Railway dashboard
-- [ ] Set `dev` branch for auto-deploy
-- [ ] Push to `dev` → verify auto-deploy works!
+## ✅ Deployment Checklist
+
+- [x] Create Railway project
+- [x] Deploy identity-service
+- [x] Deploy core-service
+- [x] Add PostgreSQL database
+- [x] Set all environment variables
+- [x] Create `railway.toml` (config-as-code)
+- [x] Create `.github/workflows/deploy-dev.yml`
+- [x] Set `RAILWAY_TOKEN` GitHub secret
+- [x] Set `RAILWAY_IDENTITY_SERVICE_ID` GitHub secret
+- [x] Set `RAILWAY_CORE_SERVICE_ID` GitHub secret
+- [x] Push to `dev` → verify auto-deploy works
+- [ ] Set up Redis (Upstash or Railway)
+- [ ] Deploy search-service (commented out, ready when needed)
+- [ ] Deploy nginx-gateway (commented out, ready when needed)
+- [ ] Set up custom domain

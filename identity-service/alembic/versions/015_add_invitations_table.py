@@ -5,11 +5,13 @@ Revises: 014
 Create Date: 2026-08-06
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "015"
@@ -45,7 +47,9 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
-        sa.Column("token_hash", sa.String(255), nullable=False, unique=True, index=True),
+        sa.Column(
+            "token_hash", sa.String(255), nullable=False, unique=True, index=True
+        ),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),

@@ -17,7 +17,8 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user, require_permission
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import LANDING_PAGE_READ
 from app.schemas.landing_page import (
     ImageUploadResponse,
     LandingPageConfigCreate,
@@ -93,7 +94,7 @@ def get_landing_page_by_sku(
 def get_landing_page(
     product_id: UUID,
     service: LandingPageService = Depends(get_service),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(LANDING_PAGE_READ)),
 ):
     """Get the landing page configuration for a QR product."""
     config = service.get_config(product_id, current_user.organization_id)

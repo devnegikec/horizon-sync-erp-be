@@ -45,6 +45,7 @@ class PickList(Base):
     reference_type = Column(String(50), nullable=True)
     reference_id = Column(UUID(as_uuid=True), nullable=True)
     remarks = Column(Text, nullable=True)
+    assigned_to = Column(UUID(as_uuid=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
 
@@ -56,6 +57,26 @@ class PickList(Base):
         ForeignKey("dispatch_records.id"),
         nullable=True,
     )
+
+    # Columns added by migration 095 for staging (PR-10 / T-10, WF-019/020).
+    staging_location_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouse_locations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    staged_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Columns added by migration 097 for prioritization + task aging
+    # (PR-12 / T-12, WF-007, ALT-011).
+    priority = Column(Integer, default=0, nullable=False)
+    dispatch_cutoff = Column(DateTime(timezone=True), nullable=True)
+    wave = Column(String(100), nullable=True)
+    route = Column(String(100), nullable=True)
+    sla_minutes = Column(Integer, nullable=True)
+
+    # Columns added by migration 099 for task accept (PR-14 / T-14, WF-010).
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_by = Column(UUID(as_uuid=True), nullable=True)
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
@@ -93,13 +114,28 @@ class PickListItem(Base):
     qty = Column(Numeric(15, 3), nullable=False)
     picked_qty = Column(Numeric(15, 3), default=0)
     uom = Column(String(50), nullable=False)
+    per_case_qty = Column(Numeric(15, 3), nullable=True)
+    case_qty = Column(Numeric(15, 3), nullable=True)
+    loose_qty = Column(Numeric(15, 3), nullable=True)
     batch_no = Column(String(100), nullable=True)
     serial_nos = Column(JSONB, nullable=True)
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     sort_order = Column(Integer, default=0)
     # Column added by migration 047 for bin location tracking
     bin_location_id = Column(
         UUID(as_uuid=True),
         ForeignKey("warehouse_locations.id"),
+        nullable=True,
+    )
+    # Column added by migration 096 for handling-unit association (PR-11 / T-11).
+    handling_unit_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("handling_units.id", ondelete="SET NULL"),
         nullable=True,
     )
     extra_data = Column(JSONB, nullable=True)

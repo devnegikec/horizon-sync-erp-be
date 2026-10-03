@@ -140,6 +140,71 @@ class ScanSessionRepository:
         return session
 
     # ------------------------------------------------------------------
+    # CANCEL SESSION
+    # ------------------------------------------------------------------
+
+    def cancel_session(self, session_id: UUID) -> ScanSession | None:
+        """
+        Cancel a scan session by setting status to 'cancelled' and recording
+        the end timestamp.
+
+        Unlike close_session, cancelling does NOT generate a receiving slip —
+        any scanned items are discarded and the ASN is released for a fresh
+        session.
+
+        Args:
+            session_id: The scan session UUID.
+
+        Returns:
+            Updated ScanSession or None if not found.
+        """
+        # Conditional update: only cancel sessions that are still open. If a
+        # concurrent end_session closed the session (and generated its
+        # receiving slip) between the caller's open-check and this update, the
+        # WHERE clause prevents overwriting 'closed' with 'cancelled'.
+        updated = (
+            self.db.query(ScanSession)
+            .filter(ScanSession.id == session_id, ScanSession.status == "open")
+            .update(
+                {
+                    ScanSession.status: "cancelled",
+                    ScanSession.ended_at: datetime.now(UTC),
+                },
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        if updated == 0:
+            return None
+        return self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
+
+    # ------------------------------------------------------------------
+    # SET ASN ORDER
+    # ------------------------------------------------------------------
+
+    def set_asn_order(self, session_id: UUID, asn_order_id: UUID) -> ScanSession | None:
+        """
+        Link a scan session to an ASN order.
+
+        Args:
+            session_id: The scan session UUID.
+            asn_order_id: The ASN order UUID to link.
+
+        Returns:
+            Updated ScanSession or None if not found.
+        """
+        session = (
+            self.db.query(ScanSession).filter(ScanSession.id == session_id).first()
+        )
+        if session is None:
+            return None
+
+        session.asn_order_id = asn_order_id
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    # ------------------------------------------------------------------
     # LIST SESSIONS (filtered + paginated)
     # ------------------------------------------------------------------
 

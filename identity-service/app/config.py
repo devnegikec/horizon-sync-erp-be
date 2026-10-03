@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Get the project root directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ENV_FILE = os.path.join(BASE_DIR, ".env")
+# Switch environments without editing this file, e.g.:
+#   ENV_FILE=.env.production uvicorn app.main:app --reload
+# Defaults to the service's own `.env`.
+ENV_FILE = os.environ.get("ENV_FILE") or os.path.join(BASE_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -28,7 +31,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_max_overflow: int = 10
     db_pool_recycle: int = 1800  # Recycle connections every 30 min
-    db_pool_timeout: int = 30    # Wait up to 30s for a connection
+    db_pool_timeout: int = 30  # Wait up to 30s for a connection
 
     # Security
     secret_key: str
@@ -70,7 +73,7 @@ class Settings(BaseSettings):
     smtp_validate_certs: bool = True
 
     # CORS
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True
 
     # Rate Limiting
@@ -82,6 +85,16 @@ class Settings(BaseSettings):
     # Core Service Integration
     core_service_url: str = "http://localhost:8001"
     core_service_timeout: int = 10  # seconds
+    # Shared secret sent as X-Internal-Secret to core-service internal
+    # endpoints (must match core-service's INTERNAL_SERVICE_SECRET). This is a
+    # TEST default — set CORE_SERVICE_SECRET (or CORE_SERVICE_SECRET_ID to load
+    # it from AWS Secrets Manager) in deployed environments.
+    core_service_secret: str = "dev-internal-secret-testing"
+    # Optional: AWS Secrets Manager secret name/ARN to load the value above
+    # from at startup (overrides CORE_SERVICE_SECRET). Leave empty to use the
+    # environment variable / default directly.
+    core_service_secret_id: str = ""
+    aws_region: str = "ap-south-1"
     enable_auto_chart_creation: bool = True
     chart_creation_retry_attempts: int = 3
 
@@ -97,6 +110,43 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+logger = logging.getLogger(__name__)
+
+
+def _load_secret_from_secrets_manager(secret_id: str, region: str) -> str | None:
+    """Fetch a secret value from AWS Secrets Manager.
+
+    Returns ``None`` when boto3 is unavailable, the secret is missing, or any
+    error occurs — the caller then falls back to the environment/default value.
+    """
+    try:
+        import boto3  # optional dependency — required only for AWS deployments
+    except ImportError:
+        logger.warning(
+            "CORE_SERVICE_SECRET_ID is set but boto3 is not installed; "
+            "using CORE_SERVICE_SECRET from environment/default."
+        )
+        return None
+    try:
+        client = boto3.client("secretsmanager", region_name=region or None)
+        response = client.get_secret_value(SecretId=secret_id)
+        return response.get("SecretString")
+    except Exception as exc:  # noqa: BLE001 — log and fall back to env/default
+        logger.warning(
+            "Failed to load core service secret from AWS Secrets Manager " "(%s): %s",
+            secret_id,
+            exc,
+        )
+        return None
+
+
+if settings.core_service_secret_id:
+    secret = _load_secret_from_secrets_manager(
+        settings.core_service_secret_id, settings.aws_region
+    )
+    if secret:
+        settings.core_service_secret = secret.strip()
 
 # Debug: Print loaded settings
 logger = logging.getLogger(__name__)

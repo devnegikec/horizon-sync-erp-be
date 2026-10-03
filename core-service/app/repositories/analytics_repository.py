@@ -1,14 +1,16 @@
 """Repository for Analytics module"""
 
-import logging
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Date, cast, func
+from sqlalchemy import Date, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.analytics import MetaCampaign
+from app.models.qr_cta_config import QRCTAConfig
+from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
+from app.models.qr_scan_interaction import QRScanInteraction
 
 
 class QRScanEventRepository:
@@ -132,48 +134,42 @@ class QRScanEventRepository:
         q = self._base_query(organization_id, date_from, date_to)
         total_scans = q.count()
 
-        # cta_action column may not exist yet in DB — default to 0
-        try:
-            scans_with_cta = q.filter(QRScanEvent.cta_action.is_not(None)).count()
-        except Exception:
-            scans_with_cta = 0
+        scans_with_cta = q.filter(QRScanEvent.cta_action.is_not(None)).count()
 
-        from app.models.qr_scan_interaction import QRScanInteraction
+        # Scope interactions to the same scan cohort as the date-filtered scan
+        # query. This avoids counting actions belonging to another tenant or to
+        # scans outside the requested reporting period.
+        scan_ids = q.with_entities(QRScanEvent.id)
+        si_q = self.db.query(QRScanInteraction).filter(
+            QRScanInteraction.organization_id == organization_id,
+            QRScanInteraction.scan_event_id.in_(scan_ids),
+        )
+        total_interactions = si_q.count()
+        scans_with_interactions = (
+            si_q.with_entities(
+                func.count(func.distinct(QRScanInteraction.scan_event_id))
+            ).scalar()
+            or 0
+        )
+        conversion_rate = (
+            round(scans_with_interactions / total_scans * 100, 1)
+            if total_scans
+            else 0.0
+        )
 
-        total_interactions = 0
-        conversion_rate = 0.0
-        top_interaction_types = []
-        try:
-            si_q = self.db.query(QRScanInteraction).filter(
-                QRScanInteraction.organization_id == organization_id
+        top_types = (
+            si_q.with_entities(
+                QRScanInteraction.interaction_type,
+                func.count().label("count"),
             )
-            if date_from:
-                si_q = si_q.filter(QRScanInteraction.created_at >= date_from)
-            if date_to:
-                si_q = si_q.filter(QRScanInteraction.created_at <= date_to)
-            total_interactions = si_q.count()
-
-            conversion_rate = (
-                round(scans_with_cta / total_scans * 100, 1) if total_scans else 0.0
-            )
-
-            top_types = (
-                si_q.with_entities(
-                    QRScanInteraction.interaction_type,
-                    func.count().label("count"),
-                )
-                .group_by(QRScanInteraction.interaction_type)
-                .order_by(func.count().desc())
-                .limit(5)
-                .all()
-            )
-            top_interaction_types = [
-                {"type": r.interaction_type, "count": r.count} for r in top_types
-            ]
-        except Exception:
-            pass
-
-        scans_with_interactions = scans_with_cta
+            .group_by(QRScanInteraction.interaction_type)
+            .order_by(func.count().desc())
+            .limit(5)
+            .all()
+        )
+        top_interaction_types = [
+            {"type": row.interaction_type, "count": row.count} for row in top_types
+        ]
 
         return {
             "total_scans": total_scans,
@@ -222,7 +218,12 @@ class QRScanEventRepository:
         limit: int = 500,
     ) -> dict:
         q = self._base_query(organization_id, date_from, date_to)
-        q = q.filter(QRScanEvent.latitude.is_not(None))
+        q = q.filter(
+            QRScanEvent.latitude.is_not(None),
+            QRScanEvent.longitude.is_not(None),
+            QRScanEvent.latitude.between(-90, 90),
+            QRScanEvent.longitude.between(-180, 180),
+        )
         rows = (
             q.with_entities(
                 QRScanEvent.latitude,
@@ -248,8 +249,8 @@ class QRScanEventRepository:
                 "city": r.city,
                 "state": r.state,
                 "country": r.country,
-                "latitude": float(r.latitude) if r.latitude else 0,
-                "longitude": float(r.longitude) if r.longitude else 0,
+                "latitude": float(r.latitude),
+                "longitude": float(r.longitude),
                 "count": r.count,
             }
             for r in rows
@@ -351,32 +352,96 @@ class MetaCampaignRepository:
 
 
 class ScanInteractionRepository:
-    """Placeholder for scan interaction tracking (Phase 4)."""
+    """Persistence for tenant-scoped post-scan interactions."""
 
     def __init__(self, db: Session):
         self.db = db
 
     def create(self, data: dict):
-        logger = logging.getLogger(__name__)
-        logger.warning(
-            "ScanInteractionRepository.create called but model not yet available"
+        scan = (
+            self.db.query(QRScanEvent)
+            .filter(
+                QRScanEvent.organization_id == data["organization_id"],
+                or_(
+                    QRScanEvent.id == data["scan_event_id"],
+                    QRScanEvent.event_id == data["scan_event_id"],
+                ),
+            )
+            .first()
         )
-        return None
+        if scan is None:
+            return None
+        payload = {**data, "scan_event_id": scan.id}
+        interaction = QRScanInteraction(**payload)
+        self.db.add(interaction)
+        self.db.commit()
+        self.db.refresh(interaction)
+        return interaction
 
     def list_by_scan(self, scan_event_id: UUID, organization_id: UUID):
-        return []
+        return (
+            self.db.query(QRScanInteraction)
+            .filter(
+                QRScanInteraction.scan_event_id == scan_event_id,
+                QRScanInteraction.organization_id == organization_id,
+            )
+            .order_by(QRScanInteraction.created_at.asc())
+            .all()
+        )
 
 
 class CTAConfigRepository:
-    """Placeholder for CTA configuration (Phase 4)."""
+    """Persistence for product CTA configuration."""
 
     def __init__(self, db: Session):
         self.db = db
 
     def create(self, data: dict):
-        logger = logging.getLogger(__name__)
-        logger.warning("CTAConfigRepository.create called but model not yet available")
-        return None
+        product_exists = (
+            self.db.query(QRProduct.id)
+            .filter(
+                QRProduct.id == data["product_id"],
+                QRProduct.organization_id == data["organization_id"],
+                QRProduct.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if product_exists is None:
+            return None
+        config = QRCTAConfig(**data)
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
 
     def list_by_product(self, organization_id: UUID, product_id: UUID):
-        return []
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.organization_id == organization_id,
+                QRCTAConfig.product_id == product_id,
+            )
+            .order_by(QRCTAConfig.display_order.asc(), QRCTAConfig.created_at.asc())
+            .all()
+        )
+
+    def get_by_id(self, config_id: UUID, organization_id: UUID):
+        return (
+            self.db.query(QRCTAConfig)
+            .filter(
+                QRCTAConfig.id == config_id,
+                QRCTAConfig.organization_id == organization_id,
+            )
+            .first()
+        )
+
+    def update(self, config: QRCTAConfig, data: dict):
+        for field, value in data.items():
+            setattr(config, field, value)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def delete(self, config: QRCTAConfig) -> None:
+        self.db.delete(config)
+        self.db.commit()

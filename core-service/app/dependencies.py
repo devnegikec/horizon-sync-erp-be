@@ -1,10 +1,12 @@
 """Dependency injection for FastAPI"""
 
+import asyncio
+import secrets
 from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.database import get_db
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
+feature_flag_security = HTTPBearer(auto_error=False)
 
 
 @dataclass
@@ -118,38 +121,55 @@ async def _get_user_org_and_permissions(token: str) -> tuple[UUID | None, list[s
     Raises:
         HTTPException: If identity service unavailable or returns error
     """
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{settings.identity_service_url}/api/v1/identity/me",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5.0,
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Unable to get user context from identity service",
+    last_error: httpx.RequestError | None = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{settings.identity_service_url}/api/v1/identity/me",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5.0,
                 )
 
-            data = response.json()
-            org_id_str = data.get("organization_id")
-            organization_id = None
-            if org_id_str:
-                try:
-                    organization_id = UUID(org_id_str)
-                except ValueError:
-                    pass
-            permissions = data.get("permissions") or []
-            if not isinstance(permissions, list):
-                permissions = []
-            return organization_id, permissions
+                if response.status_code in (401, 403):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Unable to get user context from identity service",
+                    )
 
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Identity service unavailable",
-        ) from e
+                if response.status_code != 200:
+                    # Transient identity-service error (5xx etc.) — retry on
+                    # the next attempt instead of surfacing a false 401.
+                    if attempt < 2:
+                        await asyncio.sleep(0.2 * (attempt + 1))
+                        continue
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Identity service unavailable",
+                    )
+
+                data = response.json()
+                org_id_str = data.get("organization_id")
+                organization_id = None
+                if org_id_str:
+                    try:
+                        organization_id = UUID(org_id_str)
+                    except ValueError:
+                        pass
+                permissions = data.get("permissions") or []
+                if not isinstance(permissions, list):
+                    permissions = []
+                return organization_id, permissions
+
+        except httpx.RequestError as exc:
+            last_error = exc
+            if attempt < 2:
+                await asyncio.sleep(0.2 * (attempt + 1))
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Identity service unavailable",
+    ) from last_error
 
 
 async def get_current_active_user(
@@ -183,6 +203,30 @@ async def require_admin(
     return current_user
 
 
+async def require_internal_service(
+    x_internal_secret: str = Header(None, alias="X-Internal-Secret"),
+) -> None:
+    """Guard internal service-to-service endpoints with a shared secret.
+
+    Used by identity-service to call core-service setup/internal endpoints
+    (warehouse-user assignment, organization-defaults seeding, default
+    chart-of-accounts creation). Requests must present the configured shared
+    secret in the ``X-Internal-Secret`` header. The comparison is
+    constant-time to avoid timing side channels.
+    """
+    expected = settings.internal_service_secret
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal service secret not configured",
+        )
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid internal service secret",
+        )
+
+
 def has_permission(permissions: list[str], required_permission: str) -> bool:
     """
     Check if user has the required permission.
@@ -199,8 +243,9 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     # Exact match
     if required_permission in permissions:
         return True
-    # Full wildcard
-    if "*.*" in permissions:
+    # Full wildcard is ORG-SCOPED: it grants every org-level permission but
+    # NEVER platform-level system_admin.* permissions (tenant isolation).
+    if "*.*" in permissions and not required_permission.startswith("system_admin."):
         return True
     # system_admin.master grants all system_admin.* permissions
     if (
@@ -264,6 +309,23 @@ def require_permission(*permissions: str):
         # Note: Do NOT annotate current_user with CurrentUser type hint.
         # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
         # and tries to read them as query params instead of resolving Depends().
+        #
+        # Tenant isolation:
+        #   - system_admin is platform-level and passes every check.
+        #   - organization_admin (org owner) bypasses RBAC ONLY for org-level
+        #     permissions. system_admin.* codes gate cross-organization
+        #     (admin-portal) data and must NEVER be satisfied by an
+        #     org-scoped admin.
+        if current_user.user_type == "system_admin":
+            return current_user
+        requires_platform_permission = any(
+            p.startswith("system_admin.") for p in permissions
+        )
+        if (
+            current_user.user_type == "organization_admin"
+            and not requires_platform_permission
+        ):
+            return current_user
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -287,10 +349,47 @@ def require_feature_flag(flag_name: str):
         router = APIRouter(dependencies=[Depends(require_feature_flag("invoices_enabled"))])
     """
     from app.core.constants import FEATURE_DISABLED_CODE, HTTP_FEATURE_DISABLED
-    from app.services.feature_flag_service import is_feature_enabled
+    from app.services.feature_flag_service import (
+        is_feature_enabled,
+        is_feature_enabled_for_org,
+    )
 
-    async def _check_flag(db: Session = Depends(get_db)) -> None:
-        if not is_feature_enabled(flag_name, db):
+    async def _check_flag(
+        db: Session = Depends(get_db),
+        credentials: HTTPAuthorizationCredentials | None = Depends(
+            feature_flag_security
+        ),
+    ) -> None:
+        enabled = False
+
+        # Authenticated module requests should honor a tenant override. Keep
+        # the bearer token optional because this router also contains public
+        # QR scan ingestion endpoints, which must continue using the global
+        # flag when no user token is present.
+        if credentials:
+            try:
+                token = credentials.credentials
+                payload = decode_token(token)
+                if payload and payload.get("type") == "access":
+                    organization_id, _permissions = await _get_user_org_and_permissions(
+                        token
+                    )
+                    if organization_id is not None:
+                        enabled = is_feature_enabled_for_org(
+                            flag_name, db, organization_id
+                        )
+                    else:
+                        enabled = is_feature_enabled(flag_name, db)
+                else:
+                    enabled = is_feature_enabled(flag_name, db)
+            except Exception:
+                # The endpoint's own authentication dependency, when present,
+                # remains responsible for rejecting invalid user tokens.
+                enabled = is_feature_enabled(flag_name, db)
+        else:
+            enabled = is_feature_enabled(flag_name, db)
+
+        if not enabled:
             raise HTTPException(
                 status_code=HTTP_FEATURE_DISABLED,
                 detail={
