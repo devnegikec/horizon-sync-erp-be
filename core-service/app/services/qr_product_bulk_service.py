@@ -21,7 +21,9 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.qr_product import QRProduct
@@ -130,9 +132,14 @@ def _to_int(value, *, field: str) -> int | None:
     if text is None:
         return None
     try:
-        return int(Decimal(text))
-    except (InvalidOperation, ValueError) as exc:
+        number = Decimal(text)
+    except InvalidOperation as exc:
         raise ValueError(f"{field} must be a whole number") from exc
+    # ``int(Decimal("1.9"))`` silently truncates to 1 — reject fractions
+    # instead of accepting a value the error message says must be whole.
+    if number != number.to_integral_value():
+        raise ValueError(f"{field} must be a whole number")
+    return int(number)
 
 
 def _to_decimal(value, *, field: str) -> Decimal | None:
@@ -435,7 +442,8 @@ class QRProductBulkService:
             try:
                 payload = parse_row(raw, index)
                 was_created = self._upsert_row(organization_id, user_id, payload)
-            except Exception as exc:  # noqa: BLE001 - isolate per-row failures
+            except (HTTPException, ValueError, IntegrityError) as exc:
+                # Expected, row-scoped failures: record and keep going.
                 self.db.rollback()
                 message = getattr(exc, "detail", None) or str(exc)
                 errors.append(
@@ -446,6 +454,11 @@ class QRProductBulkService:
                     }
                 )
                 continue
+            except SQLAlchemyError:
+                # A database outage / programming error is not a row problem —
+                # surface it instead of reporting a misleading partial success.
+                self.db.rollback()
+                raise
             created += was_created
             updated += not was_created
 
@@ -460,27 +473,24 @@ class QRProductBulkService:
     def _upsert_row(self, organization_id: UUID, user_id: UUID, payload: dict) -> bool:
         """Create or update one product. Returns True when a row was created."""
         packaging = payload.get("packaging")
-        settings = {
-            "shelf_life_setting_id": self._resolve_setting(
-                organization_id, payload, "shelf_life_setting", "shelf_life"
-            ),
-            "serial_prefix_setting_id": self._resolve_setting(
-                organization_id, payload, "serial_prefix_setting", "serial_prefix"
-            ),
-        }
         if payload.get("brand_id") is not None:
             self._assert_brand(organization_id, payload["brand_id"])
 
         existing = find_active_product_by_sku(
             self.db, organization_id, payload.get("sku")
         )
+        packaging_details = (
+            QRProductPackagingDetails(**packaging) if packaging else None
+        )
+
+        # Settings are only resolved when the row supplies them, so a partial
+        # update (e.g. name + sku) preserves the existing shelf-life /
+        # serial-prefix instead of failing on a missing setting.
         if existing is not None:
             update = QRProductUpdate(
                 **self._update_kwargs(payload),
-                **settings,
-                packaging_details=(
-                    QRProductPackagingDetails(**packaging) if packaging else None
-                ),
+                **self._resolved_settings(organization_id, payload, required=False),
+                packaging_details=packaging_details,
             )
             self.product_service.update_product(
                 existing.id, update, organization_id, user_id
@@ -489,13 +499,30 @@ class QRProductBulkService:
 
         create = QRProductCreate(
             **self._create_kwargs(payload),
-            **settings,
-            packaging_details=(
-                QRProductPackagingDetails(**packaging) if packaging else None
-            ),
+            **self._resolved_settings(organization_id, payload, required=True),
+            packaging_details=packaging_details,
         )
         self.product_service.create_product(create, organization_id, user_id)
         return True
+
+    def _resolved_settings(
+        self, organization_id: UUID, payload: dict, *, required: bool
+    ) -> dict:
+        """Resolve whichever settings the row provided (by id or by value)."""
+        settings: dict = {}
+        for prefix, setting_type in (
+            ("shelf_life_setting", "shelf_life"),
+            ("serial_prefix_setting", "serial_prefix"),
+        ):
+            provided = f"{prefix}_id" in payload or f"{prefix}_value" in payload
+            if not provided:
+                if required:
+                    raise ValueError(f"{prefix}_id or {prefix}_value is required")
+                continue
+            settings[f"{prefix}_id"] = self._resolve_setting(
+                organization_id, payload, prefix, setting_type
+            )
+        return settings
 
     @staticmethod
     def _create_kwargs(payload: dict) -> dict:
@@ -504,6 +531,7 @@ class QRProductBulkService:
             "sku",
             "generic_name",
             "gtin",
+            "brand_id",
             "industry",
             "email",
             "phone_number",
@@ -642,10 +670,21 @@ class QRProductBulkService:
         return rows
 
 
+#: Leading characters spreadsheet software may interpret as a formula.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
 def _cell(value):
-    """Render a value for CSV/XLSX output."""
+    """Render a value for CSV/XLSX output, neutralising formula injection.
+
+    A user-controlled string such as ``=HYPERLINK(...)`` or ``+cmd|...`` would
+    be executed as a formula when the file is opened in Excel/Sheets; prefixing
+    it with an apostrophe keeps it inert text.
+    """
     if value is None:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, str) and value[:1] in _FORMULA_TRIGGERS:
+        return "'" + value
     return value

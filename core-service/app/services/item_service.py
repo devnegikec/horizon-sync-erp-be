@@ -437,6 +437,8 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not item.qr_product_id:
             try:
+                from sqlalchemy.exc import IntegrityError
+
                 from app.models.qr_product import QRProduct
                 from app.services.qr_product_service import (
                     find_active_product_by_sku,
@@ -447,19 +449,30 @@ class ItemService:
                 # already owns this SKU instead of inserting a duplicate.
                 product = find_active_product_by_sku(self.db, organization_id, item_sku)
                 if product is None:
-                    product = QRProduct(
-                        organization_id=organization_id,
-                        name=item.item_name,
-                        sku=item_sku,
-                        gtin=item.barcode,
-                        image_url=item.image_url,
-                        brand_id=item.brand_id,
-                        is_active=True,
-                        created_by=user_id,
-                        updated_by=user_id,
-                    )
-                    self.db.add(product)
-                    self.db.flush()
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=item.item_name,
+                                sku=item_sku,
+                                gtin=item.barcode,
+                                image_url=item.image_url,
+                                brand_id=item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(
@@ -613,6 +626,8 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not updated_item.qr_product_id:
             try:
+                from sqlalchemy.exc import IntegrityError
+
                 from app.models.qr_product import QRProduct
                 from app.services.qr_product_service import (
                     find_active_product_by_sku,
@@ -623,19 +638,30 @@ class ItemService:
                 # already owns this SKU instead of inserting a duplicate.
                 product = find_active_product_by_sku(self.db, organization_id, item_sku)
                 if product is None:
-                    product = QRProduct(
-                        organization_id=organization_id,
-                        name=updated_item.item_name,
-                        sku=item_sku,
-                        gtin=updated_item.barcode,
-                        image_url=updated_item.image_url,
-                        brand_id=updated_item.brand_id,
-                        is_active=True,
-                        created_by=user_id,
-                        updated_by=user_id,
-                    )
-                    self.db.add(product)
-                    self.db.flush()
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=updated_item.item_name,
+                                sku=item_sku,
+                                gtin=updated_item.barcode,
+                                image_url=updated_item.image_url,
+                                brand_id=updated_item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 updated_item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(

@@ -47,6 +47,18 @@ class TestParseRow:
         with pytest.raises(ValueError, match="brand_id"):
             parse_row({"name": "W", "brand_id": "not-a-uuid"}, 2)
 
+    def test_keeps_a_valid_brand_id(self):
+        brand_id = uuid4()
+        payload = parse_row({"name": "W", "brand_id": str(brand_id)}, 2)
+        assert payload["brand_id"] == brand_id
+
+    def test_rejects_fractional_integer_field(self):
+        # ``int(Decimal("1.9"))`` used to truncate to 1 silently.
+        with pytest.raises(ValueError, match="items_per_master_pack"):
+            parse_row({"name": "W", "items_per_master_pack": "1.9"}, 2)
+        with pytest.raises(ValueError, match="warranty_period_months"):
+            parse_row({"name": "W", "warranty_period_months": "2.5"}, 2)
+
     def test_settings_accept_id_or_value(self):
         setting_id = uuid4()
         by_id = parse_row({"name": "W", "shelf_life_setting_id": str(setting_id)}, 2)
@@ -131,3 +143,29 @@ class TestRenderAndRead:
     def test_read_rows_rejects_empty_file(self):
         with pytest.raises(ValueError, match="empty"):
             self._service()._read_rows(b"", "products.csv")
+
+    def test_create_kwargs_include_brand_id(self):
+        brand_id = uuid4()
+        kwargs = QRProductBulkService._create_kwargs(
+            {"name": "W", "sku": "ABC-1", "brand_id": brand_id}
+        )
+        assert kwargs["brand_id"] == brand_id
+
+    def test_export_neutralises_formula_injection(self):
+        svc = self._service()
+        content, _ = svc._render(
+            [{"name": '=HYPERLINK("http://evil")', "sku": "+cmd|calc"}],
+            PRODUCT_COLUMNS,
+            "csv",
+            "exp",
+        )
+        text = content.decode("utf-8-sig")
+        assert "'=HYPERLINK" in text
+        assert "'+cmd|calc" in text
+
+    def test_export_leaves_ordinary_text_untouched(self):
+        svc = self._service()
+        content, _ = svc._render(
+            [{"name": "Widget", "sku": "ABC-1"}], PRODUCT_COLUMNS, "csv", "exp"
+        )
+        assert "Widget" in content.decode("utf-8-sig")
