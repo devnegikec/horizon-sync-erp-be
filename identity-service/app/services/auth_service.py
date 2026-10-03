@@ -372,8 +372,17 @@ class AuthService:
         Fallback for when QR login is unavailable (mobile/device only).
         The worker must have a managed `login_username` + password.
         """
-        user = self.db.query(User).filter(User.login_username == login_username).first()
-        if not user or not verify_password(password, user.password_hash):
+        # Login usernames are unique per organization, so several users may
+        # share a username. Resolve by verifying the password against each
+        # candidate (the password is the distinguishing secret).
+        candidates = (
+            self.db.query(User).filter(User.login_username == login_username).all()
+        )
+        user = next(
+            (c for c in candidates if verify_password(password, c.password_hash)),
+            None,
+        )
+        if not user:
             raise AuthenticationError("Invalid username or password")
 
         if user.user_type != UserType.WAREHOUSE_WORKER:
