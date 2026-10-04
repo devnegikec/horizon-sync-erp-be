@@ -5,6 +5,7 @@ parsing/validation, and CSV/XLSX rendering + reading. The upsert path itself is
 exercised through ``QRProductService`` against a real database.
 """
 
+import csv
 import io
 from decimal import Decimal
 from uuid import uuid4
@@ -13,6 +14,7 @@ import pytest
 
 from app.services.qr_product_bulk_service import (
     PRODUCT_COLUMNS,
+    SAMPLE_ROWS,
     QRProductBulkService,
     parse_row,
 )
@@ -321,6 +323,43 @@ class TestRenderAndRead:
             [{"name": "Widget", "sku": "ABC-1"}], PRODUCT_COLUMNS, "csv", "exp"
         )
         assert "Widget" in content.decode("utf-8-sig")
+
+
+class TestTemplateSamples:
+    """The template ships example rows, so guard that they stay importable."""
+
+    def _template_rows(self, file_format: str = "csv") -> list[dict]:
+        svc = QRProductBulkService(db=None)
+        content, _ = svc.template(file_format)
+        text = content.decode("utf-8-sig")
+        return list(csv.DictReader(io.StringIO(text)))
+
+    def test_template_ships_header_and_samples(self):
+        rows = self._template_rows()
+        assert len(rows) == len(SAMPLE_ROWS)
+        assert list(rows[0].keys()) == PRODUCT_COLUMNS
+
+    def test_xlsx_template_ships_samples(self):
+        from openpyxl import load_workbook
+
+        svc = QRProductBulkService(db=None)
+        content, _ = svc.template("xlsx")
+        wb = load_workbook(io.BytesIO(content), read_only=True)
+        sheet_rows = list(wb.active.iter_rows(values_only=True))
+        assert sheet_rows[0] == tuple(PRODUCT_COLUMNS)
+        assert len(sheet_rows) == len(SAMPLE_ROWS) + 1
+
+    def test_every_sample_row_parses(self):
+        for index, row in enumerate(self._template_rows(), start=2):
+            payload = parse_row(row, index)
+            assert payload["name"]
+            assert payload.get("sku")
+
+    def test_samples_cover_ic_mc_and_item_columns(self):
+        packed = SAMPLE_ROWS[0]
+        assert packed["items_per_master_pack"]
+        assert packed["master_pack_unit_name"]
+        assert packed["standard_rate"]
 
 
 class TestPackageColumns:

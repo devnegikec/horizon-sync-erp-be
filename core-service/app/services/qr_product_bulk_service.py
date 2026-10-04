@@ -143,6 +143,127 @@ _ITEM_BOOL_FIELDS = ("maintain_stock",)
 _ITEM_STATUSES = {"draft", "pending_approval", "active", "inactive", "discontinued"}
 _VALUATION_METHODS = {"fifo", "lifo", "moving_average", "standard"}
 
+#: Illustrative rows shipped with the import template so the expected format is
+#: obvious — one fully-populated product, one master-carton example and one
+#: minimal row. Replace or delete them before importing; every value here is an
+#: example (the brand / item-group / setting references must exist in your org).
+SAMPLE_ROWS: list[dict] = [
+    {
+        "name": "A4 Copier Paper (500 sheets)",
+        "sku": "SKU-A4-PAPER-500",
+        "generic_name": "A4 Copier Paper",
+        "gtin": "8901234567890",
+        "industry": "Stationery",
+        "email": "care@example.com",
+        # Plain digits on purpose: a leading "+" is escaped as "'+" by the
+        # formula-injection guard, which would then be stored verbatim.
+        "phone_number": "9876543210",
+        "activation_method": "pre",
+        "sr_number_type": "R6DAN",
+        "qr_type": "dynamic",
+        "warranty_period_months": 12,
+        "redirect_to_client": False,
+        "is_active": True,
+        "brand_id": "",
+        "shelf_life_setting_id": "",
+        "shelf_life_setting_value": "24 months",
+        "serial_prefix_setting_id": "",
+        "serial_prefix_setting_value": "PAP",
+        # Inner carton / base packaging unit (IC)
+        "unit_name": "Ream",
+        "conversion_factor": 1,
+        "items_per_master_pack": 5,
+        "length_mm": 297,
+        "width_mm": 210,
+        "height_mm": 50,
+        "weight_grams": 2500,
+        # Master carton (MC)
+        "master_pack_unit_name": "Carton of 5 reams",
+        "master_pack_length_mm": 320,
+        "master_pack_width_mm": 220,
+        "master_pack_height_mm": 270,
+        "master_pack_weight_grams": 13000,
+        "master_pack_fill_factor": 0.8,
+        "master_pack_void_fill_pct": 0.1,
+        "master_pack_wall_thickness_mm": 3,
+        # Linked inventory item
+        "description": "A4 80gsm copier paper, 500 sheets per ream.",
+        "uom": "Ream",
+        "item_group_id": "",
+        "item_group_name": "Stationery",
+        "maintain_stock": True,
+        "valuation_method": "fifo",
+        "standard_rate": 320,
+        "valuation_rate": 280,
+        "min_order_qty": 1,
+        "max_order_qty": 500,
+        "reorder_level": 20,
+        "reorder_qty": 100,
+        "weight_per_unit": 2.5,
+        "weight_uom": "kg",
+        "barcode": "8901234567890",
+        "image_url": "https://example.com/products/a4-copier-paper.jpg",
+        "item_status": "active",
+    },
+    {
+        "name": "Hand Sanitiser 500ml",
+        "sku": "SKU-SANITISER-500",
+        "generic_name": "Alcohol Hand Sanitiser",
+        "activation_method": "post",
+        "sr_number_type": "S8DN",
+        "qr_type": "static_qr",
+        "is_active": True,
+        "shelf_life_setting_value": "36 months",
+        "serial_prefix_setting_value": "SAN",
+        "unit_name": "Bottle",
+        "conversion_factor": 1,
+        "items_per_master_pack": 12,
+        "length_mm": 70,
+        "width_mm": 70,
+        "height_mm": 210,
+        "weight_grams": 560,
+        "master_pack_unit_name": "Carton of 12 bottles",
+        "master_pack_fill_factor": 0.75,
+        "master_pack_void_fill_pct": 0.12,
+        "master_pack_wall_thickness_mm": 3,
+        "description": "70% alcohol-based hand sanitiser, 500ml pump bottle.",
+        "uom": "Bottle",
+        "maintain_stock": True,
+        "valuation_method": "fifo",
+        "standard_rate": 145,
+        "valuation_rate": 98,
+        "min_order_qty": 1,
+        "max_order_qty": 2000,
+        "reorder_level": 50,
+        "reorder_qty": 200,
+        "weight_per_unit": 0.56,
+        "weight_uom": "kg",
+        "barcode": "8901234567891",
+        "item_status": "active",
+    },
+    {
+        # Minimal row: only the required fields plus a single packaging unit
+        # (no master carton).
+        "name": "Cotton T-Shirt (Large)",
+        "sku": "SKU-TSHIRT-L",
+        "activation_method": "pre",
+        "shelf_life_setting_value": "60 months",
+        "serial_prefix_setting_value": "TSH",
+        "unit_name": "Piece",
+        "conversion_factor": 1,
+        "length_mm": 300,
+        "width_mm": 220,
+        "height_mm": 20,
+        "weight_grams": 180,
+        "description": "100% combed cotton crew-neck t-shirt, size L.",
+        "uom": "Piece",
+        "standard_rate": 499,
+        "valuation_rate": 350,
+        "barcode": "8901234567892",
+        "item_status": "active",
+    },
+]
+
 _BOOL_TRUE = {"1", "true", "yes", "y", "t"}
 
 CSV_MEDIA_TYPE = "text/csv"
@@ -603,9 +724,18 @@ class QRProductBulkService:
         return self._render(rows, columns, file_format, "qr_products_export")
 
     def template(self, file_format: str = "csv") -> tuple[bytes, str]:
-        """Return ``(bytes, filename)`` for an import template (headers only)."""
+        """Return ``(bytes, filename)`` for the import template.
+
+        Ships the header row plus a few illustrative sample rows (see
+        :data:`SAMPLE_ROWS`) so the expected layout — including the IC / MC
+        packaging and linked-item columns — is obvious. The samples are
+        examples only: replace or delete them before importing, and make sure
+        any brand / item-group / setting reference exists in your organization.
+        """
         columns = PRODUCT_COLUMNS
-        return self._render([], columns, file_format, "qr_products_import_template")
+        return self._render(
+            SAMPLE_ROWS, columns, file_format, "qr_products_import_template"
+        )
 
     @staticmethod
     def _export_row(product: QRProduct) -> dict:
