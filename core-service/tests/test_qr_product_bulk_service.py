@@ -88,6 +88,45 @@ class TestParseRow:
         with pytest.raises(ValueError, match="conversion_factor"):
             parse_row({"name": "W", "conversion_factor": "0"}, 2)
 
+    # ── qr_type / sr_number_type validation ───────────────────────────────
+
+    def test_accepts_every_supported_qr_type(self):
+        for qr_type in (
+            "dynamic",
+            "static",
+            "dual",
+            "secure_code",
+            "one_time",
+            "post_activation",
+        ):
+            payload = parse_row({"name": "W", "qr_type": qr_type}, 2)
+            assert payload["qr_type"] == qr_type
+
+    def test_rejects_unsupported_qr_type(self):
+        # 'static_qr' used to be stored verbatim and only rejected later, at
+        # QR-block creation time.
+        with pytest.raises(ValueError, match="QR type must be one of"):
+            parse_row({"name": "W", "qr_type": "static_qr"}, 2)
+
+    def test_qr_type_is_case_insensitive_and_accepts_legacy_codes(self):
+        assert parse_row({"name": "W", "qr_type": "DYNAMIC"}, 2)["qr_type"] == "dynamic"
+        assert parse_row({"name": "W", "qr_type": "S"}, 2)["qr_type"] == "static"
+
+    def test_accepts_supported_serial_number_types(self):
+        for serial in ("R8DAN", "R6DAN", "R4DAN", "S8DN", "S10DN"):
+            payload = parse_row({"name": "W", "sr_number_type": serial}, 2)
+            assert payload["sr_number_type"] == serial
+
+    def test_rejects_unsupported_serial_number_type(self):
+        with pytest.raises(ValueError, match="Serial number type must be one of"):
+            parse_row({"name": "W", "sr_number_type": "RANDOM"}, 2)
+
+    def test_serial_number_type_accepts_legacy_name(self):
+        payload = parse_row(
+            {"name": "W", "sr_number_type": "random_6_alpha_numeric"}, 2
+        )
+        assert payload["sr_number_type"] == "R6DAN"
+
     # ── Master carton (MC) ────────────────────────────────────────────────
 
     def test_master_carton_fields_are_parsed(self):
@@ -360,6 +399,20 @@ class TestTemplateSamples:
         assert packed["items_per_master_pack"]
         assert packed["master_pack_unit_name"]
         assert packed["standard_rate"]
+
+    def test_samples_only_use_supported_qr_types(self):
+        # A sample that fails on import (e.g. "static_qr") is worse than none.
+        for row in SAMPLE_ROWS:
+            parsed = parse_row(row, 2)
+            assert parsed.get("qr_type") in {
+                None,
+                "dynamic",
+                "static",
+                "dual",
+                "secure_code",
+                "one_time",
+                "post_activation",
+            }
 
 
 class TestPackageColumns:

@@ -33,6 +33,8 @@ from app.schemas.qr_product import (
     QRProductCreate,
     QRProductPackagingDetails,
     QRProductUpdate,
+    normalize_qr_type,
+    normalize_serial_number_type,
 )
 from app.services.qr_product_service import (
     QRProductService,
@@ -211,7 +213,7 @@ SAMPLE_ROWS: list[dict] = [
         "generic_name": "Alcohol Hand Sanitiser",
         "activation_method": "post",
         "sr_number_type": "S8DN",
-        "qr_type": "static_qr",
+        "qr_type": "static",
         "is_active": True,
         "shelf_life_setting_value": "36 months",
         "serial_prefix_setting_value": "SAN",
@@ -444,10 +446,19 @@ def _parse_activation(raw: dict, payload: dict) -> None:
             raise ValueError("activation_method must be 'pre' or 'post'")
         payload["activation_method"] = activation
 
-    for field in ("sr_number_type", "qr_type"):
-        text = _as_text(raw.get(field))
-        if text is not None:
-            payload[field] = text
+    # Validated here (not only at QR-block creation time) so an unsupported
+    # value fails the row instead of being stored and rejecting later.
+    qr_type = _as_text(raw.get("qr_type"))
+    if qr_type is not None:
+        normalized = normalize_qr_type(qr_type)
+        if normalized is not None:
+            payload["qr_type"] = normalized.value
+
+    sr_number_type = _as_text(raw.get("sr_number_type"))
+    if sr_number_type is not None:
+        normalized_serial = normalize_serial_number_type(sr_number_type)
+        if normalized_serial is not None:
+            payload["sr_number_type"] = normalized_serial.value
 
 
 def _parse_warranty(raw: dict, payload: dict) -> None:
