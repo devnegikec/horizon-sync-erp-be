@@ -118,19 +118,20 @@ class TestPhysicalLimits:
         bin_rows = [row for row in result.rows if row.location_type == "bin"]
         assert {float(row.max_weight_grams) for row in bin_rows} == {750000.0}
 
-    def test_bins_carry_the_usable_volume_as_capacity(self):
-        # Warehouse capacity is a roll-up of SUM(bin.capacity), so the usable
-        # volume has to land on `capacity` as well — leaving it at the column
-        # default made every layout-derived bin (and its warehouse) report 0.
+    def test_bins_leave_the_legacy_unit_count_columns_unset(self):
+        # The bin's measure lives in `max_volume_cc`. The legacy unit-count
+        # `capacity` columns must stay unset, otherwise CapacityService's
+        # `total_capacity - stock(eaches)` arithmetic mixes m³ with eaches and
+        # every ancestor reports a nonsense available capacity.
         _, result = materialize(MINIMAL)
 
         bin_rows = [row for row in result.rows if row.location_type == "bin"]
         assert bin_rows
         for row in bin_rows:
-            assert float(row.capacity) == 3.213
-            assert float(row.total_capacity) == 3.213
-            # Stated in m³, matching capacity_uom="volume" and max_volume_cc.
-            assert float(row.capacity) == float(row.max_volume_cc) / 1_000_000
+            assert row.capacity is None
+            assert row.total_capacity is None
+            assert row.available_capacity is None
+            assert float(row.max_volume_cc) == 3213000.0
 
     def test_non_bin_rows_carry_no_capacity_of_their_own(self):
         _, result = materialize(MINIMAL)
