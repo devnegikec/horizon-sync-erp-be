@@ -98,8 +98,13 @@ class BinStockInfoResponse(BaseModel):
     batch_number: str | None = None
     bin_capacity: Decimal = Decimal("0")
     available_capacity: Decimal = Decimal("0")
-    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
-    capacity_uom: str | None = None
+    capacity_uom: str | None = Field(
+        None,
+        description=(
+            "Unit bin_capacity/available_capacity are expressed in: 'm³' "
+            "(volume-limited bin), 'kg' (weight-limited) or 'units' (legacy count)."
+        ),
+    )
     is_active: bool = True
     created_at: datetime
 

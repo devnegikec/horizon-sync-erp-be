@@ -53,11 +53,15 @@ class LayoutBin(BaseModel):
     code: str
     full_path: str | None = None
     position: Position3D
-    # ``capacity``/``available_capacity`` are expressed in ``capacity_uom``:
-    # 'units' (legacy count), 'volume' (m³) or 'weight' (kg).
     capacity: float
     available_capacity: float
-    capacity_uom: str | None = None
+    capacity_uom: str | None = Field(
+        None,
+        description=(
+            "Unit capacity/available_capacity are expressed in: 'm³' "
+            "(volume-limited bin), 'kg' (weight-limited) or 'units' (legacy count)."
+        ),
+    )
     volume: CapacityVolume | None = None
     weight: CapacityWeight | None = None
     fill_percentage: float
@@ -167,8 +171,13 @@ class Suggestion(BaseModel):
     score: float
     reasons: list[str] = Field(default_factory=list)
     available_capacity: float
-    # 'units' (count), 'volume' (m³) — the measure of ``available_capacity``.
-    capacity_uom: str = "units"
+    capacity_uom: str = Field(
+        "units",
+        description=(
+            "Unit available_capacity is expressed in: 'm³' (volume-limited bin) "
+            "or 'units' (count-limited)."
+        ),
+    )
     distance_from_worker: float
     estimated_time_seconds: int
     batch_number: str | None = None
