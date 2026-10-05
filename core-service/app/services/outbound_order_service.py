@@ -239,6 +239,19 @@ class OutboundOrderService:
         self.db.refresh(order)
         return order
 
+    def cancel_order(self, order_id: UUID, org_id: UUID) -> OutboundOrder:
+        """Cancel (reject) an outbound order before picking starts."""
+        order = self.get_order(order_id, org_id)
+        if order.status == OutboundOrderStatus.COMPLETED:
+            raise ValidationError("Cannot cancel a completed order")
+        if order.status == OutboundOrderStatus.CANCELLED:
+            return order
+
+        order.status = OutboundOrderStatus.CANCELLED
+        self.db.commit()
+        self.db.refresh(order)
+        return order
+
     def create_order(
         self,
         org_id: UUID,

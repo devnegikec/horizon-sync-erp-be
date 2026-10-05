@@ -935,9 +935,16 @@ class AsnOrderService:
             # Serialized transfer lines carry their unit serials in
             # ``serial_nos``; surface them on the order line's ``batch_no`` so
             # the order detail and downstream pick lists show the batch/serial
-            # instead of null.
+            # instead of null. Batch-tracked lines (no serials) fall back to the
+            # batch label captured on the ASN item's extra_data.
             serials = item.serial_nos or []
-            batch_no = ", ".join(str(s) for s in serials) if serials else None
+            extra = item.extra_data or {}
+            batch_hint = extra.get("batch") if isinstance(extra, dict) else None
+            batch_no = (
+                ", ".join(str(s) for s in serials)
+                if serials
+                else (batch_hint or None)
+            )
             self.db.add(
                 OutboundOrderItem(
                     organization_id=asn_order.organization_id,
