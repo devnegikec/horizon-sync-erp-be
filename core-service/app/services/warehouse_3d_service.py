@@ -23,6 +23,7 @@ from app.services.capacity_math import (
     CC_PER_M3,
     G_PER_KG,
     compute_warehouse_bin_occupancy,
+    display_capacity_uom,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
     effective_bin_weight_limit_g,
@@ -302,7 +303,9 @@ class Warehouse3DService:
         return {
             "capacity": float(capacity),
             "available_capacity": float(available),
-            "capacity_uom": capacity_uom,
+            # "volume"/"weight" is the internal bin vocabulary; the number is
+            # already in m³/kg, so report the matching unit.
+            "capacity_uom": display_capacity_uom(capacity_uom),
             "fill_percentage": round(float(binding), 1),
             "volume": {
                 "capacity_m3": float(cap_m3) if cap_m3 is not None else None,
