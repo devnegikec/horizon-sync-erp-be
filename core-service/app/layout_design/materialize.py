@@ -303,6 +303,11 @@ def materialize_layout(
                             compiled_bin.centerY,
                         ),
                     )
+                    # The bin's physical limit lives in `max_volume_cc`; the
+                    # legacy unit-count `capacity` / `total_capacity` columns
+                    # stay unset on purpose so CapacityService's
+                    # `total_capacity - stock(eaches)` arithmetic never mixes
+                    # units (see LayoutService._reported_capacity).
                     bin_row.capacity_uom = VOLUME_UOM
                     bin_row.max_volume_cc = _dec(compiled_bin.maxVolumeCc)
                     if compiled_bin.maxWeightKg is not None:
