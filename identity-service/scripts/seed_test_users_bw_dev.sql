@@ -405,6 +405,7 @@ INSERT INTO _seed_role_perms (role_code, perm_code) VALUES
     ('warehouse_work_user', 'receiving_slip.create'),
     ('warehouse_work_user', 'receiving_slip.read'),
     ('warehouse_work_user', 'receiving_slip.update'),
+    ('warehouse_work_user', 'qseal.read'),
     ('warehouse_work_user', 'stock_entry.create'),
     ('warehouse_work_user', 'stock_entry.read'),
     ('warehouse_work_user', 'warehouse.read'),

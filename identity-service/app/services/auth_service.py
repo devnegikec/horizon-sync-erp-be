@@ -53,6 +53,7 @@ class AuthService:
         "pick_list.update",
         "stock_entry.create",
         "stock_entry.read",
+        "qseal.read",
     ]
 
     def __init__(self, db: Session):

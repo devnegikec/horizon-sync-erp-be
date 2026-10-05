@@ -932,6 +932,12 @@ class AsnOrderService:
         self.db.flush()
 
         for item in asn_order.items:
+            # Serialized transfer lines carry their unit serials in
+            # ``serial_nos``; surface them on the order line's ``batch_no`` so
+            # the order detail and downstream pick lists show the batch/serial
+            # instead of null.
+            serials = item.serial_nos or []
+            batch_no = ", ".join(str(s) for s in serials) if serials else None
             self.db.add(
                 OutboundOrderItem(
                     organization_id=asn_order.organization_id,
@@ -941,6 +947,7 @@ class AsnOrderService:
                     qty=item.qty,
                     uom=item.uom,
                     sku=(item.item.sku or item.item.item_code) if item.item else None,
+                    batch_no=batch_no,
                 )
             )
 
