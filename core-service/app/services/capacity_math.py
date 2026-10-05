@@ -97,6 +97,24 @@ def _capacity_uom(bin_loc) -> str:
     return str(getattr(bin_loc, "capacity_uom", None) or "").strip().lower()
 
 
+#: A bin stores ``capacity_uom`` in this internal vocabulary; users need a unit.
+CAPACITY_UOM_DISPLAY: dict[str, str] = {"volume": "m³", "weight": "kg"}
+
+
+def display_capacity_uom(token: str | None) -> str | None:
+    """Translate a bin ``capacity_uom`` token into a unit a user can read.
+
+    Bins carry the vocabulary ``units`` / ``volume`` / ``weight``, where
+    ``volume`` always means m³ (see :func:`effective_bin_volume_limit_cc`).
+    Rolling the raw token onto a warehouse reported "volume" as the unit of
+    measure, so it is mapped to a real unit instead.
+    """
+    if token is None:
+        return None
+    normalized = token.strip()
+    return CAPACITY_UOM_DISPLAY.get(normalized.lower(), normalized) or None
+
+
 def effective_bin_volume_limit_cc(bin_loc) -> Decimal | None:
     """Effective volume limit of a bin in cc, or ``None`` if unconstrained.
 

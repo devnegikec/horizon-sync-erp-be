@@ -16,6 +16,7 @@ from app.models.warehouse import Warehouse
 from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.warehouse_repository import WarehouseRepository
 from app.schemas.warehouse import WarehouseCreate, WarehouseTreeNode, WarehouseUpdate
+from app.services.capacity_math import display_capacity_uom
 from app.services.document_numbering_service import DocumentNumberingService
 
 
@@ -340,9 +341,7 @@ class WarehouseService:
             .all()
         )
 
-        capacity_map: dict[
-            UUID, tuple[Decimal | None, int, int, int, str | None]
-        ] = {
+        capacity_map: dict[UUID, tuple[Decimal | None, int, int, int, str | None]] = {
             row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in rows
         }
 
@@ -358,7 +357,7 @@ class WarehouseService:
             # unit and they all agree. Otherwise clear the label so the derived
             # total is never paired with a stale or arbitrary unit.
             if uom_count == bin_count and distinct_uoms == 1 and uom:
-                warehouse.capacity_uom = uom
+                warehouse.capacity_uom = display_capacity_uom(uom)
             else:
                 warehouse.capacity_uom = None
 

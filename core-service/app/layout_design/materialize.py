@@ -304,6 +304,15 @@ def materialize_layout(
                         ),
                     )
                     bin_row.capacity_uom = VOLUME_UOM
+                    # `capacity` must carry the usable volume in m³: the
+                    # warehouse total is a roll-up of `SUM(bin.capacity)` and
+                    # `capacity_math` reads a volume-uom `capacity` as m³. Leaving
+                    # it at the column default made every bin (and therefore the
+                    # warehouse) report a capacity of 0.
+                    volume_m3 = _dec(compiled_bin.usableVolumeM3, 3)
+                    bin_row.capacity = volume_m3
+                    bin_row.total_capacity = volume_m3
+                    bin_row.available_capacity = volume_m3
                     bin_row.max_volume_cc = _dec(compiled_bin.maxVolumeCc)
                     if compiled_bin.maxWeightKg is not None:
                         bin_row.max_weight_grams = _dec(compiled_bin.maxWeightKg * 1000)
