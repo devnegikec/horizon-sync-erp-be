@@ -24,7 +24,7 @@
 # Usage:
 #   ./deploy_local_to_railway.sh [service] ["deploy message"] [flags]
 #
-#   service  : one of identity-service, core-service, qr-worker,
+#   service  : one of identity-service, core-service, qr-worker, core-worker,
 #              search-service, nginx-gateway — or "all" to deploy every service.
 #              Defaults to identity-service.
 #
@@ -69,7 +69,7 @@ REQUIRE_CLEAN="${REQUIRE_CLEAN:-0}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-900}"
 LOG_LINES="${LOG_LINES:-1500}"
 
-ALL_SERVICES=(identity-service core-service qr-worker search-service nginx-gateway)
+ALL_SERVICES=(identity-service core-service qr-worker core-worker search-service nginx-gateway)
 
 usage() {
   cat <<EOF
@@ -271,7 +271,7 @@ preflight_migrations() {
   case "$SERVICE" in
     identity-service|all) echo "identity-service:"; alembic_heads "identity-service" ;;
   esac
-  echo "(qr-worker/search-service/nginx-gateway have no alembic migrations)"
+  echo "(qr-worker/core-worker/search-service/nginx-gateway have no alembic migrations)"
 }
 
 # ------------------------------------------------------------------- deploy

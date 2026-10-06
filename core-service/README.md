@@ -62,11 +62,19 @@ Core Service is a microservice handling **Inventory**, **Order**, and **Billing*
    - Swagger UI: http://localhost:8001/docs
    - ReDoc: http://localhost:8001/redoc
 
-### Running QR Block Generation Locally
+### Running Background Workers Locally
 
-QR block creation is processed asynchronously by a Celery worker. PostgreSQL,
-Redis, the Core API, and the worker must use the same `core-service/.env`
-configuration.
+Background work is processed asynchronously by **two Celery workers** that
+consume **different queues**. PostgreSQL, Redis, the Core API, and both workers
+must use the same `core-service/.env` configuration.
+
+| Worker        | Queue            | Tasks                                        |
+| ------------- | ---------------- | -------------------------------------------- |
+| `qr-worker`   | `qr-generation`  | QR block generation (`qseal.generate_block`) |
+| `core-worker` | `core-tasks`     | Bulk put-away, transfer reconciliation       |
+
+Both workers are defined in `docker-compose.yml` and deploy together — see the
+deployment notes below.
 
 ```bash
 # Apply migrations
@@ -78,7 +86,17 @@ DEBUG=false uvicorn app.main:app --reload --port 8010
 # Terminal 2: QR generation worker
 DEBUG=false celery -A app.celery_app:celery_app worker \
   --loglevel=INFO --queues=qr-generation --concurrency=2
+
+# Terminal 3: Core background worker (bulk put-away + reconciliation)
+DEBUG=false celery -A app.celery_app:celery_app worker \
+  --loglevel=INFO --queues=core-tasks --concurrency=2
 ```
+
+> **Deployment note:** `core-worker` is a separate service from `qr-worker`.
+> It must be deployed alongside `qr-worker` (both `docker-compose.yml` services,
+> both `railway.toml` services, and both `railway up -s …` steps in the
+> `deploy-*.yml` workflows). Without it, queued bulk put-away and transfer
+> reconciliation jobs have no consumer.
 
 Generated workbooks and Product images are stored in the configured private S3
 bucket. Signed QR URLs are shortened through the configured short-URL provider;
@@ -181,13 +199,16 @@ pre-commit run --all-files
 
 ### Environment Variables
 
-| Variable               | Description                              | Default                  |
-| ---------------------- | ---------------------------------------- | ------------------------ |
-| `DATABASE_URL`         | PostgreSQL connection string             | Required                 |
-| `SECRET_KEY`           | JWT secret (must match identity-service) | Required                 |
-| `IDENTITY_SERVICE_URL` | URL of identity service                  | http://identity_api:8000 |
-| `DEBUG`                | Enable debug mode                        | false                    |
-| `CORS_ORIGINS`         | Allowed CORS origins                     | http://localhost:3000    |
+| Variable                  | Description                                          | Default                   |
+| ------------------------- | ---------------------------------------------------- | ------------------------- |
+| `DATABASE_URL`            | PostgreSQL connection string                         | Required                  |
+| `SECRET_KEY`              | JWT secret (must match identity-service)             | Required                  |
+| `IDENTITY_SERVICE_URL`    | URL of identity service                              | http://identity_api:8000  |
+| `DEBUG`                   | Enable debug mode                                    | false                     |
+| `CORS_ORIGINS`            | Allowed CORS origins                                 | http://localhost:3000     |
+| `CELERY_BROKER_URL`       | Celery broker URL (Redis)                            | (empty → falls back to `REDIS_URL`) |
+| `CELERY_QR_QUEUE_NAME`    | Queue for QR block generation (`qr-worker`)          | qr-generation             |
+| `CELERY_DEFAULT_QUEUE_NAME` | Queue for non-QR tasks (`core-worker`)             | core-tasks                |
 
 ## Architecture
 

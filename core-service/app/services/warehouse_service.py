@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -16,6 +16,7 @@ from app.models.warehouse import Warehouse
 from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.repositories.warehouse_repository import WarehouseRepository
 from app.schemas.warehouse import WarehouseCreate, WarehouseTreeNode, WarehouseUpdate
+from app.services.capacity_math import CC_PER_M3, display_capacity_uom
 from app.services.document_numbering_service import DocumentNumberingService
 
 
@@ -324,6 +325,26 @@ class WarehouseService:
             self.db.query(
                 WarehouseLocation.warehouse_id,
                 func.sum(WarehouseLocation.capacity),
+                # Effective physical volume, mirroring
+                # capacity_math.effective_bin_volume_limit_cc: max_volume_cc
+                # wins, else a volume-uom `capacity` (m³) converted to cc.
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                WarehouseLocation.max_volume_cc.isnot(None),
+                                WarehouseLocation.max_volume_cc,
+                            ),
+                            (
+                                WarehouseLocation.capacity_uom == "volume",
+                                func.coalesce(WarehouseLocation.capacity, 0)
+                                * CC_PER_M3,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("volume_cc"),
                 func.count().label("bin_count"),
                 func.count(WarehouseLocation.capacity_uom).label("uom_count"),
                 func.count(func.distinct(WarehouseLocation.capacity_uom)).label(
@@ -340,27 +361,39 @@ class WarehouseService:
             .all()
         )
 
-        capacity_map: dict[
-            UUID, tuple[Decimal | None, int, int, int, str | None]
-        ] = {
-            row[0]: (row[1], row[2], row[3], row[4], row[5]) for row in rows
-        }
+        capacity_map: dict[UUID, tuple] = {row[0]: row[1:] for row in rows}
 
         for warehouse in warehouses:
             row = capacity_map.get(warehouse.id)
             if row is None:
                 continue
-            total, bin_count, uom_count, distinct_uoms, uom = row
+            total, capacity_uom = self._derived_capacity(row)
             if total is None:
                 continue
-            warehouse.total_capacity = float(total)
-            # Report a single UOM only when every active bin carries a non-null
-            # unit and they all agree. Otherwise clear the label so the derived
-            # total is never paired with a stale or arbitrary unit.
-            if uom_count == bin_count and distinct_uoms == 1 and uom:
-                warehouse.capacity_uom = uom
-            else:
-                warehouse.capacity_uom = None
+            warehouse.total_capacity = total
+            warehouse.capacity_uom = capacity_uom
+
+    @staticmethod
+    def _derived_capacity(row: tuple) -> tuple[float | None, str | None]:
+        """Derive ``(total_capacity, capacity_uom)`` from one aggregate bin row.
+
+        Volume-limited bins keep their measure in ``max_volume_cc`` and
+        deliberately leave the legacy unit-count ``capacity`` column at 0 (see
+        ``LayoutService._reported_capacity``), so a volume layout is summed from
+        the physical limit instead. The UOM is only reported when every active
+        bin agrees on one unit — a mixed or unknown layout clears the label
+        rather than mislabelling the total.
+        """
+        total, volume_cc, bin_count, uom_count, distinct_uoms, uom = row
+        agrees = uom_count == bin_count and distinct_uoms == 1 and bool(uom)
+        if agrees and (uom or "").strip().lower() == "volume":
+            return (
+                float(Decimal(str(volume_cc)) / CC_PER_M3),
+                display_capacity_uom(uom),
+            )
+        if total is None:
+            return None, None
+        return float(total), (display_capacity_uom(uom) if agrees else None)
 
     def get_warehouse_tree(self, organization_id: UUID) -> list[WarehouseTreeNode]:
         """

@@ -5,6 +5,7 @@ parsing/validation, and CSV/XLSX rendering + reading. The upsert path itself is
 exercised through ``QRProductService`` against a real database.
 """
 
+import csv
 import io
 from decimal import Decimal
 from uuid import uuid4
@@ -13,6 +14,7 @@ import pytest
 
 from app.services.qr_product_bulk_service import (
     PRODUCT_COLUMNS,
+    SAMPLE_ROWS,
     QRProductBulkService,
     parse_row,
 )
@@ -85,6 +87,45 @@ class TestParseRow:
     def test_rejects_non_positive_conversion_factor(self):
         with pytest.raises(ValueError, match="conversion_factor"):
             parse_row({"name": "W", "conversion_factor": "0"}, 2)
+
+    # ── qr_type / sr_number_type validation ───────────────────────────────
+
+    def test_accepts_every_supported_qr_type(self):
+        for qr_type in (
+            "dynamic",
+            "static",
+            "dual",
+            "secure_code",
+            "one_time",
+            "post_activation",
+        ):
+            payload = parse_row({"name": "W", "qr_type": qr_type}, 2)
+            assert payload["qr_type"] == qr_type
+
+    def test_rejects_unsupported_qr_type(self):
+        # 'static_qr' used to be stored verbatim and only rejected later, at
+        # QR-block creation time.
+        with pytest.raises(ValueError, match="QR type must be one of"):
+            parse_row({"name": "W", "qr_type": "static_qr"}, 2)
+
+    def test_qr_type_is_case_insensitive_and_accepts_legacy_codes(self):
+        assert parse_row({"name": "W", "qr_type": "DYNAMIC"}, 2)["qr_type"] == "dynamic"
+        assert parse_row({"name": "W", "qr_type": "S"}, 2)["qr_type"] == "static"
+
+    def test_accepts_supported_serial_number_types(self):
+        for serial in ("R8DAN", "R6DAN", "R4DAN", "S8DN", "S10DN"):
+            payload = parse_row({"name": "W", "sr_number_type": serial}, 2)
+            assert payload["sr_number_type"] == serial
+
+    def test_rejects_unsupported_serial_number_type(self):
+        with pytest.raises(ValueError, match="Serial number type must be one of"):
+            parse_row({"name": "W", "sr_number_type": "RANDOM"}, 2)
+
+    def test_serial_number_type_accepts_legacy_name(self):
+        payload = parse_row(
+            {"name": "W", "sr_number_type": "random_6_alpha_numeric"}, 2
+        )
+        assert payload["sr_number_type"] == "R6DAN"
 
     # ── Master carton (MC) ────────────────────────────────────────────────
 
@@ -321,6 +362,57 @@ class TestRenderAndRead:
             [{"name": "Widget", "sku": "ABC-1"}], PRODUCT_COLUMNS, "csv", "exp"
         )
         assert "Widget" in content.decode("utf-8-sig")
+
+
+class TestTemplateSamples:
+    """The template ships example rows, so guard that they stay importable."""
+
+    def _template_rows(self, file_format: str = "csv") -> list[dict]:
+        svc = QRProductBulkService(db=None)
+        content, _ = svc.template(file_format)
+        text = content.decode("utf-8-sig")
+        return list(csv.DictReader(io.StringIO(text)))
+
+    def test_template_ships_header_and_samples(self):
+        rows = self._template_rows()
+        assert len(rows) == len(SAMPLE_ROWS)
+        assert list(rows[0].keys()) == PRODUCT_COLUMNS
+
+    def test_xlsx_template_ships_samples(self):
+        from openpyxl import load_workbook
+
+        svc = QRProductBulkService(db=None)
+        content, _ = svc.template("xlsx")
+        wb = load_workbook(io.BytesIO(content), read_only=True)
+        sheet_rows = list(wb.active.iter_rows(values_only=True))
+        assert sheet_rows[0] == tuple(PRODUCT_COLUMNS)
+        assert len(sheet_rows) == len(SAMPLE_ROWS) + 1
+
+    def test_every_sample_row_parses(self):
+        for index, row in enumerate(self._template_rows(), start=2):
+            payload = parse_row(row, index)
+            assert payload["name"]
+            assert payload.get("sku")
+
+    def test_samples_cover_ic_mc_and_item_columns(self):
+        packed = SAMPLE_ROWS[0]
+        assert packed["items_per_master_pack"]
+        assert packed["master_pack_unit_name"]
+        assert packed["standard_rate"]
+
+    def test_samples_only_use_supported_qr_types(self):
+        # A sample that fails on import (e.g. "static_qr") is worse than none.
+        for row in SAMPLE_ROWS:
+            parsed = parse_row(row, 2)
+            assert parsed.get("qr_type") in {
+                None,
+                "dynamic",
+                "static",
+                "dual",
+                "secure_code",
+                "one_time",
+                "post_activation",
+            }
 
 
 class TestPackageColumns:
