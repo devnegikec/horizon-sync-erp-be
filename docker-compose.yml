@@ -212,7 +212,7 @@ services:
       CELERY_QR_QUEUE_NAME: ${CELERY_QR_QUEUE_NAME:-qr-generation}
       CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
       QR_WORKER_CONCURRENCY: ${QR_WORKER_CONCURRENCY:-2}
-      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-Yr1YFHliTgZOGBrdxQwSsYtIW7u18R0CY-kZSRfXpF0=}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-3GQ2g9v0Qm1x3vJm9q0c8sQ2xJ5xv9k8aYv4lq3n2hA=}
       QR_DOMAIN: ${QR_DOMAIN:-verify.example.com}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
       AWS_S3_REGION: ${AWS_S3_REGION:-ap-south-1}
@@ -234,6 +234,33 @@ services:
     networks:
       - horizon_network
     restart: unless-stopped
+
+  # Generic background worker for non-QR Celery tasks (bulk put-away,
+  # transfer reconciliation). QR block generation runs on the dedicated
+  # qr-worker above so the two workloads don't contend on one queue.
+  core-worker:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: horizon_core_worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${DB_USER:-horizon_user}:${DB_PASSWORD:-horizon_pass}@postgres:5432/core_db}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-min-32-characters}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_DEFAULT_QUEUE_NAME: ${CELERY_DEFAULT_QUEUE_NAME:-core-tasks}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-7200}
+      CORE_WORKER_CONCURRENCY: ${CORE_WORKER_CONCURRENCY:-2}
+      BRAND_KEY_ENCRYPTION_SECRET: ${BRAND_KEY_ENCRYPTION_SECRET:-3GQ2g9v0Qm1x3vJm9q0c8sQ2xJ5xv9k8aYv4lq3n2hA=}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_healthy
 
 # ===========================================
 # VOLUMES & NETWORKS
