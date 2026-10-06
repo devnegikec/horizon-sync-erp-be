@@ -37,7 +37,8 @@ healthcheckPath = "/health"
 restartPolicyMaxRetries = 3
 
 # ============================================
-# QR Worker (Celery — processes async QR block generation)
+# QR Worker (Celery — processes async QR block generation only)
+# Consumes the dedicated `qr-generation` queue.
 # ============================================
 [services.qr-worker]
 source = "core-service/"
@@ -47,6 +48,21 @@ startCommand = "celery -A app.celery_app:celery_app worker --loglevel=INFO --que
 dockerfilePath = "Dockerfile.worker"
 
 [services.qr-worker.deploy]
+restartPolicyMaxRetries = 3
+
+# ============================================
+# Core Worker (Celery — bulk put-away & transfer reconciliation tasks)
+# Consumes the generic `core-tasks` queue. Deploy alongside qr-worker —
+# non-QR background jobs have no consumer otherwise.
+# ============================================
+[services.core-worker]
+source = "core-service/"
+startCommand = "celery -A app.celery_app:celery_app worker --loglevel=INFO --queues=core-tasks --concurrency=2"
+
+[services.core-worker.build]
+dockerfilePath = "Dockerfile.worker"
+
+[services.core-worker.deploy]
 restartPolicyMaxRetries = 3
 
 # ============================================

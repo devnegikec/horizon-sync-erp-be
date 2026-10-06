@@ -28,7 +28,11 @@ from app.models.put_away_rule import PutAwayRule
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
-from app.services.capacity_math import CC_PER_M3, compute_item_required_cc_and_grams
+from app.services.capacity_math import (
+    CC_PER_M3,
+    compute_item_required_cc_and_grams,
+    display_capacity_uom,
+)
 
 Position = tuple[float, float, float]
 
@@ -264,7 +268,7 @@ class LocationSuggestionService:
                     score=score,
                     reasons=reasons,
                     available_capacity=available,
-                    capacity_uom=available_uom,
+                    capacity_uom=display_capacity_uom(available_uom),
                     distance_from_worker=dist_from_worker,
                 )
             )

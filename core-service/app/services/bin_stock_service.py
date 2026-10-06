@@ -34,6 +34,7 @@ from app.services.capacity_math import (
     G_PER_KG,
     compute_bin_occupancy,
     compute_item_required_cc_and_grams,
+    display_capacity_uom,
     effective_available_capacity,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
@@ -725,6 +726,10 @@ class BinStockService:
                     bin_capacity = Decimal("0")
                     available_capacity = Decimal("0")
                     capacity_uom = bin_location.capacity_uom
+
+            # "volume"/"weight" is the internal bin vocabulary; the number above
+            # is already in m³/kg, so report the matching unit.
+            capacity_uom = display_capacity_uom(capacity_uom)
 
             results.append(
                 {

@@ -15,6 +15,7 @@ from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.services.capacity_math import (
     CC_PER_M3,
     G_PER_KG,
+    display_capacity_uom,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
     effective_bin_weight_limit_g,
@@ -332,6 +333,9 @@ class LayoutService:
                 use_volume=use_volume,
                 use_weight=use_weight,
             )
+            # "volume"/"weight"/"units" is the bin's internal vocabulary and the
+            # UI renders this raw (`3.213 volume`), so report a real unit.
+            capacity_uom = display_capacity_uom(capacity_uom)
             node = {
                 "id": loc.id,
                 "warehouse_id": loc.warehouse_id,

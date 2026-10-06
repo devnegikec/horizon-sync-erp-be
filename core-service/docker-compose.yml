@@ -59,11 +59,32 @@ services:
       redis:
         condition: service_healthy
       core-service:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./app:/app/app
     command: >
-      celery -A app.celery_app:celery_app worker --loglevel=$${LOG_LEVEL:-INFO} --queues=$${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=$${QR_WORKER_CONCURRENCY:-2}
+      bash -c "celery -A app.celery_app:celery_app worker --loglevel=$${LOG_LEVEL:-INFO} --queues=$${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=$${QR_WORKER_CONCURRENCY:-2}"
+    restart: unless-stopped
+
+  # Generic background worker for non-QR Celery tasks (bulk put-away,
+  # transfer reconciliation). QR block generation runs on the dedicated
+  # qr-worker above so the two workloads don't contend on one queue.
+  core-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon_core_worker
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+    command: >
+      bash -c "celery -A app.celery_app:celery_app worker --loglevel=$${LOG_LEVEL:-INFO} --queues=$${CELERY_DEFAULT_QUEUE_NAME:-core-tasks} --concurrency=$${CORE_WORKER_CONCURRENCY:-2}"
     restart: unless-stopped
 
 volumes:

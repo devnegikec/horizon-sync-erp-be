@@ -149,6 +149,79 @@ class ResetPickListOptions(BaseModel):
         return self
 
 
+class OutboundAutomationItemConfig(BaseModel):
+    """A single item line for the 'outbound_automation' feature.
+
+    Mirrors ``ReceiveAsnItemConfig`` so the Outbound Automation item picker
+    matches the Inbound Automation one (item, batch, pack, box, quantity).
+    """
+
+    item_id: UUID | None = Field(
+        default=None, description="Item UUID (resolved by sku if omitted)"
+    )
+    sku: str | None = Field(
+        default=None, description="Item SKU/code used to resolve the item"
+    )
+    batch: str = Field(
+        default="", description="Batch/lot label for the transfer line"
+    )
+    quantity: int = Field(default=1, ge=1, le=5000)
+    no_of_cases: int = Field(default=1, ge=1)
+    master_pack_size: int = Field(default=0, ge=0)
+
+
+class OutboundAutomationOptions(BaseModel):
+    """Options for the 'outbound_automation' data-sync feature."""
+
+    steps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Outbound Automation steps to run, in dependency order. One or more "
+            "of 'asn', 'order_decision', 'pick_lists', 'pick_confirm'. Each "
+            "later step depends on the previous."
+        ),
+    )
+    items: list[OutboundAutomationItemConfig] = Field(default_factory=list)
+    source_warehouse_id: UUID | None = Field(
+        default=None, description="Source warehouse (internal transfer origin)"
+    )
+    target_warehouse_id: UUID | None = Field(
+        default=None, description="Target warehouse (internal transfer destination)"
+    )
+    decision: str = Field(
+        default="confirm",
+        description="Order decision used by the 'order_decision' step: 'confirm' or 'reject'",
+    )
+    worker_ids: list[UUID] = Field(
+        default_factory=list,
+        description=(
+            "Worker user IDs to distribute the pick lists across "
+            "(step 'pick_lists'). Each worker receives a separate pick list."
+        ),
+    )
+
+    @field_validator("steps")
+    @classmethod
+    def _validate_steps(cls, value: list[str]) -> list[str]:
+        valid = {"asn", "order_decision", "pick_lists", "pick_confirm"}
+        for step in value:
+            if step not in valid:
+                raise ValueError(
+                    f"Unknown outbound automation step: {step}. "
+                    f"Expected one of: {', '.join(sorted(valid))}"
+                )
+        return value
+
+    @field_validator("decision")
+    @classmethod
+    def _validate_decision(cls, value: str) -> str:
+        if value not in ("confirm", "reject"):
+            raise ValueError(
+                f"Unknown order decision: {value}. Expected 'confirm' or 'reject'"
+            )
+        return value
+
+
 class DataSyncRequest(BaseModel):
     """Request body for on-demand data sync."""
 
@@ -178,6 +251,10 @@ class DataSyncRequest(BaseModel):
     reset_picklist: ResetPickListOptions | None = Field(
         default=None,
         description="Options for the 'reset_picklist' feature (wipe a pick list for retesting)",
+    )
+    outbound_automation: OutboundAutomationOptions | None = Field(
+        default=None,
+        description="Options for the 'outbound_automation' feature (internal-transfer ASN → order → pick lists)",
     )
 
 
@@ -250,6 +327,11 @@ async def sync_data_features(
         ),
         reset_picklist_options=(
             request.reset_picklist.model_dump() if request.reset_picklist else None
+        ),
+        outbound_automation_options=(
+            request.outbound_automation.model_dump()
+            if request.outbound_automation
+            else None
         ),
     )
 
