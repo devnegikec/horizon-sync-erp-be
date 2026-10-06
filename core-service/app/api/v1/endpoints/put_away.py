@@ -724,7 +724,7 @@ async def get_put_away_list(
     summary="Complete a put-away item",
     description="Mark a put-away item as completed, updating bin stock",
 )
-async def complete_put_away_item(
+def complete_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
     data: CompletePutAwayItemRequest = CompletePutAwayItemRequest(),
@@ -862,7 +862,7 @@ def _enqueue_bulk_job(
         "and polled via GET /put-away/bulk-jobs/{id}."
     ),
 )
-async def complete_put_away_items(
+def complete_put_away_items(
     put_away_list_id: UUID,
     data: CompletePutAwayItemsRequest,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
@@ -933,7 +933,7 @@ async def complete_put_away_items(
     summary="Bulk-complete put-away by QR (async)",
     description="Enqueue a bulk put-away of multiple QR items; poll GET /put-away/bulk-jobs/{id}",
 )
-async def complete_putaway_bulk(
+def complete_putaway_bulk(
     data: CompletePutawayBulkRequest,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),

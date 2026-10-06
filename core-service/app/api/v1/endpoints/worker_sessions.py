@@ -25,6 +25,35 @@ from app.services.worker_session_service import (
 router = APIRouter()
 
 
+def _worker_exists(worker_id: UUID) -> bool:
+    """Check a ``warehouse_worker`` exists in the identity-service ``users`` table.
+
+    ``users`` lives in the identity database, not the core database, so the
+    check runs against a read-only identity engine.
+    """
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
+        return False
+    engine = create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM users "
+                    "WHERE id=:id AND user_type='warehouse_worker'"
+                ),
+                {"id": worker_id},
+            ).fetchone()
+        return row is not None
+    except Exception:  # noqa: BLE001 — surface as "worker not found"
+        return False
+    finally:
+        engine.dispose()
+
+
 @router.post(
     "/login",
     response_model=WorkerSessionResponse,
@@ -47,11 +76,7 @@ async def start_worker_session(
     Requirements: WF-009
     """
     org_id = current_user.organization_id
-    exists = db.execute(
-        text("SELECT 1 FROM users WHERE id=:id AND user_type='warehouse_worker'"),
-        {"id": data.worker_id},
-    ).fetchone()
-    if exists is None:
+    if not _worker_exists(data.worker_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Worker not found"
         )
