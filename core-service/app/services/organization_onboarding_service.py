@@ -1701,6 +1701,7 @@ class OrganizationOnboardingService:
 
         ``decision`` is ignored unless ``order_decision`` is selected.
         """
+        from app.core.exceptions import ValidationError
         from app.models.base import OutboundOrderStatus
         from app.models.outbound_order import OutboundOrder
         from app.services.asn_order_service import AsnOrderService
@@ -1806,10 +1807,24 @@ class OrganizationOnboardingService:
                     ),
                 }
             order_svc = OutboundOrderService(self.db)
-            if decision == "reject":
-                order = order_svc.cancel_order(order.id, organization_id)
-            else:
-                order = order_svc.confirm_order(order.id, organization_id)
+            try:
+                if decision == "reject":
+                    order = order_svc.cancel_order(order.id, organization_id)
+                else:
+                    order = order_svc.confirm_order(order.id, organization_id)
+            except ValidationError as exc:
+                # Confirming fails when no line has stock. The ASN and draft
+                # order are already committed, so report the failure clearly
+                # instead of raising and leaving the caller with a traceback.
+                return {
+                    "created": 1,
+                    "skipped": 0,
+                    "steps": steps,
+                    "asn_no": asn.get("asn_order_no") if asn else None,
+                    "order_no": order.order_no,
+                    "order_status": order.status.value,
+                    "error": f"Order decision failed: {exc}",
+                }
 
         # ── Step 3: pick lists + worker assignment ────────────────────
         if "pick_lists" in steps:
