@@ -7,7 +7,6 @@
 # host in .env.docker.
 
 services:
-
   identity-service:
     build:
       context: .
