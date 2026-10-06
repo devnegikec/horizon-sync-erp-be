@@ -41,6 +41,7 @@ _REQUIRED_PERMISSION_CODES = [
     "pick_list.update",
     "stock_entry.create",
     "stock_entry.read",
+    "qseal.read",
 ]
 
 

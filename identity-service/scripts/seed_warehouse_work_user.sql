@@ -94,6 +94,13 @@ SELECT gen_random_uuid(), 'receiving_slip.update', 'Update Receiving Slip',
        'receiving_slip'::resourcetype, 'update'::actiontype, 'inventory', 'WMS', true, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE code = 'receiving_slip.update');
 
+-- 3e. qseal.read — Read QSeal (required for QR-code scanning)
+INSERT INTO permissions (id, code, name, description, resource, action, module, category, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), 'qseal.read', 'Read QSeal',
+       'View QSeal parameters and tracks',
+       'qseal'::resourcetype, 'read'::actiontype, 'inventory', 'WMS', true, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE code = 'qseal.read');
+
 -- ──────────────────────────────────────────────────────────────────────────
 -- Step 4: Assign permissions to warehouse_work_user role (for all orgs)
 -- ──────────────────────────────────────────────────────────────────────────
@@ -114,7 +121,8 @@ WHERE r.code = 'warehouse_work_user'
       'receiving_slip.read',
       'receiving_slip.update',
       'pick_list.read',
-      'pick_list.update'
+      'pick_list.update',
+      'qseal.read'
   )
   AND NOT EXISTS (
       SELECT 1 FROM role_permissions rp
@@ -133,7 +141,7 @@ DECLARE
 BEGIN
     SELECT COUNT(*) INTO role_count FROM roles WHERE code = 'warehouse_work_user';
     SELECT COUNT(*) INTO perm_count FROM permissions WHERE code IN (
-        'wms.scan', 'receiving_slip.create', 'receiving_slip.read', 'receiving_slip.update'
+        'wms.scan', 'receiving_slip.create', 'receiving_slip.read', 'receiving_slip.update', 'qseal.read'
     );
     SELECT COUNT(*) INTO rp_count FROM role_permissions rp
     JOIN roles r ON r.id = rp.role_id

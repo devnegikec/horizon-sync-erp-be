@@ -449,6 +449,19 @@ class OutboundOrderResponse(BaseModel):
     items: list[OutboundOrderItemResponse] = []
 
 
+class OutboundOrderConfirmResponse(BaseModel):
+    """Minimal response returned after confirming an outbound order.
+
+    Confirming an order only flips its status, so the endpoint returns a
+    lightweight acknowledgement instead of the full order payload.
+    """
+
+    id: str
+    order_no: str
+    status: str
+    message: str
+
+
 class OutboundOrderStatusCounts(BaseModel):
     """Status distribution for outbound orders."""
 

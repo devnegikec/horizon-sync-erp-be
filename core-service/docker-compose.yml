@@ -1,0 +1,93 @@
+# Standalone Docker Compose for Core Service (+ QR worker + Redis).
+# (future: this file moves into its own repo)
+#
+# Run:  docker compose up -d --build
+# The app reads env from .env.docker (via `env_file`).
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: horizon_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  core-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon_core
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./create_master_organization.py:/app/create_master_organization.py
+    command: >
+      bash -c "python scripts/normalize_alembic_version.py &&
+               (python -m alembic upgrade heads || echo 'WARNING: migrations had issues') ;
+               uvicorn app.main:app --host 0.0.0.0 --port 8001"
+    restart: unless-stopped
+
+  qr-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon_qr_worker
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+    command: >
+      bash -c "celery -A app.celery_app:celery_app worker --loglevel=$${LOG_LEVEL:-INFO} --queues=$${CELERY_QR_QUEUE_NAME:-qr-generation} --concurrency=$${QR_WORKER_CONCURRENCY:-2}"
+    restart: unless-stopped
+
+  # Generic background worker for non-QR Celery tasks (bulk put-away,
+  # transfer reconciliation). QR block generation runs on the dedicated
+  # qr-worker above so the two workloads don't contend on one queue.
+  core-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon_core_worker
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+    command: >
+      bash -c "celery -A app.celery_app:celery_app worker --loglevel=$${LOG_LEVEL:-INFO} --queues=$${CELERY_DEFAULT_QUEUE_NAME:-core-tasks} --concurrency=$${CORE_WORKER_CONCURRENCY:-2}"
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local

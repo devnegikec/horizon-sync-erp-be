@@ -724,7 +724,7 @@ async def get_put_away_list(
     summary="Complete a put-away item",
     description="Mark a put-away item as completed, updating bin stock",
 )
-async def complete_put_away_item(
+def complete_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
     data: CompletePutAwayItemRequest = CompletePutAwayItemRequest(),
@@ -814,7 +814,6 @@ def _enqueue_bulk_job(
     put_away_list_id: UUID | None = None,
 ) -> BulkPutAwayJob:
     """Create a queued bulk put-away job and enqueue its worker task."""
-    from app.config import settings
     from app.tasks.putaway_tasks import complete_bulk_putaway_task
 
     # Populate total_items up front so the poll endpoint reports meaningful
@@ -841,7 +840,6 @@ def _enqueue_bulk_job(
     try:
         complete_bulk_putaway_task.apply_async(
             args=[str(job.id)],
-            queue=settings.celery_qr_queue_name,
         )
     except Exception as exc:  # noqa: BLE001 — broker/connection failure
         # The job row is already committed as QUEUED; mark it FAILED so the
@@ -864,7 +862,7 @@ def _enqueue_bulk_job(
         "and polled via GET /put-away/bulk-jobs/{id}."
     ),
 )
-async def complete_put_away_items(
+def complete_put_away_items(
     put_away_list_id: UUID,
     data: CompletePutAwayItemsRequest,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
@@ -935,7 +933,7 @@ async def complete_put_away_items(
     summary="Bulk-complete put-away by QR (async)",
     description="Enqueue a bulk put-away of multiple QR items; poll GET /put-away/bulk-jobs/{id}",
 )
-async def complete_putaway_bulk(
+def complete_putaway_bulk(
     data: CompletePutawayBulkRequest,
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
     db: Session = Depends(get_db),

@@ -1,5 +1,10 @@
-# QR generation Celery worker — no web server, no web healthcheck.
+# Celery worker — no web server, no web healthcheck.
 # Built from the repo root (same context as Dockerfile.core).
+# Used for BOTH worker services in railway.toml:
+#   - qr-worker   → --queues=qr-generation  (QR block generation)
+#   - core-worker → --queues=core-tasks     (bulk put-away, reconciliation)
+# The queue is resolved at runtime from CELERY_WORKER_QUEUES, defaulting to
+# the QR queue; Railway overrides it per service via startCommand.
 
 FROM python:3.11-slim AS builder
 
@@ -33,4 +38,4 @@ ENV PATH=/root/.local/bin:$PATH
 
 COPY core-service/ .
 
-CMD ["celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=INFO", "--queues=qr-generation", "--concurrency=2"]
+CMD celery -A app.celery_app:celery_app worker --loglevel=INFO --queues=${CELERY_WORKER_QUEUES:-qr-generation} --concurrency=2

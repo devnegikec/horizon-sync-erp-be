@@ -380,13 +380,47 @@ class PackingSlipService:
         dispatch_number = DocumentNumberingService(self.db).get_next_number(
             org_id, "dispatch"
         )
+
+        # Trace the dispatch back to its source documents so the dispatches
+        # list/detail carry the same invoice reference and pick-list link as a
+        # gate-session dispatch. A packing slip can span multiple orders/pick
+        # lists, so only populate pick_list_id when a single source exists and
+        # join multiple invoice references with a comma.
+        source_pick_list_ids = {i.pick_list_id for i in slip.items if i.pick_list_id}
+        source_order_ids = {i.order_id for i in slip.items if i.order_id}
+
+        pick_list_id = (
+            next(iter(source_pick_list_ids))
+            if len(source_pick_list_ids) == 1
+            else None
+        )
+
+        invoice_references: list[str] = []
+        if source_order_ids:
+            rows = (
+                self.db.query(OutboundOrder.invoice_reference)
+                .filter(
+                    OutboundOrder.id.in_(source_order_ids),
+                    OutboundOrder.organization_id == org_id,
+                )
+                .all()
+            )
+            seen: set[str] = set()
+            for (ref,) in rows:
+                if ref and ref not in seen:
+                    seen.add(ref)
+                    invoice_references.append(ref)
+        invoice_reference = (
+            ", ".join(invoice_references) if invoice_references else None
+        )
+
         dispatch_record = DispatchRecord(
             organization_id=org_id,
             dispatch_number=dispatch_number,
-            pick_list_id=None,
+            pick_list_id=pick_list_id,
             gate_session_id=None,
             packing_slip_id=slip.id,
-            invoice_reference=None,
+            invoice_reference=invoice_reference,
             vehicle_number=None,
             driver_name=None,
             dispatched_at=datetime.now(UTC),

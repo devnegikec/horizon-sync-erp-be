@@ -1,0 +1,34 @@
+# Standalone Docker Compose for Identity Service.
+# (future: this file moves into its own repo)
+#
+# Run:  docker compose up -d --build
+# The app reads env from .env.docker (via `env_file`).
+# The database is external (remote Railway or your host Postgres) — set the
+# host in .env.docker.
+
+services:
+
+  identity-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: horizon_identity
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+    command: >
+      bash -c "python scripts/normalize_alembic_version.py &&
+               (python -m alembic upgrade head || echo 'WARNING: migrations had issues') ;
+               uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    restart: unless-stopped

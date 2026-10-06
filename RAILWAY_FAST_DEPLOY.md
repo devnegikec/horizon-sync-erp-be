@@ -44,8 +44,9 @@ Useful flags/env: `--dry-run`, `--no-healthcheck`, `--timeout <secs>`,
 `CORE_SERVICE_HEALTH_URL` / `IDENTITY_SERVICE_HEALTH_URL` to override probes.
 
 Known service names in production: `core-service`, `identity-service`,
-`qr-worker` (plus the `Postgres` service). `search-service` and `nginx-gateway`
-are listed in the script but are not deployed yet — the script skips them.
+`qr-worker`, and `core-worker` (plus the `Postgres` service). `search-service`
+and `nginx-gateway` are listed in the script but are not deployed yet — the
+script skips them.
 
 ## Prerequisites
 
