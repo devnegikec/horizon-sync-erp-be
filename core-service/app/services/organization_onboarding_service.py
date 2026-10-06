@@ -427,6 +427,15 @@ SYNCABLE_FEATURES = [
             "artifacts) so the order can be re-picked from scratch."
         ),
     },
+    {
+        "key": "outbound_automation",
+        "label": "Outbound Automation",
+        "description": (
+            "Multi-step outbound flow: internal-transfer ASN → order confirm/"
+            "reject → pick lists (with worker assignment) → pick confirmation. "
+            "Run one step or the whole chain."
+        ),
+    },
 ]
 
 SYNCABLE_FEATURE_KEYS = {feature["key"] for feature in SYNCABLE_FEATURES}
@@ -579,6 +588,7 @@ class OrganizationOnboardingService:
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
         reset_picklist_options: dict | None = None,
+        outbound_automation_options: dict | None = None,
     ) -> dict:
         """Seed the requested default data categories on demand.
 
@@ -616,6 +626,7 @@ class OrganizationOnboardingService:
                 stock_boost_qty,
                 receive_asn_options,
                 reset_picklist_options,
+                outbound_automation_options,
             )
 
         self.db.commit()
@@ -642,6 +653,7 @@ class OrganizationOnboardingService:
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
         reset_picklist_options: dict | None = None,
+        outbound_automation_options: dict | None = None,
     ) -> dict:
         """Dispatch a single feature key to its idempotent seed routine."""
         if key == "currencies":
@@ -669,6 +681,10 @@ class OrganizationOnboardingService:
         if key == "reset_picklist":
             return self._reset_picklist(
                 organization_id, reset_picklist_options or {}
+            )
+        if key == "outbound_automation":
+            return self._seed_outbound_automation(
+                organization_id, user_id, now, outbound_automation_options
             )
         return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
 
@@ -1307,6 +1323,12 @@ class OrganizationOnboardingService:
 
     # Ordered Inbound Automation steps. Each step depends on the previous one.
     INBOUND_AUTOMATION_STEPS = ("qr_blocks", "asn", "receiving_slip", "put_away")
+    OUTBOUND_AUTOMATION_STEPS = (
+        "asn",
+        "order_decision",
+        "pick_lists",
+        "pick_confirm",
+    )
 
     def _seed_receive_asn(
         self,
@@ -1626,6 +1648,235 @@ class OrganizationOnboardingService:
                     ),
                 }
         return ordered
+
+    def _normalize_outbound_automation_steps(self, requested_steps) -> list | dict:
+        """Validate/order the requested Outbound Automation steps.
+
+        Same sequential-dependency rules as the inbound counterpart: an
+        unknown step or a later step without its predecessor is an error dict.
+        """
+        valid = self.OUTBOUND_AUTOMATION_STEPS
+        ordered: list[str] = []
+        for step in requested_steps:
+            if step not in valid:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": f"Unknown outbound automation step: {step}",
+                }
+            if step not in ordered:
+                ordered.append(step)
+        ordered.sort(key=lambda s: valid.index(s))
+        for step in ordered:
+            idx = valid.index(step)
+            if idx > 0 and valid[idx - 1] not in ordered:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        f"Step '{step}' requires previous step '{valid[idx - 1]}'"
+                    ),
+                }
+        return ordered
+
+    def _seed_outbound_automation(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        options: dict | None,
+    ) -> dict:
+        """Multi-step "Outbound Automation" flow (Settings → Data Sync).
+
+        Runs the requested steps in dependency order:
+
+          1. ``asn``            — create + confirm an internal-transfer ASN
+                                  (source → target warehouse). Confirming the
+                                  ASN auto-creates the source outbound order.
+          2. ``order_decision`` — confirm or reject the auto-created order.
+          3. ``pick_lists``     — generate pick lists (one per selected worker)
+                                  from the confirmed order.
+          4. ``pick_confirm``   — accept each generated pick list for its
+                                  assigned worker (moves it to in_progress).
+
+        ``decision`` is ignored unless ``order_decision`` is selected.
+        """
+        from app.core.exceptions import ValidationError
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+        from app.services.asn_order_service import AsnOrderService
+        from app.services.outbound_order_service import OutboundOrderService
+        from app.services.pick_list_service import PickListService
+
+        options = options or {}
+        steps = self._normalize_outbound_automation_steps(
+            options.get("steps") or list(self.OUTBOUND_AUTOMATION_STEPS)
+        )
+        if isinstance(steps, dict):
+            return steps
+
+        source_warehouse_id = options.get("source_warehouse_id")
+        target_warehouse_id = options.get("target_warehouse_id")
+        decision = options.get("decision") or "confirm"
+        item_configs = options.get("items") or []
+        worker_ids = [UUID(str(w)) for w in (options.get("worker_ids") or []) if w]
+
+        if "asn" in steps:
+            if not source_warehouse_id or not target_warehouse_id:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        "source_warehouse_id and target_warehouse_id are "
+                        "required for an internal transfer"
+                    ),
+                }
+            if str(source_warehouse_id) == str(target_warehouse_id):
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        "source and target warehouses must differ for an "
+                        "internal transfer"
+                    ),
+                }
+
+        asn: dict | None = None
+        order: OutboundOrder | None = None
+        pick_lists: list = []
+
+        # ── Step 1: ASN (internal transfer) ───────────────────────────
+        if "asn" in steps:
+            asn_svc = AsnOrderService(self.db)
+            resolved_items: list[dict] = []
+            for cfg in item_configs:
+                item = self._resolve_receive_item(cfg, organization_id)
+                if item is None:
+                    continue
+                qty = max(1, int(cfg.get("quantity") or 1))
+                extra: dict = {}
+                no_of_cases = max(1, int(cfg.get("no_of_cases") or 1))
+                extra["no_of_cases"] = no_of_cases
+                master_pack = int(cfg.get("master_pack_size") or 0)
+                if master_pack > 0:
+                    extra["items_per_master_pack"] = master_pack
+                batch = str(cfg.get("batch") or "").strip()
+                if batch:
+                    extra["batch"] = batch
+                resolved_items.append(
+                    {
+                        "item_id": item.id,
+                        "qty": qty,
+                        "uom": "pcs",
+                        "extra_data": extra or None,
+                    }
+                )
+            if not resolved_items:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No valid items provided for the transfer ASN",
+                }
+
+            asn_payload = {
+                "order_date": now,
+                "delivery_date": now,
+                "asn_type": "internal_transfer",
+                "warehouse_id_from": UUID(str(source_warehouse_id)),
+                "warehouse_id_to": UUID(str(target_warehouse_id)),
+                "items": resolved_items,
+            }
+            asn = asn_svc.create(asn_payload, organization_id, user_id)
+            asn_id = UUID(str(asn["id"]))
+            asn = asn_svc.update_status(asn_id, "confirmed", organization_id, user_id)
+            linked_order_id = asn.get("linked_order_id")
+            if linked_order_id:
+                order = self.db.get(OutboundOrder, UUID(str(linked_order_id)))
+
+        # ── Step 2: order confirm/reject ──────────────────────────────
+        if "order_decision" in steps:
+            if order is None:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": (
+                        "No outbound order to decide on — the 'asn' step must "
+                        "run first"
+                    ),
+                }
+            order_svc = OutboundOrderService(self.db)
+            try:
+                if decision == "reject":
+                    order = order_svc.cancel_order(order.id, organization_id)
+                else:
+                    order = order_svc.confirm_order(order.id, organization_id)
+            except ValidationError as exc:
+                # Confirming fails when no line has stock. The ASN and draft
+                # order are already committed, so report the failure clearly
+                # instead of raising and leaving the caller with a traceback.
+                return {
+                    "created": 1,
+                    "skipped": 0,
+                    "steps": steps,
+                    "asn_no": asn.get("asn_order_no") if asn else None,
+                    "order_no": order.order_no,
+                    "order_status": order.status.value,
+                    "error": f"Order decision failed: {exc}",
+                }
+
+        # ── Step 3: pick lists + worker assignment ────────────────────
+        if "pick_lists" in steps:
+            if order is None:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No outbound order to generate pick lists from",
+                }
+            if order.status == OutboundOrderStatus.CANCELLED:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": (
+                        f"Order {order.order_no} was rejected — cannot create "
+                        "pick lists"
+                    ),
+                }
+            order_svc = OutboundOrderService(self.db)
+            pick_lists = order_svc.create_pick_lists_from_order(
+                order_id=order.id,
+                org_id=organization_id,
+                worker_ids=worker_ids or None,
+                mode="auto",
+            )
+
+        # ── Step 4: pick-list confirmation ────────────────────────────
+        if "pick_confirm" in steps:
+            pick_svc = PickListService(self.db)
+            for pl in pick_lists:
+                worker_id = pl.assigned_to or user_id
+                try:
+                    pick_svc.accept_task(pl.id, organization_id, worker_id)
+                except Exception as exc:  # noqa: BLE001 — best-effort step
+                    logger.warning(
+                        "Outbound automation: failed to accept pick list %s: %s",
+                        getattr(pl, "pick_list_no", pl.id),
+                        exc,
+                    )
+
+        result: dict = {"created": 1 if asn is not None else 0, "skipped": 0, "steps": steps}
+        if asn is not None:
+            result["asn_no"] = asn.get("asn_order_no")
+        if order is not None:
+            result["order_no"] = order.order_no
+            result["order_status"] = order.status.value
+        if pick_lists:
+            result["pick_list_count"] = len(pick_lists)
+            result["pick_list_nos"] = [pl.pick_list_no for pl in pick_lists]
+        return result
 
     def _qr_auto_link_enabled(self, organization_id: UUID) -> bool:
         """Evaluate the ``qr_auto_link_parent_child`` tenant feature flag.

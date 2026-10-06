@@ -33,6 +33,11 @@ BEGIN
         ALTER TYPE resourcetype ADD VALUE 'receiving_slip';
     END IF;
 
+    -- ResourceType: qseal (migration 016 adds this; seed must not depend on it)
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'qseal' AND enumtypid = 'resourcetype'::regtype) THEN
+        ALTER TYPE resourcetype ADD VALUE 'qseal';
+    END IF;
+
     -- ActionType: scan
     IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'scan' AND enumtypid = 'actiontype'::regtype) THEN
         ALTER TYPE actiontype ADD VALUE 'scan';

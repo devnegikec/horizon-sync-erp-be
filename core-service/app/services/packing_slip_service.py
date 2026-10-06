@@ -395,6 +395,14 @@ class PackingSlipService:
             else None
         )
 
+        # ``DispatchRecord.pick_list_id`` has a real FK to ``pick_lists``, but a
+        # packing-slip line only stores the source pick-list id as a plain UUID
+        # (it can outlive the pick list). Only trace the dispatch back when the
+        # pick list still exists, otherwise leave it null rather than fail the
+        # dispatch at flush.
+        if pick_list_id is not None and not self.db.get(PickList, pick_list_id):
+            pick_list_id = None
+
         invoice_references: list[str] = []
         if source_order_ids:
             rows = (
