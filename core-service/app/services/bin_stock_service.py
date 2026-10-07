@@ -846,6 +846,10 @@ class BinStockService:
             .filter(
                 BinStockLevel.bin_location_id == bin_id,
                 BinStockLevel.organization_id == org_id,
+                # ``remove_stock`` leaves zero-quantity rows in place, and
+                # ``get_parent_boxes`` excludes them — keep the QR map
+                # consistent so an emptied batch never gets a parent QR.
+                BinStockLevel.quantity_on_hand > 0,
                 QSealParameters.organization_id == org_id,
                 QSealTrack.organization_id == org_id,
             )
