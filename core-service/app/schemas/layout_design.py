@@ -164,6 +164,9 @@ class LayoutApplyResponse(BaseModel):
     locations_deactivated: int
     summary: LayoutSummaryOut
     sample_bin_paths: list[str] = Field(default_factory=list)
+    # Non-blocking findings, e.g. `BIN_OVER_CAPACITY_AFTER_APPLY` when the new
+    # limits leave an already-stocked bin below its contents.
+    diagnostics: list[LayoutDiagnosticOut] = Field(default_factory=list)
 
 
 class LayoutRuleOut(BaseModel):

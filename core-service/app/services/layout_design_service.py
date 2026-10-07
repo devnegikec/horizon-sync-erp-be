@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import text
@@ -45,6 +46,13 @@ from app.schemas.layout_design import (
     LayoutSummaryOut,
     LayoutValidateResponse,
     LayoutZoneOut,
+)
+from app.services.capacity_math import (
+    CC_PER_M3,
+    G_PER_KG,
+    compute_warehouse_bin_occupancy,
+    effective_bin_volume_limit_cc,
+    effective_bin_weight_limit_g,
 )
 
 #: How many candidate QR codes to check per round trip.
@@ -195,6 +203,13 @@ class LayoutDesignService:
         if replace_existing:
             self._deactivate_other_plans(warehouse.id, organization_id)
 
+        # Warn (do not block) when the new limits would leave an already-stocked
+        # bin below its contents — a whole-layout refusal for one over-full bin
+        # would be too blunt, but the operator must see it.
+        over_capacity = self._over_capacity_diagnostics(
+            warehouse.id, desired.rows, existing_rows
+        )
+
         created, updated = self._reconcile(desired, existing_rows)
 
         deactivated = 0
@@ -259,7 +274,95 @@ class LayoutDesignService:
                 locations_deactivated=deactivated,
                 summary=self._summary_out(compiled),
                 sample_bin_paths=compiled.sampleBinPaths(8),
+                diagnostics=self._diagnostics_out(compiled) + over_capacity,
             ),
+        )
+
+    def _over_capacity_diagnostics(
+        self,
+        warehouse_id: uuid.UUID,
+        desired_rows: list[WarehouseLocation],
+        existing_rows: dict[str, WarehouseLocation],
+    ) -> list[LayoutDiagnosticOut]:
+        """Warnings for existing bins the applied limits leave below their stock.
+
+        A layout apply overwrites each bin's ``max_volume_cc`` /
+        ``max_weight_grams``, so shrinking a bin that already holds stock would
+        silently drive ``available_capacity`` negative. Only limits this apply
+        actually changes are checked, so a pre-existing overage is not re-reported
+        on every apply.
+        """
+        occupancy = compute_warehouse_bin_occupancy(self.db, warehouse_id)
+
+        findings: list[LayoutDiagnosticOut] = []
+        for row in desired_rows:
+            if row.location_type != "bin" or not row.full_path:
+                continue
+            current = existing_rows.get(row.full_path)
+            if current is None or current.location_type != "bin":
+                continue
+
+            occupied_m3, occupied_kg = occupancy.get(
+                str(current.id), (Decimal("0"), Decimal("0"))
+            )
+            occupied_cc = occupied_m3 * CC_PER_M3
+            occupied_g = occupied_kg * G_PER_KG
+
+            volume_limit_cc = effective_bin_volume_limit_cc(row)
+            weight_limit_g = effective_bin_weight_limit_g(row)
+
+            if (
+                volume_limit_cc is not None
+                and row.max_volume_cc != current.max_volume_cc
+                and occupied_cc > volume_limit_cc
+            ):
+                findings.append(
+                    self._over_capacity_warning(
+                        row, "volume", occupied_cc, volume_limit_cc, "cc"
+                    )
+                )
+            if (
+                weight_limit_g is not None
+                and row.max_weight_grams != current.max_weight_grams
+                and occupied_g > weight_limit_g
+            ):
+                findings.append(
+                    self._over_capacity_warning(
+                        row, "weight", occupied_g, weight_limit_g, "g"
+                    )
+                )
+        return findings
+
+    @staticmethod
+    def _over_capacity_warning(
+        row: WarehouseLocation,
+        measure: str,
+        occupied: Decimal,
+        limit: Decimal,
+        unit: str,
+    ) -> LayoutDiagnosticOut:
+        return LayoutDiagnosticOut(
+            code="BIN_OVER_CAPACITY_AFTER_APPLY",
+            severity="warning",
+            message=(
+                f"Bin '{row.full_path}' already holds {occupied} {unit} of stock, "
+                f"which exceeds the {limit} {unit} {measure} limit this layout "
+                f"sets. Available capacity will be negative until stock is "
+                f"removed."
+            ),
+            entity_refs=[
+                LayoutEntityRefOut(
+                    kind="bin",
+                    id=str(row.full_path),
+                    label=row.code or str(row.full_path),
+                )
+            ],
+            data={
+                "measure": measure,
+                "occupied": float(occupied),
+                "limit": float(limit),
+                "unit": unit,
+            },
         )
 
     # ------------------------------------------------------------ persistence

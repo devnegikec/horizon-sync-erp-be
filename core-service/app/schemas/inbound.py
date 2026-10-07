@@ -602,6 +602,7 @@ class InboundShortBalanceResponse(BaseModel):
 
     id: str
     asn_order_id: str
+    asn_order_no: str | None = None
     asn_order_item_id: str
     receiving_slip_id: str | None = None
     item_id: str | None = None

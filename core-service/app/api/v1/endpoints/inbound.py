@@ -735,6 +735,7 @@ def _short_balance_response(balance) -> InboundShortBalanceResponse:
     return InboundShortBalanceResponse(
         id=str(data["id"]),
         asn_order_id=str(data["asn_order_id"]),
+        asn_order_no=data["asn_order_no"],
         asn_order_item_id=str(data["asn_order_item_id"]),
         receiving_slip_id=str(data["receiving_slip_id"])
         if data["receiving_slip_id"]

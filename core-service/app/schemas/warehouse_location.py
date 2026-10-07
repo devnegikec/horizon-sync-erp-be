@@ -47,6 +47,13 @@ class UpdateLocationRequest(BaseModel):
     position_y: Decimal | None = None
     max_volume_cc: Decimal | None = Field(None, ge=0)
     max_weight_grams: Decimal | None = Field(None, ge=0)
+    allow_over_capacity: bool = Field(
+        False,
+        description=(
+            "Acknowledge that the new limits leave the bin below the stock it "
+            "already holds; without this the request is rejected"
+        ),
+    )
 
 
 # ===========================================
