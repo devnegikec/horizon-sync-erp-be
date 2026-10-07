@@ -220,12 +220,17 @@ async def get_bin_stock(
         bin_id=bin_id,
         org_id=current_user.organization_id,
     )
+    parent_qr_map = service.get_parent_qr_map(
+        bin_id=bin_id,
+        org_id=current_user.organization_id,
+    )
     levels = []
     for sl in stock_levels:
         resp = BinStockLevelResponse.model_validate(sl)
         item = sl.item
         resp.item_name = item.item_name if item else None
         resp.sku = item.sku if item else None
+        resp.parent_qr_code_url = parent_qr_map.get(sl.id)
         levels.append(resp)
     return BinStockListResponse(bin_stock_levels=levels)
 

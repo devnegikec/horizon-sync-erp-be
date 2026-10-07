@@ -309,7 +309,8 @@ class PackingSlipService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return [self._to_list_item(s) for s in slips], pagination
+        invoice_refs = self._invoice_references_for_slips(slips)
+        return [self._to_list_item(s, invoice_refs) for s in slips], pagination
 
     def get_status_counts(
         self,
@@ -587,6 +588,8 @@ class PackingSlipService:
         param_by_serial: dict,
         track_by_id: dict,
         bin_paths: dict[UUID, str],
+        pick_list_nos: dict[UUID, str] | None = None,
+        pick_list_invoice_refs: dict[UUID, str] | None = None,
     ) -> list[dict]:
         """Build master-pack groups, merging lines that share a QSeal parent."""
         groups: dict = {}
@@ -639,6 +642,16 @@ class PackingSlipService:
                     "pick_list_id": str(item.pick_list_id)
                     if item.pick_list_id
                     else None,
+                    "pick_list_no": (
+                        pick_list_nos.get(item.pick_list_id)
+                        if pick_list_nos and item.pick_list_id
+                        else None
+                    ),
+                    "invoice_ref": (
+                        pick_list_invoice_refs.get(item.pick_list_id)
+                        if pick_list_invoice_refs and item.pick_list_id
+                        else None
+                    ),
                     "bin_location_id": str(item.bin_location_id)
                     if item.bin_location_id
                     else None,
@@ -662,6 +675,20 @@ class PackingSlipService:
                     group["order_id"] = str(item.order_id)
                 if group["pick_list_id"] is None and item.pick_list_id is not None:
                     group["pick_list_id"] = str(item.pick_list_id)
+                if (
+                    group["pick_list_no"] is None
+                    and pick_list_nos
+                    and item.pick_list_id is not None
+                ):
+                    group["pick_list_no"] = pick_list_nos.get(item.pick_list_id)
+                if (
+                    group["invoice_ref"] is None
+                    and pick_list_invoice_refs
+                    and item.pick_list_id is not None
+                ):
+                    group["invoice_ref"] = pick_list_invoice_refs.get(
+                        item.pick_list_id
+                    )
                 if (
                     group["bin_location_id"] is None
                     and item.bin_location_id is not None
@@ -762,9 +789,32 @@ class PackingSlipService:
                 .all()
             )
             bin_paths = {r[0]: r[1] for r in bin_rows if r[1]}
+        pick_list_ids = {i.pick_list_id for i in items if i.pick_list_id}
+        pick_list_nos: dict[UUID, str] = {}
+        pick_list_invoice_refs: dict[UUID, str] = {}
+        if pick_list_ids:
+            from app.models.pick_list import PickList
+
+            pick_rows = (
+                self.db.query(
+                    PickList.id,
+                    PickList.pick_list_no,
+                    PickList.invoice_reference,
+                )
+                .filter(PickList.id.in_(pick_list_ids))
+                .all()
+            )
+            pick_list_nos = {r[0]: r[1] for r in pick_rows if r[1]}
+            pick_list_invoice_refs = {r[0]: r[2] for r in pick_rows if r[2]}
         param_by_serial, track_by_id = self._qseal_context(slip, items_by_id)
         groups = self._build_groups(
-            slip, items_by_id, param_by_serial, track_by_id, bin_paths
+            slip,
+            items_by_id,
+            param_by_serial,
+            track_by_id,
+            bin_paths,
+            pick_list_nos,
+            pick_list_invoice_refs,
         )
         return {
             "id": str(slip.id),
@@ -812,7 +862,61 @@ class PackingSlipService:
             "groups": groups,
         }
 
-    def _to_list_item(self, slip: PackingSlip) -> dict:
+    def _invoice_references_for_slips(
+        self, slips: list[PackingSlip]
+    ) -> dict[UUID, list[str]]:
+        """Map packing_slip_id → sorted list of invoice references.
+
+        Invoice references are gathered from both the slip's outbound orders
+        (via ``order_id``) and its source pick lists (via ``pick_list_id``),
+        matching the detail response. Resolved in bulk to avoid N+1 queries.
+        """
+        order_ids_by_slip: dict[UUID, set[UUID]] = {}
+        pick_list_ids_by_slip: dict[UUID, set[UUID]] = {}
+        all_order_ids: set[UUID] = set()
+        all_pick_list_ids: set[UUID] = set()
+        for slip in slips:
+            order_ids = {i.order_id for i in slip.items if i.order_id}
+            pick_list_ids = {i.pick_list_id for i in slip.items if i.pick_list_id}
+            order_ids_by_slip[slip.id] = order_ids
+            pick_list_ids_by_slip[slip.id] = pick_list_ids
+            all_order_ids |= order_ids
+            all_pick_list_ids |= pick_list_ids
+
+        invoice_by_order: dict[UUID, str] = {}
+        if all_order_ids:
+            rows = (
+                self.db.query(OutboundOrder.id, OutboundOrder.invoice_reference)
+                .filter(OutboundOrder.id.in_(all_order_ids))
+                .all()
+            )
+            invoice_by_order = {r[0]: r[1] for r in rows if r[1]}
+
+        invoice_by_pick_list: dict[UUID, str] = {}
+        if all_pick_list_ids:
+            rows = (
+                self.db.query(PickList.id, PickList.invoice_reference)
+                .filter(PickList.id.in_(all_pick_list_ids))
+                .all()
+            )
+            invoice_by_pick_list = {r[0]: r[1] for r in rows if r[1]}
+
+        result: dict[UUID, list[str]] = {}
+        for slip_id, order_ids in order_ids_by_slip.items():
+            refs = {invoice_by_order[oid] for oid in order_ids if oid in invoice_by_order}
+            refs.update(
+                invoice_by_pick_list[pid]
+                for pid in pick_list_ids_by_slip.get(slip_id, set())
+                if pid in invoice_by_pick_list
+            )
+            result[slip_id] = sorted(refs)
+        return result
+
+    def _to_list_item(
+        self,
+        slip: PackingSlip,
+        invoice_refs: dict[UUID, list[str]] | None = None,
+    ) -> dict:
         order_ids = sorted({str(i.order_id) for i in slip.items if i.order_id})
         return {
             "id": str(slip.id),
@@ -821,5 +925,8 @@ class PackingSlipService:
             "status": slip.status.value,
             "item_count": len(slip.items),
             "order_ids": order_ids,
+            "invoice_reference": (
+                invoice_refs.get(slip.id, []) if invoice_refs else []
+            ),
             "created_at": slip.created_at.isoformat() if slip.created_at else None,
         }

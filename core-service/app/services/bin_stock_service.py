@@ -795,6 +795,73 @@ class BinStockService:
             .all()
         )
 
+    def _show_parent_qr_column(self, org_id: UUID) -> bool:
+        """Whether the parent QR code column should be exposed.
+
+        Gated by the ``bin_stock_show_parent_qr`` feature flag; defaults to
+        False (hidden) when the flag is missing or disabled, and tenant
+        overrides take precedence over the global value.
+        """
+        from app.core.constants import BIN_STOCK_SHOW_PARENT_QR
+        from app.services.feature_flag_service import is_feature_enabled_for_org
+
+        return is_feature_enabled_for_org(BIN_STOCK_SHOW_PARENT_QR, self.db, org_id)
+
+    def _build_parent_qr_url(self, serial_number: str | None) -> str | None:
+        """Build the scannable QR URL for a parent QSeal box (master pack)."""
+        if not serial_number:
+            return None
+        from app.config import settings
+
+        base_url = settings.qr_base_url or f"https://{settings.qr_domain}"
+        return f"{base_url}/qseal/{serial_number}"
+
+    def get_parent_qr_map(
+        self,
+        bin_id: UUID,
+        org_id: UUID,
+    ) -> dict[UUID, str]:
+        """Map ``bin_stock_level_id`` → scannable parent QR URL for a bin.
+
+        Resolves each stock row's parent (master-pack) box through
+        ``qseal_parameters.parent_id`` (the child serial is stored in the
+        stock row's ``batch_number``). Returns an empty dict when the
+        ``bin_stock_show_parent_qr`` flag is off (the default).
+        """
+        if not self._show_parent_qr_column(org_id):
+            return {}
+
+        from app.models.qseal import QSealParameters, QSealTrack
+
+        rows = (
+            self.db.query(
+                BinStockLevel.id,
+                QSealTrack.serial_number,
+            )
+            .join(
+                QSealParameters,
+                QSealParameters.serial_number == BinStockLevel.batch_number,
+            )
+            .join(QSealTrack, QSealTrack.id == QSealParameters.parent_id)
+            .filter(
+                BinStockLevel.bin_location_id == bin_id,
+                BinStockLevel.organization_id == org_id,
+                QSealParameters.organization_id == org_id,
+                QSealTrack.organization_id == org_id,
+            )
+            .order_by(QSealTrack.name, QSealTrack.serial_number)
+            .all()
+        )
+
+        # ``qseal_parameters.serial_number`` has no unique constraint, so keep
+        # the first (stable) parent for each stock row to avoid ambiguity.
+        result: dict[UUID, str] = {}
+        for stock_level_id, parent_serial in rows:
+            result.setdefault(
+                stock_level_id, self._build_parent_qr_url(parent_serial)
+            )
+        return result
+
     def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
         """Return the parent (master-pack) boxes present in a bin, grouped by product.
 
@@ -876,6 +943,7 @@ class BinStockService:
 
         # One group per (parent box, item) pair.
         groups: dict[tuple[UUID, UUID], dict] = {}
+        show_parent_qr = self._show_parent_qr_column(org_id)
         # ``qseal_parameters.serial_number`` has no unique constraint, so a
         # legacy duplicate serial could match one stock row to several parents.
         # Emit every stock row at most once (the ORDER BY makes "first" stable)
@@ -887,6 +955,10 @@ class BinStockService:
                 continue
             seen_stock_level_ids.add(stock_level_id)
 
+            parent_qr_url = (
+                self._build_parent_qr_url(row[1]) if show_parent_qr else None
+            )
+
             key = (row[0], row[10])
             group = groups.get(key)
             if group is None:
@@ -897,6 +969,7 @@ class BinStockService:
                         "name": row[2],
                         "qseal_type": row[3],
                         "capacity": row[4],
+                        "qr_code_url": parent_qr_url,
                     },
                     "product_name": row[13],
                     "items": [],
@@ -932,6 +1005,7 @@ class BinStockService:
                     "rejection_reason": None,
                     "reason_code": None,
                     "notes": None,
+                    "parent_qr_code_url": parent_qr_url,
                 }
             )
 

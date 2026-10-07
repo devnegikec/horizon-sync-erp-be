@@ -78,6 +78,8 @@ class PackingSlipItemGroup(BaseModel):
     product_name: str | None = None
     order_id: str | None = None
     pick_list_id: str | None = None
+    pick_list_no: str | None = None
+    invoice_ref: str | None = None
     bin_location_id: str | None = None
     bin_location_path: str | None = None
     handling_unit_id: str | None = None
@@ -110,6 +112,7 @@ class PackingSlipListItem(BaseModel):
     status: str
     item_count: int = 0
     order_ids: list[str] = []
+    invoice_reference: list[str] = []
     created_at: str | None = None
 
 
