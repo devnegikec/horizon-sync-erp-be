@@ -248,6 +248,10 @@ async def update_location(
     - **capacity_uom**: New capacity UOM
     - **position_x**: New X position
     - **position_y**: New Y position
+    - **max_volume_cc** / **max_weight_grams**: New physical limits
+    - **allow_over_capacity**: Acknowledge a limit that is below the stock
+      already in the bin (otherwise the request is rejected with
+      `BIN_CAPACITY_BELOW_OCCUPANCY`)
 
     **Returns:** Updated location details
     """
@@ -266,6 +270,7 @@ async def update_location(
         max_weight_grams=data.max_weight_grams
         if "max_weight_grams" in data.model_fields_set
         else _UNSET,
+        allow_over_capacity=data.allow_over_capacity,
     )
     return LocationResponse.model_validate(location)
 

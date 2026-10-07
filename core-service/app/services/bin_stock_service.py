@@ -263,11 +263,15 @@ class BinStockService:
             - batch_number (str | None, optional)
 
         Each item is processed independently — a failure for one item does not
-        roll back successful items. The response includes per-item status.
+        roll back successful items (each runs in its own savepoint). Capacity is
+        enforced cumulatively across the batch, against **all** of the bin's
+        limits: legacy unit count, volume (``max_volume_cc``) and weight
+        (``max_weight_grams``) — the same rules as :meth:`add_stock`.
 
         Args:
             bin_id: The bin location ID to add stock to.
-            items: List of item dicts with item_id, quantity, batch_number.
+            items: List of item dicts with item_id, quantity, batch_number,
+                and optional packaging_unit_id.
             org_id: Organization ID for scoping.
 
         Returns:
@@ -314,45 +318,55 @@ class BinStockService:
             item_id = item["item_id"]
             quantity = Decimal(str(item["quantity"]))
             batch_number = item.get("batch_number")
+            bin_stock = None
 
             try:
                 # Validate quantity
                 if quantity <= 0:
                     raise ValidationError("Quantity must be positive")
 
-                # Check capacity (cumulative across items in this batch)
-                if bin_capacity is not None:
-                    available = bin_capacity - current_stock_in_bin
-                    if quantity > available:
-                        raise ValidationError(
-                            f"Cannot add {quantity}. Available capacity: {available} "
-                            f"(total: {bin_capacity}, current: {current_stock_in_bin})"
-                        )
+                # Each item runs in its own savepoint so a single rejected item
+                # cannot roll back the items already added in this batch (the
+                # endpoint promises per-item independence).
+                with self.db.begin_nested():
+                    # Capacity check (count + volume + weight) — the same rules
+                    # as add_stock(). Items already flushed in this batch are
+                    # included in the occupancy this reads, so the bin's limits
+                    # are enforced cumulatively across the batch.
+                    self._validate_capacity(
+                        bin_location=bin_location,
+                        item_id=item_id,
+                        packaging_unit_id=item.get("packaging_unit_id"),
+                        quantity=quantity,
+                        bin_capacity=bin_capacity,
+                        current_stock_in_bin=current_stock_in_bin,
+                    )
 
-                # Create or update the BinStockLevel record
-                bin_stock = self._get_or_create_bin_stock(
-                    bin_id=bin_id,
-                    item_id=item_id,
-                    org_id=org_id,
-                    batch_number=batch_number,
-                )
-                bin_stock.quantity_on_hand = (
-                    Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
-                )
-                self.db.flush()
+                    # Create or update the BinStockLevel record
+                    bin_stock = self._get_or_create_bin_stock(
+                        bin_id=bin_id,
+                        item_id=item_id,
+                        org_id=org_id,
+                        batch_number=batch_number,
+                    )
+                    bin_stock.quantity_on_hand = (
+                        Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
+                    )
+                    self.db.flush()
 
-                # Track cumulative stock for capacity checks
-                current_stock_in_bin += quantity
+                    # Track cumulative stock for cross-item count checks
+                    current_stock_in_bin += quantity
 
-                # Sync warehouse-level stock
-                self._sync_warehouse_stock(
-                    item_id=item_id,
-                    warehouse_id=bin_location.warehouse_id,
-                    org_id=org_id,
-                    quantity_delta=quantity,
-                )
+                    # Sync warehouse-level stock
+                    self._sync_warehouse_stock(
+                        item_id=item_id,
+                        warehouse_id=bin_location.warehouse_id,
+                        org_id=org_id,
+                        quantity_delta=quantity,
+                    )
 
-                self.db.refresh(bin_stock)
+                    self.db.refresh(bin_stock)
+
                 results.append(
                     {
                         "item_id": item_id,
@@ -366,7 +380,6 @@ class BinStockService:
                 added_count += 1
 
             except (ValidationError, NotFoundError) as e:
-                self.db.rollback()
                 error_msg = e.detail if hasattr(e, "detail") else str(e)
                 results.append(
                     {

@@ -2,6 +2,7 @@
 
 import re
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.models.warehouse_location import LocationType, WarehouseLocation
 from app.services.capacity_math import (
     CC_PER_M3,
     G_PER_KG,
+    compute_bin_occupancy,
     display_capacity_uom,
     effective_bin_count_capacity,
     effective_bin_volume_limit_cc,
@@ -160,6 +162,7 @@ class LayoutService:
         position_y: Decimal | None = None,
         max_volume_cc: Decimal | None | object = _UNSET,
         max_weight_grams: Decimal | None | object = _UNSET,
+        allow_over_capacity: bool = False,
     ) -> WarehouseLocation:
         """
         Update a location's mutable fields (name, capacity, position).
@@ -176,14 +179,29 @@ class LayoutService:
             position_y: New Y position (optional).
             max_volume_cc: New max volume capacity in cc (optional).
             max_weight_grams: New max weight capacity in grams (optional).
+            allow_over_capacity: When false (default), refuse a limit that would
+                leave the bin below the stock it already holds.
 
         Returns:
             The updated WarehouseLocation.
 
         Raises:
-            ValidationError: If location not found.
+            ValidationError: If the location is not found, or the new limits would
+                leave a bin below its current occupancy.
         """
         location = self._get_location(location_id, organization_id)
+
+        # A capacity edit must not silently push a bin below what it already
+        # holds — that is exactly how `available_capacity` goes negative. Check
+        # the prospective limits *before* mutating the row.
+        self._assert_limits_fit_occupancy(
+            location,
+            allow_over_capacity=allow_over_capacity,
+            capacity=capacity,
+            capacity_uom=capacity_uom,
+            max_volume_cc=max_volume_cc,
+            max_weight_grams=max_weight_grams,
+        )
 
         if name is not None:
             location.name = name
@@ -218,6 +236,83 @@ class LayoutService:
             self.db.commit()
 
         return location
+
+    def _assert_limits_fit_occupancy(
+        self,
+        location: WarehouseLocation,
+        *,
+        allow_over_capacity: bool,
+        capacity: Decimal | None,
+        capacity_uom: str | None,
+        max_volume_cc: Decimal | None | object,
+        max_weight_grams: Decimal | None | object,
+    ) -> None:
+        """Refuse a limit that would put ``location`` below its current occupancy.
+
+        Uses the same effective-limit helpers as ``BinStockService`` so a
+        physical measure stored in ``capacity`` (m³ / kg) and one stored in
+        ``max_volume_cc`` / ``max_weight_grams`` are read identically. The
+        prospective values are evaluated on a throwaway object so the row is not
+        mutated when the edit is rejected.
+
+        No-op for non-bin locations and when ``allow_over_capacity`` is set.
+        """
+        if allow_over_capacity or location.location_type != LocationType.BIN.value:
+            return
+
+        prospective = SimpleNamespace(
+            capacity=capacity if capacity is not None else location.capacity,
+            capacity_uom=(
+                capacity_uom if capacity_uom is not None else location.capacity_uom
+            ),
+            max_volume_cc=(
+                location.max_volume_cc if max_volume_cc is _UNSET else max_volume_cc
+            ),
+            max_weight_grams=(
+                location.max_weight_grams
+                if max_weight_grams is _UNSET
+                else max_weight_grams
+            ),
+        )
+
+        volume_limit_cc = effective_bin_volume_limit_cc(prospective)
+        weight_limit_g = effective_bin_weight_limit_g(prospective)
+        if volume_limit_cc is None and weight_limit_g is None:
+            return
+
+        occupied_m3, occupied_kg = compute_bin_occupancy(self.db, location.id)
+        occupied_cc = occupied_m3 * CC_PER_M3
+        occupied_g = occupied_kg * G_PER_KG
+
+        checks = (
+            ("max_volume_cc", occupied_cc, volume_limit_cc, "cc"),
+            ("max_weight_grams", occupied_g, weight_limit_g, "g"),
+        )
+        for field, occupied, limit, unit in checks:
+            if limit is not None and occupied > limit:
+                hint = (
+                    "Move stock out of the bin first, or resend with "
+                    "allow_over_capacity=true to acknowledge the overage."
+                )
+                raise ValidationError(
+                    message=(
+                        f"Cannot set '{field}' to {limit} {unit} for bin "
+                        f"'{location.full_path}': it already holds "
+                        f"{occupied} {unit} of stock."
+                    ),
+                    details=[
+                        {
+                            "field": field,
+                            "reason": (
+                                f"New limit {limit} {unit} is below the "
+                                f"{occupied} {unit} currently stored"
+                            ),
+                            "hint": hint,
+                        }
+                    ],
+                    code="BIN_CAPACITY_BELOW_OCCUPANCY",
+                    hint=hint,
+                )
 
     # ------------------------------------------------------------------
     # DEACTIVATE (cascade to descendants)
