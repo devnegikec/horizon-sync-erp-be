@@ -66,6 +66,12 @@ class OutboundOrder(Base):
     remarks = Column(Text, nullable=True)
     extra_data = Column(JSONB, nullable=True)
 
+    # Prioritization metadata (WF-007). Copied onto generated pick lists so
+    # the configured ``priority_fields`` (cutoff/wave/route) can drive order.
+    dispatch_cutoff = Column(DateTime(timezone=True), nullable=True)
+    wave = Column(String(100), nullable=True)
+    route = Column(String(100), nullable=True)
+
     # Upstream document linkage (e.g. an internal-transfer ASN that generated
     # this order at the source warehouse).
     reference_type = Column(String(50), nullable=True)

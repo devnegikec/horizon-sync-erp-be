@@ -446,6 +446,11 @@ class OutboundOrderService:
                 reference_id=order.id,
                 invoice_reference=order.invoice_reference,
                 assigned_to=assigned_to,
+                # Carry prioritization metadata from the source order so the
+                # configured ``priority_fields`` (cutoff/wave/route) can sort.
+                dispatch_cutoff=order.dispatch_cutoff,
+                wave=order.wave,
+                route=order.route,
                 invoice_data={
                     "order_no": order.order_no,
                     "order_type": order.order_type.value,

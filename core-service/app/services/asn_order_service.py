@@ -927,6 +927,20 @@ class AsnOrderService:
             reference_no=asn_order.asn_order_no,
             remarks=f"Internal transfer from ASN {asn_order.asn_order_no}",
             created_by=user_id,
+            # Prioritization metadata (WF-007): the ASN's delivery date drives
+            # the dispatch cutoff, and any route/wave carried in extra_data is
+            # preserved for the generated pick lists.
+            dispatch_cutoff=asn_order.delivery_date,
+            wave=(
+                asn_order.extra_data.get("wave")
+                if isinstance(asn_order.extra_data, dict)
+                else None
+            ),
+            route=(
+                asn_order.extra_data.get("route")
+                if isinstance(asn_order.extra_data, dict)
+                else None
+            ),
         )
         self.db.add(order)
         self.db.flush()
