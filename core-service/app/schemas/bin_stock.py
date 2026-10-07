@@ -79,6 +79,9 @@ class BinStockLevelResponse(BaseModel):
     quantity_on_hand: Decimal = Decimal("0")
     inventory_status: str = "available"
     batch_number: str | None = None
+    # Scannable QR code URL of the parent (master-pack) box that holds this
+    # batch. Populated only when the ``bin_stock_show_parent_qr`` flag is on.
+    parent_qr_code_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -122,6 +125,9 @@ class BinStockParentQSealInfo(BaseModel):
     name: str | None = None
     qseal_type: str | None = None
     capacity: int | None = None
+    # Scannable QR code URL for this parent box (``{base}/qseal/{serial}``).
+    # Populated only when the ``bin_stock_show_parent_qr`` flag is on.
+    qr_code_url: str | None = None
 
 
 class BinStockGroupItem(BaseModel):
@@ -148,6 +154,9 @@ class BinStockGroupItem(BaseModel):
     rejection_reason: str | None = None
     reason_code: str | None = None
     notes: str | None = None
+    # Scannable QR code URL of this batch's parent (master-pack) box.
+    # Populated only when the ``bin_stock_show_parent_qr`` flag is on.
+    parent_qr_code_url: str | None = None
 
 
 class BinStockItemGroup(BaseModel):
