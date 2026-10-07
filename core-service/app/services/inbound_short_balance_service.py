@@ -744,6 +744,9 @@ class InboundShortBalanceService:
             "id": balance.id,
             "organization_id": balance.organization_id,
             "asn_order_id": balance.asn_order_id,
+            "asn_order_no": (
+                balance.asn_order.asn_order_no if balance.asn_order else None
+            ),
             "asn_order_item_id": balance.asn_order_item_id,
             "receiving_slip_id": balance.receiving_slip_id,
             "item_id": balance.item_id,

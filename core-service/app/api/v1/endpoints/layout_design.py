@@ -147,6 +147,11 @@ async def apply_layout_document(
     placements and stock keep pointing at it. Set ``replace_existing=true`` to
     soft-deactivate locations the new document no longer contains (historical
     stock rows are preserved either way).
+
+    ``diagnostics`` in the response carries non-blocking warnings — notably
+    ``BIN_OVER_CAPACITY_AFTER_APPLY`` when the applied limits leave an
+    already-stocked bin below its contents (its available capacity will go
+    negative until stock is removed).
     """
     result = LayoutDesignService(db).apply(
         warehouse_id=body.warehouse_id,

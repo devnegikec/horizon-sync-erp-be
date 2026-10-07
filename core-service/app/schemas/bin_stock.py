@@ -49,6 +49,13 @@ class BulkAddStockItem(BaseModel):
     batch_number: str | None = Field(
         None, max_length=100, description="Optional batch number"
     )
+    packaging_unit_id: UUID | None = Field(
+        None,
+        description=(
+            "Optional packaging unit UUID; used to measure volume/weight when "
+            "enforcing the bin's capacity (defaults to the item's base unit)"
+        ),
+    )
 
 
 class BulkAddStockRequest(BaseModel):

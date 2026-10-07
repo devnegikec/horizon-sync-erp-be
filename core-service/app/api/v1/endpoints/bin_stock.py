@@ -124,7 +124,9 @@ async def bulk_add_stock(
 
     Validates per-item:
     - Quantity must be positive
-    - Cumulative capacity won't be exceeded (per-item check against running total)
+    - Cumulative bin capacity won't be exceeded — unit count, volume
+      (`max_volume_cc`) and weight (`max_weight_grams`) are all enforced against
+      the running total for the batch
 
     After adding:
     - Creates/updates BinStockLevel records for each item
@@ -133,7 +135,7 @@ async def bulk_add_stock(
 
     **Request Body:**
     - **bin_id**: Bin location UUID (all items go to this bin)
-    - **items**: List of { item_id, quantity, batch_number? } (max 50)
+    - **items**: List of { item_id, quantity, batch_number?, packaging_unit_id? } (max 50)
 
     **Returns:** Per-item status with "added" or "error", plus summary counts
     """
@@ -143,6 +145,7 @@ async def bulk_add_stock(
             "item_id": item.item_id,
             "quantity": item.quantity,
             "batch_number": item.batch_number,
+            "packaging_unit_id": item.packaging_unit_id,
         }
         for item in data.items
     ]

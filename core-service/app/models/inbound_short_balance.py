@@ -83,6 +83,11 @@ class InboundShortBalance(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
+    # Many-to-one parent ASN; batch-loaded (separate SELECT ... IN) so
+    # serialization can surface the human-readable `asn_order_no` without an
+    # N+1 query — and without a joined row that would break `FOR UPDATE`.
+    asn_order = relationship("AsnOrder", lazy="selectin")
+
     events = relationship(
         "InboundShortBalanceEvent",
         back_populates="balance",
