@@ -415,6 +415,19 @@ class OrderImportService:
             return None
         from datetime import UTC, datetime
 
+        # ISO 8601: handles 'Z' suffix, numeric offsets (+05:30) and fractional
+        # seconds (Python 3.11+). CSV cutoffs in these common formats must not
+        # silently vanish into None.
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            else:
+                dt = dt.astimezone(UTC)
+            return dt
+        except ValueError:
+            pass
+
         for fmt in (
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d %H:%M",
@@ -455,8 +468,12 @@ class OrderImportService:
         if not reader.fieldnames:
             raise ValidationError("CSV file appears to be empty or has no headers.")
 
-        # Normalize header names
+        # Normalize header names for column detection AND DictReader lookups.
+        # DictReader keeps the original header spelling as row keys, so without
+        # this a title-cased header (e.g. "Route") would never match the
+        # lowercased column map and the value would be silently dropped.
         headers = [h.strip().lower() for h in reader.fieldnames]
+        reader.fieldnames = headers
 
         # Detect column mapping
         invoice_col = self._find_column(headers, ['invoice', 'invoice_no', 'invoice_reference', 'order_no', 'order_id'])

@@ -86,6 +86,9 @@ class AsnOrderBase(BaseModel):
         None, pattern="^(purchase|internal_transfer|stock_receipt)$"
     )
     remarks: str | None = Field(None, max_length=1000)
+    # Optional top-level metadata (e.g. {"wave": ..., "route": ...}) carried
+    # through to generated transfer orders and their pick-list priority.
+    extra_data: dict | None = None
 
 
 class AsnOrderCreate(AsnOrderBase):
