@@ -45,11 +45,33 @@ class FeatureFlagService:
             raise HTTPException(status_code=404, detail="Feature flag not found")
         return FeatureFlagResponse.model_validate(flag)
 
-    def list_flags(self) -> FeatureFlagListResponse:
+    def list_flags(
+        self,
+        scope: str | None = None,
+        organization_id: UUID | None = None,
+    ) -> FeatureFlagListResponse:
+        """List feature flags, optionally filtered by scope and organization.
+
+        Admin-portal usage: ``scope`` filters GLOBAL vs TENANT flags, and
+        ``organization_id`` narrows TENANT flags to one organization.
+        """
         flags = self.repo.list_all()
+        if scope:
+            flags = [f for f in flags if f.scope == scope]
+        if organization_id is not None:
+            flags = [f for f in flags if f.tenant_id == organization_id]
         return FeatureFlagListResponse(
             flags=[FeatureFlagResponse.model_validate(f) for f in flags]
         )
+
+    def list_tenant_flags(self, organization_id: UUID) -> list[FeatureFlagResponse]:
+        """List the TENANT-scoped flags for an organization (admin view)."""
+        return [
+            FeatureFlagResponse.model_validate(f)
+            for f in sorted(
+                self.repo.list_by_tenant(organization_id), key=lambda f: f.name
+            )
+        ]
 
     def update_flag(
         self, flag_id: UUID, data: FeatureFlagUpdate
@@ -76,35 +98,24 @@ class FeatureFlagService:
     def list_flags_for_org(
         self, organization_id: UUID
     ) -> list[TenantFeatureFlagResponse]:
-        """Return effective global and tenant flags for the organization.
+        """Return the TENANT-scoped feature flags for the organization.
 
-        Global flags must be included so organization owners can see and
-        override them from Settings. A tenant override takes precedence over
-        a global flag with the same name.
+        GLOBAL flags are platform-level and must remain visible only to system
+        admins (via the admin portal ``/admin/feature-flags``). Organization
+        owners/admins see only their own organization-specific flags here.
         """
-        global_flags = {
-            flag.name: flag
-            for flag in self.repo.list_by_scope(DEFAULT_SCOPE)
-        }
-        tenant_flags = {
-            flag.name: flag
-            for flag in self.repo.list_by_tenant(organization_id)
-        }
-
-        effective_flags = {**global_flags, **tenant_flags}
+        tenant_flags = self.repo.list_by_tenant(organization_id)
         return [
             TenantFeatureFlagResponse(
                 name=flag.name,
                 description=flag.description,
                 enabled=flag.enabled,
                 visible=flag.visible,
-                scope=TENANT_SCOPE if flag.name in tenant_flags else DEFAULT_SCOPE,
-                tenant_id=(
-                    flag.tenant_id if flag.name in tenant_flags else None
-                ),
-                inherited=flag.name not in tenant_flags,
+                scope=TENANT_SCOPE,
+                tenant_id=organization_id,
+                inherited=False,
             )
-            for flag in sorted(effective_flags.values(), key=lambda f: f.name)
+            for flag in sorted(tenant_flags, key=lambda f: f.name)
         ]
 
     def upsert_tenant_flag(
@@ -130,6 +141,16 @@ class FeatureFlagService:
             update_data = data.model_dump(exclude_unset=True)
             flag = self.repo.update(flag, update_data)
         return FeatureFlagResponse.model_validate(flag)
+
+    def delete_tenant_flag(self, organization_id: UUID, feature_name: str) -> None:
+        """Delete a TENANT-scoped flag override for an organization."""
+        flag = self.repo.get_by_name_for_tenant(feature_name, organization_id)
+        if flag is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tenant feature flag '{feature_name}' not found",
+            )
+        self.repo.delete(flag)
 
     def evaluate(self, feature_name: str) -> FeatureFlagEvaluation:
         try:
