@@ -24,6 +24,7 @@ from app.models.bin_stock_level import (
     InventoryStatus,
     can_transition_inventory_status,
 )
+from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.status_transition import StatusTransition
 from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
@@ -99,6 +100,10 @@ class BinStockService:
         ``max_weight_grams``, or ``capacity`` with ``capacity_uom`` of
         ``volume`` / ``weight``).
         """
+        # The supplied packaging unit drives the volume/weight measurement, so
+        # it must belong to this item.
+        self._assert_packaging_unit_owned(item_id, packaging_unit_id)
+
         if bin_capacity is not None:
             available_capacity = bin_capacity - current_stock_in_bin
             if quantity > available_capacity:
@@ -134,6 +139,26 @@ class BinStockService:
                         f"Weight capacity exceeded: occupied {occupied_g} g + "
                         f"required {required_g} g > limit {limit_g} g"
                     )
+
+    def _assert_packaging_unit_owned(
+        self,
+        item_id: UUID,
+        packaging_unit_id: UUID | None,
+    ) -> None:
+        """Reject a packaging unit that does not belong to ``item_id``.
+
+        ``compute_item_required_cc_and_grams`` measures the incoming stock with
+        the packaging unit's dimensions, so a unit from another item would
+        mis-measure the volume/weight and understate the bin's occupancy.
+        """
+        if packaging_unit_id is None:
+            return
+        packaging_unit = self.db.get(ItemPackagingUnit, packaging_unit_id)
+        if packaging_unit is None or packaging_unit.item_id != item_id:
+            raise ValidationError(
+                f"Packaging unit '{packaging_unit_id}' does not belong to item "
+                f"'{item_id}'"
+            )
 
     def add_stock(
         self,
@@ -348,6 +373,7 @@ class BinStockService:
                         item_id=item_id,
                         org_id=org_id,
                         batch_number=batch_number,
+                        packaging_unit_id=item.get("packaging_unit_id"),
                     )
                     bin_stock.quantity_on_hand = (
                         Decimal(str(bin_stock.quantity_on_hand or 0)) + quantity
