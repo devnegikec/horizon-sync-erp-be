@@ -149,6 +149,11 @@ async def list_locations(
     has_stock: bool | None = Query(
         None, description="Filter to locations with stock > 0"
     ),
+    full_path: str | None = Query(
+        None,
+        description="Filter by location path (partial, case-insensitive), "
+        "e.g. Z01-A03-B02-L04-BN001",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page (max 100)"),
     current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ)),
@@ -163,6 +168,7 @@ async def list_locations(
     - **parent_location_id**: Filter by parent
     - **is_active**: Filter by active status
     - **has_stock**: Filter to locations with stock
+    - **full_path**: Filter by location path (partial, case-insensitive)
     - **page**: Page number (default: 1)
     - **page_size**: Items per page (default: 50, max: 100)
 
@@ -176,6 +182,7 @@ async def list_locations(
         parent_location_id=parent_location_id,
         is_active=is_active,
         has_stock=has_stock,
+        full_path=full_path,
         page=page,
         page_size=page_size,
     )

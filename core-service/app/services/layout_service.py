@@ -517,6 +517,7 @@ class LayoutService:
         parent_location_id: UUID | None = None,
         is_active: bool | None = None,
         has_stock: bool | None = None,
+        full_path: str | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> dict[str, Any]:
@@ -530,6 +531,8 @@ class LayoutService:
             parent_location_id: Filter by parent.
             is_active: Filter by active status.
             has_stock: Filter to only locations with stock > 0.
+            full_path: Filter by location path (partial, case-insensitive),
+                e.g. ``Z01-A03-B02-L04-BN001``.
             page: Page number (1-indexed).
             page_size: Items per page.
 
@@ -551,6 +554,11 @@ class LayoutService:
 
         if is_active is not None:
             query = query.filter(WarehouseLocation.is_active == is_active)
+
+        if full_path:
+            query = query.filter(
+                WarehouseLocation.full_path.ilike(f"%{full_path.strip()}%")
+            )
 
         if has_stock is True:
             # Only locations that have at least one bin_stock_level with qty > 0
