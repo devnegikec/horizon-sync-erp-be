@@ -67,15 +67,27 @@ class PickListRepository:
             q = q.filter(PickList.assigned_to == assigned_to)
         total = q.count()
         if sort_by == "priority":
-            # WF-007 ordering: higher manual priority first, then earlier
-            # dispatch cutoff, then wave/route sequence, oldest created last.
-            q = q.order_by(
-                PickList.priority.desc(),
-                PickList.dispatch_cutoff.asc().nullslast(),
-                PickList.wave.asc().nullslast(),
-                PickList.route.asc().nullslast(),
-                PickList.created_at.asc(),
+            # WF-007 ordering: higher manual priority first, then the configured
+            # ``priority_fields`` (cutoff/wave/route) as tiebreakers, then
+            # oldest created last.
+            ordering = [PickList.priority.desc()]
+            from app.services.pick_settings_service import PickSettingsService
+
+            priority_fields = (
+                PickSettingsService(self.db).get_value(
+                    organization_id, "priority_fields"
+                )
+                or []
             )
+            for field in priority_fields:
+                if field == "cutoff":
+                    ordering.append(PickList.dispatch_cutoff.asc().nullslast())
+                elif field == "wave":
+                    ordering.append(PickList.wave.asc().nullslast())
+                elif field == "route":
+                    ordering.append(PickList.route.asc().nullslast())
+            ordering.append(PickList.created_at.asc())
+            q = q.order_by(*ordering)
         else:
             col = getattr(PickList, sort_by, PickList.created_at)
             q = q.order_by(col.desc() if sort_order == "desc" else col.asc())

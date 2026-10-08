@@ -36,8 +36,33 @@ class OutboundOrderService:
     # STOCK STATUS
     # ------------------------------------------------------------------
 
+    #: Live availability is only meaningful before picking starts. Once a pick
+    #: list exists the line's stock is already reserved for the order, so
+    #: recomputing from live ``quantity_available`` (which excludes the order's
+    #: own reservation) would falsely mark a fulfilled line as out of stock.
+    _REFRESHABLE_STATUSES = {
+        OutboundOrderStatus.DRAFT.value,
+        OutboundOrderStatus.CONFIRMED.value,
+    }
+
+    @staticmethod
+    def _should_refresh_stock_status(order: OutboundOrder) -> bool:
+        """Return True when this order's line availability may be recomputed."""
+        status = order.status
+        if hasattr(status, "value"):
+            status = status.value
+        return status in OutboundOrderService._REFRESHABLE_STATUSES
+
     def refresh_stock_status(self, order: OutboundOrder, commit: bool = True) -> OutboundOrder:
-        """Recompute each order line's fulfilment availability from stock_levels."""
+        """Recompute each order line's fulfilment availability from stock_levels.
+
+        Lines on orders that have already generated pick lists are left on
+        their persisted snapshot — their stock is reserved for the order, so a
+        live recompute would under-report availability.
+        """
+        if not self._should_refresh_stock_status(order):
+            return order
+
         item_ids = [item.item_id for item in order.items]
         if not item_ids:
             return order
@@ -74,13 +99,16 @@ class OutboundOrderService:
         """Recompute per-line stock status for many orders with one query.
 
         Used by the list endpoint so the in-stock/out-of-stock counts reflect
-        live availability rather than the last persisted snapshot.
+        live availability rather than the last persisted snapshot. Orders that
+        have already generated pick lists keep their persisted snapshot (their
+        stock is reserved for the order).
         """
         if not orders:
             return
 
+        refreshable = [o for o in orders if self._should_refresh_stock_status(o)]
         item_ids = {
-            item.item_id for order in orders for item in (order.items or [])
+            item.item_id for order in refreshable for item in (order.items or [])
         }
         if not item_ids:
             return
@@ -88,7 +116,7 @@ class OutboundOrderService:
         levels = (
             self.db.query(StockLevel)
             .filter(
-                StockLevel.organization_id == orders[0].organization_id,
+                StockLevel.organization_id == refreshable[0].organization_id,
                 StockLevel.product_id.in_(item_ids),
             )
             .all()
@@ -97,7 +125,7 @@ class OutboundOrderService:
             (level.warehouse_id, level.product_id): level for level in levels
         }
 
-        for order in orders:
+        for order in refreshable:
             for item in order.items or []:
                 level = available_by_key.get((order.warehouse_id, item.item_id))
                 available = (
@@ -446,6 +474,11 @@ class OutboundOrderService:
                 reference_id=order.id,
                 invoice_reference=order.invoice_reference,
                 assigned_to=assigned_to,
+                # Carry prioritization metadata from the source order so the
+                # configured ``priority_fields`` (cutoff/wave/route) can sort.
+                dispatch_cutoff=order.dispatch_cutoff,
+                wave=order.wave,
+                route=order.route,
                 invoice_data={
                     "order_no": order.order_no,
                     "order_type": order.order_type.value,

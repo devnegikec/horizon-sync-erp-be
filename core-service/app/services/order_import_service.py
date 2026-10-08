@@ -40,6 +40,10 @@ class ParsedOrder:
     invoice_reference: str = ""
     items: list[ParsedOrderItem] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Prioritization metadata captured from CSV columns (WF-007).
+    route: str | None = None
+    wave: str | None = None
+    dispatch_cutoff: str | None = None
 
 
 @dataclass
@@ -401,6 +405,43 @@ class OrderImportService:
         except Exception:
             return None
 
+    @staticmethod
+    def _to_datetime(value: str | None):
+        """Parse an optional dispatch cutoff string into a tz-aware datetime."""
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        from datetime import UTC, datetime
+
+        # ISO 8601: handles 'Z' suffix, numeric offsets (+05:30) and fractional
+        # seconds (Python 3.11+). CSV cutoffs in these common formats must not
+        # silently vanish into None.
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            else:
+                dt = dt.astimezone(UTC)
+            return dt
+        except ValueError:
+            pass
+
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+        ):
+            try:
+                return datetime.strptime(value, fmt).replace(tzinfo=UTC)
+            except ValueError:
+                continue
+        return None
+
     # ------------------------------------------------------------------
     # CSV IMPORT
     # ------------------------------------------------------------------
@@ -427,8 +468,12 @@ class OrderImportService:
         if not reader.fieldnames:
             raise ValidationError("CSV file appears to be empty or has no headers.")
 
-        # Normalize header names
+        # Normalize header names for column detection AND DictReader lookups.
+        # DictReader keeps the original header spelling as row keys, so without
+        # this a title-cased header (e.g. "Route") would never match the
+        # lowercased column map and the value would be silently dropped.
         headers = [h.strip().lower() for h in reader.fieldnames]
+        reader.fieldnames = headers
 
         # Detect column mapping
         invoice_col = self._find_column(headers, ['invoice', 'invoice_no', 'invoice_reference', 'order_no', 'order_id'])
@@ -440,6 +485,9 @@ class OrderImportService:
         case_col = self._find_column(headers, ['case_qty', 'no_of_cases', 'cases', 'boxes', 'case_count'])
         loose_col = self._find_column(headers, ['loose_qty', 'loose', 'loose_pieces'])
         batch_col = self._find_column(headers, ['batch_no', 'batch_number', 'batch', 'serial_no', 'serial_number'])
+        route_col = self._find_column(headers, ['route', 'route_code', 'route_no'])
+        wave_col = self._find_column(headers, ['wave', 'wave_no', 'wave_number'])
+        cutoff_col = self._find_column(headers, ['dispatch_cutoff', 'cutoff', 'dispatch_date', 'delivery_date', 'deliver_by'])
 
         if not sku_col:
             raise ValidationError(
@@ -480,7 +528,15 @@ class OrderImportService:
                     invoice_reference=invoice_ref,
                 )
 
-            orders_by_invoice[invoice_ref].items.append(
+            parsed = orders_by_invoice[invoice_ref]
+            if not parsed.route and route_col:
+                parsed.route = (row.get(route_col, '') or '').strip() or None
+            if not parsed.wave and wave_col:
+                parsed.wave = (row.get(wave_col, '') or '').strip() or None
+            if not parsed.dispatch_cutoff and cutoff_col:
+                parsed.dispatch_cutoff = (row.get(cutoff_col, '') or '').strip() or None
+
+            parsed.items.append(
                 ParsedOrderItem(
                     sku=sku,
                     description=desc,
@@ -593,6 +649,9 @@ class OrderImportService:
             warehouse_id=warehouse_id,
             status=OutboundOrderStatus.DRAFT,
             invoice_reference=order.invoice_reference,
+            dispatch_cutoff=self._to_datetime(order.dispatch_cutoff),
+            wave=order.wave,
+            route=order.route,
         )
         self.db.add(outbound_order)
         self.db.flush()
@@ -677,6 +736,11 @@ class OrderImportService:
         self.db.query(OutboundOrderItem).filter(
             OutboundOrderItem.outbound_order_id == existing_order.id
         ).delete()
+
+        # Refresh prioritization metadata alongside the items.
+        existing_order.dispatch_cutoff = self._to_datetime(order.dispatch_cutoff)
+        existing_order.wave = order.wave
+        existing_order.route = order.route
 
         for parsed_item, item_id in resolved:
             self.db.add(

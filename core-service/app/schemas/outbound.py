@@ -443,6 +443,10 @@ class OutboundOrderResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     reference_no: str | None = None
+    # Prioritization metadata (WF-007), copied onto generated pick lists.
+    dispatch_cutoff: str | None = None
+    wave: str | None = None
+    route: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     pick_list_ids: list[str] = []

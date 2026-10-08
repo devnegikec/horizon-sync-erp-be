@@ -1274,6 +1274,11 @@ def _order_to_response(
         reference_type=order.reference_type,
         reference_id=str(order.reference_id) if order.reference_id else None,
         reference_no=order.reference_no,
+        dispatch_cutoff=order.dispatch_cutoff.isoformat()
+        if order.dispatch_cutoff
+        else None,
+        wave=order.wave,
+        route=order.route,
         created_at=order.created_at.isoformat() if order.created_at else None,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
         pick_list_ids=pick_list_ids,
