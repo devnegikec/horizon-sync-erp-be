@@ -455,8 +455,12 @@ class OrderImportService:
         if not reader.fieldnames:
             raise ValidationError("CSV file appears to be empty or has no headers.")
 
-        # Normalize header names
+        # Normalize header names for column detection AND DictReader lookups.
+        # DictReader keeps the original header spelling as row keys, so without
+        # this a title-cased header (e.g. "Route") would never match the
+        # lowercased column map and the value would be silently dropped.
         headers = [h.strip().lower() for h in reader.fieldnames]
+        reader.fieldnames = headers
 
         # Detect column mapping
         invoice_col = self._find_column(headers, ['invoice', 'invoice_no', 'invoice_reference', 'order_no', 'order_id'])

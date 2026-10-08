@@ -497,6 +497,50 @@ class PutAwayService:
             return None
         return int(master.conversion_factor)
 
+    def _group_serials_by_parent(
+        self, serials: list[str], org_id: UUID, pack_size: int
+    ) -> list[list[str]]:
+        """Group unit serials by their physical parent box.
+
+        Serialized lines may arrive interleaved on the slip (one row per unit),
+        so positional ``pack_size`` chunking would mix units from different
+        master packs into one carton and scatter a single box across bins.
+        Instead, resolve each serial's QSeal parent (``qseal_parameters.parent_id``)
+        and emit one chunk per parent — a master pack stays whole and lands in
+        a single put-away line. Serials without a parent fall back to positional
+        chunking so legacy slips without QSeal links keep their old behaviour.
+        """
+        from app.models.qseal import QSealParameters
+
+        unique = list(dict.fromkeys(serials))
+        rows = (
+            self.db.query(QSealParameters.serial_number, QSealParameters.parent_id)
+            .filter(
+                QSealParameters.serial_number.in_(unique),
+                QSealParameters.organization_id == org_id,
+            )
+            .all()
+        )
+        parent_by_serial = {sn: pid for sn, pid in rows if pid}
+
+        ordered_parents: list[UUID] = []
+        parent_groups: dict[UUID, list[str]] = {}
+        loose: list[str] = []
+        for sn in serials:
+            parent_id = parent_by_serial.get(sn)
+            if parent_id is None:
+                loose.append(sn)
+                continue
+            if parent_id not in parent_groups:
+                parent_groups[parent_id] = []
+                ordered_parents.append(parent_id)
+            parent_groups[parent_id].append(sn)
+
+        chunks: list[list[str]] = [parent_groups[pid] for pid in ordered_parents]
+        for i in range(0, len(loose), pack_size):
+            chunks.append(loose[i : i + pack_size])
+        return chunks
+
     def _build_put_away_specs(
         self, slip: ReceivingSlip, org_id: UUID, mode: str
     ) -> tuple[list[dict], list[str]]:
@@ -590,8 +634,9 @@ class PutAwayService:
                             serials.extend(
                                 [si.batch_number] * max(1, int(si.quantity or 1))
                             )
-                    for i in range(0, len(serials), pack_size):
-                        chunk = serials[i : i + pack_size]
+                    for chunk in self._group_serials_by_parent(
+                        serials, org_id, pack_size
+                    ):
                         source_lines.append(
                             {
                                 "item": item,
