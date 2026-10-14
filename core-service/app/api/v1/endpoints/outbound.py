@@ -72,6 +72,7 @@ from app.schemas.outbound import (
     AssignWorkerRequest,
     CreatePickListFromOrderRequest,
     HandlingUnitAssignmentResponse,
+    OutboundOrderConfirmResponse,
     OutboundOrderItemResponse,
     OutboundOrderListItem,
     OutboundOrderListResponse,
@@ -1390,7 +1391,7 @@ async def get_order(
 
 @router.post(
     "/orders/{order_id}/confirm",
-    response_model=OutboundOrderResponse,
+    response_model=OutboundOrderConfirmResponse,
     summary="Confirm an outbound order",
     description="Confirm an outbound order after reviewing line stock availability",
 )
@@ -1402,7 +1403,12 @@ async def confirm_order(
     order = OutboundOrderService(db).confirm_order(
         order_id, current_user.organization_id
     )
-    return _order_to_response(order, db)
+    return OutboundOrderConfirmResponse(
+        id=str(order.id),
+        order_no=order.order_no,
+        status=order.status.value,
+        message="Order confirmed",
+    )
 
 
 @router.post(

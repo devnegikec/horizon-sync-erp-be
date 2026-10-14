@@ -43,7 +43,13 @@ _client: redis.Redis | None = None
 
 
 def _get_client() -> redis.Redis:
-    """Return a lazy, module-level sync Redis client (re-connect on failure)."""
+    """Return a lazy, module-level sync Redis client (re-connect on failure).
+
+    ``socket_connect_timeout``/``socket_timeout`` bound every call so a stalled
+    or unreachable Redis cannot hang a synchronous caller (e.g. the put-away
+    completion path publishes a bin event inside ``add_stock``) for the OS-level
+    TCP timeout.
+    """
     global _client
     try:
         if _client is not None:
@@ -52,7 +58,12 @@ def _get_client() -> redis.Redis:
     except Exception:
         _client = None
 
-    _client = redis.Redis.from_url(settings.redis_warehouse_url, decode_responses=True)
+    _client = redis.Redis.from_url(
+        settings.redis_warehouse_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+    )
     return _client
 
 

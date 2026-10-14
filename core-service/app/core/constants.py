@@ -62,6 +62,10 @@ AUTO_APPROVE_SINGLE_CREATE = "auto_approve_single_create"
 # QSeal QR block generation
 QR_AUTO_LINK_PARENT_CHILD = "qr_auto_link_parent_child"
 
+# WMS bin stock dialog — show the scannable parent (master-pack) QR code
+# column for each batch. Default hidden; enable per tenant/global to expose.
+BIN_STOCK_SHOW_PARENT_QR = "bin_stock_show_parent_qr"
+
 # ── Error codes ─────────────────────────────────────────────────────
 FEATURE_DISABLED_CODE = "FEATURE_DISABLED"
 

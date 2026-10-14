@@ -175,6 +175,7 @@ async def create_warehouse_worker(  # noqa: C901
         email_verified=True,
         qr_code=qr_code,
         employee_id=body.employee_id,
+        organization_id=org_id,
         login_username=body.login_username,
         login_password=body.password,
     )

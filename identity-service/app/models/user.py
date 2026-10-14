@@ -69,8 +69,10 @@ class User(Base):
 
     # Warehouse worker fields (consolidated from the retired wms_workers table)
     employee_id = Column(String(100), nullable=True, index=True)
-    # Worker login usernames are unique per organization, not globally. The
-    # application enforces organization-scoped uniqueness (see workers.py).
+    # Denormalized primary organization for workers; enables the database-level
+    # (organization_id, login_username) unique constraint (see migration 025).
+    organization_id = Column(Uuid, nullable=True, index=True)
+    # Worker login usernames are unique per organization, not globally.
     login_username = Column(String(100), nullable=True, index=True)
     # Recoverable login password, managed by owner/admin/manager and shown
     # (masked) in the worker details UI. Also hashed into password_hash.

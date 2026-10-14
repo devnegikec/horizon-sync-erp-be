@@ -70,13 +70,21 @@ jobs:
             -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s qr-worker \
             -m "dev: ${GITHUB_SHA::7} (qr-worker)" -d
 
+      - name: Deploy core-worker
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
+        run: |
+          railway up \
+            -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s core-worker \
+            -m "dev: ${GITHUB_SHA::7} (core-worker)" -d
+
       - name: Verify every deployment reached SUCCESS
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
         run: |
           set -uo pipefail
           failed=""
-          for svc in identity-service core-service qr-worker; do
+          for svc in identity-service core-service qr-worker core-worker; do
             echo "::group::verifying $svc"
             ok=0
             for i in $(seq 1 60); do
@@ -105,7 +113,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_DEV }}
         run: |
-          for svc in identity-service core-service qr-worker; do
+          for svc in identity-service core-service qr-worker core-worker; do
             echo "=============== $svc (last 100 deploy log lines) ==============="
             railway logs -p "$RW_PROJECT_ID" -e "$RW_ENVIRONMENT" -s "$svc" -d -n 100 || true
           done

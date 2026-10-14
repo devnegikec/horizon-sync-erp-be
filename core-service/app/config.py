@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # Durable QR Block generation worker
     celery_broker_url: str = ""
     celery_qr_queue_name: str = "qr-generation"
+    # Default queue for non-QR background tasks (bulk put-away, reconciliation).
+    # QR block generation is routed explicitly to ``celery_qr_queue_name``, so
+    # the two workloads can be consumed by separate workers.
+    celery_default_queue_name: str = "core-tasks"
     celery_visibility_timeout_seconds: int = 7200
 
     # Bulk put-away: batches up to this many items complete synchronously in

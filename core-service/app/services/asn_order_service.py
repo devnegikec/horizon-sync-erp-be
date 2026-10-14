@@ -932,6 +932,44 @@ class AsnOrderService:
         self.db.flush()
 
         for item in asn_order.items:
+            # Serialized transfer lines carry their unit serials in
+            # ``serial_nos``; surface them on the order line's ``batch_no`` so
+            # the order detail and downstream pick lists show the batch/serial
+            # instead of null. Batch-tracked lines (no serials) fall back to the
+            # batch label captured on the ASN item's extra_data.
+            serials = item.serial_nos or []
+            extra = item.extra_data or {}
+            batch_hint = extra.get("batch") if isinstance(extra, dict) else None
+            batch_no = (
+                ", ".join(str(s) for s in serials)
+                if serials
+                else (batch_hint or None)
+            )
+            # ``batch_no`` is a 100-char column — long serial lists must be
+            # truncated instead of aborting the transfer-order insert.
+            if batch_no is not None and len(batch_no) > 100:
+                batch_no = batch_no[:100]
+
+            # Carry the caller-supplied packaging (extra_data) onto the order
+            # line so generated pick lists use the same case/pack breakdown
+            # instead of re-resolving defaults.
+            per_case_qty = None
+            case_qty = None
+            loose_qty = None
+            if isinstance(extra, dict):
+                pack = extra.get("items_per_master_pack")
+                cases = extra.get("no_of_cases")
+                try:
+                    if pack is not None:
+                        per_case_qty = Decimal(str(pack))
+                    if cases is not None:
+                        case_qty = Decimal(str(cases))
+                except (ValueError, TypeError):
+                    per_case_qty = None
+                    case_qty = None
+                if per_case_qty is not None and case_qty is not None:
+                    loose_qty = max(Decimal("0"), item.qty - per_case_qty * case_qty)
+
             self.db.add(
                 OutboundOrderItem(
                     organization_id=asn_order.organization_id,
@@ -941,6 +979,10 @@ class AsnOrderService:
                     qty=item.qty,
                     uom=item.uom,
                     sku=(item.item.sku or item.item.item_code) if item.item else None,
+                    batch_no=batch_no,
+                    per_case_qty=per_case_qty,
+                    case_qty=case_qty,
+                    loose_qty=loose_qty,
                 )
             )
 

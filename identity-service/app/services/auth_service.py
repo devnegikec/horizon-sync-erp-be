@@ -53,6 +53,7 @@ class AuthService:
         "pick_list.update",
         "stock_entry.create",
         "stock_entry.read",
+        "qseal.read",
     ]
 
     def __init__(self, db: Session):
@@ -363,6 +364,7 @@ class AuthService:
         self,
         login_username: str,
         password: str,
+        organization_id: uuid.UUID | None = None,
         device_info: dict | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
@@ -372,18 +374,22 @@ class AuthService:
         Fallback for when QR login is unavailable (mobile/device only).
         The worker must have a managed `login_username` + password.
         """
-        # Login usernames are unique per organization, so several users may
-        # share a username. Resolve by verifying the password against each
-        # candidate (the password is the distinguishing secret).
-        candidates = (
-            self.db.query(User).filter(User.login_username == login_username).all()
-        )
-        user = next(
-            (c for c in candidates if verify_password(password, c.password_hash)),
-            None,
-        )
-        if not user:
+        # Usernames are unique per organization, so several users may share a
+        # username. Scope by organization when the client supplies it, then
+        # resolve by password — and refuse to guess when more than one account
+        # matches, to avoid issuing tokens for the wrong tenant.
+        q = self.db.query(User).filter(User.login_username == login_username)
+        if organization_id is not None:
+            q = q.filter(User.organization_id == organization_id)
+        matches = [c for c in q.all() if verify_password(password, c.password_hash)]
+        if not matches:
             raise AuthenticationError("Invalid username or password")
+        if len(matches) > 1:
+            raise AuthenticationError(
+                "Multiple workers share this username and password; "
+                "please log in with a QR code or contact your administrator"
+            )
+        user = matches[0]
 
         if user.user_type != UserType.WAREHOUSE_WORKER:
             raise AuthenticationError(

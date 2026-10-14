@@ -1,5 +1,6 @@
 """WMS Dashboard API endpoints for warehouse managers and supervisors"""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.core.warehouse_scope import get_user_warehouse_ids
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.asn_order import AsnOrder
@@ -20,10 +22,58 @@ from app.models.scan_session import ScanSession
 from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
+from app.models.warehouse_user import WarehouseUser
 
-from app.core.warehouse_scope import get_user_warehouse_ids
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _identity_engine():
+    """Return a read-only engine to the identity database, or None if unset.
+
+    Workers live in the identity-service ``users`` table, which is not part of
+    the core database — raw SQL touching ``users`` must run against this engine.
+    """
+    from sqlalchemy import create_engine
+
+    from app.config import settings
+
+    if not settings.identity_database_url:
+        return None
+    return create_engine(settings.identity_database_url, pool_size=2, max_overflow=0)
+
+
+def _resolve_worker_names(user_ids: set[UUID]) -> dict[UUID, str]:
+    """Batch-resolve worker UUIDs to display names from the identity database."""
+    if not user_ids:
+        return {}
+    engine = _identity_engine()
+    if engine is None:
+        return {}
+    try:
+        uid_list = [str(u) for u in user_ids]
+        placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+        params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    f"SELECT id::text, display_name, first_name, last_name "
+                    f"FROM users WHERE id::text IN ({placeholders})"
+                ),
+                params,
+            ).fetchall()
+        name_by_id: dict[UUID, str] = {}
+        for uid, display_name, first_name, last_name in rows:
+            name = display_name or f"{first_name or ''} {last_name or ''}".strip()
+            if name:
+                name_by_id[UUID(uid)] = name
+        return name_by_id
+    except Exception:  # noqa: BLE001 — best-effort name resolution
+        logger.warning("Failed to resolve worker names from identity DB", exc_info=True)
+        return {}
+    finally:
+        engine.dispose()
 
 
 @router.get("/stats")
@@ -132,17 +182,45 @@ async def get_wms_dashboard_stats(
 
     active_workers = 0
     if wh_id_strs:
-        placeholders = ", ".join(f":wh{i}" for i in range(len(wh_id_strs)))
-        params = {f"wh{i}": str(w) for i, w in enumerate(wh_id_strs)}
-        active_workers = db.execute(
-            text(
-                f"SELECT count(DISTINCT u.id) FROM users u "
-                f"JOIN warehouse_users wu ON wu.user_id = u.id "
-                f"WHERE u.user_type = 'warehouse_worker' AND u.is_active = true "
-                f"AND wu.is_active = true AND wu.warehouse_id IN ({placeholders})"
-            ),
-            params,
-        ).scalar()
+        # Workers live in the identity-service ``users`` table; the
+        # ``warehouse_users`` assignments live in the core DB. Resolve the
+        # assigned worker IDs here, then count the active workers against the
+        # identity DB (they cannot be joined in one query across databases).
+        worker_user_ids = [
+            row.user_id
+            for row in db.query(WarehouseUser.user_id)
+            .filter(
+                WarehouseUser.organization_id == org_id,
+                WarehouseUser.warehouse_id.in_(wh_id_strs),
+                WarehouseUser.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        ]
+        if worker_user_ids:
+            engine = _identity_engine()
+            if engine is not None:
+                uid_list = [str(u) for u in worker_user_ids]
+                placeholders = ", ".join(f":w{i}" for i in range(len(uid_list)))
+                params = {f"w{i}": uid_list[i] for i in range(len(uid_list))}
+                try:
+                    with engine.connect() as conn:
+                        active_workers = conn.execute(
+                            text(
+                                f"SELECT count(DISTINCT id) FROM users "
+                                f"WHERE user_type = 'warehouse_worker' "
+                                f"AND is_active = true "
+                                f"AND id::text IN ({placeholders})"
+                            ),
+                            params,
+                        ).scalar()
+                except Exception:  # noqa: BLE001 — keep the card non-fatal
+                    logger.warning(
+                        "Failed to count active workers from identity DB",
+                        exc_info=True,
+                    )
+                finally:
+                    engine.dispose()
 
     # ── Chart data: inbound / outbound movements in period ────────────────
     # Group by day/week/month bucket depending on period granularity
@@ -224,21 +302,9 @@ async def get_wms_dashboard_stats(
         .all()
     )
     worker_ids = {sc.worker_id for sc in scan_rows if sc.worker_id}
-    worker_names: dict = {}
-    if worker_ids:
-        placeholders = ", ".join(f":w{i}" for i in range(len(worker_ids)))
-        params = {f"w{i}": w for i, w in enumerate(worker_ids)}
-        rows = db.execute(
-            text(
-                f"SELECT id, display_name, first_name, last_name FROM users "
-                f"WHERE id IN ({placeholders})"
-            ),
-            params,
-        ).fetchall()
-        for uid, dn, fn, ln in rows:
-            worker_names[uid] = dn or f"{fn} {ln}".strip()
+    worker_names = _resolve_worker_names(worker_ids)
     for sc in scan_rows:
-        worker_name = worker_names.get(sc.worker_id)
+        worker_name = worker_names.get(sc.worker_id) if sc.worker_id else None
         all_activity.append({
             "type": "scan_session",
             "title": f"Scan Session {str(sc.id)[:8].upper()}",

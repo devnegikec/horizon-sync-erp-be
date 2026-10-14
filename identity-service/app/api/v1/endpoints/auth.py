@@ -668,6 +668,7 @@ async def worker_login(
         user, access_token, refresh_token = auth_service.login_worker(
             login_username=body.login_username,
             password=body.password,
+            organization_id=body.organization_id,
             ip_address=ip_address,
             user_agent=user_agent,
         )
