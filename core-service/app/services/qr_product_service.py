@@ -1445,25 +1445,46 @@ class QRProductService:
 
     @staticmethod
     def _items_to_excel_rows(items: list) -> list[dict]:
+        """Build workbook rows.
+
+        The URLs returned here are the ones ENCODED into the QR image (see
+        ``_build_excel``), so they must be the serial-bearing long URL
+        (``{base}/g/{gtin}/s/{serial}/{ts}?c={sig}``).
+
+        The CDN short link (``{cdn}/01/{gtin}/{slug}``) is still kept on the item
+        as ``token_id`` / ``short_url`` for metadata, but it is never used for the
+        QR payload: neither the handheld app nor QSeal parent→child linking can
+        parse it (they read the serial from ``/g/{gtin}/s/{serial}``). Unsigned
+        blocks (no brand key) have no ``long_url`` and fall back to ``token_id``,
+        which is already serial-bearing.
+        """
         rows = []
         for item in items:
             if isinstance(item, dict):
                 serial = item.get("serial_number")
-                primary_url = item.get("token_id") or ""
+                token = item.get("token_id") or ""
                 secret_code = item.get("secrete_code") or ""
                 extra_data = item.get("extra_data") or {}
             else:
                 serial = item.serial_number
-                primary_url = item.token_id or ""
+                token = item.token_id or ""
                 secret_code = item.secrete_code or ""
                 extra_data = item.extra_data or {}
+
+            primary_url = extra_data.get("long_url") or token
             rows.append(
                 {
                     "serial": serial,
                     "primary_url": primary_url,
                     "secret_code": secret_code,
-                    "overt_url": extra_data.get("overt_url", primary_url),
-                    "covert_url": extra_data.get("covert_url", ""),
+                    # DUAL: overt and covert are distinct signed URLs — prefer
+                    # the long variants so both QR images stay app-readable.
+                    "overt_url": extra_data.get("overt_long_url")
+                    or extra_data.get("overt_url")
+                    or primary_url,
+                    "covert_url": extra_data.get("covert_long_url")
+                    or extra_data.get("covert_url")
+                    or "",
                 }
             )
         return rows
