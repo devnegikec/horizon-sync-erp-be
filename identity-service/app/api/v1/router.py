@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth,
+    dashboard_layout,
     entity_audit_logs,
     invitations,
     organization_deactivation,
@@ -28,6 +29,10 @@ api_router.include_router(users.router, prefix="/identity", tags=["Users"])
 
 api_router.include_router(
     organizations.router, prefix="/identity", tags=["Organizations"]
+)
+
+api_router.include_router(
+    dashboard_layout.router, prefix="/identity", tags=["Dashboard Layout"]
 )
 
 api_router.include_router(permissions.router, prefix="/identity", tags=["Permissions"])
