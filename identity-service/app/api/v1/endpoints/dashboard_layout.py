@@ -28,6 +28,7 @@ from app.core.authorization import (
 from app.core.exceptions import OrganizationNotFoundException
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.schemas.dashboard_layout import DashboardLayoutResponse, DashboardLayoutUpdate
 from app.services.dashboard_layout_service import DashboardLayoutService
 
@@ -37,11 +38,61 @@ logger = logging.getLogger(__name__)
 ORG_UPDATE_PERMISSION = "org.update"
 
 
-def _require_org_update(current_user: CurrentUser) -> None:
-    """Raise 403 unless the caller may edit organization settings."""
+def _org_permission_codes(
+    db: Session, user_id: UUID, organization_id: UUID
+) -> list[str]:
+    """Permission codes the user holds *inside this organization*.
+
+    ``CurrentUser.permissions`` is the union of every active organization role,
+    so it must not authorise an action against one specific organization: an
+    ``org.update`` grant held in org A would otherwise let the holder edit org
+    B, where they may only have ``org.read``. Mirrors
+    ``AuthService.get_permission_codes`` but scoped by ``organization_id``.
+    """
+    try:
+        rows = (
+            db.query(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(
+                UserOrganizationRole,
+                RolePermission.role_id == UserOrganizationRole.role_id,
+            )
+            .join(Role, Role.id == UserOrganizationRole.role_id)
+            .filter(
+                UserOrganizationRole.user_id == user_id,
+                UserOrganizationRole.organization_id == organization_id,
+                UserOrganizationRole.is_active == True,  # noqa: E712
+                Role.is_active == True,  # noqa: E712
+                Permission.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        )
+        return [code for (code,) in rows if code]
+    except Exception:  # noqa: BLE001 - never block on a permission read
+        logger.error(
+            "Error fetching permissions for user %s in organization %s",
+            user_id,
+            organization_id,
+            exc_info=True,
+        )
+        return []
+
+
+def _require_org_update(
+    current_user: CurrentUser, organization_id: UUID, db: Session
+) -> None:
+    """Raise 403 unless the caller may edit *this* organization's settings.
+
+    The permission is resolved inside the target organization on purpose — see
+    ``_org_permission_codes``.
+    """
+    if is_system_admin(current_user.permissions):
+        return
     if has_permission(
-        current_user.permissions, ORG_UPDATE_PERMISSION
-    ) or is_system_admin(current_user.permissions):
+        _org_permission_codes(db, current_user.id, organization_id),
+        ORG_UPDATE_PERMISSION,
+    ):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -96,7 +147,7 @@ async def save_dashboard_layout(
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> DashboardLayoutResponse:
-    _require_org_update(current_user)
+    _require_org_update(current_user, organization_id, db)
     _require_org_access(current_user, organization_id, db)
     svc = DashboardLayoutService(db)
     try:
@@ -121,7 +172,7 @@ async def reset_dashboard_layout(
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ) -> DashboardLayoutResponse:
-    _require_org_update(current_user)
+    _require_org_update(current_user, organization_id, db)
     _require_org_access(current_user, organization_id, db)
     svc = DashboardLayoutService(db)
     try:

@@ -473,3 +473,148 @@ class TestDashboardLayoutUpdateValidation:
         body = DashboardLayoutUpdate(widgets=[{"id": "kpi_low_stock"}])
         assert body.widgets[0].enabled is True
         assert body.widgets[0].order is None
+
+
+# ── org-scoped permission gate (CodeAnt PR #291) ───────────────────────────
+
+
+class TestOrgScopedPermissionGate:
+    """``CurrentUser.permissions`` is the union across every active organization
+    role, so an ``org.update`` grant held in *another* organization must not
+    authorise writing this organization's layout.
+
+    ``_org_permission_codes`` is stubbed (not ``_require_org_update``) so the
+    real ``has_permission`` wildcard logic still runs — and so a revert to the
+    cross-org ``has_permission(current_user.permissions, ...)`` check fails
+    these tests instead of silently passing.
+    """
+
+    BASE = f"/api/v1/identity/organizations/{ORG_ID}/dashboard-layout"
+
+    @pytest.fixture(autouse=True)
+    def _clear_dependency_overrides(self):
+        yield
+        import app.main as main_module
+
+        main_module.app.dependency_overrides.clear()
+
+    def _client(self, monkeypatch, *, token_permissions, org_permissions):
+        from fastapi.testclient import TestClient
+
+        import app.main as main_module
+        from app.api.v1.endpoints import dashboard_layout as dl
+        from app.database import get_db
+        from app.dependencies import CurrentUser, get_current_active_user
+        from app.repositories.organization_repository import OrganizationRepository
+
+        org = Organization(id=ORG_ID, name="Test Org", slug="test-org", extra_data={})
+
+        class _DB:
+            def commit(self):
+                pass
+
+            def refresh(self, _obj):
+                pass
+
+            def query(self, *_args, **_kwargs):
+                raise AssertionError("db.query() should not be reached")
+
+        def _user():
+            return CurrentUser(
+                id=USER_ID,
+                email="user@example.com",
+                first_name="U",
+                last_name="Ser",
+                display_name="User",
+                user_type=None,
+                status=None,
+                is_active=True,
+                permissions=list(token_permissions),
+            )
+
+        main_module.app.dependency_overrides[get_current_active_user] = _user
+        main_module.app.dependency_overrides[get_db] = lambda: _DB()
+        monkeypatch.setattr(dl, "validate_user_in_organization", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            OrganizationRepository,
+            "get_by_id",
+            lambda _self, oid: org if str(oid) == str(ORG_ID) else None,
+        )
+        monkeypatch.setattr(
+            dl,
+            "_org_permission_codes",
+            lambda _db, _uid, _oid: list(org_permissions),
+        )
+        return TestClient(main_module.app), org
+
+    def test_cross_org_org_update_grant_is_rejected(self, monkeypatch):
+        """Token carries org.update from ANOTHER org; this org grants nothing."""
+        client, org = self._client(
+            monkeypatch, token_permissions=["org.update"], org_permissions=[]
+        )
+
+        response = client.put(self.BASE, json={"widgets": []})
+
+        assert response.status_code == 403
+        assert "dashboard_layout" not in org.extra_data
+
+    def test_delete_uses_the_same_org_scoped_gate(self, monkeypatch):
+        client, org = self._client(
+            monkeypatch, token_permissions=["org.update"], org_permissions=[]
+        )
+
+        assert client.delete(self.BASE).status_code == 403
+        assert "dashboard_layout" not in org.extra_data
+
+    def test_org_scoped_grant_is_accepted(self, monkeypatch):
+        """Permission comes from the target org, not the token claim."""
+        client, org = self._client(
+            monkeypatch, token_permissions=[], org_permissions=["org.update"]
+        )
+
+        response = client.put(
+            self.BASE, json={"widgets": [{"id": "kpi_low_stock", "enabled": True}]}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["customized"] is True
+        assert org.extra_data["dashboard_layout"]["widgets"] == [
+            {
+                "id": "kpi_low_stock",
+                "enabled": True,
+                "order": WIDGETS_BY_ID["kpi_low_stock"].default_order,
+            }
+        ]
+
+    def test_org_scoped_wildcard_is_accepted(self, monkeypatch):
+        client, _org = self._client(
+            monkeypatch, token_permissions=[], org_permissions=["*.*"]
+        )
+
+        assert client.put(self.BASE, json={"widgets": []}).status_code == 200
+
+    def test_read_only_role_in_org_is_rejected(self, monkeypatch):
+        client, _org = self._client(
+            monkeypatch, token_permissions=[], org_permissions=["org.read"]
+        )
+
+        assert client.put(self.BASE, json={"widgets": []}).status_code == 403
+
+    def test_system_admin_still_bypasses(self, monkeypatch):
+        client, _org = self._client(
+            monkeypatch,
+            token_permissions=["system_admin.master"],
+            org_permissions=[],
+        )
+
+        assert client.put(self.BASE, json={"widgets": []}).status_code == 200
+
+    def test_get_remains_open_to_any_member(self, monkeypatch):
+        client, _org = self._client(
+            monkeypatch, token_permissions=[], org_permissions=[]
+        )
+
+        response = client.get(self.BASE)
+
+        assert response.status_code == 200
+        assert response.json()["customized"] is False
