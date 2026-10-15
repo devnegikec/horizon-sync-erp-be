@@ -172,6 +172,12 @@ def require_permission(permission: str):
         # Check for exact permission match
         if permission in current_user.permissions:
             return current_user
+
+        # Organization Owner has the full organization-scoped wildcard.
+        # Keep this aligned with core-service and app.core.authorization so
+        # owners are not incorrectly denied permissions such as warehouse.read.
+        if "*.*" in current_user.permissions:
+            return current_user
         
         # system_admin.master grants all system_admin.* permissions
         if permission.startswith("system_admin.") and "system_admin.master" in current_user.permissions:

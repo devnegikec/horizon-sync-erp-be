@@ -3,6 +3,7 @@
 import logging
 import secrets
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -58,6 +59,7 @@ class QRVerificationService:
                 self.db.rollback()
                 return self._invalid_response()
 
+            item_details = self._public_item_details(item, organization_id)
             qr_type = normalize_qr_type(
                 getattr(item.block, "qr_type", None) or product.qr_type
             ) or QRType.DYNAMIC
@@ -68,6 +70,7 @@ class QRVerificationService:
                 brand,
                 data,
                 qr_type,
+                item_details,
             )
             if challenge is not None:
                 self.db.rollback()
@@ -94,6 +97,7 @@ class QRVerificationService:
                         else "This genuine QR code has not been activated yet."
                     ),
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
                 self.db.rollback()
                 return result
@@ -114,6 +118,7 @@ class QRVerificationService:
                     authentic=True,
                     message="This product is genuine and verified.",
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
                 self.db.commit()
             else:
@@ -127,6 +132,7 @@ class QRVerificationService:
                     authentic=True,
                     message="This product is genuine and verified.",
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
                 self.db.rollback()
 
@@ -167,6 +173,44 @@ class QRVerificationService:
         }
         return gtin in valid_gtins
 
+    def _public_item_details(self, item, organization_id) -> dict[str, object]:
+        """Resolve the batch and lifecycle dates shown on the public page.
+
+        Activated serials have authoritative per-serial values in
+        ``qr_activation_parameters``. Older/generated blocks may only have
+        the batch metadata, so each missing value falls back independently to
+        the QR block.
+        """
+        product_id = getattr(item, "product_id", None)
+        activation = None
+        if product_id:
+            try:
+                # Activation metadata is an optional presentation enhancement.
+                # Keep it in a savepoint so an older deployment that does not
+                # have the latest activation schema can still verify the QR.
+                with self.db.begin_nested():
+                    activation = self.repo.get_activation_details(
+                        product_id,
+                        item.serial_number,
+                        organization_id,
+                    )
+            except SQLAlchemyError:
+                logger.warning(
+                    "Activation metadata unavailable for public QR serial=%s; "
+                    "falling back to QR block metadata",
+                    item.serial_number,
+                    exc_info=True,
+                )
+        block = getattr(item, "block", None)
+        return {
+            "batch_number": getattr(activation, "dispatch_batch", None)
+            or getattr(block, "batch", None),
+            "manufacturing_date": getattr(activation, "manufacturing_date", None)
+            or getattr(block, "manufacture_date", None),
+            "expiry_date": getattr(activation, "expiry_date", None)
+            or getattr(block, "expiry_date", None),
+        }
+
     def _signature_is_valid(self, brand, data: PublicQRVerifyRequest) -> bool:
         if not brand.public_key:
             return False
@@ -184,6 +228,7 @@ class QRVerificationService:
         brand,
         data: PublicQRVerifyRequest,
         qr_type: QRType,
+        item_details: dict[str, object],
     ) -> dict | None:
         if qr_type == QRType.DUAL and data.qr_channel == QRVerificationChannel.OVERT:
             return self._verified_response(
@@ -198,6 +243,7 @@ class QRVerificationService:
                 requires_action=True,
                 challenge_type="scan_covert",
                 qr_channel=data.qr_channel,
+                item_details=item_details,
             )
 
         if qr_type != QRType.SECURE_CODE:
@@ -214,6 +260,7 @@ class QRVerificationService:
                 message="Enter the protected code to verify this product.",
                 requires_action=True,
                 challenge_type="secure_code",
+                item_details=item_details,
             )
 
         expected_code = (item.secrete_code or "").strip().upper()
@@ -231,6 +278,7 @@ class QRVerificationService:
             message="The protected code is invalid. Check the code and try again.",
             requires_action=True,
             challenge_type="secure_code",
+            item_details=item_details,
         )
 
     @staticmethod
@@ -255,6 +303,7 @@ class QRVerificationService:
         requires_action: bool = False,
         challenge_type: str | None = None,
         qr_channel: QRVerificationChannel | None = None,
+        item_details: dict[str, object] | None = None,
     ) -> dict:
         sku = item.sku
         variant_attributes = sku.attribute_display if sku else {}
@@ -280,6 +329,9 @@ class QRVerificationService:
                 getattr(sku, "warranty_period_months", None)
                 or getattr(product, "warranty_period_months", None)
             ),
+            "batch_number": (item_details or {}).get("batch_number"),
+            "manufacturing_date": (item_details or {}).get("manufacturing_date"),
+            "expiry_date": (item_details or {}).get("expiry_date"),
             "logo_url": product.image_url,
             "product_image_url": getattr(sku, "image_url", None)
             or product.image_url,

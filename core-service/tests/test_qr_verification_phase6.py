@@ -1,6 +1,7 @@
 """Phase 6 tests for public QR-type verification without scan analytics."""
 
 import importlib.util
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -91,6 +92,10 @@ def _item(*, qr_type="dynamic", active=True, scans=0):
 def _service(item) -> QRVerificationService:
     service = QRVerificationService.__new__(QRVerificationService)
     service.db = Mock()
+    nested_transaction = Mock()
+    nested_transaction.__enter__ = Mock(return_value=nested_transaction)
+    nested_transaction.__exit__ = Mock(return_value=False)
+    service.db.begin_nested.return_value = nested_transaction
     service.repo = Mock(spec=QRVerificationRepository)
     service.key_service = Mock()
     service.repo.resolve_active_item_identity.return_value = (
@@ -98,6 +103,7 @@ def _service(item) -> QRVerificationService:
         item.organization_id,
     )
     service.repo.get_tenant_item_for_update.return_value = item
+    service.repo.get_activation_details.return_value = None
     service.key_service.verify_signature.return_value = True
     return service
 
@@ -143,6 +149,42 @@ def test_dynamic_verification_is_read_only_and_returns_enterprise_details():
     service.db.commit.assert_not_called()
     service.db.rollback.assert_called_once()
     assert not hasattr(service.repo, "add_scan_event")
+
+
+def test_public_verification_returns_serial_batch_lifecycle_details():
+    item = _item()
+    item.product_id = uuid4()
+    item.block.batch = "BLOCK-BATCH"
+    item.block.manufacture_date = date(2026, 1, 1)
+    item.block.expiry_date = date(2027, 1, 1)
+    service = _service(item)
+    service.repo.get_activation_details.return_value = SimpleNamespace(
+        dispatch_batch="ACTIVATED-BATCH",
+        manufacturing_date=date(2026, 2, 1),
+        expiry_date=date(2027, 2, 1),
+    )
+
+    result = service.verify(_request())
+
+    assert result["batch_number"] == "ACTIVATED-BATCH"
+    assert result["manufacturing_date"] == date(2026, 2, 1)
+    assert result["expiry_date"] == date(2027, 2, 1)
+    response = PublicQRVerifyResponse(**result)
+    assert response.manufacturing_date == date(2026, 2, 1)
+
+
+def test_public_verification_falls_back_to_qr_block_lifecycle_details():
+    item = _item()
+    item.block.batch = "BLOCK-BATCH"
+    item.block.manufacture_date = date(2026, 1, 1)
+    item.block.expiry_date = date(2027, 1, 1)
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["batch_number"] == "BLOCK-BATCH"
+    assert result["manufacturing_date"] == date(2026, 1, 1)
+    assert result["expiry_date"] == date(2027, 1, 1)
 
 
 def test_dynamic_repeat_scan_is_still_authentic_without_counters():

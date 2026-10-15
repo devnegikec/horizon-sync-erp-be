@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.product_item import ProductItem
+from app.models.qr_activation import QRActivationParameters
 
 
 class QRVerificationRepository:
@@ -45,5 +46,28 @@ class QRVerificationRepository:
                 ProductItem.deleted_at.is_(None),
             )
             .with_for_update()
+            .first()
+        )
+
+    def get_activation_details(
+        self,
+        product_id: UUID,
+        serial_number: str,
+        organization_id: UUID,
+    ) -> QRActivationParameters | None:
+        """Return the per-serial activation metadata for a public scan."""
+        return (
+            self.db.query(QRActivationParameters)
+            .filter(
+                QRActivationParameters.product_id == product_id,
+                QRActivationParameters.serial_number == serial_number,
+                QRActivationParameters.organization_id == organization_id,
+                QRActivationParameters.qr_settings.is_(False),
+                QRActivationParameters.deleted_at.is_(None),
+            )
+            .order_by(
+                QRActivationParameters.created_at.desc(),
+                QRActivationParameters.id.desc(),
+            )
             .first()
         )

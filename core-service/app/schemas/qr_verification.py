@@ -1,5 +1,6 @@
 """Public QR verification API contracts."""
 
+from datetime import date
 from enum import Enum
 from uuid import UUID
 
@@ -70,6 +71,9 @@ class PublicQRVerifyResponse(BaseModel):
     activation_method: str | None = None
     industry: str | None = None
     warranty_period_months: int | None = None
+    batch_number: str | None = None
+    manufacturing_date: date | None = None
+    expiry_date: date | None = None
     logo_url: str | None = None
     product_image_url: str | None = None
     banner_image_url: str | None = None

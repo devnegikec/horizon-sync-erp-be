@@ -6,6 +6,14 @@ from math import asin, cos, radians, sin, sqrt
 from app.models.qr_scan_event import QRScanEvent
 
 
+# Direct QSeal scans use ``valid`` while public QR verification uses
+# ``authentic``. Both statuses represent a successful scan.
+VALID_SCAN_STATUSES = frozenset({"valid", "authentic"})
+NON_SUSPICIOUS_SCAN_STATUSES = VALID_SCAN_STATUSES | frozenset(
+    {"verification_required", "not_activated"}
+)
+
+
 class QSealSuspicionService:
     """Evaluate a scan without blocking the public QSeal scan response.
 
@@ -55,8 +63,15 @@ class QSealSuspicionService:
         )
 
     def _source_count(self, payload: dict) -> int:
-        ip_address = payload.get("ip_address")
-        if not ip_address:
+        source_value = payload.get("ip_address")
+        source_column = QRScanEvent.ip_address
+        if not source_value:
+            # Public scans intentionally do not persist raw IP addresses.
+            # Use their privacy-safe HMAC instead for the same rate-limit
+            # signal used by direct QSeal scans.
+            source_value = payload.get("ip_hash")
+            source_column = QRScanEvent.ip_hash
+        if not source_value:
             return 0
         timestamp = payload.get("scan_timestamp") or datetime.now(UTC)
         return (
@@ -64,7 +79,7 @@ class QSealSuspicionService:
             .filter(
                 QRScanEvent.organization_id == payload["organization_id"],
                 QRScanEvent.qseal_type.is_not(None),
-                QRScanEvent.ip_address == ip_address,
+                source_column == source_value,
                 QRScanEvent.scan_timestamp >= timestamp - timedelta(hours=1),
                 QRScanEvent.scan_timestamp < timestamp,
             )
@@ -82,7 +97,7 @@ class QSealSuspicionService:
             reasons.append(reason[0])
             score += reason[1]
 
-        if payload.get("verification_status") != "valid":
+        if payload.get("verification_status") not in NON_SUSPICIOUS_SCAN_STATUSES:
             add(self.INVALID_SCAN)
         if payload.get("is_bot"):
             add(self.BOT_SCAN)

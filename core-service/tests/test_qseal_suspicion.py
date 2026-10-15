@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
+import pytest
+
 from app.services.qseal_suspicion_service import QSealSuspicionService, risk_level
 
 
@@ -68,3 +70,19 @@ def test_rapid_repeat_and_location_change_are_added_to_the_same_event():
         "device_change",
         "location_change",
     ]
+
+
+@pytest.mark.parametrize(
+    "verification_status",
+    ["authentic", "verification_required", "not_activated"],
+)
+def test_expected_public_status_is_not_marked_invalid(verification_status):
+    detector = QSealSuspicionService(Mock())
+    detector._previous_for_serial = Mock(return_value=[])
+    detector._source_count = Mock(return_value=0)
+
+    result = detector.assess(_payload(verification_status=verification_status))
+
+    assert result["is_suspicious"] is False
+    assert result["risk_score"] == 0
+    assert result["suspicious_reasons"] == []
