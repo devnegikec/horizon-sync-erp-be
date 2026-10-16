@@ -7,6 +7,7 @@ import string
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.base import NotificationType
 from app.models.product_item import ProductItem
 from app.models.qr_block import QRBlock
 from app.models.qr_product import QRProduct
@@ -160,6 +162,53 @@ class QRProductService:
 
     # ── Products ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _json_safe_packaging_details(packaging_details: dict) -> dict:
+        """Convert Decimal packaging values before storing them in JSONB."""
+        return {
+            key: (float(value) if isinstance(value, Decimal) else value)
+            for key, value in packaging_details.items()
+        }
+
+    def _notify_product_event(
+        self,
+        product: QRProduct,
+        user_id: UUID,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+    ) -> None:
+        """Best-effort in-app notification for a QSeal product lifecycle event."""
+        if getattr(self, "db", None) is None:
+            return
+        try:
+            from app.services.notification_service import NotificationService
+
+            NotificationService(self.db).create(
+                organization_id=product.organization_id,
+                user_id=user_id,
+                type=notification_type.value,
+                title=title,
+                message=message,
+                entity_type="qr_product",
+                entity_id=product.id,
+                entity_no=product.name,
+                sender_id=user_id,
+            )
+        except Exception:
+            # Notification delivery must never turn a committed product change
+            # into an API failure.
+            # A failed flush/commit leaves the SQLAlchemy session unusable until
+            # it is rolled back. Without this, the PATCH response triggers a
+            # second database error while serializing the updated product.
+            self.db.rollback()
+            logger.warning(
+                "Failed to deliver %s notification for QR product %s",
+                notification_type.value,
+                getattr(product, "id", None),
+                exc_info=True,
+            )
+
     def _validate_shelf_life_setting(
         self,
         setting_id: UUID | None,
@@ -254,10 +303,9 @@ class QRProductService:
             extra = dict(product_dict.get("extra_data") or {})
             # packaging_details contains Decimal values; the JSONB serializer
             # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
-            extra["packaging_details"] = {
-                key: (float(value) if isinstance(value, Decimal) else value)
-                for key, value in packaging_details.items()
-            }
+            extra["packaging_details"] = self._json_safe_packaging_details(
+                packaging_details
+            )
             product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
@@ -292,6 +340,14 @@ class QRProductService:
 
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         self.db.refresh(qr_product)
+
+        self._notify_product_event(
+            qr_product,
+            user_id,
+            NotificationType.PRODUCT_CREATED,
+            "Product created",
+            f'Product "{qr_product.name}" was created successfully.',
+        )
 
         return qr_product
 
@@ -510,11 +566,15 @@ class QRProductService:
         user_id: UUID,
     ) -> QRProduct:
         product = self.get_product(product_id, organization_id)
+        was_active = getattr(product, "is_active", True)
+        product_name = getattr(product, "name", None) or "Product"
         update_dict = data.model_dump(exclude_unset=True)
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(update_dict.get("extra_data") or {})
-            extra["packaging_details"] = packaging_details
+            extra["packaging_details"] = self._json_safe_packaging_details(
+                packaging_details
+            )
             update_dict["extra_data"] = extra
 
         if "shelf_life_setting_id" in update_dict:
@@ -581,13 +641,39 @@ class QRProductService:
                 logger.error("Failed to upsert linked item packaging: %s", exc)
 
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
+        if update_dict.get("is_active") is False and was_active is not False:
+            notification_type = NotificationType.PRODUCT_DEACTIVATED
+            title = "Product deactivated"
+            message = f'Product "{product_name}" was deactivated successfully.'
+        elif update_dict.get("is_active") is True and was_active is False:
+            notification_type = NotificationType.PRODUCT_ACTIVATED
+            title = "Product activated"
+            message = f'Product "{product_name}" was activated successfully.'
+        else:
+            notification_type = NotificationType.PRODUCT_UPDATED
+            title = "Product updated"
+            message = f'Product "{product_name}" was updated successfully.'
+        self._notify_product_event(
+            product,
+            user_id,
+            notification_type,
+            title,
+            message,
+        )
         return product
 
     def delete_product(
         self, product_id: UUID, organization_id: UUID, user_id: UUID
     ) -> None:
         product = self.get_product(product_id, organization_id)
-        self.product_repo.soft_delete(product, user_id)
+        deleted_product = self.product_repo.soft_delete(product, user_id) or product
+        self._notify_product_event(
+            deleted_product,
+            user_id,
+            NotificationType.PRODUCT_DEACTIVATED,
+            "Product deactivated",
+            f'Product "{product.name}" was deactivated successfully.',
+        )
 
     def update_product_image(
         self,
@@ -1168,6 +1254,22 @@ class QRProductService:
             secrets.choice(string.ascii_uppercase + string.digits) for _ in range(12)
         )
 
+    @staticmethod
+    def _client_redirect_url(product) -> str | None:
+        """Return the configured client URL for direct-redirect products."""
+        if not getattr(product, "redirect_to_client", False):
+            return None
+
+        value = getattr(product, "client_product_auth_url", None)
+        if not isinstance(value, str):
+            return None
+
+        value = value.strip()
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return value
+
     # ── Item generation ───────────────────────────────────────────────────────
 
     def _generate_product_items(  # noqa: C901
@@ -1190,6 +1292,7 @@ class QRProductService:
         qr_type = normalize_qr_type(block.qr_type) or QRType.DYNAMIC
         sr_number_type = block.sr_number_type or product.sr_number_type
         prefix = block.serial_prefix or ""
+        client_redirect_url = self._client_redirect_url(product)
 
         # Determine if we need signing (product linked to a brand)
         brand = None
@@ -1201,10 +1304,10 @@ class QRProductService:
             if sku and sku.gtin:
                 gtin = sku.gtin
 
-        if not gtin:
+        if not gtin and not client_redirect_url:
             raise RuntimeError("Product GTIN is required for QR generation")
 
-        if product.brand_id and self.key_service:
+        if product.brand_id and self.key_service and not client_redirect_url:
             from app.repositories.brand_repository import BrandRepository
 
             brand_repo = BrandRepository(self.db)
@@ -1264,14 +1367,37 @@ class QRProductService:
                 "updated_at": now,
             }
 
-            # SecureCode: generate 12-char secret
-            if qr_type == QRType.SECURE_CODE:
-                item_dict["secrete_code"] = self._generate_secret_code()
-
             is_pre_activated = product.activation_method != "post"
             item_dict["qr_active"] = is_pre_activated
             item_dict["qr_deactive"] = not is_pre_activated
             item_dict["qr_deactive_unit"] = not is_pre_activated
+
+            # Direct redirect mode intentionally creates a QR containing the
+            # client URL. This applies equally to Dynamic, SecureCode, Dual,
+            # and One-Time QR types; no authentication URL or challenge code
+            # is needed when the product explicitly opts out of QSeal auth.
+            if client_redirect_url:
+                item_dict["token_id"] = client_redirect_url
+                if qr_type == QRType.DUAL:
+                    item_dict["extra_data"] = {
+                        "long_url": client_redirect_url,
+                        "short_url": client_redirect_url,
+                        "overt_url": client_redirect_url,
+                        "covert_url": client_redirect_url,
+                        "overt_long_url": client_redirect_url,
+                        "covert_long_url": client_redirect_url,
+                    }
+                else:
+                    item_dict["extra_data"] = {
+                        "long_url": client_redirect_url,
+                        "short_url": client_redirect_url,
+                    }
+                items.append(item_dict)
+                continue
+
+            # SecureCode: generate 12-char secret
+            if qr_type == QRType.SECURE_CODE:
+                item_dict["secrete_code"] = self._generate_secret_code()
 
             # Sign if brand is linked
             if private_key is not None:

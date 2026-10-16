@@ -287,6 +287,24 @@ return:
 The public page uses these values to render the Brand identity, authentication
 status, Product details, and official support information.
 
+When a Product has `redirect_to_client` enabled and a valid
+`client_product_auth_url`, QR generation stores the client URL directly in
+the QR for every QR type. Existing QRs also return this redirect response:
+
+```json
+{
+  "redirect_to_client": true,
+  "redirect_only": true,
+  "client_product_auth_url": "https://client.example.com/products/demo",
+  "redirect_url": "https://client.example.com/products/demo"
+}
+```
+
+The public QR page should navigate to `redirect_url` immediately when
+`redirect_only` is true. No signature, GTIN, activation, secure-code, dual-QR,
+or one-time authentication is performed in this mode. Only `http` and `https`
+URLs are accepted.
+
 Scan analytics and scan-event capture are intentionally outside the current
 verification phase and are not performed by this endpoint yet.
 

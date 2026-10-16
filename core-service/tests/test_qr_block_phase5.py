@@ -196,6 +196,31 @@ def test_dual_item_shortens_both_urls_and_retains_both_long_urls(monkeypatch):
     assert service.qr_shortener.shorten.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "qr_type",
+    ["dynamic", "static", "secure_code", "dual", "one_time", "post_activation"],
+)
+def test_redirect_mode_generates_client_url_for_every_qr_type(monkeypatch, qr_type):
+    service = _service()
+    _brand(monkeypatch)
+    service.item_repo.get_existing_serials_global.return_value = set()
+    product = _product()
+    product.redirect_to_client = True
+    product.client_product_auth_url = "https://client.example.com/product"
+
+    service._generate_product_items(_block(qr_type), product, uuid4(), uuid4())
+
+    item = service.item_repo.bulk_create.call_args.args[0][0]
+    assert item["token_id"] == product.client_product_auth_url
+    assert item["qr_active"] is True
+    assert item["extra_data"]["long_url"] == product.client_product_auth_url
+    if qr_type == "dual":
+        assert item["extra_data"]["overt_url"] == product.client_product_auth_url
+        assert item["extra_data"]["covert_url"] == product.client_product_auth_url
+    service.key_service.decrypt_private_key.assert_not_called()
+    service.qr_shortener.shorten.assert_not_called()
+
+
 def test_shortener_failure_fails_block_and_releases_reserved_credits():
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()

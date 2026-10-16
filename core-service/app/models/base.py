@@ -545,7 +545,7 @@ class RecipientType(str, enum.Enum):
 
 
 class NotificationType(str, enum.Enum):
-    """In-app notification type enumeration for WMS/ASN events"""
+    """In-app notification type enumeration for WMS/ASN and QSeal events"""
 
     ASN_CREATED = "asn_created"
     ASN_CONFIRMED = "asn_confirmed"
@@ -559,6 +559,10 @@ class NotificationType(str, enum.Enum):
     PICK_EXCEPTION = "pick_exception"
     ERP_SYNC_FAILED = "erp_sync_failed"
     TRANSFER_PICK_CREATED = "transfer_pick_created"
+    PRODUCT_CREATED = "product_created"
+    PRODUCT_UPDATED = "product_updated"
+    PRODUCT_ACTIVATED = "product_activated"
+    PRODUCT_DEACTIVATED = "product_deactivated"
 
 
 class WarehouseUserRole(str, enum.Enum):

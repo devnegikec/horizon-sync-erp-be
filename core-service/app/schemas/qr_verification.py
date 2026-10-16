@@ -1,6 +1,6 @@
 """Public QR verification API contracts."""
 
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -68,6 +68,8 @@ class PublicQRVerifyResponse(BaseModel):
     serial_number: str | None = None
     qr_type: str | None = None
     qr_channel: QRVerificationChannel | None = None
+    secure_verified_at: datetime | None = None
+    one_time_verified_at: datetime | None = None
     activation_method: str | None = None
     industry: str | None = None
     warranty_period_months: int | None = None
@@ -80,6 +82,12 @@ class PublicQRVerifyResponse(BaseModel):
     contact_email: str | None = None
     contact_phone: str | None = None
     website_url: str | None = None
+    # When enabled on the product, the public scanner skips authentication and
+    # navigates to the client URL immediately.
+    redirect_only: bool = False
+    redirect_to_client: bool = False
+    client_product_auth_url: str | None = None
+    redirect_url: str | None = None
     scan_event_id: UUID | None = None
 
 

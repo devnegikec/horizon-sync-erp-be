@@ -1,7 +1,7 @@
 """Phase 6 tests for public QR-type verification without scan analytics."""
 
 import importlib.util
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -151,6 +151,63 @@ def test_dynamic_verification_is_read_only_and_returns_enterprise_details():
     assert not hasattr(service.repo, "add_scan_event")
 
 
+def test_authenticated_scan_returns_client_redirect_when_product_enables_it():
+    item = _item()
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = (
+        "https://client.example.com/products/demo-product"
+    )
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["redirect_to_client"] is True
+    assert result["redirect_only"] is True
+    assert result["redirect_url"] == item.product.client_product_auth_url
+    assert result["client_product_auth_url"] == item.product.client_product_auth_url
+    assert result["website_url"] == item.product.client_product_auth_url
+    response = PublicQRVerifyResponse(**result)
+    assert response.redirect_url == item.product.client_product_auth_url
+
+
+def test_client_redirect_is_not_returned_for_challenges_or_unsafe_urls():
+    item = _item(qr_type="secure_code")
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = "javascript:alert(document.domain)"
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["verification_status"] == "verification_required"
+    assert result["redirect_to_client"] is False
+    assert result["redirect_url"] is None
+
+
+@pytest.mark.parametrize(
+    "qr_type",
+    ["dynamic", "static", "secure_code", "dual", "one_time", "post_activation"],
+)
+def test_redirect_mode_bypasses_authentication_for_every_qr_type(qr_type):
+    item = _item(qr_type=qr_type, active=False)
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = "https://client.example.com/product"
+    service = _service(item)
+    service.key_service.verify_signature.return_value = False
+
+    result = service.verify(
+        _request(
+            gtin="not-the-product-gtin",
+            signature="not-a-valid-signature",
+            qr_channel="overt",
+        )
+    )
+
+    assert result["redirect_only"] is True
+    assert result["redirect_to_client"] is True
+    assert result["redirect_url"] == item.product.client_product_auth_url
+    service.key_service.verify_signature.assert_not_called()
+
+
 def test_public_verification_returns_serial_batch_lifecycle_details():
     item = _item()
     item.product_id = uuid4()
@@ -260,10 +317,17 @@ def test_secure_code_requests_challenge_then_accepts_matching_code():
 
     challenge = service.verify(_request())
     verified = service.verify(_request(secure_code="a1b2c3d4e5f6"))
+    repeat_scan = service.verify(_request())
 
     assert challenge["verification_status"] == "verification_required"
     assert challenge["challenge_type"] == "secure_code"
     assert verified["verification_status"] == "authentic"
+    assert verified["secure_verified_at"] == item.scan_date
+    assert item.is_auth is True
+    assert item.scan_date is not None
+    assert repeat_scan["verification_status"] == "authentic"
+    assert repeat_scan["authentic"] is True
+    assert repeat_scan["secure_verified_at"] == item.scan_date
 
 
 def test_secure_code_rejects_wrong_code():
@@ -288,6 +352,8 @@ def test_one_time_verification_persists_only_consumption_state():
     assert item.qr_deactive_unit is True
     assert item.is_auth is True
     assert item.is_verify is True
+    assert item.scan_date is not None
+    assert result["one_time_verified_at"] == item.scan_date
     assert item.scan_count == 0
     service.db.commit.assert_called_once()
 
@@ -295,12 +361,15 @@ def test_one_time_verification_persists_only_consumption_state():
 def test_used_one_time_item_returns_already_used_without_scan_increment():
     item = _item(qr_type="one_time", active=False)
     item.is_verify = True
+    item.is_auth = True
+    item.scan_date = datetime.now(UTC)
     service = _service(item)
 
     result = service.verify(_request())
 
     assert result["verification_status"] == "already_used"
     assert result["authentic"] is False
+    assert result["one_time_verified_at"] == item.scan_date
     assert item.scan_count == 0
 
 
