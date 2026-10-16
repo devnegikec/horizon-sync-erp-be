@@ -55,22 +55,25 @@ class InvitationRepository:
         logger.debug(f"Fetching invitation: {invitation_id}")
         return self.db.query(Invitation).filter(Invitation.id == invitation_id).first()
 
-    def get_invitation_by_token(self, token_hash: str) -> Invitation | None:
+    def get_invitation_by_token(
+        self, token_hash: str, for_update: bool = False
+    ) -> Invitation | None:
         """
-        Get invitation by token hash.
+        Fetch invitation by token hash.
 
         Args:
             token_hash: Hashed invitation token
+            for_update: When True, lock the row (SELECT ... FOR UPDATE) so
+                concurrent acceptance attempts serialize instead of racing.
 
         Returns:
             Invitation object or None if not found
         """
         logger.debug("Fetching invitation by token")
-        return (
-            self.db.query(Invitation)
-            .filter(Invitation.token_hash == token_hash)
-            .first()
-        )
+        query = self.db.query(Invitation).filter(Invitation.token_hash == token_hash)
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
 
     def get_invitation_by_email_and_org(
         self, email: str, organization_id: UUID

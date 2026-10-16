@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.product_item import ProductItem
@@ -19,8 +20,8 @@ from app.schemas.qseal import (
     QSealParentCreate,
     QSealScanRequest,
 )
-from app.services.user_agent_service import parse_user_agent
 from app.services.qseal_suspicion_service import QSealSuspicionService
+from app.services.user_agent_service import parse_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +348,9 @@ class QSealService:
                 )
                 .all()
             )
-            product_ids = {param.product_id for param in linked_params if param.product_id}
+            product_ids = {
+                param.product_id for param in linked_params if param.product_id
+            }
             block_ids = {param.block_id for param in linked_params if param.block_id}
             if len(product_ids) == 1:
                 product_id = next(iter(product_ids))
@@ -388,7 +391,10 @@ class QSealService:
             "browser": req.browser or (parsed_agent or {}).get("browser"),
             "user_agent_raw": user_agent,
             "user_agent_parsed": parsed_agent,
-            "ip_address": req.ip_address or client_ip,
+            # Prefer the server-observed client IP so a public caller cannot
+            # spoof unique sources through the request body and evade the
+            # high-volume suspicion rule.
+            "ip_address": client_ip or req.ip_address,
             "latitude": req.latitude,
             "longitude": req.longitude,
             "city": req.city,
@@ -424,8 +430,10 @@ class QSealService:
             )
         except Exception:
             # Suspicion enrichment must never make the public scan endpoint
-            # unavailable. The event is still retained with a safe baseline
-            # and can be re-evaluated by a later backfill job.
+            # unavailable. A failed statement can leave the session unusable,
+            # so roll back before continuing; the event is still retained with
+            # a safe baseline and can be re-evaluated by a later backfill job.
+            self.db.rollback()
             logger.exception(
                 "[QSEAL] suspicious scan assessment failed serial=%s org=%s",
                 req.serial_number,
@@ -443,8 +451,13 @@ class QSealService:
 
         if item and verification_status == "valid":
             # Keep the existing operational counter in sync with the event
-            # stream used by the QSeal aggregation view.
-            item.scan_count = (item.scan_count or 0) + 1
+            # stream used by the QSeal aggregation view. Increment in the
+            # database so concurrent scans of the same serial cannot lose an
+            # update to a read-modify-write race.
+            self.db.query(ProductItem).filter(ProductItem.id == item.id).update(
+                {ProductItem.scan_count: func.coalesce(ProductItem.scan_count, 0) + 1},
+                synchronize_session=False,
+            )
             item.last_scanned_at = payload["scan_timestamp"]
             if payload["is_suspicious"]:
                 item.is_suspicious = True
@@ -502,23 +515,41 @@ class QSealService:
             )
 
     def get_scan_analytics_summary(self, organization_id: UUID, **filters):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
         return self.repo.get_scan_summary(organization_id, **filters)
 
     def get_scan_analytics_trends(self, organization_id: UUID, **filters):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
         return self.repo.get_scan_trends(organization_id, **filters)
 
-    def get_product_scan_analytics(self, organization_id: UUID, limit: int = 20, **filters):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
+    def get_product_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
         return self.repo.get_product_analytics(organization_id, limit=limit, **filters)
 
-    def get_geography_scan_analytics(self, organization_id: UUID, limit: int = 500, **filters):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
-        return self.repo.get_geography_analytics(organization_id, limit=limit, **filters)
+    def get_geography_scan_analytics(
+        self, organization_id: UUID, limit: int = 500, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
+        return self.repo.get_geography_analytics(
+            organization_id, limit=limit, **filters
+        )
 
-    def get_device_scan_analytics(self, organization_id: UUID, limit: int = 20, **filters):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
+    def get_device_scan_analytics(
+        self, organization_id: UUID, limit: int = 20, **filters
+    ):
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
         return self.repo.get_device_analytics(organization_id, limit=limit, **filters)
 
     def get_suspicious_scan_analytics(
@@ -530,7 +561,9 @@ class QSealService:
         limit_score: int | None = None,
         **filters,
     ):
-        self._validate_analytics_range(filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter"))
+        self._validate_analytics_range(
+            filters.get("date_from"), filters.get("date_to"), filters.get("risk_filter")
+        )
         items, total = self.repo.list_suspicious_scans(
             organization_id,
             page=page,

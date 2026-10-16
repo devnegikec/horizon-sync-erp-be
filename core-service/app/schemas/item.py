@@ -93,12 +93,40 @@ class ItemPackagingDetails(BaseModel):
     unit_name: str = Field(default="Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(default=Decimal("1"), gt=0)
     items_per_master_pack: int | None = Field(
-        None, gt=0, description="Items per master pack (used for QR master pack grouping)"
+        None,
+        gt=0,
+        description="Items per master pack (used for QR master pack grouping)",
     )
     length_mm: Decimal | None = Field(None, ge=0)
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
     weight_grams: Decimal | None = Field(None, ge=0)
+
+    # Master-carton (MC) overrides & estimation knobs. When omitted, the MC
+    # outer dimensions are estimated from the base-unit dims using the fill
+    # factor and wall thickness below.
+    master_pack_unit_name: str | None = Field(None, max_length=100)
+    master_pack_length_mm: Decimal | None = Field(None, ge=0)
+    master_pack_width_mm: Decimal | None = Field(None, ge=0)
+    master_pack_height_mm: Decimal | None = Field(None, ge=0)
+    master_pack_weight_grams: Decimal | None = Field(None, ge=0)
+    master_pack_fill_factor: Decimal | None = Field(
+        None,
+        gt=0,
+        le=1,
+        description="Packing efficiency used to estimate MC outer volume from base dims",
+    )
+    master_pack_wall_thickness_mm: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Carton wall thickness per side added when estimating MC dims",
+    )
+    master_pack_void_fill_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Extra volume allowance (fraction) for dunnage/bubble wrap added when estimating MC dims",
+    )
 
 
 class ItemCreate(ItemBase):
@@ -274,6 +302,10 @@ class ItemResponse(BaseModel):
     # Packaging units (base unit first)
     packaging_units: list[ItemPackagingUnitResponse] | None = None
 
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
+
     # Audit
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -300,6 +332,10 @@ class ItemListItem(BaseModel):
     barcode: str | None = None
     image_url: str | None = None
     created_at: datetime | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -363,6 +399,10 @@ class ItemPickerItem(BaseModel):
     stock_levels: ItemPickerStockLevels = Field(default_factory=ItemPickerStockLevels)
     item_group: ItemPickerItemGroup | None = None
     tax_info: ItemPickerTaxInfo | None = None
+
+    # Master-pack size resolved from the item's base packaging unit
+    # (ItemPackagingUnit.items_per_master_pack).
+    items_per_master_pack: int | None = None
 
 
 class ItemPickerListResponse(BaseModel):

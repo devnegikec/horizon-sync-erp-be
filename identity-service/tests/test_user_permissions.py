@@ -281,4 +281,4 @@ class TestGetUserPermissions:
         )
 
         assert response.status_code == 403
-        assert "don't have access" in response.json()["detail"]
+        assert "don't have access" in response.json()["message"]

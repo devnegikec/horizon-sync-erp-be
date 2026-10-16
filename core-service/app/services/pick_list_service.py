@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
@@ -27,6 +27,7 @@ from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLeve
 from app.models.item import Item
 from app.models.pick_list import PickList, PickListItem
 from app.models.product_item import ProductItem
+from app.models.qseal import QSealParameters
 from app.models.qr_scan_event import QRScanEvent
 from app.models.serial_no import SerialNo
 from app.models.warehouse_location import LocationType, WarehouseLocation
@@ -110,6 +111,7 @@ class PickListService:
         status: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        assigned_to: UUID | None = None,
     ) -> tuple[list[dict], dict]:
         items, total = self.repo.list_pick_lists(
             organization_id=organization_id,
@@ -119,6 +121,7 @@ class PickListService:
             status=status,
             sort_by=sort_by,
             sort_order=sort_order,
+            assigned_to=assigned_to,
         )
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
@@ -133,6 +136,43 @@ class PickListService:
             "aging_threshold_minutes"
         )
         return [self._to_list_item(x, aging_threshold) for x in items], pagination
+
+    def get_status_counts(
+        self,
+        organization_id: UUID,
+        warehouse_id: UUID | None = None,
+        invoice_reference: str | None = None,
+        assigned_to: UUID | None = None,
+    ) -> dict:
+        """Return per-status counts for outbound pick lists (unfiltered by status)."""
+        query = (
+            self.db.query(PickList.status, func.count(PickList.id))
+            .filter(PickList.organization_id == organization_id)
+        )
+        if warehouse_id:
+            query = query.filter(PickList.warehouse_id == warehouse_id)
+        if invoice_reference:
+            query = query.filter(PickList.invoice_reference == invoice_reference)
+        if assigned_to is not None:
+            query = query.filter(PickList.assigned_to == assigned_to)
+        rows = query.group_by(PickList.status).all()
+        counts = {
+            (row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in rows
+        }
+        return {
+            "total": sum(counts.values()),
+            "draft": counts.get("draft", 0),
+            "confirmed": counts.get("confirmed", 0),
+            "pending_picking": counts.get("pending_picking", 0),
+            "in_progress": counts.get("in_progress", 0),
+            "pick_complete": counts.get("pick_complete", 0),
+            "completed": counts.get("completed", 0),
+            "ready_for_dispatch": counts.get("ready_for_dispatch", 0),
+            "in_transit": counts.get("in_transit", 0),
+            "delivered": counts.get("delivered", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
 
     def update(
         self, pick_list_id: UUID, data: dict, organization_id: UUID, user_id: UUID
@@ -277,6 +317,36 @@ class PickListService:
 
         return pick_list
 
+    def _reserved_bin_ids_for_pick(
+        self, pick_list: PickList, org_id: UUID
+    ) -> set[UUID]:
+        """Return reserved bin ids for this pick list's resolution.
+
+        Bins reserved by sibling pick lists of the same outbound order are
+        excluded so two workers can pick different items from the same bin
+        within one order. Reservations held by other orders or put-away tasks
+        remain obstacles.
+        """
+        reservations = self.reservation_service.get_active_reservations(org_id)
+        sibling_task_ids: set[UUID] = set()
+        task_ids = {r.task_id for r in reservations if r.task_id}
+        if task_ids and pick_list.reference_id is not None:
+            rows = (
+                self.db.query(PickList.id)
+                .filter(
+                    PickList.id.in_(task_ids),
+                    PickList.reference_type == pick_list.reference_type,
+                    PickList.reference_id == pick_list.reference_id,
+                )
+                .all()
+            )
+            sibling_task_ids = {row[0] for row in rows}
+        return {
+            r.bin_location_id
+            for r in reservations
+            if r.task_id not in sibling_task_ids
+        }
+
     def resolve_bin_locations(self, pick_list_id: UUID, org_id: UUID) -> PickList:
         """Resolve bin locations for pick list items using FIFO logic.
 
@@ -306,8 +376,10 @@ class PickListService:
         resolved_items: list[PickListItem] = []
         items_to_remove: list[PickListItem] = []
 
-        # Bins actively reserved by workers must be skipped (FR-CW-01, FR-SL-02).
-        reserved_bin_ids = self.reservation_service.get_reserved_bin_ids(org_id=org_id)
+        # Bins actively reserved by other pick lists must be skipped
+        # (FR-CW-01, FR-SL-02) — except bins held by sibling pick lists of the
+        # same order, which may share a bin for different items.
+        reserved_bin_ids = self._reserved_bin_ids_for_pick(pick_list, org_id)
 
         # Serialized (unit-level) items capture their serials during pick scans;
         # only batch-tracked items use the bin-stock batch as the line's serial.
@@ -321,11 +393,37 @@ class PickListService:
             .all()
         }
 
+        # QR-serialized items (linked to a QR product via ``qr_product_id``)
+        # carry one bin-stock row per unit serial. Their serials must be
+        # pre-assigned at generation grouped by QSeal parent (master carton) so
+        # a full carton lands on a single pick line instead of being spread
+        # across cartons by FIFO ordering of the per-serial rows.
+        qr_serialized_item_ids = {
+            item_id
+            for (item_id,) in self.db.query(Item.id)
+            .filter(
+                Item.id.in_([it.item_id for it in pick_list.items]),
+                Item.qr_product_id.isnot(None),
+            )
+            .all()
+        }
+
+        # Track bin-stock rows already allocated to earlier items of this pick
+        # list so the same serial/stock row is never assigned twice (e.g. when
+        # an order line is split into several master-pack lines of the same SKU).
+        allocated_stock: dict[UUID, Decimal] = {}
+
         for item in list(pick_list.items):
             remaining_qty = Decimal(str(item.qty))
 
             # Query bin stock levels for this item using FEFO then FIFO:
             # earliest expiry first (NULLs last), then oldest arrival.
+            # Scope strictly to the pick list's warehouse so stock in other
+            # warehouses (e.g. the mother warehouse) is never assigned, and
+            # skip stock rows already fully allocated to earlier lines.
+            exhausted_ids = [
+                sid for sid, remaining in allocated_stock.items() if remaining <= 0
+            ]
             bin_stocks = (
                 self.db.query(BinStockLevel)
                 .join(
@@ -337,7 +435,10 @@ class PickListService:
                     BinStockLevel.organization_id == org_id,
                     BinStockLevel.quantity_on_hand > 0,
                     BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
+                    BinStockLevel.id.notin_(exhausted_ids),
+                    WarehouseLocation.warehouse_id == pick_list.warehouse_id,
                     WarehouseLocation.is_pickable.is_(True),
+                    WarehouseLocation.is_active.is_(True),
                 )
                 .order_by(
                     BinStockLevel.expiry_date.asc().nullslast(),
@@ -356,6 +457,19 @@ class PickListService:
                 resolved_items.append(item)
                 continue
 
+            # QR-serialized items are allocated as whole master cartons (QSeal
+            # parent groups) rather than per-serial FIFO rows.
+            if item.item_id in qr_serialized_item_ids:
+                self._resolve_qr_serialized_item(
+                    item,
+                    bin_stocks,
+                    allocated_stock,
+                    org_id,
+                    resolved_items,
+                    items_to_remove,
+                )
+                continue
+
             # Track whether we need to split across bins
             allocations: list[tuple[UUID, Decimal, str | None]] = []
 
@@ -363,11 +477,17 @@ class PickListService:
                 if remaining_qty <= 0:
                     break
 
-                available = Decimal(str(bin_stock.quantity_on_hand))
-                allocate_qty = min(remaining_qty, available)
+                row_remaining = allocated_stock.get(
+                    bin_stock.id, Decimal(str(bin_stock.quantity_on_hand))
+                )
+                if row_remaining <= 0:
+                    continue
+
+                allocate_qty = min(remaining_qty, row_remaining)
                 allocations.append(
                     (bin_stock.bin_location_id, allocate_qty, bin_stock.batch_number)
                 )
+                allocated_stock[bin_stock.id] = row_remaining - allocate_qty
                 remaining_qty -= allocate_qty
 
             if len(allocations) == 0:
@@ -375,8 +495,11 @@ class PickListService:
                 resolved_items.append(item)
             elif len(allocations) == 1:
                 # Single bin can fulfill the entire quantity
-                bin_location_id, _, batch_number = allocations[0]
+                bin_location_id, alloc_qty, batch_number = allocations[0]
                 item.bin_location_id = bin_location_id
+                # Cap the line quantity to what the bin actually supplied so a
+                # short-stocked line isn't overstated.
+                item.qty = alloc_qty
                 # Keep the packing-slip batch number; store the bin-stock serial(s)
                 # separately so the batch column matches the uploaded PDF.
                 if item.item_id in serialized_item_ids:
@@ -440,6 +563,134 @@ class PickListService:
         self.db.commit()
         self.db.refresh(pick_list)
         return pick_list
+
+    def _resolve_qr_serialized_item(
+        self,
+        item: PickListItem,
+        bin_stocks: list[BinStockLevel],
+        allocated_stock: dict,
+        org_id: UUID,
+        resolved_items: list,
+        items_to_remove: list,
+    ) -> None:
+        """Assign unit serials to a QR-serialized pick line grouped by QSeal
+        parent (master carton).
+
+        QR-serialized items store one bin-stock row per unit serial, and the
+        rows' ``created_at`` order reflects put-away scan order — which can
+        interleave serials from different cartons. Allocating per row therefore
+        splits a master pack across cartons. Here available rows are grouped by
+        QSeal parent and whole cartons are allocated, preserving master-pack
+        integrity while keeping FEFO/FIFO ordering at the parent level.
+        """
+        remaining_qty = Decimal(str(item.qty))
+
+        # Resolve each serial's QSeal parent.
+        serials = [bs.batch_number for bs in bin_stocks if bs.batch_number]
+        parent_by_serial: dict[str, UUID | None] = {}
+        if serials:
+            parent_by_serial = {
+                row.serial_number: row.parent_id
+                for row in self.db.query(
+                    QSealParameters.serial_number, QSealParameters.parent_id
+                )
+                .filter(
+                    QSealParameters.organization_id == org_id,
+                    QSealParameters.serial_number.in_(serials),
+                )
+                .all()
+            }
+
+        # Group available rows by (bin, parent) so same-carton same-bin units
+        # collapse into one allocation instead of one allocation per unit.
+        groups: dict[tuple[UUID, UUID | None], list[BinStockLevel]] = {}
+        for bs in bin_stocks:
+            row_remaining = allocated_stock.get(
+                bs.id, Decimal(str(bs.quantity_on_hand))
+            )
+            if row_remaining <= 0:
+                continue
+            parent_id = parent_by_serial.get(bs.batch_number)
+            groups.setdefault((bs.bin_location_id, parent_id), []).append(bs)
+
+        # FEFO then FIFO at the parent/bin level: earliest expiry first (groups
+        # without an expiry last), then earliest arrival among the group's rows.
+        def _sort_key(key):
+            rows = groups[key]
+            expiries = [r.expiry_date for r in rows if r.expiry_date is not None]
+            createds = [r.created_at for r in rows if r.created_at is not None]
+            return (
+                not bool(expiries),
+                min(expiries) if expiries else None,
+                not bool(createds),
+                min(createds) if createds else None,
+                str(key),
+            )
+
+        allocations: list[tuple[UUID, Decimal, list[str] | None]] = []
+        for key in sorted(groups, key=_sort_key):
+            if remaining_qty <= 0:
+                break
+            bin_id, _parent_id = key
+            rows = groups[key]
+
+            # FEFO/FIFO within the group for the partial-carton case.
+            def _row_key(r):
+                return (
+                    r.expiry_date is None,
+                    r.expiry_date,
+                    r.created_at is None,
+                    r.created_at,
+                    str(r.id),
+                )
+
+            rows_sorted = sorted(rows, key=_row_key)
+            take = int(min(remaining_qty, Decimal(len(rows_sorted))))
+            if take <= 0:
+                continue
+            chosen = rows_sorted[:take]
+            chosen_serials = [r.batch_number for r in chosen if r.batch_number]
+            for r in chosen:
+                allocated_stock[r.id] = Decimal("0")
+            allocations.append(
+                (bin_id, Decimal(len(chosen)), chosen_serials or None)
+            )
+            remaining_qty -= Decimal(len(chosen))
+
+        if not allocations:
+            resolved_items.append(item)
+            return
+
+        if len(allocations) == 1:
+            bin_id, alloc_qty, chosen_serials = allocations[0]
+            item.bin_location_id = bin_id
+            item.qty = alloc_qty
+            item.serial_nos = chosen_serials
+            resolved_items.append(item)
+            return
+
+        # Master pack spans multiple bins/parents; split into one line per
+        # contiguous group, carrying the per-case/loose breakdown on the first.
+        items_to_remove.append(item)
+        for split_idx, (bin_id, alloc_qty, chosen_serials) in enumerate(allocations):
+            split_item = PickListItem(
+                organization_id=org_id,
+                pick_list_id=item.pick_list_id,
+                item_id=item.item_id,
+                warehouse_id=item.warehouse_id,
+                qty=alloc_qty,
+                picked_qty=Decimal("0"),
+                uom=item.uom,
+                per_case_qty=item.per_case_qty if split_idx == 0 else None,
+                case_qty=item.case_qty if split_idx == 0 else None,
+                loose_qty=item.loose_qty if split_idx == 0 else None,
+                batch_no=item.batch_no,
+                serial_nos=chosen_serials,
+                bin_location_id=bin_id,
+                sort_order=0,
+            )
+            self.db.add(split_item)
+            resolved_items.append(split_item)
 
     def reserve_pick_bins(self, pick_list: PickList, org_id: UUID) -> int:
         """Reserve the resolved bins of a pick list for its assigned worker.
@@ -521,6 +772,43 @@ class PickListService:
         )
         if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
             order.status = OutboundOrderStatus.COMPLETED
+
+    def _revert_order_if_all_cancelled(self, order_id: UUID, org_id: UUID) -> None:
+        """Revert an outbound order to `confirmed` when all its pick lists are
+        cancelled (inverse of ``_reconcile_order``).
+
+        Cancelling a pick list must not leave the source order stuck in
+        ``pending_picking`` with no active pick lists. When every sibling pick
+        list of the order has been cancelled, restore the order to ``confirmed``
+        so a fresh set of pick lists can be generated.
+        """
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+
+        siblings = (
+            self.db.query(PickList)
+            .filter(
+                PickList.organization_id == org_id,
+                PickList.reference_type == "outbound_order",
+                PickList.reference_id == order_id,
+            )
+            .all()
+        )
+        if not siblings or not all(
+            pl.status == PickListStatus.CANCELLED for pl in siblings
+        ):
+            return
+
+        order = (
+            self.db.query(OutboundOrder)
+            .filter(
+                OutboundOrder.id == order_id,
+                OutboundOrder.organization_id == org_id,
+            )
+            .first()
+        )
+        if order is not None and order.status == OutboundOrderStatus.PENDING_PICKING:
+            order.status = OutboundOrderStatus.CONFIRMED
 
     # ------------------------------------------------------------------
     # PICK SCAN RECORDING AND STATUS TRANSITIONS
@@ -795,6 +1083,32 @@ class PickListService:
                 .first()
             )
 
+        # Master-carton scan (parent QR): when the id is not a unit serial but a
+        # QSealTrack parent, expand its children and pick the whole carton in one
+        # scan (mirrors the inbound scan-carton flow).
+        if product_item is None:
+            from app.models.qseal import QSealTrack
+
+            parent_track = (
+                self.db.query(QSealTrack)
+                .filter(
+                    QSealTrack.organization_id == org_id,
+                    QSealTrack.serial_number == payload.id,
+                )
+                .first()
+            )
+            if parent_track is not None:
+                return self._record_carton_pick_scan(
+                    pick_list=pick_list,
+                    pick_list_id=pick_list_id,
+                    parent_track=parent_track,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                    bin_location_id=bin_location_id,
+                    reason_code=reason_code,
+                    reason_quantity=reason_quantity,
+                )
+
         if item is None:
             item = (
                 self.db.query(Item)
@@ -850,6 +1164,10 @@ class PickListService:
                 )
             current.append(payload.id)
             matching_pick_item.serial_nos = current
+            # First unit wins: a pick line can carry several serials but only
+            # one product_item_id; keep the first instead of the last scan.
+            if product_item is not None and matching_pick_item.product_item_id is None:
+                matching_pick_item.product_item_id = product_item.id
 
         # Check for over-picking (EX-021 tolerance)
         scanned_qty = Decimal(str(payload.qty))
@@ -874,6 +1192,7 @@ class PickListService:
                 quantity=scanned_qty,
                 org_id=org_id,
                 batch_number=payload.batch,
+                sync_warehouse=False,
             )
 
             # Once this pick line is fully satisfied, release the worker's
@@ -902,6 +1221,7 @@ class PickListService:
         # Record scan event in qr_scan_events
         scan_event = QRScanEvent(
             organization_id=org_id,
+            product_item_id=product_item.id if product_item else None,
             serial_number=payload.id,
             scan_timestamp=datetime.now(UTC),
             extra_data={
@@ -960,6 +1280,227 @@ class PickListService:
             "required_qty": float(matching_pick_item.qty),
             "remaining_qty": float(required_qty - new_picked),
             "batch": payload.batch,
+        }
+
+    def _record_carton_pick_scan(  # noqa: C901 - mirrors record_pick_scan
+        self,
+        pick_list: PickList,
+        pick_list_id: UUID,
+        parent_track,
+        worker_id: UUID,
+        org_id: UUID,
+        bin_location_id: UUID | None = None,
+        reason_code: str | None = None,
+        reason_quantity: Decimal | None = None,
+    ) -> dict:
+        """Pick a whole master carton in one scan by expanding its child serials.
+
+        Mirrors ``record_pick_scan`` for a single unit, but operates on all N
+        child units of the scanned QSeal parent at once: captures every child
+        serial on the pick line, increments ``picked_qty`` by N, decrements bin
+        stock per unit (batch_number = serial), and writes one scan event.
+        """
+        from app.models.qseal import QSealParameters
+
+        children = (
+            self.db.query(QSealParameters)
+            .filter(
+                QSealParameters.parent_id == parent_track.id,
+                QSealParameters.organization_id == org_id,
+            )
+            .order_by(QSealParameters.created_at.asc())
+            .all()
+        )
+        if not children:
+            raise ValidationError(
+                f"Master carton '{parent_track.serial_number}' has no linked units"
+            )
+        child_serials = [c.serial_number for c in children if c.serial_number]
+        dispatch_batch = children[0].dispatch_batch if children else None
+
+        # All children in a carton share the same product; resolve the SKU once.
+        product_id = children[0].product_id
+        item = (
+            self.db.query(Item)
+            .filter(
+                Item.qr_product_id == product_id,
+                Item.organization_id == org_id,
+                Item.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if item is None:
+            raise ValidationError(
+                f"Item for master carton '{parent_track.serial_number}' not found"
+            )
+
+        # Find a pick line with remaining capacity for this item.
+        matching_pick_item = None
+        for pick_item in pick_list.items:
+            if pick_item.item_id == item.id:
+                remaining = Decimal(str(pick_item.qty)) - Decimal(
+                    str(pick_item.picked_qty or 0)
+                )
+                if remaining > 0:
+                    matching_pick_item = pick_item
+                    break
+        if matching_pick_item is None:
+            raise ValidationError(
+                f"Item '{item.sku or item.item_code}' is not on the pick list "
+                f"or has already been fully picked"
+            )
+
+        # Wrong-bin hard stop (same as the unit scan).
+        self.validate_bin(org_id, matching_pick_item, bin_location_id)
+
+        # Validate each child serial belongs to the SKU and is not consumed.
+        for serial in child_serials:
+            self.validate_serial(org_id, item, serial)
+
+        # Over-pick check: the whole carton must fit on this line.
+        scanned_qty = Decimal(str(len(child_serials)))
+        current_picked = Decimal(str(matching_pick_item.picked_qty or 0))
+        required_qty = Decimal(str(matching_pick_item.qty))
+        new_picked = current_picked + scanned_qty
+        self.validate_over_pick(org_id, required_qty, new_picked)
+
+        # Capture all child serials (duplicate hard stop before mutating).
+        # QR-serialized lines pre-assign their expected serials in `serial_nos`,
+        # so track the actually-picked set separately in `extra_data` —
+        # comparing against `serial_nos` would reject the first carton scan as
+        # a duplicate.
+        extra = dict(matching_pick_item.extra_data or {})
+        picked = set(extra.get("picked_serials") or [])
+        duplicate = next((s for s in child_serials if s in picked), None)
+        if duplicate is not None:
+            raise ValidationError(
+                f"Serial '{duplicate}' has already been picked for this line"
+            )
+        picked.update(child_serials)
+        extra["picked_serials"] = sorted(picked)
+        matching_pick_item.extra_data = extra
+
+        # Legacy serialized lines start with an empty `serial_nos`; capture the
+        # scanned serials there so they propagate to the transfer ASN at
+        # dispatch. QR-serialized lines already carry their expected serials.
+        if not (matching_pick_item.serial_nos or []):
+            matching_pick_item.serial_nos = list(child_serials)
+
+        # First unit's ProductItem key (deterministic for the whole line).
+        if matching_pick_item.product_item_id is None and child_serials:
+            first_pi = (
+                self.db.query(ProductItem)
+                .filter(
+                    ProductItem.serial_number == child_serials[0],
+                    ProductItem.organization_id == org_id,
+                )
+                .first()
+            )
+            if first_pi is not None:
+                matching_pick_item.product_item_id = first_pi.id
+
+        matching_pick_item.picked_qty = new_picked
+
+        # Decrement bin stock per unit (each unit is a bin_stock row keyed by
+        # batch_number = serial).
+        bin_stock = None
+        if matching_pick_item.bin_location_id:
+            from app.models.bin_stock_level import InventoryStatus
+            from app.services.bin_stock_service import BinStockService
+
+            bin_stock_service = BinStockService(self.db)
+            for serial in child_serials:
+                bin_stock = bin_stock_service.remove_stock(
+                    bin_id=matching_pick_item.bin_location_id,
+                    item_id=item.id,
+                    quantity=Decimal("1"),
+                    org_id=org_id,
+                    batch_number=serial,
+                    sync_warehouse=False,
+                )
+            if new_picked >= required_qty and bin_stock is not None:
+                bin_stock_service.transition_status(
+                    bin_stock,
+                    InventoryStatus.PICKED.value,
+                    user_id=worker_id,
+                    commit=False,
+                )
+                self.reservation_service.release_bin(
+                    bin_id=matching_pick_item.bin_location_id,
+                    worker_id=worker_id,
+                    org_id=org_id,
+                )
+
+        # Transition to IN_PROGRESS on first scan.
+        if pick_list.status in (
+            PickListStatus.DRAFT,
+            PickListStatus.CONFIRMED,
+            PickListStatus.PENDING_PICKING,
+        ):
+            pick_list.status = PickListStatus.IN_PROGRESS
+
+        # One scan event for the whole carton.
+        scan_event = QRScanEvent(
+            organization_id=org_id,
+            serial_number=parent_track.serial_number,
+            scan_timestamp=datetime.now(UTC),
+            extra_data={
+                "scan_context": "pick",
+                "carton_scan": True,
+                "pick_list_id": str(pick_list_id),
+                "worker_id": str(worker_id),
+                "pick_list_item_id": str(matching_pick_item.id),
+                "carton_id": str(parent_track.id),
+                "carton_serial": parent_track.serial_number,
+                "expanded_serials": child_serials,
+            },
+        )
+        self.db.add(scan_event)
+
+        # Movement ledger (one entry for the carton).
+        if matching_pick_item.bin_location_id:
+            from app.services.bin_stock_service import BinStockService
+
+            BinStockService(self.db).record_pick_movement(
+                org_id=org_id,
+                product_id=item.id,
+                warehouse_id=matching_pick_item.warehouse_id,
+                quantity=scanned_qty,
+                reference_type="pick_scan",
+                reference_id=scan_event.id,
+                performed_by=worker_id,
+                notes=(
+                    f"Pick carton {parent_track.serial_number} "
+                    f"from bin {matching_pick_item.bin_location_id}"
+                ),
+            )
+
+        self.db.commit()
+        self.db.refresh(matching_pick_item)
+        self.db.refresh(pick_list)
+
+        if reason_code:
+            self._capture_scan_exception(
+                org_id,
+                matching_pick_item.id,
+                reason_code,
+                reason_quantity if reason_quantity is not None else scanned_qty,
+                worker_id,
+            )
+
+        return {
+            "pick_list_id": str(pick_list_id),
+            "pick_list_status": pick_list.status.value,
+            "pick_list_item_id": str(matching_pick_item.id),
+            "item_id": str(item.id),
+            "sku": item.sku or item.item_code,
+            "serial_no": parent_track.serial_number,
+            "scanned_qty": float(scanned_qty),
+            "picked_qty": float(matching_pick_item.picked_qty),
+            "required_qty": float(matching_pick_item.qty),
+            "remaining_qty": float(required_qty - new_picked),
+            "batch": dispatch_batch,
+            "expanded_serials": child_serials,
         }
 
     def complete_pick_list(self, pick_list_id: UUID, org_id: UUID) -> PickList:
@@ -1072,14 +1613,53 @@ class PickListService:
                     quantity=picked,
                     org_id=org_id,
                     batch_number=item.batch_no,
+                    sync_warehouse=False,
                 )
             # Reset picked_qty
             item.picked_qty = Decimal("0")
+
+        # Release the warehouse-level reservation taken at pick-list creation.
+        # Only order-driven pick lists reserve warehouse stock; legacy/invoice
+        # pick lists never did, so releasing for them would consume another
+        # pick list's reservation.
+        if pick_list.reference_type == "outbound_order":
+            from app.models.stock_level import StockLevel
+
+            for item in pick_list.items:
+                reserved_qty = int(item.qty or 0)
+                if reserved_qty <= 0:
+                    continue
+                stock_level = (
+                    self.db.query(StockLevel)
+                    .filter(
+                        StockLevel.organization_id == org_id,
+                        StockLevel.product_id == item.item_id,
+                        StockLevel.warehouse_id == item.warehouse_id,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                if stock_level is None:
+                    continue
+                stock_level.quantity_reserved = max(
+                    0, (stock_level.quantity_reserved or 0) - reserved_qty
+                )
+                stock_level.quantity_available = max(
+                    0,
+                    (stock_level.quantity_on_hand or 0)
+                    - (stock_level.quantity_reserved or 0),
+                )
 
         pick_list.status = PickListStatus.CANCELLED
 
         # Release bin reservations for this pick list (requirement A1).
         self.release_pick_reservations(pick_list, org_id)
+
+        # Revert the source outbound order to `confirmed` when none of its pick
+        # lists remain active, so it can be re-picked instead of staying stuck
+        # in `pending_picking`.
+        if pick_list.reference_type == "outbound_order" and pick_list.reference_id:
+            self._revert_order_if_all_cancelled(pick_list.reference_id, org_id)
 
         self.db.commit()
         self.db.refresh(pick_list)
@@ -1172,6 +1752,7 @@ class PickListService:
                 PickList.id == pick_list_id,
                 PickList.organization_id == org_id,
             )
+            .with_for_update()
             .first()
         )
         if pick_list is None:
@@ -1190,8 +1771,11 @@ class PickListService:
 
         if pick_list.accepted_at is None:
             pick_list.accepted_at = datetime.now(UTC)
-        pick_list.accepted_by = worker_id
-        pick_list.assigned_to = worker_id
+            pick_list.accepted_by = worker_id
+            # Preserve an existing auto/manual assignment; only fall back to
+            # the accepting worker when the task is still unassigned.
+            if pick_list.assigned_to is None:
+                pick_list.assigned_to = worker_id
         if pick_list.status in (
             PickListStatus.DRAFT,
             PickListStatus.CONFIRMED,

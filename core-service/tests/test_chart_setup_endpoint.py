@@ -3,7 +3,6 @@
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -162,7 +161,7 @@ class TestCreateDefaultChartEndpoint:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert "Failed to create default chart of accounts" in data["detail"]
+        assert "Failed to create default chart of accounts" in data["detail"]["message"]
 
     def test_create_default_chart_default_currency(self, db_session):
         """Test currency defaults to USD when not provided"""
@@ -252,9 +251,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -318,9 +317,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -398,9 +397,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -454,9 +453,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -503,9 +502,9 @@ class TestTriggerDefaultChartEndpoint:
             # Override the dependency
             from app.main import app
 
-            app.dependency_overrides[get_current_active_user] = (
-                override_get_current_active_user
-            )
+            app.dependency_overrides[
+                get_current_active_user
+            ] = override_get_current_active_user
 
             try:
                 response = client.post(
@@ -518,4 +517,4 @@ class TestTriggerDefaultChartEndpoint:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         data = response.json()
-        assert "Failed to create default chart of accounts" in data["detail"]
+        assert "Failed to create default chart of accounts" in data["detail"]["message"]

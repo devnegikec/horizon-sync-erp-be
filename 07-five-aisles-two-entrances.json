@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "layout": { "namingScheme": "wms_typed", "defaultZoneCode": "01" },
+  "warehouse": {
+    "code": "WH-5A",
+    "name": "Five aisles, two front entrances, mid-row cross-aisle",
+    "lengthM": 70,
+    "widthM": 36,
+    "heightM": 9,
+    "origin": { "x": 0, "z": 0 },
+    "metadata": {
+      "note": "5 aisles along X. A01-A04 racked both sides, A05 left row only. Every rack row is 22 bays: 10 bays, a 2-bay cross-aisle, 10 bays - so each level of each row holds 20 bins, 10 either side of the cross-aisle.",
+      "aislePitchM": 6.0,
+      "aislePitchNote": "corridor 3.4 + two 1.1 racks = 5.6 m minimum; 6.0 leaves a 0.4 m clearance so facing rack rows sit back-to-back instead of leaving dead floor between aisles",
+      "entrances": [
+        { "id": "entrance-1", "x": 21, "z": 0, "widthM": 6, "label": "Front entrance 1" },
+        { "id": "entrance-2", "x": 39, "z": 0, "widthM": 6, "label": "Front entrance 2" }
+      ],
+      "crossAisle": {
+        "fromOffsetM": 27.0,
+        "toOffsetM": 32.4,
+        "widthM": 5.4,
+        "note": "offsets are metres along each lane; both are whole bay boundaries, so exactly bays 11 and 12 are consumed"
+      }
+    }
+  },
+  "rackTypes": [
+    {
+      "id": "rt-std",
+      "code": "STD",
+      "name": "Standard pallet rack",
+      "bayWidthM": 2.7,
+      "depthM": 1.1,
+      "uprightWidthM": 0.12,
+      "uprightDepthM": 0.12,
+      "metadata": { "beamProfile": "100x50", "levelsPerRack": 5 }
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "wall-front-1",
+      "kind": "WALL",
+      "x": 0,
+      "z": 0,
+      "widthM": 21,
+      "depthM": 0.6,
+      "heightM": 3,
+      "metadata": { "face": "front", "note": "left of entrance 1" }
+    },
+    {
+      "id": "wall-front-2",
+      "kind": "WALL",
+      "x": 27,
+      "z": 0,
+      "widthM": 12,
+      "depthM": 0.6,
+      "heightM": 3,
+      "metadata": { "face": "front", "note": "between the two entrances" }
+    },
+    {
+      "id": "wall-front-3",
+      "kind": "WALL",
+      "x": 45,
+      "z": 0,
+      "widthM": 25,
+      "depthM": 0.6,
+      "heightM": 3,
+      "metadata": { "face": "front", "note": "right of entrance 2" }
+    },
+    {
+      "id": "entrance-1",
+      "kind": "CUSTOM",
+      "x": 21,
+      "z": 0,
+      "widthM": 6,
+      "depthM": 0.6,
+      "heightM": 0.05,
+      "metadata": { "purpose": "entrance", "label": "Front entrance 1", "note": "0.05 m floor threshold, not a wall - the opening above it is clear" }
+    },
+    {
+      "id": "entrance-2",
+      "kind": "CUSTOM",
+      "x": 39,
+      "z": 0,
+      "widthM": 6,
+      "depthM": 0.6,
+      "heightM": 0.05,
+      "metadata": { "purpose": "entrance", "label": "Front entrance 2", "note": "0.05 m floor threshold, not a wall - the opening above it is clear" }
+    }
+  ],
+  "aisles": [
+    {
+      "id": "a-1",
+      "code": "A01",
+      "orientation": "X",
+      "centerline": { "x1": 4, "z1": 8, "x2": 63.4, "z2": 8 },
+      "widthM": 3.4,
+      "travelDirection": "BOTH",
+      "metadata": { "position": "front-most aisle" },
+      "lanes": [
+        {
+          "id": "a-1-l",
+          "code": "A01-L",
+          "side": "LEFT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        },
+        {
+          "id": "a-1-r",
+          "code": "A01-R",
+          "side": "RIGHT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-2",
+      "code": "A02",
+      "orientation": "X",
+      "centerline": { "x1": 4, "z1": 14, "x2": 63.4, "z2": 14 },
+      "widthM": 3.4,
+      "travelDirection": "BOTH",
+      "lanes": [
+        {
+          "id": "a-2-l",
+          "code": "A02-L",
+          "side": "LEFT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        },
+        {
+          "id": "a-2-r",
+          "code": "A02-R",
+          "side": "RIGHT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-3",
+      "code": "A03",
+      "orientation": "X",
+      "centerline": { "x1": 4, "z1": 20, "x2": 63.4, "z2": 20 },
+      "widthM": 3.4,
+      "travelDirection": "BOTH",
+      "lanes": [
+        {
+          "id": "a-3-l",
+          "code": "A03-L",
+          "side": "LEFT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        },
+        {
+          "id": "a-3-r",
+          "code": "A03-R",
+          "side": "RIGHT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-4",
+      "code": "A04",
+      "orientation": "X",
+      "centerline": { "x1": 4, "z1": 26, "x2": 63.4, "z2": 26 },
+      "widthM": 3.4,
+      "travelDirection": "BOTH",
+      "lanes": [
+        {
+          "id": "a-4-l",
+          "code": "A04-L",
+          "side": "LEFT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        },
+        {
+          "id": "a-4-r",
+          "code": "A04-R",
+          "side": "RIGHT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a-5",
+      "code": "A05",
+      "orientation": "X",
+      "centerline": { "x1": 4, "z1": 32, "x2": 63.4, "z2": 32 },
+      "widthM": 3.4,
+      "travelDirection": "BOTH",
+      "metadata": { "rows": "left_only", "note": "a single rack row on the left side only" },
+      "lanes": [
+        {
+          "id": "a-5-l",
+          "code": "A05-L",
+          "side": "LEFT",
+          "rackTypeId": "rt-std",
+          "startOffsetM": 0,
+          "lengthM": 59.4,
+          "metadata": { "baysPerSide": 10, "binsPerLevel": 20, "binsPerRow": 100 },
+          "levels": [
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 },
+            { "clearHeightM": 1.4, "binDepthM": 1, "beamHeightM": 0.08, "maxWeightKg": 800 }
+          ],
+          "segments": [
+            { "kind": "RACK", "startM": 0, "endM": 27, "label": "side 1 - bays 1-10" },
+            { "kind": "GAP", "startM": 27, "endM": 32.4, "label": "cross-aisle - bays 11-12" },
+            { "kind": "RACK", "startM": 32.4, "endM": 59.4, "label": "side 2 - bays 13-22" }
+          ]
+        }
+      ]
+    }
+  ]
+}

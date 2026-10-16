@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_CREATE, ITEM_DELETE, ITEM_READ, ITEM_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.item_supplier import (
     ItemSupplierCreate,
@@ -25,7 +26,7 @@ router = APIRouter()
 )
 async def create_item_supplier(
     data: ItemSupplierCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a new item-supplier link. Item and supplier must exist; (item_id, supplier_id) must be unique."""
@@ -43,7 +44,7 @@ async def list_item_suppliers(
     supplier_id: UUID | None = Query(None, description="Filter by supplier ID"),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """List item-supplier links with pagination and filters."""
@@ -66,7 +67,7 @@ async def list_item_suppliers(
 @router.get("/{item_supplier_id}", response_model=ItemSupplierResponse)
 async def get_item_supplier(
     item_supplier_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """Get item supplier by ID."""
@@ -80,7 +81,7 @@ async def get_item_supplier(
 async def update_item_supplier(
     item_supplier_id: UUID,
     data: ItemSupplierUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update an item supplier."""
@@ -93,7 +94,7 @@ async def update_item_supplier(
 @router.delete("/{item_supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item_supplier(
     item_supplier_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete an item supplier."""

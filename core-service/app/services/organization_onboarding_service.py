@@ -31,23 +31,73 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_UOMS = [
     # Quantity
-    {"name": "Piece", "abbreviation": "PCS", "uom_type": "count", "description": "Individual unit or piece"},
-    {"name": "Dozen", "abbreviation": "DOZ", "uom_type": "count", "description": "12 pieces"},
-    {"name": "Pair", "abbreviation": "PR", "uom_type": "count", "description": "Set of two"},
+    {
+        "name": "Piece",
+        "abbreviation": "PCS",
+        "uom_type": "count",
+        "description": "Individual unit or piece",
+    },
+    {
+        "name": "Dozen",
+        "abbreviation": "DOZ",
+        "uom_type": "count",
+        "description": "12 pieces",
+    },
+    {
+        "name": "Pair",
+        "abbreviation": "PR",
+        "uom_type": "count",
+        "description": "Set of two",
+    },
     {
         "name": "Set",
         "abbreviation": "SET",
         "uom_type": "count",
         "description": "Group of items sold together",
     },
-    {"name": "Box", "abbreviation": "BOX", "uom_type": "count", "description": "Standard box packaging"},
-    {"name": "Carton", "abbreviation": "CTN", "uom_type": "count", "description": "Carton packaging"},
-    {"name": "Pack", "abbreviation": "PCK", "uom_type": "count", "description": "Packaged bundle"},
-    {"name": "Roll", "abbreviation": "ROL", "uom_type": "count", "description": "Roll of material"},
-    {"name": "Sheet", "abbreviation": "SHT", "uom_type": "count", "description": "Flat sheet"},
-    {"name": "Bundle", "abbreviation": "BDL", "uom_type": "count", "description": "Bundled items"},
+    {
+        "name": "Box",
+        "abbreviation": "BOX",
+        "uom_type": "count",
+        "description": "Standard box packaging",
+    },
+    {
+        "name": "Carton",
+        "abbreviation": "CTN",
+        "uom_type": "count",
+        "description": "Carton packaging",
+    },
+    {
+        "name": "Pack",
+        "abbreviation": "PCK",
+        "uom_type": "count",
+        "description": "Packaged bundle",
+    },
+    {
+        "name": "Roll",
+        "abbreviation": "ROL",
+        "uom_type": "count",
+        "description": "Roll of material",
+    },
+    {
+        "name": "Sheet",
+        "abbreviation": "SHT",
+        "uom_type": "count",
+        "description": "Flat sheet",
+    },
+    {
+        "name": "Bundle",
+        "abbreviation": "BDL",
+        "uom_type": "count",
+        "description": "Bundled items",
+    },
     # Weight
-    {"name": "Kilogram", "abbreviation": "KG", "uom_type": "weight", "description": "Metric unit of weight"},
+    {
+        "name": "Kilogram",
+        "abbreviation": "KG",
+        "uom_type": "weight",
+        "description": "Metric unit of weight",
+    },
     {
         "name": "Gram",
         "abbreviation": "GM",
@@ -60,8 +110,18 @@ DEFAULT_UOMS = [
         "uom_type": "weight",
         "description": "Metric unit of weight (1/1000 g)",
     },
-    {"name": "Metric Ton", "abbreviation": "MT", "uom_type": "weight", "description": "1000 kilograms"},
-    {"name": "Pound", "abbreviation": "LB", "uom_type": "weight", "description": "Imperial unit of weight"},
+    {
+        "name": "Metric Ton",
+        "abbreviation": "MT",
+        "uom_type": "weight",
+        "description": "1000 kilograms",
+    },
+    {
+        "name": "Pound",
+        "abbreviation": "LB",
+        "uom_type": "weight",
+        "description": "Imperial unit of weight",
+    },
     {
         "name": "Ounce",
         "abbreviation": "OZ",
@@ -69,7 +129,12 @@ DEFAULT_UOMS = [
         "description": "Imperial unit of weight (1/16 lb)",
     },
     # Volume
-    {"name": "Liter", "abbreviation": "LTR", "uom_type": "volume", "description": "Metric unit of volume"},
+    {
+        "name": "Liter",
+        "abbreviation": "LTR",
+        "uom_type": "volume",
+        "description": "Metric unit of volume",
+    },
     {
         "name": "Milliliter",
         "abbreviation": "ML",
@@ -82,9 +147,19 @@ DEFAULT_UOMS = [
         "uom_type": "volume",
         "description": "Metric unit of volume",
     },
-    {"name": "Gallon", "abbreviation": "GAL", "uom_type": "volume", "description": "Imperial unit of volume"},
+    {
+        "name": "Gallon",
+        "abbreviation": "GAL",
+        "uom_type": "volume",
+        "description": "Imperial unit of volume",
+    },
     # Length
-    {"name": "Meter", "abbreviation": "MTR", "uom_type": "length", "description": "Metric unit of length"},
+    {
+        "name": "Meter",
+        "abbreviation": "MTR",
+        "uom_type": "length",
+        "description": "Metric unit of length",
+    },
     {
         "name": "Centimeter",
         "abbreviation": "CM",
@@ -103,7 +178,12 @@ DEFAULT_UOMS = [
         "uom_type": "length",
         "description": "Metric unit of length (1000 m)",
     },
-    {"name": "Inch", "abbreviation": "IN", "uom_type": "length", "description": "Imperial unit of length"},
+    {
+        "name": "Inch",
+        "abbreviation": "IN",
+        "uom_type": "length",
+        "description": "Imperial unit of length",
+    },
     {
         "name": "Foot",
         "abbreviation": "FT",
@@ -130,18 +210,73 @@ DEFAULT_UOMS = [
         "description": "Imperial unit of area",
     },
     # Time / Service
-    {"name": "Hour", "abbreviation": "HR", "uom_type": "time", "description": "Unit of time"},
-    {"name": "Day", "abbreviation": "DAY", "uom_type": "time", "description": "Unit of time (24 hours)"},
-    {"name": "Month", "abbreviation": "MON", "uom_type": "time", "description": "Unit of time"},
-    {"name": "Year", "abbreviation": "YR", "uom_type": "time", "description": "Unit of time (12 months)"},
+    {
+        "name": "Hour",
+        "abbreviation": "HR",
+        "uom_type": "time",
+        "description": "Unit of time",
+    },
+    {
+        "name": "Day",
+        "abbreviation": "DAY",
+        "uom_type": "time",
+        "description": "Unit of time (24 hours)",
+    },
+    {
+        "name": "Month",
+        "abbreviation": "MON",
+        "uom_type": "time",
+        "description": "Unit of time",
+    },
+    {
+        "name": "Year",
+        "abbreviation": "YR",
+        "uom_type": "time",
+        "description": "Unit of time (12 months)",
+    },
     # Other
-    {"name": "Unit", "abbreviation": "UNIT", "uom_type": "other", "description": "Generic unit"},
-    {"name": "Lot", "abbreviation": "LOT", "uom_type": "other", "description": "Batch or lot of items"},
-    {"name": "Pallet", "abbreviation": "PLT", "uom_type": "other", "description": "Pallet load"},
-    {"name": "Container", "abbreviation": "CNT", "uom_type": "other", "description": "Shipping container"},
-    {"name": "Bag", "abbreviation": "BAG", "uom_type": "other", "description": "Bag packaging"},
-    {"name": "Drum", "abbreviation": "DRM", "uom_type": "other", "description": "Drum container"},
-    {"name": "Bottle", "abbreviation": "BTL", "uom_type": "other", "description": "Bottle packaging"},
+    {
+        "name": "Unit",
+        "abbreviation": "UNIT",
+        "uom_type": "other",
+        "description": "Generic unit",
+    },
+    {
+        "name": "Lot",
+        "abbreviation": "LOT",
+        "uom_type": "other",
+        "description": "Batch or lot of items",
+    },
+    {
+        "name": "Pallet",
+        "abbreviation": "PLT",
+        "uom_type": "other",
+        "description": "Pallet load",
+    },
+    {
+        "name": "Container",
+        "abbreviation": "CNT",
+        "uom_type": "other",
+        "description": "Shipping container",
+    },
+    {
+        "name": "Bag",
+        "abbreviation": "BAG",
+        "uom_type": "other",
+        "description": "Bag packaging",
+    },
+    {
+        "name": "Drum",
+        "abbreviation": "DRM",
+        "uom_type": "other",
+        "description": "Drum container",
+    },
+    {
+        "name": "Bottle",
+        "abbreviation": "BTL",
+        "uom_type": "other",
+        "description": "Bottle packaging",
+    },
 ]
 
 # Tax templates: code, name, category, description
@@ -278,8 +413,28 @@ SYNCABLE_FEATURES = [
     },
     {
         "key": "receive_asn",
-        "label": "Receive from ASN",
-        "description": "Create one ASN + one receiving slip from QR blocks (latest items or existing block IDs)",
+        "label": "Inbound Automation",
+        "description": (
+            "Multi-step inbound flow: QR blocks → ASN → receiving slip → put-away. "
+            "Run one step or the whole chain."
+        ),
+    },
+    {
+        "key": "reset_picklist",
+        "label": "Reset PickList",
+        "description": (
+            "Wipe a pick list generated from an order (and its dispatch/ASN "
+            "artifacts) so the order can be re-picked from scratch."
+        ),
+    },
+    {
+        "key": "outbound_automation",
+        "label": "Outbound Automation",
+        "description": (
+            "Multi-step outbound flow: internal-transfer ASN → order confirm/"
+            "reject → pick lists (with worker assignment) → pick confirmation. "
+            "Run one step or the whole chain."
+        ),
     },
 ]
 
@@ -432,6 +587,8 @@ class OrganizationOnboardingService:
         warehouse_id: UUID | None = None,
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
+        reset_picklist_options: dict | None = None,
+        outbound_automation_options: dict | None = None,
     ) -> dict:
         """Seed the requested default data categories on demand.
 
@@ -460,8 +617,16 @@ class OrganizationOnboardingService:
         summary: dict = {"organization_id": str(organization_id)}
         for key in ordered_features:
             summary[key] = self._sync_feature(
-                key, organization_id, user_id, now, base_currency, warehouse_id,
-                stock_boost_qty, receive_asn_options,
+                key,
+                organization_id,
+                user_id,
+                now,
+                base_currency,
+                warehouse_id,
+                stock_boost_qty,
+                receive_asn_options,
+                reset_picklist_options,
+                outbound_automation_options,
             )
 
         self.db.commit()
@@ -487,6 +652,8 @@ class OrganizationOnboardingService:
         warehouse_id: UUID | None = None,
         stock_boost_qty: int | None = None,
         receive_asn_options: dict | None = None,
+        reset_picklist_options: dict | None = None,
+        outbound_automation_options: dict | None = None,
     ) -> dict:
         """Dispatch a single feature key to its idempotent seed routine."""
         if key == "currencies":
@@ -511,7 +678,39 @@ class OrganizationOnboardingService:
             return self._seed_receive_asn(
                 organization_id, user_id, now, warehouse_id, receive_asn_options
             )
+        if key == "reset_picklist":
+            return self._reset_picklist(
+                organization_id, reset_picklist_options or {}
+            )
+        if key == "outbound_automation":
+            return self._seed_outbound_automation(
+                organization_id, user_id, now, outbound_automation_options
+            )
         return {"created": 0, "skipped": 0, "error": f"unknown feature '{key}'"}
+
+    def _reset_picklist(
+        self, organization_id: UUID, options: dict
+    ) -> dict:
+        """Reset a pick list (or all pick lists of an order) for retesting."""
+        from app.services.picklist_reset_service import PickListResetService
+
+        order_id = options.get("order_id")
+        pick_list_id = options.get("pick_list_id")
+        order_no = options.get("order_no")
+        pick_list_no = options.get("pick_list_no")
+        service = PickListResetService(self.db)
+        summary = service.reset(
+            organization_id=organization_id,
+            order_id=UUID(str(order_id)) if order_id else None,
+            pick_list_id=UUID(str(pick_list_id)) if pick_list_id else None,
+            order_no=order_no,
+            pick_list_no=pick_list_no,
+        )
+        return {
+            "reset": summary["pick_lists_reset"],
+            "orders_reset": summary["orders_reset"],
+            "details": summary["details"],
+        }
 
     # ------------------------------------------------------------------
     # Product/Item dual-mode feature flags (catalog vs WMS)
@@ -530,6 +729,7 @@ class OrganizationOnboardingService:
             AUTO_CREATE_VARIANT_AXES,
             ITEM_AUTO_CREATE_PRODUCT,
             PRODUCT_EDITABLE_MANUALLY,
+            QR_AUTO_LINK_PARENT_CHILD,
             QSEAL_ENABLED,
             REQUIRE_ITEM_APPROVAL,
             TENANT_SCOPE,
@@ -548,6 +748,7 @@ class OrganizationOnboardingService:
             AUTO_CREATE_VARIANT_AXES: False,
             REQUIRE_ITEM_APPROVAL: False,
             AUTO_APPROVE_SINGLE_CREATE: True,
+            QR_AUTO_LINK_PARENT_CHILD: True,
         }
         created = 0
         skipped = 0
@@ -1050,6 +1251,7 @@ class OrganizationOnboardingService:
         put-away/pick flows don't fail on over-full bins.
         """
         from collections import defaultdict
+        from decimal import Decimal
 
         from app.models.bin_stock_level import BinStockLevel
         from app.models.stock_level import StockLevel
@@ -1119,6 +1321,15 @@ class OrganizationOnboardingService:
         )
         return {"created": stock_updated + bin_updated, "skipped": 0, "quantity": qty}
 
+    # Ordered Inbound Automation steps. Each step depends on the previous one.
+    INBOUND_AUTOMATION_STEPS = ("qr_blocks", "asn", "receiving_slip", "put_away")
+    OUTBOUND_AUTOMATION_STEPS = (
+        "asn",
+        "order_decision",
+        "pick_lists",
+        "pick_confirm",
+    )
+
     def _seed_receive_asn(
         self,
         organization_id: UUID,
@@ -1127,36 +1338,62 @@ class OrganizationOnboardingService:
         warehouse_id: UUID | None,
         options: dict | None,
     ) -> dict:
-        """Create ONE ASN + ONE receiving slip from QR blocks (test helper).
+        """Multi-step "Inbound Automation" flow (Settings → Data Sync).
 
-        Replicates the ``data-script/receive_all.py`` flow server-side:
-        - ``items`` mode: create a QR block for each configured item line
-          (batch sequence auto-incremented), waiting for each to complete.
-        - ``block_ids`` mode: receive already-completed blocks.
-        Then: resolve child serials → build ONE ASN → confirm → start ONE
-        inbound scan session → scan every child serial → end the session to
-        produce ONE receiving slip.
+        Runs the requested steps in dependency order so a tenant can execute
+        just one step or the whole chain:
+
+          1. ``qr_blocks``      — create QR blocks (+ batch) from item lines
+          2. ``asn``            — create + confirm ONE ASN from block children
+          3. ``receiving_slip`` — inbound scan session → ONE receiving slip
+          4. ``put_away``       — put-away list from the slip (auto mode,
+                                  auto-assigned worker for the inbound warehouse)
+
+        ``steps`` must be an ordered prefix of the sequence above (a later step
+        cannot run without its predecessor). When omitted, the original
+        qr_blocks → asn → receiving_slip behaviour is preserved.
         """
         from uuid import uuid4
 
         from app.schemas.qr_product import QRBlockCreate
         from app.services.asn_order_service import AsnOrderService
         from app.services.inbound_service import InboundService
+        from app.services.put_away_service import PutAwayService
         from app.services.qr_block_queue import enqueue_qr_block
         from app.services.qr_product_service import QRProductService
 
         options = options or {}
         mode = options.get("mode") or "items"
         qr_type = options.get("qr_type") or "dynamic"
+        qr_image = bool(options.get("qr_image", True))
         item_configs = options.get("items") or []
         block_ids = [b for b in (options.get("block_ids") or []) if b]
         asn_type = options.get("asn_type") or "purchase"
         target_warehouse_id = options.get("target_warehouse_id") or warehouse_id
         source_warehouse_id = options.get("source_warehouse_id")
 
-        if target_warehouse_id is None:
-            return {"created": 0, "skipped": 0, "error": "target_warehouse_id is required"}
-        if asn_type == "internal_transfer" and source_warehouse_id is None:
+        steps = self._normalize_inbound_automation_steps(
+            options.get("steps") or list(self.INBOUND_AUTOMATION_STEPS[:3])
+        )
+        if isinstance(steps, dict):  # validation error
+            return steps
+
+        # ``qr_blocks`` alone is a documented standalone first step and never
+        # touches a warehouse, so only demand one for the steps that use it.
+        needs_warehouse = any(
+            step in steps for step in ("asn", "receiving_slip", "put_away")
+        )
+        if needs_warehouse and target_warehouse_id is None:
+            return {
+                "created": 0,
+                "skipped": 0,
+                "error": "target_warehouse_id is required",
+            }
+        if (
+            "asn" in steps
+            and asn_type == "internal_transfer"
+            and source_warehouse_id is None
+        ):
             return {
                 "created": 0,
                 "skipped": 0,
@@ -1164,120 +1401,534 @@ class OrganizationOnboardingService:
             }
 
         qr_svc = QRProductService(self.db)
-        blocks: list = []
 
-        if mode == "block_ids":
-            for raw_id in block_ids:
-                try:
-                    block_id = UUID(raw_id)
-                except ValueError:
-                    return {
-                        "created": 0,
-                        "skipped": 0,
-                        "error": f"Invalid block id: {raw_id}",
+        # ── Step 1: QR blocks ──────────────────────────────────────────
+        blocks: list = []
+        if "qr_blocks" in steps:
+            if mode == "block_ids":
+                for raw_id in block_ids:
+                    try:
+                        block_id = UUID(raw_id)
+                    except ValueError:
+                        return {
+                            "created": 0,
+                            "skipped": 0,
+                            "error": f"Invalid block id: {raw_id}",
+                        }
+                    block = qr_svc.get_block(block_id, organization_id)
+                    if block.status != "completed":
+                        return {
+                            "created": 0,
+                            "skipped": 0,
+                            "error": f"Block {raw_id} is not completed (status={block.status})",
+                        }
+                    blocks.append(block)
+            else:
+                is_auto_link_enabled = self._qr_auto_link_enabled(organization_id)
+                for cfg in item_configs:
+                    item = self._resolve_receive_item(cfg, organization_id)
+                    if item is None or not getattr(item, "qr_product_id", None):
+                        continue
+                    base_batch = (cfg.get("batch") or "").strip()
+                    if not base_batch:
+                        base_batch = f"BATCH-{now.strftime('%Y%m%d')}"
+                    batch = self._next_batch_number(base_batch, organization_id)
+                    quantity = max(1, int(cfg.get("quantity") or 10))
+                    master_pack_size = self._resolve_item_master_pack_size(
+                        item, cfg, organization_id
+                    )
+                    # Parent/child auto-linking is gated by the tenant feature
+                    # flag; the master-pack size itself always comes from the
+                    # item's base packaging unit (never hardcoded).
+                    master_pack_enabled = (
+                        is_auto_link_enabled and master_pack_size is not None
+                    )
+                    try:
+                        block = qr_svc.create_block_job(
+                            item.qr_product_id,
+                            QRBlockCreate(
+                                batch=batch,
+                                quantity=quantity,
+                                qr_type=qr_type,
+                                qr_image=qr_image,
+                                master_pack_enabled=master_pack_enabled,
+                                master_pack_size=(
+                                    master_pack_size if master_pack_enabled else None
+                                ),
+                            ),
+                            organization_id,
+                            user_id,
+                        )
+                        task_id = str(uuid4())
+                        block = qr_svc.assign_block_task(
+                            block.id, organization_id, task_id
+                        )
+                        enqueue_qr_block(block.id, organization_id, task_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "Inbound automation: failed to create/enqueue QR block "
+                            "for item %s: %s: %s",
+                            getattr(item, "item_code", item.id),
+                            type(exc).__name__,
+                            getattr(exc, "detail", None) or str(exc),
+                            exc_info=True,
+                        )
+                        continue
+                    try:
+                        block = self._wait_for_receive_block(block.id, organization_id)
+                    except (RuntimeError, TimeoutError) as exc:
+                        logger.warning(
+                            "Inbound automation: QR block %s did not complete: %s",
+                            block.id,
+                            exc,
+                        )
+                        continue
+                    blocks.append(block)
+            if not blocks:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No QR blocks available",
+                }
+
+        # ── Resolve child serials (needed by steps 2/3/4) ──────────────
+        aggregated: dict = {}
+        all_serials: list[str] = []
+        if any(s in steps for s in ("asn", "receiving_slip", "put_away")):
+            for block in blocks:
+                item_id, serials = self._resolve_receive_block_children(
+                    block, organization_id
+                )
+                if item_id is None:
+                    continue
+                bucket = aggregated.setdefault(
+                    str(item_id), {"item_id": item_id, "serials": []}
+                )
+                bucket["serials"].extend(serials)
+                bucket["serials"] = list(dict.fromkeys(bucket["serials"]))
+            if not aggregated:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No child serials resolved from blocks",
+                }
+            all_serials = [
+                s for bucket in aggregated.values() for s in bucket["serials"]
+            ]
+
+        asn = None
+        slip = None
+        put_away = None
+
+        # ── Step 2: ASN ────────────────────────────────────────────────
+        if "asn" in steps:
+            asn_svc = AsnOrderService(self.db)
+            asn_payload = {
+                "order_date": now,
+                "delivery_date": now,
+                "warehouse_id_to": target_warehouse_id,
+                "asn_type": asn_type,
+                "items": [
+                    {
+                        "item_id": bucket["item_id"],
+                        "qty": len(bucket["serials"]),
+                        "uom": "pcs",
+                        "serial_nos": bucket["serials"],
                     }
-                block = qr_svc.get_block(block_id, organization_id)
-                if block.status != "completed":
-                    return {
-                        "created": 0,
-                        "skipped": 0,
-                        "error": f"Block {raw_id} is not completed (status={block.status})",
-                    }
-                blocks.append(block)
-        else:
+                    for bucket in aggregated.values()
+                ],
+            }
+            if asn_type == "internal_transfer":
+                asn_payload["warehouse_id_from"] = source_warehouse_id
+            asn = asn_svc.create(asn_payload, organization_id, user_id)
+            asn_id = UUID(str(asn["id"]))
+            asn_svc.update_status(asn_id, "confirmed", organization_id, user_id)
+
+        # ── Step 3: Receiving slip ─────────────────────────────────────
+        if "receiving_slip" in steps:
+            inbound = InboundService(self.db)
+            session = inbound.start_session(
+                worker_id=user_id,
+                organization_id=organization_id,
+                warehouse_id=target_warehouse_id,
+                dock_location="DOCK-A",
+                asn_order_id=asn_id,
+            )
+            session_id = UUID(session["id"])
+            for serial in all_serials:
+                inbound.record_scan(session_id, serial, user_id, organization_id)
+            slip = inbound.end_session(session_id, user_id, organization_id)
+
+        # ── Step 4: Put-away ───────────────────────────────────────────
+        if "put_away" in steps:
+            slip_id = UUID(str(slip["id"]))
+            # The receiving slip is generated in pending_review; put-away list
+            # generation requires an approved (pending_putaway) slip, so
+            # approve it first when running the put-away step.
+            if slip.get("status") == "pending_review":
+                inbound = InboundService(self.db)
+                slip = inbound.approve_slip(slip_id, organization_id, user_id)
+            put_away_svc = PutAwayService(self.db)
+            put_away_worker_ids = [
+                UUID(str(w)) for w in (options.get("put_away_worker_ids") or []) if w
+            ]
+            if put_away_worker_ids:
+                # One put-away list per selected worker; whole SKUs are
+                # assigned to a single worker (master packs kept together) so
+                # the same item is never worked from two lists.
+                put_away = put_away_svc.generate_from_slip_for_workers(
+                    slip_id=slip_id,
+                    org_id=organization_id,
+                    worker_ids=put_away_worker_ids,
+                    mode="auto",
+                )
+            else:
+                # No workers selected → single unassigned put-away list.
+                put_away = put_away_svc.generate_from_slip(
+                    slip_id=slip_id,
+                    org_id=organization_id,
+                    worker_id=None,
+                    mode="auto",
+                )
+
+        result: dict = {
+            "created": len(blocks) if blocks else len(aggregated),
+            "skipped": 0,
+            "steps": steps,
+        }
+        if blocks:
+            result["block_count"] = len(blocks)
+        if asn is not None:
+            result["asn_no"] = asn.get("asn_order_no")
+        if slip is not None:
+            result["slip_number"] = slip.get("slip_number")
+            result["received_serial_count"] = len(all_serials)
+        if put_away is not None:
+            put_away_lists = put_away if isinstance(put_away, list) else [put_away]
+            result["put_away_count"] = len(put_away_lists)
+            result["put_away_list_nos"] = [
+                getattr(pl, "put_away_list_no", None) for pl in put_away_lists
+            ]
+            if put_away_lists:
+                result["put_away_list_no"] = getattr(
+                    put_away_lists[0], "put_away_list_no", None
+                )
+                result["put_away_status"] = getattr(put_away_lists[0], "status", None)
+        return result
+
+    def _normalize_inbound_automation_steps(self, requested_steps) -> list | dict:
+        """Validate/order the requested Inbound Automation steps.
+
+        Returns an ordered, de-duplicated list of valid step keys, or an error
+        dict when a step is unknown or a later step is requested without its
+        predecessor (the steps are sequentially dependent).
+        """
+        valid = self.INBOUND_AUTOMATION_STEPS
+        ordered: list[str] = []
+        for step in requested_steps:
+            if step not in valid:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": f"Unknown inbound automation step: {step}",
+                }
+            if step not in ordered:
+                ordered.append(step)
+        ordered.sort(key=lambda s: valid.index(s))
+        for step in ordered:
+            idx = valid.index(step)
+            if idx > 0 and valid[idx - 1] not in ordered:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        f"Step '{step}' requires previous step '{valid[idx - 1]}'"
+                    ),
+                }
+        return ordered
+
+    def _normalize_outbound_automation_steps(self, requested_steps) -> list | dict:
+        """Validate/order the requested Outbound Automation steps.
+
+        Same sequential-dependency rules as the inbound counterpart: an
+        unknown step or a later step without its predecessor is an error dict.
+        """
+        valid = self.OUTBOUND_AUTOMATION_STEPS
+        ordered: list[str] = []
+        for step in requested_steps:
+            if step not in valid:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": f"Unknown outbound automation step: {step}",
+                }
+            if step not in ordered:
+                ordered.append(step)
+        ordered.sort(key=lambda s: valid.index(s))
+        for step in ordered:
+            idx = valid.index(step)
+            if idx > 0 and valid[idx - 1] not in ordered:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        f"Step '{step}' requires previous step '{valid[idx - 1]}'"
+                    ),
+                }
+        return ordered
+
+    def _seed_outbound_automation(
+        self,
+        organization_id: UUID,
+        user_id: UUID,
+        now: datetime,
+        options: dict | None,
+    ) -> dict:
+        """Multi-step "Outbound Automation" flow (Settings → Data Sync).
+
+        Runs the requested steps in dependency order:
+
+          1. ``asn``            — create + confirm an internal-transfer ASN
+                                  (source → target warehouse). Confirming the
+                                  ASN auto-creates the source outbound order.
+          2. ``order_decision`` — confirm or reject the auto-created order.
+          3. ``pick_lists``     — generate pick lists (one per selected worker)
+                                  from the confirmed order.
+          4. ``pick_confirm``   — accept each generated pick list for its
+                                  assigned worker (moves it to in_progress).
+
+        ``decision`` is ignored unless ``order_decision`` is selected.
+        """
+        from app.core.exceptions import ValidationError
+        from app.models.base import OutboundOrderStatus
+        from app.models.outbound_order import OutboundOrder
+        from app.services.asn_order_service import AsnOrderService
+        from app.services.outbound_order_service import OutboundOrderService
+        from app.services.pick_list_service import PickListService
+
+        options = options or {}
+        steps = self._normalize_outbound_automation_steps(
+            options.get("steps") or list(self.OUTBOUND_AUTOMATION_STEPS)
+        )
+        if isinstance(steps, dict):
+            return steps
+
+        source_warehouse_id = options.get("source_warehouse_id")
+        target_warehouse_id = options.get("target_warehouse_id")
+        decision = options.get("decision") or "confirm"
+        item_configs = options.get("items") or []
+        worker_ids = [UUID(str(w)) for w in (options.get("worker_ids") or []) if w]
+
+        if "asn" in steps:
+            if not source_warehouse_id or not target_warehouse_id:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        "source_warehouse_id and target_warehouse_id are "
+                        "required for an internal transfer"
+                    ),
+                }
+            if str(source_warehouse_id) == str(target_warehouse_id):
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "error": (
+                        "source and target warehouses must differ for an "
+                        "internal transfer"
+                    ),
+                }
+
+        asn: dict | None = None
+        order: OutboundOrder | None = None
+        pick_lists: list = []
+
+        # ── Step 1: ASN (internal transfer) ───────────────────────────
+        if "asn" in steps:
+            asn_svc = AsnOrderService(self.db)
+            resolved_items: list[dict] = []
             for cfg in item_configs:
                 item = self._resolve_receive_item(cfg, organization_id)
-                if item is None or not getattr(item, "qr_product_id", None):
+                if item is None:
                     continue
-                base_batch = (cfg.get("batch") or "").strip()
-                if not base_batch:
-                    base_batch = f"BATCH-{now.strftime('%Y%m%d')}"
-                batch = self._next_batch_number(base_batch, organization_id)
-                quantity = max(1, int(cfg.get("quantity") or 10))
-                master_pack_size = max(1, int(cfg.get("master_pack_size") or 2))
-                try:
-                    block = qr_svc.create_block_job(
-                        item.qr_product_id,
-                        QRBlockCreate(
-                            batch=batch,
-                            quantity=quantity,
-                            qr_type=qr_type,
-                            qr_image=False,
-                            master_pack_enabled=True,
-                            master_pack_size=master_pack_size,
-                        ),
-                        organization_id,
-                        user_id,
-                    )
-                    task_id = str(uuid4())
-                    block = qr_svc.assign_block_task(block.id, organization_id, task_id)
-                    enqueue_qr_block(block.id, organization_id, task_id)
-                except Exception:
-                    continue
-                try:
-                    block = self._wait_for_receive_block(block.id, organization_id)
-                except (RuntimeError, TimeoutError):
-                    continue
-                blocks.append(block)
-
-        if not blocks:
-            return {"created": 0, "skipped": 0, "error": "No blocks to receive"}
-
-        aggregated: dict = {}
-        for block in blocks:
-            item_id, serials = self._resolve_receive_block_children(block, organization_id)
-            if item_id is None:
-                continue
-            bucket = aggregated.setdefault(str(item_id), {"item_id": item_id, "serials": []})
-            bucket["serials"].extend(serials)
-            bucket["serials"] = list(dict.fromkeys(bucket["serials"]))
-
-        if not aggregated:
-            return {"created": 0, "skipped": 0, "error": "No child serials resolved from blocks"}
-
-        asn_svc = AsnOrderService(self.db)
-        asn_payload = {
-            "order_date": now,
-            "delivery_date": now,
-            "warehouse_id_to": target_warehouse_id,
-            "asn_type": asn_type,
-            "items": [
-                {
-                    "item_id": bucket["item_id"],
-                    "qty": len(bucket["serials"]),
-                    "uom": "pcs",
-                    "serial_nos": bucket["serials"],
+                qty = max(1, int(cfg.get("quantity") or 1))
+                extra: dict = {}
+                no_of_cases = max(1, int(cfg.get("no_of_cases") or 1))
+                extra["no_of_cases"] = no_of_cases
+                master_pack = int(cfg.get("master_pack_size") or 0)
+                if master_pack > 0:
+                    extra["items_per_master_pack"] = master_pack
+                batch = str(cfg.get("batch") or "").strip()
+                if batch:
+                    extra["batch"] = batch
+                resolved_items.append(
+                    {
+                        "item_id": item.id,
+                        "qty": qty,
+                        "uom": "pcs",
+                        "extra_data": extra or None,
+                    }
+                )
+            if not resolved_items:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No valid items provided for the transfer ASN",
                 }
-                for bucket in aggregated.values()
-            ],
-        }
-        if asn_type == "internal_transfer":
-            asn_payload["warehouse_id_from"] = source_warehouse_id
-        asn = asn_svc.create(asn_payload, organization_id, user_id)
-        asn_id = UUID(str(asn["id"]))
-        asn_svc.update_status(asn_id, "confirmed", organization_id, user_id)
 
-        inbound = InboundService(self.db)
-        session = inbound.start_session(
-            worker_id=user_id,
-            organization_id=organization_id,
-            warehouse_id=target_warehouse_id,
-            dock_location="DOCK-A",
-            asn_order_id=asn_id,
+            asn_payload = {
+                "order_date": now,
+                "delivery_date": now,
+                "asn_type": "internal_transfer",
+                "warehouse_id_from": UUID(str(source_warehouse_id)),
+                "warehouse_id_to": UUID(str(target_warehouse_id)),
+                "items": resolved_items,
+            }
+            asn = asn_svc.create(asn_payload, organization_id, user_id)
+            asn_id = UUID(str(asn["id"]))
+            asn = asn_svc.update_status(asn_id, "confirmed", organization_id, user_id)
+            linked_order_id = asn.get("linked_order_id")
+            if linked_order_id:
+                order = self.db.get(OutboundOrder, UUID(str(linked_order_id)))
+
+        # ── Step 2: order confirm/reject ──────────────────────────────
+        if "order_decision" in steps:
+            if order is None:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": (
+                        "No outbound order to decide on — the 'asn' step must "
+                        "run first"
+                    ),
+                }
+            order_svc = OutboundOrderService(self.db)
+            try:
+                if decision == "reject":
+                    order = order_svc.cancel_order(order.id, organization_id)
+                else:
+                    order = order_svc.confirm_order(order.id, organization_id)
+            except ValidationError as exc:
+                # Confirming fails when no line has stock. The ASN and draft
+                # order are already committed, so report the failure clearly
+                # instead of raising and leaving the caller with a traceback.
+                return {
+                    "created": 1,
+                    "skipped": 0,
+                    "steps": steps,
+                    "asn_no": asn.get("asn_order_no") if asn else None,
+                    "order_no": order.order_no,
+                    "order_status": order.status.value,
+                    "error": f"Order decision failed: {exc}",
+                }
+
+        # ── Step 3: pick lists + worker assignment ────────────────────
+        if "pick_lists" in steps:
+            if order is None:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": "No outbound order to generate pick lists from",
+                }
+            if order.status == OutboundOrderStatus.CANCELLED:
+                return {
+                    "created": 0,
+                    "skipped": 0,
+                    "steps": steps,
+                    "error": (
+                        f"Order {order.order_no} was rejected — cannot create "
+                        "pick lists"
+                    ),
+                }
+            order_svc = OutboundOrderService(self.db)
+            pick_lists = order_svc.create_pick_lists_from_order(
+                order_id=order.id,
+                org_id=organization_id,
+                worker_ids=worker_ids or None,
+                mode="auto",
+            )
+
+        # ── Step 4: pick-list confirmation ────────────────────────────
+        if "pick_confirm" in steps:
+            pick_svc = PickListService(self.db)
+            for pl in pick_lists:
+                worker_id = pl.assigned_to or user_id
+                try:
+                    pick_svc.accept_task(pl.id, organization_id, worker_id)
+                except Exception as exc:  # noqa: BLE001 — best-effort step
+                    logger.warning(
+                        "Outbound automation: failed to accept pick list %s: %s",
+                        getattr(pl, "pick_list_no", pl.id),
+                        exc,
+                    )
+
+        result: dict = {"created": 1 if asn is not None else 0, "skipped": 0, "steps": steps}
+        if asn is not None:
+            result["asn_no"] = asn.get("asn_order_no")
+        if order is not None:
+            result["order_no"] = order.order_no
+            result["order_status"] = order.status.value
+        if pick_lists:
+            result["pick_list_count"] = len(pick_lists)
+            result["pick_list_nos"] = [pl.pick_list_no for pl in pick_lists]
+        return result
+
+    def _qr_auto_link_enabled(self, organization_id: UUID) -> bool:
+        """Evaluate the ``qr_auto_link_parent_child`` tenant feature flag.
+
+        Defaults to enabled when the flag has never been configured, preserving
+        the previous always-on behaviour.
+        """
+        from app.core.constants import QR_AUTO_LINK_PARENT_CHILD
+        from app.repositories.feature_flag_repository import FeatureFlagRepository
+
+        repo = FeatureFlagRepository(self.db)
+        flag = repo.get_by_name_for_tenant(QR_AUTO_LINK_PARENT_CHILD, organization_id)
+        if flag is None:
+            flag = repo.get_by_name(QR_AUTO_LINK_PARENT_CHILD, scope="GLOBAL")
+        if flag is None:
+            return True
+        return bool(flag.enabled)
+
+    def _resolve_item_master_pack_size(
+        self, item, cfg: dict, organization_id: UUID
+    ) -> int | None:
+        """Resolve a line's master-pack size: explicit value first, else the
+        item's base packaging unit (``items_per_master_pack``)."""
+        raw = cfg.get("master_pack_size")
+        if raw is not None:
+            try:
+                value = int(raw)
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
+
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        row = (
+            self.db.query(ItemPackagingUnit.items_per_master_pack)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.organization_id == organization_id,
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .first()
         )
-        session_id = UUID(session["id"])
-        all_serials = [s for bucket in aggregated.values() for s in bucket["serials"]]
-        for serial in all_serials:
-            inbound.record_scan(session_id, serial, user_id, organization_id)
-        slip = inbound.end_session(session_id, user_id, organization_id)
-
-        return {
-            "created": len(aggregated),
-            "skipped": 0,
-            "received_serial_count": len(all_serials),
-            "asn_no": asn.get("asn_order_no"),
-            "slip_number": slip.get("slip_number"),
-        }
+        if row and row[0] is not None:
+            try:
+                value = int(row[0])
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
+        return None
 
     def _wait_for_receive_block(
         self, block_id: UUID, organization_id: UUID, timeout_s: int = 180
@@ -1368,21 +2019,33 @@ class OrganizationOnboardingService:
         return item
 
     def _next_batch_number(self, base: str, organization_id: UUID) -> str:
-        """Append the next sequence to a base batch (e.g. BASE-1, BASE-2)."""
+        """Append the next sequence to a base batch (e.g. BASE-1, BASE-2).
+
+        Matching is case-insensitive to mirror ``batch_exists``, which treats
+        batch labels differing only by case as duplicates. Otherwise a base
+        such as ``Batch-Sep-IPH-17`` would fail to see an existing
+        ``Batch-SEP-IPH-17-1`` and regenerate the same sequence number,
+        tripping the 409 duplicate-batch check in ``create_block_job``.
+        """
+        from sqlalchemy import func
+
         from app.models.qr_block import QRBlock
 
         prefix = f"{base}-"
+        lowered_prefix = prefix.lower()
         rows = (
             self.db.query(QRBlock.batch)
             .filter(
                 QRBlock.organization_id == organization_id,
-                QRBlock.batch.like(f"{prefix}%"),
+                func.lower(QRBlock.batch).like(f"{lowered_prefix}%"),
             )
             .all()
         )
         max_seq = 0
         for (batch,) in rows:
-            suffix = (batch or "").removeprefix(prefix)
+            suffix = batch or ""
+            if suffix.lower().startswith(lowered_prefix):
+                suffix = suffix[len(prefix) :]
             if suffix.isdigit():
                 max_seq = max(max_seq, int(suffix))
         return f"{base}-{max_seq + 1}"

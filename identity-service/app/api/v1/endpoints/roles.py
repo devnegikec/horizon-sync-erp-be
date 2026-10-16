@@ -12,6 +12,7 @@ from app.core.authorization import (
     require_permission,
     validate_user_in_organization,
 )
+from app.core.feature_flags import permission_code_is_enabled
 from app.core.exceptions import (
     DuplicateRoleException,
     PermissionNotFoundException,
@@ -35,6 +36,7 @@ from app.schemas.role import (
     RoleUpdate,
     RoleUsersListResponse,
 )
+from app.services.feature_flag_gate import get_disabled_resource_prefixes
 from app.services.role_service import RoleService
 
 router = APIRouter()
@@ -53,6 +55,17 @@ def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
         .all()
     )
     return [r[0] for r in rows]
+
+
+def _filter_role_permissions_by_flags(role_item: dict, disabled: set) -> None:
+    """Remove permissions belonging to feature-flag-disabled modules."""
+    perms = role_item.get("permissions") or []
+    if not disabled or not perms:
+        return
+    role_item["permissions"] = [
+        p for p in perms
+        if permission_code_is_enabled(p.get("code", ""), disabled)
+    ]
 
 
 @router.get(
@@ -144,6 +157,13 @@ async def list_roles(
             include_permissions=include_permissions,
         )
 
+        # Feature-flag gating: drop permissions of disabled modules
+        disabled = await get_disabled_resource_prefixes()
+        if disabled and result.get("data"):
+            for role_item in result["data"]:
+                if isinstance(role_item, dict):
+                    _filter_role_permissions_by_flags(role_item, disabled)
+
         # Non-system-admin users: filter out roles that only have system_admin.* permissions
         # These are system admin roles that leaked into the user's org
         if not is_system_admin(current_user.permissions) and result.get("data"):
@@ -213,6 +233,11 @@ async def get_role(
             role_id,
             include_permissions=include_permissions,
         )
+
+        # Feature-flag gating: drop permissions of disabled modules
+        disabled = await get_disabled_resource_prefixes()
+        if disabled:
+            _filter_role_permissions_by_flags(result, disabled)
 
         # Validate organization membership
         validate_user_in_organization(current_user.id, result["organization_id"], db)

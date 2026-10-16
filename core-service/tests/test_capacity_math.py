@@ -150,6 +150,65 @@ class TestComputeBinOccupancy:
         assert kg == Decimal("0")
 
 
+class TestMcAwareOccupancy:
+    """MC-aware occupancy: intact cartons count once, not ``conversion_factor`` times."""
+
+    def _create_mc(
+        self, db_session, org_id, item_id, factor=Decimal("12"), outer=100
+    ):
+        mc = ItemPackagingUnit(
+            id=uuid.uuid4(),
+            organization_id=org_id,
+            item_id=item_id,
+            unit_name="Carton of 12",
+            conversion_factor=factor,
+            length_mm=Decimal(str(outer)),
+            width_mm=Decimal(str(outer)),
+            height_mm=Decimal(str(outer)),
+            weight_grams=Decimal("1500"),
+            is_base_unit=False,
+            is_active=True,
+        )
+        db_session.add(mc)
+        db_session.flush()
+        return mc
+
+    def test_intact_carton_counts_once(self, db_session, org_id, warehouse_id, item_id):
+        bin_loc = _create_bin(db_session, org_id, warehouse_id)
+        _create_packaging_unit(
+            db_session, org_id, item_id, length=10, width=10, height=10, weight=100
+        )
+        mc = self._create_mc(db_session, org_id, item_id)
+        # 12 Eaches held as one intact carton.
+        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("12"), packaging_unit_id=mc.id)
+
+        m3, kg = compute_bin_occupancy(db_session, bin_loc.id)
+
+        # 1 × MC outer volume (100×100×100 mm³), NOT 12 ×.
+        assert m3 == (
+            Decimal("100") * Decimal("100") * Decimal("100") / MM3_PER_M3
+        )
+        assert kg == Decimal("1500") / G_PER_KG
+
+    def test_partial_carton_re_cubes_to_loose_ic(
+        self, db_session, org_id, warehouse_id, item_id
+    ):
+        bin_loc = _create_bin(db_session, org_id, warehouse_id)
+        _create_packaging_unit(
+            db_session, org_id, item_id, length=10, width=10, height=10, weight=100
+        )
+        mc = self._create_mc(db_session, org_id, item_id)
+        # 14 Eaches = 1 full carton + 2 loose IC.
+        _add_stock(db_session, org_id, bin_loc.id, item_id, Decimal("14"), packaging_unit_id=mc.id)
+
+        m3, kg = compute_bin_occupancy(db_session, bin_loc.id)
+
+        mc_mm3 = Decimal("100") * Decimal("100") * Decimal("100")
+        ic_mm3 = Decimal("10") * Decimal("10") * Decimal("10")
+        assert m3 == (mc_mm3 + Decimal("2") * ic_mm3) / MM3_PER_M3
+        assert kg == (Decimal("1500") + Decimal("2") * Decimal("100")) / G_PER_KG
+
+
 class TestComputeWarehouseBinOccupancy:
     def test_returns_per_bin_occupancy(self, db_session, org_id, warehouse_id, item_id):
         bin1 = _create_bin(db_session, org_id, warehouse_id, code="BIN-01")

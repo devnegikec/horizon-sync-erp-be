@@ -35,6 +35,7 @@ from app.api.v1.endpoints import (
     feature_flags_admin,
     floor_plans,
     inbound,
+    internal_feature_flags,
     internal_warehouse_users,
     invoices,
     item_groups,
@@ -45,6 +46,7 @@ from app.api.v1.endpoints import (
     journal_entries,
     landed_cost,
     landing_pages,
+    layout_design,
     location_allocations,
     location_scans,
     material_requests,
@@ -72,6 +74,7 @@ from app.api.v1.endpoints import (
     quality_inspections,
     quotations,
     reconciliations,
+    returns,
     rfqs,
     sales_orders,
     scan_events,
@@ -97,6 +100,7 @@ from app.api.v1.endpoints import (
     wms_3d,
     wms_dashboard,
     wms_devices,
+    wms_reports,
     worker_sessions,
     worker_tasks,
 )
@@ -172,6 +176,12 @@ api_router.include_router(
     prefix="/floor-plans",
     tags=["Floor Plan Designer"],
 )
+# JSON Layout Designer (import a layout document, validate, preview, apply)
+api_router.include_router(
+    layout_design.router,
+    prefix="/layout-design",
+    tags=["Layout Designer"],
+)
 api_router.include_router(
     wms_3d.router,
     prefix="/wms-3d",
@@ -186,6 +196,11 @@ api_router.include_router(
     wms_dashboard.router,
     prefix="/wms-dashboard",
     tags=["WMS Dashboard"],
+)
+api_router.include_router(
+    wms_reports.router,
+    prefix="/wms/reports",
+    tags=["WMS Reports"],
 )
 api_router.include_router(
     location_allocations.router,
@@ -274,6 +289,12 @@ api_router.include_router(
     prefix="",  # No prefix since endpoint already includes /internal
     tags=["Internal"],
 )
+# Internal feature flag listing (service-to-service, X-Internal-Secret)
+api_router.include_router(
+    internal_feature_flags.router,
+    prefix="",  # No prefix since endpoint already includes /internal
+    tags=["Internal"],
+)
 # Bank accounts integration
 api_router.include_router(
     bank_accounts.router,
@@ -349,6 +370,9 @@ api_router.include_router(
     prefix="/quality-inspections",
     tags=["Quality Inspections"],
 )
+# Returns (customer returns) module — R-01..R-08
+api_router.include_router(returns.router, prefix="/returns", tags=["Returns"])
+
 # Phase 5: Order Processing
 api_router.include_router(pick_lists.router, prefix="/pick-lists", tags=["Pick Lists"])
 # Pick exception framework (PR-03 / T-02 + T-05) — reason codes + immutable audit

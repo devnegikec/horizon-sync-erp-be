@@ -1,11 +1,12 @@
 """Dependency injection for FastAPI"""
 
 import asyncio
+import secrets
 from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -202,6 +203,30 @@ async def require_admin(
     return current_user
 
 
+async def require_internal_service(
+    x_internal_secret: str = Header(None, alias="X-Internal-Secret"),
+) -> None:
+    """Guard internal service-to-service endpoints with a shared secret.
+
+    Used by identity-service to call core-service setup/internal endpoints
+    (warehouse-user assignment, organization-defaults seeding, default
+    chart-of-accounts creation). Requests must present the configured shared
+    secret in the ``X-Internal-Secret`` header. The comparison is
+    constant-time to avoid timing side channels.
+    """
+    expected = settings.internal_service_secret
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal service secret not configured",
+        )
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid internal service secret",
+        )
+
+
 def has_permission(permissions: list[str], required_permission: str) -> bool:
     """
     Check if user has the required permission.
@@ -218,8 +243,9 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     # Exact match
     if required_permission in permissions:
         return True
-    # Full wildcard
-    if "*.*" in permissions:
+    # Full wildcard is ORG-SCOPED: it grants every org-level permission but
+    # NEVER platform-level system_admin.* permissions (tenant isolation).
+    if "*.*" in permissions and not required_permission.startswith("system_admin."):
         return True
     # system_admin.master grants all system_admin.* permissions
     if (
@@ -283,9 +309,22 @@ def require_permission(*permissions: str):
         # Note: Do NOT annotate current_user with CurrentUser type hint.
         # FastAPI 0.104.1 misinterprets @dataclass parameters inside closures
         # and tries to read them as query params instead of resolving Depends().
-        # System admins and organization admins (owners) bypass RBAC — they
-        # implicitly hold every permission.
-        if current_user.user_type in ("system_admin", "organization_admin"):
+        #
+        # Tenant isolation:
+        #   - system_admin is platform-level and passes every check.
+        #   - organization_admin (org owner) bypasses RBAC ONLY for org-level
+        #     permissions. system_admin.* codes gate cross-organization
+        #     (admin-portal) data and must NEVER be satisfied by an
+        #     org-scoped admin.
+        if current_user.user_type == "system_admin":
+            return current_user
+        requires_platform_permission = any(
+            p.startswith("system_admin.") for p in permissions
+        )
+        if (
+            current_user.user_type == "organization_admin"
+            and not requires_platform_permission
+        ):
             return current_user
         if not any(has_permission(current_user.permissions, p) for p in permissions):
             raise HTTPException(

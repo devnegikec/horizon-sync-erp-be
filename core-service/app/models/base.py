@@ -3,6 +3,27 @@
 import enum
 
 # ===========================================
+# ORGANIZATION ENUMS
+# ===========================================
+
+
+class OrganizationStatus(str, enum.Enum):
+    """Organization status enumeration (mirrors the identity service).
+
+    Used by the billing-automation tasks that read organization state from the
+    identity service and write status transitions back (e.g. auto-deactivation
+    for non-payment).
+    """
+
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+    TRIAL = "trial"
+    OVERDUE = "overdue"
+    DEACTIVATED = "deactivated"
+
+
+# ===========================================
 # INVENTORY ENUMS
 # ===========================================
 
@@ -557,6 +578,7 @@ class NotificationType(str, enum.Enum):
     PUT_AWAY_LIST_CREATED = "put_away_list_created"
     PICK_LIST_CREATED = "pick_list_created"
     PICK_EXCEPTION = "pick_exception"
+    INBOUND_EXCEPTION = "inbound_exception"
     ERP_SYNC_FAILED = "erp_sync_failed"
     TRANSFER_PICK_CREATED = "transfer_pick_created"
     PRODUCT_CREATED = "product_created"

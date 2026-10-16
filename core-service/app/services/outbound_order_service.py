@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ResourceNotFoundException, ValidationError
 from app.models.base import (
@@ -67,6 +68,53 @@ class OutboundOrderService:
             self.db.refresh(order)
         return order
 
+    def refresh_stock_status_batch(
+        self, orders: list[OutboundOrder], commit: bool = False
+    ) -> None:
+        """Recompute per-line stock status for many orders with one query.
+
+        Used by the list endpoint so the in-stock/out-of-stock counts reflect
+        live availability rather than the last persisted snapshot.
+        """
+        if not orders:
+            return
+
+        item_ids = {
+            item.item_id for order in orders for item in (order.items or [])
+        }
+        if not item_ids:
+            return
+
+        levels = (
+            self.db.query(StockLevel)
+            .filter(
+                StockLevel.organization_id == orders[0].organization_id,
+                StockLevel.product_id.in_(item_ids),
+            )
+            .all()
+        )
+        available_by_key = {
+            (level.warehouse_id, level.product_id): level for level in levels
+        }
+
+        for order in orders:
+            for item in order.items or []:
+                level = available_by_key.get((order.warehouse_id, item.item_id))
+                available = (
+                    Decimal(str(level.quantity_available or 0))
+                    if level
+                    else Decimal("0")
+                )
+                item.available_qty = available
+                item.stock_status = (
+                    OutboundOrderItemStockStatus.IN_STOCK
+                    if available >= Decimal(str(item.qty))
+                    else OutboundOrderItemStockStatus.OUT_OF_STOCK
+                )
+
+        if commit:
+            self.db.commit()
+
     # ------------------------------------------------------------------
     # QUERIES
     # ------------------------------------------------------------------
@@ -80,8 +128,10 @@ class OutboundOrderService:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[OutboundOrder], dict]:
-        query = self.db.query(OutboundOrder).filter(
-            OutboundOrder.organization_id == org_id
+        query = (
+            self.db.query(OutboundOrder)
+            .filter(OutboundOrder.organization_id == org_id)
+            .options(selectinload(OutboundOrder.items))
         )
         if warehouse_id:
             query = query.filter(OutboundOrder.warehouse_id == warehouse_id)
@@ -98,6 +148,10 @@ class OutboundOrderService:
             .all()
         )
 
+        # Keep per-line availability live for the list's in-stock/out-of-stock
+        # counts (in-memory only; no write on read).
+        self.refresh_stock_status_batch(orders, commit=False)
+
         total_pages = (total + page_size - 1) // page_size if page_size else 0
         pagination = {
             "page": page,
@@ -108,6 +162,35 @@ class OutboundOrderService:
             "has_prev": page > 1,
         }
         return orders, pagination
+
+    def get_status_counts(
+        self,
+        org_id: UUID,
+        warehouse_id: UUID | None = None,
+        order_type: str | None = None,
+    ) -> dict:
+        """Return per-status counts for outbound orders (unfiltered by status)."""
+        query = (
+            self.db.query(OutboundOrder.status, func.count(OutboundOrder.id))
+            .filter(OutboundOrder.organization_id == org_id)
+        )
+        if warehouse_id:
+            query = query.filter(OutboundOrder.warehouse_id == warehouse_id)
+        if order_type:
+            query = query.filter(OutboundOrder.order_type == OutboundOrderType(order_type))
+        rows = query.group_by(OutboundOrder.status).all()
+        counts = {
+            (row[0].value if hasattr(row[0], "value") else row[0]): row[1]
+            for row in rows
+        }
+        return {
+            "total": sum(counts.values()),
+            "draft": counts.get("draft", 0),
+            "confirmed": counts.get("confirmed", 0),
+            "pending_picking": counts.get("pending_picking", 0),
+            "completed": counts.get("completed", 0),
+            "cancelled": counts.get("cancelled", 0),
+        }
 
     def get_order(self, order_id: UUID, org_id: UUID) -> OutboundOrder:
         order = (
@@ -120,6 +203,8 @@ class OutboundOrderService:
         )
         if order is None:
             raise ResourceNotFoundException(f"Outbound order {order_id} not found")
+        # Keep per-line availability fresh for the detail view (read-only).
+        self.refresh_stock_status(order, commit=False)
         return order
 
     # ------------------------------------------------------------------
@@ -137,10 +222,35 @@ class OutboundOrderService:
             raise ValidationError(
                 f"Order is already in '{order.status.value}' status"
             )
+
+        # get_order() already refreshed per-line availability. Reject confirm
+        # when no line can be fulfilled (soft check — the authoritative,
+        # locked reservation still happens at pick-list creation).
+        if not any(
+            item.stock_status == OutboundOrderItemStockStatus.IN_STOCK
+            for item in (order.items or [])
+        ):
+            raise ValidationError(
+                "Cannot confirm order: none of its line items are in stock"
+            )
+
         order.status = OutboundOrderStatus.CONFIRMED
         self.db.commit()
         self.db.refresh(order)
-        return self.refresh_stock_status(order)
+        return order
+
+    def cancel_order(self, order_id: UUID, org_id: UUID) -> OutboundOrder:
+        """Cancel (reject) an outbound order before picking starts."""
+        order = self.get_order(order_id, org_id)
+        if order.status == OutboundOrderStatus.COMPLETED:
+            raise ValidationError("Cannot cancel a completed order")
+        if order.status == OutboundOrderStatus.CANCELLED:
+            return order
+
+        order.status = OutboundOrderStatus.CANCELLED
+        self.db.commit()
+        self.db.refresh(order)
+        return order
 
     def create_order(
         self,
@@ -222,6 +332,7 @@ class OutboundOrderService:
         org_id: UUID,
         worker_ids: list[UUID] | None = None,
         mode: str | None = None,
+        exclude_out_of_stock: bool = True,
     ) -> list[PickList]:
         """Generate one or more pick lists from a confirmed order.
 
@@ -234,6 +345,10 @@ class OutboundOrderService:
         ``mode`` mirrors the put-away generation contract: ``auto`` (default)
         assigns bin locations via FIFO/FEFO resolution; ``manual`` leaves bin
         assignment to the worker.
+
+        When ``exclude_out_of_stock`` is true (default), order lines with no
+        available stock are skipped so the generated pick lists only carry
+        fulfillable items (partial order).
         """
         order = self.get_order(order_id, org_id)
 
@@ -245,6 +360,56 @@ class OutboundOrderService:
 
         if not order.items:
             raise ValidationError("Order has no line items")
+
+        # Atomically reserve stock per line so concurrent pick-list generations
+        # cannot over-promise the same availability (race-condition guard).
+        pickable_items: list[tuple[OutboundOrderItem, Decimal]] = []
+        for item in order.items:
+            stock_level = (
+                self.db.query(StockLevel)
+                .filter(
+                    StockLevel.product_id == item.item_id,
+                    StockLevel.warehouse_id == order.warehouse_id,
+                    StockLevel.organization_id == org_id,
+                )
+                .with_for_update()
+                .first()
+            )
+            available = (
+                Decimal(str(stock_level.quantity_available or 0))
+                if stock_level
+                else Decimal("0")
+            )
+            reserved = (
+                Decimal(str(stock_level.quantity_reserved or 0))
+                if stock_level
+                else Decimal("0")
+            )
+            qty = Decimal(str(item.qty or 0))
+
+            if available < qty:
+                # Not fully fulfillable → out of stock.
+                item.stock_status = OutboundOrderItemStockStatus.OUT_OF_STOCK
+                item.available_qty = available
+                if exclude_out_of_stock:
+                    # Partial order: skip out-of-stock lines entirely.
+                    continue
+                # Full-order mode: keep the line but only reserve what exists.
+                reserve_qty = available
+            else:
+                item.stock_status = OutboundOrderItemStockStatus.IN_STOCK
+                item.available_qty = available
+                reserve_qty = qty
+
+            if stock_level is not None and reserve_qty > 0:
+                stock_level.quantity_reserved = reserved + reserve_qty
+                stock_level.quantity_available = available - reserve_qty
+            pickable_items.append((item, reserve_qty))
+
+        if not pickable_items:
+            raise ValidationError(
+                "No items are in stock to pick; nothing was generated for this order"
+            )
 
         effective_mode = mode or "auto"
         if effective_mode not in {"auto", "manual"}:
@@ -260,9 +425,11 @@ class OutboundOrderService:
         numbering = DocumentNumberingService(self.db)
 
         # Split order items round-robin across buckets (worker count).
-        buckets: list[list[OutboundOrderItem]] = [[] for _ in range(bucket_count)]
-        for idx, item in enumerate(order.items):
-            buckets[idx % bucket_count].append(item)
+        buckets: list[list[tuple[OutboundOrderItem, Decimal]]] = [
+            [] for _ in range(bucket_count)
+        ]
+        for idx, entry in enumerate(pickable_items):
+            buckets[idx % bucket_count].append(entry)
 
         pick_lists: list[PickList] = []
         for idx, bucket in enumerate(buckets):
@@ -288,31 +455,48 @@ class OutboundOrderService:
             self.db.add(pick_list)
             self.db.flush()
 
-            for item in bucket:
+            for item, effective_qty in bucket:
                 per_case, case_qty, loose_qty = self._resolve_packaging(
                     item.item_id,
                     org_id,
                     item.per_case_qty,
                     item.case_qty,
                     item.loose_qty,
-                    item.qty,
+                    effective_qty,
                 )
-                self.db.add(
-                    PickListItem(
-                        organization_id=org_id,
-                        pick_list_id=pick_list.id,
-                        item_id=item.item_id,
-                        warehouse_id=order.warehouse_id,
-                        qty=item.qty,
-                        picked_qty=Decimal("0"),
-                        uom=item.uom,
-                        per_case_qty=per_case,
-                        case_qty=case_qty,
-                        loose_qty=loose_qty,
-                        batch_no=item.batch_no,
-                        sort_order=0,
+
+                # Split into master-pack-sized pick lines when a pack size is
+                # known — one line per full master pack plus a loose remainder.
+                pack_size = per_case
+                if pack_size is not None and Decimal(str(pack_size)) > 1:
+                    q = effective_qty
+                    pc = Decimal(str(pack_size))
+                    split_lines = []
+                    for _ in range(int(q // pc)):
+                        split_lines.append((pc, pc, Decimal("1"), Decimal("0")))
+                    remainder = q % pc
+                    if remainder > 0:
+                        split_lines.append((remainder, pc, Decimal("0"), remainder))
+                else:
+                    split_lines = [(effective_qty, per_case, case_qty, loose_qty)]
+
+                for line_qty, line_per_case, line_case, line_loose in split_lines:
+                    self.db.add(
+                        PickListItem(
+                            organization_id=org_id,
+                            pick_list_id=pick_list.id,
+                            item_id=item.item_id,
+                            warehouse_id=order.warehouse_id,
+                            qty=line_qty,
+                            picked_qty=Decimal("0"),
+                            uom=item.uom,
+                            per_case_qty=line_per_case,
+                            case_qty=line_case,
+                            loose_qty=line_loose,
+                            batch_no=item.batch_no,
+                            sort_order=0,
+                        )
                     )
-                )
             pick_lists.append(pick_list)
 
         order.status = OutboundOrderStatus.PENDING_PICKING
@@ -324,8 +508,13 @@ class OutboundOrderService:
             from app.services.pick_list_service import PickListService
 
             pick_service = PickListService(self.db)
+            # Resolve bins for every pick list before reserving any. Otherwise
+            # a bin reservation made for one pick list blocks a sibling pick
+            # list in the same batch from using the same bin for a different
+            # item, leaving the sibling without a bin.
             for pick_list in pick_lists:
-                pick_list = pick_service.resolve_bin_locations(pick_list.id, org_id)
+                pick_service.resolve_bin_locations(pick_list.id, org_id)
+            for pick_list in pick_lists:
                 pick_service.reserve_pick_bins(pick_list, org_id)
 
         return pick_lists
@@ -351,22 +540,54 @@ class OutboundOrderService:
         if effective_per_case is None or Decimal(str(effective_per_case)) <= 0:
             from app.models.item_packaging_unit import ItemPackagingUnit
 
-            master = (
+            # Prefer the base packaging unit's items_per_master_pack — the WMS
+            # stores the master-pack size on the base "Each" unit for
+            # QR/master-pack items. Fall back to a case-level (non-base) unit's
+            # conversion factor when no base pack size is configured.
+            base = (
                 self.db.query(ItemPackagingUnit)
                 .filter(
                     ItemPackagingUnit.item_id == item_id,
                     ItemPackagingUnit.organization_id == org_id,
                     ItemPackagingUnit.is_active.is_(True),
-                    ItemPackagingUnit.is_base_unit.is_(False),
+                    ItemPackagingUnit.is_base_unit.is_(True),
+                    ItemPackagingUnit.items_per_master_pack.isnot(None),
+                    ItemPackagingUnit.items_per_master_pack > 1,
                 )
-                .order_by(ItemPackagingUnit.conversion_factor.asc())
                 .first()
             )
-            if master is not None:
-                if master.items_per_master_pack is not None:
-                    effective_per_case = Decimal(str(master.items_per_master_pack))
-                elif master.conversion_factor is not None:
-                    effective_per_case = Decimal(str(master.conversion_factor))
+            if base is not None:
+                effective_per_case = Decimal(str(base.items_per_master_pack))
+            else:
+                # Fall back to a non-base (case-level) unit with a meaningful
+                # pack size. Exclude factors <= 1 so a no-op "pack of 1" can't
+                # override a valid case size and produce an incorrect split.
+                master = (
+                    self.db.query(ItemPackagingUnit)
+                    .filter(
+                        ItemPackagingUnit.item_id == item_id,
+                        ItemPackagingUnit.organization_id == org_id,
+                        ItemPackagingUnit.is_active.is_(True),
+                        ItemPackagingUnit.is_base_unit.is_(False),
+                        or_(
+                            ItemPackagingUnit.conversion_factor > 1,
+                            ItemPackagingUnit.items_per_master_pack > 1,
+                        ),
+                    )
+                    .order_by(ItemPackagingUnit.conversion_factor.asc())
+                    .first()
+                )
+                if master is not None:
+                    if (
+                        master.items_per_master_pack is not None
+                        and master.items_per_master_pack > 1
+                    ):
+                        effective_per_case = Decimal(str(master.items_per_master_pack))
+                    elif (
+                        master.conversion_factor is not None
+                        and Decimal(str(master.conversion_factor)) > 1
+                    ):
+                        effective_per_case = Decimal(str(master.conversion_factor))
 
         effective_case = case_qty
         effective_loose = loose_qty

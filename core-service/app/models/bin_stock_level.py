@@ -118,8 +118,16 @@ class BinStockLevel(Base):
 
     # Constraints
     __table_args__ = (
+        # ``inventory_status`` is part of the key. A bin/item/batch can hold
+        # units in different statuses at once (segregated HOLD stock alongside
+        # available stock), and a single row cannot represent both without one
+        # status silently overriding the other.
         UniqueConstraint(
-            "bin_location_id", "item_id", "batch_number", name="uq_bin_item_batch"
+            "bin_location_id",
+            "item_id",
+            "batch_number",
+            "inventory_status",
+            name="uq_bin_item_batch_status",
         ),
     )
 

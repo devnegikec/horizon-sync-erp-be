@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import DOCUMENT_NUMBERING_READ, DOCUMENT_NUMBERING_UPDATE
 from app.schemas.document_numbering import (
     DocumentNumberingConfigItem,
     DocumentNumberingConfigUpdate,
@@ -22,7 +23,7 @@ router = APIRouter()
     description="Return numbering config for all document types (Settings > Document Numbering Series).",
 )
 async def list_document_numbering(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(DOCUMENT_NUMBERING_READ)),
     db: Session = Depends(get_db),
 ):
     """List document numbering configuration for the current organization."""
@@ -40,7 +41,7 @@ async def list_document_numbering(
 async def update_document_numbering(
     document_type: str,
     data: DocumentNumberingConfigUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(DOCUMENT_NUMBERING_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update one document type's numbering config."""

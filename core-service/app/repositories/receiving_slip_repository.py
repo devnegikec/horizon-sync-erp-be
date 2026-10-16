@@ -164,15 +164,28 @@ class ReceivingSlipRepository:
     # ------------------------------------------------------------------
 
     def update_item_flag(
-        self, item_id: UUID, flag: str, notes: str | None = None
+        self,
+        item_id: UUID,
+        flag: str,
+        notes: str | None = None,
+        *,
+        reason_code: str | None = None,
+        short_qty: int | None = None,
     ) -> ReceivingSlipItem | None:
         """
-        Update the flag and notes on a receiving slip item.
+        Update the flag, reason code, shortage quantity and notes on a line.
+
+        ``reason_code`` / ``short_qty`` are only overwritten when supplied; when
+        ``flag`` is ``ok`` they are cleared because a normal line has no
+        discrepancy data to report.
 
         Args:
             item_id: The receiving slip item UUID.
-            flag: New flag value (ok, short, damaged, rejected).
+            flag: New flag value (ok, short, damaged, excess, hold, quarantine,
+                rejected).
             notes: Optional notes about the flag.
+            reason_code: Operator-selected exception/shortage reason code.
+            short_qty: Units short against the ASN expectation (flag=short).
 
         Returns:
             Updated ReceivingSlipItem or None if not found.
@@ -186,6 +199,16 @@ class ReceivingSlipRepository:
             return None
 
         item.flag = flag
+        if flag == "ok":
+            # A normal line carries no discrepancy data, so clearing prevents a
+            # previously recorded shortage from lingering after the reset.
+            item.reason_code = None
+            item.short_qty = None
+        else:
+            if reason_code is not None:
+                item.reason_code = reason_code
+            if short_qty is not None:
+                item.short_qty = short_qty
         if notes is not None:
             item.notes = notes
         self.db.commit()

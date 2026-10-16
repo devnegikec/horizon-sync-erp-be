@@ -270,3 +270,116 @@ def test_shortener_failure_fails_block_and_releases_reserved_credits():
         block.id,
     )
     service.credit_service.consume_reserved_credits.assert_not_called()
+
+
+class TestQrPayloadUsesSerialBearingUrl:
+    """The QR image must encode a URL the handheld app can parse.
+
+    Regression guard: the CDN short link (``/01/{gtin}/{slug}``) was being written
+    into the QR, but neither the app nor QSeal parent→child linking can read it —
+    both expect ``/g/{gtin}/s/{serial}``.
+    """
+
+    SHORT = "https://bwqr.me/01/8843266542/ZQ21nGQDYb4aId5o"
+    LONG = "https://horizon.ciphercode.ai/g/8843266542/s/PHF-SFOTO8/1792048740930?c=sig"
+
+    def test_branded_item_encodes_long_url_not_short_url(self):
+        rows = QRProductService._items_to_excel_rows(
+            [
+                {
+                    "serial_number": "PHF-SFOTO8",
+                    "token_id": self.SHORT,
+                    "extra_data": {"long_url": self.LONG, "short_url": self.SHORT},
+                }
+            ]
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["primary_url"] == self.LONG
+        assert "/g/8843266542/s/PHF-SFOTO8" in rows[0]["primary_url"]
+        assert rows[0]["primary_url"] != self.SHORT
+
+    def test_unsigned_block_falls_back_to_token(self):
+        """No brand key -> no long_url; token_id is already serial-bearing."""
+        url = "https://horizon.ciphercode.ai/g/0123456789012/s/PRO-ABC123"
+        rows = QRProductService._items_to_excel_rows(
+            [
+                {
+                    "serial_number": "PRO-ABC123",
+                    "token_id": url,
+                    "extra_data": None,
+                }
+            ]
+        )
+
+        assert rows[0]["primary_url"] == url
+
+    def test_item_without_any_url_stays_empty(self):
+        rows = QRProductService._items_to_excel_rows(
+            [{"serial_number": "X", "token_id": None, "extra_data": {}}]
+        )
+        assert rows[0]["primary_url"] == ""
+        assert rows[0]["covert_url"] == ""
+
+    def test_dual_item_encodes_both_long_urls(self):
+        short_overt = "https://bwqr.me/01/1/overt"
+        short_covert = "https://bwqr.me/01/1/covert"
+        long_overt = "https://horizon.ciphercode.ai/g/1/s/SER/1?c=s&qr=overt"
+        long_covert = "https://horizon.ciphercode.ai/g/1/s/SER/1?c=s&qr=covert"
+
+        rows = QRProductService._items_to_excel_rows(
+            [
+                {
+                    "serial_number": "SER",
+                    "token_id": short_overt,
+                    "extra_data": {
+                        "overt_url": short_overt,
+                        "covert_url": short_covert,
+                        "overt_long_url": long_overt,
+                        "covert_long_url": long_covert,
+                    },
+                }
+            ]
+        )
+
+        assert rows[0]["overt_url"] == long_overt
+        assert rows[0]["covert_url"] == long_covert
+        assert rows[0]["overt_url"] != rows[0]["covert_url"]
+
+    def test_orm_backed_item_is_handled(self):
+        """Download path passes ProductItem ORM rows, not dicts."""
+        item = SimpleNamespace(
+            serial_number="PHF-SFOTO8",
+            token_id=self.SHORT,
+            secrete_code=None,
+            extra_data={"long_url": self.LONG, "short_url": self.SHORT},
+        )
+
+        rows = QRProductService._items_to_excel_rows([item])
+
+        assert rows[0]["serial"] == "PHF-SFOTO8"
+        assert rows[0]["primary_url"] == self.LONG
+
+    def test_encoded_row_builds_workbook_with_long_url(self):
+        """End-to-end: the long URL lands in the workbook that renders the QR."""
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        from app.services.qr_product_service import _build_excel
+
+        rows = QRProductService._items_to_excel_rows(
+            [
+                {
+                    "serial_number": "PHF-SFOTO8",
+                    "token_id": self.SHORT,
+                    "extra_data": {"long_url": self.LONG, "short_url": self.SHORT},
+                }
+            ]
+        )
+        data = _build_excel(rows, "dynamic", include_qr_images=True)
+        worksheet = load_workbook(BytesIO(data)).active
+
+        assert worksheet.cell(2, 1).value == self.LONG
+        assert worksheet.cell(2, 2).value == "PHF-SFOTO8"
+        assert len(worksheet._images) == 1

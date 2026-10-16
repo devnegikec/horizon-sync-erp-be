@@ -152,6 +152,9 @@ class ItemPackagingUnitService:
             width_mm=data.width_mm,
             height_mm=data.height_mm,
             weight_grams=data.weight_grams,
+            master_pack_fill_factor=data.master_pack_fill_factor,
+            master_pack_void_fill_pct=data.master_pack_void_fill_pct,
+            master_pack_wall_thickness_mm=data.master_pack_wall_thickness_mm,
             is_base_unit=data.is_base_unit,
             is_active=data.is_active,
         )

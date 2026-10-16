@@ -5,7 +5,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.authorization import PICK_LIST_CREATE, PICK_LIST_READ, PICK_LIST_UPDATE
+from app.core.authorization import (
+    PICK_LIST_CREATE,
+    PICK_LIST_READ,
+    PICK_LIST_UPDATE,
+    is_worker_scope,
+)
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
 from app.models.sales_order import SalesOrder
@@ -49,6 +54,11 @@ async def list_pick_lists(
 ):
     """List pick lists. Requires pick_list.read."""
     svc = PickListService(db)
+    assigned_to = (
+        current_user.id
+        if is_worker_scope(current_user.user_type, current_user.permissions)
+        else None
+    )
     items, pagination = svc.get_list(
         organization_id=current_user.organization_id,
         page=page,
@@ -57,6 +67,7 @@ async def list_pick_lists(
         status=status,
         sort_by=sort_by,
         sort_order=sort_order,
+        assigned_to=assigned_to,
     )
     # Look up sales order numbers for pick lists that reference sales orders
     so_ids = [x['reference_id'] for x in items if x.get('reference_type') and x.get('reference_id')]

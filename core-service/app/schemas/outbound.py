@@ -84,6 +84,14 @@ class CreatePickListFromOrderRequest(BaseModel):
             "the organization setting (auto unless overridden)."
         ),
     )
+    exclude_out_of_stock: bool = Field(
+        default=True,
+        description=(
+            "When true (default), order lines with no available stock are "
+            "skipped so the generated pick lists only contain fulfillable "
+            "items (partial order)."
+        ),
+    )
 
 
 class StageTransferRequest(BaseModel):
@@ -242,6 +250,45 @@ class PickListItemResponse(BaseModel):
     serials: list[PickSerialDetail] = []
 
 
+class PickListParentInfo(BaseModel):
+    """QSeal parent (master pack) info attached to a pick-list group."""
+
+    id: str
+    serial_number: str | None = None
+    name: str | None = None
+    qseal_type: str | None = None
+    capacity: int | None = None
+
+
+class PickListGroupItem(BaseModel):
+    """Individual unit inside a master-pack pick-list group."""
+
+    serial_number: str | None = None
+    sku: str | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
+    quantity: float = 1.0
+    box_count: int = 1
+
+
+class PickListItemGroup(BaseModel):
+    """A group of pick-list units under the same QSeal parent (master pack).
+
+    Mirrors the receiving-slip ``groups`` shape so the same view component can
+    render both documents consistently.
+    """
+
+    parent_qseal: PickListParentInfo | None = None
+    product_name: str | None = None
+    bin_location_id: str | None = None
+    bin_location_path: str | None = None
+    handling_unit_id: str | None = None
+    sort_order: int = 0
+    picked_qty: float = 0
+    items: list[PickListGroupItem] = []
+
+
 class OutboundPickListResponse(BaseModel):
     """Response schema for a pick list in the outbound workflow.
 
@@ -257,6 +304,7 @@ class OutboundPickListResponse(BaseModel):
     reference_type: str | None = None
     reference_id: str | None = None
     invoice_reference: str | None = None
+    order_no: str | None = None
     assigned_to: str | None = None
     worker_name: str | None = None
     completed_at: str | None = None
@@ -271,8 +319,22 @@ class OutboundPickListResponse(BaseModel):
     sla_minutes: int | None = None
     age_minutes: int = 0
     is_aging: bool = False
-    items: list[PickListItemResponse] = []
+    groups: list[PickListItemGroup] = []
     progress: PickListProgress | None = None
+
+
+class PickListAcceptResponse(BaseModel):
+    """Minimal response for accepting a pick task (WF-010).
+
+    Returns only the pick list's identity, state and acceptance info — item
+    lines and progress detail are intentionally omitted.
+    """
+
+    id: str
+    pick_list_no: str
+    status: str
+    accepted_at: str | None = None
+    accepted_by: str | None = None
 
 
 class PickScanResult(BaseModel):
@@ -317,6 +379,22 @@ class OutboundPickListListItem(BaseModel):
     progress: PickListProgress | None = None
 
 
+class OutboundPickListStatusCounts(BaseModel):
+    """Status distribution for outbound pick lists."""
+
+    total: int = 0
+    draft: int = 0
+    confirmed: int = 0
+    pending_picking: int = 0
+    in_progress: int = 0
+    pick_complete: int = 0
+    completed: int = 0
+    ready_for_dispatch: int = 0
+    in_transit: int = 0
+    delivered: int = 0
+    cancelled: int = 0
+
+
 class OutboundPickListListResponse(BaseModel):
     """Paginated list response for outbound pick lists.
 
@@ -325,6 +403,7 @@ class OutboundPickListListResponse(BaseModel):
 
     pick_lists: list[OutboundPickListListItem]
     pagination: PaginationMeta
+    status_counts: OutboundPickListStatusCounts | None = None
 
 
 # ===========================================
@@ -370,8 +449,53 @@ class OutboundOrderResponse(BaseModel):
     items: list[OutboundOrderItemResponse] = []
 
 
+class OutboundOrderConfirmResponse(BaseModel):
+    """Minimal response returned after confirming an outbound order.
+
+    Confirming an order only flips its status, so the endpoint returns a
+    lightweight acknowledgement instead of the full order payload.
+    """
+
+    id: str
+    order_no: str
+    status: str
+    message: str
+
+
+class OutboundOrderStatusCounts(BaseModel):
+    """Status distribution for outbound orders."""
+
+    total: int = 0
+    draft: int = 0
+    confirmed: int = 0
+    pending_picking: int = 0
+    completed: int = 0
+    cancelled: int = 0
+
+
+class OutboundOrderListItem(BaseModel):
+    """Lightweight list item for an outbound order (no line items).
+
+    Line-item detail is served on demand by ``GET /outbound/orders/{order_id}``.
+    """
+
+    id: str
+    organization_id: str
+    order_no: str
+    order_type: str
+    warehouse_id: str
+    status: str
+    invoice_reference: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    item_count: int = 0
+    in_stock_count: int = 0
+    out_of_stock_count: int = 0
+
+
 class OutboundOrderListResponse(BaseModel):
     """Paginated list response for outbound orders."""
 
-    orders: list[OutboundOrderResponse]
+    orders: list[OutboundOrderListItem]
     pagination: PaginationMeta
+    status_counts: OutboundOrderStatusCounts | None = None

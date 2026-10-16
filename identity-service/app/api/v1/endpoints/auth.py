@@ -199,6 +199,11 @@ async def login(
             "language": user.language,
             "extra_data": user.extra_data,
             "organization_id": organization_id,
+            # Effective permission codes for the client's own UI gating (e.g. the
+            # Returns tab on ``return.read``). The same set is embedded in the
+            # access token, so it survives a refresh; both come from the same
+            # query identity ``GET /me`` serves.
+            "permissions": auth_service.get_permission_codes(user.id),
         }
 
         # Calculate expires_in based on remember_me
@@ -663,6 +668,7 @@ async def worker_login(
         user, access_token, refresh_token = auth_service.login_worker(
             login_username=body.login_username,
             password=body.password,
+            organization_id=body.organization_id,
             ip_address=ip_address,
             user_agent=user_agent,
         )

@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -62,6 +63,10 @@ class AsnOrder(Base):
     # ``purchase`` | ``internal_transfer`` — internal transfers drive a source
     # pick list and carry unit-level serials on their line items.
     asn_type = Column(String(20), nullable=True)
+    # Verification mode set at dispatch: ``serialized`` when unit serials were
+    # captured and propagated, ``quantity_only`` otherwise. Drives the
+    # "quantity-only verification" banner on the receiving UI (T0.1).
+    serialization_mode = Column(String(20), nullable=True)
     # Auto-created source pick list for an internal-transfer ASN (visibility
     # for the destination/creation side). Kept for backward compatibility with
     # ASNs created before the order-driven outbound flow.
@@ -75,6 +80,21 @@ class AsnOrder(Base):
     remarks = Column(Text, nullable=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     extra_data = Column(JSONB, nullable=True)
+
+    # ── Short-delivery closure ────────────────────────────────────────
+    # A partially delivered ASN can be formally closed as a short delivery by
+    # a warehouse manager: the outstanding quantity is accepted as a loss, the
+    # reason is recorded here, and the ASN's open shortage balances are written
+    # off. Mirrors the ``inbound_short_balances`` closure columns.
+    short_closed = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Residual short (expected − received) accepted at closure time.
+    short_closed_qty = Column(Numeric(15, 3), nullable=True)
+    close_reason_code = Column(String(80), nullable=True)
+    close_note = Column(Text, nullable=True)
+    closed_by = Column(UUID(as_uuid=True), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_by = Column(UUID(as_uuid=True), nullable=True)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
@@ -176,6 +196,12 @@ class AsnOrderSerialLine(Base):
         nullable=False,
     )
     serial_no = Column(String(100), nullable=False)
+    # ProductItem key for the unit serial (identity as a real key, T1.3).
+    product_item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("product_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     bin_location_id = Column(UUID(as_uuid=True), nullable=True)
     expected_qty = Column(Integer, default=1, nullable=False)
     received = Column(Boolean, default=False, nullable=False)

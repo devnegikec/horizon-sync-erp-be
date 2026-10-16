@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "113_packing_slip_fk_numeric_stock"
-down_revision: str | Sequence[str] | None = "ddd66635a953"
+down_revision: str | Sequence[str] | None = "112_merge_all_remaining_heads_into_single_"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

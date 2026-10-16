@@ -1,7 +1,7 @@
 """Add QSeal context fields to scan events.
 
 Revision ID: 115_add_qseal_scan_context
-Revises: deac8f2179e0
+Revises: 133_merge_core_migration_heads
 Create Date: 2026-09-14
 """
 
@@ -11,11 +11,10 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-from app.alembic_guards import has_column, has_index
-
+from app.alembic_guards import has_column, has_constraint, has_index
 
 revision: str = "115_add_qseal_scan_context"
-down_revision: str | None = "deac8f2179e0"
+down_revision: str | None = "133_merge_core_migration_heads"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -44,7 +43,14 @@ def upgrade() -> None:
         ),
     )
     for name, column, target in foreign_keys:
-        op.create_foreign_key(name, "qr_scan_events", target.split(".")[0], [column], [target.split(".")[1]])
+        if not has_constraint("qr_scan_events", name):
+            op.create_foreign_key(
+                name,
+                "qr_scan_events",
+                target.split(".")[0],
+                [column],
+                [target.split(".")[1]],
+            )
 
     for name, column in (
         ("ix_qr_scan_events_product_id", "product_id"),

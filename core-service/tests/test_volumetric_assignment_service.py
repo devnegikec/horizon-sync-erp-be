@@ -95,6 +95,22 @@ class TestCalcVolume:
     def test_returns_none_when_no_packaging_unit(self):
         assert self.svc._calc_volume(Decimal("10"), None) is None
 
+    def test_master_carton_uses_outer_dims_plus_loose_base_remainder(self):
+        pu = make_packaging_unit(
+            length_mm=Decimal("100"),
+            width_mm=Decimal("100"),
+            height_mm=Decimal("100"),
+        )
+        pu.conversion_factor = Decimal("12")  # MC: 12 Eaches
+        base = make_packaging_unit(
+            length_mm=Decimal("10"),
+            width_mm=Decimal("10"),
+            height_mm=Decimal("10"),
+        )
+        # 14 Eaches = 1 full carton (1000 cc) + 2 loose IC (1 cc each).
+        result = self.svc._calc_volume(Decimal("14"), pu, base)
+        assert result == Decimal("1002")
+
 
 class TestCalcWeight:
     """Tests for VolumetricAssignmentService._calc_weight (Req 7.4)."""
@@ -114,6 +130,14 @@ class TestCalcWeight:
 
     def test_returns_none_when_no_packaging_unit(self):
         assert self.svc._calc_weight(Decimal("10"), None) is None
+
+    def test_master_carton_weight_uses_gross_plus_loose_net(self):
+        pu = make_packaging_unit(weight_grams=Decimal("1500"))
+        pu.conversion_factor = Decimal("12")
+        base = make_packaging_unit(weight_grams=Decimal("100"))
+        # 14 Eaches = 1 full carton (1500 g) + 2 loose IC (100 g each).
+        result = self.svc._calc_weight(Decimal("14"), pu, base)
+        assert result == Decimal("1700")
 
 
 # ---------------------------------------------------------------------------

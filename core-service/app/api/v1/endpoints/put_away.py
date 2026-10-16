@@ -11,9 +11,11 @@ Requirements: 8.1, 8.5, 8.6
 """
 
 import json
+from typing import Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -22,20 +24,32 @@ from app.core.authorization import (
     WAREHOUSE_READ,
     WAREHOUSE_UPDATE,
     WMS_SCAN,
+    is_worker_scope,
 )
+from app.config import settings
 from app.core.exceptions import NotFoundError
 from app.database import get_db
 from app.dependencies import CurrentUser, require_permission
+from app.models.bulk_put_away_job import BulkPutAwayJob, BulkPutAwayJobStatus
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.schemas.common import PaginationMeta
 from app.schemas.put_away import (
+    BulkPutAwayJobAccepted,
+    BulkPutAwayJobResponse,
     CompletePutAwayItemRequest,
+    CompletePutAwayItemsRequest,
+    CompletePutAwayItemsResponse,
+    CompletePutawayBulkRequest,
     GeneratePutAwayRequest,
+    PutAwayItemGroup,
+    PutAwayItemGroupItem,
     PutAwayListBatchResponse,
     PutAwayListItemResponse,
     PutAwayListListResponse,
     PutAwayListResponse,
     PutAwayListSummaryResponse,
+    PutAwayParentInfo,
+    PutAwayStatusCounts,
     SkipPutAwayItemRequest,
 )
 from app.services.put_away_service import PutAwayService
@@ -199,9 +213,11 @@ def _build_item_response(
         item_name=item_name,
         batch_number=item.batch_number,
         serial_number=item.batch_number,
+        serial_nos=item.serial_nos,
         manufacturing_date=meta.get("manufacturing_date"),
         expiry_date=meta.get("expiry_date"),
         quantity=float(item.quantity),
+        packaging_unit_id=str(item.packaging_unit_id) if item.packaging_unit_id else None,
         bin_location_id=str(item.bin_location_id) if item.bin_location_id else None,
         bin_location_code=bin_location_code,
         suggested_bin_code=bin_location_code,
@@ -211,6 +227,158 @@ def _build_item_response(
         completed_at=item.completed_at.isoformat() if item.completed_at else None,
         created_at=item.created_at.isoformat() if item.created_at else None,
     )
+
+
+def _fetch_qseal_context(
+    db: Session, put_away_lists: list[PutAwayList]
+) -> tuple[dict, dict]:
+    """Fetch QSealParameters + QSealTrack lookups for all serials across lists.
+
+    Returns ``(param_by_serial, track_by_id)`` with a single query pair for a
+    whole batch so grouping stays cheap when generation splits across workers.
+    """
+    if not put_away_lists:
+        return {}, {}
+
+    org_id = put_away_lists[0].organization_id
+    serials = {
+        s
+        for pal in put_away_lists
+        for item in pal.items
+        for s in (item.serial_nos or [])
+        if s
+    }
+    if not serials or org_id is None:
+        return {}, {}
+
+    from app.models.qseal import QSealParameters, QSealTrack
+
+    params = (
+        db.query(
+            QSealParameters.serial_number,
+            QSealParameters.parent_id,
+            QSealParameters.dispatch_batch,
+            QSealParameters.manufacturing_date,
+            QSealParameters.expiry_date,
+        )
+        .filter(
+            QSealParameters.organization_id == org_id,
+            QSealParameters.serial_number.in_(serials),
+        )
+        .all()
+    )
+    param_by_serial = {p.serial_number: p for p in params}
+
+    parent_ids = {p.parent_id for p in params if p.parent_id}
+    tracks = (
+        db.query(QSealTrack)
+        .filter(
+            QSealTrack.organization_id == org_id,
+            QSealTrack.id.in_(parent_ids),
+        )
+        .all()
+        if parent_ids
+        else []
+    )
+    track_by_id = {t.id: t for t in tracks}
+    return param_by_serial, track_by_id
+
+
+def _build_groups(
+    put_away_list: PutAwayList,
+    param_by_serial: dict,
+    track_by_id: dict,
+) -> list[PutAwayItemGroup]:
+    """Group put-away items by their QSeal parent (master pack).
+
+    Mirrors the receiving-slip ``groups`` shape so the same view component can
+    render both documents consistently. One group is produced per put-away line
+    so each line's bin/status/sort order is preserved; non-serialized (batch)
+    lines are emitted with ``parent_qseal=None``.
+    """
+    groups: list[PutAwayItemGroup] = []
+    order = 0
+    for item in put_away_list.items:
+        child_serials = [s for s in (item.serial_nos or []) if s]
+
+        parent_info = None
+        parent_id = None
+        for serial in child_serials:
+            param = param_by_serial.get(serial)
+            if param and param.parent_id:
+                parent_id = param.parent_id
+                break
+
+        track = track_by_id.get(parent_id) if parent_id else None
+        if track is not None:
+            parent_info = PutAwayParentInfo(
+                id=str(track.id),
+                serial_number=track.serial_number,
+                name=track.name,
+                qseal_type=track.qseal_type,
+                capacity=track.capacity,
+            )
+
+        bin_code = None
+        if item.bin_location is not None:
+            bin_code = item.bin_location.full_path or item.bin_location.code
+
+        group_items: list[PutAwayItemGroupItem] = []
+        if child_serials:
+            for serial in child_serials:
+                param = param_by_serial.get(serial)
+                batch = (param.dispatch_batch if param else None) or item.batch_number
+                group_items.append(
+                    PutAwayItemGroupItem(
+                        serial_number=serial,
+                        sku=item.sku,
+                        batch_number=batch or serial,
+                        manufacturing_date=(
+                            str(param.manufacturing_date)
+                            if param and param.manufacturing_date
+                            else None
+                        ),
+                        expiry_date=(
+                            str(param.expiry_date)
+                            if param and param.expiry_date
+                            else None
+                        ),
+                        quantity=1,
+                        box_count=1,
+                    )
+                )
+        else:
+            # Batch-tracked (non-serialized) line — one entry carrying the full
+            # quantity so it still shows in the grouped representation.
+            qty = int(item.quantity or 0)
+            group_items.append(
+                PutAwayItemGroupItem(
+                    serial_number=None,
+                    sku=item.sku,
+                    batch_number=item.batch_number,
+                    quantity=qty,
+                    box_count=qty,
+                )
+            )
+
+        groups.append(
+            PutAwayItemGroup(
+                id=str(item.id),
+                item_id=str(item.item_id),
+                parent_qseal=parent_info,
+                product_name=item.item.item_name if item.item else None,
+                bin_location_id=str(item.bin_location_id)
+                if item.bin_location_id
+                else None,
+                bin_location_code=bin_code,
+                status=item.status,
+                sort_order=order,
+                items=group_items,
+            )
+        )
+        order += 1
+
+    return groups
 
 
 def _build_list_response(
@@ -241,7 +409,11 @@ def _build_list_response(
     )
 
 
-def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListResponse:
+def _build_response(
+    db: Session,
+    put_away_list: PutAwayList,
+    qseal_ctx: tuple[dict, dict] | None = None,
+) -> PutAwayListResponse:
     """Build a PutAwayListResponse with resolved item/bin details."""
     serial_meta = _serial_meta_map(
         db, {it.batch_number for it in put_away_list.items if it.batch_number}
@@ -250,6 +422,9 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         _build_item_response(item, serial_meta) for item in put_away_list.items
     ]
     item_responses.sort(key=lambda x: x.sort_order)
+    if qseal_ctx is None:
+        qseal_ctx = _fetch_qseal_context(db, [put_away_list])
+    groups = _build_groups(put_away_list, *qseal_ctx)
 
     total_qty = sum(int(it.quantity) for it in put_away_list.items)
     completed_qty = sum(
@@ -297,6 +472,7 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
         if put_away_list.updated_at
         else None,
         items=item_responses,
+        groups=groups,
     )
 
 
@@ -308,7 +484,8 @@ def _build_response(db: Session, put_away_list: PutAwayList) -> PutAwayListRespo
     description=(
         "Generate one or more put-away lists with bin assignments from an "
         "approved receiving slip. Pass ``worker_ids`` to split the work into "
-        "one list per worker."
+        "one list per worker (divided by SKU so the same item is never handed "
+        "to two workers)."
     ),
 )
 async def generate_put_away_from_slip(
@@ -331,6 +508,10 @@ async def generate_put_away_from_slip(
 
     **Request Body (optional):**
     - **worker_id**: Optional UUID of the worker to assign the put-away task to
+    - **worker_ids**: Optional list of worker UUIDs. When present, one put-away
+      list is created per worker and whole SKUs are assigned to a single
+      worker, so the same item is never put away from two lists at once.
+    - **mode**: Optional `auto` (bin assignment) or `manual` (worker picks bins)
 
     **Returns:** The created PutAwayList with items assigned to bins
 
@@ -348,8 +529,9 @@ async def generate_put_away_from_slip(
             worker_ids=worker_ids,
             mode=mode,
         )
+        qseal_ctx = _fetch_qseal_context(db, lists)
         return PutAwayListBatchResponse(
-            put_away_lists=[_build_response(db, pal) for pal in lists]
+            put_away_lists=[_build_response(db, pal, qseal_ctx) for pal in lists]
         )
 
     put_away_list = service.generate_from_slip(
@@ -399,6 +581,10 @@ async def list_put_away_lists(
 
     if status_filter:
         query = query.filter(PutAwayList.status == status_filter)
+
+    # Warehouse workers only see the lists assigned to them.
+    if is_worker_scope(current_user.user_type, current_user.permissions):
+        query = query.filter(PutAwayList.assigned_to == current_user.id)
 
     # Get total count
     total = query.count()
@@ -455,6 +641,27 @@ async def list_put_away_lists(
         for pal in put_away_lists
     ]
 
+    # Status distribution scoped to the same warehouse filter, but not the
+    # status filter itself, so every bucket is always populated.
+    counts_query = db.query(PutAwayList.status, func.count(PutAwayList.id)).filter(
+        PutAwayList.organization_id == current_user.organization_id
+    )
+    if warehouse_id:
+        counts_query = counts_query.filter(PutAwayList.warehouse_id == warehouse_id)
+    if is_worker_scope(current_user.user_type, current_user.permissions):
+        counts_query = counts_query.filter(PutAwayList.assigned_to == current_user.id)
+    counts_raw = {
+        "total": 0,
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+    }
+    for status_value, count in counts_query.group_by(PutAwayList.status).all():
+        key = str(status_value)
+        if key in counts_raw:
+            counts_raw[key] = count
+        counts_raw["total"] += count
+
     pagination = PaginationMeta(
         page=page,
         page_size=page_size,
@@ -467,6 +674,7 @@ async def list_put_away_lists(
     return PutAwayListListResponse(
         put_away_lists=summaries,
         pagination=pagination,
+        status_counts=PutAwayStatusCounts(**counts_raw),
     )
 
 
@@ -516,7 +724,7 @@ async def get_put_away_list(
     summary="Complete a put-away item",
     description="Mark a put-away item as completed, updating bin stock",
 )
-async def complete_put_away_item(
+def complete_put_away_item(
     put_away_list_id: UUID,
     item_id: UUID,
     data: CompletePutAwayItemRequest = CompletePutAwayItemRequest(),
@@ -579,6 +787,7 @@ async def complete_put_away_item(
         item_id=str(completed_item.item_id),
         sku=completed_item.sku,
         batch_number=completed_item.batch_number,
+        serial_nos=completed_item.serial_nos,
         quantity=float(completed_item.quantity),
         bin_location_id=str(completed_item.bin_location_id)
         if completed_item.bin_location_id
@@ -593,6 +802,232 @@ async def complete_put_away_item(
         created_at=completed_item.created_at.isoformat()
         if completed_item.created_at
         else None,
+    )
+
+
+def _enqueue_bulk_job(
+    db: Session,
+    organization_id: UUID,
+    worker_id: UUID,
+    job_type: str,
+    request_data: dict,
+    put_away_list_id: UUID | None = None,
+) -> BulkPutAwayJob:
+    """Create a queued bulk put-away job and enqueue its worker task."""
+    from app.tasks.putaway_tasks import complete_bulk_putaway_task
+
+    # Populate total_items up front so the poll endpoint reports meaningful
+    # progress while the job is still queued (instead of 0 until it finishes).
+    item_count = len(
+        request_data.get("item_ids") or request_data.get("items") or []
+    )
+    job = BulkPutAwayJob(
+        organization_id=organization_id,
+        put_away_list_id=put_away_list_id,
+        job_type=job_type,
+        status=BulkPutAwayJobStatus.QUEUED,
+        total_items=item_count,
+        request_data={
+            "organization_id": str(organization_id),
+            "worker_id": str(worker_id),
+            **request_data,
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    try:
+        complete_bulk_putaway_task.apply_async(
+            args=[str(job.id)],
+        )
+    except Exception as exc:  # noqa: BLE001 — broker/connection failure
+        # The job row is already committed as QUEUED; mark it FAILED so the
+        # client surfaces the error instead of polling a job that never runs.
+        job.status = BulkPutAwayJobStatus.FAILED
+        job.error = f"Failed to enqueue worker task: {exc}"
+        db.commit()
+        raise
+    return job
+
+
+@router.post(
+    "/{put_away_list_id}/complete",
+    response_model=Union[CompletePutAwayItemsResponse, BulkPutAwayJobAccepted],
+    summary="Bulk-complete put-away items",
+    description=(
+        "Complete multiple put-away items into one bin. Small batches (<= "
+        f"{settings.bulk_putaway_sync_threshold} items) complete synchronously "
+        "and return the per-item result directly; larger batches are queued "
+        "and polled via GET /put-away/bulk-jobs/{id}."
+    ),
+)
+def complete_put_away_items(
+    put_away_list_id: UUID,
+    data: CompletePutAwayItemsRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk-complete several put-away list items into one bin.
+
+    **Request Body:**
+    - **bin_id**: Optional bin override (omit to use each item's pre-assigned bin)
+    - **item_ids**: Put-away item UUIDs to complete
+
+    **Returns:**
+    - Small batch: `200` with the `{completed, failed, summary}` result.
+    - Large batch: `202` with a job id — poll `GET /put-away/bulk-jobs/{job_id}`.
+    """
+    put_away_list = (
+        db.query(PutAwayList)
+        .filter(
+            PutAwayList.id == put_away_list_id,
+            PutAwayList.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if put_away_list is None:
+        raise NotFoundError(
+            message="Put-away list not found",
+            entity_type="PutAwayList",
+            entity_id=str(put_away_list_id),
+        )
+
+    # Small batches complete inline — one HTTP call, no polling.
+    if len(data.item_ids) <= settings.bulk_putaway_sync_threshold:
+        result = PutAwayService(db).complete_items_bulk(
+            put_away_list_id=put_away_list_id,
+            item_ids=data.item_ids,
+            worker_id=current_user.id,
+            org_id=current_user.organization_id,
+            bin_id_override=data.bin_id,
+        )
+        return CompletePutAwayItemsResponse(**result)
+
+    # Large batches run in the background and are polled for the result.
+    job = _enqueue_bulk_job(
+        db=db,
+        organization_id=current_user.organization_id,
+        worker_id=current_user.id,
+        job_type="items",
+        put_away_list_id=put_away_list_id,
+        request_data={
+            "put_away_list_id": str(put_away_list_id),
+            "item_ids": [str(i) for i in data.item_ids],
+            "bin_id": str(data.bin_id) if data.bin_id else None,
+        },
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=BulkPutAwayJobAccepted(
+            job_id=str(job.id), status="queued"
+        ).model_dump(),
+    )
+
+
+@router.post(
+    "/complete/bulk",
+    response_model=BulkPutAwayJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Bulk-complete put-away by QR (async)",
+    description="Enqueue a bulk put-away of multiple QR items; poll GET /put-away/bulk-jobs/{id}",
+)
+def complete_putaway_bulk(
+    data: CompletePutawayBulkRequest,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_UPDATE, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Enqueue a bulk completion of several QR-identified items into one bin.
+
+    **Request Body:**
+    - **bin_id**: Bin location UUID to put away into
+    - **put_away_list_id**: Optional direct put-away list to attach items to
+    - **items**: list of `{ qr, quantity? }`
+
+    **Returns:** 202 with a job id — poll `GET /put-away/bulk-jobs/{job_id}`.
+    """
+    # Validate the optional direct put-away list against the caller's org so a
+    # worker cannot attach their QR completion to another organization's list.
+    if data.put_away_list_id is not None:
+        put_away_list = (
+            db.query(PutAwayList)
+            .filter(
+                PutAwayList.id == data.put_away_list_id,
+                PutAwayList.organization_id == current_user.organization_id,
+            )
+            .first()
+        )
+        if put_away_list is None:
+            raise NotFoundError(
+                message="Put-away list not found",
+                entity_type="PutAwayList",
+                entity_id=str(data.put_away_list_id),
+            )
+
+    job = _enqueue_bulk_job(
+        db=db,
+        organization_id=current_user.organization_id,
+        worker_id=current_user.id,
+        job_type="qr",
+        put_away_list_id=data.put_away_list_id,
+        request_data={
+            "bin_id": str(data.bin_id),
+            "put_away_list_id": str(data.put_away_list_id)
+            if data.put_away_list_id
+            else None,
+            "items": [i.model_dump() for i in data.items],
+        },
+    )
+    return BulkPutAwayJobAccepted(job_id=str(job.id), status="queued")
+
+
+@router.get(
+    "/bulk-jobs/{job_id}",
+    response_model=BulkPutAwayJobResponse,
+    summary="Poll a bulk put-away job",
+    description="Return the status and per-item result of an async bulk put-away job",
+)
+async def get_bulk_put_away_job(
+    job_id: UUID,
+    current_user: CurrentUser = Depends(require_permission(WAREHOUSE_READ, WMS_SCAN)),
+    db: Session = Depends(get_db),
+):
+    """
+    Poll an async bulk put-away job.
+
+    **Returns:** `status` (queued / processing / completed / failed), live
+    `progress`, and the per-item `result` once complete.
+    """
+    job = (
+        db.query(BulkPutAwayJob)
+        .filter(
+            BulkPutAwayJob.id == job_id,
+            BulkPutAwayJob.organization_id == current_user.organization_id,
+        )
+        .first()
+    )
+    if job is None:
+        raise NotFoundError(
+            message="Bulk put-away job not found",
+            entity_type="BulkPutAwayJob",
+            entity_id=str(job_id),
+        )
+    return BulkPutAwayJobResponse(
+        job_id=str(job.id),
+        status=job.status,
+        job_type=job.job_type,
+        put_away_list_id=str(job.put_away_list_id) if job.put_away_list_id else None,
+        progress={
+            "total": job.total_items,
+            "completed": job.completed_items,
+            "failed": job.failed_items,
+        },
+        result=job.result,
+        error=job.error,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        completed_at=job.completed_at.isoformat() if job.completed_at else None,
     )
 
 
@@ -663,6 +1098,7 @@ async def skip_put_away_item(
         item_id=str(skipped_item.item_id),
         sku=skipped_item.sku,
         batch_number=skipped_item.batch_number,
+        serial_nos=skipped_item.serial_nos,
         quantity=float(skipped_item.quantity),
         bin_location_id=str(skipped_item.bin_location_id)
         if skipped_item.bin_location_id
@@ -678,5 +1114,3 @@ async def skip_put_away_item(
         if skipped_item.created_at
         else None,
     )
-
-

@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -30,8 +31,12 @@ class WarehouseFloorPlan(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    config: Mapped[dict] = mapped_column(
-        JSONB(astext_type=Text()), nullable=False
+    config: Mapped[dict] = mapped_column(JSONB(astext_type=Text()), nullable=False)
+    # The layout *document* imported by the JSON designer. Kept separate from
+    # `config` (the form-shaped FloorPlanConfig) because it is a different, richer
+    # format that the compiler reads back verbatim for round-tripping.
+    layout_doc: Mapped[dict | None] = mapped_column(
+        JSONB(astext_type=Text()), nullable=True
     )
     generated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

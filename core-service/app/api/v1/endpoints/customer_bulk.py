@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.bulk_operations import FileFormat
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_permission
+from app.core.authorization import CUSTOMER_CREATE, CUSTOMER_READ
 from app.models.customer import Customer
 from app.services.bulk_customer_import_service import BulkCustomerImportService
 
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/customers/bulk", tags=["Customer Bulk Operations"])
 async def bulk_import_customers(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(CUSTOMER_CREATE)),
 ):
     """
     Upload a file for bulk customer import.
@@ -118,7 +119,7 @@ async def bulk_export_customers(
     status_filter: str | None = Query(None, alias="status", description="Filter by status"),
     search: str | None = Query(None, description="Search filter"),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(CUSTOMER_READ)),
 ):
     """
     Export all customers as a CSV file.

@@ -1,5 +1,6 @@
 """Error handling utilities for consistent error responses across the application"""
 
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -221,3 +222,35 @@ def handle_login_errors(email: str, error: Exception) -> HTTPException:
 
     else:
         return handle_auth_error(error)
+
+
+def status_code_name(status_code: int) -> str:
+    """Map an HTTP status code to a stable, UI-friendly error code.
+
+    e.g. 409 -> "CONFLICT", 404 -> "NOT_FOUND", 423 -> "LOCKED".
+    """
+    try:
+        return HTTPStatus(status_code).name
+    except ValueError:
+        return f"HTTP_{status_code}"
+
+
+def http_error(
+    status_code: int,
+    message: str,
+    code: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> HTTPException:
+    """Build an HTTPException carrying a structured error body.
+
+    The global HTTPException handler in ``main.py`` flattens this into the
+    standard ``{"error", "message", "timestamp"}`` response shape. Passing a
+    stable ``code`` lets the UI branch on it instead of parsing message text.
+    """
+    payload: dict[str, Any] = {
+        "code": code or status_code_name(status_code),
+        "message": message,
+    }
+    if details:
+        payload["details"] = details
+    return HTTPException(status_code=status_code, detail=payload)

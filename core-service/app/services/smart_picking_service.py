@@ -407,8 +407,10 @@ class SmartPickingService:
                 .first()
             )
             if sl:
-                sl.quantity_on_hand = (sl.quantity_on_hand or 0) - qty_int
-                sl.quantity_reserved = (sl.quantity_reserved or 0) - qty_int
+                sl.quantity_on_hand = max(0, (sl.quantity_on_hand or 0) - qty_int)
+                sl.quantity_reserved = max(
+                    0, (sl.quantity_reserved or 0) - qty_int
+                )
                 # quantity_available stays the same (on_hand-reserved both drop)
 
             # Audit trail — stock movement
@@ -689,8 +691,10 @@ class SmartPickingService:
                     .first()
                 )
                 if sl:
-                    sl.quantity_on_hand = (sl.quantity_on_hand or 0) - qty_int
-                    sl.quantity_reserved = (sl.quantity_reserved or 0) - qty_int
+                    sl.quantity_on_hand = max(0, (sl.quantity_on_hand or 0) - qty_int)
+                    sl.quantity_reserved = max(
+                        0, (sl.quantity_reserved or 0) - qty_int
+                    )
 
                 # Audit trail
                 sm = StockMovement(

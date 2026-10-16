@@ -1,5 +1,6 @@
 """Authentication service with business logic"""
 
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -26,11 +27,13 @@ from app.core.security import (
     verify_password,
 )
 from app.models.base import UserStatus, UserType
-from app.models.role import Permission, Role, RolePermission
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.models.user import User
 from app.repositories.password_reset_repository import PasswordResetRepository
 from app.repositories.token_repository import TokenRepository
 from app.repositories.user_repository import UserRepository
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -50,6 +53,7 @@ class AuthService:
         "pick_list.update",
         "stock_entry.create",
         "stock_entry.read",
+        "qseal.read",
     ]
 
     def __init__(self, db: Session):
@@ -57,6 +61,52 @@ class AuthService:
         self.user_repo = UserRepository(db)
         self.token_repo = TokenRepository(db)
         self.password_reset_repo = PasswordResetRepository(db)
+
+    def get_permission_codes(self, user_id) -> list[str]:
+        """Effective permission codes across the user's active organization roles.
+
+        Deliberately the same query identity ``GET /me`` serves and core-service
+        enforces against, so a client that gates a screen on the token claim and
+        the server that authorises the call always agree.
+        """
+        try:
+            rows = (
+                self.db.query(Permission.code)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .join(
+                    UserOrganizationRole,
+                    RolePermission.role_id == UserOrganizationRole.role_id,
+                )
+                .join(Role, Role.id == UserOrganizationRole.role_id)
+                .filter(
+                    UserOrganizationRole.user_id == user_id,
+                    UserOrganizationRole.is_active,
+                    Role.is_active == True,  # noqa: E712
+                    Permission.is_active == True,  # noqa: E712
+                )
+                .distinct()
+                .all()
+            )
+            return [code for (code,) in rows if code]
+        except Exception:  # noqa: BLE001 - never block a login on a permission read
+            logger.error(
+                "Error fetching permissions for user %s", user_id, exc_info=True
+            )
+            return []
+
+    def _access_token_claims(self, user: User) -> dict:
+        """JWT claims for an access token, including the caller's permissions.
+
+        ``permissions`` is carried in the token so a client can gate UI (e.g. the
+        Returns tab on ``return.read``) without an extra round trip, and so the
+        claim survives a token refresh.
+        """
+        return {
+            "sub": str(user.id),
+            "email": user.email,
+            "user_type": user.user_type.value,
+            "permissions": self.get_permission_codes(user.id),
+        }
 
     def register_user(
         self,
@@ -219,11 +269,7 @@ class AuthService:
             refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
 
         access_token = create_access_token(
-            {
-                "sub": str(user.id),
-                "email": user.email,
-                "user_type": user.user_type.value,
-            },
+            self._access_token_claims(user),
             expires_delta=access_token_expires,
         )
 
@@ -298,11 +344,7 @@ class AuthService:
         refresh_token_expires = timedelta(hours=worker_ttl_hours * 2)
 
         access_token = create_access_token(
-            {
-                "sub": str(user.id),
-                "email": user.email,
-                "user_type": user.user_type.value,
-            },
+            self._access_token_claims(user),
             expires_delta=access_token_expires,
         )
 
@@ -322,6 +364,7 @@ class AuthService:
         self,
         login_username: str,
         password: str,
+        organization_id: uuid.UUID | None = None,
         device_info: dict | None = None,
         ip_address: str | None = None,
         user_agent: str | None = None,
@@ -331,13 +374,22 @@ class AuthService:
         Fallback for when QR login is unavailable (mobile/device only).
         The worker must have a managed `login_username` + password.
         """
-        user = (
-            self.db.query(User)
-            .filter(User.login_username == login_username)
-            .first()
-        )
-        if not user or not verify_password(password, user.password_hash):
+        # Usernames are unique per organization, so several users may share a
+        # username. Scope by organization when the client supplies it, then
+        # resolve by password — and refuse to guess when more than one account
+        # matches, to avoid issuing tokens for the wrong tenant.
+        q = self.db.query(User).filter(User.login_username == login_username)
+        if organization_id is not None:
+            q = q.filter(User.organization_id == organization_id)
+        matches = [c for c in q.all() if verify_password(password, c.password_hash)]
+        if not matches:
             raise AuthenticationError("Invalid username or password")
+        if len(matches) > 1:
+            raise AuthenticationError(
+                "Multiple workers share this username and password; "
+                "please log in with a QR code or contact your administrator"
+            )
+        user = matches[0]
 
         if user.user_type != UserType.WAREHOUSE_WORKER:
             raise AuthenticationError(
@@ -361,11 +413,7 @@ class AuthService:
         refresh_token_expires = timedelta(hours=worker_ttl_hours * 2)
 
         access_token = create_access_token(
-            {
-                "sub": str(user.id),
-                "email": user.email,
-                "user_type": user.user_type.value,
-            },
+            self._access_token_claims(user),
             expires_delta=access_token_expires,
         )
         refresh_token = create_refresh_token(
@@ -425,12 +473,12 @@ class AuthService:
             return
 
         # Fetch already-assigned permission IDs
-        existing_ids = set(
+        existing_ids = {
             row[0]
             for row in self.db.query(RolePermission.permission_id)
             .filter(RolePermission.role_id == ww_role.id)
             .all()
-        )
+        }
 
         # Assign missing permissions
         assigned = 0
@@ -496,13 +544,7 @@ class AuthService:
         self.token_repo.update_last_used(db_token)
 
         # Generate new access token
-        access_token = create_access_token(
-            {
-                "sub": str(user.id),
-                "email": user.email,
-                "user_type": user.user_type.value,
-            }
-        )
+        access_token = create_access_token(self._access_token_claims(user))
 
         return access_token
 

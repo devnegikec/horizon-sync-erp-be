@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import CHART_OF_ACCOUNT_CREATE, CHART_OF_ACCOUNT_DELETE, CHART_OF_ACCOUNT_READ, CHART_OF_ACCOUNT_UPDATE
 from app.schemas.chart_of_account import (
     AccountBalanceHistoryResponse,
     AccountBalanceResponse,
@@ -45,7 +46,7 @@ router = APIRouter(dependencies=[Depends(require_feature_flag(BOOK_CHART_OF_ACCO
 )
 async def create_chart_of_account(
     data: ChartOfAccountCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -101,7 +102,7 @@ async def list_chart_of_accounts(
     bank_accounts_only: bool = Query(
         False, description="Show only accounts with bank links"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -157,7 +158,7 @@ async def get_chart_of_accounts_tree(
     lazy_load: bool = Query(
         False, description="Return only root nodes for lazy loading"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -187,7 +188,7 @@ async def get_chart_of_accounts_tree(
 )
 async def get_tree_node_children(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -213,7 +214,7 @@ async def get_tree_node_children(
 async def get_chart_of_account(
     account_id: UUID,
     include_banking: bool = Query(True, description="Include banking information"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -271,7 +272,7 @@ async def get_chart_of_account(
 async def update_chart_of_account(
     account_id: UUID,
     data: ChartOfAccountUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -305,7 +306,7 @@ async def update_chart_of_account(
 async def delete_chart_of_account(
     account_id: UUID,
     force: bool = Query(False, description="Force delete even if has children"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -339,7 +340,7 @@ async def delete_chart_of_account(
 )
 async def activate_account(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -369,7 +370,7 @@ async def activate_account(
 )
 async def deactivate_account(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -399,7 +400,7 @@ async def deactivate_account(
 )
 async def archive_account(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -434,7 +435,7 @@ async def bulk_activate_accounts(
     account_ids: list[UUID] = Query(
         ..., description="List of account UUIDs to activate"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -470,7 +471,7 @@ async def bulk_deactivate_accounts(
     account_ids: list[UUID] = Query(
         ..., description="List of account UUIDs to deactivate"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -505,7 +506,7 @@ async def bulk_deactivate_accounts(
 async def bulk_delete_accounts(
     account_ids: list[UUID] = Query(..., description="List of account UUIDs to delete"),
     force: bool = Query(False, description="Force delete even if has children"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -548,7 +549,7 @@ async def bulk_delete_accounts(
 )
 async def get_account_hierarchy(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -591,7 +592,7 @@ async def get_account_hierarchy(
 )
 async def get_child_accounts(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -617,7 +618,7 @@ async def get_child_accounts(
 )
 async def get_ancestor_accounts(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -643,7 +644,7 @@ async def get_ancestor_accounts(
 )
 async def get_descendant_accounts(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -670,7 +671,7 @@ async def get_descendant_accounts(
 async def move_account_to_parent(
     account_id: UUID,
     data: ChartOfAccountMoveParentRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -707,7 +708,7 @@ async def move_account_to_parent(
 )
 async def validate_posting_account_by_id(
     account_id: UUID = Query(..., description="Account UUID to validate"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -750,7 +751,7 @@ async def bulk_validate_posting_accounts(
     account_ids: list[UUID] = Query(
         default=[], description="List of account UUIDs to validate"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -810,7 +811,7 @@ async def bulk_validate_posting_accounts(
 )
 async def get_account_by_code(
     code: str,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -853,7 +854,7 @@ async def get_default_account_for_transaction(
     scenario: str | None = Query(
         None, description="Optional scenario for multiple defaults per type"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -927,7 +928,7 @@ async def get_default_account_for_transaction(
 )
 async def validate_posting_account(
     account_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -976,7 +977,7 @@ async def get_account_balance(
     as_of_date: str | None = Query(
         None, description="Date to calculate balance as of (YYYY-MM-DD format)"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1033,7 +1034,7 @@ async def get_account_balance(
 )
 async def get_multiple_account_balances(
     data: AccountBalancesRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1087,7 +1088,7 @@ async def get_account_balance_history(
     account_id: UUID,
     start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1168,7 +1169,7 @@ async def get_account_audit_trail(
     end_date: str | None = Query(None, description="Filter by end date (ISO format)"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1284,7 +1285,7 @@ async def generate_chart_of_accounts_report(
     as_of_date: str | None = Query(
         None, description="Date to calculate balances as of (YYYY-MM-DD)"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1365,7 +1366,7 @@ async def generate_hierarchical_report(
     as_of_date: str | None = Query(
         None, description="Date to calculate balances as of (YYYY-MM-DD)"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1443,7 +1444,7 @@ async def generate_trial_balance_report(
     as_of_date: str | None = Query(
         None, description="Date to calculate balances as of (YYYY-MM-DD)"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1512,7 +1513,7 @@ async def export_chart_of_accounts(
     as_of_date: str | None = Query(
         None, description="Date to calculate balances as of (YYYY-MM-DD)"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1658,7 +1659,7 @@ async def get_default_accounts(
     transaction_type: str | None = Query(
         None, description="Filter by transaction type"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1713,7 +1714,7 @@ async def get_default_accounts(
 )
 async def update_default_accounts(
     request: "DefaultAccountBulkUpdateRequest",
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1857,7 +1858,7 @@ async def update_default_accounts(
     description="Get the configured account code format pattern",
 )
 async def get_account_code_format(
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -1909,7 +1910,7 @@ async def update_account_code_format(
     format_pattern: str = Query(
         ..., description="Regex pattern for account code format"
     ),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHART_OF_ACCOUNT_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """

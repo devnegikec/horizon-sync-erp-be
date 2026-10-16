@@ -356,7 +356,10 @@ class SalesOrderService:
         for so_item in original_items:
             remaining_qty = so_item.qty
 
-            # Fetch stock levels ordered by availability (richest first)
+            # Fetch stock levels ordered by availability (richest first).
+            # FOR UPDATE locks the rows for the remainder of the transaction so
+            # two concurrent confirmations of the same item serialize instead of
+            # both passing the availability check and over-reserving.
             stock_rows = (
                 self.db.query(StockLevel)
                 .filter(
@@ -365,6 +368,7 @@ class SalesOrderService:
                     StockLevel.quantity_available > 0,
                 )
                 .order_by(StockLevel.quantity_available.desc())
+                .with_for_update()
                 .all()
             )
 

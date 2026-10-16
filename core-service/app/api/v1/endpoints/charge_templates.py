@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import (
+    CHARGE_TEMPLATE_CREATE,
+    CHARGE_TEMPLATE_DELETE,
+    CHARGE_TEMPLATE_READ,
+    CHARGE_TEMPLATE_UPDATE,
+)
 from app.schemas.charge_template import (
     ChargeTemplateCreate,
     ChargeTemplateListItem,
@@ -39,7 +45,7 @@ async def list_charge_templates(
     search: str | None = Query(None, description="Search in template code and name"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHARGE_TEMPLATE_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -82,7 +88,7 @@ async def list_charge_templates(
 )
 async def create_charge_template(
     data: ChargeTemplateCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHARGE_TEMPLATE_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -117,7 +123,7 @@ async def create_charge_template(
 )
 async def get_charge_template(
     template_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHARGE_TEMPLATE_READ)),
     db: Session = Depends(get_db),
 ):
     """Get charge template by ID."""
@@ -140,7 +146,7 @@ async def get_charge_template(
 async def update_charge_template(
     template_id: UUID,
     data: ChargeTemplateUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHARGE_TEMPLATE_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a charge template."""
@@ -167,7 +173,7 @@ async def update_charge_template(
 )
 async def delete_charge_template(
     template_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(CHARGE_TEMPLATE_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Soft delete a charge template. Fails if referenced by transactions."""

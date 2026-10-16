@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_db, require_permission
+from app.core.authorization import BULK_EXPORT_CREATE, BULK_EXPORT_READ
 from app.schemas.bulk_operations import (
     BulkExportJobDetailResponse,
     BulkExportJobResponse,
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/bulk-export", tags=["Bulk Operations"])
 async def create_export_job(
     request: BulkExportRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_EXPORT_CREATE)),
 ) -> BulkExportJobResponse:
     """
     Create a bulk export job for items.
@@ -109,7 +110,7 @@ async def create_export_job(
 async def get_export_job_status(
     job_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_EXPORT_READ)),
 ) -> BulkExportJobDetailResponse:
     """
     Get the status of a bulk export job.
@@ -153,7 +154,7 @@ async def get_export_job_status(
 async def download_export_file(
     job_id: UUID,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_EXPORT_READ)),
 ):
     """
     Download an exported file.
@@ -249,7 +250,7 @@ async def list_export_jobs(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_EXPORT_READ)),
 ) -> PaginatedBulkExportResponse:
     """
     List bulk export jobs for the current organization.
@@ -307,7 +308,7 @@ async def quick_export_items(
     item_group_id: UUID | None = Query(None),
     search: str | None = Query(None),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(BULK_EXPORT_CREATE)),
 ):
     """
     Quick export items without creating a job.

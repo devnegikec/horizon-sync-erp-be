@@ -823,7 +823,7 @@ class FloorPlanGeneratorService:
         return wh
 
     def _deactivate_existing(
-        self, warehouse_id: UUID, org_id: UUID
+        self, warehouse_id: UUID, org_id: UUID, clear_stock: bool = False
     ) -> int:
         """Soft-deactivate existing *pickable* locations for this warehouse.
 
@@ -834,6 +834,11 @@ class FloorPlanGeneratorService:
         deliberately preserved — they are logical staging locations, not part of
         the physical layout, and must keep receiving stock after a layout apply.
 
+        ``clear_stock`` removes the bin stock records — used by the destructive
+        "reset" flow to start from a clean slate (the reset endpoint cancels
+        active work first). Bin reservations are left untouched: they expire via
+        TTL and their released rows form an audit trail.
+
         Previously this method hard-deleted locations without stock, but that
         caused IntegrityError when other tables (pick_list_items,
         put_away_items, bin_reservations, location_allocations) still
@@ -841,8 +846,10 @@ class FloorPlanGeneratorService:
         """
         from sqlalchemy import func
 
-        # Count total active, pickable locations
-        count = (
+        from app.models.bin_stock_level import BinStockLevel
+
+        # Active, pickable locations to deactivate.
+        locations = (
             self.db.query(WarehouseLocation)
             .filter(
                 WarehouseLocation.warehouse_id == warehouse_id,
@@ -850,20 +857,18 @@ class FloorPlanGeneratorService:
                 WarehouseLocation.is_active.is_(True),
                 WarehouseLocation.is_pickable.is_(True),
             )
-            .count()
+            .all()
         )
 
-        if count == 0:
+        if not locations:
             return 0
 
+        location_ids = [loc.id for loc in locations]
+
         # Soft-deactivate pickable locations (rename full_path + set inactive)
-        # This avoids FK violations from pick_list_items, put_away_items,
-        # bin_reservations, and location_allocations.
+        # This avoids FK violations from pick_list_items, put_away_items, etc.
         self.db.query(WarehouseLocation).filter(
-            WarehouseLocation.warehouse_id == warehouse_id,
-            WarehouseLocation.organization_id == org_id,
-            WarehouseLocation.is_active.is_(True),
-            WarehouseLocation.is_pickable.is_(True),
+            WarehouseLocation.id.in_(location_ids),
         ).update(
             {
                 "is_active": False,
@@ -877,8 +882,14 @@ class FloorPlanGeneratorService:
             synchronize_session="fetch",
         )
 
+        if clear_stock:
+            self.db.query(BinStockLevel).filter(
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.bin_location_id.in_(location_ids),
+            ).delete(synchronize_session="fetch")
+
         self.db.flush()
-        return count
+        return len(locations)
 
     def _deactivate_all_plans(
         self, warehouse_id: UUID, org_id: UUID

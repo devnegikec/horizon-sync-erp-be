@@ -48,6 +48,7 @@ class LoginUserResponse(BaseModel):
     language: str | None = None
     extra_data: dict | None = None
     organization_id: str | None = None
+    permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,6 +149,9 @@ class WorkerLoginRequest(BaseModel):
 
     login_username: str
     password: str
+    # Optional tenant scope so duplicate usernames across organizations resolve
+    # deterministically during login.
+    organization_id: UUID | None = None
 
 
 class QRCodeLoginResponse(BaseModel):

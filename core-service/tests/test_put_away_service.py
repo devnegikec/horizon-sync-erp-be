@@ -11,7 +11,9 @@ from app.models.location_allocation import LocationAllocation
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
 from app.models.scan_session import ScanSession
+from app.models.warehouse import Warehouse
 from app.models.warehouse_location import WarehouseLocation
+from app.models.warehouse_user import WarehouseUser
 from app.services.put_away_service import PutAwayService
 
 
@@ -129,6 +131,35 @@ def _create_receiving_slip_item(db_session, org_id, slip_id, sku, batch, quantit
     db_session.add(item)
     db_session.flush()
     return item
+
+
+def _create_warehouse(db_session, org_id, code="WH-01"):
+    """Helper to create a warehouse."""
+    warehouse = Warehouse(
+        id=uuid.uuid4(),
+        organization_id=org_id,
+        name=f"Test Warehouse {code}",
+        code=code,
+    )
+    db_session.add(warehouse)
+    db_session.flush()
+    return warehouse
+
+
+def _create_warehouse_worker(db_session, org_id, warehouse_id):
+    """Helper to assign a new worker to a warehouse; returns the user id."""
+    user_id = uuid.uuid4()
+    db_session.add(
+        WarehouseUser(
+            id=uuid.uuid4(),
+            organization_id=org_id,
+            user_id=user_id,
+            warehouse_id=warehouse_id,
+            is_active=True,
+        )
+    )
+    db_session.flush()
+    return user_id
 
 
 class TestGenerateFromSlip:
@@ -580,3 +611,188 @@ class TestSkipItem:
 
         with pytest.raises(StateError, match="pending"):
             put_away_service.skip_item(put_away_item.id, "Some reason", org_id)
+
+
+class TestDistributeBalanced:
+    """Unit tests for the SKU-based distribution helper."""
+
+    @staticmethod
+    def _spec(sku, serial):
+        return {
+            "item_id": uuid.uuid4(),
+            "sku": sku,
+            "batch_number": serial,
+            "quantity": Decimal("1"),
+            "bin_location_id": None,
+            "serial_nos": [serial],
+        }
+
+    @classmethod
+    def _carton(cls, sku, serials):
+        return [cls._spec(sku, serial) for serial in serials]
+
+    def test_never_splits_a_sku_when_every_worker_can_be_filled(self):
+        """Each SKU must land on exactly one worker when SKUs >= workers."""
+        sku_groups = [
+            [self._carton("SKU-A", ["A1", "A2", "A3"])],
+            [self._carton("SKU-B", ["B1", "B2"])],
+            [self._carton("SKU-C", ["C1"])],
+        ]
+
+        chunks = PutAwayService._distribute_balanced(sku_groups, 3)
+
+        owner: dict[str, int] = {}
+        for idx, chunk in enumerate(chunks):
+            for spec in chunk:
+                owner.setdefault(spec["sku"], idx)
+                assert owner[spec["sku"]] == idx, "a SKU was split across workers"
+        assert set(owner) == {"SKU-A", "SKU-B", "SKU-C"}
+        assert sum(len(chunk) for chunk in chunks) == 6
+
+    def test_balances_whole_skus_by_quantity(self):
+        """Whole SKUs go to the least-loaded worker (largest-first)."""
+        sku_groups = [
+            [self._carton("SKU-A", ["A1"])],
+            [self._carton("SKU-B", ["B1"])],
+            [self._carton("SKU-C", ["C1"])],
+            [self._carton("SKU-D", ["D1"])],
+        ]
+        # 1 carton per SKU, but distinct quantities make the split interesting.
+        for group, qty in zip(sku_groups, [10, 8, 6, 4], strict=True):
+            for spec in group[0]:
+                spec["quantity"] = Decimal(str(qty))
+
+        chunks = PutAwayService._distribute_balanced(sku_groups, 2)
+
+        loads = [
+            sum((spec["quantity"] for spec in chunk), Decimal("0")) for chunk in chunks
+        ]
+        assert loads == [Decimal("14"), Decimal("14")]
+        owner = {spec["sku"]: idx for idx, chunk in enumerate(chunks) for spec in chunk}
+        assert len(set(owner.values())) == 2, "work was not spread over both workers"
+
+    def test_splits_a_sku_on_carton_boundaries_only_when_needed(self):
+        """With fewer SKUs than workers, cartons stay whole on one worker."""
+        cartons = [
+            self._carton("SKU-A", ["A1", "A2"]),
+            self._carton("SKU-A", ["A3", "A4"]),
+            self._carton("SKU-A", ["A5"]),
+        ]
+
+        chunks = PutAwayService._distribute_balanced([cartons], 3)
+
+        assert all(chunks), "every worker should receive work"
+        for carton in cartons:
+            serials = {spec["batch_number"] for spec in carton}
+            placed = {
+                idx
+                for idx, chunk in enumerate(chunks)
+                if serials & {spec["batch_number"] for spec in chunk}
+            }
+            assert len(placed) == 1, "a master pack was split across workers"
+
+    def test_single_worker_receives_everything(self):
+        """One worker gets all SKUs in a single chunk."""
+        sku_groups = [
+            [self._carton("SKU-A", ["A1"])],
+            [self._carton("SKU-B", ["B1"])],
+        ]
+
+        chunks = PutAwayService._distribute_balanced(sku_groups, 1)
+
+        assert len(chunks) == 1
+        assert len(chunks[0]) == 2
+
+
+class TestGenerateFromSlipForWorkers:
+    """Put-away work is divided by SKU across the assigned workers."""
+
+    def test_assigns_each_sku_to_exactly_one_worker(
+        self, db_session, put_away_service, org_id, warehouse_id
+    ):
+        """No SKU may appear on more than one worker's put-away list."""
+        session = _create_scan_session(db_session, org_id, warehouse_id)
+        slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
+        for sku in ("SKU-A", "SKU-B", "SKU-C"):
+            _create_item(db_session, org_id, sku)
+            for box in range(4):
+                _create_receiving_slip_item(
+                    db_session, org_id, slip.id, sku, f"{sku}-BOX{box}", 1
+                )
+        _create_location(
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=1000,
+            total_capacity=1000,
+            available_capacity=1000,
+        )
+        workers = [
+            _create_warehouse_worker(db_session, org_id, warehouse_id) for _ in range(2)
+        ]
+        db_session.commit()
+
+        lists = put_away_service.generate_from_slip_for_workers(
+            slip.id, org_id, workers, mode="auto"
+        )
+
+        assert len(lists) == 2
+        assert {lst.assigned_to for lst in lists} == set(workers)
+
+        owners: dict[str, set] = {}
+        for put_away_list in lists:
+            for item in put_away_list.items:
+                owners.setdefault(item.sku, set()).add(put_away_list.assigned_to)
+        assert set(owners) == {"SKU-A", "SKU-B", "SKU-C"}
+        for sku, assigned in owners.items():
+            assert len(assigned) == 1, f"{sku} was assigned to {len(assigned)} workers"
+
+    def test_creates_one_worker_task_per_list(
+        self, db_session, put_away_service, org_id, warehouse_id
+    ):
+        """Every split list gets its own put-away task for its worker."""
+        from app.models.worker_task import WorkerTask
+
+        session = _create_scan_session(db_session, org_id, warehouse_id)
+        slip = _create_receiving_slip(db_session, org_id, warehouse_id, session.id)
+        for sku in ("SKU-A", "SKU-B"):
+            _create_item(db_session, org_id, sku)
+            _create_receiving_slip_item(db_session, org_id, slip.id, sku, "BATCH-A", 5)
+        _create_location(
+            db_session,
+            org_id,
+            warehouse_id,
+            "bin",
+            "Z01-A01-B01-L01-BIN01",
+            capacity=1000,
+            total_capacity=1000,
+            available_capacity=1000,
+        )
+        workers = [
+            _create_warehouse_worker(db_session, org_id, warehouse_id) for _ in range(2)
+        ]
+        db_session.commit()
+
+        lists = put_away_service.generate_from_slip_for_workers(
+            slip.id, org_id, workers, mode="auto"
+        )
+
+        task_references = {
+            task.reference_id
+            for task in db_session.query(WorkerTask)
+            .filter(WorkerTask.task_type == "put_away")
+            .all()
+        }
+        assert task_references == {lst.id for lst in lists}
+        assert all(
+            db_session.query(WorkerTask)
+            .filter(
+                WorkerTask.reference_id == lst.id,
+                WorkerTask.worker_id == lst.assigned_to,
+            )
+            .count()
+            == 1
+            for lst in lists
+        )

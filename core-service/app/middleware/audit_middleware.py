@@ -22,6 +22,7 @@ class AuditContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         user_id: str | None = None
         organization_id: str | None = None
+        role: str | None = None
         ip_address: str | None = None
         user_agent: str | None = None
 
@@ -34,6 +35,7 @@ class AuditContextMiddleware(BaseHTTPMiddleware):
                 if payload:
                     user_id = payload.get("sub")
                     organization_id = payload.get("organization_id")
+                    role = payload.get("user_type") or payload.get("role")
         except Exception:
             # Never let token parsing break the request
             logger.debug("AuditContextMiddleware: failed to decode JWT", exc_info=True)
@@ -54,6 +56,7 @@ class AuditContextMiddleware(BaseHTTPMiddleware):
         ctx = AuditContext(
             user_id=user_id,
             organization_id=organization_id,
+            role=role,
             ip_address=ip_address,
             user_agent=user_agent,
         )

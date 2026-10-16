@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import SUPPLIER_CREATE, SUPPLIER_DELETE, SUPPLIER_READ, SUPPLIER_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.supplier import (
     SupplierCreate,
@@ -29,7 +30,7 @@ router = APIRouter()
 )
 async def create_supplier(
     supplier_data: SupplierCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SUPPLIER_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -72,7 +73,7 @@ async def list_suppliers(
     search: str | None = Query(None, description="Search in name, code, email, city"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -117,7 +118,7 @@ async def list_suppliers(
 )
 async def get_supplier(
     supplier_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -147,7 +148,7 @@ async def get_supplier(
 async def update_supplier(
     supplier_id: UUID,
     supplier_data: SupplierUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SUPPLIER_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -180,7 +181,7 @@ async def update_supplier(
 )
 async def delete_supplier(
     supplier_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SUPPLIER_DELETE)),
     db: Session = Depends(get_db),
 ):
     """

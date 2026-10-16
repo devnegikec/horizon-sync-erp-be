@@ -378,6 +378,13 @@ def _seed_missing_permissions(db: Session) -> None:
             "action": ActionType.UPDATE,
             "module": "inventory",
         },
+        {
+            "code": "qseal.read",
+            "name": "Read QSeal",
+            "resource": ResourceType.QSEAL,
+            "action": ActionType.READ,
+            "module": "inventory",
+        },
     ]
 
     # Get existing permission codes
@@ -823,6 +830,13 @@ def seed_database():
                 "action": ActionType.UPDATE,
                 "module": "inventory",
             },
+            {
+                "code": "qseal.read",
+                "name": "Read QSeal",
+                "resource": ResourceType.QSEAL,
+                "action": ActionType.READ,
+                "module": "inventory",
+            },
         ]
 
         permissions = {}
@@ -878,6 +892,7 @@ def seed_database():
                 permissions["pick_list.update"],
                 permissions["stock_entry.create"],
                 permissions["stock_entry.read"],
+                permissions["qseal.read"],
             ]
             for perm in warehouse_worker_perms:
                 role_perm = RolePermission(

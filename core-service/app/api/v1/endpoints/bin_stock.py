@@ -18,9 +18,9 @@ from app.schemas.bin_stock import (
     AddStockRequest,
     BinStockForItemResponse,
     BinStockInfoResponse,
+    BinStockItemGroup,
     BinStockLevelResponse,
     BinStockListResponse,
-    BinStockParentResponse,
     BinStockParentsResponse,
     BulkAddStockRequest,
     BulkAddStockResponse,
@@ -124,7 +124,9 @@ async def bulk_add_stock(
 
     Validates per-item:
     - Quantity must be positive
-    - Cumulative capacity won't be exceeded (per-item check against running total)
+    - Cumulative bin capacity won't be exceeded — unit count, volume
+      (`max_volume_cc`) and weight (`max_weight_grams`) are all enforced against
+      the running total for the batch
 
     After adding:
     - Creates/updates BinStockLevel records for each item
@@ -133,7 +135,7 @@ async def bulk_add_stock(
 
     **Request Body:**
     - **bin_id**: Bin location UUID (all items go to this bin)
-    - **items**: List of { item_id, quantity, batch_number? } (max 50)
+    - **items**: List of { item_id, quantity, batch_number?, packaging_unit_id? } (max 50)
 
     **Returns:** Per-item status with "added" or "error", plus summary counts
     """
@@ -143,6 +145,7 @@ async def bulk_add_stock(
             "item_id": item.item_id,
             "quantity": item.quantity,
             "batch_number": item.batch_number,
+            "packaging_unit_id": item.packaging_unit_id,
         }
         for item in data.items
     ]
@@ -220,12 +223,17 @@ async def get_bin_stock(
         bin_id=bin_id,
         org_id=current_user.organization_id,
     )
+    parent_qr_map = service.get_parent_qr_map(
+        bin_id=bin_id,
+        org_id=current_user.organization_id,
+    )
     levels = []
     for sl in stock_levels:
         resp = BinStockLevelResponse.model_validate(sl)
         item = sl.item
         resp.item_name = item.item_name if item else None
         resp.sku = item.sku if item else None
+        resp.parent_qr_code_url = parent_qr_map.get(sl.id)
         levels.append(resp)
     return BinStockListResponse(bin_stock_levels=levels)
 
@@ -234,7 +242,7 @@ async def get_bin_stock(
     "/{bin_id}/parents",
     response_model=BinStockParentsResponse,
     summary="Get parent boxes in a bin",
-    description="Get the master-pack (parent) boxes present in a bin, aggregated from child units",
+    description="Get the master-pack (parent) boxes present in a bin, grouped by product like the inbound receiving-slip detail",
 )
 async def get_bin_parents(
     bin_id: UUID,
@@ -245,22 +253,29 @@ async def get_bin_parents(
     Get the parent (master-pack) boxes present in a bin.
 
     Child units are stored individually in bin stock; this endpoint groups them
-    by their QSeal parent so the warehouse manager can see box-level counts.
+    by their QSeal parent box and item so the warehouse manager can see a
+    box-level view.
+
+    The payload mirrors the inbound receiving-slip detail structure
+    (``groups[] → parent_qseal / product_name / items[]``) so the frontend can
+    reuse the same rendering component.
 
     **Path Parameters:**
     - **bin_id**: Bin location UUID
 
-    **Returns:** Parent boxes with child-unit counts for the bin
+    **Returns:** ``groups`` of child units per parent box/product, plus
+    ``total_parent_boxes`` (distinct physical boxes in the bin)
     """
     service = BinStockService(db)
-    parents = service.get_parent_boxes(
+    groups = service.get_parent_boxes(
         bin_id=bin_id,
         org_id=current_user.organization_id,
     )
+    parent_ids = {g["parent_qseal"]["id"] for g in groups if g.get("parent_qseal")}
     return BinStockParentsResponse(
         bin_id=bin_id,
-        total_parent_boxes=len(parents),
-        parents=[BinStockParentResponse(**p) for p in parents],
+        total_parent_boxes=len(parent_ids),
+        groups=[BinStockItemGroup(**g) for g in groups],
     )
 
 

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, require_admin
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/seed-data")
 async def seed_sample_data(
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_admin),
 ):
     """
     Create default chart of accounts for organization.
@@ -75,7 +75,7 @@ async def seed_sample_data(
 @router.delete("/clear-data")
 async def clear_sample_data(
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_admin),
 ):
     """
     Clear all chart of accounts data.

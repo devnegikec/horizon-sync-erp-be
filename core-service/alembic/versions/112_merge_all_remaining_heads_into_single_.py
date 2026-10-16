@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'ddd66635a953'
+revision: str = '112_merge_all_remaining_heads_into_single_'
 down_revision: Union[str, None] = ('079_add_inbound_short_balance_ledger', '089_add_scan_session_cancelled_status', '106_backfill_uom_type', '112_dispatch_from_packing_slip')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

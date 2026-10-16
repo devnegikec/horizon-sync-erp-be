@@ -20,7 +20,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.models.bin_stock_level import BinStockLevel
+from app.models.bin_stock_level import PICKABLE_INVENTORY_STATUSES, BinStockLevel
 from app.models.item import Item
 from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.location_allocation import LocationAllocation
@@ -28,7 +28,11 @@ from app.models.put_away_rule import PutAwayRule
 from app.models.warehouse_location import WarehouseLocation
 from app.services.bin_capacity_service import BinCapacityService
 from app.services.bin_reservation_service import BinReservationService
-from app.services.capacity_math import MM3_PER_M3
+from app.services.capacity_math import (
+    CC_PER_M3,
+    compute_item_required_cc_and_grams,
+    display_capacity_uom,
+)
 
 Position = tuple[float, float, float]
 
@@ -146,7 +150,7 @@ class LocationSuggestionService:
     # PUT-AWAY SCORING (section 7.1)
     # ------------------------------------------------------------------
 
-    def _score_put_away(
+    def _score_put_away(  # noqa: C901 - pre-existing complexity
         self,
         item: Item,
         quantity: Decimal,
@@ -162,17 +166,19 @@ class LocationSuggestionService:
         required_m3 = self._required_volume_m3(item, quantity)
 
         # Allocation lookups for this item group.
-        exclusive_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "exclusive"
-        ) if item_group_id else set()
-        preferred_loc_ids = self._allocated_location_ids(
-            org_id, item_group_id, "preferred"
-        ) if item_group_id else set()
+        exclusive_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "exclusive")
+            if item_group_id
+            else set()
+        )
+        preferred_loc_ids = (
+            self._allocated_location_ids(org_id, item_group_id, "preferred")
+            if item_group_id
+            else set()
+        )
         # Bins exclusively allocated to *any* group (blocked for this item
         # unless the allocation belongs to this item's group).
-        all_exclusive_loc_ids = self._allocated_location_ids(
-            org_id, None, "exclusive"
-        )
+        all_exclusive_loc_ids = self._allocated_location_ids(org_id, None, "exclusive")
 
         bins = (
             self.db.query(WarehouseLocation)
@@ -181,6 +187,7 @@ class LocationSuggestionService:
                 WarehouseLocation.organization_id == org_id,
                 WarehouseLocation.location_type == "bin",
                 WarehouseLocation.is_active.is_(True),
+                WarehouseLocation.is_pickable.is_(True),
             )
             .all()
         )
@@ -209,15 +216,32 @@ class LocationSuggestionService:
             if not cap["is_available"]:
                 continue
             remaining = None
+            available_uom = "units"
             if cap["volume"]["capacity_m3"] is not None:
                 remaining = cap["volume"]["capacity_m3"] - cap["volume"]["occupied_m3"]
+                available_uom = "volume"
                 if required_m3 is not None and required_m3 > remaining:
                     continue
                 if cap["volume"]["capacity_m3"] > 0:
-                    capacity_ratio = float(remaining) / float(cap["volume"]["capacity_m3"])
+                    capacity_ratio = float(remaining) / float(
+                        cap["volume"]["capacity_m3"]
+                    )
                     score += capacity_ratio * 10
                     reasons.append(f"{round(capacity_ratio * 100)}% volume available")
-            available = Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            elif cap["weight"]["capacity_kg"] is not None:
+                # Weight-limited bin: report the remaining kilograms rather than
+                # a zero "units" figure the client cannot interpret.
+                remaining = cap["weight"]["capacity_kg"] - cap["weight"]["occupied_kg"]
+                available_uom = "weight"
+                if cap["weight"]["capacity_kg"] > 0:
+                    weight_ratio = float(remaining) / float(
+                        cap["weight"]["capacity_kg"]
+                    )
+                    score += weight_ratio * 10
+                    reasons.append(f"{round(weight_ratio * 100)}% weight available")
+            available = (
+                Decimal(str(remaining)) if remaining is not None else Decimal("0")
+            )
 
             # 3. Proximity to dock
             dist_to_dock = self._distance(self._position(b), dock_position)
@@ -244,6 +268,7 @@ class LocationSuggestionService:
                     score=score,
                     reasons=reasons,
                     available_capacity=available,
+                    capacity_uom=display_capacity_uom(available_uom),
                     distance_from_worker=dist_from_worker,
                 )
             )
@@ -270,6 +295,10 @@ class LocationSuggestionService:
             BinStockLevel.item_id == item.id,
             BinStockLevel.organization_id == org_id,
             BinStockLevel.quantity_on_hand > 0,
+            # Candidate bins are chosen from sellable stock only: since rows are
+            # keyed by inventory_status a bin/item/batch can also hold
+            # segregated stock, which must not attract put-away consolidation.
+            BinStockLevel.inventory_status.in_(PICKABLE_INVENTORY_STATUSES),
         )
         if batch_number:
             query = query.filter(BinStockLevel.batch_number == batch_number)
@@ -280,6 +309,27 @@ class LocationSuggestionService:
         rule_priority = self._put_away_rule_priority(
             org_id, warehouse_id, item.id, item.item_group_id
         )
+
+        # Master-pack managed items: prefer complete packs and demote loose
+        # units so picking never breaks open a full pack.
+        pack_size = self._items_per_master_pack(item.id, org_id)
+        if pack_size and pack_size > 1:
+            return self._score_pick_by_pack(
+                item=item,
+                bin_stocks=bin_stocks,
+                pack_size=pack_size,
+                quantity=quantity,
+                warehouse_id=warehouse_id,
+                org_id=org_id,
+                reserved_bin_ids=reserved_bin_ids,
+                excluded=excluded,
+                worker_position=worker_position,
+                max_distance=max_distance,
+                allocation_priority=allocation_priority,
+                rule_priority=rule_priority,
+                today=today,
+            )
+
         results: list[dict] = []
         for bs in bin_stocks:
             if bs.bin_location_id in excluded or bs.bin_location_id in reserved_bin_ids:
@@ -291,6 +341,9 @@ class LocationSuggestionService:
                     WarehouseLocation.id == bs.bin_location_id,
                     WarehouseLocation.warehouse_id == warehouse_id,
                     WarehouseLocation.is_active.is_(True),
+                    # Segregation bins (HOLD / QUARANTINE) are active but not
+                    # pickable — a picker must never be sent to them.
+                    WarehouseLocation.is_pickable.is_(True),
                 )
                 .first()
             )
@@ -344,6 +397,175 @@ class LocationSuggestionService:
             )
 
         return results
+
+    def _score_pick_by_pack(  # noqa: C901 - pre-existing complexity
+        self,
+        item: Item,
+        bin_stocks: list[BinStockLevel],
+        pack_size: int,
+        quantity: Decimal,
+        warehouse_id: UUID,
+        org_id: UUID,
+        reserved_bin_ids: set[UUID],
+        excluded: set[UUID],
+        worker_position: Position,
+        max_distance: float,
+        allocation_priority: dict[UUID, int],
+        rule_priority: int,
+        today: date,
+    ) -> list[dict]:
+        """Score pick bins for a master-pack-managed item.
+
+        Complete master packs are strongly preferred; loose units left over
+        from broken packs are ranked last and only surface when no complete
+        pack is available anywhere.
+        """
+        rows_by_bin: dict[UUID, list[BinStockLevel]] = {}
+        for bs in bin_stocks:
+            if bs.bin_location_id in excluded or bs.bin_location_id in reserved_bin_ids:
+                continue
+            rows_by_bin.setdefault(bs.bin_location_id, []).append(bs)
+
+        all_serials = {
+            r.batch_number
+            for rows in rows_by_bin.values()
+            for r in rows
+            if r.batch_number
+        }
+        parent_map = self._serial_parent_map(all_serials, org_id)
+
+        bin_info: list[dict] = []
+        for bin_id, rows in rows_by_bin.items():
+            bin_location = (
+                self.db.query(WarehouseLocation)
+                .filter(
+                    WarehouseLocation.id == bin_id,
+                    WarehouseLocation.warehouse_id == warehouse_id,
+                    WarehouseLocation.is_active.is_(True),
+                )
+                .first()
+            )
+            if bin_location is None:
+                continue
+
+            parent_counts: dict[UUID, int] = {}
+            loose_qty = Decimal("0")
+            for r in rows:
+                parent_id = parent_map.get(r.batch_number) if r.batch_number else None
+                if parent_id:
+                    parent_counts[parent_id] = parent_counts.get(parent_id, 0) + 1
+                else:
+                    loose_qty += Decimal(str(r.quantity_on_hand or 0))
+
+            full_packs = sum(c // pack_size for c in parent_counts.values())
+            loose_from_packs = sum(c % pack_size for c in parent_counts.values())
+            total_loose = loose_qty + Decimal(loose_from_packs)
+            available = Decimal(full_packs * pack_size) + total_loose
+
+            expiry = min((r.expiry_date for r in rows if r.expiry_date), default=None)
+            oldest = min((r.created_at for r in rows if r.created_at), default=None)
+
+            bin_info.append(
+                {
+                    "bin_location": bin_location,
+                    "full_packs": full_packs,
+                    "total_loose": total_loose,
+                    "available": available,
+                    "expiry": expiry,
+                    "oldest": oldest,
+                }
+            )
+
+        has_full_pack = any(b["full_packs"] > 0 for b in bin_info)
+
+        results: list[dict] = []
+        for b in bin_info:
+            bin_location = b["bin_location"]
+            reasons: list[str] = []
+            score = 0.0
+
+            if b["expiry"] is not None:
+                days = (b["expiry"] - today).days
+                score += (365 - days) * 100
+                reasons.append(f"FEFO: expires in {days} day(s)")
+            elif b["oldest"] is not None:
+                age_days = (today - b["oldest"].date()).days
+                score += age_days * 80
+                reasons.append(f"FIFO: {age_days} day(s) in stock")
+
+            admin_priority = allocation_priority.get(bin_location.id, 0) + rule_priority
+            if admin_priority:
+                score += admin_priority * 40
+                reasons.append(f"Admin priority {admin_priority}")
+
+            if b["full_packs"] > 0:
+                score += 1_000_000
+                reasons.append(f"{b['full_packs']} complete master pack(s)")
+            elif has_full_pack:
+                score -= 1_000_000
+                reasons.append(
+                    f"Only {int(b['total_loose'])} loose unit(s) — a complete pack exists elsewhere"
+                )
+            else:
+                reasons.append(
+                    f"Only {int(b['total_loose'])} loose unit(s) — no complete pack available"
+                )
+
+            if b["available"] >= quantity:
+                score += 20
+                reasons.append("Satisfies full quantity in one stop")
+            else:
+                score += 5
+
+            dist = self._distance(self._position(bin_location), worker_position)
+            if max_distance > 0:
+                route = (1 - min(dist / max_distance, 1.0)) * 30
+                score += route
+
+            results.append(
+                self._build_suggestion(
+                    bin_location=bin_location,
+                    score=score,
+                    reasons=reasons,
+                    available_capacity=b["available"],
+                    distance_from_worker=dist,
+                    batch_number=None,
+                    expiry_date=b["expiry"],
+                )
+            )
+
+        return results
+
+    def _items_per_master_pack(self, item_id: UUID, org_id: UUID) -> int | None:
+        """Return the item's master-pack size (items per pack), or None."""
+        row = (
+            self.db.query(ItemPackagingUnit.items_per_master_pack)
+            .filter(
+                ItemPackagingUnit.item_id == item_id,
+                ItemPackagingUnit.organization_id == org_id,
+                ItemPackagingUnit.is_active.is_(True),
+                ItemPackagingUnit.items_per_master_pack.isnot(None),
+                ItemPackagingUnit.items_per_master_pack > 1,
+            )
+            .first()
+        )
+        return row[0] if row else None
+
+    def _serial_parent_map(self, serials: set[str], org_id: UUID) -> dict[str, UUID]:
+        """Map QSeal child serial numbers to their master-pack parent id."""
+        from app.models.qseal import QSealParameters
+
+        if not serials:
+            return {}
+        rows = (
+            self.db.query(QSealParameters.serial_number, QSealParameters.parent_id)
+            .filter(
+                QSealParameters.organization_id == org_id,
+                QSealParameters.serial_number.in_(serials),
+            )
+            .all()
+        )
+        return {serial: parent_id for serial, parent_id in rows if parent_id}
 
     # ------------------------------------------------------------------
     # HELPERS
@@ -404,24 +626,18 @@ class LocationSuggestionService:
         return bin_ids
 
     def _required_volume_m3(self, item: Item, quantity: Decimal) -> Decimal | None:
-        """Required m³ for an incoming put-away (None when dimensions are unknown)."""
-        base = (
-            self.db.query(ItemPackagingUnit)
-            .filter(
-                ItemPackagingUnit.item_id == item.id,
-                ItemPackagingUnit.is_base_unit.is_(True),
-            )
-            .first()
+        """Required m³ for an incoming put-away (None when dimensions are unknown).
+
+        Master-pack aware: an intact carton occupies its outer volume, so the
+        fit check compares against the same occupancy math the capacity service
+        uses (mirrors ``capacity_math``).
+        """
+        required_cc, _required_g = compute_item_required_cc_and_grams(
+            self.db, item.id, None, quantity
         )
-        if base is None or not (base.length_mm and base.width_mm and base.height_mm):
+        if required_cc is None:
             return None
-        mm3 = (
-            Decimal(str(quantity))
-            * Decimal(str(base.length_mm))
-            * Decimal(str(base.width_mm))
-            * Decimal(str(base.height_mm))
-        )
-        return mm3 / MM3_PER_M3
+        return required_cc / CC_PER_M3
 
     def _allocation_priority_map(
         self, org_id: UUID, item_group_id: UUID | None
@@ -569,9 +785,7 @@ class LocationSuggestionService:
 
     @staticmethod
     def _distance(a: Position, b: Position) -> float:
-        return math.sqrt(
-            (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
-        )
+        return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
     @staticmethod
     def _build_suggestion(
@@ -582,6 +796,7 @@ class LocationSuggestionService:
         distance_from_worker: float,
         batch_number: str | None = None,
         expiry_date: date | None = None,
+        capacity_uom: str = "units",
     ) -> dict:
         # Rough estimate: 1 metre/second walking + 5s handling.
         estimated_time = int(distance_from_worker + 5)
@@ -596,6 +811,7 @@ class LocationSuggestionService:
             "score": round(score, 2),
             "reasons": reasons,
             "available_capacity": float(available_capacity),
+            "capacity_uom": capacity_uom,
             "distance_from_worker": round(distance_from_worker, 2),
             "estimated_time_seconds": estimated_time,
             "batch_number": batch_number,
@@ -612,6 +828,5 @@ def _floor_plan_dock_query():
     from sqlalchemy import text
 
     return text(
-        "SELECT dock_doors FROM warehouse_floor_plans "
-        "WHERE warehouse_id = :wid LIMIT 1"
+        "SELECT dock_doors FROM warehouse_floor_plans WHERE warehouse_id = :wid LIMIT 1"
     )

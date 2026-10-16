@@ -29,11 +29,10 @@ from app.models.item import Item
 from app.models.item_packaging_unit import ItemPackagingUnit
 from app.models.put_away_list import PutAwayList, PutAwayListItem
 from app.models.receiving_slip import ReceivingSlip, ReceivingSlipItem
-from app.models.scan_session import ScanSession, ScanSessionItem
+from app.models.scan_session import ScanSessionItem
 from app.models.warehouse_location import WarehouseLocation
 from app.services.inbound_service import InboundService
 from app.services.put_away_service import PutAwayService
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -188,7 +187,9 @@ class TestFullInboundFlowWithPackagingUnits:
         # ----------------------------------------------------------------
         # Setup: item, packaging unit, warehouse bin
         # ----------------------------------------------------------------
-        item = _create_item(db_session, org_id, item_code="WIDGET-001", sku="WIDGET-001")
+        item = _create_item(
+            db_session, org_id, item_code="WIDGET-001", sku="WIDGET-001"
+        )
         pu = _create_packaging_unit(
             db_session,
             org_id,
@@ -239,14 +240,14 @@ class TestFullInboundFlowWithPackagingUnits:
         )
 
         # Assert raw_quantity == 5 (boxes scanned, not Eaches)
-        assert scan_result["raw_quantity"] == 5, (
-            f"Expected raw_quantity=5, got {scan_result['raw_quantity']}"
-        )
+        assert (
+            scan_result["raw_quantity"] == 5
+        ), f"Expected raw_quantity=5, got {scan_result['raw_quantity']}"
 
         # Assert packaging_unit_id is resolved (not None)
-        assert scan_result["packaging_unit_id"] is not None, (
-            "packaging_unit_id should be resolved from QR payload"
-        )
+        assert (
+            scan_result["packaging_unit_id"] is not None
+        ), "packaging_unit_id should be resolved from QR payload"
         assert scan_result["packaging_unit_id"] == str(pu.id)
 
         # Verify the ScanSessionItem in the DB
@@ -268,9 +269,9 @@ class TestFullInboundFlowWithPackagingUnits:
             organization_id=org_id,
         )
 
-        assert slip_result["status"] == "pending_review", (
-            f"Expected pending_review, got {slip_result['status']}"
-        )
+        assert (
+            slip_result["status"] == "pending_review"
+        ), f"Expected pending_review, got {slip_result['status']}"
         slip_id = uuid.UUID(slip_result["id"])
 
         # Verify slip exists in DB
@@ -285,7 +286,9 @@ class TestFullInboundFlowWithPackagingUnits:
             "app.services.put_away_service.VolumetricAssignmentService.assign_bins"
         ) as mock_assign:
             # Simulate the service assigning our bin to all put-away items
-            def _fake_assign_bins(put_away_list_items, warehouse_id, org_id, db):
+            def _fake_assign_bins(
+                put_away_list_items, warehouse_id, org_id, db, **_kwargs
+            ):
                 for pai in put_away_list_items:
                     pai.bin_location_id = bin_loc.id
 
@@ -305,9 +308,9 @@ class TestFullInboundFlowWithPackagingUnits:
             .all()
         )
         assert len(slip_items) == 1
-        assert int(slip_items[0].quantity) == 60, (
-            f"Expected 60 Eaches (5 boxes × 12), got {slip_items[0].quantity}"
-        )
+        assert (
+            int(slip_items[0].quantity) == 60
+        ), f"Expected 60 Eaches (5 boxes × 12), got {slip_items[0].quantity}"
 
         # ----------------------------------------------------------------
         # Step 4: Assert PutAwayList and PutAwayListItem
@@ -320,7 +323,9 @@ class TestFullInboundFlowWithPackagingUnits:
             )
             .first()
         )
-        assert put_away_list is not None, "PutAwayList should be generated after approval"
+        assert (
+            put_away_list is not None
+        ), "PutAwayList should be generated after approval"
         assert put_away_list.status == "pending"
 
         put_away_items = (
@@ -332,17 +337,17 @@ class TestFullInboundFlowWithPackagingUnits:
 
         # Total quantity across all put-away items should be 60
         total_put_away_qty = sum(int(pai.quantity) for pai in put_away_items)
-        assert total_put_away_qty == 60, (
-            f"Expected total put-away quantity=60, got {total_put_away_qty}"
-        )
+        assert (
+            total_put_away_qty == 60
+        ), f"Expected total put-away quantity=60, got {total_put_away_qty}"
 
         # ----------------------------------------------------------------
         # Step 5: Complete put-away → BinStockLevel updated
         # ----------------------------------------------------------------
         put_away_item = put_away_items[0]
-        assert put_away_item.bin_location_id == bin_loc.id, (
-            "bin_location_id should be set by the mocked VolumetricAssignmentService"
-        )
+        assert (
+            put_away_item.bin_location_id == bin_loc.id
+        ), "bin_location_id should be set by the mocked VolumetricAssignmentService"
 
         completed_item = put_away_service.complete_item(
             put_away_item_id=put_away_item.id,
@@ -380,7 +385,9 @@ class TestFullInboundFlowWithPackagingUnits:
         Requirements: 6.4
         """
         # Setup: item with an INACTIVE packaging unit
-        item = _create_item(db_session, org_id, item_code="WIDGET-INACTIVE", sku="WIDGET-INACTIVE")
+        item = _create_item(
+            db_session, org_id, item_code="WIDGET-INACTIVE", sku="WIDGET-INACTIVE"
+        )
         pu_inactive = _create_packaging_unit(
             db_session,
             org_id,
@@ -459,7 +466,9 @@ class TestFullInboundFlowWithPackagingUnits:
 
         Requirements: 5.3, 5.5
         """
-        item = _create_item(db_session, org_id, item_code="WIDGET-SCAN", sku="WIDGET-SCAN")
+        item = _create_item(
+            db_session, org_id, item_code="WIDGET-SCAN", sku="WIDGET-SCAN"
+        )
         pu = _create_packaging_unit(
             db_session,
             org_id,
@@ -545,7 +554,9 @@ class TestFullInboundFlowWithPackagingUnits:
 
         Requirements: 6.3
         """
-        item = _create_item(db_session, org_id, item_code="WIDGET-DIRECT", sku="WIDGET-DIRECT")
+        item = _create_item(
+            db_session, org_id, item_code="WIDGET-DIRECT", sku="WIDGET-DIRECT"
+        )
         _create_bin(
             db_session,
             org_id,
@@ -599,9 +610,9 @@ class TestFullInboundFlowWithPackagingUnits:
         )
         assert len(slip_items) == 1
         # No conversion — raw_quantity 25 should equal Eaches quantity 25
-        assert int(slip_items[0].quantity) == 25, (
-            f"Expected 25 Eaches (no conversion), got {slip_items[0].quantity}"
-        )
+        assert (
+            int(slip_items[0].quantity) == 25
+        ), f"Expected 25 Eaches (no conversion), got {slip_items[0].quantity}"
 
     def test_bin_stock_level_packaging_unit_id_is_set_after_put_away(
         self,
@@ -617,7 +628,9 @@ class TestFullInboundFlowWithPackagingUnits:
         This verifies traceability: the packaging unit used during inbound is
         recorded on the bin stock level row.
         """
-        item = _create_item(db_session, org_id, item_code="WIDGET-TRACE", sku="WIDGET-TRACE")
+        item = _create_item(
+            db_session, org_id, item_code="WIDGET-TRACE", sku="WIDGET-TRACE"
+        )
         pu = _create_packaging_unit(
             db_session,
             org_id,
@@ -673,6 +686,7 @@ class TestFullInboundFlowWithPackagingUnits:
         with patch(
             "app.services.put_away_service.VolumetricAssignmentService.assign_bins"
         ) as mock_assign:
+
             def _fake_assign(put_away_list_items, warehouse_id, org_id, db):
                 for pai in put_away_list_items:
                     pai.bin_location_id = bin_loc.id
@@ -720,6 +734,6 @@ class TestFullInboundFlowWithPackagingUnits:
         )
         assert bin_stock is not None
         # packaging_unit_id should be set (from put_away_item.packaging_unit_id)
-        assert bin_stock.packaging_unit_id == pu.id, (
-            "BinStockLevel.packaging_unit_id should be set for traceability (Req 3.3)"
-        )
+        assert (
+            bin_stock.packaging_unit_id == pu.id
+        ), "BinStockLevel.packaging_unit_id should be set for traceability (Req 3.3)"

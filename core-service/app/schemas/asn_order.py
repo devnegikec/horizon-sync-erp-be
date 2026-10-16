@@ -38,6 +38,7 @@ class AsnOrderItemBase(BaseModel):
     uom: str = Field(..., min_length=1, max_length=50)
     sort_order: int = 0
     serial_nos: list[str] | None = None
+    extra_data: dict | None = None
 
 
 class AsnOrderItemCreate(AsnOrderItemBase):
@@ -121,6 +122,14 @@ class AsnOrderResponse(AsnOrderBase):
     linked_order_id: UUID | None = None
     linked_order_no: str | None = None
     transfer_progress: AsnOrderTransferProgress | None = None
+    # Short-delivery closure (a partially delivered ASN closed as short).
+    short_closed: bool = False
+    short_closed_qty: Decimal | float | None = None
+    close_reason_code: str | None = None
+    close_note: str | None = None
+    closed_by: UUID | None = None
+    closed_at: datetime | None = None
+    serialization_mode: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[AsnOrderItemResponse] = []
@@ -141,6 +150,7 @@ class AsnOrderListItem(BaseModel):
     from_warehouse: AsnOrderWarehouseInfo | None = None
     to_warehouse: AsnOrderWarehouseInfo | None = None
     vehicle_arrivals: list[AsnOrderVehicleArrivalInfo] = []
+    short_closed: bool = False
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -167,4 +177,23 @@ class AsnOrderStatusUpdate(BaseModel):
     status: str = Field(
         ...,
         pattern="^(draft|confirmed|partially_delivered|delivered|closed|cancelled)$",
+    )
+
+
+class AsnOrderCloseRequest(BaseModel):
+    """Accept a short delivery by closing a partially delivered ASN."""
+
+    reason_code: str | None = Field(
+        None,
+        max_length=80,
+        description=(
+            "Shortage reason code from the inbound exception reason catalog "
+            "(category 'short'). Required when the ASN still has an "
+            "outstanding short quantity."
+        ),
+    )
+    note: str | None = Field(
+        None,
+        max_length=1000,
+        description="Manager's explanation for accepting the short delivery",
     )

@@ -458,7 +458,11 @@ class InvitationService:
     def _get_validated_invitation(self, token: str):
         """Get and validate invitation by token."""
         token_hash = _hash_token(token)
-        invitation = self.invitation_repo.get_invitation_by_token(token_hash)
+        # Lock the invitation row so two concurrent accepts with the same token
+        # cannot both pass validation and race to set the account password.
+        invitation = self.invitation_repo.get_invitation_by_token(
+            token_hash, for_update=True
+        )
 
         if not invitation:
             raise InvitationNotFoundException("Invalid invitation token")
@@ -482,6 +486,38 @@ class InvitationService:
         existing_user = self.user_repo.get_user_by_email(invitation.email)
 
         if existing_user:
+            # A placeholder user is created when the invitation is sent (with an
+            # empty password_hash placeholder and status=pending). Only that
+            # placeholder should have its credentials set on acceptance — never
+            # overwrite an existing active account's password, name or
+            # verification state.
+            is_placeholder = (
+                existing_user.status == UserStatus.PENDING
+                or not existing_user.password_hash
+            )
+            if not is_placeholder:
+                logger.info(
+                    "Invitation accepted for existing user %s; leaving "
+                    "credentials unchanged",
+                    existing_user.id,
+                )
+                return existing_user
+
+            from app.core.security import hash_password
+
+            # Update in place (flush, no commit) so the invitation row lock
+            # taken in _get_validated_invitation is held until the caller
+            # commits the whole acceptance atomically.
+            existing_user.password_hash = hash_password(password)
+            existing_user.status = UserStatus.ACTIVE
+            existing_user.is_active = True
+            existing_user.email_verified = True
+            existing_user.email_verified_at = datetime.now(UTC)
+            if first_name:
+                existing_user.first_name = first_name
+            if last_name:
+                existing_user.last_name = last_name
+            self.db.flush()
             return existing_user
 
         # Create new user
@@ -506,16 +542,33 @@ class InvitationService:
         # Assign primary role (if provided)
         primary_role_id = invitation.role_id
         if primary_role_id:
-            user_org_role = UserOrganizationRole(
-                user_id=user.id,
-                organization_id=invitation.organization_id,
-                role_id=primary_role_id,
-                is_active=True,
-                is_primary=True,
-                status="active",
-                joined_at=datetime.now(UTC),
+            existing = (
+                self.db.query(UserOrganizationRole)
+                .filter(
+                    UserOrganizationRole.user_id == user.id,
+                    UserOrganizationRole.organization_id == invitation.organization_id,
+                )
+                .first()
             )
-            self.db.add(user_org_role)
+            if existing:
+                # Reuse the membership created when the invitation was sent
+                # instead of inserting a duplicate row for the same user/org.
+                existing.role_id = primary_role_id
+                existing.is_active = True
+                existing.is_primary = True
+                existing.status = "active"
+                existing.joined_at = datetime.now(UTC)
+            else:
+                user_org_role = UserOrganizationRole(
+                    user_id=user.id,
+                    organization_id=invitation.organization_id,
+                    role_id=primary_role_id,
+                    is_active=True,
+                    is_primary=True,
+                    status="active",
+                    joined_at=datetime.now(UTC),
+                )
+                self.db.add(user_org_role)
 
         # Apply custom permissions
         custom_permission_ids = []

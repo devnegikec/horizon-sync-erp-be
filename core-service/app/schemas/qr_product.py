@@ -12,7 +12,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class QRProductPackagingDetails(BaseModel):
-    """Physical packaging details for a product's base packaging unit."""
+    """Physical packaging details for a product's base packaging unit.
+
+    The first block describes the **inner carton / base packaging unit (IC)** —
+    the "Each"-level pack. The ``master_pack_*`` block describes the
+    **master carton (MC)**: explicit outer dimensions/weight when known, plus
+    the estimation knobs used to derive any dimension that is omitted.
+    """
 
     unit_name: str = Field("Each", min_length=1, max_length=100)
     conversion_factor: Decimal = Field(Decimal("1"), gt=0)
@@ -25,6 +31,33 @@ class QRProductPackagingDetails(BaseModel):
     width_mm: Decimal | None = Field(None, ge=0)
     height_mm: Decimal | None = Field(None, ge=0)
     weight_grams: Decimal | None = Field(None, ge=0)
+
+    # Master carton (MC) — explicit overrides plus estimation knobs. An omitted
+    # dimension is estimated from the base-unit dimensions. The three knobs are
+    # optional on purpose: a null value means "keep the stored setting" (or use
+    # the estimator default) instead of resetting it to a literal default.
+    master_pack_unit_name: str | None = Field(None, max_length=100)
+    master_pack_length_mm: Decimal | None = Field(None, ge=0)
+    master_pack_width_mm: Decimal | None = Field(None, ge=0)
+    master_pack_height_mm: Decimal | None = Field(None, ge=0)
+    master_pack_weight_grams: Decimal | None = Field(None, ge=0)
+    master_pack_fill_factor: Decimal | None = Field(
+        None,
+        gt=0,
+        le=1,
+        description="Packing efficiency used to estimate MC outer volume from base dims",
+    )
+    master_pack_void_fill_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Extra volume allowance (fraction) for dunnage/bubble wrap",
+    )
+    master_pack_wall_thickness_mm: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Carton wall thickness per side (mm) added when estimating MC dims",
+    )
 
 
 class QRProductBase(BaseModel):
@@ -487,12 +520,65 @@ class OrgBlockListItem(BaseModel):
     download_url: str | None
     download_available: bool = False
     artifact_generated_at: datetime | None = None
+    # Master-pack (carton) support. ``master_pack_download_available`` tells the
+    # UI whether to render the per-row "download master pack" action.
+    master_pack_enabled: bool = False
+    master_pack_size: int | None = None
+    master_pack_count: int = 0
+    master_pack_download_available: bool = False
+    # Per-block statistics, aggregated for the whole block (not just the page).
+    activated_count: int = 0
+    deactivated_count: int = 0
+    total_scans: int = 0
+    unique_serials: int = 0
+    suspicious_count: int = 0
+    last_scanned_at: datetime | None = None
     completed_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
+class QRBlockStatusCounts(BaseModel):
+    """Summary counts of QR blocks by status for the organization.
+
+    Mirrors ``AsnOrderStatusCounts``: counts are organization-wide and are not
+    narrowed by the list filters or pagination.
+    """
+
+    total: int = 0
+    pending: int = 0
+    in_progress: int = 0
+    completed: int = 0
+    failed: int = 0
+
+
 class OrgBlockListResponse(BaseModel):
     blocks: list[OrgBlockListItem]
     pagination: dict[str, Any]
+    status_counts: QRBlockStatusCounts = Field(default_factory=QRBlockStatusCounts)
+
+
+# ── Bulk import ──────────────────────────────────────────────────────────────
+
+
+class QRProductImportError(BaseModel):
+    """One rejected row from a QR product bulk import."""
+
+    row: int = Field(..., description="1-based file row (header is row 1)")
+    sku: str | None = None
+    message: str
+
+
+class QRProductImportResult(BaseModel):
+    """Outcome of a QR product bulk import.
+
+    ``created`` and ``updated`` are counts of applied rows; ``failed`` rows are
+    listed in ``errors`` and do not abort the rest of the file.
+    """
+
+    total_rows: int
+    created: int
+    updated: int
+    failed: int
+    errors: list[QRProductImportError] = Field(default_factory=list)

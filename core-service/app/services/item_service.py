@@ -84,7 +84,7 @@ class ItemService:
         if attrs:
             item.variant_attributes = attrs
 
-    def _ensure_product_sku(
+    def _ensure_product_sku(  # noqa: C901 - pre-existing complexity
         self, item: Item, organization_id: UUID, user_id: UUID
     ) -> None:
         """Auto-create/link a ProductSKU for a concrete variant item (guarded).
@@ -437,25 +437,46 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not item.qr_product_id:
             try:
-                from app.models.qr_product import QRProduct
+                from sqlalchemy.exc import IntegrityError
 
-                product = QRProduct(
-                    organization_id=organization_id,
-                    name=item.item_name,
-                    sku=item.sku or item.item_code,
-                    gtin=item.barcode,
-                    image_url=item.image_url,
-                    brand_id=item.brand_id,
-                    is_active=True,
-                    created_by=user_id,
-                    updated_by=user_id,
+                from app.models.qr_product import QRProduct
+                from app.services.qr_product_service import (
+                    find_active_product_by_sku,
                 )
-                self.db.add(product)
-                self.db.flush()
+
+                item_sku = item.sku or item.item_code
+                # SKUs are unique per organization, so reuse the product that
+                # already owns this SKU instead of inserting a duplicate.
+                product = find_active_product_by_sku(self.db, organization_id, item_sku)
+                if product is None:
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=item.item_name,
+                                sku=item_sku,
+                                gtin=item.barcode,
+                                image_url=item.image_url,
+                                brand_id=item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(
-                    "Auto-created QR product '%s' for item '%s'",
+                    "Linked QR product '%s' to item '%s'",
                     product.name,
                     item.item_code,
                 )
@@ -605,25 +626,47 @@ class ItemService:
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         if not updated_item.qr_product_id:
             try:
-                from app.models.qr_product import QRProduct
+                from sqlalchemy.exc import IntegrityError
 
-                product = QRProduct(
-                    organization_id=organization_id,
-                    name=updated_item.item_name,
-                    sku=updated_item.sku or updated_item.item_code,
-                    gtin=updated_item.barcode,
-                    image_url=updated_item.image_url,
-                    brand_id=updated_item.brand_id,
-                    is_active=True,
-                    created_by=user_id,
-                    updated_by=user_id,
+                from app.models.qr_product import QRProduct
+                from app.services.qr_product_service import (
+                    find_active_product_by_sku,
                 )
-                self.db.add(product)
-                self.db.flush()
+
+                item_sku = updated_item.sku or updated_item.item_code
+                # SKUs are unique per organization, so reuse the product that
+                # already owns this SKU instead of inserting a duplicate.
+                product = find_active_product_by_sku(self.db, organization_id, item_sku)
+                if product is None:
+                    try:
+                        # Savepoint: a concurrent create that wins the unique
+                        # index rolls back only this insert, keeping the session
+                        # usable so we can link the winning product instead.
+                        with self.db.begin_nested():
+                            product = QRProduct(
+                                organization_id=organization_id,
+                                name=updated_item.item_name,
+                                sku=item_sku,
+                                gtin=updated_item.barcode,
+                                image_url=updated_item.image_url,
+                                brand_id=updated_item.brand_id,
+                                is_active=True,
+                                created_by=user_id,
+                                updated_by=user_id,
+                            )
+                            self.db.add(product)
+                            self.db.flush()
+                    except IntegrityError:
+                        product = find_active_product_by_sku(
+                            self.db, organization_id, item_sku
+                        )
+                        if product is None:
+                            raise
                 updated_item.qr_product_id = product.id
                 self.db.flush()
                 logger.info(
-                    "Auto-created QR product for legacy item '%s'",
+                    "Linked QR product '%s' to legacy item '%s'",
+                    product.name,
                     updated_item.item_code,
                 )
             except Exception as e:
@@ -648,9 +691,7 @@ class ItemService:
         self.db.refresh(item)
         return item
 
-    def approve_item(
-        self, item_id: UUID, organization_id: UUID, user_id: UUID
-    ) -> Item:
+    def approve_item(self, item_id: UUID, organization_id: UUID, user_id: UUID) -> Item:
         """Approve a pending item (PENDING_APPROVAL → ACTIVE)."""
         item = self.get_item_by_id(item_id, organization_id)
         if item.status != ItemStatus.PENDING_APPROVAL:
@@ -741,13 +782,201 @@ class ItemService:
                 base.is_base_unit = True
 
         base.conversion_factor = packaging_details.conversion_factor
-        if hasattr(packaging_details, "items_per_master_pack"):
-            base.items_per_master_pack = packaging_details.items_per_master_pack
-        base.length_mm = packaging_details.length_mm
-        base.width_mm = packaging_details.width_mm
-        base.height_mm = packaging_details.height_mm
-        base.weight_grams = packaging_details.weight_grams
+        # Only overwrite the optional IC fields the caller actually supplied —
+        # otherwise a partial packaging update would blank stored dimensions.
+        provided = packaging_details.model_fields_set
+        for field in (
+            "items_per_master_pack",
+            "length_mm",
+            "width_mm",
+            "height_mm",
+            "weight_grams",
+        ):
+            if field in provided:
+                setattr(base, field, getattr(packaging_details, field))
+
+        self._upsert_master_pack_unit(item, base, packaging_details, organization_id)
+
         self.db.flush()
+
+    def _upsert_master_pack_unit(  # noqa: C901 - pre-existing complexity
+        self, item: Item, base, packaging_details, organization_id: UUID
+    ) -> None:
+        """Create/update the master-carton packaging unit from the master-pack size.
+
+        The MC outer dimensions are estimated from the base-unit dimensions using
+        a packing fill factor and a carton wall thickness, unless explicit
+        ``master_pack_*`` overrides are supplied in ``packaging_details``. Missing
+        dimensions are estimated individually — an operator-supplied dimension is
+        never overwritten by an estimate.
+        """
+        from decimal import Decimal
+
+        mp = getattr(packaging_details, "items_per_master_pack", None)
+        if mp is None:
+            cf = getattr(packaging_details, "conversion_factor", None)
+            if cf is not None and Decimal(str(cf)) > 1:
+                mp = int(Decimal(str(cf)))
+
+        # Clearing the master-pack size (or setting it to 1) deactivates any
+        # existing MC row so downstream grouping stops treating the item as
+        # cartonized.
+        if not mp or mp <= 1:
+            for row in (
+                self.db.query(ItemPackagingUnit)
+                .filter(
+                    ItemPackagingUnit.item_id == item.id,
+                    ItemPackagingUnit.is_base_unit.is_(False),
+                    ItemPackagingUnit.is_active.is_(True),
+                )
+                .all()
+            ):
+                row.is_active = False
+            return
+
+        default_unit = f"Master Pack of {mp}"
+        # Active outer rows for this item, outermost first.
+        existing = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.is_base_unit.is_(False),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .order_by(ItemPackagingUnit.conversion_factor.desc())
+            .all()
+        )
+
+        # An explicitly named carton wins; otherwise keep the item's existing
+        # carton (and its name) so an unnamed update does not spawn a duplicate
+        # row with a default name.
+        named_unit = getattr(packaging_details, "master_pack_unit_name", None)
+        if named_unit:
+            unit_name = named_unit
+        elif existing:
+            unit_name = existing[0].unit_name
+        else:
+            unit_name = default_unit
+
+        # The base unit and the master carton share a unique (item_id,
+        # unit_name) constraint, so a clashing name would otherwise select the
+        # base row below and demote it to non-base.
+        if base is not None and unit_name == base.unit_name:
+            unit_name = default_unit
+
+        mc = (
+            self.db.query(ItemPackagingUnit)
+            .filter(
+                ItemPackagingUnit.item_id == item.id,
+                ItemPackagingUnit.unit_name == unit_name,
+                ItemPackagingUnit.is_base_unit.is_(False),
+            )
+            .first()
+        )
+
+        # Only one outer row is the master carton; retire the rest so exports
+        # and master-pack grouping stay unambiguous.
+        for stale in existing:
+            if stale.unit_name != unit_name:
+                stale.is_active = False
+
+        # Explicit overrides (None = not provided → leave existing / estimate).
+        l = getattr(packaging_details, "master_pack_length_mm", None)  # noqa: E741
+        w = getattr(packaging_details, "master_pack_width_mm", None)
+        h = getattr(packaging_details, "master_pack_height_mm", None)
+        wt = getattr(packaging_details, "master_pack_weight_grams", None)
+
+        fill = getattr(packaging_details, "master_pack_fill_factor", None)
+        void = getattr(packaging_details, "master_pack_void_fill_pct", None)
+        thickness = getattr(packaging_details, "master_pack_wall_thickness_mm", None)
+
+        # Estimation knobs only used when estimating; defaults match the schema.
+        eff_fill = Decimal(str(fill)) if fill is not None else Decimal("0.75")
+        eff_void = Decimal(str(void)) if void is not None else Decimal("0.10")
+        eff_thickness = (
+            Decimal(str(thickness)) if thickness is not None else Decimal("3")
+        )
+
+        if mc is None:
+            # Estimate each missing dimension individually; never overwrite a
+            # dimension the operator supplied.
+            if (l is None or w is None or h is None) and base is not None:
+                if base.length_mm and base.width_mm and base.height_mm:
+                    scale = (
+                        float(mp) * (1.0 + float(eff_void)) / max(float(eff_fill), 0.01)
+                    ) ** (1.0 / 3.0)
+                    if l is None:
+                        l = Decimal(  # noqa: E741
+                            str(
+                                round(
+                                    float(base.length_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
+                    if w is None:
+                        w = Decimal(
+                            str(
+                                round(
+                                    float(base.width_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
+                    if h is None:
+                        h = Decimal(
+                            str(
+                                round(
+                                    float(base.height_mm) * scale
+                                    + 2.0 * float(eff_thickness),
+                                    2,
+                                )
+                            )
+                        )
+
+            if wt is None and base is not None and base.weight_grams:
+                wt = Decimal(str(mp)) * Decimal(str(base.weight_grams))
+
+            mc = ItemPackagingUnit(
+                organization_id=organization_id,
+                item_id=item.id,
+                unit_name=unit_name,
+                conversion_factor=Decimal(str(mp)),
+                items_per_master_pack=int(mp),
+                length_mm=l,
+                width_mm=w,
+                height_mm=h,
+                weight_grams=wt,
+                master_pack_fill_factor=eff_fill,
+                master_pack_void_fill_pct=eff_void,
+                master_pack_wall_thickness_mm=eff_thickness,
+                is_base_unit=False,
+                is_active=True,
+            )
+            self.db.add(mc)
+        else:
+            # Update the count and any explicitly-provided overrides; never
+            # overwrite operator-entered values with estimates or defaults.
+            mc.conversion_factor = Decimal(str(mp))
+            mc.items_per_master_pack = int(mp)
+            mc.is_base_unit = False
+            mc.is_active = True
+            if fill is not None:
+                mc.master_pack_fill_factor = eff_fill
+            if void is not None:
+                mc.master_pack_void_fill_pct = eff_void
+            if thickness is not None:
+                mc.master_pack_wall_thickness_mm = eff_thickness
+            if l is not None:
+                mc.length_mm = l
+            if w is not None:
+                mc.width_mm = w
+            if h is not None:
+                mc.height_mm = h
+            if wt is not None:
+                mc.weight_grams = wt
 
     def delete_item(
         self,
@@ -922,6 +1151,30 @@ class ItemService:
 
         item_ids = [item.id for item in items]
 
+        # Resolve the master-pack size from each item's base packaging unit.
+        pack_rows = (
+            self.db.query(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.items_per_master_pack,
+            )
+            .filter(
+                ItemPackagingUnit.organization_id == organization_id,
+                ItemPackagingUnit.item_id.in_(item_ids),
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .order_by(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.created_at.asc(),
+                ItemPackagingUnit.id.asc(),
+            )
+            .all()
+        )
+        pack_map: dict = {}
+        for item_id, mpp in pack_rows:
+            if mpp is not None and item_id not in pack_map:
+                pack_map[item_id] = mpp
+
         # Warehouse-scoped or aggregated stock levels
         if warehouse_id:
             stock_agg = self._get_stock_by_warehouse(
@@ -992,6 +1245,7 @@ class ItemService:
                     stock_levels=ItemPickerStockLevels(**stock),
                     item_group=item_group,
                     tax_info=tax_info,
+                    items_per_master_pack=pack_map.get(item.id),
                 )
             )
 

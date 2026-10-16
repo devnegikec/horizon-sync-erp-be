@@ -273,14 +273,28 @@ class ValidationError(CoreServiceException):
     Attributes:
         message: Human-readable error message
         details: List of validation errors with field and reason
+        code: Machine-readable error code, stable for frontend branching
+        hint: Optional actionable next step for the caller
+
+    ``details`` entries may carry ``field``, ``reason`` and an optional
+    ``hint`` so the frontend can show an inline, actionable message per input.
     """
 
-    def __init__(self, message: str, details: list[dict[str, str]] = None):
+    def __init__(
+        self,
+        message: str,
+        details: list[dict[str, str]] = None,
+        *,
+        code: str = "VALIDATION_ERROR",
+        hint: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.details = details or []
+        self.code = code
+        self.error_code = code  # kept for backwards compatibility
+        self.hint = hint
         self.status_code = 400
-        self.error_code = "VALIDATION_ERROR"
 
 
 class ValidationException(CoreServiceException):
@@ -319,15 +333,27 @@ class NotFoundError(CoreServiceException):
         message: Human-readable error message
         entity_type: Type of entity that was not found
         entity_id: ID of the entity that was not found
+        code: Machine-readable error code
+        hint: Optional actionable next step for the caller
     """
 
-    def __init__(self, message: str, entity_type: str, entity_id: str):
+    def __init__(
+        self,
+        message: str,
+        entity_type: str,
+        entity_id: str,
+        *,
+        code: str = "NOT_FOUND",
+        hint: str | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.entity_type = entity_type
         self.entity_id = entity_id
         self.status_code = 404
-        self.error_code = "NOT_FOUND"
+        self.code = code
+        self.error_code = code  # kept for backwards compatibility
+        self.hint = hint
 
 
 class StateError(CoreServiceException):
@@ -337,15 +363,30 @@ class StateError(CoreServiceException):
         message: Human-readable error message
         current_state: Current state of the entity
         required_state: List of valid states for the operation
+        code: Machine-readable error code
+        hint: Optional actionable next step for the caller
+        details: Optional list of field-level errors
     """
 
-    def __init__(self, message: str, current_state: str, required_state: list[str]):
+    def __init__(
+        self,
+        message: str,
+        current_state: str,
+        required_state: list[str],
+        *,
+        code: str = "STATE_CONFLICT",
+        hint: str | None = None,
+        details: list[dict[str, str]] | None = None,
+    ):
         super().__init__(message)
         self.message = message
         self.current_state = current_state
         self.required_state = required_state
+        self.code = code
+        self.error_code = code  # kept for backwards compatibility
+        self.hint = hint
+        self.details = details or []
         self.status_code = 409
-        self.error_code = "STATE_CONFLICT"
 
 
 class IntegrationError(CoreServiceException):
@@ -400,4 +441,5 @@ class UnauthorizedException(CoreServiceException):
 
 class ReconciledTransactionDeletionException(CoreServiceException):
     """Raised when attempting to delete a bank account with reconciled transactions"""
+
     pass

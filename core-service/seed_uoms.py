@@ -24,6 +24,7 @@ UOMS_DATA = [
     },
     {"name": "Box", "abbreviation": "BOX", "description": "Standard box packaging"},
     {"name": "Carton", "abbreviation": "CTN", "description": "Carton packaging"},
+    {"name": "Case", "abbreviation": "CS", "description": "Case packaging"},
     {"name": "Pack", "abbreviation": "PCK", "description": "Packaged bundle"},
     {"name": "Roll", "abbreviation": "ROL", "description": "Roll of material"},
     {"name": "Sheet", "abbreviation": "SHT", "description": "Flat sheet"},
@@ -119,7 +120,7 @@ UOM_TYPE_MAP = {
     # count
     "PCS": ("count", 0), "DOZ": ("count", 0), "PR": ("count", 0),
     "SET": ("count", 0), "BOX": ("count", 0), "CTN": ("count", 0),
-    "PCK": ("count", 0), "ROL": ("count", 0), "SHT": ("count", 0),
+    "CS": ("count", 0), "PCK": ("count", 0), "ROL": ("count", 0), "SHT": ("count", 0),
     "BDL": ("count", 0), "UNIT": ("count", 0), "LOT": ("count", 0),
     "PLT": ("count", 0), "CNT": ("count", 0), "BAG": ("count", 0),
     "DRM": ("count", 0), "BTL": ("count", 0),

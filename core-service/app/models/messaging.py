@@ -147,6 +147,8 @@ class WhatsAppReport(Base):
 
 class RCSCredential(Base):
     __tablename__ = "rcs_credentials"
+    # ``config`` holds provider credentials — never snapshot them into audit.
+    __audit_exclude__ = {"config"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False)

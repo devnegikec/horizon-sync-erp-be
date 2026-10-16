@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import ITEM_CREATE, ITEM_DELETE, ITEM_READ, ITEM_UPDATE
 from app.models.item import Item
 from app.schemas.common import PaginationMeta
 from app.schemas.item import (
@@ -38,7 +39,7 @@ class RejectItemRequest(BaseModel):
 )
 async def create_item(
     item_data: ItemCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_CREATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -93,7 +94,7 @@ async def list_items(
     ),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -132,6 +133,34 @@ async def list_items(
     # Convert to response schema
     item_items = [ItemListItem.model_validate(item) for item in items]
 
+    # Attach each item's master-pack size (items per master pack) from its
+    # base packaging unit in a single query, so callers (e.g. the Inbound
+    # Automation data-sync flow) can auto-populate the master-pack field
+    # without N+1 lookups.
+    if item_items:
+        from app.models.item_packaging_unit import ItemPackagingUnit
+
+        pack_rows = (
+            db.query(
+                ItemPackagingUnit.item_id,
+                ItemPackagingUnit.items_per_master_pack,
+            )
+            .filter(
+                ItemPackagingUnit.organization_id == current_user.organization_id,
+                ItemPackagingUnit.item_id.in_([it.id for it in item_items]),
+                ItemPackagingUnit.is_base_unit.is_(True),
+                ItemPackagingUnit.is_active.is_(True),
+            )
+            .all()
+        )
+        pack_map = {
+            item_id: items_per_master_pack
+            for item_id, items_per_master_pack in pack_rows
+            if items_per_master_pack is not None
+        }
+        for item_dto in item_items:
+            item_dto.items_per_master_pack = pack_map.get(item_dto.id)
+
     return ItemListResponse(items=item_items, pagination=PaginationMeta(**pagination))
 
 
@@ -143,7 +172,7 @@ async def list_items(
 )
 async def get_item_by_sku(
     sku: str,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """Lookup an item by SKU, item_code, or barcode.
@@ -185,7 +214,7 @@ async def get_item_by_sku(
 )
 async def get_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -204,7 +233,19 @@ async def get_item(
         organization_id=current_user.organization_id,
         include_group=True,
     )
-    return ItemResponse.model_validate(item)
+    item_dto = ItemResponse.model_validate(item)
+
+    # Surface the master-pack size from the item's base packaging unit
+    # (preferred over any secondary packaging units).
+    base_units = [
+        pu
+        for pu in (item_dto.packaging_units or [])
+        if pu.is_base_unit and pu.is_active and pu.items_per_master_pack is not None
+    ]
+    base_units.sort(key=lambda pu: str(pu.id))
+    item_dto.items_per_master_pack = base_units[0].items_per_master_pack if base_units else None
+
+    return item_dto
 
 
 @router.put(
@@ -216,7 +257,7 @@ async def get_item(
 async def update_item(
     item_id: UUID,
     item_data: ItemUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -249,7 +290,7 @@ async def update_item(
 )
 async def delete_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_DELETE)),
     db: Session = Depends(get_db),
 ):
     """
@@ -278,7 +319,7 @@ async def delete_item(
 )
 async def submit_item_for_approval(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -297,7 +338,7 @@ async def submit_item_for_approval(
 )
 async def approve_item(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -317,7 +358,7 @@ async def approve_item(
 async def reject_item(
     item_id: UUID,
     body: RejectItemRequest,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_UPDATE)),
     db: Session = Depends(get_db),
 ):
     item_service = ItemService(db)
@@ -337,7 +378,7 @@ async def reject_item(
 )
 async def get_item_qr_product(
     item_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """
@@ -386,7 +427,7 @@ async def list_item_qr_serials(
     item_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(ITEM_READ)),
     db: Session = Depends(get_db),
 ):
     """

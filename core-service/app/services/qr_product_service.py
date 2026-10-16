@@ -55,6 +55,98 @@ from app.utils.serial_generators import (
 logger = logging.getLogger(__name__)
 
 
+def normalize_sku(value: str | None) -> str | None:
+    """Trim a SKU and treat a blank value as unset.
+
+    Uniqueness compares the trimmed, case-folded value, so '  ABC ' and 'abc'
+    are the same SKU.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def find_active_product_by_sku(
+    db: Session,
+    organization_id: UUID,
+    sku: str | None,
+    *,
+    exclude_product_id: UUID | None = None,
+) -> QRProduct | None:
+    """Return the active QR product holding ``sku`` in the organization.
+
+    Case- and whitespace-insensitive, ignoring soft-deleted products — the same
+    semantics as the partial unique index ``uq_qr_products_org_sku_ci``.
+    """
+    normalized = normalize_sku(sku)
+    if normalized is None:
+        return None
+    query = db.query(QRProduct).filter(
+        QRProduct.organization_id == organization_id,
+        QRProduct.deleted_at.is_(None),
+        func.lower(func.trim(QRProduct.sku)) == normalized.lower(),
+    )
+    if exclude_product_id is not None:
+        query = query.filter(QRProduct.id != exclude_product_id)
+    return query.first()
+
+
+#: Packaging keys shared by ``QRProductPackagingDetails`` and the item schema.
+_PACKAGING_KEYS = (
+    "unit_name",
+    "conversion_factor",
+    "items_per_master_pack",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "weight_grams",
+    # Master carton (MC)
+    "master_pack_unit_name",
+    "master_pack_length_mm",
+    "master_pack_width_mm",
+    "master_pack_height_mm",
+    "master_pack_weight_grams",
+    "master_pack_fill_factor",
+    "master_pack_void_fill_pct",
+    "master_pack_wall_thickness_mm",
+)
+
+
+def _json_safe_packaging(packaging_details: dict) -> dict:
+    """Make a packaging payload safe for the JSONB ``extra_data`` column.
+
+    ``packaging_details`` carries ``Decimal`` values and the JSONB serializer
+    (``json.dumps``) cannot handle them, so numbers are stored as floats.
+    """
+    return {
+        key: (float(value) if isinstance(value, Decimal) else value)
+        for key, value in packaging_details.items()
+    }
+
+
+def _to_item_packaging_details(packaging_details: dict):
+    """Map a product packaging payload onto the item packaging schema.
+
+    Covers both the inner carton / base unit (IC) and the master carton (MC),
+    so explicit MC dimensions and the estimation knobs survive the
+    product → linked-item hop.
+    """
+    from app.schemas.item import ItemPackagingDetails
+
+    kwargs = {
+        key: value
+        for key, value in packaging_details.items()
+        # Unset (None) values are dropped so the item schema's own "not
+        # provided" semantics win — otherwise a partial packaging update would
+        # reset stored master-carton settings back to schema defaults.
+        if key in _PACKAGING_KEYS and value is not None
+    }
+    kwargs.setdefault("unit_name", "Each")
+    kwargs.setdefault("conversion_factor", Decimal("1"))
+    return ItemPackagingDetails(**kwargs)
+
+
 def _build_excel(  # noqa: C901
     rows: list[dict],
     qr_type: str,
@@ -159,6 +251,35 @@ class QRProductService:
             if settings.brand_key_encryption_secret
             else None
         )
+
+    def _assert_sku_available(
+        self,
+        organization_id: UUID,
+        sku: str | None,
+        *,
+        exclude_product_id: UUID | None = None,
+    ) -> None:
+        """Reject a SKU already used by another active product in the org.
+
+        The partial unique index is the backstop for concurrent creates; this
+        check turns the common case into a clear 409 before any linked Item is
+        created from the same SKU.
+        """
+        existing = find_active_product_by_sku(
+            self.db,
+            organization_id,
+            sku,
+            exclude_product_id=exclude_product_id,
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"SKU '{normalize_sku(sku)}' is already used by product "
+                    f"'{existing.name}'. SKUs must be unique within the "
+                    "organization."
+                ),
+            )
 
     # ── Products ──────────────────────────────────────────────────────────────
 
@@ -301,15 +422,16 @@ class QRProductService:
         packaging_details = product_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(product_dict.get("extra_data") or {})
-            # packaging_details contains Decimal values; the JSONB serializer
-            # (json.dumps) can't handle Decimal, so convert to JSON-safe floats.
-            extra["packaging_details"] = self._json_safe_packaging_details(
-                packaging_details
-            )
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             product_dict["extra_data"] = extra
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
+        # A QR product's SKU is the organization-wide business key: normalise it
+        # and reserve it before the linked inventory Item copies the same value.
+        product_dict["sku"] = normalize_sku(product_dict.get("sku"))
+        if product_dict["sku"] is not None:
+            self._assert_sku_available(organization_id, product_dict["sku"])
         self._validate_shelf_life_setting(
             product_dict.get("shelf_life_setting_id"), organization_id
         )
@@ -329,7 +451,19 @@ class QRProductService:
                     detail="Brand not found",
                 )
 
-        qr_product = self.product_repo.create(product_dict)
+        try:
+            qr_product = self.product_repo.create(product_dict)
+        except IntegrityError as exc:
+            # Concurrent create with the same SKU (the partial unique index is
+            # the authoritative guard). Surface it as a clean conflict.
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"SKU '{product_dict.get('sku')}' is already used by another "
+                    "product. SKUs must be unique within the organization."
+                ),
+            ) from exc
 
         # Auto-create a corresponding inventory Item linked to this QR product.
         # This ensures every QR product has a trackable item in the ERP without
@@ -420,21 +554,9 @@ class QRProductService:
 
             if packaging_details:
                 try:
-                    from app.schemas.item import ItemPackagingDetails
                     from app.services.item_service import ItemService
 
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         item, details, organization_id
                     )
@@ -572,9 +694,7 @@ class QRProductService:
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
             extra = dict(update_dict.get("extra_data") or {})
-            extra["packaging_details"] = self._json_safe_packaging_details(
-                packaging_details
-            )
+            extra["packaging_details"] = _json_safe_packaging(packaging_details)
             update_dict["extra_data"] = extra
 
         if "shelf_life_setting_id" in update_dict:
@@ -609,7 +729,6 @@ class QRProductService:
         if packaging_details is not None:
             try:
                 from app.models.item import Item
-                from app.schemas.item import ItemPackagingDetails
                 from app.services.item_service import ItemService
 
                 linked_item = (
@@ -621,18 +740,7 @@ class QRProductService:
                     .first()
                 )
                 if linked_item is not None:
-                    details = ItemPackagingDetails(
-                        unit_name=packaging_details.get("unit_name") or "Each",
-                        conversion_factor=packaging_details.get("conversion_factor")
-                        or Decimal("1"),
-                        items_per_master_pack=packaging_details.get(
-                            "items_per_master_pack"
-                        ),
-                        length_mm=packaging_details.get("length_mm"),
-                        width_mm=packaging_details.get("width_mm"),
-                        height_mm=packaging_details.get("height_mm"),
-                        weight_grams=packaging_details.get("weight_grams"),
-                    )
+                    details = _to_item_packaging_details(packaging_details)
                     ItemService(self.db)._upsert_base_packaging_unit(
                         linked_item, details, organization_id
                     )
@@ -1462,25 +1570,46 @@ class QRProductService:
 
     @staticmethod
     def _items_to_excel_rows(items: list) -> list[dict]:
+        """Build workbook rows.
+
+        The URLs returned here are the ones ENCODED into the QR image (see
+        ``_build_excel``), so they must be the serial-bearing long URL
+        (``{base}/g/{gtin}/s/{serial}/{ts}?c={sig}``).
+
+        The CDN short link (``{cdn}/01/{gtin}/{slug}``) is still kept on the item
+        as ``token_id`` / ``short_url`` for metadata, but it is never used for the
+        QR payload: neither the handheld app nor QSeal parent→child linking can
+        parse it (they read the serial from ``/g/{gtin}/s/{serial}``). Unsigned
+        blocks (no brand key) have no ``long_url`` and fall back to ``token_id``,
+        which is already serial-bearing.
+        """
         rows = []
         for item in items:
             if isinstance(item, dict):
                 serial = item.get("serial_number")
-                primary_url = item.get("token_id") or ""
+                token = item.get("token_id") or ""
                 secret_code = item.get("secrete_code") or ""
                 extra_data = item.get("extra_data") or {}
             else:
                 serial = item.serial_number
-                primary_url = item.token_id or ""
+                token = item.token_id or ""
                 secret_code = item.secrete_code or ""
                 extra_data = item.extra_data or {}
+
+            primary_url = extra_data.get("long_url") or token
             rows.append(
                 {
                     "serial": serial,
                     "primary_url": primary_url,
                     "secret_code": secret_code,
-                    "overt_url": extra_data.get("overt_url", primary_url),
-                    "covert_url": extra_data.get("covert_url", ""),
+                    # DUAL: overt and covert are distinct signed URLs — prefer
+                    # the long variants so both QR images stay app-readable.
+                    "overt_url": extra_data.get("overt_long_url")
+                    or extra_data.get("overt_url")
+                    or primary_url,
+                    "covert_url": extra_data.get("covert_long_url")
+                    or extra_data.get("covert_url")
+                    or "",
                 }
             )
         return rows
@@ -1812,6 +1941,9 @@ class QRProductService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
+        stats_by_block = self.block_repo.get_block_stats(
+            [block.id for block, _ in rows], organization_id
+        )
         enriched = []
         for block, product_name in rows:
             block_dict = {
@@ -1821,8 +1953,17 @@ class QRProductService:
             block_dict["distribution_channel"] = block.distribution_channel
             block_dict["destination_market"] = block.destination_market
             block_dict["download_available"] = block.download_available
+            block_dict.update(stats_by_block.get(block.id, {}))
+            # Drives the per-row "download master pack" button in the UI.
+            block_dict["master_pack_download_available"] = bool(
+                block.master_pack_enabled and block_dict.get("master_pack_count", 0) > 0
+            )
             enriched.append(block_dict)
         return enriched, pagination
+
+    def get_block_status_counts(self, organization_id: UUID) -> dict:
+        """Organization-wide QR block counts by status, for list-view tiles."""
+        return self.block_repo.get_status_counts(organization_id)
 
     # ── Product Items ─────────────────────────────────────────────────────────
 

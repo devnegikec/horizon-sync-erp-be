@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_active_user
+from app.dependencies import CurrentUser, require_permission
+from app.core.authorization import SERIAL_CREATE, SERIAL_DELETE, SERIAL_READ, SERIAL_UPDATE
 from app.schemas.common import PaginationMeta
 from app.schemas.serial_no import (
     SerialNoCreate,
@@ -25,7 +26,7 @@ router = APIRouter()
 @router.post("", response_model=SerialNoResponse, status_code=status.HTTP_201_CREATED)
 async def create_serial_no(
     data: SerialNoCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Create a new serial number. Serial must be unique per item."""
@@ -44,7 +45,7 @@ async def list_serial_nos(
     search: str | None = None,
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_READ)),
     db: Session = Depends(get_db),
 ):
     """List serial numbers with filters."""
@@ -68,7 +69,7 @@ async def list_serial_nos(
 @router.get("/{serial_no_id}", response_model=SerialNoResponse)
 async def get_serial_no(
     serial_no_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_READ)),
     db: Session = Depends(get_db),
 ):
     """Get serial number by ID."""
@@ -82,7 +83,7 @@ async def get_serial_no(
 async def update_serial_no(
     serial_no_id: UUID,
     data: SerialNoUpdate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_UPDATE)),
     db: Session = Depends(get_db),
 ):
     """Update a serial number."""
@@ -95,7 +96,7 @@ async def update_serial_no(
 @router.delete("/{serial_no_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_serial_no(
     serial_no_id: UUID,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_DELETE)),
     db: Session = Depends(get_db),
 ):
     """Delete a serial number (hard delete)."""
@@ -110,7 +111,7 @@ async def delete_serial_no(
 async def list_serial_no_history(
     serial_no_id: UUID,
     limit: int = Query(100, ge=1, le=500),
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_READ)),
     db: Session = Depends(get_db),
 ):
     """List history entries for a serial number."""
@@ -127,7 +128,7 @@ async def list_serial_no_history(
 async def create_serial_no_history(
     serial_no_id: UUID,
     data: SerialNoHistoryCreate,
-    current_user: CurrentUser = Depends(get_current_active_user),
+    current_user: CurrentUser = Depends(require_permission(SERIAL_CREATE)),
     db: Session = Depends(get_db),
 ):
     """Add a history entry for a serial number (e.g. movement, sale)."""

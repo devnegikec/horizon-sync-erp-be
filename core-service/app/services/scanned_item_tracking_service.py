@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import ValidationError
 from app.models.scanned_item_tracking import ScannedItemTracking
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 class ScannedItemTrackingService:
     """Manages the dual-axis state machine for receiving & put-away."""
+
+    #: Receiving-slip statuses for which segregated stock is genuinely on hand
+    #: and must not be received a second time. A stock row whose only receipt is
+    #: outside this set (``rejected``/``cancelled``) is stale — see
+    #: :meth:`_stock_is_from_invalid_receipt`.
+    ACTIVE_RECEIPT_STATUSES = (
+        "pending_review",
+        "pending_putaway",
+        "putaway_in_progress",
+        "putaway_complete",
+    )
 
     def __init__(self, db: Session):
         self.db = db
@@ -72,6 +84,7 @@ class ScannedItemTrackingService:
         scan_item_id: UUID,
         qr_identifier: str,
         item_id: UUID,
+        product_item_id: UUID | None = None,
         sku: str,
         quantity: int = 1,
         batch_number: str | None = None,
@@ -85,6 +98,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=scan_item_id,
             qr_identifier=qr_identifier,
             item_id=item_id,
+            product_item_id=product_item_id,
             sku=sku,
             batch_number=batch_number,
             quantity=quantity,
@@ -179,6 +193,22 @@ class ScannedItemTrackingService:
                 f"No Item found for QR id='{payload.id}' sku='{payload.sku}'"
             )
 
+        # T1.3 — resolve the ProductItem key for the unit serial (best effort).
+        product_item_id = None
+        from app.models.product_item import ProductItem
+
+        product_item = (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.serial_number == payload.id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if product_item is not None:
+            product_item_id = product_item.id
+
         tracking = ScannedItemTracking(
             organization_id=organization_id,
             warehouse_id=warehouse_id,
@@ -186,6 +216,7 @@ class ScannedItemTrackingService:
             scan_session_item_id=None,
             qr_identifier=payload.id,
             item_id=item.id,
+            product_item_id=product_item_id,
             sku=item.sku or item.item_code or payload.sku,
             batch_number=payload.batch,
             quantity=payload.qty or 1,
@@ -278,6 +309,7 @@ class ScannedItemTrackingService:
         putaway_by: UUID,
         put_away_list_id: UUID | None = None,
         put_away_item_id: UUID | None = None,
+        quantity: int | None = None,
     ) -> ScannedItemTracking:
         """Complete put-away for an item. Tries to enter stock if receiving is also done."""
         tracking = (
@@ -289,6 +321,17 @@ class ScannedItemTrackingService:
 
         if not tracking:
             raise ValueError(f"No tracking found for QR: {qr_identifier}")
+
+        if quantity is not None:
+            if quantity < 1:
+                raise ValidationError("Put-away quantity must be at least 1")
+            stored_qty = int(tracking.quantity or 0)
+            if quantity > stored_qty:
+                raise ValidationError(
+                    f"Cannot put away {quantity} unit(s): only {stored_qty} "
+                    f"received for QR '{qr_identifier}'"
+                )
+            tracking.quantity = quantity
 
         ok, err = self.can_put_away(qr_identifier)
         if not ok:
@@ -383,6 +426,167 @@ class ScannedItemTrackingService:
             tracking.quantity,
             bin_id,
         )
+
+    # ── Duplicate identity against active stock (G-E3 / E-13) ────────────
+
+    def find_active_stock(
+        self, qr_identifier: str, organization_id: UUID
+    ) -> dict | None:
+        """Return where an identity already sits in stock, or ``None``.
+
+        A carton/unit that is physically in the warehouse must never be received
+        a second time — it would double-count stock and silently overwrite the
+        original receipt. The session-scoped duplicate check is not enough: the
+        same label can be re-presented days later in a brand-new session.
+
+        Checks the three places an identity can live in active stock:
+
+        1. ``bin_stock_levels`` — the identity (or its batch) is on hand,
+        2. ``serial_nos`` — the serial is registered,
+        3. ``scanned_item_tracking`` — an earlier session already put it away.
+        """
+        from app.models.bin_stock_level import BinStockLevel
+        from app.models.serial_no import SerialNo
+
+        bin_stocks = (
+            self.db.query(BinStockLevel)
+            .filter(
+                BinStockLevel.organization_id == organization_id,
+                BinStockLevel.batch_number == qr_identifier,
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .all()
+        )
+        for bin_stock in bin_stocks:
+            # Defence in depth: a rejected/cancelled receipt leaves its stock
+            # rows behind if the reversal did not run. Such stale rows must not
+            # block the physical unit from being received again, otherwise a
+            # rejected receipt permanently poisons the identity
+            # (RCA_ASN-2026-00014, fix 7.2).
+            if self._stock_is_from_invalid_receipt(
+                bin_stock, qr_identifier, organization_id
+            ):
+                logger.warning(
+                    "Ignoring stale bin stock for '%s' in bin %s — originating "
+                    "receipt is rejected/cancelled",
+                    qr_identifier,
+                    bin_stock.bin_location_id,
+                )
+                continue
+            return {
+                "source": "bin_stock",
+                "bin_location_id": bin_stock.bin_location_id,
+                "quantity": float(bin_stock.quantity_on_hand or 0),
+                "detail": (
+                    f"already on hand ({bin_stock.quantity_on_hand} unit(s)) in bin "
+                    f"{bin_stock.bin_location_id}"
+                ),
+            }
+
+        serial = (
+            self.db.query(SerialNo)
+            .filter(
+                SerialNo.organization_id == organization_id,
+                SerialNo.serial_no == qr_identifier,
+                # Only serials the warehouse still owns count as a duplicate: a
+                # sold/dispatched serial (customer + delivery date recorded) may
+                # legitimately come back as a return.
+                SerialNo.customer_id.is_(None),
+                SerialNo.delivery_date.is_(None),
+            )
+            .first()
+        )
+        if serial is not None:
+            return {
+                "source": "serial_master",
+                "bin_location_id": None,
+                "quantity": None,
+                "detail": (
+                    f"serial already registered (status '{serial.status or 'unknown'}')"
+                ),
+            }
+
+        tracking = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                ScannedItemTracking.organization_id == organization_id,
+                ScannedItemTracking.qr_identifier == qr_identifier,
+                ScannedItemTracking.putaway_status == "completed",
+            )
+            .order_by(ScannedItemTracking.putaway_at.desc())
+            .first()
+        )
+        if tracking is not None:
+            return {
+                "source": "tracking",
+                "bin_location_id": tracking.bin_location_id,
+                "quantity": tracking.quantity,
+                "detail": (
+                    "already put away"
+                    + (
+                        f" on {tracking.putaway_at.isoformat()}"
+                        if tracking.putaway_at
+                        else " in an earlier session"
+                    )
+                ),
+            }
+
+        return None
+
+    def _stock_is_from_invalid_receipt(
+        self, bin_stock, qr_identifier: str, organization_id: UUID
+    ) -> bool:
+        """True when ``bin_stock`` is owned by a receipt that is no longer valid.
+
+        Walks the stock row back to its owning ``scanned_item_tracking`` row and
+        then to the receiving slip — directly (``receiving_slip_id``) or via the
+        exception that segregated it. Stock with no provable receipt link is
+        treated as real, so the duplicate gate stays conservative and never lets
+        an unexplained on-hand row be received twice.
+        """
+        from sqlalchemy import and_
+
+        from app.models.inbound_exception import InboundException
+        from app.models.receiving_slip import ReceivingSlip
+
+        trackings = (
+            self.db.query(ScannedItemTracking)
+            .filter(
+                and_(
+                    ScannedItemTracking.organization_id == organization_id,
+                    ScannedItemTracking.qr_identifier == qr_identifier,
+                    ScannedItemTracking.item_id == bin_stock.item_id,
+                    ScannedItemTracking.stock_location_id == bin_stock.bin_location_id,
+                    ScannedItemTracking.stock_entered.is_(True),
+                )
+            )
+            .all()
+        )
+        if not trackings:
+            return False
+
+        for tracking in trackings:
+            slip_id = tracking.receiving_slip_id
+            if slip_id is None:
+                slip_id = (
+                    self.db.query(InboundException.slip_id)
+                    .filter(
+                        InboundException.tracking_id == tracking.id,
+                        InboundException.slip_id.isnot(None),
+                    )
+                    .scalar()
+                )
+            if slip_id is None:
+                # Cannot prove this stock came from a dead receipt → treat real.
+                return False
+            status = (
+                self.db.query(ReceivingSlip.status)
+                .filter(ReceivingSlip.id == slip_id)
+                .scalar()
+            )
+            if status is None or status in self.ACTIVE_RECEIPT_STATUSES:
+                return False
+        return True
 
     def _get_or_create_system_bin(
         self, warehouse_id: UUID, organization_id: UUID, code: str

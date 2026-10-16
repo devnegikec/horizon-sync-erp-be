@@ -45,6 +45,7 @@ class TaskService:
         worker_id: UUID,
         reference_id: UUID,
         org_id: UUID,
+        commit: bool = True,
     ) -> dict:
         """Create a worker task record.
 
@@ -53,6 +54,9 @@ class TaskService:
             worker_id: UUID of the worker assigned to the task.
             reference_id: UUID of the put_away_list or pick_list.
             org_id: Organization UUID for tenant isolation.
+            commit: When False the row is only flushed, leaving the surrounding
+                transaction to the caller (used when several tasks must land
+                atomically with the records they reference).
 
         Returns:
             Dictionary representation of the created WorkerTask.
@@ -85,6 +89,10 @@ class TaskService:
             updated_at=now,
         )
         self.db.add(task)
+        if not commit:
+            self.db.flush()
+            return self._task_to_dict(task)
+
         self.db.commit()
         self.db.refresh(task)
 
