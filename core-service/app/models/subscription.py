@@ -208,6 +208,13 @@ class OrganizationSubscription(Base):
     suspended_at = Column(DateTime(timezone=True), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
     suspended_reason = Column(Text, nullable=True)
+    #: Future-effective contract change applied lazily on the effective date.
+    pending_plan_version_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("subscription_plan_versions.id"),
+        nullable=True,
+    )
+    pending_effective_from = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow

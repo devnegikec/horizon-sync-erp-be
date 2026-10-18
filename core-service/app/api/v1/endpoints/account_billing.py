@@ -271,47 +271,52 @@ def export_credit_report(
     db: Session = Depends(get_db),
 ):
     org_id = _org(current_user)
-    entries, _total = CreditEngineService(db).credit_repo.list_ledger(
-        org_id,
-        from_date=from_date,
-        to_date=to_date,
-        page=1,
-        page_size=10_000,
-    )
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(
-        [
-            "entry_id",
-            "batch_id",
-            "type",
-            "quantity",
-            "balance_after",
-            "operation_id",
-            "reference_type",
-            "reference_id",
-            "reason",
-            "occurred_at",
-        ]
-    )
-    for entry in entries:
+    service = CreditEngineService(db)
+
+    def rows():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
         writer.writerow(
             [
-                entry.id,
-                entry.batch_id,
-                entry.type,
-                entry.qty,
-                entry.balance_after,
-                entry.operation_id,
-                entry.reference_type,
-                entry.reference_id,
-                entry.reason,
-                entry.occurred_at.isoformat(),
+                "entry_id",
+                "batch_id",
+                "type",
+                "quantity",
+                "balance_after",
+                "operation_id",
+                "reference_type",
+                "reference_id",
+                "reason",
+                "occurred_at",
             ]
         )
-    buffer.seek(0)
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        # Stream every matching row; never silently cap the export.
+        for entry in service.credit_repo.iter_ledger(
+            org_id, from_date=from_date, to_date=to_date
+        ):
+            writer.writerow(
+                [
+                    entry.id,
+                    entry.batch_id,
+                    entry.type,
+                    entry.qty,
+                    entry.balance_after,
+                    entry.operation_id,
+                    entry.reference_type,
+                    entry.reference_id,
+                    entry.reason,
+                    entry.occurred_at.isoformat(),
+                ]
+            )
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
     return StreamingResponse(
-        iter([buffer.getvalue()]),
+        rows(),
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="credit-ledger.csv"'},
     )

@@ -39,8 +39,33 @@ def add_months(value: datetime, months: int) -> datetime:
 CADENCE_MONTHS = {"monthly": 1, "quarterly": 3, "annually": 12, "yearly": 12}
 
 
+def _aware(value: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes; treat them as UTC."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 def period_end(start: datetime, cadence: str) -> datetime:
-    return add_months(start, CADENCE_MONTHS.get(cadence, 1))
+    return add_months(_aware(start), CADENCE_MONTHS.get(cadence, 1))
+
+
+def anchored_period_end(
+    start: datetime, cadence: str, anchor_day: int | None
+) -> datetime:
+    """End of the period, clamped to the billing anchor day."""
+    start = _aware(start)
+    anchor = max(1, min(int(anchor_day or 1), 28))
+    candidate = add_months(start, CADENCE_MONTHS.get(cadence, 1))
+    candidate = candidate.replace(
+        day=min(anchor, calendar.monthrange(candidate.year, candidate.month)[1])
+    )
+    while candidate <= start:
+        candidate = add_months(candidate, 1)
+        candidate = candidate.replace(
+            day=min(anchor, calendar.monthrange(candidate.year, candidate.month)[1])
+        )
+    return candidate
 
 
 class SubscriptionService:
@@ -82,8 +107,10 @@ class SubscriptionService:
 
         now = datetime.now(UTC)
         starts_active = not payload.activation_fee_required
-        start = version.effective_from or now
-        end = period_end(start, version.billing_cadence)
+        start = _aware(version.effective_from) or now
+        end = anchored_period_end(
+            start, version.billing_cadence, payload.billing_anchor_day
+        )
         subscription = self.repo.create_subscription(
             {
                 "organization_id": organization_id,
@@ -105,7 +132,7 @@ class SubscriptionService:
                 "current_period_start": start,
                 "current_period_end": end,
                 "next_invoice_date": end.date(),
-                "activated_at": now if starts_active else None,
+                "activated_at": (now if starts_active and start <= now else None),
             }
         )
         self.db.commit()
@@ -132,7 +159,9 @@ class SubscriptionService:
         )
         subscription.activated_at = now
         subscription.current_period_start = now
-        subscription.current_period_end = period_end(now, subscription.billing_cadence)
+        subscription.current_period_end = anchored_period_end(
+            now, subscription.billing_cadence, subscription.billing_anchor_day
+        )
         subscription.next_invoice_date = subscription.current_period_end.date()
         self.db.commit()
         return self._snapshot_current(subscription, reference=reference)
@@ -159,12 +188,34 @@ class SubscriptionService:
                     "Create a new subscription to switch plans",
                     status.HTTP_409_CONFLICT,
                 )
-            subscription.plan_version_id = version.id
-            subscription.billing_cadence = version.billing_cadence
+            effective_from = _aware(payload.effective_from)
+            if effective_from and effective_from > datetime.now(UTC):
+                # Effective-dated change: keep the current contract until due.
+                subscription.pending_plan_version_id = version.id
+                subscription.pending_effective_from = effective_from
+            else:
+                subscription.plan_version_id = version.id
+                subscription.billing_cadence = version.billing_cadence
+                subscription.pending_plan_version_id = None
+                subscription.pending_effective_from = None
+        elif payload.effective_from is not None:
+            raise billing_error(
+                "EFFECTIVE_FROM_REQUIRES_VERSION",
+                "effective_from is only valid together with plan_version_id",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
         if payload.billing_anchor_day is not None:
             subscription.billing_anchor_day = payload.billing_anchor_day
         if payload.billing_timezone is not None:
             subscription.billing_timezone = payload.billing_timezone
+        if payload.billing_anchor_day is not None:
+            start = _aware(subscription.current_period_start) or datetime.now(UTC)
+            subscription.current_period_end = anchored_period_end(
+                start,
+                subscription.billing_cadence,
+                subscription.billing_anchor_day,
+            )
+            subscription.next_invoice_date = subscription.current_period_end.date()
         self.db.commit()
         return self._snapshot_current(subscription)
 
@@ -194,7 +245,10 @@ class SubscriptionService:
         subscription.status = SUBSCRIPTION_STATUS_ACTIVE
         subscription.suspended_at = None
         subscription.suspended_reason = None
-        if subscription.current_period_end and subscription.current_period_end < now:
+        if (
+            subscription.current_period_end
+            and _aware(subscription.current_period_end) < now
+        ):
             subscription.status = SUBSCRIPTION_STATUS_OVERDUE
         self.db.commit()
         return self._snapshot_current(subscription)
@@ -216,7 +270,24 @@ class SubscriptionService:
                 "No subscription is configured for this organization",
                 status.HTTP_404_NOT_FOUND,
             )
+        if self.apply_pending_changes(subscription):
+            self.db.commit()
         return self._snapshot_current(subscription)
+
+    def apply_pending_changes(self, subscription) -> bool:
+        """Promote a future-effective contract version once it is due."""
+        if not subscription.pending_plan_version_id:
+            return False
+        due = _aware(subscription.pending_effective_from)
+        if due is None or due > datetime.now(UTC):
+            return False
+        version = self.repo.get_version(subscription.pending_plan_version_id)
+        if version is not None:
+            subscription.plan_version_id = version.id
+            subscription.billing_cadence = version.billing_cadence
+        subscription.pending_plan_version_id = None
+        subscription.pending_effective_from = None
+        return True
 
     def get_exposure(self, expiring_within_days: int = 30) -> dict:
         from datetime import timedelta
@@ -231,6 +302,7 @@ class SubscriptionService:
             available = self.credit_repo.sum_available(org_id)
             expiring = self.credit_repo.expiring_between(org_id, now, horizon)
             earliest = self.credit_repo.earliest_expiring_batch(org_id, now)
+            overdue, outstanding = self.credit_repo.invoice_exposure(org_id)
             total_available += available
             total_expiring += expiring
             items.append(
@@ -239,7 +311,10 @@ class SubscriptionService:
                     "subscription_status": subscription.status,
                     "available": available,
                     "reserved": self.credit_repo.sum_reserved(org_id),
-                    "expiring_30_days": expiring,
+                    "expiring_within_days": expiring,
+                    "horizon_days": expiring_within_days,
+                    "overdue_invoices": overdue,
+                    "outstanding_amount": outstanding,
                     "earliest_expiry": earliest.expires_at if earliest else None,
                 }
             )
@@ -248,7 +323,7 @@ class SubscriptionService:
             "totals": {
                 "organizations": len(items),
                 "available": total_available,
-                "expiring_30_days": total_expiring,
+                "expiring_within_days": total_expiring,
             },
         }
 
@@ -266,6 +341,39 @@ class SubscriptionService:
                     "reference_type": "invoice",
                     "reference_id": invoice_id,
                     "detail": f"Invoice {invoice_no} is paid but has no credit batch",
+                }
+            )
+        for (
+            batch_id,
+            org_id,
+            source_id,
+            invoice_no,
+            invoice_status,
+        ) in self.credit_repo.grants_without_payment():
+            items.append(
+                {
+                    "issue": "grant_without_payment",
+                    "organization_id": org_id,
+                    "reference_type": "credit_batch",
+                    "reference_id": batch_id,
+                    "detail": (
+                        f"Batch for invoice {source_id} exists but the invoice is "
+                        f"{invoice_status or 'missing'}"
+                        + (f" ({invoice_no})" if invoice_no else "")
+                    ),
+                }
+            )
+        for operation in self.credit_repo.stuck_reservations(datetime.now(UTC)):
+            items.append(
+                {
+                    "issue": "stuck_reservation",
+                    "organization_id": operation.organization_id,
+                    "reference_type": "generation_operation",
+                    "reference_id": operation.id,
+                    "detail": (
+                        f"Reservation '{operation.operation_key}' expired at "
+                        f"{operation.reserved_until} and is still held"
+                    ),
                 }
             )
         return {"items": items}

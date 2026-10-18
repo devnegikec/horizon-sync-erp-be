@@ -381,7 +381,10 @@ class ExposureItem(BaseModel):
     subscription_status: str | None
     available: Decimal
     reserved: Decimal
-    expiring_30_days: Decimal
+    expiring_within_days: Decimal
+    horizon_days: int
+    overdue_invoices: int
+    outstanding_amount: Decimal
     earliest_expiry: datetime | None
 
 

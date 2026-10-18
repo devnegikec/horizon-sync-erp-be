@@ -722,6 +722,24 @@ Behavioral notes:
   catalog as a follow-up.
 - `mark_topup_paid()` exists in `CreditEngineService` for the future verified
   webhook; the HTTP webhook route is intentionally not exposed yet.
+- `Idempotency-Key` is honored on plan/version/subscription creates and on
+  `POST /admin/credits/adjustments` (a replay returns the original result).
+- Future-effective version changes are stored on
+  `organization_subscriptions.pending_plan_version_id` /
+  `pending_effective_from` and promoted when the effective date arrives; the
+  current contract keeps its weight until then. Billing periods are aligned to
+  `billing_anchor_day`.
+- Credit issuance (`rate`, `reserve`) and top-up quotes are rejected with
+  `SUBSCRIPTION_NOT_STARTED` until the active version's `effective_from` passes.
+- `GET /account/reports/credits.csv` streams the full filtered ledger (no
+  10,000-row cap).
+- `GET /admin/subscriptions/exposure` returns `expiring_within_days`,
+  `horizon_days`, `overdue_invoices` and `outstanding_amount`;
+  reconciliation reports `paid_invoice_without_grant`, `grant_without_payment`
+  and `stuck_reservation`.
+- Migration `136` records the tables it creates in
+  `subscription_billing_created_tables`; `downgrade()` drops only those, so
+  pre-existing tables are never deleted.
 
 Remaining Phase 2/3 work: provider webhook endpoint + `billing_provider_events`
 ingestion, recurring invoice scheduler worker, credit-expiry cron wiring,

@@ -22,6 +22,13 @@ def conflict(code: str, message: str, http_status: int = status.HTTP_409_CONFLIC
     )
 
 
+def _aware(value: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes; treat them as UTC."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 class SubscriptionPlanService:
     def __init__(self, db: Session):
         self.db = db
@@ -92,7 +99,9 @@ class SubscriptionPlanService:
     def create_version(
         self, plan_id: UUID, payload, actor_id: UUID | None = None
     ) -> dict:
-        plan = self.repo.get_plan(plan_id)
+        # Row-lock the plan so concurrent creates cannot read the same max
+        # version and collide on uq_plan_versions_plan_version.
+        plan = self.repo.get_plan(plan_id, for_update=True)
         if plan is None:
             raise conflict(
                 "PLAN_NOT_FOUND", "Plan not found", status.HTTP_404_NOT_FOUND
@@ -150,23 +159,29 @@ class SubscriptionPlanService:
         return self._version_dict(version)
 
     def publish_version(self, plan_id: UUID, version_id: UUID, payload) -> dict:
+        # Lock the plan so the overlap check and status flip are serialized;
+        # two concurrent publishes cannot both pass the overlap check.
+        self.repo.get_plan(plan_id, for_update=True)
         version = self._get_version_for_plan(plan_id, version_id)
         if version.status != PLAN_VERSION_STATUS_APPROVED:
             raise conflict(
                 "VERSION_NOT_APPROVED",
                 "Approve the version before publishing it",
             )
-        effective_from = (
+        effective_from = _aware(
             payload.effective_from or version.effective_from or datetime.now(UTC)
         )
-        if version.effective_to and effective_from >= version.effective_to:
+        if version.effective_to and effective_from >= _aware(version.effective_to):
             raise conflict(
                 "EFFECTIVE_RANGE_INVALID",
                 "effective_from must be before effective_to",
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         overlap = self.repo.find_published_overlap(
-            plan_id, effective_from, version.effective_to, exclude_version_id=version.id
+            plan_id,
+            effective_from,
+            _aware(version.effective_to),
+            exclude_version_id=version.id,
         )
         if overlap:
             raise conflict(
@@ -184,7 +199,9 @@ class SubscriptionPlanService:
             raise conflict(
                 "VERSION_NOT_PUBLISHED", "Only published versions can be retired"
             )
-        if version.effective_from and payload.effective_to <= version.effective_from:
+        if version.effective_from and _aware(payload.effective_to) <= _aware(
+            version.effective_from
+        ):
             raise conflict(
                 "EFFECTIVE_RANGE_INVALID",
                 "effective_to must be after effective_from",

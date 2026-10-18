@@ -2,9 +2,10 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice
@@ -80,6 +81,20 @@ class CreditEngineService:
                 "No subscription is configured for this organization",
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
+        applied_pending = False
+        if subscription.pending_plan_version_id:
+            due = _aware(subscription.pending_effective_from)
+            if due is not None and due <= datetime.now(UTC):
+                pending = self.subscription_repo.get_version(
+                    subscription.pending_plan_version_id
+                )
+                if pending is not None:
+                    subscription.plan_version_id = pending.id
+                    subscription.billing_cadence = pending.billing_cadence
+                    applied_pending = True
+                subscription.pending_plan_version_id = None
+                subscription.pending_effective_from = None
+                self.db.commit()
         version = self.subscription_repo.get_version(subscription.plan_version_id)
         if version is None:
             raise credit_error(
@@ -87,22 +102,36 @@ class CreditEngineService:
                 "Subscription has no plan version",
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
-        return subscription, version
+        return subscription, version, applied_pending
+
+    @staticmethod
+    def _assert_started(version, allow_early: bool = False) -> None:
+        if allow_early:
+            return
+        start = _aware(version.effective_from)
+        if start is not None and start > datetime.now(UTC):
+            raise credit_error(
+                "SUBSCRIPTION_NOT_STARTED",
+                "The contract version is not effective yet",
+                status.HTTP_402_PAYMENT_REQUIRED,
+                effective_from=start.isoformat(),
+            )
 
     def current_weight(self, organization_id: UUID) -> Decimal:
-        _, version = self._contract(organization_id)
+        _, version, _ = self._contract(organization_id)
         return q6(version.id_weight)
 
     # ── Rating ──────────────────────────────────────────────────────────────
 
     def rate(self, organization_id: UUID, id_count: int) -> dict:
-        subscription, version = self._contract(organization_id)
+        subscription, version, applied_pending = self._contract(organization_id)
         if subscription.status not in RESERVABLE_STATUSES:
             raise credit_error(
                 "SUBSCRIPTION_INACTIVE",
                 f"Subscription is {subscription.status}; issuance is paused",
                 status.HTTP_402_PAYMENT_REQUIRED,
             )
+        self._assert_started(version, allow_early=applied_pending)
         weight = q6(version.id_weight)
         return {"id_weight": weight, "debit": q6(Decimal(id_count) * weight)}
 
@@ -136,22 +165,60 @@ class CreditEngineService:
                 status.HTTP_409_CONFLICT,
             )
 
-        subscription, version = self._contract(organization_id)
+        subscription, version, applied_pending = self._contract(organization_id)
         if subscription.status not in RESERVABLE_STATUSES:
             raise credit_error(
                 "SUBSCRIPTION_INACTIVE",
                 f"Subscription is {subscription.status}; issuance is paused",
                 status.HTTP_402_PAYMENT_REQUIRED,
             )
+        self._assert_started(version, allow_early=applied_pending)
 
         weight = q6(version.id_weight)
         debit = q6(Decimal(id_count) * weight)
         if debit <= 0:
             debit = SIX
 
+        now = datetime.now(UTC)
+        # FOR UPDATE cannot lock a row that does not exist yet. Claim the
+        # operation key by inserting first; the unique constraint is the guard
+        # and a concurrent duplicate is replayed instead of failing.
+        try:
+            operation = self.credit_repo.create_operation(
+                {
+                    "organization_id": organization_id,
+                    "operation_key": operation_key,
+                    "id_count": id_count,
+                    "id_weight": weight,
+                    "debit_qty": debit,
+                    "status": GENERATION_STATUS_RESERVED,
+                    "reserved_until": now + timedelta(minutes=RESERVATION_TTL_MINUTES),
+                    "allocations": None,
+                    "created_by": actor_id,
+                }
+            )
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.credit_repo.get_operation_by_key(
+                organization_id, operation_key
+            )
+            if (
+                existing is not None
+                and existing.id_count == id_count
+                and existing.status
+                in (GENERATION_STATUS_RESERVED, GENERATION_STATUS_COMMITTED)
+            ):
+                return self._operation_response(existing)
+            raise credit_error(
+                "OPERATION_IN_PROGRESS",
+                "The same operation_key is being processed concurrently",
+                status.HTTP_409_CONFLICT,
+            )
+
         batches = self.credit_repo.lock_eligible_batches(organization_id)
         total_available = sum((q6(batch.available_qty) for batch in batches), SIX * 0)
         if total_available < debit:
+            self.db.rollback()
             raise credit_error(
                 "INSUFFICIENT_CREDITS",
                 "Not enough credits for this generation operation",
@@ -184,26 +251,14 @@ class CreditEngineService:
             )
             remaining = q6(remaining - take)
 
-        operation = self.credit_repo.create_operation(
+        operation.allocations = [
             {
-                "organization_id": organization_id,
-                "operation_key": operation_key,
-                "id_count": id_count,
-                "id_weight": weight,
-                "debit_qty": debit,
-                "status": GENERATION_STATUS_RESERVED,
-                "reserved_until": now + timedelta(minutes=RESERVATION_TTL_MINUTES),
-                "allocations": [
-                    {
-                        "batch_id": str(a["batch_id"]),
-                        "quantity": str(a["quantity"]),
-                        "expires_at": a["expires_at"].isoformat(),
-                    }
-                    for a in allocations
-                ],
-                "created_by": actor_id,
+                "batch_id": str(a["batch_id"]),
+                "quantity": str(a["quantity"]),
+                "expires_at": a["expires_at"].isoformat(),
             }
-        )
+            for a in allocations
+        ]
 
         for allocation in allocations:
             self._write_ledger(
@@ -336,6 +391,7 @@ class CreditEngineService:
         quantity: Decimal,
         expires_at: datetime | None = None,
         actor_id: UUID | None = None,
+        idempotency_key: str | None = None,
         commit: bool = True,
     ) -> dict:
         quantity = q6(quantity)
@@ -371,7 +427,9 @@ class CreditEngineService:
             balance_after=balance_after,
             reference_type=source_type,
             reference_id=source_id,
-            idempotency_key=f"grant:{source_type}:{source_id or batch.id}",
+            idempotency_key=(
+                idempotency_key or f"grant:{source_type}:{source_id or batch.id}"
+            ),
             actor_id=actor_id,
             reason="Credit grant",
         )
@@ -388,21 +446,42 @@ class CreditEngineService:
         reason: str,
         expires_at: datetime | None = None,
         actor_id: UUID | None = None,
+        idempotency_key: str | None = None,
     ) -> dict:
         quantity = q6(quantity)
+        ledger_key = (
+            f"adjust:{idempotency_key}" if idempotency_key else f"adjust:{uuid4()}"
+        )
+        existing = self.credit_repo.get_ledger_by_idempotency(
+            organization_id, ledger_key
+        )
+        if existing is not None:
+            return {
+                "organization_id": organization_id,
+                "adjusted": str(abs(q6(existing.qty))),
+                "replayed": True,
+            }
         if direction == LEDGER_ADJUST_POSITIVE:
-            return self.grant_batch(
+            source_id = uuid5(NAMESPACE_URL, f"adjust:{organization_id}:{ledger_key}")
+            result = self.grant_batch(
                 organization_id=organization_id,
                 source_type="adjustment",
-                source_id=uuid4(),
+                source_id=source_id,
                 quantity=quantity,
                 expires_at=expires_at,
                 actor_id=actor_id,
+                idempotency_key=ledger_key,
             )
+            result["replayed"] = False
+            return result
 
         now = datetime.now(UTC)
-        available = self.credit_repo.sum_available(organization_id, now)
+        # Lock first, then check: two concurrent negative adjustments must
+        # serialize on the batch rows, not race the aggregate check.
+        batches = self.credit_repo.lock_eligible_batches(organization_id, now)
+        available = sum((q6(batch.available_qty) for batch in batches), SIX * 0)
         if available < quantity:
+            self.db.rollback()
             raise credit_error(
                 "INSUFFICIENT_BALANCE",
                 "Adjustment would take the credit balance below zero",
@@ -412,7 +491,7 @@ class CreditEngineService:
             )
         remaining = quantity
         running_balance = available
-        for batch in self.credit_repo.lock_eligible_batches(organization_id, now):
+        for batch in batches:
             if remaining <= 0:
                 break
             take = min(q6(batch.available_qty), remaining)
@@ -420,21 +499,31 @@ class CreditEngineService:
                 continue
             batch.reversed_qty = q6(batch.reversed_qty + take)
             running_balance = q6(running_balance - take)
-            self._write_ledger(
-                organization_id=organization_id,
-                batch_id=batch.id,
-                entry_type=LEDGER_ADJUST_NEGATIVE,
-                qty=-take,
-                balance_after=running_balance,
-                idempotency_key=f"adjust_negative:{uuid4()}:{batch.id}",
-                actor_id=actor_id,
-                reason=reason,
-            )
             remaining = q6(remaining - take)
+        if remaining > 0:
+            self.db.rollback()
+            raise credit_error(
+                "INSUFFICIENT_BALANCE",
+                "Adjustment could not be fully allocated",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                available=str(q6(available - quantity + remaining)),
+                required=str(quantity),
+            )
+        self._write_ledger(
+            organization_id=organization_id,
+            batch_id=None,
+            entry_type=LEDGER_ADJUST_NEGATIVE,
+            qty=-quantity,
+            balance_after=running_balance,
+            idempotency_key=ledger_key,
+            actor_id=actor_id,
+            reason=reason,
+        )
         self.db.commit()
         return {
             "organization_id": organization_id,
-            "adjusted": str(quantity - remaining),
+            "adjusted": str(quantity),
+            "replayed": False,
         }
 
     def expire_due_batches(self, now: datetime | None = None) -> dict:
@@ -619,7 +708,20 @@ class CreditEngineService:
     # ── Top-ups ─────────────────────────────────────────────────────────────
 
     def create_topup_quote(self, organization_id: UUID, credits: Decimal) -> tuple:
-        subscription, version = self._contract(organization_id)
+        subscription, version, applied_pending = self._contract(organization_id)
+        if subscription.status not in RESERVABLE_STATUSES:
+            raise credit_error(
+                "TOPUP_NOT_ALLOWED",
+                f"Top-ups are unavailable while the subscription is {subscription.status}",
+                status.HTTP_409_CONFLICT,
+            )
+        if not version.topup_allowed:
+            raise credit_error(
+                "TOPUP_NOT_ALLOWED",
+                "The current plan does not allow credit top-ups",
+                status.HTTP_409_CONFLICT,
+            )
+        self._assert_started(version, allow_early=applied_pending)
         credits = q6(credits)
         unit_price = DEFAULT_TOPUP_UNIT_PRICE
         if version.included_credits and version.included_credits > 0:

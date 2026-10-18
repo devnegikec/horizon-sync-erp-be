@@ -13,18 +13,26 @@ from app.models.subscription import (
 )
 
 
+def _aware(value: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes; treat them as UTC."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 class SubscriptionRepository:
     def __init__(self, db: Session):
         self.db = db
 
     # ── Plans ───────────────────────────────────────────────────────────────
 
-    def get_plan(self, plan_id: UUID) -> SubscriptionPlan | None:
-        return (
-            self.db.query(SubscriptionPlan)
-            .filter(SubscriptionPlan.id == plan_id)
-            .first()
-        )
+    def get_plan(
+        self, plan_id: UUID, *, for_update: bool = False
+    ) -> SubscriptionPlan | None:
+        query = self.db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id)
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
 
     def get_plan_by_code(
         self, organization_id: UUID | None, code: str
@@ -135,12 +143,12 @@ class SubscriptionRepository:
             query = query.filter(SubscriptionPlanVersion.id != exclude_version_id)
         overlap = []
         for version in query.all():
-            other_start = version.effective_from
-            other_end = version.effective_to
+            other_start = _aware(version.effective_from)
+            other_end = _aware(version.effective_to)
             if other_start is None:
                 continue
-            if effective_to is None or effective_to > other_start:
-                if other_end is None or other_end > effective_from:
+            if effective_to is None or _aware(effective_to) > other_start:
+                if other_end is None or other_end > _aware(effective_from):
                     overlap.append(version)
         return overlap[0] if overlap else None
 

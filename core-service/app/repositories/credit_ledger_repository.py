@@ -1,10 +1,11 @@
 """Database access for credit batches, the append-only ledger and top-ups."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.subscription import (
@@ -149,6 +150,25 @@ class CreditLedgerRepository:
             .all()
         )
         return items, total
+
+    def iter_ledger(
+        self,
+        organization_id: UUID,
+        *,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+        chunk_size: int = 1000,
+    ) -> Iterator[CreditLedger]:
+        """Stream every matching entry (no silent export cap)."""
+        query = self.db.query(CreditLedger).filter(
+            CreditLedger.organization_id == organization_id
+        )
+        if from_date:
+            query = query.filter(CreditLedger.occurred_at >= from_date)
+        if to_date:
+            query = query.filter(CreditLedger.occurred_at <= to_date)
+        query = query.order_by(CreditLedger.occurred_at.desc())
+        yield from query.yield_per(chunk_size)
 
     # ── Aggregates ──────────────────────────────────────────────────────────
 
@@ -356,6 +376,61 @@ class CreditLedgerRepository:
             .limit(limit)
             .all()
         )
+
+    def grants_without_payment(self, limit: int = 100) -> list[tuple]:
+        """Plan grants whose source invoice is missing or not settled."""
+        from app.models.invoice import Invoice
+
+        return (
+            self.db.query(
+                CreditBatch.id,
+                CreditBatch.organization_id,
+                CreditBatch.source_id,
+                Invoice.invoice_no,
+                Invoice.status,
+            )
+            .outerjoin(Invoice, Invoice.id == CreditBatch.source_id)
+            .filter(
+                CreditBatch.source_type == "invoice_plan",
+                or_(Invoice.id.is_(None), Invoice.status != "paid"),
+            )
+            .limit(limit)
+            .all()
+        )
+
+    def stuck_reservations(
+        self, as_of: datetime, limit: int = 100
+    ) -> list[GenerationOperation]:
+        return (
+            self.db.query(GenerationOperation)
+            .filter(
+                GenerationOperation.status == "reserved",
+                GenerationOperation.reserved_until.isnot(None),
+                GenerationOperation.reserved_until < as_of,
+            )
+            .limit(limit)
+            .all()
+        )
+
+    def invoice_exposure(self, organization_id: UUID) -> tuple[int, Decimal]:
+        """(overdue invoice count, outstanding amount) for account invoices."""
+        from app.models.invoice import Invoice
+
+        base = self.db.query(Invoice).filter(
+            Invoice.organization_id == organization_id,
+            Invoice.invoice_type.in_(("subscription", "setup_fee", "overage", "addon")),
+            Invoice.status != "void",
+        )
+        overdue = base.filter(
+            Invoice.status == "overdue", Invoice.outstanding_amount > 0
+        ).count()
+        outstanding = (
+            base.with_entities(
+                func.coalesce(func.sum(Invoice.outstanding_amount), 0)
+            ).scalar()
+            or 0
+        )
+        return overdue, Decimal(outstanding)
 
     def expiring_window(self, as_of: datetime, days: int) -> datetime:
         return as_of + timedelta(days=days)

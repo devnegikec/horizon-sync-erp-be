@@ -266,11 +266,11 @@ will return `422 INSUFFICIENT_BALANCE`.
   "items": [
     {
       "organization_id": "…",
-      "organization_name": "Acme FZE",
       "subscription_status": "active",
       "available": "1950.000000",
       "reserved": "0.000000",
-      "expiring_30_days": "750.000000",
+      "expiring_within_days": "750.000000",
+      "horizon_days": 30,
       "earliest_expiry": "2027-01-01T00:00:00Z",
       "overdue_invoices": 1,
       "outstanding_amount": "12000.00"
@@ -279,7 +279,7 @@ will return `422 INSUFFICIENT_BALANCE`.
   "totals": {
     "organizations": 34,
     "available": "812000.000000",
-    "expiring_30_days": "24500.000000"
+    "expiring_within_days": "24500.000000"
   }
 }
 ```
@@ -302,10 +302,7 @@ Rows are _findings_, not invoices:
 | ---------------------------- | --------------------------------------- | ------------------------------------------- |
 | `paid_invoice_without_grant` | Invoice `paid`, no `credit_batches` row | Open customer → grants tab → re-run webhook |
 | `grant_without_payment`      | Batch exists, no settled payment        | Investigate; never delete                   |
-| `batch_sum_mismatch`         | Projection ≠ sum of batches             | "Rebuild projection" (permission gated)     |
-| `duplicate_grant`            | Two batches for one invoice             | Alert only; finance review                  |
 | `stuck_reservation`          | `reserved_until` passed                 | Release reservation                         |
-| `expired_batch_consumed`     | Ledger consume after `expires_at`       | Alert only                                  |
 
 Each row exposes the referenced IDs and a copyable audit link
 (`/admin/audit-logs?entity=…`). Provide CSV export of the current filter.

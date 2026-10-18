@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-from app.alembic_guards import has_table
+from app.alembic_guards import has_column, has_table
 
 revision: str = "136_subscription_billing"
 down_revision: str | Sequence[str] | None = "135_add_bin_stock_parent_qr_flag"
@@ -36,6 +36,24 @@ UUID_TYPE = postgresql.UUID(as_uuid=True)
 JSONB_TYPE = postgresql.JSONB(astext_type=sa.Text())
 NUMERIC_CREDITS = sa.Numeric(20, 6)
 NUMERIC_MONEY = sa.Numeric(15, 2)
+
+#: Tables owned by this migration, in creation order.
+OWNED_TABLES = (
+    "subscription_plans",
+    "subscription_plan_versions",
+    "organization_subscriptions",
+    "credit_batches",
+    "generation_operations",
+    "credit_ledger",
+    "topup_quotes",
+    "topup_orders",
+    "billing_provider_events",
+    "billing_outbox_events",
+)
+
+#: Marker used by downgrade() so a table that pre-dated this migration is
+#: never dropped (upgrade() was a no-op for it).
+MARKER_TABLE = "subscription_billing_created_tables"
 
 
 def _timestamps() -> list[sa.Column]:
@@ -56,6 +74,13 @@ def _timestamps() -> list[sa.Column]:
 
 
 def upgrade() -> None:  # noqa: C901 - one guarded block per table
+    if not has_table(MARKER_TABLE):
+        op.create_table(
+            MARKER_TABLE,
+            sa.Column("table_name", sa.String(80), primary_key=True),
+        )
+    preexisting = {name for name in OWNED_TABLES if has_table(name)}
+
     if not has_table("subscription_plans"):
         op.create_table(
             "subscription_plans",
@@ -489,19 +514,56 @@ def upgrade() -> None:  # noqa: C901 - one guarded block per table
             ["published_at", "attempts"],
         )
 
+    # Pending (future-effective) contract changes. Added as columns so an
+    # existing subscription row survives with its current contract intact.
+    if has_table("organization_subscriptions"):
+        if not has_column("organization_subscriptions", "pending_plan_version_id"):
+            op.add_column(
+                "organization_subscriptions",
+                sa.Column("pending_plan_version_id", UUID_TYPE, nullable=True),
+            )
+            op.create_foreign_key(
+                "fk_org_subscriptions_pending_plan_version",
+                "organization_subscriptions",
+                "subscription_plan_versions",
+                ["pending_plan_version_id"],
+                ["id"],
+            )
+        if not has_column("organization_subscriptions", "pending_effective_from"):
+            op.add_column(
+                "organization_subscriptions",
+                sa.Column(
+                    "pending_effective_from",
+                    sa.DateTime(timezone=True),
+                    nullable=True,
+                ),
+            )
+
+    created = [name for name in OWNED_TABLES if name not in preexisting]
+    if created:
+        bind = op.get_bind()
+        for name in created:
+            bind.execute(
+                sa.text(
+                    f"INSERT INTO {MARKER_TABLE} (table_name) "
+                    "VALUES (:name) ON CONFLICT DO NOTHING"
+                ),
+                {"name": name},
+            )
+
 
 def downgrade() -> None:
-    for table in (
-        "billing_outbox_events",
-        "billing_provider_events",
-        "topup_orders",
-        "topup_quotes",
-        "credit_ledger",
-        "generation_operations",
-        "credit_batches",
-        "organization_subscriptions",
-        "subscription_plan_versions",
-        "subscription_plans",
-    ):
-        if has_table(table):
+    # Only drop tables this migration created; pre-existing tables (whose
+    # upgrade() was a guarded no-op) keep their data.
+    if not has_table(MARKER_TABLE):
+        return
+    rows = (
+        op.get_bind()
+        .execute(sa.text(f"SELECT table_name FROM {MARKER_TABLE}"))
+        .fetchall()
+    )
+    created = {row[0] for row in rows}
+    for table in reversed(OWNED_TABLES):
+        if table in created and has_table(table):
             op.drop_table(table)
+    op.drop_table(MARKER_TABLE)

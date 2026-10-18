@@ -301,6 +301,7 @@ def create_credit_adjustment(
         reason=payload.reason,
         expires_at=payload.expires_at,
         actor_id=current_user.id,
+        idempotency_key=idempotency_key,
     )
 
 
