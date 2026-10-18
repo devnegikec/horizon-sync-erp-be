@@ -582,6 +582,8 @@ class InboundExceptionStatusCounts(BaseModel):
     approved: int = 0
     released: int = 0
     closed: int = 0
+    #: Exceptions voided because their receiving slip was rejected.
+    cancelled: int = 0
 
 
 class InboundExceptionListResponse(BaseModel):

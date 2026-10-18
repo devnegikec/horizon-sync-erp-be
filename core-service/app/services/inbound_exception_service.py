@@ -235,6 +235,11 @@ class InboundExceptionService:
             "approved": 0,
             "released": 0,
             "closed": 0,
+            # Exceptions belonging to a rejected receiving slip (see
+            # InboundService._reverse_slip_stock). Without this bucket those
+            # rows raise ``total`` but land in no bucket, so the counts would
+            # not reconcile.
+            "cancelled": 0,
         }
         for status_value, count in query.group_by(InboundException.status).all():
             key = str(status_value)
