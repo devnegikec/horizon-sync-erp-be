@@ -156,7 +156,32 @@ GET /api/v1/inbound/exceptions
 | `destination` | string | `HOLD` or `QUARANTINE` |
 | `status` | string | `pending_approval` \| `open` \| `approved` \| `released` \| `closed` |
 
-**Response:** `InboundExceptionResponse[]` (newest first, not paginated).
+**Response:** paginated (newest first) with lifecycle statistics:
+
+```json
+{
+  "exceptions": [ /* InboundExceptionResponse */ ],
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 92,
+    "total_pages": 5,
+    "has_next": true,
+    "has_prev": false
+  },
+  "status_counts": {
+    "total": 92,
+    "open": 0,
+    "pending_approval": 86,
+    "approved": 3,
+    "released": 0,
+    "closed": 3
+  }
+}
+```
+
+`status_counts` is scoped to the same `warehouse_id` / `destination` filters (but ignores
+`status` itself, so every bucket stays populated) — use it for the queue's tab badges.
 
 ---
 

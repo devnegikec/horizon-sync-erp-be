@@ -42,6 +42,7 @@ from app.schemas.inbound import (
     InboundExceptionPagination,
     InboundExceptionReasonResponse,
     InboundExceptionResponse,
+    InboundExceptionStatusCounts,
     InboundShortBalanceEventResponse,
     InboundShortBalanceListResponse,
     InboundShortBalanceResponse,
@@ -713,6 +714,11 @@ async def list_inbound_exceptions(
         page_size=page_size,
     )
     total_pages = max(1, (total + page_size - 1) // page_size)
+    status_counts = service.get_status_counts(
+        current_user.organization_id,
+        warehouse_id=warehouse_id,
+        destination=destination,
+    )
     return InboundExceptionListResponse(
         exceptions=[
             InboundExceptionResponse(**serialized)
@@ -726,6 +732,7 @@ async def list_inbound_exceptions(
             has_next=page < total_pages,
             has_prev=page > 1,
         ),
+        status_counts=InboundExceptionStatusCounts(**status_counts),
     )
 
 

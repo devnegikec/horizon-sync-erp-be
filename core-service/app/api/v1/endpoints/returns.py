@@ -164,6 +164,12 @@ async def list_registrations(
         "total_pages": total_pages,
         "has_next": page < total_pages,
         "has_prev": page > 1,
+        "status_counts": service.get_registration_status_counts(
+            current_user.organization_id,
+            warehouse_id=warehouse_id,
+            party_id=party_id,
+            invoice_no=invoice_no,
+        ),
     }
 
 
@@ -444,6 +450,11 @@ async def list_receipt_notes(
         "page_size": page_size,
         "total_items": total,
         "total_pages": ceil(total / page_size) if page_size else 0,
+        "status_counts": service.get_note_status_counts(
+            current_user.organization_id,
+            warehouse_id=warehouse_id,
+            registration_id=registration_id,
+        ),
     }
 
 

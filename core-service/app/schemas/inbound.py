@@ -573,11 +573,25 @@ class InboundExceptionPagination(BaseModel):
     has_prev: bool
 
 
+class InboundExceptionStatusCounts(BaseModel):
+    """Lifecycle distribution for the inbound exception / hold-quarantine queue."""
+
+    total: int = 0
+    open: int = 0
+    pending_approval: int = 0
+    approved: int = 0
+    released: int = 0
+    closed: int = 0
+    #: Exceptions voided because their receiving slip was rejected.
+    cancelled: int = 0
+
+
 class InboundExceptionListResponse(BaseModel):
     """Paginated inbound exception queue."""
 
     exceptions: list[InboundExceptionResponse]
     pagination: InboundExceptionPagination
+    status_counts: InboundExceptionStatusCounts
 
 
 class InboundExceptionBulkResult(BaseModel):

@@ -208,6 +208,46 @@ class InboundExceptionService:
         )
         return items, total
 
+    def get_status_counts(
+        self,
+        organization_id: UUID,
+        *,
+        warehouse_id: UUID | None = None,
+        destination: str | None = None,
+    ) -> dict:
+        """Count exceptions by lifecycle status, scoped to the same filters as
+        the list query (excluding ``status`` itself so every bucket is populated).
+        """
+        from sqlalchemy import func
+
+        query = self.db.query(
+            InboundException.status, func.count(InboundException.id)
+        ).filter(InboundException.organization_id == organization_id)
+        if warehouse_id:
+            query = query.filter(InboundException.warehouse_id == warehouse_id)
+        if destination:
+            query = query.filter(InboundException.destination == destination.upper())
+
+        counts = {
+            "total": 0,
+            "open": 0,
+            "pending_approval": 0,
+            "approved": 0,
+            "released": 0,
+            "closed": 0,
+            # Exceptions belonging to a rejected receiving slip (see
+            # InboundService._reverse_slip_stock). Without this bucket those
+            # rows raise ``total`` but land in no bucket, so the counts would
+            # not reconcile.
+            "cancelled": 0,
+        }
+        for status_value, count in query.group_by(InboundException.status).all():
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
+
     def get_exception(
         self, exception_id: UUID, organization_id: UUID
     ) -> InboundException:
