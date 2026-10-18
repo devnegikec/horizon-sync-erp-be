@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 # from app.api.v1.endpoints import item_groups, item_prices, items, warehouses
 from app.api.v1.endpoints import (
+    account_billing,
     admin,
     analytics,
     asn_orders,
@@ -35,6 +36,7 @@ from app.api.v1.endpoints import (
     feature_flags_admin,
     floor_plans,
     inbound,
+    internal_credits,
     internal_feature_flags,
     internal_warehouse_users,
     invoices,
@@ -460,6 +462,20 @@ api_router.include_router(
     qr_credits.router,
     prefix="/qr-credits",
     tags=["QR Credits"],
+)
+
+# Subscription billing — customer account surfaces
+api_router.include_router(
+    account_billing.router,
+    prefix="/account",
+    tags=["Account Billing"],
+)
+
+# Subscription billing — internal generation credit operations
+api_router.include_router(
+    internal_credits.router,
+    prefix="/internal/credits",
+    tags=["Internal Credits"],
 )
 
 # QR Products module

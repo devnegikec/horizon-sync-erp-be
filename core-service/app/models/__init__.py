@@ -39,9 +39,6 @@ from app.models.base import (
     MaterialRequestStatus,
     MovementType,
     NotificationType,
-    OutboundOrderItemStockStatus,
-    OutboundOrderStatus,
-    OutboundOrderType,
     PaymentAuditAction,
     PaymentEntryStatus,
     PaymentEntryType,
@@ -85,7 +82,6 @@ from app.models.brand_trust import (
 )
 from app.models.bulk_export_job import BulkExportJob
 from app.models.bulk_import_job import BulkImportJob
-from app.models.bulk_put_away_job import BulkPutAwayJob, BulkPutAwayJobStatus
 
 # Bulk Import/Export module
 # Campaigns & Coupons module
@@ -151,7 +147,6 @@ from app.models.messaging import (
     WhatsAppReport,
 )
 from app.models.notification import Notification
-from app.models.outbound_order import OutboundOrder, OutboundOrderItem
 from app.models.packaging_types import PackagingType
 from app.models.payment import Payment
 from app.models.payment_audit_log import PaymentAuditLog
@@ -242,6 +237,20 @@ from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.stock_settings import StockSettings
+
+# Subscription / billing / credit ledger module
+from app.models.subscription import (
+    BillingOutboxEvent,
+    BillingProviderEvent,
+    CreditBatch,
+    CreditLedger,
+    GenerationOperation,
+    OrganizationSubscription,
+    SubscriptionPlan,
+    SubscriptionPlanVersion,
+    TopupOrder,
+    TopupQuote,
+)
 from app.models.supplier import Supplier
 from app.models.system_config import SystemConfig
 from app.models.tax_template import TaxRule, TaxTemplate
