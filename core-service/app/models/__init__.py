@@ -242,6 +242,20 @@ from app.models.stock_level import StockLevel
 from app.models.stock_movement import StockMovement
 from app.models.stock_reconciliation import StockReconciliation, StockReconciliationItem
 from app.models.stock_settings import StockSettings
+
+# Subscription / billing / credit ledger module
+from app.models.subscription import (
+    BillingOutboxEvent,
+    BillingProviderEvent,
+    CreditBatch,
+    CreditLedger,
+    GenerationOperation,
+    OrganizationSubscription,
+    SubscriptionPlan,
+    SubscriptionPlanVersion,
+    TopupOrder,
+    TopupQuote,
+)
 from app.models.supplier import Supplier
 from app.models.system_config import SystemConfig
 from app.models.tax_template import TaxRule, TaxTemplate

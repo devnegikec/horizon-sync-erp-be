@@ -24,6 +24,7 @@ from app.api.v1.endpoints.admin.payment_reminders import (
 )
 from app.api.v1.endpoints.admin.payments import router as payments_router
 from app.api.v1.endpoints.admin.roles import router as roles_router
+from app.api.v1.endpoints.admin.subscriptions import router as subscriptions_router
 from app.api.v1.endpoints.admin.system import router as system_router
 from app.api.v1.endpoints.admin.users import router as users_router
 
@@ -64,6 +65,9 @@ router.include_router(
 # Billing
 router.include_router(billing_router, prefix="/billing", tags=["Admin - Billing"])
 
+# Subscriptions (plan catalog, contracts, credit adjustments)
+router.include_router(subscriptions_router, tags=["Admin - Subscriptions"])
+
 # Payment Reminders
 router.include_router(
     payment_reminders_router,
@@ -75,13 +79,16 @@ router.include_router(
 router.include_router(system_router, tags=["Admin - System"])
 
 # Feature Flags
-router.include_router(feature_flags_router, prefix="/feature-flags", tags=["Admin - Feature Flags"])
+router.include_router(
+    feature_flags_router, prefix="/feature-flags", tags=["Admin - Feature Flags"]
+)
 
 # Roles & Permissions
 router.include_router(roles_router, prefix="/roles", tags=["Admin - Roles"])
 
 # Also mount the permissions endpoint at /admin/permissions (not under /roles)
 from app.api.v1.endpoints.admin.roles import list_permissions as _list_permissions_fn
+
 _permissions_router = APIRouter()
 _permissions_router.add_api_route(
     "",
