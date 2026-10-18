@@ -137,6 +137,18 @@ class Pagination(BaseModel):
     has_prev: bool = False
 
 
+class RegistrationStatusCounts(BaseModel):
+    """Lifecycle distribution for return registrations in the current scope."""
+
+    total: int = 0
+    draft: int = 0
+    ready: int = 0
+    receiving: int = 0
+    received: int = 0
+    closed: int = 0
+    cancelled: int = 0
+
+
 class RegistrationListResponse(BaseModel):
     items: list[RegistrationListItem]
     page: int
@@ -145,6 +157,7 @@ class RegistrationListResponse(BaseModel):
     total_pages: int
     has_next: bool = False
     has_prev: bool = False
+    status_counts: RegistrationStatusCounts
 
 
 class RegistrationDetail(BaseModel):
@@ -340,12 +353,23 @@ class ReceiptNoteListItem(BaseModel):
     created_at: datetime | None = None
 
 
+class ReceiptNoteStatusCounts(BaseModel):
+    """Lifecycle distribution for return receipt notes in the current scope."""
+
+    total: int = 0
+    draft: int = 0
+    pending_approval: int = 0
+    approved: int = 0
+    rejected: int = 0
+
+
 class ReceiptNoteListResponse(BaseModel):
     items: list[ReceiptNoteListItem]
     page: int
     page_size: int
     total_items: int
     total_pages: int
+    status_counts: ReceiptNoteStatusCounts
 
 
 class NoteLineItem(BaseModel):

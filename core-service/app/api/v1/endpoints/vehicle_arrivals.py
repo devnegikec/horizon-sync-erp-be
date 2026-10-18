@@ -20,6 +20,7 @@ from app.schemas.vehicle import (
     VehicleArrivalListItem,
     VehicleArrivalListResponse,
     VehicleArrivalResponse,
+    VehicleArrivalStatusCounts,
     VehicleArrivalUpdate,
     VehicleInfo,
 )
@@ -117,9 +118,15 @@ async def list_vehicle_arrivals(
         )
         for a in arrivals
     ]
+    status_counts = svc.get_status_counts(
+        current_user.organization_id,
+        warehouse_id=warehouse_id,
+        search=search,
+    )
     return VehicleArrivalListResponse(
         vehicle_arrivals=items,
         pagination=PaginationMeta(**pagination),
+        status_counts=VehicleArrivalStatusCounts(**status_counts),
     )
 
 

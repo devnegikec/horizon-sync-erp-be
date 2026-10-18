@@ -427,6 +427,43 @@ class ReturnService:
         )
         return rows, total
 
+    def get_registration_status_counts(
+        self,
+        organization_id: UUID,
+        *,
+        warehouse_id: UUID | None = None,
+        party_id: UUID | None = None,
+        invoice_no: str | None = None,
+    ) -> dict:
+        """Count registrations by status, scoped to the same filters as the
+        list query (excluding ``status`` itself so every bucket is populated).
+        """
+        query = self.db.query(
+            ReturnRegistration.status, func.count(ReturnRegistration.id)
+        ).filter(ReturnRegistration.organization_id == organization_id)
+        if warehouse_id:
+            query = query.filter(ReturnRegistration.warehouse_id == warehouse_id)
+        if party_id:
+            query = query.filter(ReturnRegistration.party_id == party_id)
+        if invoice_no:
+            query = query.filter(ReturnRegistration.reference_no == invoice_no)
+
+        counts = {
+            "total": 0,
+            "draft": 0,
+            "ready": 0,
+            "receiving": 0,
+            "received": 0,
+            "closed": 0,
+            "cancelled": 0,
+        }
+        for status_value, count in query.group_by(ReturnRegistration.status).all():
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
+
     def get_registration(
         self, registration_id: UUID, organization_id: UUID
     ) -> ReturnRegistration:
@@ -916,6 +953,38 @@ class ReturnService:
             .all()
         )
         return rows, total
+
+    def get_note_status_counts(
+        self,
+        organization_id: UUID,
+        *,
+        warehouse_id: UUID | None = None,
+        registration_id: UUID | None = None,
+    ) -> dict:
+        """Count receipt notes by status, scoped to the same filters as the
+        list query (excluding ``status`` itself so every bucket is populated).
+        """
+        query = self.db.query(
+            ReturnReceiptNote.status, func.count(ReturnReceiptNote.id)
+        ).filter(ReturnReceiptNote.organization_id == organization_id)
+        if warehouse_id:
+            query = query.filter(ReturnReceiptNote.warehouse_id == warehouse_id)
+        if registration_id:
+            query = query.filter(ReturnReceiptNote.registration_id == registration_id)
+
+        counts = {
+            "total": 0,
+            "draft": 0,
+            "pending_approval": 0,
+            "approved": 0,
+            "rejected": 0,
+        }
+        for status_value, count in query.group_by(ReturnReceiptNote.status).all():
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
 
     def get_note(self, note_id: UUID, organization_id: UUID) -> ReturnReceiptNote:
         note = (

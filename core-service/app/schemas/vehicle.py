@@ -92,6 +92,16 @@ class VehicleArrivalListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class VehicleArrivalStatusCounts(BaseModel):
+    """Counts of vehicle arrivals by status for the current scope."""
+
+    total: int = 0
+    arrived: int = 0
+    unloaded: int = 0
+    closed: int = 0
+
+
 class VehicleArrivalListResponse(BaseModel):
     vehicle_arrivals: list[VehicleArrivalListItem]
     pagination: PaginationMeta
+    status_counts: VehicleArrivalStatusCounts

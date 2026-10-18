@@ -214,13 +214,24 @@ GET /api/v1/returns/references?invoice_no=INV-2026-00123&warehouse_id=<uuid>
   "total_items": 1,
   "total_pages": 1,
   "has_next": false,
-  "has_prev": false
+  "has_prev": false,
+  "status_counts": {
+    "total": 1,
+    "draft": 0,
+    "ready": 1,
+    "receiving": 0,
+    "received": 0,
+    "closed": 0,
+    "cancelled": 0
+  }
 }
 ```
 
 The list row is **flat** (`party_name`, `warehouse_name`, `warehouse_id`) and carries
 `return_reason_code`, so the registration table can render the reason and preselect the picker
 without a second call. Only `GET /returns/registrations/{id}` nests `party` / `warehouse` objects.
+`status_counts` is scoped to the same `warehouse_id` / `party_id` / `invoice_no` filters (ignoring
+`status` itself) and drives the status tabs.
 
 ### 5.3 `GET /returns/registrations/{id}`
 
@@ -297,11 +308,20 @@ supervisor queue should ask for. `draft` is only reachable through the note's ow
   "page": 1,
   "page_size": 20,
   "total_items": 1,
-  "total_pages": 1
+  "total_pages": 1,
+  "status_counts": {
+    "total": 1,
+    "draft": 0,
+    "pending_approval": 1,
+    "approved": 0,
+    "rejected": 0
+  }
 }
 ```
 
 Badges to render: `mismatch` (expected ≠ received), `damaged_qty`, `open_exceptions`.
+`status_counts` is scoped to the same `warehouse_id` / `registration_id` filters (ignoring
+`status` itself) and drives the queue's status tabs.
 
 ### 6.2 `GET /returns/receipt-notes/{id}`
 

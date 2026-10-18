@@ -181,6 +181,36 @@ class VehicleArrivalService:
         }
         return items, pagination
 
+    def get_status_counts(
+        self,
+        organization_id: UUID,
+        *,
+        warehouse_id: UUID | None = None,
+        search: str | None = None,
+    ) -> dict:
+        """Count vehicle arrivals by status, scoped to the same filters as the
+        list query (excluding ``status`` itself so every bucket is populated).
+        """
+        from sqlalchemy import func
+
+        q = self.db.query(VehicleArrival.status, func.count(VehicleArrival.id)).filter(
+            VehicleArrival.organization_id == organization_id
+        )
+        if warehouse_id is not None:
+            q = q.filter(VehicleArrival.warehouse_id == warehouse_id)
+        if search:
+            q = q.join(Vehicle, Vehicle.id == VehicleArrival.vehicle_id).filter(
+                Vehicle.vehicle_no.ilike(f"%{search}%")
+            )
+
+        counts = {"total": 0, "arrived": 0, "unloaded": 0, "closed": 0}
+        for status_value, count in q.group_by(VehicleArrival.status).all():
+            key = str(status_value)
+            if key in counts:
+                counts[key] = count
+            counts["total"] += count
+        return counts
+
     def link_asns(
         self, arrival_id: UUID, asn_order_ids: list[UUID], organization_id: UUID
     ) -> VehicleArrival:
