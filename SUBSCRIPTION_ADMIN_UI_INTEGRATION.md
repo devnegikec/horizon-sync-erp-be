@@ -5,26 +5,26 @@ plan catalog, tenant subscription lifecycle, activation/payment state, credit
 adjustments, exposure and reconciliation screens. API contracts are defined in
 `SUBSCRIPTION_PLAN_API_IMPLEMENTATION.md`; this document is about consuming them.
 
-| Item | Value |
-| --- | --- |
-| Backend | Core Service `http://localhost:8001/api/v1` (prod: gateway host) |
-| Auth | `Authorization: Bearer <admin JWT>` |
-| Content type | `application/json`; all decimals are **strings** |
-| Currency | ISO-4217 on every money field; never assume `USD` |
-| Timestamps | ISO-8601 UTC (`2026-11-01T00:00:00Z`); render in the org's `billing_timezone` |
+| Item         | Value                                                                         |
+| ------------ | ----------------------------------------------------------------------------- |
+| Backend      | Core Service `http://localhost:8001/api/v1` (prod: gateway host)              |
+| Auth         | `Authorization: Bearer <admin JWT>`                                           |
+| Content type | `application/json`; all decimals are **strings**                              |
+| Currency     | ISO-4217 on every money field; never assume `USD`                             |
+| Timestamps   | ISO-8601 UTC (`2026-11-01T00:00:00Z`); render in the org's `billing_timezone` |
 
 ---
 
 ## 1. Access model
 
-| Screen group | Required permission | Notes |
-| --- | --- | --- |
-| Plan catalog (read) | `system_admin.billing_read` | Ops + Finance + support lead |
-| Plan catalog (write/publish) | `system_admin.billing_create` / `system_admin.billing_update` | Publish shows a confirmation dialog |
-| Tenant subscription (read) | `system_admin.billing_read` | |
-| Tenant subscription (mutate) | `system_admin.billing_update` | Suspend/close require a reason |
-| Payment reconciliation | `system_admin.billing_read` | Export allowed |
-| Credit adjustments | `system_admin.billing_update` | Above threshold requires `approval_id` (dual approval) |
+| Screen group                 | Required permission                                           | Notes                                                  |
+| ---------------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
+| Plan catalog (read)          | `system_admin.billing_read`                                   | Ops + Finance + support lead                           |
+| Plan catalog (write/publish) | `system_admin.billing_create` / `system_admin.billing_update` | Publish shows a confirmation dialog                    |
+| Tenant subscription (read)   | `system_admin.billing_read`                                   |                                                        |
+| Tenant subscription (mutate) | `system_admin.billing_update`                                 | Suspend/close require a reason                         |
+| Payment reconciliation       | `system_admin.billing_read`                                   | Export allowed                                         |
+| Credit adjustments           | `system_admin.billing_update`                                 | Above threshold requires `approval_id` (dual approval) |
 
 Hide (do not merely disable) write actions the current user cannot perform: call
 `GET /admin/permissions` (existing) or read the JWT permission claim once and
@@ -83,7 +83,12 @@ Existing screens (invoice creation, billing summary, credit balance/ledger under
       "draft_version_count": 1
     }
   ],
-  "pagination": { "page": 1, "page_size": 25, "total_items": 12, "total_pages": 1 }
+  "pagination": {
+    "page": 1,
+    "page_size": 25,
+    "total_items": 12,
+    "total_pages": 1
+  }
 }
 ```
 
@@ -97,7 +102,7 @@ Actions.
 **Row actions:** View · Create version · New subscription (deep-links to the
 customer subscription screen with `?plan_id=…`).
 
-**States:** skeleton rows while loading; empty state offers *Create plan*; 403 →
+**States:** skeleton rows while loading; empty state offers _Create plan_; 403 →
 permission notice; retry button on 5xx.
 
 ---
@@ -113,9 +118,9 @@ permission notice; retry button on 5xx.
 
 Render as a vertical list (not a table) because published versions are immutable:
 
-- **draft** — editable; shows *Approve* and *Publish*.
-- **approved** — read-only; shows *Publish* (approver recorded).
-- **published** — read-only badge; *Retire* action (sets `effective_to`).
+- **draft** — editable; shows _Approve_ and _Publish_.
+- **approved** — read-only; shows _Publish_ (approver recorded).
+- **published** — read-only badge; _Retire_ action (sets `effective_to`).
 - **retired** — read-only.
 
 ### 4.2 Version form (draft only)
@@ -123,22 +128,22 @@ Render as a vertical list (not a table) because published versions are immutable
 `POST /admin/subscription-plans/{plan_id}/versions` (create) or
 `PATCH /admin/subscription-plans/{plan_id}/versions/{version_id}` (edit).
 
-| Field | Control | Validation |
-| --- | --- | --- |
-| `billing_cadence` | select `monthly / quarterly / annually` | required |
-| `base_price` | money input, 2dp | `>= 0`; send as string |
-| `tax_rate` | percent input, 4dp | `0–100`; send as string (e.g. `"7.5000"`) |
-| `included_credits` | decimal input, up to 6dp | `>= 0` |
-| `id_weight` | decimal input, up to 6dp | `> 0`; show helper "credits per generated ID" |
-| `topup_allowed` | toggle | default on |
-| `effective_from` | date-time picker (org timezone) | must be > now for publish |
+| Field              | Control                                 | Validation                                    |
+| ------------------ | --------------------------------------- | --------------------------------------------- |
+| `billing_cadence`  | select `monthly / quarterly / annually` | required                                      |
+| `base_price`       | money input, 2dp                        | `>= 0`; send as string                        |
+| `tax_rate`         | percent input, 4dp                      | `0–100`; send as string (e.g. `"7.5000"`)     |
+| `included_credits` | decimal input, up to 6dp                | `>= 0`                                        |
+| `id_weight`        | decimal input, up to 6dp                | `> 0`; show helper "credits per generated ID" |
+| `topup_allowed`    | toggle                                  | default on                                    |
+| `effective_from`   | date-time picker (org timezone)         | must be > now for publish                     |
 
 Client-side guardrails:
 
 - Show a computed example: `100 IDs × 0.5 = 50 credits`.
 - When `billing_cadence` changes on an existing plan, warn that current
   subscriptions keep their contract version until re-assigned.
-- Disable *Publish* until `approval_id` exists (approve first) and
+- Disable _Publish_ until `approval_id` exists (approve first) and
   `effective_from` is valid.
 
 ### 4.3 Publish confirmation
@@ -150,12 +155,12 @@ finance-sensitive accounts.
 
 **Error mapping**
 
-| Code | UI message |
-| --- | --- |
-| `VERSION_NOT_DRAFT` | "This version was published or retired. Create a new version." |
-| `EFFECTIVE_RANGE_OVERLAP` | Highlight `effective_from`; "Another published version already covers this period." |
-| `ID_WEIGHT_INVALID` | Inline error under the weight field |
-| `409 IDEMPOTENCY_CONFLICT` | "This change was already submitted with different values. Reload." |
+| Code                       | UI message                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| `VERSION_NOT_DRAFT`        | "This version was published or retired. Create a new version."                      |
+| `EFFECTIVE_RANGE_OVERLAP`  | Highlight `effective_from`; "Another published version already covers this period." |
+| `ID_WEIGHT_INVALID`        | Inline error under the weight field                                                 |
+| `409 IDEMPOTENCY_CONFLICT` | "This change was already submitted with different values. Reload."                  |
 
 ---
 
@@ -177,12 +182,12 @@ guide. Render:
 - Activation fee + `activation_fee_status`.
 - Current period, next invoice date, billing anchor day/timezone.
 - Primary action depends on status:
-  - `draft` → *Assign plan* (only if no version yet)
-  - `pending_activation_payment` → *Mark activation paid* (opens payment
+  - `draft` → _Assign plan_ (only if no version yet)
+  - `pending_activation_payment` → _Mark activation paid_ (opens payment
     verification dialog; never a free-text "paid" toggle)
-  - `active` → *Change version*, *Suspend*
-  - `overdue` → *Record payment*, *Suspend*
-  - `suspended` → *Reinstate*, *Close*
+  - `active` → _Change version_, _Suspend_
+  - `overdue` → _Record payment_, _Suspend_
+  - `suspended` → _Reinstate_, _Close_
 
 ### 5.2 Create subscription
 
@@ -237,15 +242,15 @@ All three require `reason` (min 10 chars) and render in the audit trail.
 
 **Adjustment dialog** → `POST /admin/credits/adjustments`:
 
-| Field | Rule |
-| --- | --- |
-| Direction | `adjust_positive` / `adjust_negative` |
-| Quantity | `> 0`; show resulting balance before submit |
-| Expiry | required for positive; default +12 months |
-| Reason | required, min 10 chars |
-| Approval | required above org threshold; picker over pending approvals |
+| Field     | Rule                                                        |
+| --------- | ----------------------------------------------------------- |
+| Direction | `adjust_positive` / `adjust_negative`                       |
+| Quantity  | `> 0`; show resulting balance before submit                 |
+| Expiry    | required for positive; default +12 months                   |
+| Reason    | required, min 10 chars                                      |
+| Approval  | required above org threshold; picker over pending approvals |
 
-Negative adjustments that would go below zero must be blocked client-side *and*
+Negative adjustments that would go below zero must be blocked client-side _and_
 will return `422 INSUFFICIENT_BALANCE`.
 
 ---
@@ -271,7 +276,11 @@ will return `422 INSUFFICIENT_BALANCE`.
       "outstanding_amount": "12000.00"
     }
   ],
-  "totals": { "organizations": 34, "available": "812000.000000", "expiring_30_days": "24500.000000" }
+  "totals": {
+    "organizations": 34,
+    "available": "812000.000000",
+    "expiring_30_days": "24500.000000"
+  }
 }
 ```
 
@@ -287,16 +296,16 @@ subscription screen.
 
 `GET /admin/subscriptions/reconciliation?from=&to=`
 
-Rows are *findings*, not invoices:
+Rows are _findings_, not invoices:
 
-| `issue` | Meaning | Suggested action |
-| --- | --- | --- |
+| `issue`                      | Meaning                                 | Suggested action                            |
+| ---------------------------- | --------------------------------------- | ------------------------------------------- |
 | `paid_invoice_without_grant` | Invoice `paid`, no `credit_batches` row | Open customer → grants tab → re-run webhook |
-| `grant_without_payment` | Batch exists, no settled payment | Investigate; never delete |
-| `batch_sum_mismatch` | Projection ≠ sum of batches | "Rebuild projection" (permission gated) |
-| `duplicate_grant` | Two batches for one invoice | Alert only; finance review |
-| `stuck_reservation` | `reserved_until` passed | Release reservation |
-| `expired_batch_consumed` | Ledger consume after `expires_at` | Alert only |
+| `grant_without_payment`      | Batch exists, no settled payment        | Investigate; never delete                   |
+| `batch_sum_mismatch`         | Projection ≠ sum of batches             | "Rebuild projection" (permission gated)     |
+| `duplicate_grant`            | Two batches for one invoice             | Alert only; finance review                  |
+| `stuck_reservation`          | `reserved_until` passed                 | Release reservation                         |
+| `expired_batch_consumed`     | Ledger consume after `expires_at`       | Alert only                                  |
 
 Each row exposes the referenced IDs and a copyable audit link
 (`/admin/audit-logs?entity=…`). Provide CSV export of the current filter.
@@ -306,7 +315,7 @@ Each row exposes the referenced IDs and a copyable audit link
 ## 8. Shared frontend pieces
 
 - `useIdempotencyKey()` — generates a UUID per form submission attempt and reuses
-  it on retry of the *same* payload.
+  it on retry of the _same_ payload.
 - `<Money value currency />` — renders API strings without `parseFloat` math.
 - `<CreditQuantity value />` — 6dp source, displays max 2dp, tooltip full value.
 - `<StatusPill status />` — statuses are snake_case exactly as returned.

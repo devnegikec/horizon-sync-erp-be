@@ -1,17 +1,17 @@
 # Subscription Plans, Billing & Credits — API Implementation Guide
 
-Companion to *Ciphercode Subscription, Billing & Credit Architecture v1.0*. This
+Companion to _Ciphercode Subscription, Billing & Credit Architecture v1.0_. This
 document maps the functional spec onto **this repository** (FastAPI services),
 states what already exists, what must be built, and gives implementation-ready
 table definitions, endpoints, payloads and invariants.
 
-| Service | Base URL (local) | Owns |
-| --- | --- | --- |
-| Identity Service | `http://localhost:8000/api/v1` | `organizations`, users, roles/permissions |
-| Core Service | `http://localhost:8001/api/v1` | invoices, payments, QR credits, QR generation |
-| Worker / Identity Generation | internal network | reserve → generate → commit credit operations |
+| Service                      | Base URL (local)               | Owns                                          |
+| ---------------------------- | ------------------------------ | --------------------------------------------- |
+| Identity Service             | `http://localhost:8000/api/v1` | `organizations`, users, roles/permissions     |
+| Core Service                 | `http://localhost:8001/api/v1` | invoices, payments, QR credits, QR generation |
+| Worker / Identity Generation | internal network               | reserve → generate → commit credit operations |
 
-**Terminology mapping** — the architecture spec says *tenant*; this codebase uses
+**Terminology mapping** — the architecture spec says _tenant_; this codebase uses
 **organization** (`organizations.id`, enforced as `organization_id` on every
 child row). Read "tenant" as "organization" throughout.
 
@@ -19,26 +19,26 @@ child row). Read "tenant" as "organization" throughout.
 
 ## 1. What already exists (do not rebuild)
 
-| Capability | Location | Notes |
-| --- | --- | --- |
-| Organization + billing fields | `identity-service/app/models/organization.py` | `billing_status`, `billing_cycle`, `subscription_start_date`, `subscription_end_date`, `next_billing_date`, `max_users`, `max_credits`, `billing_contact_email` |
-| Subscription/setup/overage invoices | `core-service/app/models/invoice.py` | `invoice_type` ∈ `subscription`, `setup_fee`, `overage`; `billing_cycle`, `subscription_period_start/end`, `seat_count`, `credit_usage` |
-| Admin invoice & billing ops | `core-service/app/api/v1/endpoints/admin/billing.py` | `POST /admin/billing/subscription-invoice`, `/setup-fee-invoice`, `/overage-invoice`, `/addon-invoice`, `/credit-adjustment-invoice`, `GET /admin/billing/summary`, `/summary/{customer_id}` |
-| QR credit balance (single bucket) | `core-service/app/models/qr_credit.py`, `app/services/credit_service.py` | `qr_credit_balance`, `qr_credit_ledger`, `qr_credit_reservations`, `qr_credit_usage`; `SELECT … FOR UPDATE` reservation flow |
-| Org-facing credit read API | `core-service/app/api/v1/endpoints/qr_credits.py` | `GET /qr-credits/balance`, `GET /qr-credits/ledger`, admin `GET/POST /qr-credits/organizations/{id}/…` |
-| Permission helpers | `core-service/app/core/authorization.py`, `app/dependencies.py` | `require_permission(...)`, `require_admin`; `system_admin.billing_read/create/update` |
+| Capability                          | Location                                                                 | Notes                                                                                                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organization + billing fields       | `identity-service/app/models/organization.py`                            | `billing_status`, `billing_cycle`, `subscription_start_date`, `subscription_end_date`, `next_billing_date`, `max_users`, `max_credits`, `billing_contact_email`                              |
+| Subscription/setup/overage invoices | `core-service/app/models/invoice.py`                                     | `invoice_type` ∈ `subscription`, `setup_fee`, `overage`; `billing_cycle`, `subscription_period_start/end`, `seat_count`, `credit_usage`                                                      |
+| Admin invoice & billing ops         | `core-service/app/api/v1/endpoints/admin/billing.py`                     | `POST /admin/billing/subscription-invoice`, `/setup-fee-invoice`, `/overage-invoice`, `/addon-invoice`, `/credit-adjustment-invoice`, `GET /admin/billing/summary`, `/summary/{customer_id}` |
+| QR credit balance (single bucket)   | `core-service/app/models/qr_credit.py`, `app/services/credit_service.py` | `qr_credit_balance`, `qr_credit_ledger`, `qr_credit_reservations`, `qr_credit_usage`; `SELECT … FOR UPDATE` reservation flow                                                                 |
+| Org-facing credit read API          | `core-service/app/api/v1/endpoints/qr_credits.py`                        | `GET /qr-credits/balance`, `GET /qr-credits/ledger`, admin `GET/POST /qr-credits/organizations/{id}/…`                                                                                       |
+| Permission helpers                  | `core-service/app/core/authorization.py`, `app/dependencies.py`          | `require_permission(...)`, `require_admin`; `system_admin.billing_read/create/update`                                                                                                        |
 
 ### 1.1 Gaps vs. the architecture spec
 
-| Gap | Impact | Action |
-| --- | --- | --- |
-| No plan catalog / contract version entity | Prices and ID weight only entered per invoice | Add `subscription_plans`, `subscription_plan_versions` |
-| No per-organization subscription lifecycle | Status lives on `organizations.billing_status` only | Add `organization_subscriptions` |
-| Credits are a single integer bucket | No batch expiry, no FEFO, no weight | Add `credit_batches` + microcredit ledger |
-| No top-up checkout | Top-ups can only be admin-granted | Add `topup_quotes`, `topup_orders` |
-| No payment webhook ingestion / dedupe | Grants depend on manual invoice marking | Add `billing_provider_events` + outbox |
-| `qr_credit_balance` is not rebuildable | Manual adjustments cannot be proven | Make it a projection over `credit_batches` + ledger |
-| No idempotency keys on mutating billing APIs | Retries can double-invoice/double-grant | Require `Idempotency-Key` |
+| Gap                                          | Impact                                              | Action                                                 |
+| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------ |
+| No plan catalog / contract version entity    | Prices and ID weight only entered per invoice       | Add `subscription_plans`, `subscription_plan_versions` |
+| No per-organization subscription lifecycle   | Status lives on `organizations.billing_status` only | Add `organization_subscriptions`                       |
+| Credits are a single integer bucket          | No batch expiry, no FEFO, no weight                 | Add `credit_batches` + microcredit ledger              |
+| No top-up checkout                           | Top-ups can only be admin-granted                   | Add `topup_quotes`, `topup_orders`                     |
+| No payment webhook ingestion / dedupe        | Grants depend on manual invoice marking             | Add `billing_provider_events` + outbox                 |
+| `qr_credit_balance` is not rebuildable       | Manual adjustments cannot be proven                 | Make it a projection over `credit_batches` + ledger    |
+| No idempotency keys on mutating billing APIs | Retries can double-invoice/double-grant             | Require `Idempotency-Key`                              |
 
 ---
 
@@ -59,7 +59,7 @@ grandfathered into one synthetic batch per organization
 
 ## 3. Target data model
 
-All tables keep `organization_id` and are filtered by it in *every* query.
+All tables keep `organization_id` and are filtered by it in _every_ query.
 DDL is written as SQLAlchemy-model intent, matching existing `app/models` style.
 
 ### 3.1 `subscription_plans`
@@ -98,6 +98,7 @@ CHECK (effective_to IS NULL OR effective_to > effective_from)
 ```
 
 Rules:
+
 - A published version is never edited; changes create a new version.
 - Only one version per plan may be `published` for a given instant.
 - Contracts on `organization_subscriptions` point at a version, not a plan.
@@ -253,16 +254,16 @@ Conventions for every mutating endpoint:
 
 ### 5.1 Admin — plan catalog
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| GET | `/admin/subscription-plans` | `system_admin.billing_read` | List plans (filter `active`, `organization_id`, `q`, page) |
-| POST | `/admin/subscription-plans` | `system_admin.billing_create` | Create plan shell |
-| GET | `/admin/subscription-plans/{plan_id}` | `system_admin.billing_read` | Plan + all versions |
-| POST | `/admin/subscription-plans/{plan_id}/versions` | `system_admin.billing_create` | Create draft version |
-| PATCH | `/admin/subscription-plans/{plan_id}/versions/{version_id}` | `system_admin.billing_update` | Edit **draft only** |
-| POST | `/admin/subscription-plans/{plan_id}/versions/{version_id}/approve` | `system_admin.billing_update` | Record approver |
-| POST | `/admin/subscription-plans/{plan_id}/versions/{version_id}/publish` | `system_admin.billing_update` | Set `effective_from`, publish |
-| POST | `/admin/subscription-plans/{plan_id}/versions/{version_id}/retire` | `system_admin.billing_update` | Close `effective_to` |
+| Method | Path                                                                | Permission                    | Purpose                                                    |
+| ------ | ------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------- |
+| GET    | `/admin/subscription-plans`                                         | `system_admin.billing_read`   | List plans (filter `active`, `organization_id`, `q`, page) |
+| POST   | `/admin/subscription-plans`                                         | `system_admin.billing_create` | Create plan shell                                          |
+| GET    | `/admin/subscription-plans/{plan_id}`                               | `system_admin.billing_read`   | Plan + all versions                                        |
+| POST   | `/admin/subscription-plans/{plan_id}/versions`                      | `system_admin.billing_create` | Create draft version                                       |
+| PATCH  | `/admin/subscription-plans/{plan_id}/versions/{version_id}`         | `system_admin.billing_update` | Edit **draft only**                                        |
+| POST   | `/admin/subscription-plans/{plan_id}/versions/{version_id}/approve` | `system_admin.billing_update` | Record approver                                            |
+| POST   | `/admin/subscription-plans/{plan_id}/versions/{version_id}/publish` | `system_admin.billing_update` | Set `effective_from`, publish                              |
+| POST   | `/admin/subscription-plans/{plan_id}/versions/{version_id}/retire`  | `system_admin.billing_update` | Close `effective_to`                                       |
 
 Create plan:
 
@@ -299,17 +300,17 @@ Errors: `409 PLAN_CODE_EXISTS`, `409 VERSION_NOT_DRAFT`,
 
 ### 5.2 Admin — tenant subscription lifecycle
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| GET | `/admin/organizations/{org_id}/subscription` | `system_admin.billing_read` | Subscription + contract snapshot |
-| POST | `/admin/organizations/{org_id}/subscription` | `system_admin.billing_create` | Create draft subscription from published version |
-| POST | `/admin/organizations/{org_id}/subscription/activate` | `system_admin.billing_update` | Mark activation paid (verified payment only) |
-| PATCH | `/admin/organizations/{org_id}/subscription` | `system_admin.billing_update` | Change version (future-effective), anchor day |
-| POST | `/admin/organizations/{org_id}/subscription/suspend` | `system_admin.billing_update` | Suspend with reason |
-| POST | `/admin/organizations/{org_id}/subscription/reinstate` | `system_admin.billing_update` | Reinstate |
-| POST | `/admin/organizations/{org_id}/subscription/close` | `system_admin.billing_update` | Close |
-| GET | `/admin/subscriptions/exposure` | `system_admin.billing_read` | Cross-tenant credit exposure / expiry |
-| GET | `/admin/subscriptions/reconciliation` | `system_admin.billing_read` | Invoice vs payment vs batch discrepancies |
+| Method | Path                                                   | Permission                    | Purpose                                          |
+| ------ | ------------------------------------------------------ | ----------------------------- | ------------------------------------------------ |
+| GET    | `/admin/organizations/{org_id}/subscription`           | `system_admin.billing_read`   | Subscription + contract snapshot                 |
+| POST   | `/admin/organizations/{org_id}/subscription`           | `system_admin.billing_create` | Create draft subscription from published version |
+| POST   | `/admin/organizations/{org_id}/subscription/activate`  | `system_admin.billing_update` | Mark activation paid (verified payment only)     |
+| PATCH  | `/admin/organizations/{org_id}/subscription`           | `system_admin.billing_update` | Change version (future-effective), anchor day    |
+| POST   | `/admin/organizations/{org_id}/subscription/suspend`   | `system_admin.billing_update` | Suspend with reason                              |
+| POST   | `/admin/organizations/{org_id}/subscription/reinstate` | `system_admin.billing_update` | Reinstate                                        |
+| POST   | `/admin/organizations/{org_id}/subscription/close`     | `system_admin.billing_update` | Close                                            |
+| GET    | `/admin/subscriptions/exposure`                        | `system_admin.billing_read`   | Cross-tenant credit exposure / expiry            |
+| GET    | `/admin/subscriptions/reconciliation`                  | `system_admin.billing_read`   | Invoice vs payment vs batch discrepancies        |
 
 `GET /admin/organizations/{org_id}/subscription`:
 
@@ -318,9 +319,13 @@ Errors: `409 PLAN_CODE_EXISTS`, `409 VERSION_NOT_DRAFT`,
   "organization_id": "b0e1…",
   "plan": { "id": "…", "code": "ENT-GROWTH", "name": "Enterprise Growth" },
   "plan_version": {
-    "id": "…", "version": 3, "effective_from": "2026-11-01T00:00:00Z",
-    "billing_cadence": "annually", "base_price": "12000.00",
-    "currency": "USD", "included_credits": "120000.000000",
+    "id": "…",
+    "version": 3,
+    "effective_from": "2026-11-01T00:00:00Z",
+    "billing_cadence": "annually",
+    "base_price": "12000.00",
+    "currency": "USD",
+    "included_credits": "120000.000000",
     "id_weight": "0.500000"
   },
   "status": "active",
@@ -337,11 +342,11 @@ Errors: `409 PLAN_CODE_EXISTS`, `409 VERSION_NOT_DRAFT`,
 
 ### 5.3 Admin — credit adjustments
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| GET | `/qr-credits/organizations/{org_id}` | `require_admin` | Existing balance projection |
-| GET | `/qr-credits/organizations/{org_id}/ledger` | `require_admin` | Existing ledger page |
-| POST | `/admin/credits/adjustments` | `system_admin.billing_update` | `adjust_positive` / `adjust_negative` with reason + approval |
+| Method | Path                                        | Permission                    | Purpose                                                      |
+| ------ | ------------------------------------------- | ----------------------------- | ------------------------------------------------------------ |
+| GET    | `/qr-credits/organizations/{org_id}`        | `require_admin`               | Existing balance projection                                  |
+| GET    | `/qr-credits/organizations/{org_id}/ledger` | `require_admin`               | Existing ledger page                                         |
+| POST   | `/admin/credits/adjustments`                | `system_admin.billing_update` | `adjust_positive` / `adjust_negative` with reason + approval |
 
 Request (dual approval: `approval_id` required above threshold):
 
@@ -367,19 +372,19 @@ All require an org-scoped JWT. Read permission:
 `billing.manage` (Account Admin). Add both permission codes to the permission
 catalog and seed them on the customer org roles.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/account/subscription` | Current plan, cadence, renewal, weight, status |
-| GET | `/account/credits` | Aggregate + reserved + expiring windows + earliest expiry |
-| GET | `/account/credits/batches` | Paginated batch history (`status`, `expiring_before`) |
-| GET | `/account/credits/ledger` | Paginated ledger with filters (`type`, `from`, `to`, `operation_id`) |
-| GET | `/account/credits/expirations` | Buckets: 30 / 60 / 90 days |
-| GET | `/account/invoices` | Paginated invoice history |
-| GET | `/account/invoices/{invoice_id}/download` | Short-lived signed URL |
-| POST | `/account/topups/quotes` | Server-side price/tax/credits/expiry quote |
-| POST | `/account/topups/orders` | Idempotent checkout order |
-| GET | `/account/topups/orders/{order_id}` | Payment status polling |
-| GET | `/account/reports/credits.csv` | CSV export with audit IDs |
+| Method | Path                                      | Purpose                                                              |
+| ------ | ----------------------------------------- | -------------------------------------------------------------------- |
+| GET    | `/account/subscription`                   | Current plan, cadence, renewal, weight, status                       |
+| GET    | `/account/credits`                        | Aggregate + reserved + expiring windows + earliest expiry            |
+| GET    | `/account/credits/batches`                | Paginated batch history (`status`, `expiring_before`)                |
+| GET    | `/account/credits/ledger`                 | Paginated ledger with filters (`type`, `from`, `to`, `operation_id`) |
+| GET    | `/account/credits/expirations`            | Buckets: 30 / 60 / 90 days                                           |
+| GET    | `/account/invoices`                       | Paginated invoice history                                            |
+| GET    | `/account/invoices/{invoice_id}/download` | Short-lived signed URL                                               |
+| POST   | `/account/topups/quotes`                  | Server-side price/tax/credits/expiry quote                           |
+| POST   | `/account/topups/orders`                  | Idempotent checkout order                                            |
+| GET    | `/account/topups/orders/{order_id}`       | Payment status polling                                               |
+| GET    | `/account/reports/credits.csv`            | CSV export with audit IDs                                            |
 
 `GET /account/subscription`:
 
@@ -411,7 +416,11 @@ catalog and seed them on the customer org roles.
   "expiring_30_days": "0.000000",
   "expiring_60_days": "0.000000",
   "expiring_90_days": "0.000000",
-  "earliest_expiry": { "batch_id": "…", "expires_at": "2027-01-01T00:00:00Z", "quantity": "750.000000" },
+  "earliest_expiry": {
+    "batch_id": "…",
+    "expires_at": "2027-01-01T00:00:00Z",
+    "quantity": "750.000000"
+  },
   "id_weight": "0.500000",
   "estimated_ids_available": 3900,
   "as_of": "2026-10-18T10:00:00Z"
@@ -449,12 +458,12 @@ from a verified provider event, never from the redirect.
 
 Callers: identity generation service / QR worker.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/internal/credits/reserve` | Hold weighted quantity for an operation |
-| POST | `/internal/credits/commit` | Finalize generated IDs and debit |
-| POST | `/internal/credits/release` | Release a failed/partial reservation |
-| POST | `/internal/credits/rate` | Quote debit for `id_count` at current weight |
+| Method | Path                        | Purpose                                      |
+| ------ | --------------------------- | -------------------------------------------- |
+| POST   | `/internal/credits/reserve` | Hold weighted quantity for an operation      |
+| POST   | `/internal/credits/commit`  | Finalize generated IDs and debit             |
+| POST   | `/internal/credits/release` | Release a failed/partial reservation         |
+| POST   | `/internal/credits/rate`    | Quote debit for `id_count` at current weight |
 
 Reserve:
 
@@ -476,7 +485,11 @@ Response:
   "debit": "50.000000",
   "reserved_until": "2026-10-18T10:15:00Z",
   "allocations": [
-    { "batch_id": "A", "quantity": "50.000000", "expires_at": "2027-01-01T00:00:00Z" }
+    {
+      "batch_id": "A",
+      "quantity": "50.000000",
+      "expires_at": "2027-01-01T00:00:00Z"
+    }
   ]
 }
 ```
@@ -494,9 +507,9 @@ Errors: `402 INSUFFICIENT_CREDITS`, `409 OPERATION_ALREADY_COMMITTED`,
 
 ### 5.6 Webhooks
 
-| Method | Path | Verification |
-| --- | --- | --- |
-| POST | `/payments/webhooks/{provider}` | HMAC signature + timestamp window + event-id dedupe |
+| Method | Path                            | Verification                                        |
+| ------ | ------------------------------- | --------------------------------------------------- |
+| POST   | `/payments/webhooks/{provider}` | HMAC signature + timestamp window + event-id dedupe |
 
 Processing contract:
 
@@ -558,37 +571,37 @@ Concurrency:
 Annual policy: default `annual_release_policy='monthly_tranches'` — 12 equal
 batch grants released on the monthly anniversary of `activated_at`; set
 `'upfront'` per contract only if finance approves. Store the choice on
-`organization_subscriptions`. *(DECISION REQUIRED — see §12.)*
+`organization_subscriptions`. _(DECISION REQUIRED — see §12.)_
 
 ---
 
 ## 8. Error codes
 
-| HTTP | Code | Meaning |
-| --- | --- | --- |
-| 400 | `INVALID_QUOTE` | Quote expired / already consumed |
-| 401 | `SIGNATURE_INVALID` | Webhook signature mismatch |
-| 402 | `INSUFFICIENT_CREDITS` | Debit exceeds available |
-| 402 | `SUBSCRIPTION_INACTIVE` | Org not active / suspended |
-| 403 | `TENANT_MISMATCH` | Path org ≠ token org (never 404-leak) |
-| 404 | `PLAN_NOT_FOUND` | Unknown plan/version |
-| 409 | `IDEMPOTENCY_CONFLICT` | Same key, different payload |
-| 409 | `VERSION_NOT_DRAFT` | Edit/publish a non-draft version |
-| 409 | `OPERATION_IN_PROGRESS` | Reservation still held |
-| 422 | `ID_WEIGHT_INVALID` | Weight ≤ 0 or > configured max |
-| 422 | `INVOICE_TOTAL_MISMATCH` | Provider amount ≠ invoice total |
+| HTTP | Code                     | Meaning                               |
+| ---- | ------------------------ | ------------------------------------- |
+| 400  | `INVALID_QUOTE`          | Quote expired / already consumed      |
+| 401  | `SIGNATURE_INVALID`      | Webhook signature mismatch            |
+| 402  | `INSUFFICIENT_CREDITS`   | Debit exceeds available               |
+| 402  | `SUBSCRIPTION_INACTIVE`  | Org not active / suspended            |
+| 403  | `TENANT_MISMATCH`        | Path org ≠ token org (never 404-leak) |
+| 404  | `PLAN_NOT_FOUND`         | Unknown plan/version                  |
+| 409  | `IDEMPOTENCY_CONFLICT`   | Same key, different payload           |
+| 409  | `VERSION_NOT_DRAFT`      | Edit/publish a non-draft version      |
+| 409  | `OPERATION_IN_PROGRESS`  | Reservation still held                |
+| 422  | `ID_WEIGHT_INVALID`      | Weight ≤ 0 or > configured max        |
+| 422  | `INVOICE_TOTAL_MISMATCH` | Provider amount ≠ invoice total       |
 
 ---
 
 ## 9. Permissions to add
 
-| Code | Role bundle |
-| --- | --- |
-| `subscription.read` | Customer Account Admin, Customer Viewer |
-| `billing.manage` | Customer Account Admin |
-| `billing.topup` | Customer Account Admin |
-| `system_admin.subscription_plans_read/create/update` | Ciphercode ops admin |
-| `system_admin.credits_adjust` | Finance Admin (with approval) |
+| Code                                                 | Role bundle                             |
+| ---------------------------------------------------- | --------------------------------------- |
+| `subscription.read`                                  | Customer Account Admin, Customer Viewer |
+| `billing.manage`                                     | Customer Account Admin                  |
+| `billing.topup`                                      | Customer Account Admin                  |
+| `system_admin.subscription_plans_read/create/update` | Ciphercode ops admin                    |
+| `system_admin.credits_adjust`                        | Finance Admin (with approval)           |
 
 Register in `core-service/app/core/authorization.py` and in the identity-service
 permission seed; keep naming consistent with the existing
@@ -626,26 +639,26 @@ the same shape (now projected from batches), and keep
 
 ## 11. Acceptance-test mapping
 
-| ID | Where it is enforced |
-| --- | --- |
+| ID  | Where it is enforced                                                     |
+| --- | ------------------------------------------------------------------------ |
 | T01 | `organization_subscriptions` status transition + activation webhook test |
-| T02 | `billing_provider_events.provider_event_id` unique + batch unique key |
-| T03 | `UNIQUE(organization_id, invoice_type, subscription_period_start)` |
-| T04 | annual release policy unit test |
-| T05 | `credit_engine.weighted_debit` parametrized (0.5/1/2) |
-| T06 | concurrent reserve test (`FOR UPDATE`, expect no negative availability) |
-| T07 | FEFO order test with two batches |
-| T08 | expiry clamp test (leap year, month-end) |
-| T09 | expiry job test: A expires, B untouched |
-| T10 | top-up webhook test: one batch, failure grants none |
-| T11 | weight snapshot test: historical debit unchanged |
-| T12 | reserve → release/commit idempotency test |
-| T13 | tenant scoping tests on every account/admin read |
-| T14 | forged webhook / amount mismatch test |
-| T15 | adjustment approval + compensating entry test |
-| T16 | reconciliation: sum(batches) == projection == ledger balance_after |
-| T17 | overdue/suspension grace policy test |
-| T18 | outbox replay after crash issues exactly one grant |
+| T02 | `billing_provider_events.provider_event_id` unique + batch unique key    |
+| T03 | `UNIQUE(organization_id, invoice_type, subscription_period_start)`       |
+| T04 | annual release policy unit test                                          |
+| T05 | `credit_engine.weighted_debit` parametrized (0.5/1/2)                    |
+| T06 | concurrent reserve test (`FOR UPDATE`, expect no negative availability)  |
+| T07 | FEFO order test with two batches                                         |
+| T08 | expiry clamp test (leap year, month-end)                                 |
+| T09 | expiry job test: A expires, B untouched                                  |
+| T10 | top-up webhook test: one batch, failure grants none                      |
+| T11 | weight snapshot test: historical debit unchanged                         |
+| T12 | reserve → release/commit idempotency test                                |
+| T13 | tenant scoping tests on every account/admin read                         |
+| T14 | forged webhook / amount mismatch test                                    |
+| T15 | adjustment approval + compensating entry test                            |
+| T16 | reconciliation: sum(batches) == projection == ledger balance_after       |
+| T17 | overdue/suspension grace policy test                                     |
+| T18 | outbox replay after crash issues exactly one grant                       |
 
 Suggested locations: `core-service/tests/services/test_subscription_*.py`,
 `core-service/tests/api/test_account_billing.py`,
@@ -672,16 +685,16 @@ Suggested locations: `core-service/tests/services/test_subscription_*.py`,
 
 Phase 1 foundations from §10 are implemented and running:
 
-| Layer | File |
-| --- | --- |
-| Models | `core-service/app/models/subscription.py` |
-| Migration | `core-service/alembic/versions/136_subscription_billing.py` |
-| Schemas | `core-service/app/schemas/subscription.py` |
-| Repositories | `app/repositories/subscription_repository.py`, `app/repositories/credit_ledger_repository.py` |
-| Services | `app/services/subscription_plan_service.py`, `app/services/subscription_service.py`, `app/services/credit_engine_service.py` |
-| Admin API | `app/api/v1/endpoints/admin/subscriptions.py` (mounted at `/api/v1/admin`) |
-| Account API | `app/api/v1/endpoints/account_billing.py` (mounted at `/api/v1/account`) |
-| Internal API | `app/api/v1/endpoints/internal_credits.py` (mounted at `/api/v1/internal/credits`, `X-Internal-Secret`) |
+| Layer        | File                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Models       | `core-service/app/models/subscription.py`                                                                                    |
+| Migration    | `core-service/alembic/versions/136_subscription_billing.py`                                                                  |
+| Schemas      | `core-service/app/schemas/subscription.py`                                                                                   |
+| Repositories | `app/repositories/subscription_repository.py`, `app/repositories/credit_ledger_repository.py`                                |
+| Services     | `app/services/subscription_plan_service.py`, `app/services/subscription_service.py`, `app/services/credit_engine_service.py` |
+| Admin API    | `app/api/v1/endpoints/admin/subscriptions.py` (mounted at `/api/v1/admin`)                                                   |
+| Account API  | `app/api/v1/endpoints/account_billing.py` (mounted at `/api/v1/account`)                                                     |
+| Internal API | `app/api/v1/endpoints/internal_credits.py` (mounted at `/api/v1/internal/credits`, `X-Internal-Secret`)                      |
 
 Live endpoints (all verified registered at app startup):
 
@@ -699,7 +712,7 @@ Live endpoints (all verified registered at app startup):
 Behavioral notes:
 
 - Credits are stored as `NUMERIC(20,6)`; everything is FEFO and append-only.
-  `credit_ledger.qty` is the signed change in *availability*; `consume` rows are
+  `credit_ledger.qty` is the signed change in _availability_; `consume` rows are
   written with `qty = 0` because reserved → consumed does not change
   availability (use `generation_operations.debit_qty` for usage reporting).
 - Account reads accept `subscription.read` **or** the existing
@@ -714,4 +727,3 @@ Remaining Phase 2/3 work: provider webhook endpoint + `billing_provider_events`
 ingestion, recurring invoice scheduler worker, credit-expiry cron wiring,
 `GET /account/invoices/{id}/download` signed URLs, and the billing React screens
 described in the two UI integration guides.
-

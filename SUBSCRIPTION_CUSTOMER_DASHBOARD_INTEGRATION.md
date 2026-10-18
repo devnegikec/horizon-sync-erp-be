@@ -8,14 +8,14 @@ All endpoints are **organization-scoped by the JWT** — the frontend never send
 an `organization_id`; the API derives it from the token and returns `403
 TENANT_MISMATCH` if a path/body tries to override it.
 
-| Item | Value |
-| --- | --- |
-| Base URL | Core Service `http://localhost:8001/api/v1` (prod gateway) |
-| Auth | `Authorization: Bearer <access_token>` |
-| Read permission | `subscription.read` (Account Admin + Viewer) |
-| Write permissions | `billing.manage`, `billing.topup` (Account Admin only) |
-| Decimals | strings; render with the org currency |
-| Times | ISO-8601 UTC; render in the org's billing timezone |
+| Item              | Value                                                      |
+| ----------------- | ---------------------------------------------------------- |
+| Base URL          | Core Service `http://localhost:8001/api/v1` (prod gateway) |
+| Auth              | `Authorization: Bearer <access_token>`                     |
+| Read permission   | `subscription.read` (Account Admin + Viewer)               |
+| Write permissions | `billing.manage`, `billing.topup` (Account Admin only)     |
+| Decimals          | strings; render with the org currency                      |
+| Times             | ISO-8601 UTC; render in the org's billing timezone         |
 
 ---
 
@@ -31,7 +31,7 @@ TENANT_MISMATCH` if a path/body tries to override it.
 /account/reports                    → CSV export
 ```
 
-Viewer sees everything read-only; hide *Buy credits* and payment CTAs, or show
+Viewer sees everything read-only; hide _Buy credits_ and payment CTAs, or show
 them disabled with "Ask your account admin".
 
 ---
@@ -63,19 +63,19 @@ Two widgets are enough for the landing page; everything else is one click away.
 
 Render:
 
-| Field | Display |
-| --- | --- |
-| `plan.name` | Title; `plan.code` as secondary text |
-| `status` | Pill; map `overdue` → warning, `suspended`/`closed` → error |
-| `billing_cadence` | "Billed annually" / "Billed monthly" / "Billed quarterly" |
-| `renewal_date` | "Renews 1 Nov 2027"; for `overdue`, replace with "Payment overdue" |
-| `id_weight` | "1 ID = 0.5 credits" |
-| `payment_status` | `current` / `due` / `overdue` with link to `/account/billing` |
+| Field             | Display                                                            |
+| ----------------- | ------------------------------------------------------------------ |
+| `plan.name`       | Title; `plan.code` as secondary text                               |
+| `status`          | Pill; map `overdue` → warning, `suspended`/`closed` → error        |
+| `billing_cadence` | "Billed annually" / "Billed monthly" / "Billed quarterly"          |
+| `renewal_date`    | "Renews 1 Nov 2027"; for `overdue`, replace with "Payment overdue" |
+| `id_weight`       | "1 ID = 0.5 credits"                                               |
+| `payment_status`  | `current` / `due` / `overdue` with link to `/account/billing`      |
 
 Status-specific banners:
 
 - `pending_activation_payment` → "Activate your account to start generating IDs"
-  + payment CTA.
+  - payment CTA.
 - `overdue` → banner with `grace_until`; keep credits visible.
 - `suspended` → "Issuance paused"; top-up CTA hidden.
 - `closed` → read-only history; contact support.
@@ -92,7 +92,11 @@ Status-specific banners:
   "expiring_30_days": "0.000000",
   "expiring_60_days": "0.000000",
   "expiring_90_days": "0.000000",
-  "earliest_expiry": { "batch_id": "…", "expires_at": "2027-01-01T00:00:00Z", "quantity": "750.000000" },
+  "earliest_expiry": {
+    "batch_id": "…",
+    "expires_at": "2027-01-01T00:00:00Z",
+    "quantity": "750.000000"
+  },
   "id_weight": "0.500000",
   "estimated_ids_available": 3900,
   "as_of": "2026-10-18T10:00:00Z"
@@ -107,7 +111,7 @@ Render:
 - Secondary: reserved now, used this period.
 - Expiry strip: show the smallest non-zero bucket of
   `expiring_30/60/90_days`; if all zero, show the `earliest_expiry` date.
-- CTA *Buy credits* (hidden for Viewer or when `can_top_up === false`).
+- CTA _Buy credits_ (hidden for Viewer or when `can_top_up === false`).
 
 Never render a negative balance. If the API omits `earliest_expiry`, show "No
 expiring credits".
@@ -121,9 +125,18 @@ expiring credits".
 
 ```json
 {
-  "buckets": { "within_30_days": "0.000000", "within_60_days": "750.000000", "within_90_days": "750.000000" },
+  "buckets": {
+    "within_30_days": "0.000000",
+    "within_60_days": "750.000000",
+    "within_90_days": "750.000000"
+  },
   "timeline": [
-    { "batch_id": "…", "expires_at": "2027-01-01T00:00:00Z", "quantity": "750.000000", "source": "invoice_plan" }
+    {
+      "batch_id": "…",
+      "expires_at": "2027-01-01T00:00:00Z",
+      "quantity": "750.000000",
+      "source": "invoice_plan"
+    }
   ]
 }
 ```
@@ -156,7 +169,12 @@ Africa/Lagos") to avoid confusing users in other timezones.
       "status": "active"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total_items": 2, "total_pages": 1 }
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 2,
+    "total_pages": 1
+  }
 }
 ```
 
@@ -205,9 +223,9 @@ Filters: date range, type, source batch. Export respects current filters via
 
 - Status pills: `draft` (never shown to customers), `issued`, `partially_paid`,
   `paid`, `overdue`, `void`.
-- *Download* calls `GET /account/invoices/{id}/download` and follows the
+- _Download_ calls `GET /account/invoices/{id}/download` and follows the
   short-lived signed URL; do not cache URLs beyond the page session.
-- Unpaid invoice → *Pay now* button when the API returns a `payment_link`.
+- Unpaid invoice → _Pay now_ button when the API returns a `payment_link`.
 
 ---
 
@@ -233,13 +251,13 @@ sequenceDiagram
 
 Rules:
 
-- Quotes expire (typically 15 min). If `expires_at` passes, disable *Pay* and
+- Quotes expire (typically 15 min). If `expires_at` passes, disable _Pay_ and
   re-quote silently; never send an expired `quote_id`.
 - Show the credit expiry date from the quote **before** payment.
 - The success redirect is informational only — poll
   `GET /account/topups/orders/{order_id}` (2 s interval, stop after 60 s) and
   only show "Credits added" when `status === "paid"`.
-- Pending state copy: "Waiting for payment confirmation" with a *Refresh* button.
+- Pending state copy: "Waiting for payment confirmation" with a _Refresh_ button.
 - Failure state: "Payment failed — no credits were added", link back to quote.
 
 ---
@@ -262,13 +280,13 @@ Rules:
 
 ## 8. Refresh and caching
 
-| Data | Strategy |
-| --- | --- |
-| `/account/subscription` | Fetch on route entry; cache 5 min; invalidate after payment/top-up |
-| `/account/credits` | Fetch on dashboard entry; poll every 60 s while the page is visible |
-| Batches/ledger | Fetch on demand, paginated; no background polling |
-| Invoices | Cache 2 min; refresh after returning from provider checkout |
-| Top-up order status | Poll 2 s while `pending`, max 60 s |
+| Data                    | Strategy                                                            |
+| ----------------------- | ------------------------------------------------------------------- |
+| `/account/subscription` | Fetch on route entry; cache 5 min; invalidate after payment/top-up  |
+| `/account/credits`      | Fetch on dashboard entry; poll every 60 s while the page is visible |
+| Batches/ledger          | Fetch on demand, paginated; no background polling                   |
+| Invoices                | Cache 2 min; refresh after returning from provider checkout         |
+| Top-up order status     | Poll 2 s while `pending`, max 60 s                                  |
 
 Use `document.visibilityState` to pause polling in background tabs. Abort
 in-flight requests on unmount.
@@ -277,15 +295,15 @@ in-flight requests on unmount.
 
 ## 9. Error and gating UX
 
-| HTTP / code | Where | UI behaviour |
-| --- | --- | --- |
-| `403 TENANT_MISMATCH` | any | Generic "Access denied"; log out if persistent |
-| `402 INSUFFICIENT_CREDITS` | generation entry points | Modal: available vs required, *Buy credits* CTA |
-| `402 SUBSCRIPTION_INACTIVE` | any write | Banner + link to billing; disable generate |
-| `409 OPERATION_IN_PROGRESS` | retry of generation | "Already in progress" — do not retry blindly |
-| `410 RESERVATION_EXPIRED` | async generation | Restart flow; no double charge |
-| `422 INVALID_QUOTE` | top-up | Auto re-quote and show the new total |
-| `5xx` | any | Inline retry; keep last good data visible with a stale stamp |
+| HTTP / code                 | Where                   | UI behaviour                                                 |
+| --------------------------- | ----------------------- | ------------------------------------------------------------ |
+| `403 TENANT_MISMATCH`       | any                     | Generic "Access denied"; log out if persistent               |
+| `402 INSUFFICIENT_CREDITS`  | generation entry points | Modal: available vs required, _Buy credits_ CTA              |
+| `402 SUBSCRIPTION_INACTIVE` | any write               | Banner + link to billing; disable generate                   |
+| `409 OPERATION_IN_PROGRESS` | retry of generation     | "Already in progress" — do not retry blindly                 |
+| `410 RESERVATION_EXPIRED`   | async generation        | Restart flow; no double charge                               |
+| `422 INVALID_QUOTE`         | top-up                  | Auto re-quote and show the new total                         |
+| `5xx`                       | any                     | Inline retry; keep last good data visible with a stale stamp |
 
 Initial load: skeletons, not spinners over empty cards. Partial failure: render
 whichever widget loaded and a per-widget retry.
