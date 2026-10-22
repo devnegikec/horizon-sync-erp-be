@@ -6,13 +6,11 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.authorization import ASN_ORDER_READ, QR_PRODUCT_READ
-from app.dependencies import CurrentUser, require_permission
+from app.dependencies import CurrentUser, get_current_active_user
 from app.schemas.notification import (
     NotificationCountResponse,
     NotificationListResponse,
     NotificationResponse,
-    NotificationUpdate,
 )
 from app.services.notification_service import NotificationService
 
@@ -25,9 +23,10 @@ async def list_notifications(
     page_size: int = Query(20, ge=1, le=100),
     unread_only: bool = Query(False, description="Filter to unread notifications only"),
     entity_type: str | None = Query(None, description="Filter by entity type"),
-    current_user: CurrentUser = Depends(
-        require_permission(ASN_ORDER_READ, QR_PRODUCT_READ)
-    ),
+    # Notifications are private to the authenticated user. Requiring a
+    # module permission (asn_order.read / qr_product.read) wrongly denied
+    # warehouse workers their own alerts with a 403.
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """List notifications for the current user."""
@@ -49,9 +48,7 @@ async def list_notifications(
 
 @router.get("/count", response_model=NotificationCountResponse)
 async def get_notification_count(
-    current_user: CurrentUser = Depends(
-        require_permission(ASN_ORDER_READ, QR_PRODUCT_READ)
-    ),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Get total and unread notification count for the current user."""
@@ -66,9 +63,7 @@ async def get_notification_count(
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
 async def mark_notification_read(
     notification_id: UUID,
-    current_user: CurrentUser = Depends(
-        require_permission(ASN_ORDER_READ, QR_PRODUCT_READ)
-    ),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Mark a single notification as read."""
@@ -82,9 +77,7 @@ async def mark_notification_read(
 
 @router.patch("/mark-all-read", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_all_notifications_read(
-    current_user: CurrentUser = Depends(
-        require_permission(ASN_ORDER_READ, QR_PRODUCT_READ)
-    ),
+    current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """Mark all notifications as read for the current user."""

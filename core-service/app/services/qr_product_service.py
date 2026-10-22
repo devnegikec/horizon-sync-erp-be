@@ -7,7 +7,6 @@ import string
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -1362,22 +1361,6 @@ class QRProductService:
             secrets.choice(string.ascii_uppercase + string.digits) for _ in range(12)
         )
 
-    @staticmethod
-    def _client_redirect_url(product) -> str | None:
-        """Return the configured client URL for direct-redirect products."""
-        if not getattr(product, "redirect_to_client", False):
-            return None
-
-        value = getattr(product, "client_product_auth_url", None)
-        if not isinstance(value, str):
-            return None
-
-        value = value.strip()
-        parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            return None
-        return value
-
     # ── Item generation ───────────────────────────────────────────────────────
 
     def _generate_product_items(  # noqa: C901
@@ -1400,7 +1383,6 @@ class QRProductService:
         qr_type = normalize_qr_type(block.qr_type) or QRType.DYNAMIC
         sr_number_type = block.sr_number_type or product.sr_number_type
         prefix = block.serial_prefix or ""
-        client_redirect_url = self._client_redirect_url(product)
 
         # Determine if we need signing (product linked to a brand)
         brand = None
@@ -1412,10 +1394,10 @@ class QRProductService:
             if sku and sku.gtin:
                 gtin = sku.gtin
 
-        if not gtin and not client_redirect_url:
+        if not gtin:
             raise RuntimeError("Product GTIN is required for QR generation")
 
-        if product.brand_id and self.key_service and not client_redirect_url:
+        if product.brand_id and self.key_service:
             from app.repositories.brand_repository import BrandRepository
 
             brand_repo = BrandRepository(self.db)
@@ -1479,29 +1461,6 @@ class QRProductService:
             item_dict["qr_active"] = is_pre_activated
             item_dict["qr_deactive"] = not is_pre_activated
             item_dict["qr_deactive_unit"] = not is_pre_activated
-
-            # Direct redirect mode intentionally creates a QR containing the
-            # client URL. This applies equally to Dynamic, SecureCode, Dual,
-            # and One-Time QR types; no authentication URL or challenge code
-            # is needed when the product explicitly opts out of QSeal auth.
-            if client_redirect_url:
-                item_dict["token_id"] = client_redirect_url
-                if qr_type == QRType.DUAL:
-                    item_dict["extra_data"] = {
-                        "long_url": client_redirect_url,
-                        "short_url": client_redirect_url,
-                        "overt_url": client_redirect_url,
-                        "covert_url": client_redirect_url,
-                        "overt_long_url": client_redirect_url,
-                        "covert_long_url": client_redirect_url,
-                    }
-                else:
-                    item_dict["extra_data"] = {
-                        "long_url": client_redirect_url,
-                        "short_url": client_redirect_url,
-                    }
-                items.append(item_dict)
-                continue
 
             # SecureCode: generate 12-char secret
             if qr_type == QRType.SECURE_CODE:

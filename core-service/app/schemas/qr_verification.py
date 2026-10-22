@@ -13,6 +13,10 @@ class QRVerificationStatus(str, Enum):
     NOT_ACTIVATED = "not_activated"
     ALREADY_USED = "already_used"
     INVALID = "invalid"
+    # Product opted out of QSeal authentication (client redirect mode). The
+    # scan was resolved to a real item, but no signature/activation check ran,
+    # so it must not be reported or analyzed as an authentic verification.
+    REDIRECT = "redirect"
 
 
 class QRVerificationChannel(str, Enum):

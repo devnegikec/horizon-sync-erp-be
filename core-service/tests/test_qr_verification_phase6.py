@@ -161,6 +161,8 @@ def test_authenticated_scan_returns_client_redirect_when_product_enables_it():
 
     result = service.verify(_request())
 
+    assert result["verification_status"] == "redirect"
+    assert result["authentic"] is False
     assert result["redirect_to_client"] is True
     assert result["redirect_only"] is True
     assert result["redirect_url"] == item.product.client_product_auth_url
@@ -204,6 +206,8 @@ def test_redirect_mode_bypasses_authentication_for_every_qr_type(qr_type):
 
     assert result["redirect_only"] is True
     assert result["redirect_to_client"] is True
+    assert result["verification_status"] == "redirect"
+    assert result["authentic"] is False
     assert result["redirect_url"] == item.product.client_product_auth_url
     service.key_service.verify_signature.assert_not_called()
 
@@ -390,9 +394,7 @@ def test_global_collision_query_does_not_accept_an_organization():
     query.filter.return_value = query
     query.all.return_value = [("PRO-ABC12345",)]
 
-    result = ProductItemRepository(db).get_existing_serials_global(
-        ["PRO-ABC12345"]
-    )
+    result = ProductItemRepository(db).get_existing_serials_global(["PRO-ABC12345"])
 
     assert result == {"PRO-ABC12345"}
     filters = query.filter.call_args.args
@@ -427,7 +429,9 @@ migration_path = (
     / "versions"
     / "047_make_product_item_serial_global.py"
 )
-spec = importlib.util.spec_from_file_location("global_item_serial_migration", migration_path)
+spec = importlib.util.spec_from_file_location(
+    "global_item_serial_migration", migration_path
+)
 assert spec and spec.loader
 migration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(migration)

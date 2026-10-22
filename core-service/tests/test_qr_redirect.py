@@ -71,7 +71,9 @@ async def test_pre_activation_redirect_appends_legacy_client_parameters(monkeypa
     repo = _repo(item)
     db = Mock()
     _stub_analytics(monkeypatch)
-    monkeypatch.setattr("app.api.qr_redirect.QRVerificationRepository", lambda _db: repo)
+    monkeypatch.setattr(
+        "app.api.qr_redirect.QRVerificationRepository", lambda _db: repo
+    )
 
     async def location(_request):
         return "India", "Maharashtra"
@@ -116,7 +118,9 @@ async def test_active_post_activation_redirect_appends_activation_metadata(monke
     )
     db = Mock()
     _stub_analytics(monkeypatch)
-    monkeypatch.setattr("app.api.qr_redirect.QRVerificationRepository", lambda _db: repo)
+    monkeypatch.setattr(
+        "app.api.qr_redirect.QRVerificationRepository", lambda _db: repo
+    )
     monkeypatch.setattr(
         "app.api.qr_redirect._location_values",
         lambda _request: _location(),
@@ -153,7 +157,9 @@ async def test_direct_redirect_captures_analytics_before_redirect(monkeypatch):
         "app.api.qr_redirect._scan_event_id",
         lambda _request: event_id,
     )
-    monkeypatch.setattr("app.api.qr_redirect.QRVerificationRepository", lambda _db: repo)
+    monkeypatch.setattr(
+        "app.api.qr_redirect.QRVerificationRepository", lambda _db: repo
+    )
 
     async def location(_request):
         return None, None
@@ -185,7 +191,8 @@ async def test_direct_redirect_captures_analytics_before_redirect(monkeypatch):
     assert capture_kwargs["event_id"] == event_id
     assert capture_kwargs["request_data"].serial_number == item.serial_number
     assert capture_kwargs["request_data"].qr_channel == QRVerificationChannel.OVERT
-    assert capture_kwargs["verification_result"]["authentic"] is True
+    assert capture_kwargs["verification_result"]["verification_status"] == "redirect"
+    assert capture_kwargs["verification_result"]["authentic"] is False
     background_tasks.add_task.assert_called_once()
 
 

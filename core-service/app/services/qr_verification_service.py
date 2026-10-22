@@ -27,7 +27,7 @@ class QRVerificationService:
         self.repo = QRVerificationRepository(db)
         self.key_service = KeyService(settings.brand_key_encryption_secret)
 
-    def verify(self, data: PublicQRVerifyRequest) -> dict:
+    def verify(self, data: PublicQRVerifyRequest) -> dict:  # noqa: C901
         identity = self.repo.resolve_active_item_identity(data.serial_number)
         if identity is None:
             return self._invalid_response()
@@ -53,10 +53,13 @@ class QRVerificationService:
             if self._can_redirect_without_auth(
                 item, product, organization_id, redirect_url
             ):
-                qr_type = normalize_qr_type(
-                    getattr(getattr(item, "block", None), "qr_type", None)
-                    or getattr(product, "qr_type", None)
-                ) or QRType.DYNAMIC
+                qr_type = (
+                    normalize_qr_type(
+                        getattr(getattr(item, "block", None), "qr_type", None)
+                        or getattr(product, "qr_type", None)
+                    )
+                    or QRType.DYNAMIC
+                )
                 self.db.rollback()
                 return self._redirect_response(
                     item,
@@ -86,9 +89,12 @@ class QRVerificationService:
                 return self._invalid_response()
 
             item_details = self._public_item_details(item, organization_id)
-            qr_type = normalize_qr_type(
-                getattr(item.block, "qr_type", None) or product.qr_type
-            ) or QRType.DYNAMIC
+            qr_type = (
+                normalize_qr_type(
+                    getattr(item.block, "qr_type", None) or product.qr_type
+                )
+                or QRType.DYNAMIC
+            )
 
             challenge = self._challenge_response(
                 item,
@@ -358,8 +364,12 @@ class QRVerificationService:
     ) -> dict:
         sku = getattr(item, "sku", None)
         return {
-            "verification_status": QRVerificationStatus.AUTHENTIC,
-            "authentic": True,
+            # Redirect mode deliberately skips GTIN, signature, activation,
+            # secure-code, dual-QR, and one-time checks. Reporting AUTHENTIC
+            # here would let QSeal analytics count an unauthenticated redirect
+            # as a successful verification.
+            "verification_status": QRVerificationStatus.REDIRECT,
+            "authentic": False,
             "message": "Redirecting to the client product URL.",
             "redirect_only": True,
             "requires_action": False,
@@ -439,8 +449,7 @@ class QRVerificationService:
             "manufacturing_date": (item_details or {}).get("manufacturing_date"),
             "expiry_date": (item_details or {}).get("expiry_date"),
             "logo_url": product.image_url,
-            "product_image_url": getattr(sku, "image_url", None)
-            or product.image_url,
+            "product_image_url": getattr(sku, "image_url", None) or product.image_url,
             "banner_image_url": product.banner_image_url,
             "contact_email": getattr(product, "email", None),
             "contact_phone": getattr(product, "phone_number", None),
@@ -462,7 +471,12 @@ class QRVerificationService:
             return None
 
         value = value.strip()
-        parsed = urlparse(value)
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            # ``urlparse`` raises on malformed values (for example an
+            # unmatched IPv6 bracket). Treat them as unusable, not fatal.
+            return None
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return None
         return value

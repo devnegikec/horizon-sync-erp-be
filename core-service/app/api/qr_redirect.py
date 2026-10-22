@@ -3,7 +3,15 @@
 import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -168,16 +176,21 @@ async def redirect_qr_to_client(
             signature=signed_value or "direct-redirect",
             qr_channel=resolved_qr_channel,
         )
-        qr_type = normalize_qr_type(
-            getattr(getattr(item, "block", None), "qr_type", None)
-            or getattr(product, "qr_type", None)
-        ) or QRType.DYNAMIC
+        qr_type = (
+            normalize_qr_type(
+                getattr(getattr(item, "block", None), "qr_type", None)
+                or getattr(product, "qr_type", None)
+            )
+            or QRType.DYNAMIC
+        )
         captured_id = PublicScanCaptureService(db).capture(
             event_id=_scan_event_id(request),
             request_data=scan_data,
             verification_result={
-                "verification_status": QRVerificationStatus.AUTHENTIC,
-                "authentic": True,
+                # This route never authenticates the QR, so the scan is
+                # recorded as a redirect rather than a successful verification.
+                "verification_status": QRVerificationStatus.REDIRECT,
+                "authentic": False,
                 "qr_type": qr_type.value,
                 "challenge_type": None,
             },
