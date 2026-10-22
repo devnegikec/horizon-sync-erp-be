@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.qr_product import QRProduct
 from app.models.qr_scan_event import QRScanEvent
 from app.models.qseal import QSealTrack
-from app.services.qseal_suspicion_service import risk_level
+from app.services.qseal_suspicion_service import VALID_SCAN_STATUSES, risk_level
 
 
 class QSealRepository:
@@ -351,14 +351,16 @@ class QSealRepository:
 
     @staticmethod
     def _valid_scan_filter(query):
-        return query.filter(QRScanEvent.verification_status == "valid")
+        return query.filter(QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES))
 
     def get_scan_summary(self, organization_id: UUID, **filters) -> dict:
         query = self._qseal_scan_query(organization_id, **filters)
         total_scans = query.count()
         valid_query = self._valid_scan_filter(query)
         valid_scans = valid_query.count()
-        invalid_scans = query.filter(QRScanEvent.verification_status != "valid").count()
+        invalid_scans = query.filter(
+            ~QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES)
+        ).count()
         unique_serials = (
             valid_query.with_entities(
                 func.count(func.distinct(QRScanEvent.serial_number))
@@ -425,7 +427,7 @@ class QSealRepository:
             )
             item["total_scans"] += row.count
             item["suspicious_scans"] += int(getattr(row, "suspicious_count", 0) or 0)
-            if row.verification_status == "valid":
+            if row.verification_status in VALID_SCAN_STATUSES:
                 item["valid_scans"] += row.count
             else:
                 item["invalid_scans"] += row.count
@@ -441,12 +443,18 @@ class QSealRepository:
                 QRScanEvent.batch,
                 func.count(QRScanEvent.id).label("total_scans"),
                 func.sum(
-                    case((QRScanEvent.verification_status == "valid", 1), else_=0)
+                    case(
+                        (QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES), 1),
+                        else_=0,
+                    )
                 ).label("valid_scans"),
                 func.count(
                     func.distinct(
                         case(
-                            (QRScanEvent.verification_status == "valid", QRScanEvent.serial_number),
+                            (
+                                QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES),
+                                QRScanEvent.serial_number,
+                            ),
                             else_=None,
                         )
                     )
@@ -497,7 +505,10 @@ class QSealRepository:
                 QRScanEvent.longitude,
                 func.count().label("total_scans"),
                 func.sum(
-                    case((QRScanEvent.verification_status == "valid", 1), else_=0)
+                    case(
+                        (QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES), 1),
+                        else_=0,
+                    )
                 ).label("valid_scans"),
             )
             .group_by(
@@ -536,7 +547,10 @@ class QSealRepository:
                 QRScanEvent.device_type,
                 func.count().label("total_scans"),
                 func.sum(
-                    case((QRScanEvent.verification_status == "valid", 1), else_=0)
+                    case(
+                        (QRScanEvent.verification_status.in_(VALID_SCAN_STATUSES), 1),
+                        else_=0,
+                    )
                 ).label("valid_scans"),
             )
             .group_by(QRScanEvent.device_type)

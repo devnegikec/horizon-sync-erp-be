@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.models.base import NotificationType
 from app.models.product_item import ProductItem
 from app.models.qr_block import QRBlock
 from app.models.qr_product import QRProduct
@@ -281,6 +282,53 @@ class QRProductService:
 
     # ── Products ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _json_safe_packaging_details(packaging_details: dict) -> dict:
+        """Convert Decimal packaging values before storing them in JSONB."""
+        return {
+            key: (float(value) if isinstance(value, Decimal) else value)
+            for key, value in packaging_details.items()
+        }
+
+    def _notify_product_event(
+        self,
+        product: QRProduct,
+        user_id: UUID,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+    ) -> None:
+        """Best-effort in-app notification for a QSeal product lifecycle event."""
+        if getattr(self, "db", None) is None:
+            return
+        try:
+            from app.services.notification_service import NotificationService
+
+            NotificationService(self.db).create(
+                organization_id=product.organization_id,
+                user_id=user_id,
+                type=notification_type.value,
+                title=title,
+                message=message,
+                entity_type="qr_product",
+                entity_id=product.id,
+                entity_no=product.name,
+                sender_id=user_id,
+            )
+        except Exception:
+            # Notification delivery must never turn a committed product change
+            # into an API failure.
+            # A failed flush/commit leaves the SQLAlchemy session unusable until
+            # it is rolled back. Without this, the PATCH response triggers a
+            # second database error while serializing the updated product.
+            self.db.rollback()
+            logger.warning(
+                "Failed to deliver %s notification for QR product %s",
+                notification_type.value,
+                getattr(product, "id", None),
+                exc_info=True,
+            )
+
     def _validate_shelf_life_setting(
         self,
         setting_id: UUID | None,
@@ -425,6 +473,14 @@ class QRProductService:
 
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
         self.db.refresh(qr_product)
+
+        self._notify_product_event(
+            qr_product,
+            user_id,
+            NotificationType.PRODUCT_CREATED,
+            "Product created",
+            f'Product "{qr_product.name}" was created successfully.',
+        )
 
         return qr_product
 
@@ -631,6 +687,8 @@ class QRProductService:
         user_id: UUID,
     ) -> QRProduct:
         product = self.get_product(product_id, organization_id)
+        was_active = getattr(product, "is_active", True)
+        product_name = getattr(product, "name", None) or "Product"
         update_dict = data.model_dump(exclude_unset=True)
         packaging_details = update_dict.pop("packaging_details", None)
         if packaging_details is not None:
@@ -690,13 +748,39 @@ class QRProductService:
                 logger.error("Failed to upsert linked item packaging: %s", exc)
 
         # NOTE: field-level sync (product_item_sync_service) was removed in Phase 4.
+        if update_dict.get("is_active") is False and was_active is not False:
+            notification_type = NotificationType.PRODUCT_DEACTIVATED
+            title = "Product deactivated"
+            message = f'Product "{product_name}" was deactivated successfully.'
+        elif update_dict.get("is_active") is True and was_active is False:
+            notification_type = NotificationType.PRODUCT_ACTIVATED
+            title = "Product activated"
+            message = f'Product "{product_name}" was activated successfully.'
+        else:
+            notification_type = NotificationType.PRODUCT_UPDATED
+            title = "Product updated"
+            message = f'Product "{product_name}" was updated successfully.'
+        self._notify_product_event(
+            product,
+            user_id,
+            notification_type,
+            title,
+            message,
+        )
         return product
 
     def delete_product(
         self, product_id: UUID, organization_id: UUID, user_id: UUID
     ) -> None:
         product = self.get_product(product_id, organization_id)
-        self.product_repo.soft_delete(product, user_id)
+        deleted_product = self.product_repo.soft_delete(product, user_id) or product
+        self._notify_product_event(
+            deleted_product,
+            user_id,
+            NotificationType.PRODUCT_DEACTIVATED,
+            "Product deactivated",
+            f'Product "{product.name}" was deactivated successfully.',
+        )
 
     def update_product_image(
         self,
@@ -1373,14 +1457,14 @@ class QRProductService:
                 "updated_at": now,
             }
 
-            # SecureCode: generate 12-char secret
-            if qr_type == QRType.SECURE_CODE:
-                item_dict["secrete_code"] = self._generate_secret_code()
-
             is_pre_activated = product.activation_method != "post"
             item_dict["qr_active"] = is_pre_activated
             item_dict["qr_deactive"] = not is_pre_activated
             item_dict["qr_deactive_unit"] = not is_pre_activated
+
+            # SecureCode: generate 12-char secret
+            if qr_type == QRType.SECURE_CODE:
+                item_dict["secrete_code"] = self._generate_secret_code()
 
             # Sign if brand is linked
             if private_key is not None:

@@ -2,7 +2,10 @@
 
 import logging
 import secrets
+from datetime import UTC, datetime
+from urllib.parse import urlparse
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -24,7 +27,7 @@ class QRVerificationService:
         self.repo = QRVerificationRepository(db)
         self.key_service = KeyService(settings.brand_key_encryption_secret)
 
-    def verify(self, data: PublicQRVerifyRequest) -> dict:
+    def verify(self, data: PublicQRVerifyRequest) -> dict:  # noqa: C901
         identity = self.repo.resolve_active_item_identity(data.serial_number)
         if identity is None:
             return self._invalid_response()
@@ -41,6 +44,33 @@ class QRVerificationService:
         try:
             product = item.product
             brand = product.brand if product else None
+
+            # Product URL redirect mode is intentionally independent of QSeal
+            # authentication. It is a product-level opt-out from the public
+            # authentication page, so it must run before GTIN, signature,
+            # activation, secure-code, dual-QR, and one-time checks.
+            redirect_url = self._client_redirect_url(product)
+            if self._can_redirect_without_auth(
+                item, product, organization_id, redirect_url
+            ):
+                qr_type = (
+                    normalize_qr_type(
+                        getattr(getattr(item, "block", None), "qr_type", None)
+                        or getattr(product, "qr_type", None)
+                    )
+                    or QRType.DYNAMIC
+                )
+                self.db.rollback()
+                return self._redirect_response(
+                    item,
+                    product,
+                    brand,
+                    data.gtin,
+                    qr_type,
+                    data.qr_channel,
+                    redirect_url,
+                )
+
             if not self._ownership_is_valid(item, product, brand, organization_id):
                 logger.error(
                     "QR ownership validation failed: item_id=%s organization_id=%s",
@@ -58,9 +88,13 @@ class QRVerificationService:
                 self.db.rollback()
                 return self._invalid_response()
 
-            qr_type = normalize_qr_type(
-                getattr(item.block, "qr_type", None) or product.qr_type
-            ) or QRType.DYNAMIC
+            item_details = self._public_item_details(item, organization_id)
+            qr_type = (
+                normalize_qr_type(
+                    getattr(item.block, "qr_type", None) or product.qr_type
+                )
+                or QRType.DYNAMIC
+            )
 
             challenge = self._challenge_response(
                 item,
@@ -68,11 +102,17 @@ class QRVerificationService:
                 brand,
                 data,
                 qr_type,
+                item_details,
             )
             if challenge is not None:
                 self.db.rollback()
                 return challenge
 
+            secure_verified_now = (
+                qr_type == QRType.SECURE_CODE
+                and bool(data.secure_code)
+                and not bool(item.is_auth)
+            )
             is_one_time = qr_type == QRType.ONE_TIME
             if not item.qr_active:
                 status = (
@@ -94,6 +134,7 @@ class QRVerificationService:
                         else "This genuine QR code has not been activated yet."
                     ),
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
                 self.db.rollback()
                 return result
@@ -104,6 +145,7 @@ class QRVerificationService:
                 item.qr_deactive_unit = True
                 item.is_auth = True
                 item.is_verify = True
+                item.scan_date = datetime.now(UTC)
                 result = self._verified_response(
                     item,
                     product,
@@ -114,9 +156,13 @@ class QRVerificationService:
                     authentic=True,
                     message="This product is genuine and verified.",
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
                 self.db.commit()
             else:
+                if secure_verified_now:
+                    item.is_auth = True
+                    item.scan_date = datetime.now(UTC)
                 result = self._verified_response(
                     item,
                     product,
@@ -127,8 +173,12 @@ class QRVerificationService:
                     authentic=True,
                     message="This product is genuine and verified.",
                     qr_channel=data.qr_channel,
+                    item_details=item_details,
                 )
-                self.db.rollback()
+                if secure_verified_now:
+                    self.db.commit()
+                else:
+                    self.db.rollback()
 
             logger.info(
                 "Public QR verified: item_id=%s organization_id=%s qr_type=%s",
@@ -167,6 +217,44 @@ class QRVerificationService:
         }
         return gtin in valid_gtins
 
+    def _public_item_details(self, item, organization_id) -> dict[str, object]:
+        """Resolve the batch and lifecycle dates shown on the public page.
+
+        Activated serials have authoritative per-serial values in
+        ``qr_activation_parameters``. Older/generated blocks may only have
+        the batch metadata, so each missing value falls back independently to
+        the QR block.
+        """
+        product_id = getattr(item, "product_id", None)
+        activation = None
+        if product_id:
+            try:
+                # Activation metadata is an optional presentation enhancement.
+                # Keep it in a savepoint so an older deployment that does not
+                # have the latest activation schema can still verify the QR.
+                with self.db.begin_nested():
+                    activation = self.repo.get_activation_details(
+                        product_id,
+                        item.serial_number,
+                        organization_id,
+                    )
+            except SQLAlchemyError:
+                logger.warning(
+                    "Activation metadata unavailable for public QR serial=%s; "
+                    "falling back to QR block metadata",
+                    item.serial_number,
+                    exc_info=True,
+                )
+        block = getattr(item, "block", None)
+        return {
+            "batch_number": getattr(activation, "dispatch_batch", None)
+            or getattr(block, "batch", None),
+            "manufacturing_date": getattr(activation, "manufacturing_date", None)
+            or getattr(block, "manufacture_date", None),
+            "expiry_date": getattr(activation, "expiry_date", None)
+            or getattr(block, "expiry_date", None),
+        }
+
     def _signature_is_valid(self, brand, data: PublicQRVerifyRequest) -> bool:
         if not brand.public_key:
             return False
@@ -184,6 +272,7 @@ class QRVerificationService:
         brand,
         data: PublicQRVerifyRequest,
         qr_type: QRType,
+        item_details: dict[str, object],
     ) -> dict | None:
         if qr_type == QRType.DUAL and data.qr_channel == QRVerificationChannel.OVERT:
             return self._verified_response(
@@ -198,9 +287,12 @@ class QRVerificationService:
                 requires_action=True,
                 challenge_type="scan_covert",
                 qr_channel=data.qr_channel,
+                item_details=item_details,
             )
 
         if qr_type != QRType.SECURE_CODE:
+            return None
+        if item.is_auth:
             return None
         if not data.secure_code:
             return self._verified_response(
@@ -214,6 +306,7 @@ class QRVerificationService:
                 message="Enter the protected code to verify this product.",
                 requires_action=True,
                 challenge_type="secure_code",
+                item_details=item_details,
             )
 
         expected_code = (item.secrete_code or "").strip().upper()
@@ -231,6 +324,7 @@ class QRVerificationService:
             message="The protected code is invalid. Check the code and try again.",
             requires_action=True,
             challenge_type="secure_code",
+            item_details=item_details,
         )
 
     @staticmethod
@@ -239,6 +333,59 @@ class QRVerificationService:
             "verification_status": QRVerificationStatus.INVALID,
             "authentic": False,
             "message": message,
+        }
+
+    @staticmethod
+    def _can_redirect_without_auth(
+        item,
+        product,
+        organization_id,
+        redirect_url: str | None,
+    ) -> bool:
+        return bool(
+            redirect_url
+            and item is not None
+            and getattr(item, "organization_id", None) == organization_id
+            and product is not None
+            and getattr(product, "organization_id", None) == organization_id
+            and getattr(product, "deleted_at", None) is None
+            and getattr(product, "is_active", True)
+        )
+
+    @staticmethod
+    def _redirect_response(
+        item,
+        product,
+        brand,
+        gtin: str,
+        qr_type: QRType,
+        qr_channel: QRVerificationChannel | None,
+        redirect_url: str,
+    ) -> dict:
+        sku = getattr(item, "sku", None)
+        return {
+            # Redirect mode deliberately skips GTIN, signature, activation,
+            # secure-code, dual-QR, and one-time checks. Reporting AUTHENTIC
+            # here would let QSeal analytics count an unauthenticated redirect
+            # as a successful verification.
+            "verification_status": QRVerificationStatus.REDIRECT,
+            "authentic": False,
+            "message": "Redirecting to the client product URL.",
+            "redirect_only": True,
+            "requires_action": False,
+            "challenge_type": None,
+            "product_name": getattr(product, "name", None),
+            "brand_name": getattr(brand, "name", None),
+            "sku_name": getattr(sku, "name", None),
+            "sku_code": getattr(sku, "sku_code", None),
+            "gtin": gtin,
+            "serial_number": getattr(item, "serial_number", None),
+            "qr_type": qr_type.value,
+            "qr_channel": qr_channel,
+            "website_url": redirect_url,
+            "redirect_to_client": True,
+            "client_product_auth_url": redirect_url,
+            "redirect_url": redirect_url,
         }
 
     @staticmethod
@@ -255,9 +402,17 @@ class QRVerificationService:
         requires_action: bool = False,
         challenge_type: str | None = None,
         qr_channel: QRVerificationChannel | None = None,
+        item_details: dict[str, object] | None = None,
     ) -> dict:
         sku = item.sku
         variant_attributes = sku.attribute_display if sku else {}
+        redirect_url = None
+        if verification_status == QRVerificationStatus.AUTHENTIC and authentic:
+            redirect_url = QRVerificationService._client_redirect_url(product)
+        # ``website_url`` is consumed by older public QR pages. Keep it
+        # compatible with the redirect setting so those pages do not continue
+        # opening the product's landing page after authentication.
+        website_url = redirect_url or getattr(product, "landing_page", None)
         return {
             "verification_status": verification_status,
             "authentic": authentic,
@@ -274,17 +429,54 @@ class QRVerificationService:
             "serial_number": item.serial_number,
             "qr_type": qr_type.value,
             "qr_channel": qr_channel,
+            "secure_verified_at": (
+                item.scan_date
+                if qr_type == QRType.SECURE_CODE and item.is_auth
+                else None
+            ),
+            "one_time_verified_at": (
+                item.scan_date
+                if qr_type == QRType.ONE_TIME and (item.is_auth or item.is_verify)
+                else None
+            ),
             "activation_method": product.activation_method,
             "industry": getattr(product, "industry", None),
             "warranty_period_months": (
                 getattr(sku, "warranty_period_months", None)
                 or getattr(product, "warranty_period_months", None)
             ),
+            "batch_number": (item_details or {}).get("batch_number"),
+            "manufacturing_date": (item_details or {}).get("manufacturing_date"),
+            "expiry_date": (item_details or {}).get("expiry_date"),
             "logo_url": product.image_url,
-            "product_image_url": getattr(sku, "image_url", None)
-            or product.image_url,
+            "product_image_url": getattr(sku, "image_url", None) or product.image_url,
             "banner_image_url": product.banner_image_url,
             "contact_email": getattr(product, "email", None),
             "contact_phone": getattr(product, "phone_number", None),
-            "website_url": getattr(product, "landing_page", None),
+            "website_url": website_url,
+            "redirect_only": False,
+            "redirect_to_client": redirect_url is not None,
+            "client_product_auth_url": redirect_url,
+            "redirect_url": redirect_url,
         }
+
+    @staticmethod
+    def _client_redirect_url(product) -> str | None:
+        """Return a safe client URL only when product redirect is enabled."""
+        if not getattr(product, "redirect_to_client", False):
+            return None
+
+        value = getattr(product, "client_product_auth_url", None)
+        if not isinstance(value, str):
+            return None
+
+        value = value.strip()
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            # ``urlparse`` raises on malformed values (for example an
+            # unmatched IPv6 bracket). Treat them as unusable, not fatal.
+            return None
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return value

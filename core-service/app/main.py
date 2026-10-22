@@ -24,6 +24,7 @@ from sqlalchemy.exc import (
     SQLAlchemyError,
 )
 
+from app.api.qr_redirect import router as qr_redirect_router
 from app.api.v1.router import api_router
 from app.config import settings
 from app.core.exceptions import (
@@ -259,6 +260,7 @@ async def health_check():
 
 
 # Include API router
+app.include_router(qr_redirect_router)
 app.include_router(api_router, prefix="/api/v1")
 
 # Mount static files directory for uploaded images (landing page logos/banners)

@@ -117,6 +117,9 @@ ASN_ORDER_READ = "asn_order.read"
 ASN_ORDER_CREATE = "asn_order.create"
 ASN_ORDER_UPDATE = "asn_order.update"
 
+# QSeal products
+QR_PRODUCT_READ = "qr_product.read"
+
 # UOM
 UOM_READ = "uom.read"
 UOM_CREATE = "uom.create"

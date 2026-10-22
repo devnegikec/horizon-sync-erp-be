@@ -74,8 +74,10 @@ class QRProductRepository:
 
     def soft_delete(self, product: QRProduct, user_id: UUID) -> QRProduct:
         product.deleted_at = datetime.now(UTC)
+        product.is_active = False
         product.updated_by = user_id
         self.db.commit()
+        self.db.refresh(product)
         return product
 
 

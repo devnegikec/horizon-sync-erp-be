@@ -157,26 +157,41 @@ async def require_admin(
 
 def require_permission(permission: str):
     """Create dependency that requires specific permission for access
-    
+
     Args:
         permission: Permission code required (e.g., 'system_admin.org_manager')
-        
+
     Returns:
         Dependency function that validates user has the required permission
     """
+
     async def _require_permission(
         current_user: CurrentUser = Depends(get_current_active_user),
     ) -> CurrentUser:
         """Check if current user has the required permission"""
-        
+
         # Check for exact permission match
         if permission in current_user.permissions:
             return current_user
-        
-        # system_admin.master grants all system_admin.* permissions
-        if permission.startswith("system_admin.") and "system_admin.master" in current_user.permissions:
+
+        # Organization Owner has the full organization-scoped wildcard.
+        # Keep this aligned with core-service and app.core.authorization so
+        # owners are not incorrectly denied permissions such as warehouse.read.
+        # The wildcard is organization-scoped: platform-level ``system_admin.*``
+        # codes gate cross-organization data (admin-user listing, organization
+        # deactivation) and must never be satisfied by an org-scoped owner.
+        if "*.*" in current_user.permissions and not permission.startswith(
+            "system_admin."
+        ):
             return current_user
-        
+
+        # system_admin.master grants all system_admin.* permissions
+        if (
+            permission.startswith("system_admin.")
+            and "system_admin.master" in current_user.permissions
+        ):
+            return current_user
+
         # _manage expansion: system_admin.users_manage grants system_admin.users_{read,create,update,delete}
         if "." in permission:
             resource, _, action = permission.partition(".")
@@ -185,19 +200,19 @@ def require_permission(permission: str):
                 manage_perm = f"{resource}.{domain}_manage"
                 if manage_perm in current_user.permissions:
                     return current_user
-        
+
         # Check for partial wildcard matches (e.g., 'resource.*' matches 'resource.anything')
         if "." in permission:
             resource, _, _ = permission.partition(".")
             if f"{resource}.*" in current_user.permissions:
                 return current_user
-        
+
         # Permission not found
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Permission '{permission}' required",
         )
-    
+
     return _require_permission
 
 
@@ -242,6 +257,5 @@ def get_core_service_client() -> CoreServiceClient | None:
         return None
 
     return CoreServiceClient(
-        base_url=settings.core_service_url,
-        timeout=settings.core_service_timeout
+        base_url=settings.core_service_url, timeout=settings.core_service_timeout
     )

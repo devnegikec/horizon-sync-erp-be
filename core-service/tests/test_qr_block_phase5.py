@@ -70,9 +70,7 @@ def test_shortener_posts_existing_cloudfront_contract(monkeypatch):
         received["payload"] = json.loads(request.read())
         return httpx.Response(200, json={"url_short": "https://bwqr.me/abc"})
 
-    monkeypatch.setattr(
-        "app.services.qr_shortener.settings.qr_shortener_enabled", True
-    )
+    monkeypatch.setattr("app.services.qr_shortener.settings.qr_shortener_enabled", True)
     short_url = QRShortener(client=_client(handler)).shorten(
         "https://demo.verify.example.com/g/1/s/ABC/123?c=signature"
     )
@@ -81,21 +79,19 @@ def test_shortener_posts_existing_cloudfront_contract(monkeypatch):
     assert received["url"] == "https://de5be4rdmboho.cloudfront.net/prod/"
     assert received["payload"] == {
         "cdn_prefix": "bwqr.me",
-        "url_long": (
-            "https://demo.verify.example.com/g/1/s/ABC/123?c=signature"
-        ),
+        "url_long": ("https://demo.verify.example.com/g/1/s/ABC/123?c=signature"),
     }
 
 
 def test_shortener_retries_transient_failure(monkeypatch):
-    responses = iter([
-        httpx.Response(503),
-        httpx.Response(200, json={"url_short": "https://bwqr.me/recovered"}),
-    ])
-    sleeps = []
-    monkeypatch.setattr(
-        "app.services.qr_shortener.settings.qr_shortener_enabled", True
+    responses = iter(
+        [
+            httpx.Response(503),
+            httpx.Response(200, json={"url_short": "https://bwqr.me/recovered"}),
+        ]
     )
+    sleeps = []
+    monkeypatch.setattr("app.services.qr_shortener.settings.qr_shortener_enabled", True)
 
     short_url = QRShortener(
         client=_client(lambda _request: next(responses)),
@@ -107,9 +103,7 @@ def test_shortener_retries_transient_failure(monkeypatch):
 
 
 def test_shortener_normalizes_provider_http_url_to_https(monkeypatch):
-    monkeypatch.setattr(
-        "app.services.qr_shortener.settings.qr_shortener_enabled", True
-    )
+    monkeypatch.setattr("app.services.qr_shortener.settings.qr_shortener_enabled", True)
     client = _client(
         lambda _request: httpx.Response(
             200,
@@ -133,9 +127,7 @@ def test_shortener_normalizes_provider_http_url_to_https(monkeypatch):
         httpx.Response(400, json={"message": "bad request"}),
     ],
 )
-def test_shortener_rejects_invalid_or_non_retryable_responses(
-    response, monkeypatch
-):
+def test_shortener_rejects_invalid_or_non_retryable_responses(response, monkeypatch):
     calls = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -143,9 +135,7 @@ def test_shortener_rejects_invalid_or_non_retryable_responses(
         calls += 1
         return response
 
-    monkeypatch.setattr(
-        "app.services.qr_shortener.settings.qr_shortener_enabled", True
-    )
+    monkeypatch.setattr("app.services.qr_shortener.settings.qr_shortener_enabled", True)
     with pytest.raises(QRShortenerError, match="QR short URL generation failed"):
         QRShortener(client=_client(handler), sleep=lambda _delay: None).shorten(
             "https://demo.verify.example.com/long"
@@ -160,9 +150,7 @@ def test_generated_item_uses_short_url_and_retains_long_url(monkeypatch):
     service.item_repo.get_existing_serials_global.return_value = set()
     service.qr_shortener.shorten.return_value = "https://bwqr.me/item"
 
-    service._generate_product_items(
-        _block(), _product(), uuid4(), uuid4()
-    )
+    service._generate_product_items(_block(), _product(), uuid4(), uuid4())
 
     item = service.item_repo.bulk_create.call_args.args[0][0]
     long_url = item["extra_data"]["long_url"]
@@ -181,9 +169,7 @@ def test_dual_item_shortens_both_urls_and_retains_both_long_urls(monkeypatch):
         "https://bwqr.me/covert",
     ]
 
-    service._generate_product_items(
-        _block("dual"), _product(), uuid4(), uuid4()
-    )
+    service._generate_product_items(_block("dual"), _product(), uuid4(), uuid4())
 
     item = service.item_repo.bulk_create.call_args.args[0][0]
     metadata = item["extra_data"]
@@ -194,6 +180,38 @@ def test_dual_item_shortens_both_urls_and_retains_both_long_urls(monkeypatch):
     assert metadata["covert_long_url"].endswith("&qr=covert")
     assert "/g/0123456789012/s/" in metadata["covert_long_url"]
     assert service.qr_shortener.shorten.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "qr_type",
+    ["dynamic", "static", "secure_code", "dual", "one_time", "post_activation"],
+)
+def test_redirect_mode_keeps_serial_bearing_qr_url(monkeypatch, qr_type):
+    """Redirect products still encode the /g/{gtin}/s/{serial} payload.
+
+    Direct redirect happens when the QR is scanned, so the QR structure must
+    stay identical to the pre-existing (dev) format for every QR type.
+    """
+    service = _service()
+    _brand(monkeypatch)
+    service.item_repo.get_existing_serials_global.return_value = set()
+    service.qr_shortener.shorten.return_value = "https://bwqr.me/item"
+    product = _product()
+    product.redirect_to_client = True
+    product.client_product_auth_url = "https://client.example.com/product"
+
+    service._generate_product_items(_block(qr_type), product, uuid4(), uuid4())
+
+    item = service.item_repo.bulk_create.call_args.args[0][0]
+    metadata = item["extra_data"]
+    assert "/g/0123456789012/s/" in metadata["long_url"]
+    assert "client.example.com" not in json.dumps(metadata)
+    if qr_type == "dual":
+        assert "/g/0123456789012/s/" in metadata["covert_long_url"]
+        assert metadata["overt_url"] == "https://bwqr.me/item"
+    else:
+        assert item["token_id"] == "https://bwqr.me/item"
+    service.key_service.decrypt_private_key.assert_called_once()
 
 
 def test_shortener_failure_fails_block_and_releases_reserved_credits():
@@ -224,9 +242,7 @@ def test_shortener_failure_fails_block_and_releases_reserved_credits():
     )
     service.block_repo.get_by_id_for_update.return_value = block
     service.block_repo.get_by_id.return_value = block
-    service.product_repo.get_by_id.return_value = SimpleNamespace(
-        id=block.product_id
-    )
+    service.product_repo.get_by_id.return_value = SimpleNamespace(id=block.product_id)
     service._generate_product_items = Mock(
         side_effect=QRShortenerError("QR short URL generation failed")
     )

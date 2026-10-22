@@ -1,5 +1,6 @@
 """Public QR verification API contracts."""
 
+from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -12,6 +13,10 @@ class QRVerificationStatus(str, Enum):
     NOT_ACTIVATED = "not_activated"
     ALREADY_USED = "already_used"
     INVALID = "invalid"
+    # Product opted out of QSeal authentication (client redirect mode). The
+    # scan was resolved to a real item, but no signature/activation check ran,
+    # so it must not be reported or analyzed as an authentic verification.
+    REDIRECT = "redirect"
 
 
 class QRVerificationChannel(str, Enum):
@@ -67,15 +72,26 @@ class PublicQRVerifyResponse(BaseModel):
     serial_number: str | None = None
     qr_type: str | None = None
     qr_channel: QRVerificationChannel | None = None
+    secure_verified_at: datetime | None = None
+    one_time_verified_at: datetime | None = None
     activation_method: str | None = None
     industry: str | None = None
     warranty_period_months: int | None = None
+    batch_number: str | None = None
+    manufacturing_date: date | None = None
+    expiry_date: date | None = None
     logo_url: str | None = None
     product_image_url: str | None = None
     banner_image_url: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
     website_url: str | None = None
+    # When enabled on the product, the public scanner skips authentication and
+    # navigates to the client URL immediately.
+    redirect_only: bool = False
+    redirect_to_client: bool = False
+    client_product_auth_url: str | None = None
+    redirect_url: str | None = None
     scan_event_id: UUID | None = None
 
 

@@ -1,6 +1,7 @@
 """Phase 6 tests for public QR-type verification without scan analytics."""
 
 import importlib.util
+from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -91,6 +92,10 @@ def _item(*, qr_type="dynamic", active=True, scans=0):
 def _service(item) -> QRVerificationService:
     service = QRVerificationService.__new__(QRVerificationService)
     service.db = Mock()
+    nested_transaction = Mock()
+    nested_transaction.__enter__ = Mock(return_value=nested_transaction)
+    nested_transaction.__exit__ = Mock(return_value=False)
+    service.db.begin_nested.return_value = nested_transaction
     service.repo = Mock(spec=QRVerificationRepository)
     service.key_service = Mock()
     service.repo.resolve_active_item_identity.return_value = (
@@ -98,6 +103,7 @@ def _service(item) -> QRVerificationService:
         item.organization_id,
     )
     service.repo.get_tenant_item_for_update.return_value = item
+    service.repo.get_activation_details.return_value = None
     service.key_service.verify_signature.return_value = True
     return service
 
@@ -143,6 +149,103 @@ def test_dynamic_verification_is_read_only_and_returns_enterprise_details():
     service.db.commit.assert_not_called()
     service.db.rollback.assert_called_once()
     assert not hasattr(service.repo, "add_scan_event")
+
+
+def test_authenticated_scan_returns_client_redirect_when_product_enables_it():
+    item = _item()
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = (
+        "https://client.example.com/products/demo-product"
+    )
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["verification_status"] == "redirect"
+    assert result["authentic"] is False
+    assert result["redirect_to_client"] is True
+    assert result["redirect_only"] is True
+    assert result["redirect_url"] == item.product.client_product_auth_url
+    assert result["client_product_auth_url"] == item.product.client_product_auth_url
+    assert result["website_url"] == item.product.client_product_auth_url
+    response = PublicQRVerifyResponse(**result)
+    assert response.redirect_url == item.product.client_product_auth_url
+
+
+def test_client_redirect_is_not_returned_for_challenges_or_unsafe_urls():
+    item = _item(qr_type="secure_code")
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = "javascript:alert(document.domain)"
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["verification_status"] == "verification_required"
+    assert result["redirect_to_client"] is False
+    assert result["redirect_url"] is None
+
+
+@pytest.mark.parametrize(
+    "qr_type",
+    ["dynamic", "static", "secure_code", "dual", "one_time", "post_activation"],
+)
+def test_redirect_mode_bypasses_authentication_for_every_qr_type(qr_type):
+    item = _item(qr_type=qr_type, active=False)
+    item.product.redirect_to_client = True
+    item.product.client_product_auth_url = "https://client.example.com/product"
+    service = _service(item)
+    service.key_service.verify_signature.return_value = False
+
+    result = service.verify(
+        _request(
+            gtin="not-the-product-gtin",
+            signature="not-a-valid-signature",
+            qr_channel="overt",
+        )
+    )
+
+    assert result["redirect_only"] is True
+    assert result["redirect_to_client"] is True
+    assert result["verification_status"] == "redirect"
+    assert result["authentic"] is False
+    assert result["redirect_url"] == item.product.client_product_auth_url
+    service.key_service.verify_signature.assert_not_called()
+
+
+def test_public_verification_returns_serial_batch_lifecycle_details():
+    item = _item()
+    item.product_id = uuid4()
+    item.block.batch = "BLOCK-BATCH"
+    item.block.manufacture_date = date(2026, 1, 1)
+    item.block.expiry_date = date(2027, 1, 1)
+    service = _service(item)
+    service.repo.get_activation_details.return_value = SimpleNamespace(
+        dispatch_batch="ACTIVATED-BATCH",
+        manufacturing_date=date(2026, 2, 1),
+        expiry_date=date(2027, 2, 1),
+    )
+
+    result = service.verify(_request())
+
+    assert result["batch_number"] == "ACTIVATED-BATCH"
+    assert result["manufacturing_date"] == date(2026, 2, 1)
+    assert result["expiry_date"] == date(2027, 2, 1)
+    response = PublicQRVerifyResponse(**result)
+    assert response.manufacturing_date == date(2026, 2, 1)
+
+
+def test_public_verification_falls_back_to_qr_block_lifecycle_details():
+    item = _item()
+    item.block.batch = "BLOCK-BATCH"
+    item.block.manufacture_date = date(2026, 1, 1)
+    item.block.expiry_date = date(2027, 1, 1)
+    service = _service(item)
+
+    result = service.verify(_request())
+
+    assert result["batch_number"] == "BLOCK-BATCH"
+    assert result["manufacturing_date"] == date(2026, 1, 1)
+    assert result["expiry_date"] == date(2027, 1, 1)
 
 
 def test_dynamic_repeat_scan_is_still_authentic_without_counters():
@@ -218,10 +321,17 @@ def test_secure_code_requests_challenge_then_accepts_matching_code():
 
     challenge = service.verify(_request())
     verified = service.verify(_request(secure_code="a1b2c3d4e5f6"))
+    repeat_scan = service.verify(_request())
 
     assert challenge["verification_status"] == "verification_required"
     assert challenge["challenge_type"] == "secure_code"
     assert verified["verification_status"] == "authentic"
+    assert verified["secure_verified_at"] == item.scan_date
+    assert item.is_auth is True
+    assert item.scan_date is not None
+    assert repeat_scan["verification_status"] == "authentic"
+    assert repeat_scan["authentic"] is True
+    assert repeat_scan["secure_verified_at"] == item.scan_date
 
 
 def test_secure_code_rejects_wrong_code():
@@ -246,6 +356,8 @@ def test_one_time_verification_persists_only_consumption_state():
     assert item.qr_deactive_unit is True
     assert item.is_auth is True
     assert item.is_verify is True
+    assert item.scan_date is not None
+    assert result["one_time_verified_at"] == item.scan_date
     assert item.scan_count == 0
     service.db.commit.assert_called_once()
 
@@ -253,12 +365,15 @@ def test_one_time_verification_persists_only_consumption_state():
 def test_used_one_time_item_returns_already_used_without_scan_increment():
     item = _item(qr_type="one_time", active=False)
     item.is_verify = True
+    item.is_auth = True
+    item.scan_date = datetime.now(UTC)
     service = _service(item)
 
     result = service.verify(_request())
 
     assert result["verification_status"] == "already_used"
     assert result["authentic"] is False
+    assert result["one_time_verified_at"] == item.scan_date
     assert item.scan_count == 0
 
 
@@ -279,9 +394,7 @@ def test_global_collision_query_does_not_accept_an_organization():
     query.filter.return_value = query
     query.all.return_value = [("PRO-ABC12345",)]
 
-    result = ProductItemRepository(db).get_existing_serials_global(
-        ["PRO-ABC12345"]
-    )
+    result = ProductItemRepository(db).get_existing_serials_global(["PRO-ABC12345"])
 
     assert result == {"PRO-ABC12345"}
     filters = query.filter.call_args.args
@@ -316,7 +429,9 @@ migration_path = (
     / "versions"
     / "047_make_product_item_serial_global.py"
 )
-spec = importlib.util.spec_from_file_location("global_item_serial_migration", migration_path)
+spec = importlib.util.spec_from_file_location(
+    "global_item_serial_migration", migration_path
+)
 assert spec and spec.loader
 migration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(migration)
