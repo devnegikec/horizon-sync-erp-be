@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.invoice import Invoice
 from app.models.subscription import (
     CREDIT_BATCH_STATUS_ACTIVE,
@@ -28,6 +29,7 @@ from app.models.subscription import (
 )
 from app.repositories.credit_ledger_repository import CreditLedgerRepository
 from app.repositories.subscription_repository import SubscriptionRepository
+from app.services.razorpay_service import RazorpayService
 from app.services.subscription_service import add_months
 
 SIX = Decimal("0.000001")
@@ -392,6 +394,7 @@ class CreditEngineService:
         expires_at: datetime | None = None,
         actor_id: UUID | None = None,
         idempotency_key: str | None = None,
+        reason: str | None = None,
         commit: bool = True,
     ) -> dict:
         quantity = q6(quantity)
@@ -431,7 +434,7 @@ class CreditEngineService:
                 idempotency_key or f"grant:{source_type}:{source_id or batch.id}"
             ),
             actor_id=actor_id,
-            reason="Credit grant",
+            reason=reason or "Credit grant",
         )
         if commit:
             self.db.commit()
@@ -752,6 +755,7 @@ class CreditEngineService:
         quote_id: UUID,
         idempotency_key: str,
         provider: str | None = None,
+        customer_email: str | None = None,
     ) -> dict:
         existing = self.credit_repo.get_order_by_idempotency(
             organization_id, idempotency_key
@@ -770,6 +774,24 @@ class CreditEngineService:
                 "This quote has expired or was already used",
                 status.HTTP_400_BAD_REQUEST,
             )
+        provider = (provider or "razorpay").lower()
+        client = RazorpayService()
+        if provider == "razorpay" and not client.enabled:
+            raise credit_error(
+                "PAYMENT_PROVIDER_NOT_CONFIGURED",
+                "Razorpay checkout is not configured",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if (
+            provider == "razorpay"
+            and quote.currency.upper() != settings.razorpay_currency.upper()
+        ):
+            raise credit_error(
+                "CURRENCY_NOT_SUPPORTED",
+                f"Razorpay top-ups require {settings.razorpay_currency}",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
         quote.consumed_at = now
         order = self.credit_repo.create_order(
             {
@@ -778,19 +800,120 @@ class CreditEngineService:
                 "credits": quote.credits,
                 "amount": quote.amount,
                 "currency": quote.currency,
-                "status": "pending",
+                "status": "created",
                 "provider": provider,
                 "idempotency_key": idempotency_key,
             }
         )
+        self.db.flush()
+
+        checkout = None
+        if provider == "razorpay":
+            amount_paise = int(
+                (Decimal(order.amount) * 100).to_integral_value(rounding=ROUND_HALF_UP)
+            )
+            try:
+                provider_order = client.create_order(
+                    amount_paise=amount_paise,
+                    receipt=f"topup-{order.id}",
+                    notes={
+                        "organization_id": str(organization_id),
+                        "topup_order_id": str(order.id),
+                        "credits": str(q6(order.credits)),
+                    },
+                )
+            except HTTPException:
+                order.status = "failed"
+                self.db.commit()
+                raise
+            order.provider_ref = provider_order["id"]
+            order.status = "pending"
+            order.checkout_url = provider_order.get("short_url")
+            checkout = {
+                "provider": "razorpay",
+                "key_id": client.key_id,
+                "order_id": provider_order["id"],
+                "amount": provider_order["amount"],
+                "currency": provider_order["currency"],
+                "name": settings.razorpay_company_name,
+                "description": f"{q6(order.credits)} QR credits",
+                "prefill": {"email": customer_email} if customer_email else {},
+            }
+        else:
+            order.status = "pending"
+
         self.db.commit()
-        return self._order_dict(order)
+        return self._order_dict(order, checkout=checkout)
+
+    def verify_topup_payment(
+        self,
+        organization_id: UUID,
+        order_id: UUID,
+        provider_order_id: str,
+        provider_payment_id: str,
+        signature: str,
+    ) -> dict:
+        """Verify the Checkout callback and grant credits (webhook fallback)."""
+        order = self.credit_repo.get_order(organization_id, order_id, for_update=True)
+        if order is None:
+            raise credit_error(
+                "ORDER_NOT_FOUND", "Top-up order not found", status.HTTP_404_NOT_FOUND
+            )
+        if order.status == "paid":
+            return self._order_dict(order)
+        if order.provider != "razorpay":
+            raise credit_error(
+                "PROVIDER_MISMATCH",
+                "This order was not created with Razorpay",
+                status.HTTP_409_CONFLICT,
+            )
+        if order.provider_ref and order.provider_ref != provider_order_id:
+            raise credit_error(
+                "ORDER_MISMATCH",
+                "Razorpay order id does not match this top-up",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        client = RazorpayService()
+        if not client.verify_checkout_signature(
+            provider_order_id, provider_payment_id, signature
+        ):
+            raise credit_error(
+                "SIGNATURE_INVALID",
+                "Razorpay checkout signature is invalid",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        payment = client.fetch_payment(provider_payment_id)
+        amount_paise = int(
+            (Decimal(order.amount) * 100).to_integral_value(rounding=ROUND_HALF_UP)
+        )
+        if (
+            payment.get("order_id") != provider_order_id
+            or int(payment.get("amount", -1)) != amount_paise
+            or payment.get("currency") != order.currency
+        ):
+            raise credit_error(
+                "PAYMENT_MISMATCH",
+                "Provider payment does not match the top-up order",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        if payment.get("status") != "captured":
+            raise credit_error(
+                "PAYMENT_NOT_CAPTURED",
+                f"Payment is {payment.get('status', 'unknown')}; wait for capture",
+                status.HTTP_402_PAYMENT_REQUIRED,
+            )
+        if not order.provider_ref:
+            order.provider_ref = provider_order_id
+        return self.mark_topup_paid(organization_id, order.id, provider_payment_id)
 
     def mark_topup_paid(
-        self, organization_id: UUID, order_id: UUID, provider_ref: str
+        self,
+        organization_id: UUID,
+        order_id: UUID,
+        provider_payment_id: str | None = None,
     ) -> dict:
-        """Called from the verified provider webhook — grants exactly one batch."""
-        order = self.credit_repo.get_order(organization_id, order_id)
+        """Grant exactly one batch for a verified, captured payment."""
+        order = self.credit_repo.get_order(organization_id, order_id, for_update=True)
         if order is None:
             raise credit_error(
                 "ORDER_NOT_FOUND", "Top-up order not found", status.HTTP_404_NOT_FOUND
@@ -800,7 +923,8 @@ class CreditEngineService:
         quote = self.credit_repo.get_quote(organization_id, order.quote_id)
         order.status = "paid"
         order.paid_at = datetime.now(UTC)
-        order.provider_ref = provider_ref
+        if provider_payment_id:
+            order.provider_payment_id = provider_payment_id
         self.grant_batch(
             organization_id=organization_id,
             source_type="topup",
@@ -914,7 +1038,7 @@ class CreditEngineService:
         }
 
     @staticmethod
-    def _order_dict(order) -> dict:
+    def _order_dict(order, checkout: dict | None = None) -> dict:
         return {
             "order_id": order.id,
             "status": order.status,
@@ -922,4 +1046,8 @@ class CreditEngineService:
             "amount": order.amount,
             "currency": order.currency,
             "credits": q6(order.credits),
+            "provider": order.provider,
+            "provider_order_id": order.provider_ref,
+            "provider_payment_id": order.provider_payment_id,
+            "checkout": checkout,
         }

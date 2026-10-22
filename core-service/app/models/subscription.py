@@ -384,6 +384,9 @@ class TopupOrder(Base):
             "organization_id", "idempotency_key", name="uq_topup_orders_org_idem"
         ),
         UniqueConstraint("provider_ref", name="uq_topup_orders_provider_ref"),
+        UniqueConstraint(
+            "provider_payment_id", name="uq_topup_orders_provider_payment_id"
+        ),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -395,7 +398,10 @@ class TopupOrder(Base):
     currency = Column(String(3), nullable=False)
     status = Column(String(20), nullable=False, default="created", index=True)
     provider = Column(String(30), nullable=True)
+    #: Provider-side order id (e.g. Razorpay ``order_...``).
     provider_ref = Column(String(191), nullable=True)
+    #: Provider-side payment id (e.g. Razorpay ``pay_...``), set on capture.
+    provider_payment_id = Column(String(191), nullable=True)
     checkout_url = Column(Text, nullable=True)
     idempotency_key = Column(String(120), nullable=False)
     paid_at = Column(DateTime(timezone=True), nullable=True)

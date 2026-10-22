@@ -236,27 +236,38 @@ sequenceDiagram
     participant User
     participant UI
     participant API
-    participant Provider
+    participant Razorpay
     User->>UI: Choose amount
     UI->>API: POST /account/topups/quotes
     API-->>UI: price, tax, credits, expiry, quote_id, expires_at
     User->>UI: Confirm
     UI->>API: POST /account/topups/orders (Idempotency-Key)
-    API-->>UI: order_id, checkout_url
-    UI->>Provider: Redirect to checkout
-    Provider-->>API: verified webhook
-    API-->>UI: order status becomes paid on poll
-    UI->>API: GET /account/topups/orders/{id}
+    API->>Razorpay: create provider order
+    API-->>UI: order_id + checkout {key_id, order_id, amount, currency}
+    UI->>Razorpay: Razorpay Checkout (in-page modal)
+    Razorpay-->>UI: payment_id + signature
+    UI->>API: POST /account/topups/orders/{id}/verify
+    API->>Razorpay: re-fetch payment (must be captured)
+    API-->>UI: status=paid (credits granted once)
+    Razorpay-->>API: payment.captured webhook (idempotent duplicate)
+    UI->>API: GET /account/credits (refresh)
 ```
+
+Full request/response details and the Checkout snippet live in
+`RAZORPAY_TOPUP_INTEGRATION.md`.
 
 Rules:
 
 - Quotes expire (typically 15 min). If `expires_at` passes, disable _Pay_ and
   re-quote silently; never send an expired `quote_id`.
 - Show the credit expiry date from the quote **before** payment.
-- The success redirect is informational only — poll
-  `GET /account/topups/orders/{order_id}` (2 s interval, stop after 60 s) and
-  only show "Credits added" when `status === "paid"`.
+- Open Razorpay Checkout with the returned `checkout` object, then call
+  `POST /account/topups/orders/{order_id}/verify` with the three
+  `razorpay_*` fields from the handler. Only show "Credits added" when that
+  call returns `status === "paid"`.
+- If the Checkout modal is dismissed or the callback is missed, poll
+  `GET /account/topups/orders/{order_id}` (2 s interval, stop after 60 s) — the
+  webhook may still settle it.
 - Pending state copy: "Waiting for payment confirmation" with a _Refresh_ button.
 - Failure state: "Payment failed — no credits were added", link back to quote.
 

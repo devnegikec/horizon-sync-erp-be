@@ -23,6 +23,7 @@ from app.schemas.subscription import (
     TopupOrderResponse,
     TopupQuoteRequest,
     TopupQuoteResponse,
+    TopupVerifyRequest,
 )
 from app.services.credit_engine_service import CreditEngineService
 from app.services.subscription_service import SubscriptionService
@@ -231,6 +232,29 @@ def create_topup_order(
         payload.quote_id,
         idempotency_key,
         payload.provider,
+        customer_email=current_user.email,
+    )
+
+
+@router.post(
+    "/topups/orders/{order_id}/verify",
+    response_model=TopupOrderResponse,
+    summary="Verify the Razorpay Checkout callback and grant credits",
+)
+def verify_topup_order(
+    order_id: UUID,
+    payload: TopupVerifyRequest,
+    current_user: CurrentUser = Depends(
+        require_permission("billing.topup", "billing.manage", "qr_product.manage")
+    ),
+    db: Session = Depends(get_db),
+):
+    return CreditEngineService(db).verify_topup_payment(
+        _org(current_user),
+        order_id,
+        payload.razorpay_order_id,
+        payload.razorpay_payment_id,
+        payload.razorpay_signature,
     )
 
 

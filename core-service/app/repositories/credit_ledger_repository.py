@@ -336,15 +336,27 @@ class CreditLedgerRepository:
         self.db.flush()
         return order
 
-    def get_order(self, organization_id: UUID, order_id: UUID) -> TopupOrder | None:
-        return (
-            self.db.query(TopupOrder)
-            .filter(
-                TopupOrder.organization_id == organization_id,
-                TopupOrder.id == order_id,
-            )
-            .first()
+    def get_order(
+        self, organization_id: UUID, order_id: UUID, *, for_update: bool = False
+    ) -> TopupOrder | None:
+        query = self.db.query(TopupOrder).filter(
+            TopupOrder.organization_id == organization_id,
+            TopupOrder.id == order_id,
         )
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
+
+    def get_order_by_provider_ref(
+        self, provider: str, provider_ref: str, *, for_update: bool = False
+    ) -> TopupOrder | None:
+        query = self.db.query(TopupOrder).filter(
+            TopupOrder.provider == provider,
+            TopupOrder.provider_ref == provider_ref,
+        )
+        if for_update:
+            query = query.with_for_update()
+        return query.first()
 
     # ── Reporting ───────────────────────────────────────────────────────────
 

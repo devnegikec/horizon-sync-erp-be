@@ -323,8 +323,21 @@ class TopupOrderResponse(BaseModel):
     amount: Decimal
     currency: str
     credits: Decimal
+    provider: str | None = None
+    provider_order_id: str | None = None
+    provider_payment_id: str | None = None
+    #: Razorpay Checkout configuration for the browser SDK.
+    checkout: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+class TopupVerifyRequest(BaseModel):
+    """Razorpay Checkout success callback payload."""
+
+    razorpay_order_id: str = Field(..., min_length=1, max_length=191)
+    razorpay_payment_id: str = Field(..., min_length=1, max_length=191)
+    razorpay_signature: str = Field(..., min_length=1, max_length=512)
 
 
 # ── Internal generation operations ──────────────────────────────────────────

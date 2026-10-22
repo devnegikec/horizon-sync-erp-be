@@ -720,10 +720,15 @@ Behavioral notes:
   seeded; top-ups accept `billing.topup`, `billing.manage`, or
   `qr_product.manage`. Seed the dedicated codes in the identity permission
   catalog as a follow-up.
-- `mark_topup_paid()` exists in `CreditEngineService` for the future verified
-  webhook; the HTTP webhook route is intentionally not exposed yet.
-- `Idempotency-Key` is honored on plan/version/subscription creates and on
-  `POST /admin/credits/adjustments` (a replay returns the original result).
+- `Idempotency-Key` is honored on plan/version/subscription creates, top-up
+  orders and `POST /admin/credits/adjustments` (a replay returns the original
+  result).
+- Razorpay top-ups are implemented: `POST /account/topups/orders` creates a
+  provider order and returns a `checkout` payload,
+  `POST /account/topups/orders/{order_id}/verify` validates the Checkout
+  signature + captured payment, and `POST /payments/webhooks/razorpay`
+  verifies, deduplicates and settles `payment.captured` / `order.paid` events.
+  See `RAZORPAY_TOPUP_INTEGRATION.md`.
 - Future-effective version changes are stored on
   `organization_subscriptions.pending_plan_version_id` /
   `pending_effective_from` and promoted when the effective date arrives; the
@@ -741,7 +746,7 @@ Behavioral notes:
   `subscription_billing_created_tables`; `downgrade()` drops only those, so
   pre-existing tables are never deleted.
 
-Remaining Phase 2/3 work: provider webhook endpoint + `billing_provider_events`
-ingestion, recurring invoice scheduler worker, credit-expiry cron wiring,
-`GET /account/invoices/{id}/download` signed URLs, and the billing React screens
+Remaining Phase 2/3 work: recurring invoice scheduler worker, credit-expiry cron
+wiring, `GET /account/invoices/{id}/download` signed URLs, and the billing React
+screens
 described in the two UI integration guides.

@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     internal_service_secret_id: str = ""
     aws_region: str = "ap-south-1"
 
+    # Razorpay — credit top-up checkout and verified webhooks. Leave the key
+    # pair blank to keep top-up orders in manual/provider-less mode.
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+    razorpay_currency: str = "INR"
+    razorpay_company_name: str = "Ciphercode"
+    razorpay_timeout_seconds: float = 10.0
+
+    @property
+    def razorpay_enabled(self) -> bool:
+        """True when checkout orders can be created with Razorpay."""
+        return bool(self.razorpay_key_id and self.razorpay_key_secret)
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True
@@ -183,8 +197,7 @@ def _load_secret_from_secrets_manager(secret_id: str, region: str) -> str | None
         return response.get("SecretString")
     except Exception as exc:  # noqa: BLE001 — log and fall back to env/default
         logger.warning(
-            "Failed to load internal service secret from AWS Secrets Manager "
-            "(%s): %s",
+            "Failed to load internal service secret from AWS Secrets Manager (%s): %s",
             secret_id,
             exc,
         )

@@ -58,6 +58,7 @@ from app.api.v1.endpoints import (
     outbound,
     packing_slips,
     payments,
+    payments_webhooks,
     pick_exceptions,
     pick_lists,
     pick_settings,
@@ -402,6 +403,12 @@ api_router.include_router(
 # Phase 7: Billing
 api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"])
 api_router.include_router(payments.router, prefix="/payments", tags=["Payments"])
+# Provider webhooks are signature-verified, not JWT-authenticated.
+api_router.include_router(
+    payments_webhooks.router,
+    prefix="/payments/webhooks",
+    tags=["Payment Webhooks"],
+)
 api_router.include_router(
     journal_entries.router, prefix="/journal-entries", tags=["Journal Entries"]
 )
