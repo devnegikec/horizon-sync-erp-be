@@ -896,10 +896,42 @@ class BinStockService:
         # the first (stable) parent for each stock row to avoid ambiguity.
         result: dict[UUID, str] = {}
         for stock_level_id, parent_serial in rows:
-            result.setdefault(
-                stock_level_id, self._build_parent_qr_url(parent_serial)
-            )
+            result.setdefault(stock_level_id, self._build_parent_qr_url(parent_serial))
         return result
+
+    def get_stocked_serial_locations(
+        self,
+        org_id: UUID,
+        serials: list[str],
+    ) -> dict[str, tuple[UUID, Decimal]]:
+        """Map each already-stocked serial to ``(bin_location_id, quantity)``.
+
+        Serial/QR numbers identify a single physical unit, so callers use this
+        to keep put-away retries idempotent (a serial already in the target bin
+        must not be added again) and to reject re-stocking a unit that lives in
+        another bin.
+        """
+        if not serials:
+            return {}
+
+        rows = (
+            self.db.query(
+                BinStockLevel.batch_number,
+                BinStockLevel.bin_location_id,
+                func.sum(BinStockLevel.quantity_on_hand),
+            )
+            .filter(
+                BinStockLevel.organization_id == org_id,
+                BinStockLevel.batch_number.in_(serials),
+                BinStockLevel.quantity_on_hand > 0,
+            )
+            .group_by(BinStockLevel.batch_number, BinStockLevel.bin_location_id)
+            .all()
+        )
+        return {
+            serial: (bin_id, Decimal(str(quantity or 0)))
+            for serial, bin_id, quantity in rows
+        }
 
     def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
         """Return the parent (master-pack) boxes present in a bin, grouped by product.
