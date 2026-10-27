@@ -221,6 +221,11 @@ def test_s3_artifact_is_private_and_tenant_scoped(monkeypatch):
     client = Mock()
     monkeypatch.setattr(storage_service.settings, "aws_s3_bucket", "private-bucket")
     monkeypatch.setattr(storage_service, "_get_s3_client", lambda: client)
+    monkeypatch.setattr(
+        storage_service,
+        "organization_folder",
+        lambda org_id: f"orgs/org-{org_id}",
+    )
 
     object_key = storage_service.build_qr_artifact_key(
         organization_id, product_id, block_id
