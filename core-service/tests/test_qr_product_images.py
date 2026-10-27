@@ -52,9 +52,7 @@ def test_update_product_image_maps_type_to_url_field(image_type, field):
     )
 
     assert previous_url == getattr(product, field)
-    service.product_repo.get_by_id.assert_called_once_with(
-        product.id, organization_id
-    )
+    service.product_repo.get_by_id.assert_called_once_with(product.id, organization_id)
     service.product_repo.update.assert_called_once_with(
         product,
         {field: new_url, "updated_by": user_id},
@@ -143,6 +141,10 @@ def test_s3_product_image_round_trip_uses_tenant_scoped_key(monkeypatch):
         "app.services.storage_service._get_s3_client",
         lambda: client,
     )
+    monkeypatch.setattr(
+        "app.services.storage_service.organization_folder",
+        lambda org_id: f"orgs/org-{org_id}",
+    )
 
     object_key = store_product_image(
         data,
@@ -153,8 +155,7 @@ def test_s3_product_image_round_trip_uses_tenant_scoped_key(monkeypatch):
     )
 
     expected_prefix = (
-        f"qseal/organizations/{organization_id}/products/{product_id}/"
-        "images/banner/"
+        f"orgs/org-{organization_id}/qseal/products/{product_id}/images/banner/"
     )
     assert object_key.startswith(expected_prefix)
     assert object_key.endswith(".webp")

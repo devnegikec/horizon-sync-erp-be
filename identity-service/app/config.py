@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     # TEST default — set CORE_SERVICE_SECRET (or CORE_SERVICE_SECRET_ID to load
     # it from AWS Secrets Manager) in deployed environments.
     core_service_secret: str = "dev-internal-secret-testing"
+    # Shared secret expected on inbound service-to-service endpoints
+    # (must match core-service's INTERNAL_SERVICE_SECRET).
+    internal_service_secret: str = "dev-internal-secret-testing"
     # Optional: AWS Secrets Manager secret name/ARN to load the value above
     # from at startup (overrides CORE_SERVICE_SECRET). Leave empty to use the
     # environment variable / default directly.
@@ -134,7 +137,7 @@ def _load_secret_from_secrets_manager(secret_id: str, region: str) -> str | None
         return response.get("SecretString")
     except Exception as exc:  # noqa: BLE001 — log and fall back to env/default
         logger.warning(
-            "Failed to load core service secret from AWS Secrets Manager " "(%s): %s",
+            "Failed to load core service secret from AWS Secrets Manager (%s): %s",
             secret_id,
             exc,
         )

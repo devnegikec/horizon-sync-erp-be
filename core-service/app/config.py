@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     aws_s3_bucket: str = ""
     aws_s3_region: str = "ap-south-1"
     aws_s3_endpoint_url: str = ""
+    # S3-compatible providers (e.g. a Railway bucket) commonly reject the
+    # Amazon-specific SSE header. Set empty to omit it; AWS keeps AES256.
+    aws_s3_server_side_encryption: str = "AES256"
+    # ``path`` or ``virtual``. Empty lets botocore decide. S3-compatible
+    # providers usually need ``path``.
+    aws_s3_addressing_style: str = ""
     aws_s3_presigned_expiry_seconds: int = 300
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
@@ -183,8 +189,7 @@ def _load_secret_from_secrets_manager(secret_id: str, region: str) -> str | None
         return response.get("SecretString")
     except Exception as exc:  # noqa: BLE001 — log and fall back to env/default
         logger.warning(
-            "Failed to load internal service secret from AWS Secrets Manager "
-            "(%s): %s",
+            "Failed to load internal service secret from AWS Secrets Manager (%s): %s",
             secret_id,
             exc,
         )

@@ -96,6 +96,14 @@ async def send_invitation(
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
         )
+        recipient_name = (
+            " ".join(
+                part
+                for part in (result.get("first_name"), result.get("last_name"))
+                if part
+            ).strip()
+            or None
+        )
 
         background_tasks.add_task(
             email_service.send_invitation_email,
@@ -105,6 +113,7 @@ async def send_invitation(
             inviter_name=inviter_name,
             message=result.get("message"),
             role_name=role_name,
+            recipient_name=recipient_name,
         )
         logger.info(f"Invitation email task added to background for {result['email']}")
 
@@ -338,6 +347,14 @@ async def resend_invitation(
             f"{current_user.first_name} {current_user.last_name}".strip()
             or current_user.email
         )
+        recipient_name = (
+            " ".join(
+                part
+                for part in (result.get("first_name"), result.get("last_name"))
+                if part
+            ).strip()
+            or None
+        )
 
         background_tasks.add_task(
             email_service.send_invitation_email,
@@ -347,6 +364,7 @@ async def resend_invitation(
             inviter_name=inviter_name,
             message=result.get("message"),
             role_name=role_name,
+            recipient_name=recipient_name,
         )
         logger.info(
             f"Invitation resend email task added to background for {result['email']}"

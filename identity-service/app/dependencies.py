@@ -1,9 +1,10 @@
 """Dependency injection for FastAPI"""
 
+import secrets
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -153,6 +154,27 @@ async def require_admin(
             detail="Admin access required",
         )
     return current_user
+
+
+async def require_internal_service(
+    x_internal_secret: str = Header(None, alias="X-Internal-Secret"),
+) -> None:
+    """Guard service-to-service endpoints with the shared internal secret.
+
+    Mirrors core-service's ``require_internal_service``. Callers (core-service)
+    must send ``X-Internal-Secret``.
+    """
+    expected = settings.internal_service_secret
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal service secret not configured",
+        )
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid internal service secret",
+        )
 
 
 def require_permission(permission: str):

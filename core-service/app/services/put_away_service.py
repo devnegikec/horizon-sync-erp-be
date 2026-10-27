@@ -497,7 +497,7 @@ class PutAwayService:
             return None
         return int(master.conversion_factor)
 
-    def _build_put_away_specs(
+    def _build_put_away_specs(  # noqa: C901
         self, slip: ReceivingSlip, org_id: UUID, mode: str
     ) -> tuple[list[dict], list[str]]:
         """Resolve eligible slip lines into put-away item specs (no ORM yet).
@@ -563,6 +563,10 @@ class PutAwayService:
             by_item.setdefault(line["item"].id, []).append(line)
 
         source_lines: list[dict] = []
+        # A serial/QR identifies exactly one physical unit, so it may be queued
+        # once per slip even when receipt lines land in different packaging
+        # units (the per-packaging-unit dedupe below is not enough).
+        claimed_serials: set[str] = set()
         for item_id in item_order:
             lines = by_item[item_id]
             item = lines[0]["item"]
@@ -584,12 +588,22 @@ class PutAwayService:
                         if persisted:
                             serials.extend(persisted)
                         elif si.batch_number:
-                            # Legacy line without persisted serials: batch_number
-                            # is the unit serial. Honour quantity so a qty>1 line
-                            # does not silently lose units.
-                            serials.extend(
-                                [si.batch_number] * max(1, int(si.quantity or 1))
-                            )
+                            # Legacy line without persisted serials:
+                            # ``batch_number`` is the unit serial. Append it ONCE
+                            # — never once per quantity, because repeating a
+                            # serial would queue the same physical QR for
+                            # put-away multiple times.
+                            serials.append(si.batch_number)
+                    # A serial/QR identifies exactly one physical unit and is
+                    # unique at the product level. Overlapping slip lines (for
+                    # example a regenerated receipt) can list the same serial
+                    # twice, so drop repeats keeping the first occurrence.
+                    serials = [
+                        serial
+                        for serial in dict.fromkeys(serials)
+                        if serial not in claimed_serials
+                    ]
+                    claimed_serials.update(serials)
                     for i in range(0, len(serials), pack_size):
                         chunk = serials[i : i + pack_size]
                         source_lines.append(
@@ -947,7 +961,7 @@ class PutAwayService:
         self.db.refresh(existing_list)
         return existing_list
 
-    def complete_item(
+    def complete_item(  # noqa: C901
         self,
         put_away_item_id: UUID,
         worker_id: UUID,
@@ -1028,19 +1042,64 @@ class PutAwayService:
         # Stock enters the final bin directly when the put-away item is
         # completed. Master-pack lines add one stock row per unit serial.
         serial_nos = put_away_item.serial_nos or []
-        bin_stock = None
         if serial_nos:
+            # A serial/QR identifies exactly one physical unit and is unique at
+            # the product level. Repeating a serial inside one item is a
+            # malformed payload, never a legitimate quantity, so reject it
+            # instead of silently inflating bin stock.
+            unique_serials = list(dict.fromkeys(serial_nos))
+            if len(unique_serials) != len(serial_nos):
+                raise ValidationError(
+                    "Put-away item contains duplicate serial numbers",
+                    code="DUPLICATE_SERIAL_NUMBERS",
+                    hint="Each QR/serial must appear exactly once.",
+                )
+
+            # Mobile clients retry completion when the response is lost. A
+            # serial already sitting in the target bin was written by the
+            # previous attempt and must not be counted again; a serial found in
+            # a different bin means the same physical unit is already stocked.
+            # The advisory lock serializes two concurrent completions that
+            # would otherwise both see the serial as absent.
+            self.bin_stock_service.lock_serials(org_id, unique_serials)
+            stocked = self.bin_stock_service.get_stocked_serial_locations(
+                org_id, unique_serials, item_id=put_away_item.item_id
+            )
+            already_in_bin: set[str] = set()
+            stocked_elsewhere: list[str] = []
+            for serial in unique_serials:
+                bins = {bin_id for bin_id, _quantity in stocked.get(serial, [])}
+                if not bins:
+                    continue
+                if bins - {target_bin_id}:
+                    stocked_elsewhere.append(serial)
+                elif target_bin_id in bins:
+                    already_in_bin.add(serial)
+
+            if stocked_elsewhere:
+                preview = ", ".join(sorted(stocked_elsewhere)[:5])
+                raise ValidationError(
+                    f"Serial number(s) already stocked in another bin: {preview}",
+                    code="SERIAL_ALREADY_STOCKED",
+                    hint="A serial can only be stocked in one bin.",
+                )
+
+            serials_to_add = [
+                serial for serial in unique_serials if serial not in already_in_bin
+            ]
+
             # A master carton occupies more volume than its loose serials, so
             # validate the whole pack's volume/weight once up front; then add
             # one row per serial without re-checking (count is additive).
-            self.bin_stock_service.validate_capacity(
-                bin_id=target_bin_id,
-                item_id=put_away_item.item_id,
-                org_id=org_id,
-                quantity=Decimal(len(serial_nos)),
-                packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
-            )
-            for serial in serial_nos:
+            if serials_to_add:
+                self.bin_stock_service.validate_capacity(
+                    bin_id=target_bin_id,
+                    item_id=put_away_item.item_id,
+                    org_id=org_id,
+                    quantity=Decimal(len(serials_to_add)),
+                    packaging_unit_id=getattr(put_away_item, "packaging_unit_id", None),
+                )
+            for serial in serials_to_add:
                 self.bin_stock_service.add_stock(
                     bin_id=target_bin_id,
                     item_id=put_away_item.item_id,
@@ -1052,7 +1111,7 @@ class PutAwayService:
                     skip_validate=True,
                 )
         else:
-            bin_stock = self.bin_stock_service.add_stock(
+            self.bin_stock_service.add_stock(
                 bin_id=target_bin_id,
                 item_id=put_away_item.item_id,
                 quantity=Decimal(str(put_away_item.quantity)),
@@ -1237,7 +1296,7 @@ class PutAwayService:
         )
         return [r[0] for r in rows if r[0]]
 
-    def complete_putaway_bulk(
+    def complete_putaway_bulk(  # noqa: C901
         self,
         bin_id: UUID,
         items: list[dict],

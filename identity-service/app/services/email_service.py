@@ -136,6 +136,7 @@ class EmailService:
         inviter_name: str,
         message: str | None = None,
         role_name: str | None = None,
+        recipient_name: str | None = None,
     ):
         """
         Send an organization invitation email.
@@ -147,25 +148,28 @@ class EmailService:
             inviter_name: Name of the person inviting
             message: Optional personal message
             role_name: Optional role name assigned to the invitee
+            recipient_name: Optional invitee name used in the greeting
         """
         subject = f"Invitation to join {org_name}"
         # Use URL from settings
         invitation_link = f"{settings.invitation_url}?token={token}"
 
+        greeting_name = (recipient_name or "").strip() or recipient.split("@")[0]
         role_part = f" as {role_name}" if role_name else ""
         body = (
-            f"Hello,\n\n"
-            f"{inviter_name} has invited you to join {org_name}{role_part} on Horizon Sync ERP.\n\n"
+            f"Hi {greeting_name},\n\n"
+            f"{inviter_name} has invited you to join {org_name}{role_part} "
+            f"on Ciphercode ERP.\n\n"
         )
 
         if message:
             body += f'Message from {inviter_name}:\n"{message}"\n\n'
 
         body += (
-            f"Click the link below to accept the invitation and set up your account:\n\n"
+            "Click the link below to accept the invitation and set up your account:\n\n"
             f"{invitation_link}\n\n"
             f"This invitation will expire in {INVITATION_EXPIRY_DAYS} days.\n\n"
-            f"If you weren't expecting this invitation, you can safely ignore this email.\n"
+            "If you weren't expecting this invitation, you can safely ignore this email.\n"
         )
 
         await self.send_email(subject, recipient, body)
