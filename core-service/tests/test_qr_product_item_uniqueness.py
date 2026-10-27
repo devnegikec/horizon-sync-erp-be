@@ -32,20 +32,19 @@ def test_qr_product_creation_does_not_duplicate_item(db_session, mock_current_us
         db_session.query(Item).filter(Item.qr_product_id == product.id).count()
     )
 
-    # Attempt to run create_product again for same logical product name — service creates a new QRProduct row
-    product2 = svc.create_product(
-        type("D", (), {"model_dump": lambda self=None: product_data})(),
-        mock_current_user.organization_id,
-        mock_current_user.id,
-    )
-
-    item_count_after = (
-        db_session.query(Item).filter(Item.qr_product_id == product2.id).count()
-    )
-
     # Ensure only one item exists per QR product (the service should not create duplicates)
     assert item_count_before <= 1
-    assert item_count_after <= 1
+
+    # Product names are organization-scoped and case-insensitive.
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as duplicate_error:
+        svc.create_product(
+            type("D", (), {"model_dump": lambda self=None: {**product_data, "name": " unique test product "}})(),
+            mock_current_user.organization_id,
+            mock_current_user.id,
+        )
+    assert duplicate_error.value.status_code == 409
 
     # Additionally, ensure database unique constraint prevents duplicate item_code
     # Create a raw Item with duplicate item_code and expect an IntegrityError

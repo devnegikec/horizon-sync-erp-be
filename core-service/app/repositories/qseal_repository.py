@@ -231,6 +231,8 @@ class QSealRepository:
                     "city": event.city,
                     "state": event.state,
                     "country": event.country,
+                    "location_source": event.location_source,
+                    "location_accuracy_meters": event.location_accuracy_meters,
                 }
             )
         return items, total
@@ -503,6 +505,7 @@ class QSealRepository:
                 QRScanEvent.city,
                 QRScanEvent.latitude,
                 QRScanEvent.longitude,
+                QRScanEvent.location_source,
                 func.count().label("total_scans"),
                 func.sum(
                     case(
@@ -517,6 +520,7 @@ class QSealRepository:
                 QRScanEvent.city,
                 QRScanEvent.latitude,
                 QRScanEvent.longitude,
+                QRScanEvent.location_source,
             )
             .order_by(func.count().desc())
             .limit(limit)
@@ -530,6 +534,7 @@ class QSealRepository:
                     "city": row.city,
                     "latitude": float(row.latitude) if row.latitude is not None else None,
                     "longitude": float(row.longitude) if row.longitude is not None else None,
+                    "location_source": getattr(row, "location_source", None),
                     "total_scans": int(row.total_scans or 0),
                     "valid_scans": int(row.valid_scans or 0),
                     "invalid_scans": int((row.total_scans or 0) - (row.valid_scans or 0)),

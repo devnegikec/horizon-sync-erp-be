@@ -89,6 +89,7 @@ class QSealScanRequest(BaseModel):
     ip_address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    accuracy_meters: int | None = Field(None, ge=0, le=100_000)
     city: str | None = None
     state: str | None = None
     country: str | None = None
@@ -134,6 +135,8 @@ class QSealHistoryItem(BaseModel):
     risk_score: int = 0
     suspicious_reasons: list[str] = Field(default_factory=list)
     review_status: str = "not_flagged"
+    location_source: str | None = None
+    location_accuracy_meters: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -197,6 +200,7 @@ class QSealGeographyAnalyticsItem(BaseModel):
     total_scans: int
     valid_scans: int
     invalid_scans: int
+    location_source: str | None = None
 
 
 class QSealGeographyAnalyticsResponse(BaseModel):
@@ -233,6 +237,8 @@ class QSealSuspiciousScanItem(BaseModel):
     city: str | None
     state: str | None
     country: str | None
+    location_source: str | None = None
+    location_accuracy_meters: int | None = None
 
 
 class QSealSuspiciousScanResponse(BaseModel):

@@ -67,6 +67,14 @@ def normalize_sku(value: str | None) -> str | None:
     return cleaned or None
 
 
+def normalize_product_name(value: str | None) -> str | None:
+    """Trim a product name and treat an all-whitespace value as unset."""
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
 def find_active_product_by_sku(
     db: Session,
     organization_id: UUID,
@@ -86,6 +94,31 @@ def find_active_product_by_sku(
         QRProduct.organization_id == organization_id,
         QRProduct.deleted_at.is_(None),
         func.lower(func.trim(QRProduct.sku)) == normalized.lower(),
+    )
+    if exclude_product_id is not None:
+        query = query.filter(QRProduct.id != exclude_product_id)
+    return query.first()
+
+
+def find_active_product_by_name(
+    db: Session,
+    organization_id: UUID,
+    name: str | None,
+    *,
+    exclude_product_id: UUID | None = None,
+) -> QRProduct | None:
+    """Return the active QR product holding ``name`` in the organization.
+
+    Product names are compared case- and whitespace-insensitively. Soft-deleted
+    products do not reserve their name.
+    """
+    normalized = normalize_product_name(name)
+    if normalized is None:
+        return None
+    query = db.query(QRProduct).filter(
+        QRProduct.organization_id == organization_id,
+        QRProduct.deleted_at.is_(None),
+        func.lower(func.trim(QRProduct.name)) == normalized.lower(),
     )
     if exclude_product_id is not None:
         query = query.filter(QRProduct.id != exclude_product_id)
@@ -281,6 +314,29 @@ class QRProductService:
                 ),
             )
 
+    def _assert_product_name_available(
+        self,
+        organization_id: UUID,
+        name: str | None,
+        *,
+        exclude_product_id: UUID | None = None,
+    ) -> None:
+        """Reject a product name already used by another active product."""
+        existing = find_active_product_by_name(
+            self.db,
+            organization_id,
+            name,
+            exclude_product_id=exclude_product_id,
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"A product named '{normalize_product_name(name)}' already "
+                    "exists. Please choose a different name."
+                ),
+            )
+
     # ── Products ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -427,6 +483,18 @@ class QRProductService:
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
+        if not product_dict.get("brand_id"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Brand is required when creating a product",
+            )
+        product_dict["name"] = normalize_product_name(product_dict.get("name"))
+        if product_dict["name"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Product name is required",
+            )
+        self._assert_product_name_available(organization_id, product_dict["name"])
         # A QR product's SKU is the organization-wide business key: normalise it
         # and reserve it before the linked inventory Item copies the same value.
         product_dict["sku"] = normalize_sku(product_dict.get("sku"))
@@ -454,9 +522,17 @@ class QRProductService:
         try:
             qr_product = self.product_repo.create(product_dict)
         except IntegrityError as exc:
-            # Concurrent create with the same SKU (the partial unique index is
-            # the authoritative guard). Surface it as a clean conflict.
+            # Unique indexes are the authoritative backstop for concurrent
+            # creates. Surface their conflicts as clear domain errors.
             self.db.rollback()
+            if "uq_qr_products_org_name_ci" in str(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"A product named '{product_dict.get('name')}' already "
+                        "exists. Please choose a different name."
+                    ),
+                ) from exc
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -665,7 +741,7 @@ class QRProductService:
         page_size: int = 20,
         search: str | None = None,
         is_active: bool | None = None,
-    ) -> tuple[list[QRProduct], dict]:
+    ) -> tuple[list[QRProduct], dict, dict[str, int]]:
         items, total = self.product_repo.list(
             organization_id, page, page_size, search, is_active
         )
@@ -678,7 +754,8 @@ class QRProductService:
             "has_next": page < total_pages,
             "has_prev": page > 1,
         }
-        return items, pagination
+        stats = self.product_repo.list_stats(organization_id, search, is_active)
+        return items, pagination, stats
 
     def update_product(
         self,
@@ -696,6 +773,27 @@ class QRProductService:
             extra = dict(update_dict.get("extra_data") or {})
             extra["packaging_details"] = _json_safe_packaging(packaging_details)
             update_dict["extra_data"] = extra
+
+        if "name" in update_dict:
+            update_dict["name"] = normalize_product_name(update_dict["name"])
+            if update_dict["name"] is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Product name is required",
+                )
+            self._assert_product_name_available(
+                organization_id,
+                update_dict["name"],
+                exclude_product_id=product.id,
+            )
+
+        if "sku" in update_dict:
+            update_dict["sku"] = normalize_sku(update_dict["sku"])
+            self._assert_sku_available(
+                organization_id,
+                update_dict["sku"],
+                exclude_product_id=product.id,
+            )
 
         if "shelf_life_setting_id" in update_dict:
             self._validate_shelf_life_setting(
@@ -724,7 +822,19 @@ class QRProductService:
             )
 
         update_dict["updated_by"] = user_id
-        product = self.product_repo.update(product, update_dict)
+        try:
+            product = self.product_repo.update(product, update_dict)
+        except IntegrityError as exc:
+            self.db.rollback()
+            if "uq_qr_products_org_name_ci" in str(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"A product named '{update_dict.get('name')}' already "
+                        "exists. Please choose a different name."
+                    ),
+                ) from exc
+            raise
 
         if packaging_details is not None:
             try:
