@@ -76,3 +76,93 @@ in the verify output and manually assign them.
 **Old DB table names differ**: The export SQL assumes `dashboard_client`, `integration_brand`,
 and `users_user`. Adjust if your old app uses different table names.
 Check with: `\dt` in psql against the old DB.
+
+---
+
+## Phase 2: QSeal Domain Migration (`elemage`/elemaze → core_db)
+
+Script: `phase2_migrate_elemage_qseal.py`
+
+Migrates the **elemaze** client (old tenant schema `elemage`, AWS EC2) into the new
+ERP core-service database. Run it **after** Phase 1 so the organization exists.
+
+### What gets migrated
+
+| Old (`elemage.*`) | New (`core_db`) |
+|---|---|
+| `integration_brand` | `brands` |
+| `integration_product` | `products` + `qr_products` |
+| `integration_serialnumformat` / `channel` / `destinationmarket` / `warrantyperiod` | `qr_product_settings` (+ `destination_markets`, `warranty_periods`) |
+| *(derived, one per product)* | `product_skus` (`ELEMAGE-<id>`) |
+| `integration_order` (old model name: "Block") | `qr_blocks` |
+| `integration_productitem` | `product_items` |
+| `integration_qractivationparameters` | `qr_activation_parameters` (+ `qseal_parameters` with `--mirror-qseal`) |
+| `integration_productcertificate` | `qr_scan_events` |
+| `integration_lead` | `campaign_leads` (campaign_id NULL — old campaigns table is empty) |
+| `integration_warranty` | `warranties` (empty in this tenant) |
+
+**Not migrated** (no target equivalent / not QSeal): POS tables
+(`integration_store*`), pallets, `skuqr`/`qr`, analytics events, messaging/report
+tables, NFTs, OTPs. Phase 1 handled users/organisations.
+
+### How the source is read
+
+The script shells out to:
+
+```
+ssh -i <key> <host> "docker exec -i <container> psql -U <user> -d <db> --csv -q -f -"
+```
+
+SQL is piped over stdin, so **no AWS credentials or open DB ports are needed**.
+Defaults match production (`3.6.154.21`, `postgres_db`, `adminportal`, `elemage`).
+
+### Run it
+
+```bash
+cd /path/to/horizon-sync-be
+
+export TARGET_DATABASE_URL='postgresql://postgres:PASS@<railway-proxy>:<port>/railway'
+export IDENTITY_DATABASE_URL='postgresql://postgres:PASS@<railway-identity-proxy>:<port>/railway'
+export BRAND_KEY_ENCRYPTION_SECRET='<same Fernet key the core-service uses>'
+
+# 1. Preview (rolls back at the end)
+python scripts/migration/phase2_migrate_elemage_qseal.py --dry-run --mirror-qseal
+
+# 2. Apply
+python scripts/migration/phase2_migrate_elemage_qseal.py --org-slug elemage --mirror-qseal
+```
+
+If you already have a tunnel to the AWS database:
+
+```bash
+python scripts/migration/phase2_migrate_elemage_qseal.py \
+  --source-mode direct --source-url 'postgresql://adminportal_user:PASS@localhost:15432/adminportal' \
+  --org-slug elemage --mirror-qseal
+```
+
+### Properties
+
+- **Idempotent** — every ID is `uuid5(...)`; inserts use `ON CONFLICT (id) DO UPDATE`.
+  Re-running updates instead of duplicating.
+- **Atomic** — one transaction; any failure rolls back the whole run.
+- **Safe on shared serials** — `product_items.serial_number` has a *global* unique
+  index. Pre-existing serials under another id are skipped and reported, and child
+  scan events are re-pointed at the existing row.
+- `--purge-org` deletes this org's QSeal rows first (destructive; use with care).
+
+### Known gaps / manual follow-ups
+
+1. **Brand keys** — the old brand key pair is legacy RSA; the ERP signs QR codes with
+   ECDSA P-256 + Fernet. Pass `BRAND_KEY_ENCRYPTION_SECRET` so a compatible,
+   deterministic pair is generated. Without it `private_key_encrypted` stays NULL and
+   cascade signing will not work for this brand.
+2. **Old printed QR payloads** were signed with the old scheme — signature
+   verification of already-printed labels will not pass against the new keys. Serial
+   lookup (`product_items` + `qr_activation_parameters`) still works.
+3. **Images** — `image`/`banner_image` were Django-relative media paths, copied
+   verbatim. They need rewriting to real URLs (S3/GCS) if the frontend uses them.
+4. **No SKU variants** — legacy products had none, so one SKU per product is created.
+   Split into real variants later if needed.
+5. `qr_activation_parameters.parent_id/parent_app_id` are NULL because the old
+   `integration_qractivationtrack` table is empty.
+6. **POS module data** (stores, bills, payments, purchase items) is not migrated.

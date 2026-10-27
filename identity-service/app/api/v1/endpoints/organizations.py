@@ -21,6 +21,7 @@ from app.dependencies import (
     CurrentUser,
     get_core_service_client,
     get_current_active_user,
+    require_internal_service,
 )
 from app.models.base import UserStatus
 from app.models.role import UserOrganizationRole
@@ -133,8 +134,6 @@ async def get_master_organization(
     """Get master organization details. Requires system admin permissions."""
     require_permission(current_user.permissions, "system_admin.master")
 
-    svc = OrganizationService(db)
-
     # Find the master organization (should be unique)
     from app.models.base import OrganizationType
     from app.models.organization import Organization
@@ -179,6 +178,28 @@ async def get_master_organization(
         created_at=master_org.created_at,
         updated_at=master_org.updated_at,
     )
+
+
+@router.get(
+    "/internal/organizations/{organization_id}/slug",
+    summary="Get organization slug (service-to-service)",
+    description=(
+        "Return the organization slug for object-storage folder naming. "
+        "Protected by the X-Internal-Secret shared-secret header."
+    ),
+    dependencies=[Depends(require_internal_service)],
+)
+async def get_organization_slug_internal(
+    organization_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Return ``{organization_id, slug}`` for internal callers."""
+    svc = OrganizationService(db)
+    try:
+        org = svc.get_by_id(organization_id)
+    except OrganizationNotFoundException:
+        raise
+    return {"organization_id": str(organization_id), "slug": org.get("slug")}
 
 
 @router.get(

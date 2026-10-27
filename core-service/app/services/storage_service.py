@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.config import settings
+from app.services.organization_directory import organization_folder
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,12 @@ INBOUND_EVIDENCE_CONTENT_TYPES = {
     "application/pdf": ".pdf",
 }
 PRODUCT_IMAGE_S3_KEY_PATTERN = re.compile(
-    r"^qseal/organizations/[0-9a-f-]{36}/products/[0-9a-f-]{36}/"
-    r"images/(?:logo|banner)/[0-9a-f]{32}\.(?:jpg|png|webp)$"
+    r"^(?:qseal/organizations/[0-9a-f-]{36}|orgs/[a-z0-9-]+/qseal)/"
+    r"products/[0-9a-f-]{36}/images/(?:logo|banner)/[0-9a-f]{32}\.(?:jpg|png|webp)$"
 )
+# New keys are org-slug scoped (``orgs/<slug>/...``); keys written before the
+# slug layout used a domain-first prefix with the organization UUID.
+ORG_SCOPED_KEY_PREFIXES = ("orgs/", "qseal/", "inbound/")
 
 QR_ARTIFACT_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -41,10 +45,27 @@ def _get_client():
 
 
 def _get_s3_client():
-    """Return an S3 client using the standard AWS credential provider chain."""
-    import boto3  # type: ignore[import]
+    """Return an S3 client using the standard AWS credential provider chain.
 
-    kwargs = {"region_name": settings.aws_s3_region}
+    Works with AWS S3 and S3-compatible providers (Railway buckets, R2,
+    MinIO): a custom endpoint, path-style addressing, and optional
+    server-side encryption are all configurable.
+    """
+    import boto3  # type: ignore[import]
+    from botocore.config import Config  # type: ignore[import]
+
+    client_kwargs: dict = {
+        "region_name": settings.aws_s3_region,
+        "signature_version": "s3v4",
+    }
+    addressing_style = (settings.aws_s3_addressing_style or "").strip().lower()
+    if addressing_style in {"path", "virtual", "auto"}:
+        client_kwargs["s3"] = {"addressing_style": addressing_style}
+
+    kwargs: dict = {
+        "region_name": settings.aws_s3_region,
+        "config": Config(**client_kwargs),
+    }
     if settings.aws_s3_endpoint_url:
         kwargs["endpoint_url"] = settings.aws_s3_endpoint_url
     if settings.aws_access_key_id and settings.aws_secret_access_key:
@@ -55,6 +76,18 @@ def _get_s3_client():
     return boto3.client("s3", **kwargs)
 
 
+def _sse_kwargs() -> dict:
+    """Server-side encryption params, omitted for providers that reject them.
+
+    Railway/S3-compatible buckets reject the AWS-only SSE header, so an empty
+    value or an explicit disable word (``none``/``off``/``disabled``) omits it.
+    """
+    algorithm = (settings.aws_s3_server_side_encryption or "").strip()
+    if algorithm.lower() in {"none", "off", "disabled", "false"}:
+        return {}
+    return {"ServerSideEncryption": algorithm} if algorithm else {}
+
+
 def build_qr_artifact_key(
     organization_id: UUID,
     product_id: UUID,
@@ -62,8 +95,33 @@ def build_qr_artifact_key(
 ) -> str:
     """Build a tenant-scoped, label-independent key for a QR workbook."""
     return (
-        f"qseal/organizations/{organization_id}/products/{product_id}/"
+        f"{organization_folder(organization_id)}/qseal/products/{product_id}/"
         f"blocks/{block_id}/qr_codes.xlsx"
+    )
+
+
+def build_product_image_key(
+    organization_id: UUID,
+    product_id: UUID,
+    image_type: str,
+    extension: str,
+) -> str:
+    """Build the bucket key for a Product logo/banner image."""
+    return (
+        f"{organization_folder(organization_id)}/qseal/products/{product_id}/"
+        f"images/{image_type}/{uuid4().hex}{extension}"
+    )
+
+
+def build_inbound_evidence_key(
+    organization_id: UUID,
+    exception_id: UUID,
+    extension: str,
+) -> str:
+    """Build the bucket key for inbound-exception evidence."""
+    return (
+        f"{organization_folder(organization_id)}/inbound/exceptions/"
+        f"{exception_id}/evidence/{uuid4().hex}{extension}"
     )
 
 
@@ -84,7 +142,7 @@ def store_qr_artifact(data: bytes, object_key: str, filename: str) -> None:
         Body=data,
         ContentType=QR_ARTIFACT_CONTENT_TYPE,
         ContentDisposition=f'attachment; filename="{filename}"',
-        ServerSideEncryption="AES256",
+        **_sse_kwargs(),
     )
 
 
@@ -200,9 +258,8 @@ def store_product_image(
 ) -> str:
     """Persist a Product image and return its opaque object key."""
     extension = PRODUCT_IMAGE_CONTENT_TYPES[content_type]
-    object_key = (
-        f"qseal/organizations/{organization_id}/products/{product_id}/"
-        f"images/{image_type}/{uuid4().hex}{extension}"
+    object_key = build_product_image_key(
+        organization_id, product_id, image_type, extension
     )
 
     if settings.aws_s3_bucket:
@@ -211,7 +268,7 @@ def store_product_image(
             Key=object_key,
             Body=data,
             ContentType=content_type,
-            ServerSideEncryption="AES256",
+            **_sse_kwargs(),
         )
         return object_key
 
@@ -226,7 +283,7 @@ def store_product_image(
 
 def read_product_image(object_key: str) -> tuple[bytes, str]:
     """Read a Product image from S3 or a legacy Product image store."""
-    if object_key.startswith("qseal/"):
+    if object_key.startswith(ORG_SCOPED_KEY_PREFIXES):
         if not PRODUCT_IMAGE_S3_KEY_PATTERN.fullmatch(object_key):
             raise ValueError("Invalid Product image object key")
         if settings.aws_s3_bucket:
@@ -270,7 +327,7 @@ def read_product_image(object_key: str) -> tuple[bytes, str]:
 
 def delete_product_image(object_key: str) -> None:
     """Delete a Product image if it exists."""
-    if object_key.startswith("qseal/"):
+    if object_key.startswith(ORG_SCOPED_KEY_PREFIXES):
         if not PRODUCT_IMAGE_S3_KEY_PATTERN.fullmatch(object_key):
             raise ValueError("Invalid Product image object key")
         if settings.aws_s3_bucket:
@@ -302,9 +359,10 @@ def store_inbound_exception_evidence(
     """Store private optional photo/PDF evidence for an inbound exception."""
     if content_type not in INBOUND_EVIDENCE_CONTENT_TYPES:
         raise ValueError("Unsupported inbound evidence content type")
-    object_key = (
-        f"inbound/organizations/{organization_id}/exceptions/{exception_id}/"
-        f"evidence/{uuid4().hex}{INBOUND_EVIDENCE_CONTENT_TYPES[content_type]}"
+    object_key = build_inbound_evidence_key(
+        organization_id,
+        exception_id,
+        INBOUND_EVIDENCE_CONTENT_TYPES[content_type],
     )
     if settings.aws_s3_bucket:
         _get_s3_client().put_object(
@@ -312,7 +370,7 @@ def store_inbound_exception_evidence(
             Key=object_key,
             Body=data,
             ContentType=content_type,
-            ServerSideEncryption="AES256",
+            **_sse_kwargs(),
         )
         return object_key
     if settings.environment.lower() == "production":
