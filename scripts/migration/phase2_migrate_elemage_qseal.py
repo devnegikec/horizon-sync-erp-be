@@ -80,10 +80,9 @@ import shutil
 import subprocess
 import sys
 import uuid
-from collections import Counter
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable
+from typing import Any
 
 try:
     import psycopg2
@@ -122,6 +121,12 @@ def i(v: Any) -> int | None:
         return int(float(v))
     except ValueError:
         return None
+
+
+def years_to_months(v: Any) -> int | None:
+    """Convert the legacy ``number_of_years`` column into target months."""
+    value = i(v)
+    return None if value is None else value * 12
 
 
 def d(v: Any) -> Decimal | None:
@@ -217,7 +222,9 @@ class DirectSource:
                 cols = [c[0] for c in cur.description]
                 out = []
                 for row in cur.fetchall():
-                    out.append({c: _direct_str(v) for c, v in zip(cols, row)})
+                    out.append(
+                        {c: _direct_str(v) for c, v in zip(cols, row, strict=False)}
+                    )
                 return out
 
 
@@ -617,7 +624,7 @@ class Migrator:
             wuid = did("warranty_period", r["id"])
             suid = did("setting:shelf_life", r["id"])
             self.m_setting[f"shelf_life:{r['id']}"] = suid
-            months = i(r.get("number_of_years"))
+            months = years_to_months(r.get("number_of_years"))
             wp_out.append(
                 (
                     wuid,
@@ -695,7 +702,7 @@ class Migrator:
                        p.brand_id, p.warrantyperiod_id, p.serialnumformat_id,
                        p.industry_id, p.show_consumer_risk_warning,
                        ind.name AS industry_name,
-                       wp.number_of_years AS warranty_months
+                       wp.number_of_years AS warranty_years
                   FROM {self.t("integration_product")} p
                   LEFT JOIN {self.t("integration_industry")} ind
                          ON ind.id = p.industry_id
@@ -767,7 +774,7 @@ class Migrator:
                     i(r.get("num_activated_qr")) or 0,
                     s(r.get("sr_number_type")),
                     b(r.get("redirect_to_client")),
-                    i(r.get("warranty_months")),
+                    years_to_months(r.get("warranty_years")),
                     None,
                     True,
                     None,
@@ -1057,12 +1064,15 @@ class Migrator:
         )
         scans = {r["product_item_id"]: r for r in scan_rows}
 
-        # existing serials in target (global unique index) -> skip conflicts
+        # existing serials in target (global unique index on active rows) ->
+        # skip conflicts. The index is NOT organization-scoped, so a serial
+        # owned by another organization must be detected too or the insert
+        # aborts the whole transaction.
         cur.execute(
-            "SELECT serial_number, id::text FROM product_items WHERE organization_id = %s",
-            (self.org,),
+            "SELECT serial_number, id::text, organization_id::text "
+            "FROM product_items WHERE deleted_at IS NULL"
         )
-        existing = {sn: pid for sn, pid in cur.fetchall()}
+        existing = dict(cur.fetchall())
 
         out, skipped = [], []
         for r in rows:
@@ -1072,11 +1082,22 @@ class Migrator:
             serial = s(r.get("serial_number"))
             pid = r.get("product_id")
             order_id = r.get("order_id")
-            if serial and serial in existing and existing[serial] != iuid:
-                # Point any child rows at the row that already owns this serial
-                self.m_item[iid] = existing[serial]
-                skipped.append(serial)
-                continue
+            if serial and serial in existing:
+                owner_id, owner_org = existing[serial]
+                if owner_org != self.org:
+                    # Never remap child rows onto another tenant's item.
+                    self.warn(
+                        f"product_item {iid} skipped: serial {serial} belongs "
+                        f"to another organization ({owner_org})"
+                    )
+                    self.m_item.pop(iid, None)
+                    skipped.append(serial)
+                    continue
+                if owner_id != iuid:
+                    # Point any child rows at the row that already owns this serial
+                    self.m_item[iid] = owner_id
+                    skipped.append(serial)
+                    continue
             if not self.m_product.get(pid or ""):
                 self.warn(f"product_item {iid} skipped: product {pid} not mapped")
                 continue
@@ -1605,6 +1626,9 @@ def resolve_org(args) -> uuid.UUID:
 
 
 def purge(cur, org: str) -> None:
+    # Only QSeal rows this migration owns. ``products`` and ``brands`` are the
+    # shared catalog and are upserted by deterministic id, so deleting them
+    # would destroy unrelated catalog data owned by the organization.
     order = [
         "qr_scan_events",
         "qr_activation_parameters",
@@ -1613,12 +1637,10 @@ def purge(cur, org: str) -> None:
         "qr_blocks",
         "product_skus",
         "qr_products",
-        "products",
         "qr_product_settings",
         "destination_markets",
         "warranty_periods",
         "campaign_leads",
-        "brands",
     ]
     for t in order:
         if table_exists(cur, t):

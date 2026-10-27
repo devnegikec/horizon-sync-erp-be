@@ -68,7 +68,25 @@ def test_overlapping_serial_lists_are_deduplicated():
     assert serials == ["SN-A", "SN-B", "SN-C"]
 
 
-def _complete(item, *, stocked=None, add_stock=None, validate=None):
+def test_duplicate_serial_across_packaging_units_is_dropped():
+    """The same serial in two packaging-unit groups must be queued once."""
+    service = _service()
+    items = [
+        _slip_item(
+            serial_nos=["SN-A"], quantity=Decimal("1"), packaging_unit_id=uuid.uuid4()
+        ),
+        _slip_item(
+            serial_nos=["SN-A"], quantity=Decimal("1"), packaging_unit_id=uuid.uuid4()
+        ),
+    ]
+
+    specs = _specs(service, items, pack_size=4)
+
+    serials = [serial for spec in specs for serial in spec["serial_nos"]]
+    assert serials == ["SN-A"]
+
+
+def _complete(item, *, stocked=None, add_stock=None, validate=None, locked=None):
     service = _service()
     service.db = type("DB", (), {})()
     query = type("Query", (), {})()
@@ -82,8 +100,11 @@ def _complete(item, *, stocked=None, add_stock=None, validate=None):
     service.db.refresh = lambda *args, **kwargs: None
 
     service.bin_stock_service = type("Stock", (), {})()
+    service.bin_stock_service.lock_serials = lambda org_id, serials: (
+        locked.append(list(serials)) if locked is not None else None
+    )
     service.bin_stock_service.get_stocked_serial_locations = (
-        lambda org_id, serials: stocked or {}
+        lambda org_id, serials, item_id=None: stocked or {}
     )
     if add_stock is not None:
         service.bin_stock_service.add_stock = add_stock
@@ -128,12 +149,14 @@ def test_retry_does_not_add_serials_already_in_the_target_bin():
     item = _pending_item(["SN-A", "SN-B"])
     calls = []
     validated = []
+    locked = []
 
     service = _complete(
         item,
-        stocked={"SN-A": (item.bin_location_id, Decimal("1"))},
+        stocked={"SN-A": [(item.bin_location_id, Decimal("1"))]},
         add_stock=lambda **kw: calls.append(kw),
         validate=lambda **kw: validated.append(kw),
+        locked=locked,
     )
 
     service.complete_item(
@@ -143,6 +166,7 @@ def test_retry_does_not_add_serials_already_in_the_target_bin():
         check_completion=False,
     )
 
+    assert locked == [["SN-A", "SN-B"]]
     assert [call["batch_number"] for call in calls] == ["SN-B"]
     assert validated[0]["quantity"] == Decimal("1")
     assert item.status == "completed"
@@ -152,7 +176,27 @@ def test_complete_item_rejects_serial_stocked_in_another_bin():
     item = _pending_item(["SN-A"])
     service = _complete(
         item,
-        stocked={"SN-A": (uuid.uuid4(), Decimal("1"))},
+        stocked={"SN-A": [(uuid.uuid4(), Decimal("1"))]},
+        add_stock=lambda **kw: pytest.fail("stock must not be added"),
+    )
+
+    with pytest.raises(ValidationError) as exc:
+        service.complete_item(item.id, uuid.uuid4(), item.organization_id)
+
+    assert exc.value.code == "SERIAL_ALREADY_STOCKED"
+
+
+def test_complete_item_rejects_serial_found_in_target_bin_and_elsewhere():
+    """Corrupt data in two bins must be reported, not silently skipped."""
+    item = _pending_item(["SN-A"])
+    service = _complete(
+        item,
+        stocked={
+            "SN-A": [
+                (item.bin_location_id, Decimal("1")),
+                (uuid.uuid4(), Decimal("1")),
+            ]
+        },
         add_stock=lambda **kw: pytest.fail("stock must not be added"),
     )
 

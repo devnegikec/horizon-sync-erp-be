@@ -12,9 +12,10 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 18.1, 18.2
 """
 
 from decimal import Decimal
+from hashlib import sha256
 from uuid import UUID
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import NotFoundError, StateError, ValidationError
@@ -903,18 +904,21 @@ class BinStockService:
         self,
         org_id: UUID,
         serials: list[str],
-    ) -> dict[str, tuple[UUID, Decimal]]:
-        """Map each already-stocked serial to ``(bin_location_id, quantity)``.
+        item_id: UUID | None = None,
+    ) -> dict[str, list[tuple[UUID, Decimal]]]:
+        """Map each already-stocked serial to every ``(bin, quantity)`` row.
 
         Serial/QR numbers identify a single physical unit, so callers use this
         to keep put-away retries idempotent (a serial already in the target bin
         must not be added again) and to reject re-stocking a unit that lives in
-        another bin.
+        another bin. A serial that already exists in more than one bin is
+        corrupt data, so every location is returned instead of keeping an
+        arbitrary one.
         """
         if not serials:
             return {}
 
-        rows = (
+        query = (
             self.db.query(
                 BinStockLevel.batch_number,
                 BinStockLevel.bin_location_id,
@@ -926,12 +930,36 @@ class BinStockService:
                 BinStockLevel.quantity_on_hand > 0,
             )
             .group_by(BinStockLevel.batch_number, BinStockLevel.bin_location_id)
-            .all()
         )
-        return {
-            serial: (bin_id, Decimal(str(quantity or 0)))
-            for serial, bin_id, quantity in rows
-        }
+        if item_id is not None:
+            # ``batch_number`` also holds real batch codes for batch-tracked
+            # stock, so scope the match to the item being put away.
+            query = query.filter(BinStockLevel.item_id == item_id)
+
+        locations: dict[str, list[tuple[UUID, Decimal]]] = {}
+        for serial, bin_id, quantity in query.all():
+            locations.setdefault(serial, []).append(
+                (bin_id, Decimal(str(quantity or 0)))
+            )
+        return locations
+
+    def lock_serials(self, org_id: UUID, serials: list[str]) -> None:
+        """Serialize concurrent put-away of the same serial numbers.
+
+        A check-then-insert cannot stop two completions from both seeing a
+        serial as absent and inserting it into different bins. PostgreSQL
+        transaction-level advisory locks (taken in a stable order to avoid
+        deadlocks) close that window; they are released on commit/rollback.
+        """
+        unique = sorted({serial for serial in serials if serial})
+        if not unique or self.db.bind is None:
+            return
+        if self.db.bind.dialect.name != "postgresql":
+            return
+        for serial in unique:
+            digest = sha256(f"{org_id}:{serial}".encode()).digest()
+            key = int.from_bytes(digest[:8], "big", signed=True)
+            self.db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
     def get_parent_boxes(self, bin_id: UUID, org_id: UUID) -> list[dict]:
         """Return the parent (master-pack) boxes present in a bin, grouped by product.
