@@ -15,6 +15,8 @@ from app.services.qr_product_service import QRProductService
 def _service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
     service.db = Mock()
+    service.db.query.return_value.filter.return_value.first.return_value = None
+    service.db.query.return_value.filter.return_value.filter.return_value.first.return_value = None
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
     return service
@@ -48,11 +50,15 @@ def test_create_product_notifies_creator():
     service._create_linked_item = Mock()
 
     with patch(
+        "app.repositories.brand_repository.BrandRepository.get_by_id",
+        return_value=SimpleNamespace(id=uuid4()),
+    ), patch(
         "app.services.notification_service.NotificationService"
     ) as notification_cls:
         service.create_product(
             QRProductCreate(
                 name=product.name,
+                brand_id=uuid4(),
                 shelf_life_setting_id=shelf_life.id,
                 serial_prefix_setting_id=serial_prefix.id,
             ),

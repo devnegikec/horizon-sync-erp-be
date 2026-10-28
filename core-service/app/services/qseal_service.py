@@ -397,6 +397,8 @@ class QSealService:
             "ip_address": client_ip or req.ip_address,
             "latitude": req.latitude,
             "longitude": req.longitude,
+            "location_source": "browser" if req.latitude is not None and req.longitude is not None else None,
+            "location_accuracy_meters": req.accuracy_meters,
             "city": req.city,
             "state": req.state,
             "country": req.country,

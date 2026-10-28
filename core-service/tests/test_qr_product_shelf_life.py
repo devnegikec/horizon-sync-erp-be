@@ -15,8 +15,10 @@ from app.services.qr_product_setting_service import QRProductSettingService
 
 def make_product_service() -> QRProductService:
     service = QRProductService.__new__(QRProductService)
+    service.db = Mock()
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
+    service._assert_product_name_available = Mock()
     return service
 
 
@@ -53,6 +55,7 @@ def test_create_product_persists_shelf_life_setting_reference():
     result = service.create_product(
         QRProductCreate(
             name="Test Product",
+            brand_id=uuid4(),
             shelf_life_setting_id=setting.id,
             serial_prefix_setting_id=prefix.id,
         ),
@@ -97,6 +100,7 @@ def test_create_product_rejects_invalid_shelf_life_setting(
         service.create_product(
             QRProductCreate(
                 name="Test Product",
+                brand_id=uuid4(),
                 shelf_life_setting_id=uuid4(),
                 serial_prefix_setting_id=uuid4(),
             ),
@@ -119,6 +123,7 @@ def test_setting_lookup_is_scoped_to_authenticated_organization():
         service.create_product(
             QRProductCreate(
                 name="Test Product",
+                brand_id=uuid4(),
                 shelf_life_setting_id=setting_id,
                 serial_prefix_setting_id=uuid4(),
             ),

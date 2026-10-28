@@ -32,6 +32,8 @@ class ActivationSettingsResponse(BaseModel):
     expiry_date: date
     history: bool
     created_on: datetime
+    created_by: UUID | None = None
+    created_by_name: str | None = None
 
     model_config = {"from_attributes": True}
 
