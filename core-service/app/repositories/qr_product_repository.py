@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.models.item import Item
 from app.models.product_item import ProductItem
 from app.models.qr_block import QRBlock
 from app.models.qr_credit import QRCreditUsage
@@ -46,7 +47,13 @@ class QRProductRepository:
     ) -> tuple[list[QRProduct], int]:
         q = (
             self.db.query(QRProduct)
-            .options(joinedload(QRProduct.serial_prefix_setting))
+            .options(
+                joinedload(QRProduct.serial_prefix_setting),
+                # The list schema resolves ``items_per_master_pack`` from the
+                # linked item's base packaging unit; eager-load both so a page
+                # of products does not issue 2N lazy queries.
+                selectinload(QRProduct.items).selectinload(Item.packaging_units),
+            )
             .filter(
                 QRProduct.organization_id == organization_id,
                 QRProduct.deleted_at.is_(None),
@@ -88,7 +95,9 @@ class QRProductRepository:
                 .group_by(ProductItem.product_id)
                 .all()
             )
-            scan_product_id = func.coalesce(QRScanEvent.product_id, ProductItem.product_id)
+            scan_product_id = func.coalesce(
+                QRScanEvent.product_id, ProductItem.product_id
+            )
             scan_rows = (
                 self.db.query(
                     scan_product_id,
@@ -103,8 +112,8 @@ class QRProductRepository:
                 .group_by(scan_product_id)
                 .all()
             )
-            block_counts = {product_id: count for product_id, count in block_rows}
-            item_counts = {product_id: count for product_id, count in item_rows}
+            block_counts = dict(block_rows)
+            item_counts = dict(item_rows)
             scan_metrics = {
                 product_id: (count, last_scan_at)
                 for product_id, count, last_scan_at in scan_rows
@@ -142,11 +151,19 @@ class QRProductRepository:
         if is_active is not None:
             product_filters.append(QRProduct.is_active == is_active)
 
-        total_products = self.db.query(func.count(QRProduct.id)).filter(*product_filters).scalar() or 0
-        active_products = self.db.query(func.count(QRProduct.id)).filter(
-            *product_filters,
-            QRProduct.is_active.is_(True),
-        ).scalar() or 0
+        total_products = (
+            self.db.query(func.count(QRProduct.id)).filter(*product_filters).scalar()
+            or 0
+        )
+        active_products = (
+            self.db.query(func.count(QRProduct.id))
+            .filter(
+                *product_filters,
+                QRProduct.is_active.is_(True),
+            )
+            .scalar()
+            or 0
+        )
         qr_code_count = (
             self.db.query(func.count(ProductItem.id))
             .join(QRProduct, ProductItem.product_id == QRProduct.id)

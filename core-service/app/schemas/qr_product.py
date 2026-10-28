@@ -46,6 +46,35 @@ def _validate_http_url_value(value: str | None) -> str | None:
         raise ValueError("URL must be a valid http:// or https:// URL")
     return normalized
 
+
+def _linked_item(obj: Any) -> Any | None:
+    """Return a QR product's linked inventory item, tolerating test doubles."""
+    try:
+        items = obj.items
+    except Exception:
+        return None
+    if not items:
+        return None
+    try:
+        return items[0]
+    except Exception:
+        return None
+
+
+def _populate_items_per_master_pack(instance: Any, linked_item: Any | None) -> None:
+    """Set ``items_per_master_pack`` from the item's base packaging unit."""
+    if linked_item is None:
+        return
+    try:
+        packaging_units = linked_item.packaging_units or []
+    except Exception:
+        return
+    for unit in packaging_units:
+        if getattr(unit, "is_base_unit", False):
+            instance.items_per_master_pack = unit.items_per_master_pack
+            return
+
+
 # ── QR Product ────────────────────────────────────────────────────────────────
 
 
@@ -191,18 +220,10 @@ class QRProductResponse(QRProductBase):
         """Populate linked_item_id and items_per_master_pack from the linked item."""
         instance = super().model_validate(obj, *args, **kwargs)
         # SQLAlchemy relationship: qr_product.items is a list
-        try:
-            items = obj.items  # type: ignore[attr-defined]
-            if items:
-                item = items[0]
-                instance.linked_item_id = item.id
-                # Resolve Items per Master Pack from the item's base packaging unit
-                for pu in item.packaging_units or []:
-                    if pu.is_base_unit:
-                        instance.items_per_master_pack = pu.items_per_master_pack
-                        break
-        except Exception:
-            pass
+        linked_item = _linked_item(obj)
+        if linked_item is not None:
+            instance.linked_item_id = linked_item.id
+        _populate_items_per_master_pack(instance, linked_item)
         return instance
 
 
@@ -229,6 +250,13 @@ class QRProductListItem(BaseModel):
     last_scan_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        """Resolve items_per_master_pack so list rows match the detail view."""
+        instance = super().model_validate(obj, *args, **kwargs)
+        _populate_items_per_master_pack(instance, _linked_item(obj))
+        return instance
 
 
 class QRProductListStats(BaseModel):

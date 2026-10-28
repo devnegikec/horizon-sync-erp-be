@@ -483,11 +483,9 @@ class QRProductService:
         product_dict["organization_id"] = organization_id
         product_dict["created_by"] = user_id
         product_dict["updated_by"] = user_id
-        if not product_dict.get("brand_id"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Brand is required when creating a product",
-            )
+        # ``brand_id`` stays optional: products without a brand are valid and
+        # simply generate unsigned QR codes (see ``_generate_product_items``).
+        # Bulk imports also omit it, so requiring it here would reject them.
         product_dict["name"] = normalize_product_name(product_dict.get("name"))
         if product_dict["name"] is None:
             raise HTTPException(
@@ -757,7 +755,7 @@ class QRProductService:
         stats = self.product_repo.list_stats(organization_id, search, is_active)
         return items, pagination, stats
 
-    def update_product(
+    def update_product(  # noqa: C901
         self,
         product_id: UUID,
         data: QRProductUpdate,
