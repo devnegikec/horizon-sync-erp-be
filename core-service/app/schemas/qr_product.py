@@ -4,9 +4,47 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _validate_gtin_value(value: str | None) -> str | None:
+    """Validate a numeric GTIN-like identifier and its modulo-10 check digit."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if not normalized.isdigit():
+        raise ValueError("GTIN must contain digits only")
+    if not 8 <= len(normalized) <= 20:
+        raise ValueError("GTIN must contain 8–20 digits")
+
+    body = normalized[:-1]
+    check_digit = int(normalized[-1])
+    total = sum(
+        int(digit) * (3 if index % 2 == 0 else 1)
+        for index, digit in enumerate(reversed(body))
+    )
+    expected_check_digit = (10 - (total % 10)) % 10
+    if check_digit != expected_check_digit:
+        raise ValueError("GTIN check digit is invalid")
+    return normalized
+
+
+def _validate_http_url_value(value: str | None) -> str | None:
+    """Allow only absolute HTTP(S) URLs for customer-facing product links."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("URL must be a valid http:// or https:// URL")
+    return normalized
 
 # ── QR Product ────────────────────────────────────────────────────────────────
 
@@ -64,7 +102,7 @@ class QRProductBase(BaseModel):
     name: str = Field(..., max_length=100)
     sku: str | None = None
     generic_name: str | None = None
-    gtin: str | None = None
+    gtin: str | None = Field(None, max_length=20)
     industry: str | None = None
     landing_page: str | None = None
     image_url: str | None = None
@@ -88,11 +126,21 @@ class QRProductCreate(QRProductBase):
     serial_prefix_setting_id: UUID
     packaging_details: QRProductPackagingDetails | None = None
 
+    @field_validator("gtin")
+    @classmethod
+    def validate_gtin(cls, value: str | None) -> str | None:
+        return _validate_gtin_value(value)
+
+    @field_validator("landing_page", "client_product_auth_url")
+    @classmethod
+    def validate_product_url(cls, value: str | None) -> str | None:
+        return _validate_http_url_value(value)
+
 
 class QRProductUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
     generic_name: str | None = None
-    gtin: str | None = None
+    gtin: str | None = Field(None, max_length=20)
     industry: str | None = None
     landing_page: str | None = None
     image_url: str | None = None
@@ -110,6 +158,16 @@ class QRProductUpdate(BaseModel):
     is_active: bool | None = None
     extra_data: dict[str, Any] | None = None
     packaging_details: QRProductPackagingDetails | None = None
+
+    @field_validator("gtin")
+    @classmethod
+    def validate_gtin(cls, value: str | None) -> str | None:
+        return _validate_gtin_value(value)
+
+    @field_validator("landing_page", "client_product_auth_url")
+    @classmethod
+    def validate_product_url(cls, value: str | None) -> str | None:
+        return _validate_http_url_value(value)
 
 
 class QRProductResponse(QRProductBase):
@@ -164,13 +222,26 @@ class QRProductListItem(BaseModel):
     created_at: datetime
     # Resolved from the linked item's base packaging unit (QR master pack grouping)
     items_per_master_pack: int | None = None
+    # Product-level QR activity summaries used by the Products overview.
+    block_count: int = 0
+    qr_code_count: int = 0
+    scan_count: int = 0
+    last_scan_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class QRProductListStats(BaseModel):
+    total_products: int = 0
+    active_products: int = 0
+    qr_code_count: int = 0
+    scan_count: int = 0
 
 
 class QRProductListResponse(BaseModel):
     products: list[QRProductListItem]
     pagination: dict[str, Any]
+    stats: QRProductListStats = QRProductListStats()
 
 
 class QRProductImageResponse(BaseModel):

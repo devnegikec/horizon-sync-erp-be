@@ -6,13 +6,14 @@ the same validation, tenant isolation, and transaction semantics.
 
 import hashlib
 import json
+import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, update
+from sqlalchemy import create_engine, func, or_, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,21 @@ from app.services.activation_expiry import (
     calculate_shelf_life_expiry,
     resolve_shelf_life_months,
 )
+
+logger = logging.getLogger(__name__)
+_identity_engine = None
+
+
+def _get_identity_engine():
+    """Return the read-only connection pool for identity user lookups."""
+    global _identity_engine
+    if _identity_engine is None and settings.identity_database_url:
+        _identity_engine = create_engine(
+            settings.identity_database_url,
+            pool_size=2,
+            max_overflow=0,
+        )
+    return _identity_engine
 
 
 def activation_error(http_status: int, code: str, message: str, **extra):
@@ -178,6 +194,8 @@ class QSealActivationService:
 
     def save_settings(self, product_id: UUID, data: ActivationSettingsInput, org_id: UUID, user_id: UUID | None):
         product = self.product(product_id, org_id, lock=True)
+        if data.manufacturing_date > date.today():
+            activation_error(400, "INVALID_MANUFACTURING_DATE", "Manufacturing date cannot be in the future.")
         currency = self.destination_currency(data.destination_market, org_id)
         available = self.db.query(func.count(ProductItem.id)).filter(
             ProductItem.product_id == product_id,
@@ -195,6 +213,21 @@ class QSealActivationService:
         ).with_for_update().first()
         if existing and not data.append_to_existing:
             activation_error(409, "BATCH_EXISTS", "This dispatch batch already has active settings. Confirm to update.", requires_confirmation=True)
+        if existing:
+            used_in_batch = self.db.query(func.count(QRActivationParameters.id)).filter(
+                QRActivationParameters.product_id == product_id,
+                QRActivationParameters.organization_id == org_id,
+                QRActivationParameters.dispatch_batch == data.dispatch_batch,
+                QRActivationParameters.qr_settings.is_(False),
+                QRActivationParameters.deleted_at.is_(None),
+            ).scalar() or 0
+            if data.batch_size < used_in_batch:
+                activation_error(
+                    400,
+                    "BATCH_SIZE_BELOW_ACTIVATED",
+                    f"Batch size cannot be lower than the {used_in_batch} QR blocks already activated in this dispatch batch.",
+                    activated_blocks=used_in_batch,
+                )
         if data.batch_size > available and not existing:
             activation_error(400, "INVALID_BATCH_SIZE", "Batch size cannot exceed available QR blocks.", available_blocks=available)
         shelf_life_months = resolve_shelf_life_months(
@@ -254,7 +287,41 @@ class QSealActivationService:
             QRActivationParameters.deleted_at.is_(None),
         ).order_by(QRActivationParameters.created_at.desc(), QRActivationParameters.id.desc())
         total = query.count()
-        return query.offset((page - 1) * page_size).limit(page_size).all(), total
+        rows = query.offset((page - 1) * page_size).limit(page_size).all()
+        creator_names = self._resolve_creator_names({row.created_by for row in rows if row.created_by})
+        for row in rows:
+            row.created_by_name = creator_names.get(str(row.created_by)) if row.created_by else None
+        return rows, total
+
+    @staticmethod
+    def _resolve_creator_names(user_ids: set[UUID]) -> dict[str, str]:
+        """Resolve activation setting creators from the identity database."""
+        engine = _get_identity_engine()
+        if not engine or not user_ids:
+            return {}
+
+        try:
+            with engine.connect() as connection:
+                rows = connection.execute(
+                    text(
+                        """
+                        SELECT id::text,
+                               COALESCE(
+                                   NULLIF(TRIM(login_username), ''),
+                                   NULLIF(TRIM(display_name), ''),
+                                   NULLIF(TRIM(CONCAT_WS(' ', first_name, last_name)), ''),
+                                   NULLIF(TRIM(email), '')
+                               ) AS creator_name
+                        FROM users
+                        WHERE id::text = ANY(:user_ids)
+                        """
+                    ),
+                    {"user_ids": [str(user_id) for user_id in user_ids]},
+                ).fetchall()
+            return {str(row[0]): row[1] for row in rows if row[1]}
+        except Exception as exc:
+            logger.warning("Failed to resolve QSeal activation creators: %s", exc)
+            return {}
 
     def resolve_serial(self, value: str, org_id: UUID | None = None):
         parsed = urlparse(value)

@@ -37,6 +37,7 @@ from app.schemas.qr_product import (
     QRProductCreate,
     QRProductImageResponse,
     QRProductImportResult,
+    QRProductListItem,
     QRProductListResponse,
     QRProductResponse,
     QRProductUpdate,
@@ -97,12 +98,13 @@ async def list_qr_products(
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
-    products, pagination = svc.list_products(
+    products, pagination, stats = svc.list_products(
         current_user.organization_id, page, page_size, search, is_active
     )
     return QRProductListResponse(
-        products=[QRProductResponse.model_validate(p) for p in products],
+        products=[QRProductListItem.model_validate(p) for p in products],
         pagination=pagination,
+        stats=stats,
     )
 
 

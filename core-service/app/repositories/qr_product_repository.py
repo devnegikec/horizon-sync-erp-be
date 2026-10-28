@@ -63,6 +63,60 @@ class QRProductRepository:
             .limit(page_size)
             .all()
         )
+
+        # Attach page-level aggregates in grouped queries so the Products
+        # overview can summarize products without loading every QR block/item.
+        product_ids = [product.id for product in items]
+        if product_ids:
+            block_rows = (
+                self.db.query(QRBlock.product_id, func.count(QRBlock.id))
+                .filter(
+                    QRBlock.organization_id == organization_id,
+                    QRBlock.product_id.in_(product_ids),
+                    QRBlock.deleted_at.is_(None),
+                )
+                .group_by(QRBlock.product_id)
+                .all()
+            )
+            item_rows = (
+                self.db.query(ProductItem.product_id, func.count(ProductItem.id))
+                .filter(
+                    ProductItem.organization_id == organization_id,
+                    ProductItem.product_id.in_(product_ids),
+                    ProductItem.deleted_at.is_(None),
+                )
+                .group_by(ProductItem.product_id)
+                .all()
+            )
+            scan_product_id = func.coalesce(QRScanEvent.product_id, ProductItem.product_id)
+            scan_rows = (
+                self.db.query(
+                    scan_product_id,
+                    func.count(QRScanEvent.id),
+                    func.max(QRScanEvent.scan_timestamp),
+                )
+                .outerjoin(ProductItem, QRScanEvent.product_item_id == ProductItem.id)
+                .filter(
+                    QRScanEvent.organization_id == organization_id,
+                    scan_product_id.in_(product_ids),
+                )
+                .group_by(scan_product_id)
+                .all()
+            )
+            block_counts = {product_id: count for product_id, count in block_rows}
+            item_counts = {product_id: count for product_id, count in item_rows}
+            scan_metrics = {
+                product_id: (count, last_scan_at)
+                for product_id, count, last_scan_at in scan_rows
+            }
+            for product in items:
+                scan_count, last_scan_at = scan_metrics.get(product.id, (0, None))
+                # These transient attributes are consumed by the Pydantic list
+                # schema and do not change the persisted QRProduct model.
+                product.block_count = int(block_counts.get(product.id, 0))
+                product.qr_code_count = int(item_counts.get(product.id, 0))
+                product.scan_count = int(scan_count)
+                product.last_scan_at = last_scan_at
         return items, total
 
     def update(self, product: QRProduct, data: dict) -> QRProduct:
@@ -71,6 +125,57 @@ class QRProductRepository:
         self.db.commit()
         self.db.refresh(product)
         return product
+
+    def list_stats(
+        self,
+        organization_id: UUID,
+        search: str | None = None,
+        is_active: bool | None = None,
+    ) -> dict[str, int]:
+        """Return product-list totals for the same filters as ``list``."""
+        product_filters = [
+            QRProduct.organization_id == organization_id,
+            QRProduct.deleted_at.is_(None),
+        ]
+        if search:
+            product_filters.append(QRProduct.name.ilike(f"%{search}%"))
+        if is_active is not None:
+            product_filters.append(QRProduct.is_active == is_active)
+
+        total_products = self.db.query(func.count(QRProduct.id)).filter(*product_filters).scalar() or 0
+        active_products = self.db.query(func.count(QRProduct.id)).filter(
+            *product_filters,
+            QRProduct.is_active.is_(True),
+        ).scalar() or 0
+        qr_code_count = (
+            self.db.query(func.count(ProductItem.id))
+            .join(QRProduct, ProductItem.product_id == QRProduct.id)
+            .filter(
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+                *product_filters,
+            )
+            .scalar()
+            or 0
+        )
+        scan_product_id = func.coalesce(QRScanEvent.product_id, ProductItem.product_id)
+        scan_count = (
+            self.db.query(func.count(QRScanEvent.id))
+            .outerjoin(ProductItem, QRScanEvent.product_item_id == ProductItem.id)
+            .join(QRProduct, QRProduct.id == scan_product_id)
+            .filter(
+                QRScanEvent.organization_id == organization_id,
+                *product_filters,
+            )
+            .scalar()
+            or 0
+        )
+        return {
+            "total_products": int(total_products),
+            "active_products": int(active_products),
+            "qr_code_count": int(qr_code_count),
+            "scan_count": int(scan_count),
+        }
 
     def soft_delete(self, product: QRProduct, user_id: UUID) -> QRProduct:
         product.deleted_at = datetime.now(UTC)

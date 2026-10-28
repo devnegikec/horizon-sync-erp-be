@@ -17,6 +17,7 @@ def make_service() -> QRProductService:
     service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
+    service._assert_product_name_available = Mock()
     service.block_repo = Mock()
     service.item_repo = Mock()
     service.sku_repo = Mock()
@@ -94,6 +95,7 @@ def test_create_product_rejects_invalid_serial_prefix(
         service.create_product(
             QRProductCreate(
                 name="Test Product",
+                brand_id=uuid4(),
                 shelf_life_setting_id=shelf_life.id,
                 serial_prefix_setting_id=uuid4(),
             ),
