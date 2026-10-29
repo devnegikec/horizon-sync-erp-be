@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.brand import Brand
@@ -29,6 +29,23 @@ class BrandRepository:
         self.db.commit()
         self.db.refresh(brand)
         return brand
+
+    def value_exists(
+        self,
+        field_name: str,
+        value: str,
+        organization_id: UUID,
+        exclude_id: UUID | None = None,
+    ) -> bool:
+        column = {"name": Brand.name, "short_code": Brand.short_code}[field_name]
+        query = self.db.query(Brand.id).filter(
+            Brand.organization_id == organization_id,
+            Brand.deleted_at.is_(None),
+            func.lower(func.trim(column)) == value.strip().lower(),
+        )
+        if exclude_id:
+            query = query.filter(Brand.id != exclude_id)
+        return query.first() is not None
 
     def get_by_id(self, brand_id: UUID, organization_id: UUID) -> Brand | None:
         """Get brand by ID within an organization.

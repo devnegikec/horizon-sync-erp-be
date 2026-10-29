@@ -82,6 +82,30 @@ class RedisCache:
             logger.warning(f"Cache set error for key {key}: {e}")
             return False
 
+    def increment_with_ttl(self, key: str, ttl: int) -> int | None:
+        """Atomically increment a counter and set its TTL on first use."""
+        try:
+            client = self._get_client()
+            pipeline = client.pipeline()
+            pipeline.incr(key)
+            # Refreshing the TTL on each increment keeps the window active
+            # while requests are arriving and works with older Redis versions.
+            pipeline.expire(key, ttl)
+            count, _ = pipeline.execute()
+            return int(count)
+        except RedisError as e:
+            logger.warning(f"Cache increment error for key {key}: {e}")
+            return None
+
+    def ttl(self, key: str) -> int | None:
+        """Return a key's remaining TTL, or ``None`` if Redis is unavailable."""
+        try:
+            value = self._get_client().ttl(key)
+            return int(value) if value > 0 else None
+        except RedisError as e:
+            logger.warning(f"Cache TTL error for key {key}: {e}")
+            return None
+
     def delete(self, key: str) -> bool:
         """
         Delete value from cache

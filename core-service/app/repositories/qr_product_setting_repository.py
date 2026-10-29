@@ -1,9 +1,10 @@
 """Repository for QR Product Settings"""
 
 from datetime import UTC, datetime
+from typing import List
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.qr_block import QRBlock
@@ -23,7 +24,7 @@ class QRProductSettingRepository:
         return setting
 
     def get_by_id(self, setting_id: UUID, organization_id: UUID) -> QRProductSetting | None:
-        return (
+        setting = (
             self.db.query(QRProductSetting)
             .filter(
                 QRProductSetting.id == setting_id,
@@ -32,6 +33,9 @@ class QRProductSettingRepository:
             )
             .first()
         )
+        if setting:
+            setting.usage_count = self.reference_counts([setting.id], organization_id).get(setting.id, 0)
+        return setting
 
     def value_exists(
         self,
@@ -40,12 +44,13 @@ class QRProductSettingRepository:
         organization_id: UUID,
         exclude_id: UUID | None = None,
     ) -> bool:
+        normalized_value = value.strip()
         q = self.db.query(QRProductSetting.id).filter(
             QRProductSetting.setting_type == setting_type,
-            QRProductSetting.value == value,
             QRProductSetting.organization_id == organization_id,
             QRProductSetting.deleted_at.is_(None),
         )
+        q = q.filter(func.lower(func.trim(QRProductSetting.value)) == normalized_value.lower())
         if exclude_id:
             q = q.filter(QRProductSetting.id != exclude_id)
         return q.first() is not None
@@ -79,7 +84,34 @@ class QRProductSettingRepository:
             .limit(page_size)
             .all()
         )
+        usage_counts = self.reference_counts([setting.id for setting in items], organization_id)
+        for setting in items:
+            setting.usage_count = usage_counts.get(setting.id, 0)
         return items, total
+
+    def reference_counts(self, setting_ids: List[UUID], organization_id: UUID) -> dict[UUID, int]:
+        counts = {setting_id: 0 for setting_id in setting_ids}
+        if not setting_ids:
+            return counts
+
+        for model, columns in (
+            (QRProduct, (QRProduct.shelf_life_setting_id, QRProduct.serial_prefix_setting_id)),
+            (QRBlock, (QRBlock.channel_setting_id, QRBlock.destination_setting_id)),
+        ):
+            for column in columns:
+                rows = (
+                    self.db.query(column, func.count(model.id))
+                    .filter(
+                        column.in_(setting_ids),
+                        model.organization_id == organization_id,
+                        model.deleted_at.is_(None),
+                    )
+                    .group_by(column)
+                    .all()
+                )
+                for setting_id, count in rows:
+                    counts[setting_id] = counts.get(setting_id, 0) + int(count)
+        return counts
 
     def update(self, setting: QRProductSetting, data: dict) -> QRProductSetting:
         for k, v in data.items():

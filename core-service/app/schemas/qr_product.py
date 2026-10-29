@@ -10,30 +10,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-def _validate_gtin_value(value: str | None) -> str | None:
-    """Validate a numeric GTIN-like identifier and its modulo-10 check digit."""
-    if value is None:
-        return None
-    normalized = value.strip()
-    if not normalized:
-        return None
-    if not normalized.isdigit():
-        raise ValueError("GTIN must contain digits only")
-    if not 8 <= len(normalized) <= 20:
-        raise ValueError("GTIN must contain 8–20 digits")
-
-    body = normalized[:-1]
-    check_digit = int(normalized[-1])
-    total = sum(
-        int(digit) * (3 if index % 2 == 0 else 1)
-        for index, digit in enumerate(reversed(body))
-    )
-    expected_check_digit = (10 - (total % 10)) % 10
-    if check_digit != expected_check_digit:
-        raise ValueError("GTIN check digit is invalid")
-    return normalized
-
-
 def _validate_http_url_value(value: str | None) -> str | None:
     """Allow only absolute HTTP(S) URLs for customer-facing product links."""
     if value is None:
@@ -155,11 +131,6 @@ class QRProductCreate(QRProductBase):
     serial_prefix_setting_id: UUID
     packaging_details: QRProductPackagingDetails | None = None
 
-    @field_validator("gtin")
-    @classmethod
-    def validate_gtin(cls, value: str | None) -> str | None:
-        return _validate_gtin_value(value)
-
     @field_validator("landing_page", "client_product_auth_url")
     @classmethod
     def validate_product_url(cls, value: str | None) -> str | None:
@@ -187,11 +158,6 @@ class QRProductUpdate(BaseModel):
     is_active: bool | None = None
     extra_data: dict[str, Any] | None = None
     packaging_details: QRProductPackagingDetails | None = None
-
-    @field_validator("gtin")
-    @classmethod
-    def validate_gtin(cls, value: str | None) -> str | None:
-        return _validate_gtin_value(value)
 
     @field_validator("landing_page", "client_product_auth_url")
     @classmethod
@@ -474,6 +440,15 @@ class BlockDownloadResponse(BaseModel):
     expires_at: datetime
 
 
+class SerialCollisionCheckResponse(BaseModel):
+    """Result of a pre-generation sequential serial collision check."""
+
+    checked_count: int
+    collision_count: int
+    collisions: list[str]
+    available: bool
+
+
 # ── Product Item ──────────────────────────────────────────────────────────────
 
 
@@ -502,6 +477,16 @@ class ProductItemResponse(BaseModel):
 class ProductItemListResponse(BaseModel):
     items: list[ProductItemResponse]
     pagination: dict[str, Any]
+
+
+class ProductItemBulkStatusUpdate(BaseModel):
+    item_ids: list[UUID] = Field(..., min_length=1, max_length=200)
+    active: bool
+
+
+class ProductItemBulkStatusResponse(BaseModel):
+    updated_count: int
+    items: list[ProductItemResponse]
 
 
 # ── QR Validate (public endpoint) ─────────────────────────────────────────────
@@ -547,6 +532,10 @@ class QRActivationParamsCreate(BaseModel):
     qr_settings: bool = False
     qr_cascade: bool = False
     extra_data: dict[str, Any] | None = None
+
+
+class ProductItemStatusUpdate(BaseModel):
+    active: bool
 
 
 class QRActivationParamsResponse(QRActivationParamsCreate):

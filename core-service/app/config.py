@@ -68,6 +68,10 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     rate_limit_per_minute: int = 60
+    secure_qr_rate_limit_per_minute: int = 30
+    secure_qr_failed_attempt_limit: int = 5
+    secure_qr_failed_attempt_window_seconds: int = 600
+    secure_qr_lockout_seconds: int = 900
 
     # Logging
     log_level: str = "INFO"

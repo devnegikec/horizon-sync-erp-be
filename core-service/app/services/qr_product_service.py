@@ -99,31 +99,6 @@ def find_active_product_by_sku(
     return query.first()
 
 
-def find_active_product_by_name(
-    db: Session,
-    organization_id: UUID,
-    name: str | None,
-    *,
-    exclude_product_id: UUID | None = None,
-) -> QRProduct | None:
-    """Return the active QR product holding ``name`` in the organization.
-
-    Product names are compared case- and whitespace-insensitively. Soft-deleted
-    products do not reserve their name.
-    """
-    normalized = normalize_product_name(name)
-    if normalized is None:
-        return None
-    query = db.query(QRProduct).filter(
-        QRProduct.organization_id == organization_id,
-        QRProduct.deleted_at.is_(None),
-        func.lower(func.trim(QRProduct.name)) == normalized.lower(),
-    )
-    if exclude_product_id is not None:
-        query = query.filter(QRProduct.id != exclude_product_id)
-    return query.first()
-
-
 #: Packaging keys shared by ``QRProductPackagingDetails`` and the item schema.
 _PACKAGING_KEYS = (
     "unit_name",
@@ -313,29 +288,6 @@ class QRProductService:
                 ),
             )
 
-    def _assert_product_name_available(
-        self,
-        organization_id: UUID,
-        name: str | None,
-        *,
-        exclude_product_id: UUID | None = None,
-    ) -> None:
-        """Reject a product name already used by another active product."""
-        existing = find_active_product_by_name(
-            self.db,
-            organization_id,
-            name,
-            exclude_product_id=exclude_product_id,
-        )
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"A product named '{normalize_product_name(name)}' already "
-                    "exists. Please choose a different name."
-                ),
-            )
-
     # ── Products ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -491,7 +443,6 @@ class QRProductService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Product name is required",
             )
-        self._assert_product_name_available(organization_id, product_dict["name"])
         # A QR product's SKU is the organization-wide business key: normalise it
         # and reserve it before the linked inventory Item copies the same value.
         product_dict["sku"] = normalize_sku(product_dict.get("sku"))
@@ -522,14 +473,6 @@ class QRProductService:
             # Unique indexes are the authoritative backstop for concurrent
             # creates. Surface their conflicts as clear domain errors.
             self.db.rollback()
-            if "uq_qr_products_org_name_ci" in str(exc):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"A product named '{product_dict.get('name')}' already "
-                        "exists. Please choose a different name."
-                    ),
-                ) from exc
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -778,12 +721,6 @@ class QRProductService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Product name is required",
                 )
-            self._assert_product_name_available(
-                organization_id,
-                update_dict["name"],
-                exclude_product_id=product.id,
-            )
-
         if "sku" in update_dict:
             update_dict["sku"] = normalize_sku(update_dict["sku"])
             self._assert_sku_available(
@@ -823,14 +760,6 @@ class QRProductService:
             product = self.product_repo.update(product, update_dict)
         except IntegrityError as exc:
             self.db.rollback()
-            if "uq_qr_products_org_name_ci" in str(exc):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"A product named '{update_dict.get('name')}' already "
-                        "exists. Please choose a different name."
-                    ),
-                ) from exc
             raise
 
         if packaging_details is not None:
@@ -941,6 +870,66 @@ class QRProductService:
             organization_id,
             _claimed_block=block,
         )
+
+    def check_sequential_serial_collisions(
+        self,
+        product_id: UUID,
+        starting_serial: str,
+        quantity: int,
+        organization_id: UUID,
+    ) -> dict:
+        """Check a proposed sequential range before a block is generated.
+
+        Generation performs the same check again immediately before reserving
+        credits. This endpoint is only an early user-facing preflight check;
+        it does not reserve the range or guarantee that a concurrent request
+        cannot claim it first.
+        """
+        product = self.get_product(product_id, organization_id)
+        try:
+            serial_type = normalize_serial_number_type(product.sr_number_type)
+            qr_type = normalize_qr_type(product.qr_type) or QRType.DYNAMIC
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        if serial_type not in {SerialNumberType.S8DN, SerialNumberType.S10DN}:
+            return {
+                "checked_count": 0,
+                "collision_count": 0,
+                "collisions": [],
+                "available": True,
+            }
+
+        if not product.serial_prefix:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Product serial prefix is not configured.",
+            )
+
+        self._validate_block_generation_options(
+            qr_type,
+            serial_type,
+            quantity,
+            starting_serial,
+        )
+        serials = self._build_deterministic_serials(
+            qr_type,
+            serial_type,
+            product.serial_prefix,
+            "preflight",
+            starting_serial,
+            quantity,
+        )
+        existing = sorted(self.item_repo.get_existing_serials_global(serials))
+        return {
+            "checked_count": len(serials),
+            "collision_count": len(existing),
+            "collisions": existing[:25],
+            "available": not existing,
+        }
 
     def create_block_job(
         self,
@@ -2040,6 +2029,8 @@ class QRProductService:
         organization_id: UUID,
         page: int = 1,
         page_size: int = 50,
+        search: str | None = None,
+        qr_active: bool | None = None,
     ) -> tuple[list[ProductItem], dict]:
         block = self.block_repo.get_by_id(block_id, organization_id)
         if not block:
@@ -2047,7 +2038,7 @@ class QRProductService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="QR block not found"
             )
         items, total = self.item_repo.list_by_block(
-            block_id, organization_id, page, page_size
+            block_id, organization_id, page, page_size, search, qr_active
         )
         total_pages = max(1, (total + page_size - 1) // page_size)
         pagination = {
@@ -2059,6 +2050,94 @@ class QRProductService:
             "has_prev": page > 1,
         }
         return items, pagination
+
+    def update_block_item_status(
+        self,
+        block_id: UUID,
+        item_id: UUID,
+        active: bool,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> ProductItem:
+        """Activate or deactivate one generated serial in a QR block."""
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if not block:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR block not found",
+            )
+
+        item = self.item_repo.get_by_id_in_block(item_id, block_id, organization_id)
+        if not item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serial number not found in this QR block",
+            )
+
+        # A consumed One-Time QR must remain consumed. Re-enabling it would
+        # undermine the product's one-scan guarantee.
+        if active and block.qr_type == QRType.ONE_TIME.value and item.is_verify:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A consumed One-Time QR cannot be reactivated.",
+            )
+
+        item.qr_active = active
+        item.qr_deactive = not active
+        item.qr_deactive_unit = not active
+        item.updated_by = user_id
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def update_block_items_status(
+        self,
+        block_id: UUID,
+        item_ids: list[UUID],
+        active: bool,
+        organization_id: UUID,
+        user_id: UUID,
+    ) -> list[ProductItem]:
+        """Activate or deactivate multiple generated serials atomically."""
+        block = self.block_repo.get_by_id(block_id, organization_id)
+        if not block:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="QR block not found",
+            )
+
+        requested_ids = list(dict.fromkeys(item_ids))
+        items = self.item_repo.list_by_ids_in_block(
+            requested_ids, block_id, organization_id
+        )
+        found_ids = {item.id for item in items}
+        missing_ids = [item_id for item_id in requested_ids if item_id not in found_ids]
+        if missing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more serial numbers were not found in this QR block",
+            )
+
+        # A consumed One-Time QR must remain consumed. Validate the complete
+        # selection before mutating anything so the operation is all-or-nothing.
+        if active and block.qr_type == QRType.ONE_TIME.value and any(
+            item.is_verify for item in items
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A consumed One-Time QR cannot be reactivated.",
+            )
+
+        for item in items:
+            item.qr_active = active
+            item.qr_deactive = not active
+            item.qr_deactive_unit = not active
+            item.updated_by = user_id
+
+        self.db.commit()
+        for item in items:
+            self.db.refresh(item)
+        return items
 
     # ── QR Validate (public) ──────────────────────────────────────────────────
 

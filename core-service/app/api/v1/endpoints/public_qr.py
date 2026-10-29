@@ -81,9 +81,9 @@ async def verify_public_qr(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    result = QRVerificationService(db).verify(data)
-    event_id = _scan_event_id(request)
     client_ip = _client_ip(request)
+    result = QRVerificationService(db).verify(data, client_ip=client_ip)
+    event_id = _scan_event_id(request)
     try:
         captured_id = PublicScanCaptureService(db).capture(
             event_id=event_id,
