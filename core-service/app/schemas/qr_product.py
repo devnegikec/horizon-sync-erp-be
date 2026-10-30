@@ -431,8 +431,17 @@ class QRBlockResponse(BaseModel):
     deactivated_count: int = 0
     completed_at: datetime | None
     created_at: datetime
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def fallback_updated_at(self):
+        # Older QR block rows may not have an updated_at value. The UI formats
+        # this field while polling pending jobs, so use creation time as fallback.
+        if self.updated_at is None:
+            self.updated_at = self.created_at
+        return self
 
 
 class BlockDownloadResponse(BaseModel):
