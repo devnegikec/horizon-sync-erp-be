@@ -121,9 +121,8 @@ class Settings(BaseSettings):
     qr_shortener_cdn_prefix: str = "bwqr.me"
     qr_shortener_timeout_seconds: float = 10.0
     qr_shortener_max_retries: int = 3
-    # Configure a trusted/self-hosted provider explicitly. Browser GPS must not
-    # be disclosed to a third party merely by deploying the application.
-    reverse_geocoding_url: str = ""
+    # Reverse-geocode permitted browser GPS coordinates using Nominatim.
+    reverse_geocoding_url: str = "https://nominatim.openstreetmap.org/reverse"
     reverse_geocoding_timeout_seconds: float = 4.0
     aws_s3_bucket: str = ""
     aws_s3_region: str = "ap-south-1"

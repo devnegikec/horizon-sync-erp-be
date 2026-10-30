@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -49,7 +49,7 @@ def _hash_ip(ip_address: str | None) -> str | None:
 
 
 class PublicScanCaptureService:
-    """Create or update one scan event for a browser-generated event UUID."""
+    """Create or update one scan event per serial within a five-minute window."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -237,15 +237,35 @@ class PublicScanCaptureService:
         event = (
             self.db.query(QRScanEvent)
             .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
             .first()
         )
+        if event is None:
+            recent_event = (
+                self.db.query(QRScanEvent)
+                .filter(
+                    QRScanEvent.organization_id == organization_id,
+                    QRScanEvent.serial_number == request_data.serial_number,
+                    QRScanEvent.event_id.isnot(None),
+                    QRScanEvent.scan_timestamp
+                    >= datetime.now(UTC) - timedelta(minutes=5),
+                )
+                .order_by(QRScanEvent.scan_timestamp.desc())
+                .with_for_update()
+                .first()
+            )
+            if recent_event is not None:
+                # The recent scan already contains its original location and
+                # metadata. Return its captured ID without changing the row.
+                return recent_event.event_id
+
         if event is not None and event.organization_id != organization_id:
             logger.warning("Rejected cross-tenant scan event reuse: %s", event_id)
             return None
 
         # Keep retries idempotent: an existing event retains its original
-        # timestamp, so scoring does not treat the same browser retry as a
-        # new rapid-repeat scan.
+        # timestamp so refreshing the same QR does not create a rapid-repeat
+        # scan event.
         scan_timestamp = (
             (event.scan_timestamp if event is not None else None) or datetime.now(UTC)
         )
@@ -331,6 +351,7 @@ class PublicScanCaptureService:
         event = (
             self.db.query(QRScanEvent)
             .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
             .first()
         )
         if event is None:
@@ -340,10 +361,10 @@ class PublicScanCaptureService:
         event.location_source = "browser"
         event.location_accuracy_meters = accuracy_meters
         if location_names:
-            event.city = location_names.get("city")
-            event.state = location_names.get("state")
-            event.country = location_names.get("country")
-            event.street_address = location_names.get("street_address")
+            for field in ("city", "state", "country", "street_address"):
+                value = location_names.get(field)
+                if value:
+                    setattr(event, field, value)
 
         # Browser location is submitted after the initial verification call.
         # Re-score the event now so rapid cross-location scans are included in
@@ -389,13 +410,22 @@ async def enrich_scan_location(event_id: UUID, client_ip: str | None) -> None:
         event = (
             db.query(QRScanEvent)
             .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
             .first()
         )
-        if event is None or event.location_source == "browser":
+        if event is None:
             return
-        for field in ("country", "state", "city", "latitude", "longitude"):
-            setattr(event, field, geo.get(field))
-        event.location_source = "ip"
+        if event.location_source == "browser":
+            # Keep the precise browser coordinates and accuracy, but use the
+            # existing IP lookup as a city/region label when reverse geocoding
+            # is unavailable or did not return names.
+            for field in ("country", "state", "city"):
+                if not getattr(event, field, None):
+                    setattr(event, field, geo.get(field))
+        else:
+            for field in ("country", "state", "city", "latitude", "longitude"):
+                setattr(event, field, geo.get(field))
+            event.location_source = "ip"
         db.commit()
     except Exception:
         db.rollback()

@@ -4,7 +4,14 @@ import ipaddress
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -95,12 +102,14 @@ async def verify_public_qr(
             language=request.headers.get("accept-language"),
         )
         if captured_id:
+            print(f"Captured scan event ID: {captured_id}")
             result["scan_event_id"] = captured_id
-            background_tasks.add_task(
-                enrich_scan_location,
-                captured_id,
-                client_ip,
-            )
+            if captured_id == event_id:
+                background_tasks.add_task(
+                    enrich_scan_location,
+                    captured_id,
+                    client_ip,
+                )
     except Exception:
         db.rollback()
         # Analytics must never interrupt a consumer's authenticity result.
@@ -118,6 +127,7 @@ async def update_public_scan_location(
     data: PublicScanLocationUpdate,
     db: Session = Depends(get_db),
 ) -> None:
+    print(f"Updating location for event_id: {event_id}")
     location_names = await reverse_geocode(data.latitude, data.longitude)
     updated = PublicScanCaptureService(db).update_browser_location(
         event_id,
