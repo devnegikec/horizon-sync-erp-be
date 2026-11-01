@@ -49,6 +49,7 @@ from app.services.avatar_storage import (
     decode_avatar_data_url,
     delete_avatar,
     is_avatar_data_url,
+    is_avatar_key,
     read_avatar,
     store_avatar,
 )
@@ -63,11 +64,19 @@ router = APIRouter()
 _AVATAR_PATH = "/api/v1/identity/users/avatars/"
 
 
-def _avatar_key_from_url(url: str | None) -> str | None:
-    """Extract the storage key from an avatar URL produced by this service."""
+def _avatar_key_from_url(url: str | None, user_id: UUID) -> str | None:
+    """Extract the storage key from an avatar URL **owned by ``user_id``**.
+
+    Only keys belonging to this user are returned: a crafted ``avatar_url``
+    pointing at someone else's served image must never become a key we later
+    read or delete.
+    """
     if not url or _AVATAR_PATH not in url:
         return None
-    return url.split(_AVATAR_PATH, maxsplit=1)[1]
+    key = url.split(_AVATAR_PATH, maxsplit=1)[1]
+    if not is_avatar_key(key) or not key.startswith(f"users/{user_id}/"):
+        return None
+    return key
 
 
 def _avatar_public_base(request: Request) -> str:
@@ -467,7 +476,7 @@ async def update_my_profile(
     raw_avatar = payload.get("avatar_url")
     if is_avatar_data_url(raw_avatar):
         user = user_service.get_user_by_id(current_user.id)
-        previous_key = _avatar_key_from_url(user.avatar_url)
+        previous_key = _avatar_key_from_url(user.avatar_url, user.id)
         try:
             data, content_type = decode_avatar_data_url(raw_avatar)
             stored_key = store_avatar(user.id, data, content_type)
@@ -546,7 +555,7 @@ async def upload_my_avatar(
             detail="Image storage is currently unavailable",
         ) from None
 
-    previous_key = _avatar_key_from_url(user.avatar_url)
+    previous_key = _avatar_key_from_url(user.avatar_url, user.id)
     user = user_service.update_user(
         user.id,
         {"avatar_url": f"{_avatar_public_base(request)}{_AVATAR_PATH}{key}"},
@@ -571,7 +580,7 @@ async def delete_my_avatar(
     """Remove the current user's profile image. No permission required."""
     user_service = UserService(db)
     user = user_service.get_user_by_id(current_user.id)
-    key = _avatar_key_from_url(user.avatar_url)
+    key = _avatar_key_from_url(user.avatar_url, user.id)
 
     # update_user() drops None values, so clear the column directly.
     user.avatar_url = None
