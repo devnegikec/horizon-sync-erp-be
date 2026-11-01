@@ -53,6 +53,15 @@ def _absolute_url(url: str | None) -> str | None:
     return None
 
 
+def _header_safe(value: str) -> str:
+    """Collapse CR/LF so a header value can never be rejected or injected.
+
+    ``EmailMessage`` raises ValueError when a header contains a newline, which
+    would abort the whole send (e.g. an organization name with a line break).
+    """
+    return " ".join(str(value).split())
+
+
 def _logo_block(logo_url: str | None) -> str:
     """Render the logo at the top of the email, or a typographic wordmark."""
     resolved = _absolute_url(logo_url)
@@ -236,7 +245,7 @@ class EmailService:
         message = EmailMessage()
         message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
         message["To"] = recipient
-        message["Subject"] = subject
+        message["Subject"] = _header_safe(subject)
         message.set_content(body)
         if html_body:
             message.add_alternative(html_body, subtype="html")

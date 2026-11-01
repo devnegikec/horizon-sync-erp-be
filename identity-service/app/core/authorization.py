@@ -101,6 +101,33 @@ def has_org_permission(permissions: list[str], required_permission: str) -> bool
     )
 
 
+def _platform_grants(permissions: list[str]) -> list[str]:
+    """Platform-level (cross-org) grants: ``system.admin`` + ``system_admin.*``."""
+    return [
+        perm
+        for perm in permissions or ()
+        if perm == "system.admin" or perm.startswith("system_admin.")
+    ]
+
+
+def cross_org_allows(
+    permissions: list[str], required_permissions: Sequence[str]
+) -> bool:
+    """Whether platform grants authorise a cross-org request.
+
+    ``system.admin`` / ``system_admin.master`` grant full access. Any other
+    ``system_admin.{domain}_{action}`` grant authorises only the action it maps
+    to, so ``system_admin.users_read`` must NOT authorise a write. The ``*.*``
+    wildcard is organization-scoped and never counts here.
+    """
+    platform = _platform_grants(permissions)
+    if not platform:
+        return False
+    if is_system_admin(platform):
+        return True
+    return any(_system_admin_grants(platform, code) for code in required_permissions)
+
+
 def require_organization_permission(
     current_user,
     organization_id: UUID,
@@ -125,8 +152,20 @@ def require_organization_permission(
     Raises:
         HTTPException: 403 when the caller is not a member or lacks the grant.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, (required_permission,)):
         return
+
+    if _platform_grants(current_user.permissions):
+        # Cross-org platform admin whose grant does not cover this action.
+        logger.warning(
+            "Permission denied: platform user %s lacks a grant for '%s'",
+            current_user.id,
+            required_permission,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied. Required: {required_permission}",
+        )
 
     if not current_user.organization_ids:
         # Authorization context was not populated (e.g. an older caller built
@@ -163,8 +202,16 @@ def require_any_organization_permission(
     Used where an API is reachable through more than one grant — for example the
     invitation screens accept either ``user.invite`` or ``invitation.create``.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, required_permissions):
         return
+
+    if _platform_grants(current_user.permissions):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Permission denied. Required one of: " + ", ".join(required_permissions)
+            ),
+        )
 
     if not current_user.organization_ids:
         if not any(
@@ -248,8 +295,14 @@ def require_shared_organization_permission(
     (otherwise 404, so existence is not leaked) and must hold the permission in
     one of those shared organizations.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, (required_permission,)):
         return
+
+    if _platform_grants(current_user.permissions):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied. Required: {required_permission}",
+        )
 
     shared = shared_organization_ids(db, current_user.id, other_user_id)
     if not shared:
