@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Identity Service"
     smtp_validate_certs: bool = True
 
+    # Email branding used in the HTML templates. `email_brand_logo_url` must be
+    # an absolute, publicly reachable https URL (used when the organization has
+    # no logo of its own).
+    email_brand_name: str = "Ciphercode ERP"
+    email_brand_logo_url: str = ""
+    email_support_email: str = ""
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True

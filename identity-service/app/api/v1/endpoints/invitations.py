@@ -114,6 +114,7 @@ async def send_invitation(
             message=result.get("message"),
             role_name=role_name,
             recipient_name=recipient_name,
+            org_logo_url=org.logo_url if org else None,
         )
         logger.info(f"Invitation email task added to background for {result['email']}")
 
@@ -365,6 +366,7 @@ async def resend_invitation(
             message=result.get("message"),
             role_name=role_name,
             recipient_name=recipient_name,
+            org_logo_url=org.logo_url if org else None,
         )
         logger.info(
             f"Invitation resend email task added to background for {result['email']}"
