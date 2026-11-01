@@ -59,8 +59,22 @@ arbitrary object reads are rejected with `404`.
 { "avatar_url": "https://cdn.example.com/team/priya.png" }
 ```
 
-`avatar_url` must be an absolute `http(s)` URL. Because the partial update
-ignores `null`, use `DELETE /users/me/avatar` to clear it.
+`avatar_url` accepts either an absolute `http(s)` URL (max 500 chars — the
+`users.avatar_url` column width) **or** an inline base64 image as produced by
+browsers reading the file client-side:
+
+```json
+{ "avatar_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg..." }
+```
+
+Inline payloads (`image/png`, `image/jpeg`, `image/jpg`, `image/webp`, max 2 MB)
+are decoded, stored through the same backend as the multipart endpoint, and
+replaced by a served URL before saving — so `avatar_url` never contains base64
+in the database. Anything larger than the limit returns `422` with a clear
+message.
+
+Because the partial update ignores `null`, use `DELETE /users/me/avatar` to
+clear the image.
 
 ## Frontend notes
 

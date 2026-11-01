@@ -23,11 +23,18 @@ depends_on: str | Sequence[str] | None = None
 
 INDEX_NAME = "uq_qr_products_org_name_ci"
 
+# ``btrim(name)`` only strips spaces, so a trailing tab/newline would slip past a
+# whitespace-normalised uniqueness guarantee. Trim every whitespace character.
+# Keep ``_DUPLICATES_SQL`` on exactly the same expression as the index, or the
+# pre-check would miss a duplicate and the CREATE INDEX would fail raw.
+_TRIM_WHITESPACE = "btrim(name, E' \\t\\n\\r\\f\\v')"
+_NAME_EXPRESSION = f"lower({_TRIM_WHITESPACE})"
+
 _DUPLICATES_SQL = sa.text(
-    """
-    SELECT organization_id, lower(btrim(name)) AS name_ci, count(*) AS n
+    f"""
+    SELECT organization_id, {_NAME_EXPRESSION} AS name_ci, count(*) AS n
     FROM qr_products
-    WHERE deleted_at IS NULL AND name IS NOT NULL AND btrim(name) <> ''
+    WHERE deleted_at IS NULL AND name IS NOT NULL AND {_TRIM_WHITESPACE} <> ''
     GROUP BY 1, 2
     HAVING count(*) > 1
     ORDER BY 3 DESC, 2
@@ -53,8 +60,9 @@ def upgrade() -> None:
 
     op.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS "
-        f"{INDEX_NAME} ON qr_products (organization_id, lower(btrim(name))) "
-        "WHERE deleted_at IS NULL AND name IS NOT NULL AND btrim(name) <> ''"
+        f"{INDEX_NAME} ON qr_products (organization_id, {_NAME_EXPRESSION}) "
+        "WHERE deleted_at IS NULL AND name IS NOT NULL "
+        f"AND {_TRIM_WHITESPACE} <> ''"
     )
 
 
