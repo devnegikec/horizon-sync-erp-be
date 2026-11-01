@@ -41,8 +41,20 @@ def _validate_http_url_value(value: str | None) -> str | None:
     normalized = value.strip()
     if not normalized:
         return None
-    parsed = urlparse(normalized)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    try:
+        parsed = urlparse(normalized)
+        # ``.port`` and ``.hostname`` parse the netloc and raise ValueError for
+        # malformed values such as ``https://example.com:bad``, which a plain
+        # ``netloc`` truthiness check would happily accept.
+        is_valid = (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.netloc)
+            and bool(parsed.hostname)
+            and (parsed.port is None or 0 < parsed.port < 65536)
+        )
+    except ValueError as exc:
+        raise ValueError("URL must be a valid http:// or https:// URL") from exc
+    if not is_valid:
         raise ValueError("URL must be a valid http:// or https:// URL")
     return normalized
 

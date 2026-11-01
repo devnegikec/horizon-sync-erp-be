@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.authorization import (
+    has_org_permission,
     is_system_admin,
     is_system_admin_or_owner,
     require_organization_permission,
@@ -113,10 +114,15 @@ async def list_roles(
         organization_ids = [organization_id]
     else:
         require_permission(current_user.permissions, "role.read")
-        # No org specified: restrict to user's own organizations
-        organization_ids = _user_organization_ids(db, current_user.id)
+        # No org specified: restrict to organizations where the caller actually
+        # holds role.read — the union above must not widen the result set.
+        organization_ids = [
+            org_id
+            for org_id in _user_organization_ids(db, current_user.id)
+            if has_org_permission(current_user.permissions_in(org_id), "role.read")
+        ]
         if not organization_ids:
-            # User has no org membership - return empty list
+            # User has no readable organization - return empty list
             return RoleListResponse(
                 data=[],
                 total=0,

@@ -89,6 +89,18 @@ def has_permission(permissions: list[str], required_permission: str) -> bool:
     return False
 
 
+def has_org_permission(permissions: list[str], required_permission: str) -> bool:
+    """Org-level grant, including the ``system_admin.{domain}_{action}`` mapping.
+
+    Use this (instead of ``has_permission``) whenever the permission is being
+    evaluated against a single organization's grants, so seeded admin codes keep
+    working inside their own organization.
+    """
+    return has_permission(permissions, required_permission) or _system_admin_grants(
+        permissions, required_permission
+    )
+
+
 def require_organization_permission(
     current_user,
     organization_id: UUID,
@@ -156,7 +168,7 @@ def require_any_organization_permission(
 
     if not current_user.organization_ids:
         if not any(
-            has_permission(current_user.permissions, code)
+            has_org_permission(current_user.permissions, code)
             for code in required_permissions
         ):
             raise HTTPException(
@@ -180,7 +192,7 @@ def require_any_organization_permission(
         )
 
     org_permissions = current_user.permissions_in(organization_id)
-    if any(has_permission(org_permissions, code) for code in required_permissions):
+    if any(has_org_permission(org_permissions, code) for code in required_permissions):
         return
 
     logger.warning(
@@ -330,8 +342,10 @@ def is_cross_org_admin(permissions: list[str]) -> bool:
     """
     Check if user has cross-organization administrative permissions.
 
-    Only explicit system_admin.* permissions grant cross-org access.
-    The *. * wildcard is org-scoped and does NOT grant cross-org access.
+    Platform grants are ``system.admin`` plus any seeded ``system_admin.*``
+    permission (e.g. ``system_admin.users_read``). Both are platform-level and
+    therefore tenant-agnostic; the ``*.*`` wildcard is an organization-level
+    grant and must NOT be treated as cross-org access.
 
     Args:
         permissions: List of user permission codes
@@ -339,14 +353,10 @@ def is_cross_org_admin(permissions: list[str]) -> bool:
     Returns:
         True if user has cross-org admin permissions
     """
-    cross_org_permissions = [
-        "system_admin.master",
-        "system_admin.users",
-        "system_admin.organizations",
-        "system_admin.billing",
-        "system_admin.reporting",
-    ]
-    return any(perm in permissions for perm in cross_org_permissions)
+    return any(
+        perm == "system.admin" or perm.startswith("system_admin.")
+        for perm in permissions or ()
+    )
 
 
 def has_billing_admin_permission(permissions: list[str]) -> bool:

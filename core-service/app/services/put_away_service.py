@@ -565,8 +565,11 @@ class PutAwayService:
         source_lines: list[dict] = []
         # A serial/QR identifies exactly one physical unit, so it may be queued
         # once per slip even when receipt lines land in different packaging
-        # units (the per-packaging-unit dedupe below is not enough).
-        claimed_serials: set[str] = set()
+        # units (the per-packaging-unit dedupe below is not enough). Claims are
+        # keyed by (item, serial): the legacy fallback below uses
+        # ``batch_number`` as the serial, and the same batch can legitimately
+        # appear on lines for different items.
+        claimed_serials: set[tuple[UUID, str]] = set()
         for item_id in item_order:
             lines = by_item[item_id]
             item = lines[0]["item"]
@@ -601,9 +604,9 @@ class PutAwayService:
                     serials = [
                         serial
                         for serial in dict.fromkeys(serials)
-                        if serial not in claimed_serials
+                        if (item_id, serial) not in claimed_serials
                     ]
-                    claimed_serials.update(serials)
+                    claimed_serials.update((item_id, serial) for serial in serials)
                     for i in range(0, len(serials), pack_size):
                         chunk = serials[i : i + pack_size]
                         source_lines.append(

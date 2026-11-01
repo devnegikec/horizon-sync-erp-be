@@ -40,12 +40,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove only objects created by this repair migration."""
-    if not has_table("audit_logs"):
-        return
+    """Intentionally a no-op.
 
-    if has_index("audit_logs", "ix_audit_logs_role"):
-        op.drop_index("ix_audit_logs_role", table_name="audit_logs")
-
-    if has_column("audit_logs", "role"):
-        op.drop_column("audit_logs", "role")
+    This revision only repairs objects that ``126_add_audit_log_role`` owns when
+    that migration was stamped without being applied. A downgrade cannot tell
+    whether ``role``/``ix_audit_logs_role`` were created here or by revision
+    126, so dropping them would destroy schema that 126 is still responsible
+    for. Leaving them in place is safe: 126's own downgrade removes them.
+    """

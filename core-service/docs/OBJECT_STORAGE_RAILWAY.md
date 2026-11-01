@@ -69,14 +69,19 @@ railway bucket credentials -b brandwise-dev-files -e dev --json
 # -> endpoint, accessKeyId, secretAccessKey, bucketName, region, urlStyle
 
 # 3. Wire variables (repeat --service for core-service, qr-worker, core-worker)
+#    NOTE: AWS_S3_BUCKET is the bucketName returned by step 2 — Railway appends a
+#    random suffix, so it is NOT the display name passed to `bucket create`.
+#    AWS_S3_REGION must be the region reported by the credentials (usually
+#    `auto`), NOT the Railway deployment region you chose above; boto3 signs every
+#    request for this value and the provider rejects a mismatch.
 railway variable set \
-  AWS_S3_BUCKET=brandwise-dev-files \
-  AWS_S3_REGION=sin \
+  AWS_S3_BUCKET=<bucketName from step 2> \
+  AWS_S3_REGION=<region from step 2, e.g. auto> \
   AWS_S3_ENDPOINT_URL=https://<endpoint> \
   AWS_ACCESS_KEY_ID=<key> \
   AWS_SECRET_ACCESS_KEY=<secret> \
-  AWS_S3_ADDRESSING_STYLE=path \
-  AWS_S3_SERVER_SIDE_ENCRYPTION= \
+  AWS_S3_ADDRESSING_STYLE=virtual \
+  AWS_S3_SERVER_SIDE_ENCRYPTION=none \
   --service core-service -e dev --skip-deploys
 
 # 4. Slug endpoint secret (identity-service)

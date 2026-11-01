@@ -72,6 +72,17 @@ def upgrade() -> None:
             )
         )
 
+    # ``event_id`` only provides its idempotency guarantee together with the
+    # unique partial index created by revision 068. A drifted database stamped
+    # past 068 has the column but not the index, which would let concurrent
+    # retries insert duplicate scan events.
+    conn.execute(
+        sa.text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_qr_scan_events_event_id "
+            "ON qr_scan_events (event_id) WHERE event_id IS NOT NULL"
+        )
+    )
+
 
 def downgrade() -> None:
     # This revision only repairs additive columns. The owning migrations remain
