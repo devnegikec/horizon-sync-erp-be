@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permission
 from app.models.entity_audit_log import EntityAuditLog
-from app.models.user import User
 from app.models.organization import Organization
+from app.models.user import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,7 +62,11 @@ class AuditLogListResponse(BaseModel):
 def _resolve_users(db: Session, user_ids: set[UUID]) -> dict[UUID, dict]:
     if not user_ids:
         return {}
-    users = db.query(User.id, User.first_name, User.last_name, User.email).filter(User.id.in_(user_ids)).all()
+    users = (
+        db.query(User.id, User.first_name, User.last_name, User.email)
+        .filter(User.id.in_(user_ids))
+        .all()
+    )
     result = {}
     for u in users:
         name = f"{u.first_name or ''} {u.last_name or ''}".strip()
@@ -73,7 +77,11 @@ def _resolve_users(db: Session, user_ids: set[UUID]) -> dict[UUID, dict]:
 def _resolve_orgs(db: Session, org_ids: set[UUID]) -> dict[UUID, str]:
     if not org_ids:
         return {}
-    orgs = db.query(Organization.id, Organization.name).filter(Organization.id.in_(org_ids)).all()
+    orgs = (
+        db.query(Organization.id, Organization.name)
+        .filter(Organization.id.in_(org_ids))
+        .all()
+    )
     return {o.id: o.name for o in orgs}
 
 
@@ -82,6 +90,7 @@ def _resolve_user_orgs(db: Session, user_ids: set[UUID]) -> dict[UUID, UUID]:
     if not user_ids:
         return {}
     from app.models.role import UserOrganizationRole
+
     roles = (
         db.query(UserOrganizationRole.user_id, UserOrganizationRole.organization_id)
         .filter(
@@ -92,8 +101,6 @@ def _resolve_user_orgs(db: Session, user_ids: set[UUID]) -> dict[UUID, UUID]:
         .all()
     )
     return {r.user_id: r.organization_id for r in roles}
-    orgs = db.query(Organization.id, Organization.name).filter(Organization.id.in_(org_ids)).all()
-    return {o.id: o.name for o in orgs}
 
 
 @router.get("", response_model=AuditLogListResponse)
@@ -153,7 +160,11 @@ async def list_entity_audit_logs(
     # For logs with NULL organization_id, use record_id when table is 'organizations'
     record_org_ids = set()
     for log in logs:
-        if not log.organization_id and log.table_name == "organizations" and log.record_id:
+        if (
+            not log.organization_id
+            and log.table_name == "organizations"
+            and log.record_id
+        ):
             oid_set.add(log.record_id)
             record_org_ids.add(log.record_id)
 
@@ -185,23 +196,25 @@ async def list_entity_audit_logs(
             effective_oid = user_org_map.get(effective_uid)
         org_name = org_map.get(effective_oid) if effective_oid else None
 
-        items.append(AuditLogItem(
-            id=log.id,
-            user_id=log.user_id or effective_uid,
-            organization_id=log.organization_id or effective_oid,
-            action=log.action,
-            table_name=log.table_name,
-            record_id=log.record_id,
-            old_values=log.old_values,
-            new_values=log.new_values,
-            changed_fields=log.changed_fields,
-            ip_address=log.ip_address,
-            created_at=log.created_at,
-            user_email=u.get("name") or u.get("email"),
-            user_name=u.get("name"),
-            user_email_address=u.get("email"),
-            organization_name=org_name,
-        ))
+        items.append(
+            AuditLogItem(
+                id=log.id,
+                user_id=log.user_id or effective_uid,
+                organization_id=log.organization_id or effective_oid,
+                action=log.action,
+                table_name=log.table_name,
+                record_id=log.record_id,
+                old_values=log.old_values,
+                new_values=log.new_values,
+                changed_fields=log.changed_fields,
+                ip_address=log.ip_address,
+                created_at=log.created_at,
+                user_email=u.get("name") or u.get("email"),
+                user_name=u.get("name"),
+                user_email_address=u.get("email"),
+                organization_name=org_name,
+            )
+        )
 
     return AuditLogListResponse(
         audit_logs=items,

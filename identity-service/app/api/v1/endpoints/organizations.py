@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.authorization import (
     is_system_admin,
+    require_organization_permission,
     require_permission,
     validate_user_in_organization,
 )
@@ -307,9 +308,7 @@ async def update_organization(
     db: Session = Depends(get_db),
 ):
     """Update organization. Requires org.update and membership (unless system admin)."""
-    require_permission(current_user.permissions, "org.update")
-    if not is_system_admin(current_user.permissions):
-        validate_user_in_organization(current_user.id, organization_id, db)
+    require_organization_permission(current_user, organization_id, "org.update")
     svc = OrganizationService(db)
     payload = body.model_dump(exclude_unset=True)
     try:
@@ -333,9 +332,7 @@ async def delete_organization(
     db: Session = Depends(get_db),
 ):
     """Soft delete organization. Requires org.delete and membership (unless system admin)."""
-    require_permission(current_user.permissions, "org.delete")
-    if not is_system_admin(current_user.permissions):
-        validate_user_in_organization(current_user.id, organization_id, db)
+    require_organization_permission(current_user, organization_id, "org.delete")
     svc = OrganizationService(db)
     try:
         svc.delete(organization_id, user_type=current_user.user_type)
@@ -354,7 +351,9 @@ async def backfill_billing_defaults(
 ):
     """One-time backfill: sets trial status, next_billing_date, seat/credit limits
     on all non-master orgs that currently have NULL billing fields."""
-    require_permission(current_user.permissions, "*.*")
+    # Platform-wide write across every organization: the org-level "*.*" wildcard
+    # (organization owner) must NOT be enough here.
+    require_permission(current_user.permissions, "system_admin.master")
 
     from datetime import UTC, datetime, timedelta
 

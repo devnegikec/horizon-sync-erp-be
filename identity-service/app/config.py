@@ -72,12 +72,38 @@ class Settings(BaseSettings):
     smtp_from_name: str = "Identity Service"
     smtp_validate_certs: bool = True
 
+    # Email branding used in the HTML templates. `email_brand_logo_url` must be
+    # an absolute, publicly reachable https URL (used when the organization has
+    # no logo of its own).
+    email_brand_name: str = "Ciphercode ERP"
+    email_brand_logo_url: str = ""
+    email_support_email: str = ""
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:4200"
     cors_allow_credentials: bool = True
 
     # Rate Limiting
     rate_limit_per_minute: int = 60
+
+    # Profile images (avatars).
+    # Files are stored in an S3-compatible bucket using the same AWS_S3_* env
+    # vars as core-service. When no bucket is configured they fall back to a
+    # local directory so the feature still works in development — containers
+    # have an ephemeral filesystem, so a bucket IS required in deployed envs.
+    avatar_max_bytes: int = 2 * 1024 * 1024  # 2 MB
+    avatar_storage_dir: str = os.path.join(BASE_DIR, "media", "avatars")
+    # Absolute base URL used to build the stored avatar_url (e.g.
+    # https://dev-identity-api.ciphercode.ai). Empty = derive from the request.
+    media_base_url: str = ""
+    aws_s3_bucket: str = ""
+    aws_s3_region: str = "ap-south-1"
+    aws_s3_endpoint_url: str = ""
+    aws_s3_server_side_encryption: str = "AES256"
+    aws_s3_addressing_style: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_session_token: str = ""
 
     # Logging
     log_level: str = "INFO"

@@ -54,10 +54,26 @@ class UserSelfUpdate(BaseModel):
     last_name: str | None = Field(None, min_length=2, max_length=100)
     display_name: str | None = Field(None, max_length=200)
     phone: str | None = Field(None, max_length=20)
+    # Direct link to an already-hosted image. Prefer POST /users/me/avatar,
+    # which uploads the file and sets this field for you.
+    avatar_url: str | None = Field(None, max_length=500)
     preferences: dict | None = None
     extra_data: dict | None = None
     timezone: str | None = Field(None, max_length=50)
     language: str | None = Field(None, max_length=10)
+
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, value: str | None) -> str | None:
+        """Accept only absolute http(s) URLs; blank is treated as 'unchanged'."""
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("avatar_url must be an absolute http(s) URL")
+        return value
 
 
 class UserResponse(UserBase):
@@ -65,6 +81,7 @@ class UserResponse(UserBase):
 
     id: UUID
     display_name: str | None = None
+    avatar_url: str | None = None
     user_type: str
     status: str
     email_verified: bool
@@ -79,6 +96,7 @@ class UserProfileResponse(UserBase):
 
     id: UUID
     display_name: str | None = None
+    avatar_url: str | None = None
     user_type: str
     status: str
     email_verified: bool

@@ -1,7 +1,15 @@
-"""Email service for sending notifications"""
+"""Email service for sending notifications.
 
+Transactional emails are sent as ``multipart/alternative``: a plain-text part
+for accessibility and old clients, plus a branded HTML part that renders the
+organization logo, accent colour and a single clear call-to-action.
+"""
+
+import html
 import logging
+import ssl
 from email.message import EmailMessage
+from urllib.parse import urlparse
 
 import aiosmtplib
 
@@ -10,11 +18,181 @@ from app.services.invitation_service import INVITATION_EXPIRY_DAYS
 
 logger = logging.getLogger(__name__)
 
+# Single brand accent for every transactional email: buttons, links and the
+# wordmark. Deliberately fixed (not tenant-configurable) so mail cannot be made
+# to imitate another brand's colour scheme.
+ACCENT_COLOR = "#2563eb"
+DEFAULT_BRAND_NAME = "Ciphercode ERP"
+
+# System font stack — no webfonts, since most mail clients block external CSS.
+_FONT_STACK = (
+    "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+)
+
+
+def _brand_name() -> str:
+    return settings.email_brand_name or DEFAULT_BRAND_NAME
+
+
+def _absolute_url(url: str | None) -> str | None:
+    """Return a URL that mail clients can actually load, or ``None``.
+
+    Mail clients cannot resolve relative paths, so a stored ``/uploads/x.png``
+    logo is prefixed with the public origin of the invitation link.
+    """
+    if not url:
+        return None
+    url = url.strip()
+    if url.startswith(("http://", "https://")):
+        return url
+    if url.startswith("/"):
+        base = urlparse(settings.invitation_url)
+        if base.scheme and base.netloc:
+            return f"{base.scheme}://{base.netloc}{url}"
+    logger.debug("Ignoring unusable logo URL %r", url)
+    return None
+
+
+def _logo_block(logo_url: str | None) -> str:
+    """Render the logo at the top of the email, or a typographic wordmark."""
+    resolved = _absolute_url(logo_url)
+    if resolved:
+        return (
+            f'<img src="{html.escape(resolved, quote=True)}" '
+            f'alt="{html.escape(_brand_name())}" width="160" '
+            'style="display:block;height:auto;max-height:48px;max-width:220px;'
+            'border:0;outline:none;text-decoration:none;" />'
+        )
+    return (
+        f'<span style="font-family:{_FONT_STACK};font-size:20px;font-weight:700;'
+        f'letter-spacing:-0.3px;color:{ACCENT_COLOR};">'
+        f"{html.escape(_brand_name())}</span>"
+    )
+
+
+def _paragraph(content: str) -> str:
+    """One body paragraph. ``content`` may contain pre-escaped inline markup."""
+    return (
+        f'<p style="margin:0 0 14px 0;font-family:{_FONT_STACK};font-size:15px;'
+        f'line-height:24px;color:#344054;">{content}</p>'
+    )
+
+
+def _button(label: str, url: str, accent: str) -> str:
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+        'style="margin:24px 0 16px 0;"><tr>'
+        f'<td style="background-color:{accent};border-radius:8px;">'
+        f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+        'style="display:inline-block;padding:12px 28px;font-family:'
+        f"{_FONT_STACK};font-size:15px;font-weight:600;color:#ffffff;"
+        'text-decoration:none;border-radius:8px;">'
+        f"{html.escape(label)}</a></td></tr></table>"
+    )
+
+
+def _fallback_link(url: str, accent: str) -> str:
+    safe = html.escape(url, quote=True)
+    return (
+        f'<p style="margin:0 0 6px 0;font-family:{_FONT_STACK};font-size:13px;'
+        'line-height:20px;color:#667085;">'
+        "If the button above does not work, copy this link into your browser:"
+        "</p>"
+        f'<p style="margin:0 0 20px 0;font-family:{_FONT_STACK};font-size:13px;'
+        f'line-height:20px;word-break:break-all;"><a href="{safe}" '
+        f'style="color:{accent};text-decoration:underline;">{safe}</a></p>'
+    )
+
+
+def _details_table(rows: list[tuple[str, str]], accent: str) -> str:
+    """Small summary card (organization, role, inviter)."""
+    pairs = [(key, value) for key, value in rows if value]
+    if not pairs:
+        return ""
+    cells = "".join(
+        f'<tr><td style="padding:5px 16px 5px 0;font-family:{_FONT_STACK};'
+        f'font-size:13px;line-height:20px;color:#667085;white-space:nowrap;">'
+        f"{html.escape(key)}</td>"
+        f'<td style="padding:5px 0;font-family:{_FONT_STACK};font-size:13px;'
+        f'line-height:20px;color:#101828;">{html.escape(value)}</td></tr>'
+        for key, value in pairs
+    )
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'border="0" style="margin:20px 0 4px 0;background-color:#f9fafb;'
+        f'border-left:3px solid {accent};border-radius:6px;"><tr>'
+        f'<td style="padding:12px 16px;"><table role="presentation" '
+        f'cellpadding="0" cellspacing="0" border="0">{cells}</table>'
+        "</td></tr></table>"
+    )
+
+
+def _layout(
+    *,
+    accent: str,
+    logo_url: str | None,
+    heading: str,
+    preheader: str,
+    content_html: str,
+    footer_html: str,
+) -> str:
+    """Wrap content in a table-based, mail-client-safe HTML shell."""
+    return f"""<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<title>{html.escape(heading)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f5f7;
+font-size:1px;line-height:1px;">{html.escape(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+style="background-color:#f4f5f7;">
+<tr><td align="center" style="padding:32px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+style="max-width:600px;background-color:#ffffff;border:1px solid #eaecf0;
+border-radius:12px;font-family:{_FONT_STACK};">
+<tr><td style="height:4px;line-height:4px;font-size:0;background-color:{accent};
+border-radius:12px 12px 0 0;">&nbsp;</td></tr>
+<tr><td style="padding:28px 32px 0 32px;">{_logo_block(logo_url)}</td></tr>
+<tr><td style="padding:20px 32px 0 32px;">
+<h1 style="margin:0 0 16px 0;font-family:{_FONT_STACK};font-size:22px;
+line-height:30px;font-weight:600;color:#101828;">{html.escape(heading)}</h1>
+{content_html}
+</td></tr>
+<tr><td style="padding:24px 32px 28px 32px;">
+<div style="border-top:1px solid #eaecf0;padding-top:16px;font-family:{_FONT_STACK};
+font-size:12px;line-height:18px;color:#98a2b3;">{footer_html}</div>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _support_line() -> str:
+    if not settings.email_support_email:
+        return ""
+    address = html.escape(settings.email_support_email)
+    return (
+        f' &middot; <a href="mailto:{html.escape(settings.email_support_email, quote=True)}" '
+        f'style="color:#98a2b3;text-decoration:underline;">{address}</a>'
+    )
+
 
 class EmailService:
     """Service for sending emails via SMTP"""
 
-    async def send_email(self, subject: str, recipient: str, body: str):
+    async def send_email(
+        self,
+        subject: str,
+        recipient: str,
+        body: str,
+        html_body: str | None = None,
+    ):
         """
         Send an email notification.
 
@@ -22,6 +200,9 @@ class EmailService:
             subject: Email subject
             recipient: Recipient email address
             body: Email body (plain text)
+            html_body: Optional HTML body. When provided the message is sent as
+                multipart/alternative and the HTML part is preferred by clients
+                that render it, while ``body`` stays as the fallback.
         """
         logger.info("=" * 60)
         logger.info("Email Service - send_email() called")
@@ -57,11 +238,11 @@ class EmailService:
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(body)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
 
         try:
             logger.info("Connecting to SMTP server...")
-
-            import ssl
 
             ssl_context = ssl.create_default_context()
             if not settings.smtp_validate_certs:
@@ -114,19 +295,49 @@ class EmailService:
             recipient: User's email address
             token: Password reset token
         """
-        subject = "Password Reset Request"
-        # Use URL from settings
+        accent = ACCENT_COLOR
+        brand_name = _brand_name()
+        subject = f"Reset your {brand_name} password"
         reset_link = f"{settings.password_reset_url}?token={token}"
+        expiry_hours = settings.password_reset_token_expire_hours
+        expiry_text = f"{expiry_hours} hour{'s' if expiry_hours != 1 else ''}"
 
         body = (
-            f"Hello,\n\n"
-            f"You requested to reset your password. Click the link below to reset it:\n\n"
+            "Hello,\n\n"
+            "We received a request to reset the password for your account.\n\n"
+            "Reset your password:\n"
             f"{reset_link}\n\n"
-            f"This link will expire in {settings.password_reset_token_expire_hours} hour.\n\n"
-            f"If you didn't request this, please ignore this email.\n"
+            f"This link expires in {expiry_text}.\n\n"
+            "If you did not request a password reset, you can safely ignore this "
+            "email - your password will remain unchanged.\n"
         )
 
-        await self.send_email(subject, recipient, body)
+        content_html = (
+            _paragraph("Hello,")
+            + _paragraph(
+                "We received a request to reset the password for your account."
+            )
+            + _button("Reset password", reset_link, accent)
+            + _fallback_link(reset_link, accent)
+            + _paragraph(
+                f"This link expires in <strong>{html.escape(expiry_text)}</strong>. "
+                "If you did not request a password reset, you can safely ignore "
+                "this email &mdash; your password will remain unchanged."
+            )
+        )
+        html_body = _layout(
+            accent=accent,
+            logo_url=settings.email_brand_logo_url or None,
+            heading="Reset your password",
+            preheader=f"Use this link within {expiry_text} to reset your password.",
+            content_html=content_html,
+            footer_html=(
+                "This is an automated security message; please do not reply to it."
+                f"<br />{html.escape(brand_name)}{_support_line()}"
+            ),
+        )
+
+        await self.send_email(subject, recipient, body, html_body=html_body)
 
     async def send_invitation_email(
         self,
@@ -137,6 +348,7 @@ class EmailService:
         message: str | None = None,
         role_name: str | None = None,
         recipient_name: str | None = None,
+        org_logo_url: str | None = None,
     ):
         """
         Send an organization invitation email.
@@ -149,27 +361,92 @@ class EmailService:
             message: Optional personal message
             role_name: Optional role name assigned to the invitee
             recipient_name: Optional invitee name used in the greeting
+            org_logo_url: Optional logo URL shown at the top of the email
         """
-        subject = f"Invitation to join {org_name}"
-        # Use URL from settings
+        brand_name = _brand_name()
+        accent = ACCENT_COLOR
+        logo_url = _absolute_url(org_logo_url) or _absolute_url(
+            settings.email_brand_logo_url
+        )
         invitation_link = f"{settings.invitation_url}?token={token}"
 
         greeting_name = (recipient_name or "").strip() or recipient.split("@")[0]
         role_part = f" as {role_name}" if role_name else ""
+        subject = f"You've been invited to join {org_name}"
+
+        # ── Plain-text part ─────────────────────────────────────────────────
+        message_block = (
+            f'\nMessage from {inviter_name}:\n"{message}"\n' if message else ""
+        )
+        role_line = f"Your role: {role_name}\n" if role_name else ""
+        support_line = (
+            f"\nNeed help? Contact {settings.email_support_email}.\n"
+            if settings.email_support_email
+            else ""
+        )
         body = (
             f"Hi {greeting_name},\n\n"
             f"{inviter_name} has invited you to join {org_name}{role_part} "
-            f"on Ciphercode ERP.\n\n"
-        )
-
-        if message:
-            body += f'Message from {inviter_name}:\n"{message}"\n\n'
-
-        body += (
-            "Click the link below to accept the invitation and set up your account:\n\n"
+            f"on {brand_name}.\n"
+            f"{message_block}"
+            "\nAccept the invitation and set up your account:\n"
             f"{invitation_link}\n\n"
-            f"This invitation will expire in {INVITATION_EXPIRY_DAYS} days.\n\n"
-            "If you weren't expecting this invitation, you can safely ignore this email.\n"
+            f"{role_line}"
+            f"This invitation expires in {INVITATION_EXPIRY_DAYS} days.\n\n"
+            "If you weren't expecting this invitation, you can safely ignore this "
+            "email - no account is created until you accept it.\n"
+            f"{support_line}"
         )
 
-        await self.send_email(subject, recipient, body)
+        # ── HTML part ──────────────────────────────────────────────────────
+        message_html = (
+            '<table role="presentation" width="100%" cellpadding="0" '
+            'cellspacing="0" border="0" style="margin:0 0 16px 0;"><tr>'
+            '<td style="border-left:3px solid #e4e7ec;padding:2px 0 2px 14px;">'
+            f'<p style="margin:0;font-family:{_FONT_STACK};font-size:14px;'
+            'line-height:22px;font-style:italic;color:#475467;">'
+            f"&ldquo;{html.escape(message)}&rdquo;</p></td></tr></table>"
+            if message
+            else ""
+        )
+        content_html = (
+            _paragraph(f"Hi {html.escape(greeting_name)},")
+            + _paragraph(
+                f"<strong>{html.escape(inviter_name)}</strong> has invited you to "
+                f"join <strong>{html.escape(org_name)}</strong>"
+                f"{html.escape(role_part)} on {html.escape(brand_name)}."
+            )
+            + message_html
+            + _details_table(
+                [
+                    ("Organization", org_name),
+                    ("Role", role_name or "Team member"),
+                    ("Invited by", inviter_name),
+                ],
+                accent,
+            )
+            + _button("Accept invitation", invitation_link, accent)
+            + _fallback_link(invitation_link, accent)
+            + _paragraph(
+                f"This invitation expires in <strong>{INVITATION_EXPIRY_DAYS} "
+                "days</strong>. If you weren't expecting it, you can safely "
+                "ignore this email &mdash; no account is created until you accept."
+            )
+        )
+        html_body = _layout(
+            accent=accent,
+            logo_url=logo_url,
+            heading=f"You're invited to join {org_name}",
+            preheader=(
+                f"{inviter_name} invited you to join {org_name} on {brand_name}. "
+                f"This invitation expires in {INVITATION_EXPIRY_DAYS} days."
+            ),
+            content_html=content_html,
+            footer_html=(
+                f"You received this email because {html.escape(inviter_name)} "
+                f"invited {html.escape(recipient)} to {html.escape(org_name)}."
+                f"<br />{html.escape(brand_name)}{_support_line()}"
+            ),
+        )
+
+        await self.send_email(subject, recipient, body, html_body=html_body)

@@ -1,7 +1,7 @@
 """Dependency injection for FastAPI"""
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -12,7 +12,7 @@ from app.config import settings
 from app.core.security import decode_token
 from app.database import get_db
 from app.models.base import UserStatus, UserType
-from app.models.role import Permission, RolePermission, UserOrganizationRole
+from app.models.role import Permission, Role, RolePermission, UserOrganizationRole
 from app.repositories.user_repository import UserRepository
 from app.services.core_service_client import CoreServiceClient
 
@@ -28,46 +28,80 @@ class CurrentUser:
     status: UserStatus | None
     is_active: bool
     permissions: list[str]
+    # Organization-scoped authorization context. ``permissions`` above is the
+    # union of every organization's grants, which is only safe for operations
+    # that are not tied to a single tenant. Anything that touches one
+    # organization MUST resolve permissions through ``permissions_in()`` so a
+    # role held in organization A never authorizes access to organization B.
+    organization_permissions: dict[str, list[str]] = field(default_factory=dict)
+    organization_ids: list[str] = field(default_factory=list)
+
+    def is_member_of(self, organization_id: UUID | str) -> bool:
+        """True when the user holds an active membership in the organization."""
+        return str(organization_id) in self.organization_permissions
+
+    def permissions_in(self, organization_id: UUID | str) -> list[str]:
+        """Permission codes granted to the user *inside* one organization."""
+        return self.organization_permissions.get(str(organization_id), [])
 
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
 
 
-def _get_user_permissions(db: Session, user_id: UUID) -> list[str]:
-    """
-    Get user's permission codes from their active roles.
+def _get_organization_permissions(
+    db: Session, user_id: UUID
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Map every organization the user belongs to onto its permission codes.
 
-    Handles potential enum issues gracefully by catching exceptions
-    and returning an empty list if there are database errors.
+    Returns ``(mapping, organization_ids)`` where ``mapping`` contains an entry
+    for **every active membership** — including organizations where the user has
+    no role, which resolves to an empty list. That distinction matters: an empty
+    list means "member without permissions" while a missing key means "not a
+    member", and the organization guard needs to tell them apart.
     """
     try:
-        permission_codes = (
-            db.query(Permission.code)
-            .join(RolePermission, RolePermission.permission_id == Permission.id)
-            .join(
-                UserOrganizationRole,
-                RolePermission.role_id == UserOrganizationRole.role_id,
-            )
+        memberships = (
+            db.query(UserOrganizationRole.organization_id)
             .filter(
                 UserOrganizationRole.user_id == user_id,
-                UserOrganizationRole.is_active,
+                UserOrganizationRole.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
+        )
+        mapping: dict[str, list[str]] = {str(org_id): [] for (org_id,) in memberships}
+
+        rows = (
+            db.query(UserOrganizationRole.organization_id, Permission.code)
+            .join(Role, Role.id == UserOrganizationRole.role_id)
+            .join(
+                RolePermission, RolePermission.role_id == UserOrganizationRole.role_id
+            )
+            .join(Permission, Permission.id == RolePermission.permission_id)
+            .filter(
+                UserOrganizationRole.user_id == user_id,
+                UserOrganizationRole.is_active == True,  # noqa: E712
+                Role.is_active == True,  # noqa: E712
                 Permission.is_active == True,  # noqa: E712
             )
             .distinct()
             .all()
         )
-        return [code for (code,) in permission_codes if code]
-    except Exception as e:
-        # Log the error but don't fail - return empty permissions
-        # This prevents 500 errors if there are enum issues in permissions table
+        for org_id, code in rows:
+            if code:
+                mapping.setdefault(str(org_id), []).append(code)
+
+        return mapping, sorted(mapping)
+    except Exception:  # noqa: BLE001 — never break authentication on a lookup error
         import logging
 
-        logger = logging.getLogger(__name__)
-        logger.error(
-            f"Error fetching permissions for user {user_id}: {e}", exc_info=True
+        logging.getLogger(__name__).error(
+            "Error fetching organization permissions for user %s",
+            user_id,
+            exc_info=True,
         )
-        return []
+        return {}, []
 
 
 async def get_current_user(
@@ -118,7 +152,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    permissions = _get_user_permissions(db, user.id)
+    organization_permissions, organization_ids = _get_organization_permissions(
+        db, user.id
+    )
+    # The union is derived from the per-organization map, so only one extra
+    # round-trip is needed per request.
+    permissions = sorted(
+        {code for codes in organization_permissions.values() for code in codes}
+    )
 
     return CurrentUser(
         id=user.id,
@@ -130,6 +171,8 @@ async def get_current_user(
         status=user.status,
         is_active=user.is_active,
         permissions=permissions,
+        organization_permissions=organization_permissions,
+        organization_ids=organization_ids,
     )
 
 

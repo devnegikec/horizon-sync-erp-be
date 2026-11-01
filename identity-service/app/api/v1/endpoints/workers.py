@@ -36,12 +36,22 @@ FALLBACK_EMAIL_DOMAIN = "warehouse.horizonsync.com"
 
 async def require_worker_manager(
     current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ) -> CurrentUser:
     if current_user.user_type in (UserType.SYSTEM_ADMIN, UserType.ORGANIZATION_ADMIN):
         return current_user
+    # Resolve the organization whose workers will be touched and evaluate the
+    # grant *inside* it, so a warehouse.manage role held in another
+    # organization cannot be used here.
+    org_id = _get_org_id(current_user, db)
+    permissions = (
+        current_user.permissions_in(org_id)
+        if org_id and current_user.organization_ids
+        else current_user.permissions
+    )
     # Wildcard-aware check: grants exact 'warehouse.manage', resource wildcard
     # 'warehouse.*', or full wildcard '*.*' (organization owner).
-    if has_permission(current_user.permissions, "warehouse.manage"):
+    if has_permission(permissions, "warehouse.manage"):
         return current_user
     raise HTTPException(
         status_code=403,
@@ -606,7 +616,10 @@ async def update_worker(
     if "login_username" in body and body["login_username"] is not None:
         new_lu = body["login_username"]
         if new_lu and _login_username_taken_in_org(
-            db, user.organization_id or _primary_org_id(user, db), new_lu, exclude_user_id=user.id
+            db,
+            user.organization_id or _primary_org_id(user, db),
+            new_lu,
+            exclude_user_id=user.id,
         ):
             raise http_error(
                 409,

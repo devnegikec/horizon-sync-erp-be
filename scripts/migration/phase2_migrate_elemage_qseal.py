@@ -535,12 +535,21 @@ class Migrator:
             f"FROM {self.t('integration_destinationmarket')} ORDER BY id"
         )
         dm_out, ps_out = [], []
+        # ``qr_product_settings`` is unique on (organization_id, setting_type,
+        # value), but several destination markets can share one currency (e.g.
+        # two euro markets). Keep every value unique — the id suffix is stable so
+        # re-running the migration produces the same result.
+        destination_values: set[str] = set()
         for r in rows:
             duid = did("destination_market", r["id"])
             self.m_destmarket[r["id"]] = duid
             suid = did("setting:destination", r["id"])
             self.m_setting[f"destination:{r['id']}"] = suid
             name = s(r["name"]) or ""
+            setting_value = s(r.get("currency")) or name
+            if setting_value in destination_values:
+                setting_value = f"{setting_value}-{r['id']}"
+            destination_values.add(setting_value)
             dm_out.append(
                 (
                     duid,
@@ -564,7 +573,7 @@ class Migrator:
                     suid,
                     self.org,
                     "destination",
-                    s(r.get("currency")) or name,
+                    setting_value,
                     name,
                     None,
                     0,
@@ -1072,7 +1081,11 @@ class Migrator:
             "SELECT serial_number, id::text, organization_id::text "
             "FROM product_items WHERE deleted_at IS NULL"
         )
-        existing = dict(cur.fetchall())
+        # Rows are (serial_number, id, organization_id) — unpack the tail so the
+        # mapping stays (serial -> (id, org)).
+        existing = {
+            serial: (item_id, org_id) for serial, item_id, org_id in cur.fetchall()
+        }
 
         out, skipped = [], []
         for r in rows:
