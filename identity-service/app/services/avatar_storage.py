@@ -11,6 +11,7 @@ Stored values are *keys*, never URLs: the public URL is built by the endpoint so
 it always matches the host the API is actually served from.
 """
 
+import base64
 import logging
 import re
 import shutil
@@ -28,6 +29,13 @@ AVATAR_CONTENT_TYPES = {
 }
 _EXTENSION_CONTENT_TYPES = {ext: ctype for ctype, ext in AVATAR_CONTENT_TYPES.items()}
 
+# Browsers that POST the image inline send ``data:image/png;base64,<payload>``.
+# Older clients still use the non-standard ``image/jpg``.
+AVATAR_DATA_URL_PATTERN = re.compile(
+    r"^data:(image/(?:png|jpe?g|webp));base64,(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
 # Only keys produced by build_avatar_key() may be read or deleted, which keeps
 # traversal attempts and arbitrary bucket objects out of the public route.
 AVATAR_KEY_PATTERN = re.compile(
@@ -42,6 +50,60 @@ def build_avatar_key(user_id: UUID | str, extension: str) -> str:
 
 def is_avatar_key(key: str) -> bool:
     return bool(AVATAR_KEY_PATTERN.match(key or ""))
+
+
+def is_avatar_data_url(value: str | None) -> bool:
+    """True when the value is an inline base64 image data URL."""
+    return bool(value) and value.strip().lower().startswith("data:")
+
+
+def avatar_max_bytes() -> int:
+    return settings.avatar_max_bytes
+
+
+def max_base64_length() -> int:
+    """Characters needed to base64-encode an image of the maximum size."""
+    return (settings.avatar_max_bytes * 4 // 3) + 8
+
+
+def decode_avatar_data_url(value: str) -> tuple[bytes, str]:
+    """Decode an inline ``data:image/...;base64,...`` avatar payload.
+
+    Returns:
+        ``(image_bytes, content_type)``.
+
+    Raises:
+        ValueError: unsupported image type, invalid base64, empty or too large.
+    """
+    match = AVATAR_DATA_URL_PATTERN.match((value or "").strip())
+    if match is None:
+        raise ValueError(
+            "avatar_url must be an absolute http(s) URL or a base64 data URL "
+            "of a PNG, JPEG or WebP image"
+        )
+
+    content_type = match.group(1).lower()
+    if content_type == "image/jpg":
+        content_type = "image/jpeg"
+    if content_type not in AVATAR_CONTENT_TYPES:
+        raise ValueError("Only PNG, JPEG and WebP images are supported")
+
+    limit_mb = settings.avatar_max_bytes // (1024 * 1024)
+    encoded = match.group(2)
+    if len(encoded) > max_base64_length():
+        raise ValueError(f"Image exceeds the {limit_mb} MB limit")
+
+    try:
+        data = base64.b64decode(encoded)
+    except Exception as exc:  # noqa: BLE001 — any decode failure is a client error
+        raise ValueError("avatar_url data URL is not valid base64") from exc
+
+    if not data:
+        raise ValueError("Image file is empty")
+    if len(data) > settings.avatar_max_bytes:
+        raise ValueError(f"Image exceeds the {limit_mb} MB limit")
+
+    return data, content_type
 
 
 def _local_path(key: str) -> Path:
