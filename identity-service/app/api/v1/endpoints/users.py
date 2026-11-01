@@ -3,9 +3,20 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.authorization import (
     is_system_admin_or_owner,
     require_permission,
@@ -30,12 +41,33 @@ from app.schemas.user import (
     UserStatusCounts,
     UserUpdate,
 )
+from app.services.avatar_storage import (
+    AVATAR_CONTENT_TYPES,
+    delete_avatar,
+    read_avatar,
+    store_avatar,
+)
 from app.services.feature_flag_gate import get_disabled_resource_prefixes
 from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Public path the stored avatar keys are served from.
+_AVATAR_PATH = "/api/v1/identity/users/avatars/"
+
+
+def _avatar_key_from_url(url: str | None) -> str | None:
+    """Extract the storage key from an avatar URL produced by this service."""
+    if not url or _AVATAR_PATH not in url:
+        return None
+    return url.split(_AVATAR_PATH, maxsplit=1)[1]
+
+
+def _avatar_public_base(request: Request) -> str:
+    """Absolute base used to build the stored avatar URL."""
+    return (settings.media_base_url or str(request.base_url)).rstrip("/")
 
 
 def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
@@ -389,8 +421,13 @@ async def update_my_profile(
     """
     Update current user's own profile.
 
-    Allowed fields: first_name, last_name, display_name, phone, preferences, extra_data,
-    timezone, language. Any logged-in user can update these. No permission required.
+    Allowed fields: first_name, last_name, display_name, phone, avatar_url,
+    preferences, extra_data, timezone, language. Any logged-in user can update
+    these. No permission required.
+
+    To upload an image file use ``POST /users/me/avatar``; use
+    ``DELETE /users/me/avatar`` to remove it (``avatar_url: null`` is ignored by
+    the partial update).
     """
     user_service = UserService(db)
     payload = body.model_dump(exclude_unset=True)
@@ -399,6 +436,124 @@ async def update_my_profile(
         return UserProfileResponse.model_validate(user)
     except UserNotFoundException:
         raise
+
+
+@router.post(
+    "/users/me/avatar",
+    response_model=UserProfileResponse,
+    summary="Upload or replace my profile image",
+    description=(
+        "Upload a PNG, JPEG or WebP image for the current user. Any previously "
+        "uploaded image is replaced. Use the returned `avatar_url` in the UI."
+    ),
+)
+async def upload_my_avatar(
+    request: Request,
+    file: UploadFile = File(..., description="PNG, JPEG or WebP image"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Upload/replace the current user's profile image. No permission required."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in AVATAR_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PNG, JPEG and WebP images are supported",
+        )
+
+    data = await file.read(settings.avatar_max_bytes + 1)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Image file is empty",
+        )
+    if len(data) > settings.avatar_max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                "Image exceeds the "
+                f"{settings.avatar_max_bytes // (1024 * 1024)} MB limit"
+            ),
+        )
+
+    user_service = UserService(db)
+    user = user_service.get_user_by_id(current_user.id)
+
+    try:
+        key = store_avatar(user.id, data, content_type)
+    except Exception:  # noqa: BLE001 — surfaced as a storage outage, not a 500
+        logger.exception("Avatar upload failed for user %s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Image storage is currently unavailable",
+        ) from None
+
+    previous_key = _avatar_key_from_url(user.avatar_url)
+    user = user_service.update_user(
+        user.id,
+        {"avatar_url": f"{_avatar_public_base(request)}{_AVATAR_PATH}{key}"},
+    )
+    if previous_key and previous_key != key:
+        delete_avatar(previous_key)
+
+    logger.info("Avatar updated for user %s", user.id)
+    return UserProfileResponse.model_validate(user)
+
+
+@router.delete(
+    "/users/me/avatar",
+    response_model=UserProfileResponse,
+    summary="Remove my profile image",
+    description="Clear the current user's profile image and delete the stored file.",
+)
+async def delete_my_avatar(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Remove the current user's profile image. No permission required."""
+    user_service = UserService(db)
+    user = user_service.get_user_by_id(current_user.id)
+    key = _avatar_key_from_url(user.avatar_url)
+
+    # update_user() drops None values, so clear the column directly.
+    user.avatar_url = None
+    db.commit()
+    db.refresh(user)
+
+    if key:
+        delete_avatar(key)
+    return UserProfileResponse.model_validate(user)
+
+
+@router.get(
+    "/users/avatars/{object_key:path}",
+    name="get_user_avatar",
+    include_in_schema=False,
+)
+async def get_user_avatar(object_key: str):
+    """Serve a stored profile image (declared before /users/{user_id})."""
+    try:
+        data, content_type = read_avatar(object_key)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile image not found",
+        ) from None
+    except Exception:  # noqa: BLE001 — storage outage
+        logger.exception("Could not read avatar %s", object_key)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Image storage is currently unavailable",
+        ) from None
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get(
@@ -524,15 +679,19 @@ async def get_user_permissions(
     # Custom (fine-grained) permissions come from the per-user custom role.
     custom_role_ids = [r.id for r in user_roles if r.code == custom_code]
     custom_permission_codes = (
-        db.query(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .filter(
-            RolePermission.role_id.in_(custom_role_ids),
-            Permission.is_active == True,  # noqa: E712
+        (
+            db.query(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .filter(
+                RolePermission.role_id.in_(custom_role_ids),
+                Permission.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
         )
-        .distinct()
-        .all()
-    ) if custom_role_ids else []
+        if custom_role_ids
+        else []
+    )
     custom_permissions = list(
         dict.fromkeys(code for (code,) in custom_permission_codes if code)
     )
