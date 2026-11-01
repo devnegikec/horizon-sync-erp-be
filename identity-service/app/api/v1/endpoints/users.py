@@ -18,8 +18,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.authorization import (
+    has_permission,
     is_system_admin_or_owner,
+    require_organization_permission,
     require_permission,
+    require_shared_organization_permission,
     validate_user_in_organization,
 )
 from app.core.exceptions import DuplicateEmailException, UserNotFoundException
@@ -68,6 +71,22 @@ def _avatar_key_from_url(url: str | None) -> str | None:
 def _avatar_public_base(request: Request) -> str:
     """Absolute base used to build the stored avatar URL."""
     return (settings.media_base_url or str(request.base_url)).rstrip("/")
+
+
+def _require_user_permission(
+    current_user: CurrentUser, organization_id: str | UUID | None, permission: str
+) -> None:
+    """Require ``permission`` in the target organization when one is supplied.
+
+    Without an explicit organization the caller may act in any organization
+    where they hold the permission, so the aggregate check is used.
+    """
+    if organization_id:
+        require_organization_permission(
+            current_user, UUID(str(organization_id)), permission
+        )
+    else:
+        require_permission(current_user.permissions, permission)
 
 
 def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
@@ -181,10 +200,17 @@ async def list_users(
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
         if not has_cross_org_user_access:
-            validate_user_in_organization(current_user.id, organization_id, db)
+            # RBAC must be evaluated *inside* that organization: a role held in
+            # another organization must not grant access here.
+            require_organization_permission(current_user, organization_id, "user.read")
         organization_ids = [organization_id]
     elif not has_cross_org_user_access:
-        organization_ids = _user_organization_ids(db, current_user.id)
+        # Only organizations where the caller actually holds user.read.
+        organization_ids = [
+            org_id
+            for org_id in _user_organization_ids(db, current_user.id)
+            if has_permission(current_user.permissions_in(org_id), "user.read")
+        ]
     if organization_ids is not None and not organization_ids:
         return UserListResponse(
             users=[],
@@ -568,17 +594,8 @@ async def get_user(
     db: Session = Depends(get_db),
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.read")
-    has_cross_org_user_access = current_user.user_type == "system_admin" or any(
-        p.startswith("system_admin.") for p in current_user.permissions
-    )
-    if not has_cross_org_user_access and not _users_share_organization(
-        db, current_user.id, user_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Caller must share an organization with the target AND hold user.read there.
+    require_shared_organization_permission(db, current_user, user_id, "user.read")
     user_service = UserService(db)
     try:
         user = user_service.get_user_by_id(user_id)
@@ -632,20 +649,12 @@ async def get_user_permissions(
     """
     from app.models.role import Permission, Role, RolePermission
 
-    require_permission(current_user.permissions, "user.read")
-
     logger.info(
         f"User {current_user.id} fetching permissions for user {user_id} in org {organization_id}"
     )
 
-    # Validate current user has access to the organization
-    try:
-        validate_user_in_organization(current_user.id, organization_id, db)
-    except HTTPException:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this organization",
-        )
+    # Membership + user.read inside *this* organization only.
+    require_organization_permission(current_user, organization_id, "user.read")
 
     # Validate target user is in the organization
     try:
@@ -743,7 +752,8 @@ async def create_user(
     db: Session = Depends(get_db),
 ):
     """Create user. Requires user.create permission."""
-    require_permission(current_user.permissions, "user.create")
+    # Creating a member of a specific organization requires the grant there.
+    _require_user_permission(current_user, body.organization_id, "user.create")
 
     # Escalation guard: only callers with system_admin.master may create system_admin users
     if body.user_type and body.user_type == UserType.SYSTEM_ADMIN.value:
@@ -841,15 +851,8 @@ async def update_user(
     db: Session = Depends(get_db),
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.update")
-    if not (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
-    ) and not _users_share_organization(db, current_user.id, user_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Shared organization + user.update within that organization.
+    require_shared_organization_permission(db, current_user, user_id, "user.update")
     if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
         db, user_id
     ):
@@ -907,15 +910,8 @@ async def delete_user(
     db: Session = Depends(get_db),
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.delete")
-    if not (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
-    ) and not _users_share_organization(db, current_user.id, user_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Shared organization + user.delete within that organization.
+    require_shared_organization_permission(db, current_user, user_id, "user.delete")
     if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
         db, user_id
     ):
@@ -1068,20 +1064,12 @@ async def update_user_roles(
     - **organization_id**: UUID of the organization
     - **role_ids**: List of role UUIDs to assign (replaces existing)
     """
-    require_permission(current_user.permissions, "user.update")
+    require_organization_permission(current_user, body.organization_id, "user.update")
 
     if not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
-        )
-
-    try:
-        validate_user_in_organization(current_user.id, body.organization_id, db)
-    except HTTPException:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this organization",
         )
 
     # Verify target user is also in the organization

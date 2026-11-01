@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 from app.core.authorization import (
     is_system_admin,
     is_system_admin_or_owner,
+    require_organization_permission,
     require_permission,
     validate_user_in_organization,
 )
-from app.core.feature_flags import permission_code_is_enabled
 from app.core.exceptions import (
     DuplicateRoleException,
     PermissionNotFoundException,
@@ -22,6 +22,7 @@ from app.core.exceptions import (
     RolePermissionNotFoundException,
     SystemRoleModificationException,
 )
+from app.core.feature_flags import permission_code_is_enabled
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_active_user
 from app.models.role import UserOrganizationRole
@@ -63,8 +64,7 @@ def _filter_role_permissions_by_flags(role_item: dict, disabled: set) -> None:
     if not disabled or not perms:
         return
     role_item["permissions"] = [
-        p for p in perms
-        if permission_code_is_enabled(p.get("code", ""), disabled)
+        p for p in perms if permission_code_is_enabled(p.get("code", ""), disabled)
     ]
 
 
@@ -105,15 +105,14 @@ async def list_roles(
     )
 
     # Check permission - user must have role.read (or role.* or *.*)
-    require_permission(current_user.permissions, "role.read")
-
     # Restrict to user's organizations only - never return roles from other orgs
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
-        # Specific org requested: validate user is a member
-        validate_user_in_organization(current_user.id, organization_id, db)
+        # Permission must be granted *inside* this organization.
+        require_organization_permission(current_user, organization_id, "role.read")
         organization_ids = [organization_id]
     else:
+        require_permission(current_user.permissions, "role.read")
         # No org specified: restrict to user's own organizations
         organization_ids = _user_organization_ids(db, current_user.id)
         if not organization_ids:
@@ -128,11 +127,12 @@ async def list_roles(
     # Non-system-admin users should never see roles from the master organization
     # (those are system admin roles like Super Admin, System User Manager, etc.)
     if not is_system_admin(current_user.permissions) and organization_ids:
-        from app.models.organization import Organization
         from app.models.base import OrganizationType
+        from app.models.organization import Organization
+
         master_org_ids = {
-            row[0] for row in
-            db.query(Organization.id)
+            row[0]
+            for row in db.query(Organization.id)
             .filter(
                 Organization.organization_type == OrganizationType.MASTER,
                 Organization.id.in_(organization_ids),
@@ -140,7 +140,9 @@ async def list_roles(
             .all()
         }
         if master_org_ids:
-            organization_ids = [oid for oid in organization_ids if oid not in master_org_ids]
+            organization_ids = [
+                oid for oid in organization_ids if oid not in master_org_ids
+            ]
             if not organization_ids:
                 return RoleListResponse(data=[], total=0, skip=skip, limit=limit)
 
@@ -167,15 +169,21 @@ async def list_roles(
         # Non-system-admin users: filter out roles that only have system_admin.* permissions
         # These are system admin roles that leaked into the user's org
         if not is_system_admin(current_user.permissions) and result.get("data"):
-            from app.models.role import Permission, RolePermission, Role as RoleModel
+            from app.models.role import Permission, RolePermission
+
             filtered_data = []
             for role_item in result["data"]:
-                role_id = role_item.id if hasattr(role_item, "id") else role_item.get("id")
+                role_id = (
+                    role_item.id if hasattr(role_item, "id") else role_item.get("id")
+                )
                 if role_id:
                     # Check if ALL permissions for this role are system_admin.*
                     perm_codes = (
                         db.query(Permission.code)
-                        .join(RolePermission, RolePermission.permission_id == Permission.id)
+                        .join(
+                            RolePermission,
+                            RolePermission.permission_id == Permission.id,
+                        )
                         .filter(RolePermission.role_id == role_id)
                         .all()
                     )
@@ -294,11 +302,8 @@ async def create_role(
         f"in org: {role.organization_id}"
     )
 
-    # Check permission
-    require_permission(current_user.permissions, "role.create")
-
-    # Validate user is in the organization
-    validate_user_in_organization(current_user.id, role.organization_id, db)
+    # Check permission inside the target organization (membership included).
+    require_organization_permission(current_user, role.organization_id, "role.create")
 
     role_service = RoleService(db)
 
@@ -320,6 +325,8 @@ async def create_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating role: {str(e)}")
         raise HTTPException(
@@ -357,22 +364,21 @@ async def update_role(
     """
     logger.info(f"User {current_user.id} updating role: {role_id}")
 
-    # Check permission
-    require_permission(current_user.permissions, "role.update")
-
     role_service = RoleService(db)
 
     try:
         # Get role first to validate org membership and system role check
         existing_role = role_service.get_role_by_id(role_id)
 
-        # Validate organization membership
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        # Membership + role.update in the role's own organization.
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.update"
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(
+            current_user.permissions
+        ):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -402,6 +408,8 @@ async def update_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating role: {str(e)}")
         raise HTTPException(
@@ -431,22 +439,21 @@ async def delete_role(
     """
     logger.info(f"User {current_user.id} deleting role: {role_id}")
 
-    # Check permission
-    require_permission(current_user.permissions, "role.delete")
-
     role_service = RoleService(db)
 
     try:
         # Get role first to validate org membership
         existing_role = role_service.get_role_by_id(role_id)
 
-        # Validate organization membership
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        # Membership + role.delete in the role's own organization.
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.delete"
         )
 
         # Check if trying to delete system role
-        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(
+            current_user.permissions
+        ):
             logger.warning(
                 f"User {current_user.id} attempted to delete system role {role_id}"
             )
@@ -481,6 +488,8 @@ async def delete_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting role: {str(e)}")
         raise HTTPException(
@@ -519,16 +528,13 @@ async def get_role_permissions(
     """
     logger.info(f"User {current_user.id} fetching permissions for role: {role_id}")
 
-    # Check permission
-    require_permission(current_user.permissions, "role.read")
-
     role_service = RoleService(db)
 
     try:
         # Get role to validate org membership
         existing_role = role_service.get_role_by_id(role_id)
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.read"
         )
 
         result = role_service.get_role_permissions(
@@ -557,6 +563,8 @@ async def get_role_permissions(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching role permissions: {str(e)}")
         raise HTTPException(
@@ -595,20 +603,19 @@ async def assign_permission_to_role(
         f"to role {role_id}"
     )
 
-    # Check permission
-    require_permission(current_user.permissions, "role.manage")
-
     role_service = RoleService(db)
 
     try:
         # Get role to validate org membership and system role
         existing_role = role_service.get_role_by_id(role_id)
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.manage"
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(
+            current_user.permissions
+        ):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -660,6 +667,8 @@ async def assign_permission_to_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error assigning permission: {str(e)}")
         raise HTTPException(
@@ -694,20 +703,19 @@ async def remove_permission_from_role(
         f"from role {role_id}"
     )
 
-    # Check permission
-    require_permission(current_user.permissions, "role.manage")
-
     role_service = RoleService(db)
 
     try:
         # Get role to validate org membership and system role
         existing_role = role_service.get_role_by_id(role_id)
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.manage"
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(
+            current_user.permissions
+        ):
             logger.warning(
                 f"User {current_user.id} attempted to modify system role {role_id}"
             )
@@ -743,6 +751,8 @@ async def remove_permission_from_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error removing permission: {str(e)}")
         raise HTTPException(
@@ -780,20 +790,19 @@ async def bulk_assign_permissions_to_role(
         f"permissions to role {role_id}"
     )
 
-    # Check permission
-    require_permission(current_user.permissions, "role.manage")
-
     role_service = RoleService(db)
 
     try:
         # Get role to validate org membership and system role
         existing_role = role_service.get_role_by_id(role_id)
-        validate_user_in_organization(
-            current_user.id, existing_role["organization_id"], db
+        require_organization_permission(
+            current_user, existing_role["organization_id"], "role.manage"
         )
 
         # Check if trying to modify system role
-        if existing_role["is_system"] and not is_system_admin_or_owner(current_user.permissions):
+        if existing_role["is_system"] and not is_system_admin_or_owner(
+            current_user.permissions
+        ):
             logger.warning(
                 f"User {current_user.id} attempted to bulk modify system role {role_id}"
             )
@@ -829,6 +838,8 @@ async def bulk_assign_permissions_to_role(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error bulk assigning permissions: {str(e)}")
         raise HTTPException(
@@ -869,11 +880,8 @@ async def get_role_users(
         f"in org: {organization_id}"
     )
 
-    # Check permission
-    require_permission(current_user.permissions, "user.read")
-
-    # Validate organization membership
-    validate_user_in_organization(current_user.id, organization_id, db)
+    # Membership + user.read inside the requested organization.
+    require_organization_permission(current_user, organization_id, "user.read")
 
     role_service = RoleService(db)
 

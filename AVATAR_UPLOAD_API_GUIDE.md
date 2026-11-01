@@ -85,18 +85,21 @@ ignores `null`, use `DELETE /users/me/avatar` to clear it.
    uploads disappear on redeploy.
 
 To make dev/staging durable, copy the core-service bucket variables onto the
-identity-service (values are identical). **Already configured on the `dev`
-environment** (2026-11-01); `staging` still needs them:
+identity-service. **Configured on both `dev` and `staging`** (2026-11-01):
 
-```
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_S3_BUCKET=brandwise-dev-files-iywczu
-AWS_S3_REGION=auto
-AWS_S3_ENDPOINT_URL=https://t3.storageapi.dev
-AWS_S3_ADDRESSING_STYLE=virtual
-AWS_S3_SERVER_SIDE_ENCRYPTION=none
-```
+| Variable | dev | staging |
+|---|---|---|
+| `AWS_S3_BUCKET` | `brandwise-dev-files-iywczu` | `brandwise-stage-files-zufa6s` |
+| `AWS_S3_REGION` | `auto` | `sin` |
+| `AWS_S3_ENDPOINT_URL` | `https://t3.storageapi.dev` | same |
+| `AWS_S3_ADDRESSING_STYLE` | `virtual` | same |
+| `AWS_S3_SERVER_SIDE_ENCRYPTION` | `none` | same |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | copied from core-service | copied from core-service |
+| `MEDIA_BASE_URL` | `https://dev-identity-api.ciphercode.ai` | `https://identity-api.ciphercode.ai` |
+
+> Railway bucket names carry a random suffix (`brandwise-stage-files-zufa6s`).
+> core-service `staging` still has the suffix-less `brandwise-stage-files`, which
+> returns `NoSuchBucket` — image uploads there are broken until corrected.
 
 Avatars live under the `users/` key prefix, which core-service never uses, so
 the two services can share one bucket without colliding.

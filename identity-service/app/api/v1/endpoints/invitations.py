@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.authorization import require_any_organization_permission
 from app.core.exceptions import (
     InvitationAlreadyAcceptedException,
     InvitationExpiredException,
@@ -34,6 +35,30 @@ from app.services.invitation_service import InvitationService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Invitations are manageable by anyone holding an invite grant in the target
+# organization, or (read-only screens) by anyone who can read users there.
+_INVITE_PERMISSIONS = ("user.invite", "invitation.create")
+_VIEW_INVITATION_PERMISSIONS = (
+    "user.read",
+    "user.invite",
+    "invitation.read",
+    "invitation.create",
+)
+
+
+def _require_invitation_org_access(
+    current_user: CurrentUser,
+    organization_id: UUID,
+    permissions: tuple[str, ...] = _INVITE_PERMISSIONS,
+) -> None:
+    """Membership + an invite permission **inside** the organization.
+
+    Permission codes are aggregated across every organization in the token, so
+    without this check a role held in organization A would authorize invitation
+    operations in organization B.
+    """
+    require_any_organization_permission(current_user, organization_id, permissions)
 
 
 @router.post(
@@ -64,6 +89,9 @@ async def send_invitation(
     - **message**: Optional personal message
     """
     logger.info(f"User {current_user.id} sending invitation to {invitation.email}")
+
+    # The inviter must hold the invite grant in the organization being invited to.
+    _require_invitation_org_access(current_user, invitation.organization_id)
 
     invitation_service = InvitationService(db)
 
@@ -171,6 +199,11 @@ async def list_invitations(
     """
     logger.info(f"Listing invitations for org: {organization_id}")
 
+    # Never expose another organization's invitations (emails, names, roles).
+    _require_invitation_org_access(
+        current_user, organization_id, _VIEW_INVITATION_PERMISSIONS
+    )
+
     invitation_service = InvitationService(db)
 
     try:
@@ -186,6 +219,8 @@ async def list_invitations(
 
         return InvitationListResponse(**result)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing invitations: {str(e)}")
         raise HTTPException(
@@ -217,6 +252,13 @@ async def get_invitation(
 
     try:
         result = invitation_service.get_invitation_by_id(invitation_id)
+        # The invitation id alone carries no tenant context — verify the caller
+        # belongs to the inviting organization before returning anything.
+        _require_invitation_org_access(
+            current_user,
+            UUID(str(result["organization_id"])),
+            _VIEW_INVITATION_PERMISSIONS,
+        )
         logger.info(f"Invitation fetched: {invitation_id}")
         return InvitationResponse(**result)
 
@@ -227,6 +269,8 @@ async def get_invitation(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching invitation: {str(e)}")
         raise HTTPException(
@@ -259,6 +303,10 @@ async def cancel_invitation(
     invitation_service = InvitationService(db)
 
     try:
+        target = invitation_service.get_invitation_by_id(invitation_id)
+        _require_invitation_org_access(
+            current_user, UUID(str(target["organization_id"]))
+        )
         invitation_service.cancel_invitation(
             invitation_id,
             user_id=current_user.id,
@@ -287,6 +335,8 @@ async def cancel_invitation(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error cancelling invitation: {str(e)}")
         raise HTTPException(
@@ -320,6 +370,10 @@ async def resend_invitation(
     invitation_service = InvitationService(db)
 
     try:
+        target = invitation_service.get_invitation_by_id(invitation_id)
+        _require_invitation_org_access(
+            current_user, UUID(str(target["organization_id"]))
+        )
         result = invitation_service.resend_invitation(
             invitation_id,
             user_id=current_user.id,
@@ -395,6 +449,8 @@ async def resend_invitation(
             detail=str(e),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error resending invitation: {str(e)}")
         raise HTTPException(
