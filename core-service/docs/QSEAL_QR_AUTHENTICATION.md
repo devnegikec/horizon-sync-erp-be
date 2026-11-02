@@ -95,7 +95,7 @@ For each Product Item, block generation performs the following steps:
 10. Build the long verification URL:
 
    ```text
-   https://horizon.ciphercode.ai/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}
+   https://app.ciphercode.ai/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}
    ```
 
 11. Optionally send the long URL to the configured short-URL provider.
