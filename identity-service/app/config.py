@@ -75,9 +75,15 @@ class Settings(BaseSettings):
     # Email branding used in the HTML templates. `email_brand_logo_url` must be
     # an absolute, publicly reachable https URL (used when the organization has
     # no logo of its own).
-    email_brand_name: str = "Ciphercode ERP"
+    email_brand_name: str = "Ciphercode VDI"
     email_brand_logo_url: str = ""
     email_support_email: str = ""
+    # Product name used in the invitation copy, e.g. "... on Ciphercode's VDI
+    # (Verifiable Digital Identity) Platform." Falls back to the brand name
+    # when left blank.
+    email_platform_description: str = (
+        "Ciphercode's VDI (Verifiable Digital Identity) Platform"
+    )
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:4200"
