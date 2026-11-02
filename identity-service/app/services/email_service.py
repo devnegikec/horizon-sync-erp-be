@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # to imitate another brand's colour scheme.
 ACCENT_COLOR = "#2563eb"
 DEFAULT_BRAND_NAME = "Ciphercode VDI"
+DEFAULT_PLATFORM_DESCRIPTION = "Ciphercode's VDI (Verifiable Digital Identity) Platform"
 
 # System font stack — no webfonts, since most mail clients block external CSS.
 _FONT_STACK = (
@@ -32,6 +33,14 @@ _FONT_STACK = (
 
 def _brand_name() -> str:
     return settings.email_brand_name or DEFAULT_BRAND_NAME
+
+
+def _platform_description() -> str:
+    """Product name used in invitation copy (falls back to the brand name)."""
+    return (
+        getattr(settings, "email_platform_description", "")
+        or DEFAULT_PLATFORM_DESCRIPTION
+    )
 
 
 def _absolute_url(url: str | None) -> str | None:
@@ -140,19 +149,31 @@ def _layout(
     *,
     accent: str,
     logo_url: str | None,
-    heading: str,
+    heading: str | None,
     preheader: str,
     content_html: str,
     footer_html: str,
 ) -> str:
-    """Wrap content in a table-based, mail-client-safe HTML shell."""
+    """Wrap content in a table-based, mail-client-safe HTML shell.
+
+    ``heading`` is optional: when omitted the logo/wordmark is followed straight
+    by the body content (used by the invitation email).
+    """
+    title = html.escape(heading or _brand_name())
+    heading_html = ""
+    if heading:
+        heading_html = (
+            f'<h1 style="margin:0 0 16px 0;font-family:{_FONT_STACK};'
+            'font-size:22px;line-height:30px;font-weight:600;color:#101828;">'
+            f"{html.escape(heading)}</h1>"
+        )
     return f"""<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="x-apple-disable-message-reformatting" />
-<title>{html.escape(heading)}</title>
+<title>{title}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f5f7;
@@ -167,8 +188,7 @@ border-radius:12px;font-family:{_FONT_STACK};">
 border-radius:12px 12px 0 0;">&nbsp;</td></tr>
 <tr><td style="padding:28px 32px 0 32px;">{_logo_block(logo_url)}</td></tr>
 <tr><td style="padding:20px 32px 0 32px;">
-<h1 style="margin:0 0 16px 0;font-family:{_FONT_STACK};font-size:22px;
-line-height:30px;font-weight:600;color:#101828;">{html.escape(heading)}</h1>
+{heading_html}
 {content_html}
 </td></tr>
 <tr><td style="padding:24px 32px 28px 32px;">
@@ -373,6 +393,7 @@ class EmailService:
             org_logo_url: Optional logo URL shown at the top of the email
         """
         brand_name = _brand_name()
+        platform_description = _platform_description()
         accent = ACCENT_COLOR
         logo_url = _absolute_url(org_logo_url) or _absolute_url(
             settings.email_brand_logo_url
@@ -396,7 +417,7 @@ class EmailService:
         body = (
             f"Hi {greeting_name},\n\n"
             f"{inviter_name} has invited you to join WMS {org_name}{role_part} "
-            f"on {brand_name}.\n"
+            f"on {platform_description}.\n"
             f"{message_block}"
             "\nAccept the invitation and set up your account:\n"
             f"{invitation_link}\n\n"
@@ -423,7 +444,7 @@ class EmailService:
             + _paragraph(
                 f"<strong>{html.escape(inviter_name)}</strong> has invited you to "
                 f"join <strong>{html.escape(org_name)}</strong>"
-                f"{html.escape(role_part)} on {html.escape(brand_name)}."
+                f"{html.escape(role_part)} on {html.escape(platform_description)}."
             )
             + message_html
             + _details_table(
@@ -445,7 +466,7 @@ class EmailService:
         html_body = _layout(
             accent=accent,
             logo_url=logo_url,
-            heading=f"You're invited to join {org_name}",
+            heading=None,
             preheader=(
                 f"{inviter_name} invited you to join {org_name} on {brand_name}. "
                 f"This invitation expires in {INVITATION_EXPIRY_DAYS} days."
