@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # wordmark. Deliberately fixed (not tenant-configurable) so mail cannot be made
 # to imitate another brand's colour scheme.
 ACCENT_COLOR = "#2563eb"
-DEFAULT_BRAND_NAME = "Ciphercode ERP"
+DEFAULT_BRAND_NAME = "Ciphercode VDI"
 
 # System font stack — no webfonts, since most mail clients block external CSS.
 _FONT_STACK = (
@@ -381,7 +381,7 @@ class EmailService:
 
         greeting_name = (recipient_name or "").strip() or recipient.split("@")[0]
         role_part = f" as {role_name}" if role_name else ""
-        subject = f"You've been invited to join {org_name}"
+        subject = f"You've been invited to join {org_name} WMS account"
 
         # ── Plain-text part ─────────────────────────────────────────────────
         message_block = (
@@ -395,7 +395,7 @@ class EmailService:
         )
         body = (
             f"Hi {greeting_name},\n\n"
-            f"{inviter_name} has invited you to join {org_name}{role_part} "
+            f"{inviter_name} has invited you to join WMS {org_name}{role_part} "
             f"on {brand_name}.\n"
             f"{message_block}"
             "\nAccept the invitation and set up your account:\n"
