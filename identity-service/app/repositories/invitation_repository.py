@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.invitation import Invitation
@@ -97,6 +97,37 @@ class InvitationRepository:
                 Invitation.status == "pending",
             )
             .first()
+        )
+
+    def get_pending_invitations(
+        self, email: str, organization_id: UUID
+    ) -> list[Invitation]:
+        """All still-pending invitations for an email in an organization.
+
+        Email matching is case-insensitive (users type addresses in any case).
+        Rows are returned newest-first so the caller can treat the first
+        unexpired one as authoritative and close out the rest as duplicates.
+
+        Args:
+            email: Email address
+            organization_id: Organization UUID
+
+        Returns:
+            List of pending invitations (possibly empty)
+        """
+        normalized = (email or "").strip().lower()
+        logger.debug(
+            f"Fetching pending invitations for {normalized} in {organization_id}"
+        )
+        return (
+            self.db.query(Invitation)
+            .filter(
+                func.lower(Invitation.email) == normalized,
+                Invitation.organization_id == organization_id,
+                Invitation.status == "pending",
+            )
+            .order_by(Invitation.created_at.desc())
+            .all()
         )
 
     def update_invitation(

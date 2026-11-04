@@ -32,7 +32,9 @@ depends_on: str | Sequence[str] | None = None
 
 INDEX_NAME = "uq_qr_products_org_name_ci"
 
-_TRIM_WHITESPACE = "btrim(name, E' \\t\\n\\r\\f\\v')"
+# PostgreSQL escape strings have no ``\v`` sequence (anything else after a
+# backslash is literal), so the vertical tab must be produced by ``chr(11)``.
+_TRIM_WHITESPACE = "btrim(name, E' \\t\\n\\r\\f' || chr(11))"
 _NAME_EXPRESSION = f"lower({_TRIM_WHITESPACE})"
 
 _INDEX_DEFINITION_SQL = sa.text(
@@ -62,8 +64,10 @@ def upgrade() -> None:
         return
 
     definition = _current_definition()
-    if definition is not None and "E' " in definition:
-        # Already rebuilt with the whitespace-aware expression.
+    if definition is not None and "chr(11)" in definition:
+        # Already rebuilt with the whitespace-aware expression (140 was shipped
+        # with ``E'...\v'``, which PostgreSQL reads as a literal ``v``, so the
+        # presence of that literal is not proof of a correct index).
         return
 
     duplicates = op.get_bind().execute(_DUPLICATES_SQL).fetchall()
